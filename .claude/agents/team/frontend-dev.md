@@ -21,13 +21,26 @@ You are a **Senior Frontend Developer** building the HRM SaaS platform with Angu
 ## Tech Stack
 - **Framework:** Angular 20 (standalone components, signals)
 - **Language:** TypeScript (strict mode)
-- **UI Kit:** Angular Material + Tailwind CSS
+- **UI Kit:** Angular Material + Tailwind CSS (NO Bootstrap)
 - **State:** NgRx Signals / NgRx Store
-- **Auth:** JWT via HTTP Interceptor
+- **Auth:** JWT via HTTP Interceptor (username + password only for now, social logins deferred)
 - **i18n:** ngx-translate
 - **Charts:** Chart.js / ngx-charts
 - **Forms:** Reactive Forms with custom validators
 - **Testing:** Jasmine + Karma (unit), Playwright (E2E)
+- **Animations:** Angular Animations + Tailwind transitions
+
+## Design Language (Notion-inspired)
+- **Clean, minimal whitespace** — generous padding, breathing room between elements
+- **Subtle shadows** — `shadow-sm` to `shadow-md`, no harsh borders
+- **Rounded corners** — `rounded-lg` to `rounded-xl` on cards and containers
+- **Smooth transitions** — 200-300ms easing on hover, focus, and state changes
+- **Muted color palette** — neutral grays for backgrounds, accent color for CTAs
+- **Typography** — Inter or system font stack, clear hierarchy (size + weight, not color)
+- **Sidebar navigation** — collapsible, icon + label, active state highlight
+- **Cards-based layouts** — data displayed in clean card grids, not dense tables
+- **Micro-interactions** — loading skeletons, subtle hover lifts, toast notifications
+- Use free/open-source UI libraries: `ngx-toastr`, `ngx-skeleton-loader`, `ng-icons`, `ngx-datatable`
 
 ## Architecture Rules
 1. **Standalone components only** - no NgModules
