@@ -1,0 +1,114 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+/* ─── Login Card ──────────────────────────────── */
+
+.login-card {
+  @apply w-full rounded-xl bg-white border border-neutral-100 p-8 shadow-notion;
+
+  @screen sm {
+    @apply p-10;
+  }
+}
+
+.login-header {
+  @apply text-center mb-6;
+}
+
+.login-title {
+  @apply text-2xl font-semibold text-neutral-900 tracking-tight;
+}
+
+.login-subtitle {
+  @apply mt-1.5 text-sm text-neutral-500;
+}
+
+/* ─── Error Alert ─────────────────────────────── */
+
+.error-alert {
+  @apply flex items-center gap-2 rounded-lg bg-red-50 border border-red-100
+    px-4 py-3 mb-6 text-sm text-red-700;
+}
+
+.error-icon {
+  @apply w-4 h-4 flex-shrink-0 text-red-500;
+}
+
+/* ─── Form ────────────────────────────────────── */
+
+.login-form,
+.mfa-form {
+  @apply space-y-5;
+}
+
+.form-group {
+  @apply space-y-1;
+}
+
+.label-row {
+  @apply flex items-center justify-between;
+}
+
+.forgot-link {
+  @apply text-xs text-brand-600 hover:text-brand-700 font-medium
+    transition-colors no-underline;
+}
+
+.field-error {
+  @apply text-xs text-red-500 mt-1;
+}
+
+/* ─── Password Input ──────────────────────────── */
+
+.password-wrapper {
+  @apply relative;
+}
+
+.password-toggle {
+  @apply absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded
+    text-neutral-400 hover:text-neutral-600 transition-colors;
+}
+
+/* ─── Button Loading Spinner ──────────────────── */
+
+.btn-spinner {
+  @apply inline-block w-4 h-4 mr-2 border-2 border-white/30
+    border-t-white rounded-full;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── MFA Section ─────────────────────────────── */
+
+.mfa-section {
+  @apply space-y-6;
+}
+
+.mfa-header {
+  @apply text-center;
+}
+
+.mfa-icon {
+  @apply w-10 h-10 mx-auto mb-3 text-brand-600;
+}
+
+.mfa-title {
+  @apply text-lg font-semibold text-neutral-900;
+}
+
+.mfa-subtitle {
+  @apply mt-1 text-sm text-neutral-500;
+}
+
+.back-link {
+  @apply block w-full text-center text-sm text-neutral-500
+    hover:text-neutral-700 transition-colors mt-4 cursor-pointer
+    bg-transparent border-none;
+}

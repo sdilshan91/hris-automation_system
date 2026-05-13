@@ -1,4 +1,32 @@
 {
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Agent",
+      "mcp__github__*",
+      "Bash(dotnet build *)",
+      "Bash(git add *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-user-story-commit.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-dev-commit.sh"
+          }
+        ]
+      }
+    ]
+  },
   "mcpServers": {
     "github": {
       "type": "http",
@@ -7,30 +35,5 @@
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       }
     }
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "command": "bash .claude/hooks/post-user-story-commit.sh",
-        "description": "Detect user story commits and trigger dev/QA pipeline",
-        "condition": "tool_input.command.includes('git commit') && tool_input.command.includes('user-stories')"
-      },
-      {
-        "matcher": "Bash",
-        "command": "bash .claude/hooks/post-dev-commit.sh",
-        "description": "Detect dev commits and notify QA agent",
-        "condition": "tool_input.command.includes('git commit') && (tool_input.command.includes('frontend') || tool_input.command.includes('backend'))"
-      }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Read",
-      "Glob",
-      "Grep",
-      "Agent",
-      "mcp__github__*"
-    ]
   }
 }

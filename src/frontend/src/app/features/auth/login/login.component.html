@@ -1,0 +1,169 @@
+<!-- Login Card -->
+<div class="login-card" [@fadeSlide]>
+  <div class="login-header">
+    <h2 class="login-title">Welcome back</h2>
+    <p class="login-subtitle">Sign in to your account to continue</p>
+  </div>
+
+  <!-- Error alert -->
+  @if (errorMessage()) {
+    <div class="error-alert" role="alert" [@fadeIn]>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        class="error-icon"
+      >
+        <path
+          fill-rule="evenodd"
+          d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+          clip-rule="evenodd"
+        />
+      </svg>
+      <span>{{ errorMessage() }}</span>
+    </div>
+  }
+
+  <!-- MFA Challenge view -->
+  @if (authService.mfaChallenge()) {
+    <div class="mfa-section" [@fadeSlide]>
+      <div class="mfa-header">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          class="mfa-icon"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+          />
+        </svg>
+        <h3 class="mfa-title">Two-factor authentication</h3>
+        <p class="mfa-subtitle">Enter the 6-digit code from your authenticator app</p>
+      </div>
+
+      <form [formGroup]="mfaForm" (ngSubmit)="onMfaSubmit()" class="mfa-form">
+        <div class="form-group">
+          <label for="mfaCode" class="label-notion">Verification code</label>
+          <input
+            id="mfaCode"
+            type="text"
+            formControlName="mfaCode"
+            class="input-notion text-center text-lg tracking-[0.5em] font-mono"
+            placeholder="000000"
+            maxlength="6"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            autofocus
+          />
+          @if (mfaForm.get('mfaCode')?.hasError('required') && mfaForm.get('mfaCode')?.touched) {
+            <p class="field-error">Please enter the verification code</p>
+          }
+          @if (mfaForm.get('mfaCode')?.hasError('pattern') && mfaForm.get('mfaCode')?.touched) {
+            <p class="field-error">Code must be 6 digits</p>
+          }
+        </div>
+
+        <button
+          type="submit"
+          class="btn-primary w-full"
+          [disabled]="mfaForm.invalid || authService.isLoading()"
+        >
+          @if (authService.isLoading()) {
+            <span class="btn-spinner"></span>
+            Verifying...
+          } @else {
+            Verify
+          }
+        </button>
+
+        <button
+          type="button"
+          class="back-link"
+          (click)="backToLogin()"
+        >
+          Back to login
+        </button>
+      </form>
+    </div>
+  } @else {
+    <!-- Standard login form -->
+    <form [formGroup]="loginForm" (ngSubmit)="onLoginSubmit()" class="login-form" [@fadeSlide]>
+      <div class="form-group">
+        <label for="email" class="label-notion">Email address</label>
+        <input
+          id="email"
+          type="email"
+          formControlName="email"
+          class="input-notion"
+          placeholder="you@company.com"
+          autocomplete="email"
+          autofocus
+        />
+        @if (loginForm.get('email')?.hasError('required') && loginForm.get('email')?.touched) {
+          <p class="field-error">Email is required</p>
+        }
+        @if (loginForm.get('email')?.hasError('email') && loginForm.get('email')?.touched) {
+          <p class="field-error">Please enter a valid email address</p>
+        }
+      </div>
+
+      <div class="form-group">
+        <div class="label-row">
+          <label for="password" class="label-notion">Password</label>
+          <a routerLink="/auth/forgot-password" class="forgot-link">
+            Forgot password?
+          </a>
+        </div>
+        <div class="password-wrapper">
+          <input
+            id="password"
+            [type]="showPassword() ? 'text' : 'password'"
+            formControlName="password"
+            class="input-notion pr-10"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+          />
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="togglePassword()"
+            [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+          >
+            @if (showPassword()) {
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                <path fill-rule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.092 1.092a4 4 0 0 0-5.558-5.558Z" clip-rule="evenodd"/>
+                <path d="M10.748 13.93 8.07 11.25A2.5 2.5 0 0 0 10.748 13.93Zm-6.998-.452 1.645-1.645A4 4 0 0 1 10.418 6.9l1.518-1.518A9.956 9.956 0 0 0 10 5C6.09 5 2.651 7.29.666 10.595a1.651 1.651 0 0 0 0 1.186 10.037 10.037 0 0 0 3.084 3.697Z"/>
+              </svg>
+            } @else {
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>
+                <path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clip-rule="evenodd"/>
+              </svg>
+            }
+          </button>
+        </div>
+        @if (loginForm.get('password')?.hasError('required') && loginForm.get('password')?.touched) {
+          <p class="field-error">Password is required</p>
+        }
+      </div>
+
+      <button
+        type="submit"
+        class="btn-primary w-full mt-2"
+        [disabled]="loginForm.invalid || authService.isLoading()"
+      >
+        @if (authService.isLoading()) {
+          <span class="btn-spinner"></span>
+          Signing in...
+        } @else {
+          Sign in
+        }
+      </button>
+    </form>
+  }
+</div>

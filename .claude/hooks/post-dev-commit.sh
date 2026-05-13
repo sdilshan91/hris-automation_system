@@ -2,6 +2,12 @@
 # Hook: Triggered after dev commits (frontend or backend)
 # Notifies QA agent that implementation is ready for test execution
 
+# Read PostToolUse payload from stdin and only proceed for git commit invocations
+HOOK_INPUT=$(cat 2>/dev/null || true)
+if [ -n "$HOOK_INPUT" ] && ! echo "$HOOK_INPUT" | grep -q '"command"[^"]*"[^"]*git[[:space:]]\+commit'; then
+    exit 0
+fi
+
 CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null)
 
 # Check if frontend or backend code was committed

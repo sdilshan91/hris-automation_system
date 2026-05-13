@@ -21,10 +21,9 @@
 - **PostgreSQL** (localhost)
   - Host: `localhost`
   - Port: `5432`
-  - Username: `hris-developer`
-  - Password: `Sanjesi#123`
-  - Database: `hris-dev`
-  - Connection string: `Host=localhost;Port=5432;Database=hris-dev;Username=hris-developer;Password=Sanjesi#123`
+  - Username: `developer`
+  - Password: provided locally via `ConnectionStrings__DefaultConnection` env var or `dotnet user-secrets` (never commit the real password)
+  - Database: `hris_dev_db`
 - **Serilog** for structured logging
 - **Polly** for resilience (retry, circuit-breaker, fallback)
 - **Hangfire** for background jobs, scheduled tasks, notifications
