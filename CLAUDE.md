@@ -96,6 +96,7 @@ main
 ├── .env.example                   # Template for .env
 ├── .gitignore
 ├── docs/                          # Technical documentation (source of truth)
+│   └── vault/                     # Obsidian vault — shared agent memory (see Shared Memory section)
 ├── user-stories/                  # IEEE 830 user stories (by module)
 │   ├── {module-name}/
 │   │   └── US-{MOD}-001.md
@@ -128,6 +129,25 @@ main
     └── workflows/
         └── claude-agent-pipeline.yml  # GitHub Actions (future, needs credits)
 ```
+
+## Shared Memory (Obsidian Vault)
+
+All agents share a persistent markdown knowledge base at `docs/vault/`. Open as an Obsidian vault for the human view; agents read/write the `.md` files directly. Start at [docs/vault/Home.md](docs/vault/Home.md) and follow conventions in [docs/vault/README.md](docs/vault/README.md).
+
+| Folder | Use it for |
+|---|---|
+| `docs/vault/agents/{agent}.md` | Per-agent persistent notes (preferences, gotchas, working patterns) |
+| `docs/vault/modules/{module}.md` | Domain rules, edge cases, why-decisions per module |
+| `docs/vault/decisions/` | ADR-lite architecture/design decisions |
+| `docs/vault/handoffs/` | Short-lived context drops between agents in a pipeline run |
+| `docs/vault/incidents/` | Bug/incident post-mortems |
+
+**Agent contract:**
+- Before starting work on a module, check `docs/vault/modules/{module}.md` and your own `docs/vault/agents/{agent}.md` for prior context.
+- When you make a non-obvious decision or learn a domain rule worth keeping, write it to the appropriate vault folder (not into the code as a comment).
+- When handing off to another agent in the same run, drop a note in `docs/vault/handoffs/` with frontmatter `from:` and `to:`.
+- Use Obsidian wiki links `[[note-name]]` between vault notes so backlinks work.
+- Never put secrets, generated logs, or transient task state in the vault.
 
 ## Critical Rules
 1. **Tenant isolation is non-negotiable** — every query, cache key, and API call must be tenant-scoped

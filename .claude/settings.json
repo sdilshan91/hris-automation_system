@@ -7,7 +7,12 @@
       "Agent",
       "mcp__github__*",
       "Bash(dotnet build *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "PowerShell(dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"Host=localhost;Port=5432;Database=hris_dev_db;Username=developer;Password=Sanjesi#123\" --project src/backend/HRM.Api/HRM.Api.csproj)",
+      "PowerShell(dotnet user-secrets list --project src/backend/HRM.Api/HRM.Api.csproj)",
+      "PowerShell(winget install --id Obsidian.Obsidian -e --source winget --accept-source-agreements --accept-package-agreements)"
     ]
   },
   "hooks": {
