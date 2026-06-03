@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, noAuthGuard } from './core/auth/auth.guard';
+import { authGuard, noAuthGuard, roleGuard } from './core/auth/auth.guard';
 import { AuthLayoutComponent } from './layouts/auth-layout/auth-layout.component';
 import { MainLayoutComponent } from './layouts/main-layout/main-layout.component';
 
@@ -47,6 +47,17 @@ export const appRoutes: Routes = [
           import('./features/dashboard/dashboard.component').then(
             (m) => m.DashboardComponent
           ),
+      },
+      // ─── Admin / Roles (US-AUTH-006) ──────────────────────
+      {
+        path: 'admin/roles',
+        loadChildren: () =>
+          import('./features/admin/roles/roles.routes').then(
+            (m) => m.ROLES_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'Tenant Owner']),
+        ],
       },
       // Feature modules will be added here as they are implemented
       // {

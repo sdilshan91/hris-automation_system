@@ -1,8 +1,11 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Interfaces;
+using HRM.Infrastructure.Caching;
+using HRM.Infrastructure.Identity;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Persistence.Interceptors;
 using HRM.Infrastructure.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace HRM.Infrastructure;
 
 /// <summary>
-/// Registers all infrastructure services: DbContext, repositories, JWT, auth, and tenant context.
+/// Registers all infrastructure services: DbContext, repositories, JWT, auth, tenant context, and RBAC.
 /// </summary>
 public static class DependencyInjection
 {
@@ -47,6 +50,17 @@ public static class DependencyInjection
         // Note: JwtService is registered in Program.cs alongside JWT authentication config.
         // Auth service
         services.AddScoped<IAuthService, AuthService>();
+
+        // RBAC service
+        services.AddScoped<IRoleService, RoleService>();
+
+        // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
+        services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
+
+        // Permission-based authorization
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, TeamScopeAuthorizationHandler>();
 
         return services;
     }

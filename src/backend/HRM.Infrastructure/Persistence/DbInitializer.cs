@@ -1,3 +1,4 @@
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,13 +48,15 @@ public static class DbInitializer
             logger.LogInformation("Seeded default admin tenant {Subdomain}", tenant.Subdomain);
         }
 
-        var role = await db.Roles
+        // Seed SystemAdmin role (platform-level) with all permissions
+        var systemAdminRole = await db.Roles
             .IgnoreQueryFilters()
+            .Include(r => r.RolePermissions)
             .FirstOrDefaultAsync(r => r.TenantId == tenant.Id && r.Name == SystemAdminRoleName, ct);
 
-        if (role is null)
+        if (systemAdminRole is null)
         {
-            role = new Role
+            systemAdminRole = new Role
             {
                 Id = BaseEntity.NewUuidV7(),
                 TenantId = tenant.Id,
@@ -62,10 +65,25 @@ public static class DbInitializer
                 IsBuiltIn = true,
                 CreatedAt = DateTime.UtcNow,
             };
-            db.Roles.Add(role);
+
+            // SystemAdmin gets all permissions from the catalog
+            foreach (var perm in PermissionCatalog.AllPermissions)
+            {
+                systemAdminRole.RolePermissions.Add(new RolePermission
+                {
+                    RoleId = systemAdminRole.Id,
+                    Permission = perm,
+                });
+            }
+
+            db.Roles.Add(systemAdminRole);
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Seeded {Role} role for tenant {Subdomain}", role.Name, tenant.Subdomain);
+            logger.LogInformation("Seeded {Role} role with {Count} permissions for tenant {Subdomain}",
+                systemAdminRole.Name, PermissionCatalog.AllPermissions.Count, tenant.Subdomain);
         }
+
+        // Seed built-in tenant roles with their default permissions (FR-2)
+        await SeedBuiltInTenantRolesAsync(db, tenant.Id, logger, ct);
 
         var user = await db.Users
             .IgnoreQueryFilters()
@@ -108,19 +126,65 @@ public static class DbInitializer
 
         var roleAssigned = await db.UserTenantRoles
             .IgnoreQueryFilters()
-            .AnyAsync(utr => utr.UserTenantId == userTenant.Id && utr.RoleId == role.Id, ct);
+            .AnyAsync(utr => utr.UserTenantId == userTenant.Id && utr.RoleId == systemAdminRole.Id, ct);
 
         if (!roleAssigned)
         {
             db.UserTenantRoles.Add(new UserTenantRole
             {
                 UserTenantId = userTenant.Id,
-                RoleId = role.Id,
+                RoleId = systemAdminRole.Id,
                 AssignedAt = DateTime.UtcNow,
                 AssignedBy = "system-seed",
             });
             await db.SaveChangesAsync(ct);
             logger.LogInformation("Assigned {Role} to admin user", SystemAdminRoleName);
+        }
+    }
+
+    /// <summary>
+    /// Seeds built-in tenant roles (Tenant Owner, Tenant Admin, HR Manager, HR Officer,
+    /// Manager, Employee, Recruiter, Auditor) with their default permissions.
+    /// These roles are marked as is_built_in and cannot be edited/deleted by tenants.
+    /// Called during tenant provisioning.
+    /// </summary>
+    private static async Task SeedBuiltInTenantRolesAsync(
+        AppDbContext db, Guid tenantId, ILogger logger, CancellationToken ct)
+    {
+        foreach (var roleName in PermissionCatalog.BuiltInRoles.All)
+        {
+            var exists = await db.Roles
+                .IgnoreQueryFilters()
+                .AnyAsync(r => r.TenantId == tenantId && r.Name == roleName, ct);
+
+            if (exists)
+                continue;
+
+            var role = new Role
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = tenantId,
+                Name = roleName,
+                Description = $"Built-in {roleName} role",
+                IsBuiltIn = true,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            // Assign default permissions from the catalog
+            var defaultPerms = PermissionCatalog.DefaultPermissionsFor(roleName);
+            foreach (var perm in defaultPerms)
+            {
+                role.RolePermissions.Add(new RolePermission
+                {
+                    RoleId = role.Id,
+                    Permission = perm,
+                });
+            }
+
+            db.Roles.Add(role);
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Seeded built-in role {Role} with {Count} permissions for tenant {TenantId}",
+                roleName, defaultPerms.Count, tenantId);
         }
     }
 }

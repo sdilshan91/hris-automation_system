@@ -36,6 +36,7 @@ export class AuthService {
   readonly currentUser = signal<IUser | null>(null);
   readonly currentTenant = signal<ITenantInfo | null>(null);
   readonly permissions = signal<string[]>([]);
+  readonly roles = signal<string[]>([]);
   readonly isAuthenticated = computed(() => this.currentUser() !== null);
   readonly isLoading = signal(false);
   readonly mfaChallenge = signal(false);
@@ -216,6 +217,12 @@ export class AuthService {
 
   // ─── Private Helpers ─────────────────────────────────────
 
+  /** Check if user has all of the given permissions */
+  hasAllPermissions(perms: string[]): boolean {
+    const current = this.permissions();
+    return perms.every((p) => current.includes(p));
+  }
+
   private handleLoginResponse(response: ILoginResponse): void {
     if (response.mfaChallenge) {
       this.mfaChallenge.set(true);
@@ -227,6 +234,12 @@ export class AuthService {
     this.currentUser.set(response.user);
     this.currentTenant.set(response.tenant);
     this.permissions.set(response.permissions);
+
+    // Decode roles from the JWT claims
+    const claims = this.decodeToken();
+    if (claims?.roles) {
+      this.roles.set(claims.roles);
+    }
   }
 
   private setAccessToken(token: string): void {
@@ -238,6 +251,7 @@ export class AuthService {
     this.currentUser.set(null);
     this.currentTenant.set(null);
     this.permissions.set([]);
+    this.roles.set([]);
     this.mfaChallenge.set(false);
   }
 
