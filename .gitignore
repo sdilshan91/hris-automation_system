@@ -27,3 +27,6 @@ bin/
 obj/
 *.user
 *.suo
+
+# Playwright MCP (browser debugging artifacts: traces, screenshots, sessions)
+.playwright-artifacts/

@@ -27,6 +27,25 @@ Enables agents to directly:
 
 **Setup:** `GITHUB_TOKEN` env var from `.env` file (PAT with `repo`, `workflow`, `issues`, `pull_requests` scopes)
 
+### Playwright MCP Server (Browser Debugging)
+Local stdio server (`npx @playwright/mcp@latest`) that gives agents a **real Chrome browser** for
+runtime investigation of the Angular UI and its calls to the .NET API. Configured in
+`.claude/settings.json` with `--browser chrome --caps vision,pdf,devtools --save-trace
+--output-dir .playwright-artifacts`.
+
+Enables agents to:
+- Navigate the running app and reproduce user flows (click, type, fill forms)
+- Read **browser console** messages — JS/Angular errors (`browser_console_messages`)
+- Inspect **network requests** — status, headers, payloads, CORS (`browser_network_requests`)
+- Capture the accessibility snapshot, run page JS (`browser_evaluate`), take screenshots
+- Diagnose auth / **multi-tenant** routing issues from real traffic
+
+**Activation:** the server connects at Claude Code startup. After first adding/changing it,
+**reload the VS Code window** and confirm with `/mcp` that `playwright` is connected. Artifacts
+(traces/screenshots) save to `.playwright-artifacts/` (gitignored). It is **read-only on the
+codebase** — used to investigate, not to edit code. Driven by the `@browser-debugger` agent and the
+`/debug-ui` skill.
+
 ## Agent Team
 
 | Agent | Role | Branch | MCP Tools |
@@ -35,6 +54,7 @@ Enables agents to directly:
 | `@frontend-dev` | Implements Angular 20 UI | `feature/frontend-{module}` | create_branch, push_files, create_pull_request |
 | `@backend-dev` | Implements ASP.NET Core 10 API | `feature/backend-{module}` | create_branch, push_files, create_pull_request |
 | `@qa-engineer` | Writes IEEE 829 test cases | `feature/qa-{module}` | create_branch, push_files, create_pull_request, create_issue |
+| `@browser-debugger` | Drives Chrome to debug UI (console, network, DOM) — read-only investigator | _(no branch — diagnoses only)_ | playwright (navigate, console_messages, network_requests, snapshot, evaluate, screenshot, interactions) |
 
 ## Skills (Slash Commands)
 
@@ -43,6 +63,7 @@ Enables agents to directly:
 | `/orchestrate` | Local + MCP | Full pipeline: BA → (FE + BE + QA in parallel via worktrees) |
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
 | `/implement-story US-{ID}` | Local + MCP | Implement a story with all agents in parallel |
+| `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
 ## Automation Hooks
@@ -115,11 +136,13 @@ main
 │   │   ├── business-analyst.md
 │   │   ├── frontend-dev.md
 │   │   ├── backend-dev.md
-│   │   └── qa-engineer.md
+│   │   ├── qa-engineer.md
+│   │   └── browser-debugger.md    # Playwright-driven UI debugger (read-only)
 │   ├── skills/                    # Slash command skills
 │   │   ├── orchestrate.md         # Local + MCP pipeline
 │   │   ├── analyze-module.md
 │   │   ├── implement-story.md
+│   │   ├── debug-ui.md            # Browser debugging via Playwright MCP
 │   │   └── github-pipeline.md     # Remote pipeline (needs credits)
 │   ├── hooks/                     # Automation hooks
 │   │   ├── post-user-story-commit.sh
