@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard, noAuthGuard, roleGuard } from './core/auth/auth.guard';
+import { mfaChallengeGuard, mfaEnrollGuard } from './core/auth/mfa.guard';
 import { AuthLayoutComponent } from './layouts/auth-layout/auth-layout.component';
 import { MainLayoutComponent } from './layouts/main-layout/main-layout.component';
 
@@ -35,6 +36,30 @@ export const appRoutes: Routes = [
     ],
   },
 
+  // ─── MFA routes (mid-login flow — no auth/noAuth guard, custom guards) ─
+  {
+    path: 'auth/mfa',
+    component: AuthLayoutComponent,
+    children: [
+      {
+        path: 'challenge',
+        canActivate: [mfaChallengeGuard],
+        loadComponent: () =>
+          import(
+            './features/auth/mfa/mfa-challenge/mfa-challenge.component'
+          ).then((m) => m.MfaChallengeComponent),
+      },
+      {
+        path: 'enroll',
+        canActivate: [mfaEnrollGuard],
+        loadComponent: () =>
+          import(
+            './features/auth/mfa/mfa-enroll/mfa-enroll.component'
+          ).then((m) => m.MfaEnrollComponent),
+      },
+    ],
+  },
+
   // ─── Authenticated routes ────────────────────────────────
   {
     path: '',
@@ -58,6 +83,23 @@ export const appRoutes: Routes = [
         canActivate: [
           roleGuard(['Tenant Admin', 'Tenant Owner']),
         ],
+      },
+      // MFA settings page (user profile security)
+      {
+        path: 'auth/mfa/settings',
+        loadComponent: () =>
+          import(
+            './features/auth/mfa/mfa-settings/mfa-settings.component'
+          ).then((m) => m.MfaSettingsComponent),
+      },
+      // Tenant admin auth settings
+      {
+        path: 'admin/tenant/auth-settings',
+        canActivate: [roleGuard(['Tenant Admin'])],
+        loadComponent: () =>
+          import(
+            './features/auth/mfa/tenant-auth-settings/tenant-auth-settings.component'
+          ).then((m) => m.TenantAuthSettingsComponent),
       },
       // Feature modules will be added here as they are implemented
       // {

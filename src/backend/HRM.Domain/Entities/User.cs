@@ -19,9 +19,16 @@ public sealed class User
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Counter for consecutive failed MFA verification attempts.
+    /// Resets on successful MFA verification.
+    /// </summary>
+    public int MfaFailedAttemptCount { get; set; }
+
     // Navigation
     public ICollection<UserTenant> UserTenants { get; set; } = new List<UserTenant>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<MfaRecoveryCode> MfaRecoveryCodes { get; set; } = new List<MfaRecoveryCode>();
 
     /// <summary>
     /// Returns true if the account is currently locked out.

@@ -63,5 +63,62 @@
     "TITLE": "Access Denied",
     "MESSAGE": "You don't have permission to access this page. If you think this is a mistake, please contact your administrator.",
     "GO_DASHBOARD": "Go to Dashboard"
+  },
+  "auth": {
+    "mfa": {
+      "enroll": {
+        "title": "Set up two-factor authentication",
+        "scanInstructions": "Open your authenticator app and scan this QR code to add your account.",
+        "copySecret": "Copy secret key",
+        "manualEntry": "Can't scan? Enter this code manually:",
+        "continue": "I've scanned it, continue"
+      },
+      "verify": {
+        "label": "Verification code",
+        "title": "Verify setup",
+        "subtitle": "Enter the 6-digit code from your authenticator app to confirm setup.",
+        "submit": "Verify and activate",
+        "error": "Invalid verification code. Please try again."
+      },
+      "recovery": {
+        "title": "Save your recovery codes",
+        "warning": "Store them in a safe place. They cannot be shown again. Each code can only be used once.",
+        "copyAll": "Copy all",
+        "download": "Download .txt",
+        "finish": "I've saved them, finish"
+      },
+      "challenge": {
+        "title": "Two-factor authentication",
+        "subtitle": "Enter the 6-digit code from your authenticator app",
+        "useRecovery": "Use a recovery code instead",
+        "useAuthenticator": "Use authenticator code instead",
+        "backToLogin": "Back to login",
+        "lockedOut": "Account temporarily locked due to too many failed attempts."
+      },
+      "settings": {
+        "title": "Two-factor authentication",
+        "enabled": "MFA enabled",
+        "notEnabled": "MFA not enabled",
+        "disable": "Disable MFA",
+        "enable": "Enable two-factor authentication",
+        "regenerate": "Regenerate recovery codes",
+        "policyRequired": "MFA is required by your organization policy and cannot be disabled.",
+        "disableConfirmTitle": "Disable two-factor authentication?",
+        "disableConfirmText": "This will remove the extra security layer from your account.",
+        "disabled": "Two-factor authentication has been disabled."
+      },
+      "tenantSettings": {
+        "title": "Authentication Settings",
+        "subtitle": "Configure multi-factor authentication policy for your organization.",
+        "policyLabel": "MFA Policy",
+        "policyOff": "Off - MFA is disabled",
+        "policyOptional": "Optional - Users can choose to enable MFA",
+        "policyRequired": "Required - Users must enable MFA",
+        "requiredRoles": "Required Roles",
+        "requiredRolesHint": "Specify which roles must have MFA enabled.",
+        "saved": "Authentication settings saved.",
+        "readonlyNotice": "Only Tenant Admins can modify authentication settings."
+      }
+    }
   }
 }

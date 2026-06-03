@@ -29,6 +29,7 @@ public sealed class Tenant
 
     // MFA policy
     public string MfaPolicy { get; set; } = "off"; // "off" | "optional" | "required"
+    public List<string> MfaRequiredRoles { get; set; } = new(); // jsonb: roles that require MFA when policy is "required"
 
     // Password policy
     public int MinPasswordLength { get; set; } = 12;

@@ -47,6 +47,9 @@ public static class DependencyInjection
         // Register UnitOfWork
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<AppDbContext>());
 
+        // TOTP service (singleton — no per-request state)
+        services.AddSingleton<ITotpService, TotpService>();
+
         // Note: JwtService is registered in Program.cs alongside JWT authentication config.
         // Auth service
         services.AddScoped<IAuthService, AuthService>();
