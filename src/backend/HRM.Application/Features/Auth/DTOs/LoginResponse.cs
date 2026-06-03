@@ -12,6 +12,7 @@ public sealed record LoginResponse
     public IReadOnlyList<string> Permissions { get; init; } = [];
     public bool MfaChallenge { get; init; }
     public string? MfaMethod { get; init; }
+    public bool MfaEnrollmentRequired { get; init; }
 
     // Refresh token is set via cookie, but kept here for internal use
     public string? RefreshToken { get; init; }

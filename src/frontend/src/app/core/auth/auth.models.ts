@@ -13,6 +13,7 @@ export interface ILoginResponse {
   permissions: string[];
   mfaChallenge?: boolean;
   mfaMethod?: 'totp';
+  mfaEnrollmentRequired?: boolean;
 }
 
 /** Authenticated user profile */

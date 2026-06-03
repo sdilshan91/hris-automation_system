@@ -9,6 +9,9 @@
 *.swp
 *.swo
 
+# Claude Code local-only settings
+.claude/settings.local.json
+
 # OS
 Thumbs.db
 Desktop.ini

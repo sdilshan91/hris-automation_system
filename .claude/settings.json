@@ -15,7 +15,8 @@
       "PowerShell(winget install --id Obsidian.Obsidian -e --source winget --accept-source-agreements --accept-package-agreements)",
       "Bash(mkdir -p .claude/commands)",
       "Bash(gh auth *)",
-      "Bash(gh repo *)"
+      "Bash(gh repo *)",
+      "Bash(set -e)"
     ],
     "additionalDirectories": [
       "C:\\HRIS\\.claude"

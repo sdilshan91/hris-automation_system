@@ -256,6 +256,11 @@ export class AuthService {
     );
   }
 
+  /** Cancel an in-progress MFA challenge and return to login */
+  cancelMfaChallenge(): void {
+    this.clearSession();
+  }
+
   // ─── Token Access ────────────────────────────────────────
 
   getAccessToken(): string | null {
@@ -300,9 +305,11 @@ export class AuthService {
   private handleLoginResponse(response: ILoginResponse): void {
     if (response.mfaChallenge) {
       this.mfaChallenge.set(true);
-      // If user must enroll (policy requires MFA but user has not enabled it)
-      if (response.user && !response.user.mfaEnabled) {
+      // Use explicit backend flag; fall back to proxy for backwards compatibility
+      if (response.mfaEnrollmentRequired ?? (response.user && !response.user.mfaEnabled)) {
         this.mfaRequiresEnrollment.set(true);
+      } else {
+        this.mfaRequiresEnrollment.set(false);
       }
       return;
     }
