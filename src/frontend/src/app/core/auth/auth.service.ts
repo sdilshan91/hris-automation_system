@@ -19,6 +19,9 @@ import {
   ISwitchTenantRequest,
   ISwitchTenantResponse,
   ISession,
+  IMfaEnrollResponse,
+  IMfaVerifyResponse,
+  ITenantAuthSettings,
 } from './auth.models';
 
 @Injectable({ providedIn: 'root' })
@@ -39,6 +42,11 @@ export class AuthService {
   readonly isAuthenticated = computed(() => this.currentUser() !== null);
   readonly isLoading = signal(false);
   readonly mfaChallenge = signal(false);
+
+  // MFA state (US-AUTH-005)
+  readonly mfaEnabled = computed(() => this.currentUser()?.mfaEnabled ?? false);
+  readonly mfaRequiresEnrollment = signal(false);
+  readonly loginEmail = signal('');
 
   // Refresh token queue management (FR-10 from US-AUTH-002)
   private isRefreshing = false;
@@ -175,6 +183,79 @@ export class AuthService {
     );
   }
 
+  // ─── MFA Enrollment (US-AUTH-005) ───────────────────────
+
+  enrollMfa(): Observable<IMfaEnrollResponse> {
+    return this.http.post<IMfaEnrollResponse>(
+      `${this.apiUrl}/auth/mfa/enroll`,
+      null,
+      { withCredentials: true }
+    );
+  }
+
+  verifyMfaEnrollment(code: string): Observable<IMfaVerifyResponse> {
+    return this.http
+      .post<IMfaVerifyResponse>(
+        `${this.apiUrl}/auth/mfa/verify`,
+        { code },
+        { withCredentials: true }
+      )
+      .pipe(
+        tap((response) => {
+          if (response.success) {
+            // Update local user state to reflect MFA is now enabled
+            const user = this.currentUser();
+            if (user) {
+              this.currentUser.set({ ...user, mfaEnabled: true });
+            }
+            this.mfaRequiresEnrollment.set(false);
+          }
+        })
+      );
+  }
+
+  verifyMfaLogin(email: string, code: string): Observable<ILoginResponse> {
+    return this.http
+      .post<ILoginResponse>(
+        `${this.apiUrl}/auth/mfa/challenge`,
+        { email, code },
+        { withCredentials: true }
+      )
+      .pipe(
+        tap((response) => this.handleLoginResponse(response))
+      );
+  }
+
+  disableMfa(): Observable<void> {
+    return this.http
+      .delete<void>(`${this.apiUrl}/auth/mfa`, {
+        withCredentials: true,
+      })
+      .pipe(
+        tap(() => {
+          const user = this.currentUser();
+          if (user) {
+            this.currentUser.set({ ...user, mfaEnabled: false });
+          }
+        })
+      );
+  }
+
+  getTenantAuthSettings(): Observable<ITenantAuthSettings> {
+    return this.http.get<ITenantAuthSettings>(
+      `${this.apiUrl}/tenant/auth-settings`,
+      { withCredentials: true }
+    );
+  }
+
+  updateTenantAuthSettings(settings: ITenantAuthSettings): Observable<void> {
+    return this.http.put<void>(
+      `${this.apiUrl}/tenant/auth-settings`,
+      settings,
+      { withCredentials: true }
+    );
+  }
+
   // ─── Token Access ────────────────────────────────────────
 
   getAccessToken(): string | null {
@@ -219,10 +300,15 @@ export class AuthService {
   private handleLoginResponse(response: ILoginResponse): void {
     if (response.mfaChallenge) {
       this.mfaChallenge.set(true);
+      // If user must enroll (policy requires MFA but user has not enabled it)
+      if (response.user && !response.user.mfaEnabled) {
+        this.mfaRequiresEnrollment.set(true);
+      }
       return;
     }
 
     this.mfaChallenge.set(false);
+    this.mfaRequiresEnrollment.set(false);
     this.setAccessToken(response.accessToken);
     this.currentUser.set(response.user);
     this.currentTenant.set(response.tenant);
@@ -239,6 +325,8 @@ export class AuthService {
     this.currentTenant.set(null);
     this.permissions.set([]);
     this.mfaChallenge.set(false);
+    this.mfaRequiresEnrollment.set(false);
+    this.loginEmail.set('');
   }
 
   private decodeToken(): ITokenClaims | null {

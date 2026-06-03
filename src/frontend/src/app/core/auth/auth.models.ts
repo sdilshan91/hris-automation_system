@@ -124,3 +124,38 @@ export interface IAuthState {
   isLoading: boolean;
   mfaChallenge: boolean;
 }
+
+// ─── MFA (US-AUTH-005) ──────────────────────────────────────
+
+/** Response from POST /auth/mfa/enroll */
+export interface IMfaEnrollResponse {
+  secret: string;
+  qrCodeDataUrl: string;
+  recoveryCodes: string[];
+}
+
+/** Request body for POST /auth/mfa/verify (enrollment verification) */
+export interface IMfaVerifyRequest {
+  code: string;
+}
+
+/** Response from POST /auth/mfa/verify */
+export interface IMfaVerifyResponse {
+  success: boolean;
+  recoveryCodes?: string[];
+}
+
+/** Request body for POST /auth/mfa/challenge (login MFA step) */
+export interface IMfaLoginVerifyRequest {
+  code: string;
+  email: string;
+}
+
+/** Tenant-level authentication settings */
+export interface ITenantAuthSettings {
+  mfaPolicy: 'off' | 'optional' | 'required';
+  mfaRequiredRoles: string[];
+}
+
+/** MFA enrollment step for the wizard UI */
+export type MfaEnrollStep = 'qr' | 'verify' | 'recovery';

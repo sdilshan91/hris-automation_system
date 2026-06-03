@@ -12,7 +12,13 @@
       "Bash(git push *)",
       "PowerShell(dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"Host=localhost;Port=5432;Database=hris_dev_db;Username=developer;Password=Sanjesi#123\" --project src/backend/HRM.Api/HRM.Api.csproj)",
       "PowerShell(dotnet user-secrets list --project src/backend/HRM.Api/HRM.Api.csproj)",
-      "PowerShell(winget install --id Obsidian.Obsidian -e --source winget --accept-source-agreements --accept-package-agreements)"
+      "PowerShell(winget install --id Obsidian.Obsidian -e --source winget --accept-source-agreements --accept-package-agreements)",
+      "Bash(mkdir -p .claude/commands)",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)"
+    ],
+    "additionalDirectories": [
+      "C:\\HRIS\\.claude"
     ]
   },
   "hooks": {

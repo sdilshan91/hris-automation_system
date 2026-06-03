@@ -31,7 +31,7 @@
 - [x] US-AUTH-002 — JWT token issuance and refresh token flow *(scaffold impl exists)*
 - [x] US-AUTH-003 — User logout and token invalidation *(scaffold impl exists)*
 - [x] US-AUTH-004 — Password reset flow *(scaffold impl exists)*
-- [ ] US-AUTH-005 — Multi-factor authentication (TOTP)
+- [~] US-AUTH-005 — Multi-factor authentication (TOTP)
 - [ ] US-AUTH-006 — Role-based access control (RBAC) per tenant
 - [ ] US-AUTH-007 — Tenant resolution from subdomain
 - [ ] US-AUTH-008 — Cross-tenant user switching
@@ -155,8 +155,8 @@
 ## Tally
 - Total stories: **102**
 - Done: **4** (AUTH-001..004 — scaffolded, awaiting verification)
-- In progress: **0**
-- Pending: **98**
+- In progress: **1**
+- Pending: **97**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
