@@ -212,6 +212,108 @@ public sealed class AuthController : ControllerBase
         return Ok(ApiResponse.Ok("All sessions revoked."));
     }
 
+    /// <summary>
+    /// POST /api/v1/auth/mfa/enroll
+    /// Initiates MFA enrollment for the authenticated user.
+    /// Returns TOTP secret, QR code data URL, and one-time recovery codes.
+    /// </summary>
+    [HttpPost("mfa/enroll")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<MfaEnrollResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> MfaEnroll(CancellationToken cancellationToken)
+    {
+        var command = new MfaEnrollCommand(_currentUser.UserId);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse<MfaEnrollResponse>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/auth/mfa/verify
+    /// Verifies TOTP code to complete MFA enrollment.
+    /// </summary>
+    [HttpPost("mfa/verify")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<MfaVerifyResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> MfaVerify([FromBody] MfaVerifyRequest request, CancellationToken cancellationToken)
+    {
+        var command = new MfaVerifyCommand(_currentUser.UserId, request.Code);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse<MfaVerifyResponse>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/auth/mfa/challenge
+    /// Verifies TOTP code or recovery code during the MFA login challenge (step 2 of two-step login).
+    /// Returns access token and sets refresh cookie on success.
+    /// </summary>
+    [HttpPost("mfa/challenge")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> MfaChallenge([FromBody] MfaLoginVerifyRequest request, CancellationToken cancellationToken)
+    {
+        var command = new MfaLoginVerifyCommand(
+            request.Email,
+            request.Code,
+            GetIpAddress(),
+            GetUserAgent());
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        var response = result.Value!;
+
+        // Set refresh token as httpOnly cookie
+        if (!string.IsNullOrEmpty(response.RefreshToken))
+        {
+            SetRefreshTokenCookie(response.RefreshToken);
+        }
+
+        // Remove refresh token from response body (it's in the cookie)
+        var bodyResponse = response with { RefreshToken = null };
+
+        return Ok(ApiResponse<LoginResponse>.Ok(bodyResponse));
+    }
+
+    /// <summary>
+    /// DELETE /api/v1/auth/mfa
+    /// Disables MFA for the authenticated user. Blocked if tenant policy requires MFA for user's roles.
+    /// </summary>
+    [HttpDelete("mfa")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> MfaDisable(CancellationToken cancellationToken)
+    {
+        var command = new MfaDisableCommand(_currentUser.UserId, _currentUser.TenantId);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse.Ok("MFA has been disabled."));
+    }
+
     #region Private Helpers
 
     private void SetRefreshTokenCookie(string token)

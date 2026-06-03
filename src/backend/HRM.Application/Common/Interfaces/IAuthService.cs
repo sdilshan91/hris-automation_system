@@ -4,7 +4,7 @@ using HRM.Application.Features.Auth.DTOs;
 namespace HRM.Application.Common.Interfaces;
 
 /// <summary>
-/// Authentication service interface for login, refresh, logout, and password operations.
+/// Authentication service interface for login, refresh, logout, password, and MFA operations.
 /// </summary>
 public interface IAuthService
 {
@@ -15,4 +15,14 @@ public interface IAuthService
     Task<Result> ResetPasswordAsync(string email, string token, string newPassword, CancellationToken cancellationToken = default);
     Task<Result> RevokeAllSessionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
     Task<Result<CurrentUserDto>> GetCurrentUserAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+
+    // MFA operations
+    Task<Result<MfaEnrollResponse>> EnrollMfaAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<Result<MfaVerifyResponse>> VerifyMfaEnrollmentAsync(Guid userId, string code, CancellationToken cancellationToken = default);
+    Task<Result<LoginResponse>> VerifyMfaLoginAsync(string email, string code, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
+    Task<Result> DisableMfaAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+
+    // Tenant auth settings
+    Task<Result<TenantAuthSettingsResponse>> GetTenantAuthSettingsAsync(Guid tenantId, CancellationToken cancellationToken = default);
+    Task<Result> UpdateTenantAuthSettingsAsync(Guid tenantId, TenantAuthSettingsRequest request, CancellationToken cancellationToken = default);
 }

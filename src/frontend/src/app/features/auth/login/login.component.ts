@@ -82,10 +82,16 @@ export class LoginComponent implements OnInit {
       .login({ email: email.trim().toLowerCase(), password })
       .subscribe({
         next: (response) => {
-          if (!response.mfaChallenge) {
+          if (response.mfaChallenge) {
+            this.authService.loginEmail.set(email.trim().toLowerCase());
+            if (this.authService.mfaRequiresEnrollment()) {
+              this.router.navigate(['/auth/mfa/enroll']);
+            } else {
+              this.router.navigate(['/auth/mfa/challenge']);
+            }
+          } else {
             this.router.navigate(['/dashboard']);
           }
-          // If MFA challenge, the template switches to MFA view via authService.mfaChallenge()
         },
         error: (err: HttpErrorResponse) => {
           this.handleLoginError(err);

@@ -31,6 +31,12 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.MfaSecret)
             .HasMaxLength(200);
 
+        builder.Property(u => u.MfaEnabled)
+            .HasDefaultValue(false);
+
+        builder.Property(u => u.MfaFailedAttemptCount)
+            .HasDefaultValue(0);
+
         builder.Property(u => u.FailedLoginCount)
             .HasDefaultValue(0);
 

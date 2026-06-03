@@ -170,3 +170,73 @@ All agents share a persistent markdown knowledge base at `docs/vault/`. Open as 
 10. Training & Benefits
 11. Reports & Analytics
 12. Notifications & Audit
+
+---
+
+# Application Development
+
+> The sections above describe the **agent-orchestration meta-system**. The sections below describe the **actual HRM application** in `src/` — how to build, run, and test it, and how its architecture fits together.
+
+## Commands
+
+### Backend (`src/backend`, .NET 10)
+```bash
+dotnet restore HRM.sln
+dotnet build HRM.sln
+dotnet run --project HRM.Api          # serves API + Swagger UI at /swagger, Hangfire dashboard at /hangfire (dev only)
+
+# EF Core migrations (run from src/backend; --startup-project supplies config/connection string)
+dotnet ef migrations add <Name> --project HRM.Infrastructure --startup-project HRM.Api
+dotnet ef database update --project HRM.Infrastructure --startup-project HRM.Api
+```
+Migrations are **applied automatically on startup** via `DbInitializer.RunAsync` (`Program.cs`), which also seeds a default admin tenant, roles, and admin user. There is currently no backend test project.
+
+### Frontend (`src/frontend`, Angular 20)
+```bash
+npm install
+npm start            # ng serve — dev server
+npm run build        # ng build
+npm test             # ng test — Karma + Jasmine (single project, headful Chrome)
+npm run lint         # ng lint
+ng test --include='**/auth.service.spec.ts'   # run a single spec
+```
+
+## Local Configuration (required to run)
+`appsettings.json` ships with **blank secrets** — the app will not start until these are set, ideally via .NET user-secrets (`UserSecretsId` is already in `HRM.Api.csproj`), not by editing the committed file:
+- `ConnectionStrings:DefaultConnection` — PostgreSQL (`Password` is empty in the template)
+- `Jwt:PrivateKey` — signing key for JWT validation
+- A running **PostgreSQL** instance (also backs Hangfire job storage)
+
+## Architecture
+
+### Backend: Clean Architecture + CQRS
+Four projects, dependencies point inward (`Api → Application → Domain`; `Infrastructure → Application`):
+- **HRM.Domain** — entities, value objects (e.g. `Email`), repository interfaces. No framework dependencies.
+- **HRM.Application** — CQRS handlers organized by feature (`Features/{Feature}/Commands|Queries|DTOs|Validators`), MediatR pipeline behaviors (`ValidationBehavior`, `LoggingBehavior`), and `Common/Interfaces` abstractions (`ITenantContext`, `ICurrentUser`, `IJwtService`, `IAuthService`).
+- **HRM.Infrastructure** — EF Core `AppDbContext`, entity configurations, interceptors, and interface implementations. Wired up in `DependencyInjection.AddInfrastructure`.
+- **HRM.Api** — controllers (thin; dispatch via MediatR), middleware, filters, Hangfire jobs. Composition root is `Program.cs`.
+
+Request flow: validation runs both via the MVC `ValidationFilter` and the MediatR `ValidationBehavior`; `ExceptionHandlingMiddleware` is the outermost layer and normalizes errors.
+
+### Multi-Tenancy (the central architectural concern)
+Tenant isolation is enforced in **three coordinated layers** — when adding entities or queries, all three matter:
+1. **Resolution** (`TenantResolutionMiddleware`, runs before auth): extracts tenant from the request **subdomain** (`acme.yourhrm.com` → `acme`; `admin.*` → system context; reserved subdomains skip resolution). Looks up the tenant and populates the scoped `ITenantContext`. Dev fallback: the SPA sends an `X-Tenant-Subdomain` header (set by the frontend `tenantInterceptor`) so `*.localhost` hosts-file entries aren't needed.
+2. **Write isolation** (`TenantInterceptor`, a `SaveChanges` interceptor): auto-stamps `TenantId` on any new `BaseEntity` when a tenant is resolved.
+3. **Read isolation** (global query filters in `AppDbContext.OnModelCreating`): every tenant-scoped entity is filtered by `TenantId == _tenantContext.TenantId`. Use `IgnoreQueryFilters()` only deliberately (e.g. the tenant lookup in the resolution middleware itself).
+
+`AuditInterceptor` similarly stamps audit fields. EF uses PostgreSQL with **snake_case** naming convention (`EFCore.NamingConventions`).
+
+### Cross-cutting backend infrastructure
+- **Auth**: JWT bearer; `JwtService` is registered as a singleton and also supplies `TokenValidationParameters`. BCrypt for password hashing. Refresh tokens are cleaned up by the `TokenCleanupJob` Hangfire recurring job (daily).
+- **Background jobs**: Hangfire on PostgreSQL storage; dashboard at `/hangfire` (dev only).
+- **Resilience**: a named `ResilientClient` HttpClient with Polly retry + circuit-breaker for outbound calls.
+- **Logging**: Serilog; `TenantId`/`TenantSubdomain` are pushed into the log context per request.
+
+### Frontend: standalone Angular 20
+- `core/` holds singletons: `auth/` (service, guard, interceptor, models), `interceptors/` (`error`, `tenant`), `tenant/` (subdomain resolution mirroring the backend rules, using signals).
+- `features/` holds route-lazy feature components (e.g. `auth/login`, `dashboard`); `layouts/` holds `auth-layout` / `main-layout`.
+- HTTP interceptors are functional (`HttpInterceptorFn`). The `tenantInterceptor` injects `X-Tenant-Subdomain` from `environment.tenantSubdomain` for local dev.
+- UI stack: Angular Material + Tailwind CSS, ngx-translate (i18n), ngx-toastr (notifications).
+
+### Traceability convention
+Code, user stories (`user-stories/`, IEEE 830), and test cases (`test-cases/`, IEEE 829) are cross-referenced by ID — e.g. `US-AUTH-007` appears in both `TenantService` comments and `test-cases/authentication/`. Preserve these references when modifying related code.

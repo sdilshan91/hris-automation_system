@@ -1,5 +1,7 @@
+using System.Text.Json;
 using HRM.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace HRM.Infrastructure.Persistence.Configurations;
@@ -46,5 +48,16 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.ConcurrentSessionStrategy)
             .HasMaxLength(20)
             .HasDefaultValue("revoke_oldest");
+
+        // MfaRequiredRoles stored as jsonb column with value converter and comparer
+        builder.Property(t => t.MfaRequiredRoles)
+            .HasColumnType("jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .Metadata.SetValueComparer(new ValueComparer<List<string>>(
+                (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()));
     }
 }

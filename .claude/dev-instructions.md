@@ -48,7 +48,9 @@
 
 ## Building stories with the automation loop
 
-The repo ships with two skills that drive the story-by-story build pipeline. Source of truth: [`user-stories/STATUS.md`](../user-stories/STATUS.md).
+The repo ships with two slash commands at [`.claude/commands/`](commands/) that drive the story-by-story build pipeline. Their full specifications live alongside, at [`.claude/skills/`](skills/). Source of truth for progress: [`user-stories/STATUS.md`](../user-stories/STATUS.md).
+
+> **Note:** The `.claude/skills/` files are reference specs read by the slash-command body. Claude Code's slash-command scanner only looks at `.claude/commands/`, so don't move them.
 
 ### The daily loop
 
