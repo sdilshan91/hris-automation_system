@@ -83,7 +83,7 @@ export class LoginComponent implements OnInit {
       .subscribe({
         next: (response) => {
           if (response.mfaChallenge) {
-            this.authService.loginEmail.set(this.loginForm.value.email.trim().toLowerCase());
+            this.authService.loginEmail.set(email.trim().toLowerCase());
             if (this.authService.mfaRequiresEnrollment()) {
               this.router.navigate(['/auth/mfa/enroll']);
             } else {
