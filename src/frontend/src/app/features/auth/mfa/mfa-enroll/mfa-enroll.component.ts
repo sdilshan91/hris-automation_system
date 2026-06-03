@@ -270,7 +270,7 @@ import {
     }
 
     .spinner {
-      @apply w-8 h-8 border-3 border-neutral-200 border-t-brand-600 rounded-full;
+      @apply w-8 h-8 border-2 border-neutral-200 border-t-brand-600 rounded-full;
       animation: spin 0.7s linear infinite;
     }
 

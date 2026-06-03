@@ -214,7 +214,7 @@ import { AuthService } from '../../../../core/auth/auth.service';
     }
 
     .btn-spinner-sm {
-      @apply inline-block w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full;
+      @apply inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full;
       animation: spin 0.6s linear infinite;
     }
 

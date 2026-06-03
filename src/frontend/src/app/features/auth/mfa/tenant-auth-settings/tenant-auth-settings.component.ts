@@ -184,7 +184,7 @@ import { ITenantAuthSettings } from '../../../../core/auth/auth.models';
     }
 
     .spinner {
-      @apply w-7 h-7 border-3 border-neutral-200 border-t-brand-600 rounded-full;
+      @apply w-7 h-7 border-2 border-neutral-200 border-t-brand-600 rounded-full;
       animation: spin 0.7s linear infinite;
     }
 

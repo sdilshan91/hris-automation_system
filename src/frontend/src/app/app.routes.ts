@@ -73,6 +73,17 @@ export const appRoutes: Routes = [
             (m) => m.DashboardComponent
           ),
       },
+      // ─── Admin / Roles (US-AUTH-006) ──────────────────────
+      {
+        path: 'admin/roles',
+        loadChildren: () =>
+          import('./features/admin/roles/roles.routes').then(
+            (m) => m.ROLES_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'Tenant Owner']),
+        ],
+      },
       // MFA settings page (user profile security)
       {
         path: 'auth/mfa/settings',
