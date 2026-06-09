@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideToastr, ToastrService } from 'ngx-toastr';
+import { provideToastr } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 import { Router } from '@angular/router';
 import { signal, computed } from '@angular/core';
@@ -15,7 +15,6 @@ describe('MfaSettingsComponent', () => {
   let component: MfaSettingsComponent;
   let fixture: ComponentFixture<MfaSettingsComponent>;
   let authServiceSpy: jasmine.SpyObj<AuthService>;
-  let toastrSpy: jasmine.SpyObj<ToastrService>;
   let router: Router;
 
   function createComponent(mfaEnabled: boolean): void {
@@ -37,14 +36,13 @@ describe('MfaSettingsComponent', () => {
 
     TestBed.overrideProvider(AuthService, { useValue: authServiceSpy });
 
+    router = TestBed.inject(Router);
     fixture = TestBed.createComponent(MfaSettingsComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
-    toastrSpy = jasmine.createSpyObj('ToastrService', ['success', 'error']);
-
     await TestBed.configureTestingModule({
       imports: [MfaSettingsComponent],
       providers: [
@@ -56,8 +54,6 @@ describe('MfaSettingsComponent', () => {
         { provide: AuthService, useValue: {} },
       ],
     }).compileComponents();
-
-    router = TestBed.inject(Router);
   });
 
   it('should create with MFA enabled', () => {

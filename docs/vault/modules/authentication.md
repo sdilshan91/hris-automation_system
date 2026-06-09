@@ -38,6 +38,7 @@ updated: 2026-06-03
 - `IPermissionCache` interface in Application layer
 - Default: `InMemoryPermissionCache` (ConcurrentDictionary)
 - TODO: Replace with Redis (`t:{tenantId}:user:{userId}:permissions`) when Redis is wired in
+- US-AUTH-008 tenant switcher membership lists should be cached per user, not per current tenant, with key `user:{userId}:tenants`; invalidate this key whenever `user_tenants` or `user_tenant_roles` changes for that user so cross-tenant switch targets and role badges stay fresh.
 
 ### Audit
 - Role/permission changes logged via `ILogger` with structured properties

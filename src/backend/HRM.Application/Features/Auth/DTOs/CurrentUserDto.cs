@@ -11,5 +11,6 @@ public sealed record CurrentUserDto
     public TenantDto Tenant { get; init; } = null!;
     public IReadOnlyList<string> Roles { get; init; } = [];
     public IReadOnlyList<string> Permissions { get; init; } = [];
+    public IReadOnlyList<TenantMembershipDto> TenantMemberships { get; init; } = [];
     public bool MfaEnabled { get; init; }
 }

@@ -2,11 +2,15 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
+  OnInit,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { EMPTY } from 'rxjs';
+import { catchError, finalize } from 'rxjs/operators';
 import { AuthService } from '../../core/auth/auth.service';
+import { IUserTenant } from '../../core/auth/auth.models';
 import { TenantService } from '../../core/tenant/tenant.service';
 
 interface INavItem {
@@ -40,43 +44,103 @@ interface INavItem {
       >
         <!-- Sidebar header -->
         <div class="sidebar-header">
-          <div class="sidebar-brand">
-            @if (!sidebarCollapsed()) {
-              <div class="brand-icon">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  class="w-5 h-5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"
-                  />
-                </svg>
-              </div>
-              <span class="brand-name">
-                {{ tenantName() }}
+          <div class="tenant-switcher" [class.tenant-switcher-collapsed]="sidebarCollapsed()">
+            <button
+              type="button"
+              class="tenant-trigger"
+              [class.icon-only]="sidebarCollapsed()"
+              [attr.aria-expanded]="tenantMenuOpen()"
+              aria-haspopup="menu"
+              aria-label="Switch organization"
+              (click)="toggleTenantMenu()"
+            >
+              <span class="tenant-logo">
+                @if (currentTenantLogo()) {
+                  <img [src]="currentTenantLogo()" [alt]="tenantName()" />
+                } @else {
+                  <span>{{ tenantInitial() }}</span>
+                }
               </span>
-            } @else {
-              <div class="brand-icon">
+              @if (!sidebarCollapsed()) {
+                <span class="tenant-trigger-copy">
+                  <span class="tenant-name">{{ tenantName() }}</span>
+                  <span class="tenant-role">{{ currentPrimaryRole() }}</span>
+                </span>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  class="w-5 h-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  class="tenant-chevron"
+                  [class.rotate-180]="tenantMenuOpen()"
                 >
                   <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"
+                    fill-rule="evenodd"
+                    d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                    clip-rule="evenodd"
                   />
                 </svg>
+              }
+            </button>
+
+            @if (tenantMenuOpen()) {
+              <div class="tenant-menu" role="menu" aria-label="Organizations">
+                <div class="tenant-menu-header">
+                  <span>Organizations</span>
+                  @if (tenantsLoading()) {
+                    <span class="tenant-loading">Loading</span>
+                  }
+                </div>
+                @if (tenantError()) {
+                  <p class="tenant-error">{{ tenantError() }}</p>
+                }
+                @for (tenant of tenants(); track tenant.tenantId) {
+                  <button
+                    type="button"
+                    class="tenant-option"
+                    role="menuitemradio"
+                    [class.current]="tenant.isCurrentTenant"
+                    [class.unavailable]="!isTenantSwitchable(tenant)"
+                    [disabled]="!isTenantSwitchable(tenant) || switchingTenantId() === tenant.tenantId"
+                    [attr.aria-checked]="tenant.isCurrentTenant"
+                    [attr.aria-disabled]="!isTenantSwitchable(tenant)"
+                    [title]="tenantUnavailableMessage(tenant)"
+                    (click)="switchTenant(tenant)"
+                  >
+                    <span class="tenant-logo option-logo">
+                      @if (tenant.logoUrl) {
+                        <img [src]="tenant.logoUrl" [alt]="tenant.name" />
+                      } @else {
+                        <span>{{ tenantInitial(tenant.name) }}</span>
+                      }
+                    </span>
+                    <span class="tenant-option-copy">
+                      <span class="tenant-option-name">{{ tenant.name }}</span>
+                      <span class="tenant-option-role">{{ primaryRole(tenant) }}</span>
+                    </span>
+                    @if (tenant.status !== 'active') {
+                      <span class="tenant-status">{{ statusLabel(tenant.status) }}</span>
+                    }
+                    @if (tenant.isCurrentTenant) {
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        class="tenant-check"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fill-rule="evenodd"
+                          d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                    }
+                  </button>
+                } @empty {
+                  @if (!tenantsLoading()) {
+                    <p class="tenant-empty">No organization memberships found.</p>
+                  }
+                }
               </div>
             }
           </div>
@@ -191,6 +255,86 @@ interface INavItem {
             </svg>
           </button>
 
+          <button
+            type="button"
+            class="mobile-tenant-trigger lg:hidden"
+            (click)="toggleTenantMenu()"
+            [attr.aria-expanded]="tenantMenuOpen()"
+            aria-haspopup="menu"
+            aria-label="Switch organization"
+          >
+            <span class="tenant-logo">
+              @if (currentTenantLogo()) {
+                <img [src]="currentTenantLogo()" [alt]="tenantName()" />
+              } @else {
+                <span>{{ tenantInitial() }}</span>
+              }
+            </span>
+            <span class="mobile-tenant-name">{{ tenantName() }}</span>
+          </button>
+
+          @if (tenantMenuOpen()) {
+            <div class="tenant-menu mobile-tenant-menu" role="menu" aria-label="Organizations">
+              <div class="tenant-menu-header">
+                <span>Organizations</span>
+                @if (tenantsLoading()) {
+                  <span class="tenant-loading">Loading</span>
+                }
+              </div>
+              @if (tenantError()) {
+                <p class="tenant-error">{{ tenantError() }}</p>
+              }
+              @for (tenant of tenants(); track tenant.tenantId) {
+                <button
+                  type="button"
+                  class="tenant-option"
+                  role="menuitemradio"
+                  [class.current]="tenant.isCurrentTenant"
+                  [class.unavailable]="!isTenantSwitchable(tenant)"
+                  [disabled]="!isTenantSwitchable(tenant) || switchingTenantId() === tenant.tenantId"
+                  [attr.aria-checked]="tenant.isCurrentTenant"
+                  [attr.aria-disabled]="!isTenantSwitchable(tenant)"
+                  [title]="tenantUnavailableMessage(tenant)"
+                  (click)="switchTenant(tenant)"
+                >
+                  <span class="tenant-logo option-logo">
+                    @if (tenant.logoUrl) {
+                      <img [src]="tenant.logoUrl" [alt]="tenant.name" />
+                    } @else {
+                      <span>{{ tenantInitial(tenant.name) }}</span>
+                    }
+                  </span>
+                  <span class="tenant-option-copy">
+                    <span class="tenant-option-name">{{ tenant.name }}</span>
+                    <span class="tenant-option-role">{{ primaryRole(tenant) }}</span>
+                  </span>
+                  @if (tenant.status !== 'active') {
+                    <span class="tenant-status">{{ statusLabel(tenant.status) }}</span>
+                  }
+                  @if (tenant.isCurrentTenant) {
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      class="tenant-check"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  }
+                </button>
+              } @empty {
+                @if (!tenantsLoading()) {
+                  <p class="tenant-empty">No organization memberships found.</p>
+                }
+              }
+            </div>
+          }
+
           <div class="topbar-spacer"></div>
 
           <!-- Top bar right actions -->
@@ -258,20 +402,107 @@ interface INavItem {
     }
 
     .sidebar-header {
-      @apply flex items-center justify-between px-4 py-4 border-b border-neutral-50;
+      @apply relative flex items-center justify-between gap-2 px-4 py-4 border-b border-neutral-50;
     }
 
-    .sidebar-brand {
-      @apply flex items-center gap-2.5 min-w-0;
+    .tenant-switcher {
+      @apply relative min-w-0 flex-1;
     }
 
-    .brand-icon {
-      @apply flex-shrink-0 w-8 h-8 rounded-lg bg-brand-600 text-white
-        flex items-center justify-center;
+    .tenant-switcher-collapsed {
+      @apply flex-none;
     }
 
-    .brand-name {
-      @apply text-sm font-semibold text-neutral-900 truncate;
+    .tenant-trigger,
+    .mobile-tenant-trigger {
+      @apply flex min-w-0 items-center gap-2 rounded-lg border border-transparent
+        text-left transition-colors duration-150 hover:bg-neutral-50
+        focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2;
+    }
+
+    .tenant-trigger {
+      @apply w-full px-2 py-1.5;
+    }
+
+    .tenant-trigger.icon-only {
+      @apply h-9 w-9 justify-center p-0;
+    }
+
+    .tenant-logo {
+      @apply flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden
+        rounded-lg bg-brand-600 text-xs font-semibold text-white;
+    }
+
+    .tenant-logo img {
+      @apply h-full w-full object-cover;
+    }
+
+    .tenant-trigger-copy,
+    .tenant-option-copy {
+      @apply min-w-0 flex-1;
+    }
+
+    .tenant-name,
+    .tenant-option-name {
+      @apply block truncate text-sm font-semibold text-neutral-900;
+    }
+
+    .tenant-role,
+    .tenant-option-role {
+      @apply block truncate text-xs text-neutral-500;
+    }
+
+    .tenant-chevron {
+      @apply h-4 w-4 flex-shrink-0 text-neutral-400 transition-transform duration-150;
+    }
+
+    .tenant-menu {
+      @apply absolute left-3 right-3 top-full z-50 mt-2 rounded-xl border border-neutral-100
+        bg-white p-2 shadow-lg;
+    }
+
+    .tenant-menu-header {
+      @apply flex items-center justify-between px-2 pb-2 text-xs font-semibold uppercase
+        tracking-wide text-neutral-400;
+    }
+
+    .tenant-loading {
+      @apply normal-case tracking-normal text-brand-600;
+    }
+
+    .tenant-error,
+    .tenant-empty {
+      @apply m-0 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700;
+    }
+
+    .tenant-empty {
+      @apply bg-neutral-50 text-neutral-500;
+    }
+
+    .tenant-option {
+      @apply flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left
+        transition-colors duration-150 hover:bg-neutral-50 focus:outline-none
+        focus:ring-2 focus:ring-brand-500 focus:ring-offset-1;
+    }
+
+    .tenant-option.current {
+      @apply bg-brand-50;
+    }
+
+    .tenant-option.unavailable {
+      @apply cursor-not-allowed opacity-55 grayscale hover:bg-transparent;
+    }
+
+    .option-logo {
+      @apply h-9 w-9;
+    }
+
+    .tenant-status {
+      @apply rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600;
+    }
+
+    .tenant-check {
+      @apply h-4 w-4 flex-shrink-0 text-brand-600;
     }
 
     .collapse-btn {
@@ -355,13 +586,25 @@ interface INavItem {
     }
 
     .topbar {
-      @apply flex items-center h-14 px-4 border-b border-neutral-100 bg-white;
+      @apply relative flex items-center h-14 px-4 border-b border-neutral-100 bg-white;
       @apply lg:px-6;
     }
 
     .mobile-menu-btn {
       @apply w-9 h-9 rounded-lg flex items-center justify-center
         text-neutral-500 hover:bg-neutral-100 transition-colors;
+    }
+
+    .mobile-tenant-trigger {
+      @apply ml-2 max-w-[calc(100vw-8rem)] px-2 py-1;
+    }
+
+    .mobile-tenant-name {
+      @apply truncate text-sm font-semibold text-neutral-900;
+    }
+
+    .mobile-tenant-menu {
+      @apply left-3 right-3 top-14 lg:hidden;
     }
 
     .topbar-spacer {
@@ -382,12 +625,17 @@ interface INavItem {
     }
   `],
 })
-export class MainLayoutComponent {
+export class MainLayoutComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly tenantService = inject(TenantService);
 
   readonly sidebarCollapsed = signal(false);
   readonly mobileMenuOpen = signal(false);
+  readonly tenantMenuOpen = signal(false);
+  readonly tenants = signal<IUserTenant[]>([]);
+  readonly tenantsLoading = signal(false);
+  readonly tenantError = signal('');
+  readonly switchingTenantId = signal<string | null>(null);
 
   readonly navItems: INavItem[] = [
     {
@@ -445,6 +693,10 @@ export class MainLayoutComponent {
     },
   ];
 
+  ngOnInit(): void {
+    this.loadTenants();
+  }
+
   userInitials(): string {
     const name = this.authService.currentUser()?.displayName || '';
     const parts = name.split(' ');
@@ -458,7 +710,102 @@ export class MainLayoutComponent {
     this.sidebarCollapsed.update((v) => !v);
   }
 
+  toggleTenantMenu(): void {
+    this.tenantMenuOpen.update((open) => !open);
+    if (!this.tenants().length && !this.tenantsLoading()) {
+      this.loadTenants();
+    }
+  }
+
+  switchTenant(tenant: IUserTenant): void {
+    if (!this.isTenantSwitchable(tenant) || this.switchingTenantId()) {
+      return;
+    }
+
+    this.switchingTenantId.set(tenant.tenantId);
+    this.tenantError.set('');
+
+    this.authService
+      .switchTenant({ tenantId: tenant.tenantId })
+      .pipe(
+        catchError((error) => {
+          this.tenantError.set(
+            error?.error?.message ||
+              error?.error?.error ||
+              'This organization is unavailable right now.'
+          );
+          return EMPTY;
+        }),
+        finalize(() => this.switchingTenantId.set(null))
+      )
+      .subscribe();
+  }
+
+  isTenantSwitchable(tenant: IUserTenant): boolean {
+    return !tenant.isCurrentTenant && (tenant.status === 'active' || tenant.status === 'trial');
+  }
+
+  primaryRole(tenant: IUserTenant): string {
+    return tenant.roles[0] || 'Member';
+  }
+
+  currentPrimaryRole(): string {
+    const currentTenantId = this.authService.currentTenant()?.tenantId;
+    const current = this.tenants().find((tenant) => tenant.tenantId === currentTenantId || tenant.isCurrentTenant);
+    return current ? this.primaryRole(current) : this.authService.roles()[0] || 'Member';
+  }
+
+  currentTenantLogo(): string | undefined {
+    const currentTenantId = this.authService.currentTenant()?.tenantId;
+    return (
+      this.tenants().find((tenant) => tenant.tenantId === currentTenantId || tenant.isCurrentTenant)?.logoUrl ||
+      this.authService.currentTenant()?.logoUrl ||
+      this.tenantService.tenantContext().logoUrl
+    );
+  }
+
+  tenantInitial(name = this.tenantName()): string {
+    return name.trim().charAt(0).toUpperCase() || 'H';
+  }
+
+  statusLabel(status: IUserTenant['status']): string {
+    return status
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  tenantUnavailableMessage(tenant: IUserTenant): string {
+    if (tenant.isCurrentTenant) {
+      return 'Current organization';
+    }
+
+    if (this.isTenantSwitchable(tenant)) {
+      return `Switch to ${tenant.name}`;
+    }
+
+    return `${tenant.name} is ${this.statusLabel(tenant.status)} and cannot be opened.`;
+  }
+
   tenantName(): string {
     return this.authService.currentTenant()?.name || this.tenantService.displayName();
+  }
+
+  private loadTenants(): void {
+    this.tenantsLoading.set(true);
+    this.tenantError.set('');
+
+    this.authService
+      .getMyTenants()
+      .pipe(
+        catchError(() => {
+          this.tenantError.set('Unable to load organization memberships.');
+          return EMPTY;
+        }),
+        finalize(() => this.tenantsLoading.set(false))
+      )
+      .subscribe((tenants) => {
+        this.tenants.set(tenants);
+      });
   }
 }

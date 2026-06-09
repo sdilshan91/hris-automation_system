@@ -22,6 +22,10 @@ public sealed class UserTenantConfiguration : IEntityTypeConfiguration<UserTenan
         builder.HasIndex(ut => new { ut.UserId, ut.TenantId })
             .IsUnique();
 
+        builder.HasIndex(ut => new { ut.UserId, ut.Status });
+
+        builder.HasIndex(ut => new { ut.TenantId, ut.Status });
+
         builder.HasOne(ut => ut.Tenant)
             .WithMany()
             .HasForeignKey(ut => ut.TenantId)

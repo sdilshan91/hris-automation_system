@@ -12,6 +12,8 @@ public sealed class UserTenantRoleConfiguration : IEntityTypeConfiguration<UserT
 
         builder.HasKey(utr => new { utr.UserTenantId, utr.RoleId });
 
+        builder.HasIndex(utr => new { utr.RoleId, utr.UserTenantId });
+
         builder.HasOne(utr => utr.Role)
             .WithMany(r => r.UserTenantRoles)
             .HasForeignKey(utr => utr.RoleId)

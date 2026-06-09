@@ -19,7 +19,8 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
             .HasMaxLength(500)
             .IsRequired();
 
-        builder.HasIndex(rt => rt.TokenHash);
+        builder.HasIndex(rt => rt.TokenHash)
+            .IsUnique();
 
         builder.Property(rt => rt.UserAgent)
             .HasMaxLength(500);
@@ -29,6 +30,8 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
 
         // Index for session queries and concurrent session counting
         builder.HasIndex(rt => new { rt.UserId, rt.TenantId, rt.RevokedAt });
+
+        builder.HasIndex(rt => new { rt.UserId, rt.TenantId, rt.ExpiresAt });
 
         builder.HasOne(rt => rt.ReplacedByToken)
             .WithMany()

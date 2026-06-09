@@ -164,8 +164,8 @@ export class AuthService {
       })
       .pipe(
         tap((response) => {
-          // Redirect to the new tenant subdomain
-          window.location.href = response.redirectUrl;
+          this.handleTenantSwitchResponse(response);
+          this.redirectTo(response.redirectUrl);
         })
       );
   }
@@ -333,9 +333,18 @@ export class AuthService {
 
     // Decode roles from the JWT claims
     const claims = this.decodeToken();
-    if (claims?.roles) {
-      this.roles.set(claims.roles);
-    }
+    this.roles.set(claims?.roles ?? []);
+    this.permissions.set(claims?.permissions ?? response.permissions);
+  }
+
+  private handleTenantSwitchResponse(response: ISwitchTenantResponse): void {
+    this.setAccessToken(response.accessToken);
+    this.currentTenant.set(response.tenant);
+    this.tenantService.setTenantFromAuth(response.tenant);
+
+    const claims = this.decodeToken();
+    this.roles.set(claims?.roles ?? []);
+    this.permissions.set(claims?.permissions ?? []);
   }
 
   private setAccessToken(token: string): void {
@@ -362,5 +371,9 @@ export class AuthService {
     } catch {
       return null;
     }
+  }
+
+  private redirectTo(url: string): void {
+    window.location.href = url;
   }
 }

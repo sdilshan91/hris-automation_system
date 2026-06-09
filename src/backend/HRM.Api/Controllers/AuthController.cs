@@ -193,6 +193,63 @@ public sealed class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/auth/my-tenants
+    /// Returns all tenant memberships for the current authenticated user.
+    /// </summary>
+    [HttpGet("my-tenants")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<TenantMembershipDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetMyTenants(CancellationToken cancellationToken)
+    {
+        var query = new GetMyTenantsQuery(_currentUser.UserId, _currentUser.TenantId);
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse<IReadOnlyList<TenantMembershipDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/auth/switch-tenant
+    /// Issues a new tenant-scoped access token and refresh token for an active target membership.
+    /// </summary>
+    [HttpPost("switch-tenant")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<SwitchTenantResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SwitchTenant([FromBody] SwitchTenantRequest request, CancellationToken cancellationToken)
+    {
+        var command = new SwitchTenantCommand(
+            _currentUser.UserId,
+            _currentUser.TenantId,
+            request.TenantId,
+            GetIpAddress(),
+            GetUserAgent());
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        var response = result.Value!;
+
+        if (!string.IsNullOrEmpty(response.RefreshToken))
+        {
+            SetRefreshTokenCookie(response.RefreshToken);
+        }
+
+        var bodyResponse = response with { RefreshToken = null };
+
+        return Ok(ApiResponse<SwitchTenantResponse>.Ok(bodyResponse));
+    }
+
+    /// <summary>
     /// POST /api/v1/auth/revoke-sessions
     /// Revokes all sessions for the current user in the current tenant.
     /// </summary>
