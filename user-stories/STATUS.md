@@ -34,7 +34,7 @@
 - [~] US-AUTH-005 — Multi-factor authentication (TOTP) *(implemented; PR #1 open)*
 - [x] US-AUTH-006 — Role-based access control (RBAC) per tenant *(PR #2 open)*
 - [x] US-AUTH-007 — Tenant resolution from subdomain *(PR #5 open)*
-- [ ] US-AUTH-008 — Cross-tenant user switching
+- [~] US-AUTH-008 — Cross-tenant user switching
 - [ ] US-AUTH-009 — Session management and concurrent session limits
 - [ ] US-AUTH-010 — Account lockout after failed attempts
 
@@ -155,8 +155,8 @@
 ## Tally
 - Total stories: **102**
 - Done: **6** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5)
-- In progress: **1** (AUTH-005 in PR #1)
-- Pending: **95**
+- In progress: **2** (AUTH-005 in PR #1; AUTH-008 active)
+- Pending: **94**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
