@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -26,10 +26,6 @@ describe('MfaEnrollComponent', () => {
   const mockVerifySuccessResponse: IMfaVerifyResponse = {
     success: true,
     recoveryCodes: ['code-1111-aa', 'code-2222-bb', 'code-3333-cc'],
-  };
-
-  const mockVerifyFailureResponse: IMfaVerifyResponse = {
-    success: false,
   };
 
   beforeEach(async () => {

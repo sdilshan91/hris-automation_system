@@ -23,11 +23,11 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-005 | Multi-factor authentication (TOTP) | Should Have | TC-AUTH-013, TC-AUTH-014, TC-AUTH-015, TC-AUTH-029, TC-AUTH-030, TC-AUTH-031, TC-AUTH-032, TC-AUTH-033, TC-AUTH-034, TC-AUTH-035, TC-AUTH-036, TC-AUTH-037, TC-AUTH-038 | 13 | 7/7 AC covered |
 | US-AUTH-006 | Role-based access control (RBAC) | Must Have | TC-AUTH-016, TC-AUTH-017, TC-AUTH-018, TC-AUTH-039, TC-AUTH-040, TC-AUTH-041, TC-AUTH-042, TC-AUTH-043, TC-AUTH-044, TC-AUTH-045, TC-AUTH-046, TC-AUTH-047, TC-AUTH-048, TC-AUTH-049, TC-AUTH-050 | 15 | 7/7 AC covered (deep) |
 | US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021, TC-AUTH-051, TC-AUTH-052, TC-AUTH-053, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057, TC-AUTH-058 | 11 | 6/6 AC covered (deep) |
-| US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023 | 2 | 5/5 AC covered |
+| US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025 | 2 | 6/6 AC covered |
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028 | 3 | 6/6 AC covered |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004 | 4 | -- |
-| **TOTAL** | | | **62 test cases** | **62** | **61/61 AC** |
+| **TOTAL** | | | **68 test cases** | **68** | **61/61 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -91,10 +91,44 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-056 | Cache miss falls back to PostgreSQL and repopulates Redis within 50 ms | Performance | High | US-AUTH-007 | AC-6, FR-5, FR-6, FR-9, NFR-2 |
 | TC-AUTH-057 | Redis outage falls back to PostgreSQL without failing tenant requests | Performance | High | US-AUTH-007 | AC-1, AC-6, FR-5, FR-6, NFR-3 |
 | TC-AUTH-058 | Static 404 and suspended workspace pages meet accessibility and information disclosure rules | Accessibility | Medium | US-AUTH-007 | AC-2, AC-5, FR-7, FR-8, NFR-5 |
+| TC-AUTH-059 | My-tenants list and switch to tenant B | Functional | High | US-AUTH-008 | AC-1, AC-2, FR-1, FR-2, FR-3, FR-5, FR-6, FR-8, FR-9, BR-1, BR-5 |
+| TC-AUTH-060 | Unauthorized, suspended, and terminated tenant switch attempts are rejected | Security | Critical | US-AUTH-008 | AC-3, AC-4, FR-5, FR-6, BR-5 |
+| TC-AUTH-061 | Target JWT contains only target tenant roles and permissions | Security | Critical | US-AUTH-008 | AC-5, FR-3, FR-5, BR-2, NFR-3 |
+| TC-AUTH-062 | Tenant switch blocks impersonation and prevents cross-tenant data exposure | Security | Critical | US-AUTH-008 | AC-2, AC-3, AC-5, FR-3, FR-5, FR-7, BR-4, NFR-3, NFR-4 |
+| TC-AUTH-063 | Source session remains valid and MFA-required target triggers enrollment | Functional | High | US-AUTH-008 | AC-2, AC-5, FR-3, FR-4, FR-6, FR-8, BR-1, BR-3 |
+| TC-AUTH-064 | My-tenants cache performance and invalidation | Performance | Medium | US-AUTH-008 | AC-1, FR-1, FR-9, NFR-1, NFR-2, NFR-3, NFR-4, BR-5 |
 | TC-AUTH-ISO-001 | Tenant A user cannot authenticate as Tenant B | Security | Critical | US-AUTH-001, US-AUTH-007 | -- |
 | TC-AUTH-ISO-002 | JWT claims include correct tenant_id | Security | Critical | US-AUTH-002, US-AUTH-006 | -- |
 | TC-AUTH-ISO-003 | API rejects requests with mismatched tenant context | Security | Critical | US-AUTH-002, US-AUTH-007 | -- |
 | TC-AUTH-ISO-004 | RBAC cross-tenant isolation -- roles, permissions, and cache keys are tenant-scoped | Security | Critical | US-AUTH-006 | FR-2, FR-10, NFR-2, BR-1 |
+
+### US-AUTH-008 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: my-tenants returns tenant memberships with tenant fields and roles | AC | TC-AUTH-022, TC-AUTH-059, TC-AUTH-064 | Direct |
+| AC-2: Switch to tenant B issues target tokens and redirects to target subdomain | AC | TC-AUTH-022, TC-AUTH-059, TC-AUTH-062, TC-AUTH-063 | Direct |
+| AC-3: Unauthorized tenant switch returns 403 | AC | TC-AUTH-023, TC-AUTH-060, TC-AUTH-062 | Direct |
+| AC-4: Suspended tenant switch returns 403 and UI flags unavailable tenant | AC | TC-AUTH-023, TC-AUTH-060 | Direct |
+| AC-5: Target JWT contains only target tenant roles and source refresh remains valid | AC | TC-AUTH-022, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063 | Direct |
+| FR-1: GET /api/v1/auth/my-tenants returns all memberships | FR | TC-AUTH-022, TC-AUTH-059, TC-AUTH-064 | Direct |
+| FR-2: POST /api/v1/auth/switch-tenant accepts tenantId UUID | FR | TC-AUTH-022, TC-AUTH-059, TC-AUTH-060 | Direct |
+| FR-3: Switch issues new JWT and refresh token scoped to target tenant | FR | TC-AUTH-022, TC-AUTH-059, TC-AUTH-061, TC-AUTH-063 | Direct |
+| FR-4: Previous tenant refresh token remains valid | FR | TC-AUTH-022, TC-AUTH-060, TC-AUTH-063 | Direct |
+| FR-5: Active target membership is verified before token issuance | FR | TC-AUTH-023, TC-AUTH-060, TC-AUTH-062 | Direct |
+| FR-6: Target tenant lifecycle allows login | FR | TC-AUTH-022, TC-AUTH-059, TC-AUTH-060, TC-AUTH-063 | Direct |
+| FR-7: Tenant switch events are audited in source and target logs | FR | TC-AUTH-022, TC-AUTH-060, TC-AUTH-062, TC-AUTH-063 | Direct |
+| FR-8: Frontend redirects browser to target tenant subdomain URL | FR | TC-AUTH-022, TC-AUTH-059, TC-AUTH-063 | Direct |
+| FR-9: GET /api/v1/auth/me returns profile, current tenant, and memberships | FR | TC-AUTH-059, TC-AUTH-064 | Direct |
+| NFR-1: Tenant switch response time <= 400 ms P95 | NFR | TC-AUTH-064 | Direct |
+| NFR-2: my-tenants Redis cache is per user and invalidated on membership changes | NFR | TC-AUTH-064 | Direct |
+| NFR-3: Switching exposes no source tenant data | NFR | TC-AUTH-061, TC-AUTH-062, TC-AUTH-064 | Direct |
+| NFR-4: Switch works behind a load balancer | NFR | TC-AUTH-064 | Direct |
+| BR-1: Single login session can switch tenants without re-authentication | BR | TC-AUTH-022, TC-AUTH-059, TC-AUTH-063 | Direct |
+| BR-2: Roles are per membership | BR | TC-AUTH-022, TC-AUTH-061 | Direct |
+| BR-3: MFA-required target triggers mandatory enrollment | BR | TC-AUTH-063 | Direct |
+| BR-4: Impersonation sessions cannot use tenant switching | BR | TC-AUTH-062 | Direct |
+| BR-5: my-tenants includes all memberships and flags inaccessible tenants | BR | TC-AUTH-059, TC-AUTH-060, TC-AUTH-064 | Direct |
 
 ### US-AUTH-007 Detailed Requirements Traceability
 
@@ -194,8 +228,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-005 BR Coverage | 5/5 (100%) | >= 100% | PASS |
 | US-AUTH-006 Requirement Coverage | 10/10 FR + 4/4 NFR + 7/7 BR = 100% | >= 85% | PASS |
 | US-AUTH-007 Requirement Coverage | 10/10 FR + 5/5 NFR + 5/5 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 11 (4 dedicated + 7 embedded) | >= 3 | PASS |
-| Security Test Cases | 26/62 (42%) | >= 30% | PASS |
+| US-AUTH-008 Requirement Coverage | 9/9 FR + 4/4 NFR + 5/5 BR = 100% | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 17 (4 dedicated + 13 embedded) | >= 3 | PASS |
+| Security Test Cases | 29/68 (43%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
 | API Endpoint Coverage | 26/26 (100%) | >= 90% | PASS |
 

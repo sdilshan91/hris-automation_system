@@ -4,7 +4,10 @@ using HRM.Application.Features.Auth.DTOs;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace HRM.Infrastructure.Services;
 
@@ -18,6 +21,8 @@ public sealed class AuthService : IAuthService
     private readonly IJwtService _jwtService;
     private readonly ITenantContext _tenantContext;
     private readonly ITotpService _totpService;
+    private readonly IConfiguration _configuration;
+    private readonly IDistributedCache _cache;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -25,12 +30,16 @@ public sealed class AuthService : IAuthService
         IJwtService jwtService,
         ITenantContext tenantContext,
         ITotpService totpService,
+        IConfiguration configuration,
+        IDistributedCache cache,
         ILogger<AuthService> logger)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
         _tenantContext = tenantContext;
         _totpService = totpService;
+        _configuration = configuration;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -517,6 +526,7 @@ public sealed class AuthService : IAuthService
             .Select(rp => rp.Permission)
             .Distinct()
             .ToList();
+        var myTenants = await GetMyTenantsAsync(userId, tenantId, cancellationToken);
 
         return Result<CurrentUserDto>.Success(new CurrentUserDto
         {
@@ -526,7 +536,178 @@ public sealed class AuthService : IAuthService
             Tenant = new TenantDto(tenant.Id, tenant.Subdomain, tenant.Name),
             Roles = roles,
             Permissions = permissions,
+            TenantMemberships = myTenants.Value ?? [],
             MfaEnabled = user.MfaEnabled,
+        });
+    }
+
+    public async Task<Result<IReadOnlyList<TenantMembershipDto>>> GetMyTenantsAsync(
+        Guid userId,
+        Guid currentTenantId,
+        CancellationToken cancellationToken = default)
+    {
+        var cacheKey = $"user:{userId}:tenants";
+        var cached = await _cache.GetStringAsync(cacheKey, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(cached))
+        {
+            var cachedMemberships = JsonSerializer.Deserialize<List<TenantMembershipDto>>(cached);
+            if (cachedMemberships is not null)
+            {
+                return Result<IReadOnlyList<TenantMembershipDto>>.Success(
+                    WithCurrentTenant(cachedMemberships, currentTenantId));
+            }
+        }
+
+        var userExists = await _dbContext.Users
+            .IgnoreQueryFilters()
+            .AnyAsync(u => u.Id == userId && u.IsActive, cancellationToken);
+
+        if (!userExists)
+        {
+            return Result<IReadOnlyList<TenantMembershipDto>>.Failure("User not found.", 404);
+        }
+
+        var userTenants = await _dbContext.UserTenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(ut => ut.Tenant)
+            .Include(ut => ut.UserTenantRoles)
+                .ThenInclude(utr => utr.Role)
+            .Where(ut => ut.UserId == userId)
+            .OrderBy(ut => ut.Tenant.Name)
+            .ToListAsync(cancellationToken);
+
+        var memberships = userTenants
+            .Select(ut => new TenantMembershipDto(
+                ut.TenantId,
+                ut.Tenant.Subdomain,
+                ut.Tenant.Name,
+                ut.Tenant.LogoUrl,
+                ut.Tenant.Status.ToString(),
+                ut.UserTenantRoles
+                    .Select(utr => utr.Role.Name)
+                    .OrderBy(role => role)
+                    .ToList(),
+                false))
+            .ToList();
+
+        await _cache.SetStringAsync(
+            cacheKey,
+            JsonSerializer.Serialize(memberships),
+            new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5),
+            },
+            cancellationToken);
+
+        return Result<IReadOnlyList<TenantMembershipDto>>.Success(
+            WithCurrentTenant(memberships, currentTenantId));
+    }
+
+    public async Task<Result<SwitchTenantResponse>> SwitchTenantAsync(
+        Guid userId,
+        Guid sourceTenantId,
+        Guid targetTenantId,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _dbContext.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null || !user.IsActive)
+        {
+            return Result<SwitchTenantResponse>.Failure("Account is inactive.", 401);
+        }
+
+        if (user.IsLockedOut)
+        {
+            return Result<SwitchTenantResponse>.Failure(
+                "Account temporarily locked. Try again later or contact your administrator.",
+                401);
+        }
+
+        var targetTenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == targetTenantId, cancellationToken);
+
+        if (targetTenant is null)
+        {
+            return Result<SwitchTenantResponse>.Failure(
+                "You do not have an active membership in this organization.",
+                403);
+        }
+
+        if (targetTenant.Status is not (TenantStatus.Active or TenantStatus.Trial))
+        {
+            return Result<SwitchTenantResponse>.Failure(
+                $"The target organization is unavailable ({targetTenant.Status}).",
+                403);
+        }
+
+        var userTenant = await _dbContext.UserTenants
+            .IgnoreQueryFilters()
+            .Include(ut => ut.UserTenantRoles)
+                .ThenInclude(utr => utr.Role)
+                    .ThenInclude(r => r.RolePermissions)
+            .FirstOrDefaultAsync(
+                ut => ut.UserId == userId && ut.TenantId == targetTenantId,
+                cancellationToken);
+
+        if (userTenant is null || userTenant.Status != UserTenantStatus.Active)
+        {
+            return Result<SwitchTenantResponse>.Failure(
+                "You do not have an active membership in this organization.",
+                403);
+        }
+
+        if (!user.MfaEnabled
+            && targetTenant.MfaPolicy == "required"
+            && userTenant.UserTenantRoles.Any(utr =>
+                targetTenant.MfaRequiredRoles.Contains(utr.Role.Name)))
+        {
+            return Result<SwitchTenantResponse>.Failure(
+                "MFA enrollment is required before accessing this organization.",
+                403);
+        }
+
+        var tokenResult = await IssueTokensAsync(
+            user,
+            targetTenant,
+            userTenant,
+            ipAddress,
+            userAgent,
+            cancellationToken);
+
+        if (tokenResult.IsFailure)
+        {
+            return Result<SwitchTenantResponse>.Failure(
+                tokenResult.Error!,
+                tokenResult.StatusCode ?? 400);
+        }
+
+        await WriteTenantSwitchAuditAsync(
+            userId,
+            sourceTenantId,
+            targetTenantId,
+            ipAddress,
+            userAgent,
+            cancellationToken);
+
+        _logger.LogInformation(
+            "User {UserId} switched tenant from {SourceTenantId} to {TargetTenantId}",
+            userId,
+            sourceTenantId,
+            targetTenantId);
+
+        var loginResponse = tokenResult.Value!;
+        return Result<SwitchTenantResponse>.Success(new SwitchTenantResponse
+        {
+            AccessToken = loginResponse.AccessToken,
+            RefreshToken = loginResponse.RefreshToken,
+            Tenant = new TenantDto(targetTenant.Id, targetTenant.Subdomain, targetTenant.Name),
+            RedirectUrl = BuildTenantRedirectUrl(targetTenant.Subdomain),
         });
     }
 
@@ -1013,6 +1194,67 @@ public sealed class AuthService : IAuthService
         {
             token.RevokedAt = DateTime.UtcNow;
         }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static IReadOnlyList<TenantMembershipDto> WithCurrentTenant(
+        IEnumerable<TenantMembershipDto> memberships,
+        Guid currentTenantId)
+    {
+        return memberships
+            .Select(membership => membership with
+            {
+                IsCurrentTenant = membership.TenantId == currentTenantId,
+            })
+            .ToList();
+    }
+
+    private string BuildTenantRedirectUrl(string subdomain)
+    {
+        var baseDomain = (_configuration["Platform:BaseDomain"] ?? "yourhrm.com").Trim();
+        var normalizedBaseDomain = baseDomain.TrimStart('.');
+
+        return $"https://{subdomain}.{normalizedBaseDomain}/dashboard";
+    }
+
+    private async Task WriteTenantSwitchAuditAsync(
+        Guid userId,
+        Guid sourceTenantId,
+        Guid targetTenantId,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken)
+    {
+        var detail = JsonSerializer.Serialize(new
+        {
+            sourceTenantId,
+            targetTenantId,
+        });
+
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = sourceTenantId,
+            UserId = userId,
+            EventType = "tenant_switch",
+            Detail = detail,
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = targetTenantId,
+            UserId = userId,
+            EventType = "tenant_switch",
+            Detail = detail,
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            CreatedAt = DateTime.UtcNow,
+        });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }

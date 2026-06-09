@@ -15,6 +15,8 @@ public interface IAuthService
     Task<Result> ResetPasswordAsync(string email, string token, string newPassword, CancellationToken cancellationToken = default);
     Task<Result> RevokeAllSessionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
     Task<Result<CurrentUserDto>> GetCurrentUserAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<TenantMembershipDto>>> GetMyTenantsAsync(Guid userId, Guid currentTenantId, CancellationToken cancellationToken = default);
+    Task<Result<SwitchTenantResponse>> SwitchTenantAsync(Guid userId, Guid sourceTenantId, Guid targetTenantId, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
 
     // MFA operations
     Task<Result<MfaEnrollResponse>> EnrollMfaAsync(Guid userId, CancellationToken cancellationToken = default);

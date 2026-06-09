@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideToastr, ToastrService } from 'ngx-toastr';
+import { provideToastr } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 
 import { TenantAuthSettingsComponent } from './tenant-auth-settings.component';

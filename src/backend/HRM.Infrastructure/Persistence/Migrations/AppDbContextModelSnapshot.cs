@@ -81,7 +81,11 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_refresh_tokens_replaced_by_token_id");
 
                     b.HasIndex("TokenHash")
+                        .IsUnique()
                         .HasDatabaseName("ix_refresh_tokens_token_hash");
+
+                    b.HasIndex("UserId", "TenantId", "ExpiresAt")
+                        .HasDatabaseName("ix_refresh_tokens_user_id_tenant_id_expires_at");
 
                     b.HasIndex("UserId", "TenantId", "RevokedAt")
                         .HasDatabaseName("ix_refresh_tokens_user_id_tenant_id_revoked_at");
@@ -411,9 +415,15 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId")
                         .HasDatabaseName("ix_user_tenants_tenant_id");
 
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("ix_user_tenants_tenant_id_status");
+
                     b.HasIndex("UserId", "TenantId")
                         .IsUnique()
                         .HasDatabaseName("ix_user_tenants_user_id_tenant_id");
+
+                    b.HasIndex("UserId", "Status")
+                        .HasDatabaseName("ix_user_tenants_user_id_status");
 
                     b.ToTable("user_tenants", (string)null);
                 });
@@ -440,8 +450,8 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.HasKey("UserTenantId", "RoleId")
                         .HasName("pk_user_tenant_roles");
 
-                    b.HasIndex("RoleId")
-                        .HasDatabaseName("ix_user_tenant_roles_role_id");
+                    b.HasIndex("RoleId", "UserTenantId")
+                        .HasDatabaseName("ix_user_tenant_roles_role_id_user_tenant_id");
 
                     b.ToTable("user_tenant_roles", (string)null);
                 });
