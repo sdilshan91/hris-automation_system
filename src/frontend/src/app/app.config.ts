@@ -21,7 +21,7 @@ import { TenantService } from './core/tenant/tenant.service';
  * Factory for tenant resolution at app startup.
  * Resolves the tenant from the subdomain before the app renders.
  */
-function initializeTenant(tenantService: TenantService): () => void {
+function initializeTenant(tenantService: TenantService): () => Promise<void> {
   return () => tenantService.resolve();
 }
 

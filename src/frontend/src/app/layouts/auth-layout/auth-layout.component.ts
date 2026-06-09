@@ -1,6 +1,6 @@
 import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { AuthService } from '../../core/auth/auth.service';
+import { TenantService } from '../../core/tenant/tenant.service';
 
 @Component({
   selector: 'app-auth-layout',
@@ -19,10 +19,10 @@ import { AuthService } from '../../core/auth/auth.service';
       <div class="auth-content">
         <!-- Logo / brand -->
         <div class="auth-brand">
-          @if (tenant()?.logoUrl) {
+          @if (tenant().logoUrl) {
             <img
-              [src]="tenant()!.logoUrl"
-              [alt]="tenant()!.name"
+              [src]="tenant().logoUrl"
+              [alt]="tenantName()"
               class="auth-logo"
             />
           } @else {
@@ -43,7 +43,7 @@ import { AuthService } from '../../core/auth/auth.service';
               </svg>
             </div>
           }
-          <h1 class="auth-title">{{ tenant()?.name || 'YourHRM' }}</h1>
+          <h1 class="auth-title">{{ tenantName() }}</h1>
         </div>
 
         <!-- Router outlet for auth pages -->
@@ -116,8 +116,12 @@ import { AuthService } from '../../core/auth/auth.service';
   `],
 })
 export class AuthLayoutComponent {
-  private readonly authService = inject(AuthService);
+  private readonly tenantService = inject(TenantService);
 
-  readonly tenant = this.authService.currentTenant;
+  readonly tenant = this.tenantService.tenantContext;
   readonly currentYear = new Date().getFullYear();
+
+  tenantName(): string {
+    return this.tenantService.displayName();
+  }
 }

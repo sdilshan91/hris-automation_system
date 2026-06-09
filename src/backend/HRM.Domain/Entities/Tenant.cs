@@ -9,6 +9,8 @@ public sealed class Tenant
     public string Subdomain { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public TenantStatus Status { get; set; } = TenantStatus.Trial;
+    public string PlanId { get; set; } = "default";
+    public List<string> EnabledModules { get; set; } = new();
     public string? LogoUrl { get; set; }
     public string? PrimaryColor { get; set; }
     public string? ContactEmail { get; set; }

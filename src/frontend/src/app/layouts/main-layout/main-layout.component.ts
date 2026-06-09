@@ -7,6 +7,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
+import { TenantService } from '../../core/tenant/tenant.service';
 
 interface INavItem {
   label: string;
@@ -58,7 +59,7 @@ interface INavItem {
                 </svg>
               </div>
               <span class="brand-name">
-                {{ authService.currentTenant()?.name || 'YourHRM' }}
+                {{ tenantName() }}
               </span>
             } @else {
               <div class="brand-icon">
@@ -383,6 +384,7 @@ interface INavItem {
 })
 export class MainLayoutComponent {
   readonly authService = inject(AuthService);
+  private readonly tenantService = inject(TenantService);
 
   readonly sidebarCollapsed = signal(false);
   readonly mobileMenuOpen = signal(false);
@@ -454,5 +456,9 @@ export class MainLayoutComponent {
 
   toggleSidebar(): void {
     this.sidebarCollapsed.update((v) => !v);
+  }
+
+  tenantName(): string {
+    return this.authService.currentTenant()?.name || this.tenantService.displayName();
   }
 }

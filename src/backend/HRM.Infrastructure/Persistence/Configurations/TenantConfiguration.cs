@@ -10,7 +10,12 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
 {
     public void Configure(EntityTypeBuilder<Tenant> builder)
     {
-        builder.ToTable("tenants");
+        builder.ToTable("tenants", t =>
+        {
+            t.HasCheckConstraint(
+                "ck_tenants_subdomain_format",
+                "subdomain = lower(subdomain) AND length(subdomain) BETWEEN 3 AND 63 AND subdomain ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])$'");
+        });
 
         builder.HasKey(t => t.Id);
 
@@ -24,6 +29,10 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.HasIndex(t => t.Subdomain)
             .IsUnique();
 
+        builder.HasIndex(t => new { t.Subdomain, t.Status })
+            .HasDatabaseName("ix_tenants_subdomain_status")
+            .HasFilter("is_deleted = false");
+
         builder.Property(t => t.Name)
             .HasMaxLength(200)
             .IsRequired();
@@ -31,6 +40,22 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.Status)
             .HasConversion<string>()
             .HasMaxLength(50);
+
+        builder.Property(t => t.PlanId)
+            .HasMaxLength(64)
+            .HasDefaultValue("default")
+            .IsRequired();
+
+        builder.Property(t => t.EnabledModules)
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'[]'::jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .Metadata.SetValueComparer(new ValueComparer<List<string>>(
+                (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()));
 
         builder.Property(t => t.LogoUrl)
             .HasMaxLength(500);
@@ -52,6 +77,7 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         // MfaRequiredRoles stored as jsonb column with value converter and comparer
         builder.Property(t => t.MfaRequiredRoles)
             .HasColumnType("jsonb")
+            .HasDefaultValueSql("'[]'::jsonb")
             .HasConversion(
                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
                 v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())

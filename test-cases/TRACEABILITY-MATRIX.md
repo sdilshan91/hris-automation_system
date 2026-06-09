@@ -3,7 +3,7 @@ title: Requirements Traceability Matrix
 project: HRM SaaS Platform
 created: 2026-05-11
 status: draft
-last_updated: 2026-06-03
+last_updated: 2026-06-09
 ---
 
 # Requirements Traceability Matrix
@@ -22,12 +22,12 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-004 | Password reset flow | Must Have | TC-AUTH-010, TC-AUTH-011, TC-AUTH-012 | 3 | 6/6 AC covered |
 | US-AUTH-005 | Multi-factor authentication (TOTP) | Should Have | TC-AUTH-013, TC-AUTH-014, TC-AUTH-015, TC-AUTH-029, TC-AUTH-030, TC-AUTH-031, TC-AUTH-032, TC-AUTH-033, TC-AUTH-034, TC-AUTH-035, TC-AUTH-036, TC-AUTH-037, TC-AUTH-038 | 13 | 7/7 AC covered |
 | US-AUTH-006 | Role-based access control (RBAC) | Must Have | TC-AUTH-016, TC-AUTH-017, TC-AUTH-018, TC-AUTH-039, TC-AUTH-040, TC-AUTH-041, TC-AUTH-042, TC-AUTH-043, TC-AUTH-044, TC-AUTH-045, TC-AUTH-046, TC-AUTH-047, TC-AUTH-048, TC-AUTH-049, TC-AUTH-050 | 15 | 7/7 AC covered (deep) |
-| US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021 | 3 | 6/6 AC covered |
+| US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021, TC-AUTH-051, TC-AUTH-052, TC-AUTH-053, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057, TC-AUTH-058 | 11 | 6/6 AC covered (deep) |
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023 | 2 | 5/5 AC covered |
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025 | 2 | 6/6 AC covered |
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028 | 3 | 6/6 AC covered |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004 | 4 | -- |
-| **TOTAL** | | | **54 test cases** | **54** | **61/61 AC** |
+| **TOTAL** | | | **62 test cases** | **62** | **61/61 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -83,10 +83,49 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-048 | Roles management UI accessibility (WCAG 2.1 AA) | Accessibility | Medium | US-AUTH-006 | AC-1 |
 | TC-AUTH-049 | Permission evaluation adds no more than 5ms overhead per request | Performance | High | US-AUTH-006 | AC-4, FR-5, NFR-1 |
 | TC-AUTH-050 | Role and permission changes are audited in tenant audit log | Security | High | US-AUTH-006 | AC-2, AC-4, AC-6, FR-7, NFR-4 |
+| TC-AUTH-051 | Reserved subdomains bypass tenant resolution | Functional | High | US-AUTH-007 | AC-3, FR-1, FR-3, BR-2, BR-4 |
+| TC-AUTH-052 | Admin subdomain establishes system context with authorization enforcement | Security | Critical | US-AUTH-007 | AC-4, FR-1, FR-3, FR-4, FR-6, BR-3, BR-4 |
+| TC-AUTH-053 | Subdomain validation rejects invalid and boundary values | Security | High | US-AUTH-007 | AC-2, FR-2, FR-7, NFR-4, NFR-5, BR-1, BR-2, BR-5 |
+| TC-AUTH-054 | Resolved tenant context prevents cross-tenant data exposure | Security | Critical | US-AUTH-007 | AC-1, FR-1, FR-6, FR-10, BR-4 |
+| TC-AUTH-055 | Tenant resolution cache hit completes within 5 ms | Performance | High | US-AUTH-007 | AC-1, FR-5, FR-6, FR-9, NFR-1 |
+| TC-AUTH-056 | Cache miss falls back to PostgreSQL and repopulates Redis within 50 ms | Performance | High | US-AUTH-007 | AC-6, FR-5, FR-6, FR-9, NFR-2 |
+| TC-AUTH-057 | Redis outage falls back to PostgreSQL without failing tenant requests | Performance | High | US-AUTH-007 | AC-1, AC-6, FR-5, FR-6, NFR-3 |
+| TC-AUTH-058 | Static 404 and suspended workspace pages meet accessibility and information disclosure rules | Accessibility | Medium | US-AUTH-007 | AC-2, AC-5, FR-7, FR-8, NFR-5 |
 | TC-AUTH-ISO-001 | Tenant A user cannot authenticate as Tenant B | Security | Critical | US-AUTH-001, US-AUTH-007 | -- |
 | TC-AUTH-ISO-002 | JWT claims include correct tenant_id | Security | Critical | US-AUTH-002, US-AUTH-006 | -- |
 | TC-AUTH-ISO-003 | API rejects requests with mismatched tenant context | Security | Critical | US-AUTH-002, US-AUTH-007 | -- |
 | TC-AUTH-ISO-004 | RBAC cross-tenant isolation -- roles, permissions, and cache keys are tenant-scoped | Security | Critical | US-AUTH-006 | FR-2, FR-10, NFR-2, BR-1 |
+
+### US-AUTH-007 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Active tenant subdomain resolves and populates context | AC | TC-AUTH-019, TC-AUTH-054, TC-AUTH-055, TC-AUTH-057 | Direct |
+| AC-2: Unknown tenant returns static 404 with no exposed app/API | AC | TC-AUTH-020, TC-AUTH-053, TC-AUTH-058 | Direct |
+| AC-3: Reserved subdomains route without tenant resolution | AC | TC-AUTH-051 | Direct |
+| AC-4: Admin subdomain sets system context | AC | TC-AUTH-052 | Direct |
+| AC-5: Suspended tenant shows suspension notice and blocks login | AC | TC-AUTH-021, TC-AUTH-058 | Direct |
+| AC-6: Cache miss falls back to PostgreSQL and repopulates cache | AC | TC-AUTH-019, TC-AUTH-056, TC-AUTH-057 | Direct |
+| FR-1: Middleware runs before authentication and authorization | FR | TC-AUTH-019, TC-AUTH-051, TC-AUTH-052 | Direct |
+| FR-2: Host header subdomain extraction | FR | TC-AUTH-019, TC-AUTH-053 | Direct |
+| FR-3: Reserved subdomain list | FR | TC-AUTH-051, TC-AUTH-052 | Direct |
+| FR-4: `admin.yourhrm.com` sets system context | FR | TC-AUTH-052 | Direct |
+| FR-5: Redis lookup then PostgreSQL fallback | FR | TC-AUTH-019, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057 | Direct |
+| FR-6: `ITenantContext` fields are populated | FR | TC-AUTH-019, TC-AUTH-052, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057 | Direct |
+| FR-7: Not-found tenants short-circuit with static 404 | FR | TC-AUTH-020, TC-AUTH-053, TC-AUTH-058 | Direct |
+| FR-8: Non-accessible tenant state is preserved for downstream handling | FR | TC-AUTH-021, TC-AUTH-058 | Direct |
+| FR-9: Redis TTL and cache population | FR | TC-AUTH-019, TC-AUTH-055, TC-AUTH-056 | Direct |
+| FR-10: Tenant ID included in logs after resolution | FR | TC-AUTH-019, TC-AUTH-054 | Direct |
+| NFR-1: Cache hit overhead <= 5 ms | NFR | TC-AUTH-055 | Direct |
+| NFR-2: Cache miss P95 <= 50 ms | NFR | TC-AUTH-056 | Direct |
+| NFR-3: Redis outage graceful fallback | NFR | TC-AUTH-057 | Direct |
+| NFR-4: Valid subdomain format only | NFR | TC-AUTH-053 | Direct |
+| NFR-5: Static 404 does not leak platform information | NFR | TC-AUTH-020, TC-AUTH-053, TC-AUTH-058 | Direct |
+| BR-1: Unique immutable subdomain slug | BR | TC-AUTH-053 | Direct |
+| BR-2: Reserved subdomains cannot be claimed | BR | TC-AUTH-051, TC-AUTH-053 | Direct |
+| BR-3: System tenant special case | BR | TC-AUTH-052 | Direct |
+| BR-4: Tenant resolution required except allowed routes | BR | TC-AUTH-051, TC-AUTH-052, TC-AUTH-054 | Direct |
+| BR-5: Custom domains deferred to Phase 2 | BR | TC-AUTH-053 | Direct |
 
 ### US-AUTH-005 Detailed Requirements Traceability
 
@@ -154,8 +193,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-005 NFR Coverage | 3/3 covered (NFR-1, NFR-3, NFR-4) | >= 85% | PASS |
 | US-AUTH-005 BR Coverage | 5/5 (100%) | >= 100% | PASS |
 | US-AUTH-006 Requirement Coverage | 10/10 FR + 4/4 NFR + 7/7 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 8 (4 dedicated + 4 embedded) | >= 3 | PASS |
-| Security Test Cases | 23/54 (43%) | >= 30% | PASS |
+| US-AUTH-007 Requirement Coverage | 10/10 FR + 5/5 NFR + 5/5 BR = 100% | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 11 (4 dedicated + 7 embedded) | >= 3 | PASS |
+| Security Test Cases | 26/62 (42%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
 | API Endpoint Coverage | 26/26 (100%) | >= 90% | PASS |
 
