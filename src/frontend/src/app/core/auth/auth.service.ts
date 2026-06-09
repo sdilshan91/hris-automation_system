@@ -5,6 +5,7 @@ import { Observable, BehaviorSubject, throwError, of } from 'rxjs';
 import { tap, catchError, switchMap, finalize, filter, take } from 'rxjs/operators';
 import { ToastrService } from 'ngx-toastr';
 import { environment } from '../../../environments/environment';
+import { TenantService } from '../tenant/tenant.service';
 import {
   ILoginRequest,
   ILoginResponse,
@@ -29,6 +30,7 @@ export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
   private readonly toastr = inject(ToastrService);
+  private readonly tenantService = inject(TenantService);
 
   private readonly apiUrl = environment.apiBaseUrl;
 
@@ -326,6 +328,7 @@ export class AuthService {
     this.setAccessToken(response.accessToken);
     this.currentUser.set(response.user);
     this.currentTenant.set(response.tenant);
+    this.tenantService.setTenantFromAuth(response.tenant);
     this.permissions.set(response.permissions);
 
     // Decode roles from the JWT claims

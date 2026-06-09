@@ -60,6 +60,22 @@ public static class DependencyInjection
         // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
         services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
 
+        var redisConnectionString = configuration.GetConnectionString("Redis")
+            ?? configuration["Redis:ConnectionString"];
+
+        if (!string.IsNullOrWhiteSpace(redisConnectionString))
+        {
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConnectionString;
+                options.InstanceName = configuration["Redis:InstanceName"] ?? "hrm:";
+            });
+        }
+        else
+        {
+            services.AddDistributedMemoryCache();
+        }
+
         // Permission-based authorization
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

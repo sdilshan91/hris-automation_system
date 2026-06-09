@@ -28,6 +28,7 @@ public static class DbInitializer
 
     private static async Task SeedAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
+        var defaultEnabledModules = PermissionCatalog.ByModule.Keys.OrderBy(module => module).ToList();
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Subdomain == DefaultTenantSubdomain, ct);
@@ -40,12 +41,30 @@ public static class DbInitializer
                 Subdomain = DefaultTenantSubdomain,
                 Name = DefaultTenantName,
                 Status = TenantStatus.Active,
+                PlanId = "default",
+                EnabledModules = defaultEnabledModules,
                 ContactEmail = DefaultAdminEmail,
                 CreatedAt = DateTime.UtcNow,
             };
             db.Tenants.Add(tenant);
             await db.SaveChangesAsync(ct);
             logger.LogInformation("Seeded default admin tenant {Subdomain}", tenant.Subdomain);
+        }
+        else if (string.IsNullOrWhiteSpace(tenant.PlanId) || tenant.EnabledModules.Count == 0)
+        {
+            if (string.IsNullOrWhiteSpace(tenant.PlanId))
+            {
+                tenant.PlanId = "default";
+            }
+
+            if (tenant.EnabledModules.Count == 0)
+            {
+                tenant.EnabledModules = defaultEnabledModules;
+            }
+
+            tenant.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Updated default admin tenant metadata for {Subdomain}", tenant.Subdomain);
         }
 
         // Seed SystemAdmin role (platform-level) with all permissions

@@ -1,6 +1,9 @@
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace HRM.Api.Middleware;
 
@@ -19,6 +22,14 @@ namespace HRM.Api.Middleware;
 public sealed class TenantResolutionMiddleware
 {
     private const string DevTenantHeader = "X-Tenant-Subdomain";
+    private const string TenantCacheKeyPrefix = "t:subdomain:";
+    private const string WorkspaceNotFoundHtml = """
+        <!doctype html>
+        <html lang="en">
+        <head><meta charset="utf-8"><title>Workspace not found</title></head>
+        <body><main><h1>This workspace does not exist.</h1></main></body>
+        </html>
+        """;
 
     private readonly RequestDelegate _next;
     private readonly ILogger<TenantResolutionMiddleware> _logger;
@@ -100,34 +111,35 @@ public sealed class TenantResolutionMiddleware
         // Validate subdomain format (3-63 chars, lowercase alphanumeric + hyphens, no leading/trailing hyphens)
         if (!IsValidSubdomain(subdomain))
         {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { error = "This workspace does not exist." });
+            await WriteWorkspaceNotFoundAsync(context);
             return;
         }
 
-        // Look up tenant in database (skip Redis caching for now as per instructions)
-        var dbContext = context.RequestServices.GetRequiredService<AppDbContext>();
-        var tenant = await dbContext.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Subdomain == subdomain.ToLowerInvariant());
+        var tenant = await ResolveTenantAsync(context, subdomain.ToLowerInvariant());
 
         if (tenant is null)
         {
             _logger.LogWarning("Tenant not found for subdomain: {Subdomain}", subdomain);
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { error = "This workspace does not exist." });
+            await WriteWorkspaceNotFoundAsync(context);
             return;
         }
 
         // Populate tenant context
         var tenantCtx = context.RequestServices.GetRequiredService<ITenantContext>();
-        tenantCtx.SetTenant(tenant.Id, tenant.Subdomain, tenant.Status);
+        tenantCtx.SetTenant(
+            tenant.Id,
+            tenant.Subdomain,
+            tenant.Status,
+            tenant.Plan,
+            tenant.EnabledModules,
+            tenant.LogoUrl,
+            tenant.PrimaryColor);
 
         // Add tenant_id to Serilog log context
         using (Serilog.Context.LogContext.PushProperty("TenantId", tenant.Id))
         using (Serilog.Context.LogContext.PushProperty("TenantSubdomain", tenant.Subdomain))
+        using (Serilog.Context.LogContext.PushProperty("tenant_id", tenant.Id))
+        using (Serilog.Context.LogContext.PushProperty("tenant_subdomain", tenant.Subdomain))
         {
             await _next(context);
         }
@@ -162,6 +174,88 @@ public sealed class TenantResolutionMiddleware
     {
         if (subdomain.Length < 3 || subdomain.Length > 63) return false;
         if (subdomain.StartsWith('-') || subdomain.EndsWith('-')) return false;
-        return subdomain.All(c => char.IsLetterOrDigit(c) || c == '-');
+        return subdomain.All(c => c is >= 'a' and <= 'z' || c is >= '0' and <= '9' || c == '-');
     }
+
+    private async Task<ResolvedTenant?> ResolveTenantAsync(HttpContext context, string subdomain)
+    {
+        var cache = context.RequestServices.GetService<IDistributedCache>();
+        var cacheKey = $"{TenantCacheKeyPrefix}{subdomain}";
+
+        if (cache is not null)
+        {
+            try
+            {
+                var cached = await cache.GetStringAsync(cacheKey, context.RequestAborted);
+                if (!string.IsNullOrWhiteSpace(cached))
+                {
+                    var resolvedTenant = JsonSerializer.Deserialize<ResolvedTenant>(cached);
+                    if (resolvedTenant is not null)
+                    {
+                        return resolvedTenant;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tenant cache read failed for {Subdomain}; falling back to database", subdomain);
+            }
+        }
+
+        var dbContext = context.RequestServices.GetRequiredService<AppDbContext>();
+        var tenant = await dbContext.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(t => !t.IsDeleted)
+            .Where(t => t.Subdomain == subdomain)
+            .Select(t => new ResolvedTenant(
+                t.Id,
+                t.Subdomain,
+                t.Status,
+                t.PlanId,
+                t.EnabledModules,
+                t.LogoUrl,
+                t.PrimaryColor))
+            .FirstOrDefaultAsync(context.RequestAborted);
+
+        if (tenant is not null && cache is not null)
+        {
+            try
+            {
+                var ttlMinutes = _configuration.GetValue("Platform:TenantCacheTtlMinutes", 5);
+                var options = new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(ttlMinutes)
+                };
+
+                await cache.SetStringAsync(
+                    cacheKey,
+                    JsonSerializer.Serialize(tenant),
+                    options,
+                    context.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tenant cache write failed for {Subdomain}; continuing without cache", subdomain);
+            }
+        }
+
+        return tenant;
+    }
+
+    private static async Task WriteWorkspaceNotFoundAsync(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(WorkspaceNotFoundHtml);
+    }
+
+    private sealed record ResolvedTenant(
+        Guid Id,
+        string Subdomain,
+        TenantStatus Status,
+        string? Plan,
+        IReadOnlyCollection<string> EnabledModules,
+        string? LogoUrl,
+        string? PrimaryColor);
 }

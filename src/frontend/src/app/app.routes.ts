@@ -1,15 +1,31 @@
 import { Routes } from '@angular/router';
 import { authGuard, noAuthGuard, roleGuard } from './core/auth/auth.guard';
 import { mfaChallengeGuard, mfaEnrollGuard } from './core/auth/mfa.guard';
+import { tenantAvailabilityGuard } from './core/tenant/tenant.guard';
 import { AuthLayoutComponent } from './layouts/auth-layout/auth-layout.component';
 import { MainLayoutComponent } from './layouts/main-layout/main-layout.component';
 
 export const appRoutes: Routes = [
+  {
+    path: 'workspace-not-found',
+    loadComponent: () =>
+      import('./features/workspace/workspace-not-found.component').then(
+        (m) => m.WorkspaceNotFoundComponent
+      ),
+  },
+  {
+    path: 'tenant-suspended',
+    loadComponent: () =>
+      import('./features/workspace/tenant-suspended.component').then(
+        (m) => m.TenantSuspendedComponent
+      ),
+  },
+
   // ─── Auth routes (no auth required) ──────────────────────
   {
     path: 'auth',
     component: AuthLayoutComponent,
-    canActivate: [noAuthGuard],
+    canActivate: [tenantAvailabilityGuard, noAuthGuard],
     children: [
       {
         path: 'login',
@@ -40,6 +56,7 @@ export const appRoutes: Routes = [
   {
     path: 'auth/mfa',
     component: AuthLayoutComponent,
+    canActivate: [tenantAvailabilityGuard],
     children: [
       {
         path: 'challenge',
@@ -64,7 +81,7 @@ export const appRoutes: Routes = [
   {
     path: '',
     component: MainLayoutComponent,
-    canActivate: [authGuard],
+    canActivate: [tenantAvailabilityGuard, authGuard],
     children: [
       {
         path: 'dashboard',
