@@ -5,6 +5,30 @@ Multi-tenant HRM SaaS platform built with **Angular 20 + ASP.NET Core 10 + Postg
 Reference: `docs/hrm_technical_document_v4.0.md`
 Repo: `sdilshan91/hris-automation_system`
 
+## Engineering Discipline (how every agent should work)
+
+These behavioral rules apply to **all** agents and skills, in addition to the
+project rules below. They exist to cut wasted diff, rework, and late surprises.
+
+1. **Think before coding.** Don't assume — surface tradeoffs and ask when a
+   requirement is genuinely ambiguous. If there are multiple reasonable
+   interpretations, name them instead of silently picking one. Don't hide
+   confusion; a question before implementation is cheaper than a rewrite after.
+2. **Simplicity first.** Write the minimal code that solves the stated problem.
+   No speculative abstractions, unrequested flexibility, or error handling for
+   impossible cases. Self-check: *would a senior engineer call this overcomplicated?*
+3. **Surgical changes.** Touch only what the task requires; match adjacent style.
+   Clean up only the mess **your** change created (e.g. imports/vars *your* edit
+   orphaned) — don't refactor pre-existing dead code as a side quest. When a change
+   forces you to touch files outside the task's scope, **flag it explicitly** rather
+   than burying it. *Carve-out:* the `/implement-all` **remediation loop** is allowed
+   to edit sibling tests/contracts when a verified failure demands it — but it still
+   may never weaken, skip, or delete a test to go green.
+4. **Goal-driven execution.** Turn each task into verifiable success criteria
+   (build passes, tests green, AC met) before starting; for multi-step work keep a
+   short checkpointed plan. Strong criteria are what let the agent loop unattended;
+   "make it work" is not a success criterion.
+
 ## Execution Modes
 
 | Mode | Command | Requires | Best For |
@@ -60,11 +84,23 @@ codebase** — used to investigate, not to edit code. Driven by the `@browser-de
 
 | Command | Mode | Description |
 |---------|------|-------------|
+| `/implement-all [module\|US-ID]` | Local + MCP | **Loop driver.** Picks the next pending story from `user-stories/STATUS.md`, builds it end-to-end (BE + FE + QA in parallel), runs the full verify gate with an autonomous remediation loop, then commits + opens a PR. One story per call; rerun (or `/loop`) to continue. See below. |
 | `/orchestrate` | Local + MCP | Full pipeline: BA → (FE + BE + QA in parallel via worktrees) |
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
-| `/implement-story US-{ID}` | Local + MCP | Implement a story with all agents in parallel |
+| `/implement-story US-{ID}` | Local + MCP | Implement ONE specific story end-to-end (manual single-shot; does NOT touch STATUS.md) |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
+
+### `/implement-all` — autonomous story loop
+
+Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.md). Per story it:
+
+1. Picks the first `[ ]` story in `user-stories/STATUS.md` (scoped by module/ID arg, else priority order), marks it `[~]`, and cuts `feature/US-{MODULE}-{NNN}` from fresh `main`.
+2. Runs `@backend-dev` (incl. DB/EF/migrations), `@frontend-dev`, and `@qa-engineer` **in parallel** on non-overlapping paths; sub-agents do **not** commit.
+3. **Verify gate:** `dotnet build` → `dotnet test` → `npm run build` → `ng test` (headless). Any failure enters the **remediation loop** — up to 3 attempts that hand the verbatim errors to the owning dev agent and re-run the whole gate. It may **never** weaken/skip a test to go green; if it can't fix cleanly in 3 attempts it reverts the story to `[ ]` and stops without a PR.
+4. On green: commits `feat(US-XXX)`, pushes, opens a PR, flips STATUS.md `[~]`→`[x]` on `main`.
+
+Run continuously with `/loop /implement-all [scope]` — it re-fires until the scope reports "all done." Requires a **clean working tree on `main`**; only run unattended when you're willing to review the stacked PRs after the fact (they are opened, not auto-merged).
 
 ## Automation Hooks
 

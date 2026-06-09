@@ -41,10 +41,17 @@ This pacing matches the "pause for review" PR strategy: each PR can be reviewed 
      - @qa-engineer   → writes to test-cases/    (NO git commits)
    Each agent receives an explicit instruction: "Implement only this one story.
    Do NOT run git add/commit/push — the orchestrator commits at the end."
-10. After all three sub-agents return:
-    a. Run `dotnet build src/backend/HRM.sln` — abort and report on failure
-    b. Run `ng build` in src/frontend/ — abort and report on failure
-    c. Run `dotnet test src/backend/HRM.sln --no-build` — report failures but continue
+10. **Verify, then auto-remediate.** After all three sub-agents return, run the full
+    gate below IN ORDER. Do NOT abort on the first failure — collect every failure,
+    then hand them to the Remediation loop (see section below):
+    a. `dotnet build src/backend/HRM.sln`
+    b. `dotnet test src/backend/HRM.sln` (the HRM.Tests project)
+    c. `npm run build` (in src/frontend/)
+    d. `npx ng test --watch=false --browsers=ChromeHeadless` (in src/frontend/)
+    - If ALL FOUR pass → go to step 11.
+    - If ANY fail → enter the **Remediation loop**. Only if remediation exhausts its
+      attempts do you fall through to failure-mode handling (revert STATUS.md to `[ ]`,
+      leave the branch local, do NOT push or open a PR, report residual failures).
 11. Stage and commit the combined changes:
        feat(US-XXX): {story title}
 
@@ -67,6 +74,47 @@ This pacing matches the "pause for review" PR strategy: each PR can be reviewed 
     even before the PR merges. The PR itself doesn't need to merge to unblock the next story.)
 15. Print: "PR #N opened for US-XXX. Review and merge, then run /implement-all again."
 ```
+
+## Remediation loop (autonomous bug-fixing)
+
+This is what makes step 3 of the cycle **self-healing** instead of just reporting.
+It runs only when the step-10 gate has at least one failure. Hard cap:
+**MAX_ATTEMPTS = 3** across the whole loop (not per-check) to bound context and cost.
+
+For each attempt (1 → 3):
+
+1. **Classify** every current failure by the layer that owns it:
+   - backend compile error or `HRM.Tests` failure → `@backend-dev`
+   - frontend build (`npm run build`) or `ng test` failure → `@frontend-dev`
+   - a failure caused by a wrong test expectation or a missing fixture → the SAME
+     dev agent that owns that layer.
+2. **Dispatch** the owning agent(s) IN PARALLEL with a focused fixer prompt:
+   ```
+   These checks are failing for US-{ID}. Fix ONLY these failures in {layer}.
+   Do NOT touch the other layer. Do NOT run git add/commit/push.
+   Do NOT weaken, skip, or delete tests to go green.
+   Exact output:
+   {paste the verbatim build/test errors}
+   Re-run {the failing command} yourself and confirm it is green before returning.
+   ```
+3. **Re-run the FULL step-10 gate** (all four checks), not just the one that failed —
+   a backend fix can break the frontend contract and vice-versa.
+4. Decide:
+   - All green → go to step 11. Record for the PR body:
+     `Auto-remediation: {N} attempt(s) — fixed {short list}`.
+   - Still failing, attempts remain → loop again with the reduced failure set,
+     keeping the verbatim output in context so the loop converges.
+   - Attempts exhausted → **STOP**. Revert STATUS.md to `[ ]` with note
+     `blocked: {checks} failing after 3 fix attempts`, leave the branch local and
+     uncommitted, do NOT push or open a PR, and report the residual failures verbatim.
+
+**Guardrails (non-negotiable):**
+- Never disable, skip, `xit`/`fdescribe`, comment out, or delete a test to make it
+  pass. Never add `|| true`, `[Skip]`, or an `IgnoreQueryFilters`-style escape hatch
+  to mask a failure. If a green build would require any of these, STOP and report.
+- Prefer fixing the **code** over changing a test. Only change a test when it is
+  provably wrong, and say so explicitly in the PR body.
+- Never expand scope: remediation edits stay within the files this story touches.
 
 ## Argument parsing
 
@@ -106,7 +154,8 @@ IMPORTANT — DO NOT:
   - Touch src/frontend/ or test-cases/
   - Modify other stories' code
 
-Verify with `dotnet build src/backend/HRM.sln` before reporting back.
+Verify with `dotnet build src/backend/HRM.sln` AND `dotnet test src/backend/HRM.sln`
+(your new tests must pass) before reporting back.
 Report a 5-bullet summary of files created/modified.
 ```
 
@@ -133,7 +182,9 @@ IMPORTANT — DO NOT:
   - Touch src/backend/ or test-cases/
   - Modify other stories' code
 
-Verify with `ng build` (in src/frontend/) before reporting back.
+Verify with `npm run build` AND `npx ng test --watch=false --browsers=ChromeHeadless`
+(in src/frontend/; your new specs must pass and must not break sibling specs) before
+reporting back.
 Report a 5-bullet summary of files created/modified.
 ```
 
@@ -168,8 +219,9 @@ Report the list of TC-IDs you created and which ACs each covers.
 
 | Symptom | Action |
 |---|---|
-| `dotnet build` fails after agents finish | Print errors, leave branch local, mark STATUS.md back to `[ ]`, do NOT push or open PR. |
-| `ng build` fails | Same as above. |
+| Any step-10 check fails after agents finish | Enter the **Remediation loop** (≤3 attempts). Do NOT abort yet. |
+| Step-10 still failing after 3 remediation attempts | Print errors verbatim, leave branch local, mark STATUS.md back to `[ ]` (note `blocked: …`), do NOT push or open PR. |
+| Remediation would require weakening/skipping a test | STOP immediately, do NOT push, report — never mask a failure to go green. |
 | Sub-agent reports "blocked — missing dependency" | Mark STATUS.md `[~]` with note `blocked: <reason>`, do NOT branch/push, report to user. |
 | Working tree not clean at step 6 | Abort. Ask the user to commit/stash first. Never auto-stash. |
 | Story file missing or malformed | Abort. Ask the user to fix the story first. |
@@ -188,9 +240,14 @@ The built-in `/loop` skill will re-fire `/implement-all auth` after each complet
 ## State machine
 
 ```
-[ ] pending  ──/implement-all──►  [~] in-progress  ──build passes──►  [x] done (PR open)
-   ▲                                  │
-   └────────── build/agent failure ◄──┘
+[ ] pending ──/implement-all──► [~] in-progress ──agents done──► step-10 gate
+   ▲                                                                │
+   │                                              all 4 checks pass │──► [x] done (PR open)
+   │                                                                │
+   │                                          any check fails ──► Remediation loop (≤3)
+   │                                                                │   │
+   │                                              green within 3 ◄──┘   │
+   └──────────────── still red after 3 fix attempts ◄───────────────────┘
 ```
 
 The STATUS.md flip happens BEFORE the PR is merged, intentionally — the next `/implement-all` invocation should pick the next story even if you haven't merged the prior PR yet, otherwise the loop stalls. Branches stack on top of each other; if there's a dependency, the agent for story N+1 can read the un-merged code on `feature/US-XXX-N` and rebase if needed.
