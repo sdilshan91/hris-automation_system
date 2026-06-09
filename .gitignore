@@ -12,6 +12,11 @@
 # Claude Code local-only settings
 .claude/settings.local.json
 
+# Codex local-only settings and transient agent output
+.codex/settings.local.json
+.codex/tmp/
+.codex/runs/
+
 # OS
 Thumbs.db
 Desktop.ini
