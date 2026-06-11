@@ -42,7 +42,7 @@
 - [ ] US-CHR-001 — Add new employee with personal information
 - [ ] US-CHR-002 — View and edit employee profile
 - [ ] US-CHR-003 — Employee directory with search and filters
-- [ ] US-CHR-004 — Create and manage departments
+- [~] US-CHR-004 — Create and manage departments
 - [ ] US-CHR-005 — Create and manage job titles and positions
 - [ ] US-CHR-006 — Organization tree/hierarchy visualization
 - [ ] US-CHR-007 — Manage office locations
