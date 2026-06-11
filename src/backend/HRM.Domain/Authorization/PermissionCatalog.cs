@@ -9,6 +9,15 @@ namespace HRM.Domain.Authorization;
 /// </summary>
 public static class PermissionCatalog
 {
+    // ── Department Module (US-CHR-004) ────────────────────────────────
+    public static class Department
+    {
+        public const string View = "Department.View";
+        public const string Create = "Department.Create";
+        public const string Edit = "Department.Edit";
+        public const string Deactivate = "Department.Deactivate";
+    }
+
     // ── Employee Module ──────────────────────────────────────────────
     public static class Employee
     {
@@ -139,6 +148,9 @@ public static class PermissionCatalog
     /// </summary>
     public static IReadOnlyList<string> AllPermissions { get; } = new[]
     {
+        // Department
+        Department.View, Department.Create, Department.Edit, Department.Deactivate,
+
         // Employee
         Employee.ViewOwn, Employee.ViewTeam, Employee.ViewAll,
         Employee.Create, Employee.Edit, Employee.EditOwn, Employee.Delete, Employee.Export,
@@ -247,6 +259,7 @@ public static class PermissionCatalog
         BuiltInRoles.TenantOwner => AllPermissions,
         BuiltInRoles.TenantAdmin => new[]
         {
+            Department.View, Department.Create, Department.Edit, Department.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -264,6 +277,7 @@ public static class PermissionCatalog
         },
         BuiltInRoles.HRManager => new[]
         {
+            Department.View, Department.Create, Department.Edit, Department.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -277,6 +291,7 @@ public static class PermissionCatalog
         },
         BuiltInRoles.HROfficer => new[]
         {
+            Department.View, Department.Create, Department.Edit, Department.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,
@@ -287,6 +302,7 @@ public static class PermissionCatalog
         },
         BuiltInRoles.Manager => new[]
         {
+            Department.View,
             Employee.ViewTeam,
             Leave.ViewTeam, Leave.ApproveTeam,
             Attendance.ViewTeam,

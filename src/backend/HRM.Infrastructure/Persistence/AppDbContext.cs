@@ -28,6 +28,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Department> Departments => Set<Department>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,5 +49,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         modelBuilder.Entity<Tenant>()
             .HasQueryFilter(t => !t.IsDeleted);
+
+        // US-CHR-004: Department tenant isolation + soft-delete filter
+        modelBuilder.Entity<Department>()
+            .HasQueryFilter(d => !d.IsDeleted && (!_tenantContext.IsResolved || d.TenantId == _tenantContext.TenantId));
     }
 }
