@@ -1,8 +1,9 @@
 namespace HRM.Application.Features.Auth.DTOs;
 
 /// <summary>
-/// Response containing the tenant's current auth policy settings (MFA + session).
+/// Response containing the tenant's current auth policy settings (MFA + session + lockout).
 /// US-AUTH-009 FR-1: Session policy fields added.
+/// US-AUTH-010 FR-3: Lockout policy fields added.
 /// </summary>
 public sealed record TenantAuthSettingsResponse
 {
@@ -14,4 +15,9 @@ public sealed record TenantAuthSettingsResponse
     public int AbsoluteTimeoutHours { get; init; } = 24;
     public int MaxConcurrentSessions { get; init; } = 5;
     public string ConcurrentSessionStrategy { get; init; } = "revoke_oldest";
+
+    // Lockout policy settings (US-AUTH-010 FR-3)
+    public int MaxFailedAttempts { get; init; } = 5;
+    public int LockoutDurationMinutes { get; init; } = 15;
+    public bool ProgressiveLockoutEnabled { get; init; }
 }

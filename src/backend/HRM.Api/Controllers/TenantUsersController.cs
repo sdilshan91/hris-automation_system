@@ -52,6 +52,33 @@ public sealed class TenantUsersController : ControllerBase
         return Ok(ApiResponse.Ok("User roles updated successfully."));
     }
 
+    #region Account Lockout Management (US-AUTH-010)
+
+    /// <summary>
+    /// POST /api/v1/tenant/users/{id}/unlock
+    /// Admin unlocks a locked user account (AC-5).
+    /// BR-3: Admin may only unlock users with a membership in their tenant.
+    /// </summary>
+    [HttpPost("{id:guid}/unlock")]
+    [Authorize(Roles = "Tenant Admin,Tenant Owner")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UnlockUser(Guid id, CancellationToken cancellationToken)
+    {
+        var command = new UnlockUserCommand(id, _currentUser.TenantId, _currentUser.UserId);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse.Ok("User account unlocked successfully."));
+    }
+
+    #endregion
+
     #region Session Management (US-AUTH-009)
 
     /// <summary>

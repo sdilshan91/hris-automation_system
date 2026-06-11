@@ -25,6 +25,17 @@ public sealed class User
     /// </summary>
     public int MfaFailedAttemptCount { get; set; }
 
+    /// <summary>
+    /// Number of lockout cycles triggered (for progressive lockout).
+    /// Resets when 24 hours pass without a lockout.
+    /// </summary>
+    public int LockoutCount { get; set; }
+
+    /// <summary>
+    /// Timestamp of the most recent lockout event (for progressive lockout window calculation).
+    /// </summary>
+    public DateTime? LastLockoutAt { get; set; }
+
     // Navigation
     public ICollection<UserTenant> UserTenants { get; set; } = new List<UserTenant>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();

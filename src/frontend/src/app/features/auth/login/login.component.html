@@ -5,8 +5,33 @@
     <p class="login-subtitle">Sign in to your account to continue</p>
   </div>
 
-  <!-- Error alert -->
-  @if (errorMessage()) {
+  <!-- US-AUTH-010 AC-2/AC-3: Account lockout banner (distinct from generic errors) -->
+  @if (errorMessage() && isAccountLocked()) {
+    <div class="lockout-alert" role="alert" [@fadeIn]>
+      <div class="lockout-icon-wrapper">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          class="lockout-icon"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
+            clip-rule="evenodd"
+          />
+        </svg>
+      </div>
+      <div class="lockout-content">
+        <p class="lockout-title">Account locked</p>
+        <p class="lockout-message">{{ errorMessage() }}</p>
+      </div>
+    </div>
+  }
+
+  <!-- Generic error alert (non-lockout) -->
+  @if (errorMessage() && !isAccountLocked()) {
     <div class="error-alert" role="alert" [@fadeIn]>
       <svg
         xmlns="http://www.w3.org/2000/svg"

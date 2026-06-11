@@ -40,6 +40,11 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.FailedLoginCount)
             .HasDefaultValue(0);
 
+        builder.Property(u => u.LockoutCount)
+            .HasDefaultValue(0);
+
+        builder.Property(u => u.LastLockoutAt);
+
         builder.HasMany(u => u.UserTenants)
             .WithOne(ut => ut.User)
             .HasForeignKey(ut => ut.UserId)

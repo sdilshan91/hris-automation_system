@@ -134,6 +134,7 @@ try
 
     // ===== Background Jobs =====
     builder.Services.AddScoped<HRM.Api.Jobs.TokenCleanupJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.SendLockoutNotificationJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")

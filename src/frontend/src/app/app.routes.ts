@@ -144,6 +144,24 @@ export const appRoutes: Routes = [
             './features/auth/sessions/admin-user-sessions/admin-user-sessions.component'
           ).then((m) => m.AdminUserSessionsComponent),
       },
+      // Lockout policy settings (US-AUTH-010 FR-3)
+      {
+        path: 'admin/tenant/lockout-policy',
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+        loadComponent: () =>
+          import(
+            './features/auth/lockout/lockout-policy-settings/lockout-policy-settings.component'
+          ).then((m) => m.LockoutPolicySettingsComponent),
+      },
+      // Admin user lockout management (US-AUTH-010 AC-5 / FR-6)
+      {
+        path: 'admin/users/lockout',
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+        loadComponent: () =>
+          import(
+            './features/auth/lockout/admin-user-lockout/admin-user-lockout.component'
+          ).then((m) => m.AdminUserLockoutComponent),
+      },
       // Feature modules will be added here as they are implemented
       // {
       //   path: 'employees',

@@ -25,9 +25,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021, TC-AUTH-051, TC-AUTH-052, TC-AUTH-053, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057, TC-AUTH-058 | 11 | 6/6 AC covered (deep) |
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-069, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-074, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078, TC-AUTH-079, TC-AUTH-080, TC-AUTH-081, TC-AUTH-082 | 20 | 6/6 AC covered (deep) |
-| US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028 | 3 | 6/6 AC covered |
+| US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112 | 33 | 6/6 AC covered (deep) |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004 | 4 | -- |
-| **TOTAL** | | | **86 test cases** | **86** | **61/61 AC** |
+| **TOTAL** | | | **116 test cases** | **116** | **61/61 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -59,7 +59,7 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-024 | Concurrent session limit enforced | Functional | High | US-AUTH-009 | AC-1, AC-2, AC-3 |
 | TC-AUTH-025 | Oldest session terminated when limit exceeded | Functional | High | US-AUTH-009 | AC-1, AC-4, AC-5, AC-6 |
 | TC-AUTH-026 | Account locked after N failed attempts | Security | Critical | US-AUTH-010 | AC-1, AC-2 |
-| TC-AUTH-027 | Locked account cannot login | Security | Critical | US-AUTH-010 | AC-3 |
+| TC-AUTH-027 | Locked account cannot login | Security | Critical | US-AUTH-010 | AC-3, FR-5, NFR-4, BR-7 |
 | TC-AUTH-028 | Account unlocks after cooldown period | Functional | Critical | US-AUTH-010 | AC-4, AC-5, AC-6 |
 | TC-AUTH-029 | Forced MFA enrollment when tenant policy requires it for user's role | Functional | Critical | US-AUTH-005 | AC-1, FR-6, FR-7, BR-1, BR-5 |
 | TC-AUTH-030 | Login with valid recovery code | Functional | High | US-AUTH-005 | AC-7, FR-2, FR-5, BR-4 |
@@ -115,10 +115,73 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-080 | Session policy configuration via PUT /api/v1/tenant/auth-settings | Functional | High | US-AUTH-009 | AC-1, AC-2, AC-3, FR-1 |
 | TC-AUTH-081 | Idle timeout is reset by any authenticated API request (BR-6) | Functional | High | US-AUTH-009 | AC-2, FR-2, FR-4, BR-6 |
 | TC-AUTH-082 | System admin sessions follow system policy; impersonation sessions excluded from count | Security | High | US-AUTH-009 | AC-1, FR-1, FR-5, BR-2, BR-3 |
+| TC-AUTH-083 | Failed login increment below threshold returns generic 401 with no remaining-count leak | Functional | Critical | US-AUTH-010 | AC-1, FR-1, FR-3, NFR-4 |
+| TC-AUTH-084 | Lockout triggered at threshold -- locked_until set, lockout message, account_locked audit | Security | Critical | US-AUTH-010 | AC-2, FR-1, FR-2, FR-3, FR-7 |
+| TC-AUTH-085 | Correct credentials during active lockout are still rejected | Security | Critical | US-AUTH-010 | AC-3, FR-5, NFR-4 |
+| TC-AUTH-086 | Lockout expiry clears counters and allows successful login | Functional | Critical | US-AUTH-010 | AC-4, FR-2, FR-4 |
+| TC-AUTH-087 | Admin manual unlock clears counters, logs audit, and enables immediate login | Functional | Critical | US-AUTH-010 | AC-5, FR-6, FR-7 |
+| TC-AUTH-088 | Successful login below threshold resets failed_login_count to zero | Functional | Critical | US-AUTH-010 | AC-6, FR-1, FR-4 |
+| TC-AUTH-089 | Progressive lockout doubles duration after repeated lockout cycles | Functional | Critical | US-AUTH-010 | FR-9 |
+| TC-AUTH-090 | MFA failures count toward lockout threshold (shared counter) | Security | Critical | US-AUTH-010 | FR-10 |
+| TC-AUTH-091 | Password reset clears lockout state | Functional | Critical | US-AUTH-010 | BR-2, FR-4 |
+| TC-AUTH-092 | Global lockout blocks login on all tenants (cross-tenant lockout enforcement) | Security | Critical | US-AUTH-010 | BR-1, FR-1, FR-2, FR-5 |
+| TC-AUTH-093 | Tenant admin can only unlock users with membership in their own tenant | Security | Critical | US-AUTH-010 | BR-3, FR-6 |
+| TC-AUTH-094 | System admin can unlock any user regardless of tenant | Security | Critical | US-AUTH-010 | BR-4, FR-6, FR-7 |
+| TC-AUTH-095 | Lockout does NOT revoke active sessions (existing refresh tokens remain valid) | Security | High | US-AUTH-010 | BR-7 |
+| TC-AUTH-096 | Social login failures do NOT increment the lockout counter | Security | High | US-AUTH-010 | BR-6 |
+| TC-AUTH-097 | Timing-attack resistance -- locked vs non-existent accounts have similar response times | Security | Critical | US-AUTH-010 | NFR-4, FR-5 |
+| TC-AUTH-098 | Atomic increment of failed_login_count under concurrent login attempts | Security | Critical | US-AUTH-010 | NFR-2, FR-1 |
+| TC-AUTH-099 | Lockout state persists across API instance restarts | Security | High | US-AUTH-010 | NFR-5 |
+| TC-AUTH-100 | Lockout notification email sent within 60 seconds via Hangfire | Functional | High | US-AUTH-010 | FR-8, NFR-3 |
+| TC-AUTH-101 | Audit trail -- all lockout-related event types are recorded with correct metadata | Security | High | US-AUTH-010 | FR-7 |
+| TC-AUTH-102 | Lockout policy bounds -- maxFailedAttempts and lockoutDurationMinutes reject out-of-range values | Security | High | US-AUTH-010 | BR-5, FR-3 |
+| TC-AUTH-103 | Custom tenant lockout policy is applied (non-default maxFailedAttempts and duration) | Functional | High | US-AUTH-010 | FR-3, BR-5 |
+| TC-AUTH-104 | Lockout check overhead is within 2ms (NFR-1 performance) | Performance | High | US-AUTH-010 | NFR-1 |
+| TC-AUTH-105 | Failed login attempts accumulate across tenants toward global lockout | Security | High | US-AUTH-010 | BR-1, FR-1, FR-2 |
+| TC-AUTH-106 | Progressive lockout disabled -- duration remains constant across cycles | Functional | High | US-AUTH-010 | FR-9 |
+| TC-AUTH-107 | Non-admin user cannot call the unlock endpoint | Security | High | US-AUTH-010 | FR-6, BR-3 |
+| TC-AUTH-108 | Lockout UI displays correct error banner and admin UI shows locked badge | Functional | Medium | US-AUTH-010 | UI/UX Section 8 |
+| TC-AUTH-109 | Lockout error banner and admin lockout UI meet WCAG 2.1 AA accessibility standards | Accessibility | Medium | US-AUTH-010 | UI/UX Section 8, WCAG 2.1 AA |
+| TC-AUTH-110 | MFA-only failures trigger lockout (5 consecutive invalid TOTP codes) | Functional | High | US-AUTH-010 | FR-10 |
+| TC-AUTH-111 | Lockout at exact boundary -- threshold minus one does not lock, threshold locks | Security | High | US-AUTH-010 | AC-1, AC-2, FR-1, FR-2 |
+| TC-AUTH-112 | Unlock of an already-unlocked account is idempotent and non-destructive | Security | High | US-AUTH-010 | AC-5, FR-6 |
 | TC-AUTH-ISO-001 | Tenant A user cannot authenticate as Tenant B | Security | Critical | US-AUTH-001, US-AUTH-007 | -- |
 | TC-AUTH-ISO-002 | JWT claims include correct tenant_id | Security | Critical | US-AUTH-002, US-AUTH-006 | -- |
 | TC-AUTH-ISO-003 | API rejects requests with mismatched tenant context | Security | Critical | US-AUTH-002, US-AUTH-007 | -- |
 | TC-AUTH-ISO-004 | RBAC cross-tenant isolation -- roles, permissions, and cache keys are tenant-scoped | Security | Critical | US-AUTH-006 | FR-2, FR-10, NFR-2, BR-1 |
+
+### US-AUTH-010 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Failed login below threshold increments counter, returns generic 401, no remaining-count leak | AC | TC-AUTH-026, TC-AUTH-083, TC-AUTH-111 | Direct |
+| AC-2: Lockout at threshold sets locked_until, returns lockout message, logs account_locked audit | AC | TC-AUTH-026, TC-AUTH-084, TC-AUTH-111 | Direct |
+| AC-3: Correct credentials during lockout are still rejected | AC | TC-AUTH-027, TC-AUTH-085 | Direct |
+| AC-4: Lockout expiry clears counters and login succeeds | AC | TC-AUTH-028, TC-AUTH-086 | Direct |
+| AC-5: Admin manual unlock clears counters, logs account_unlocked_by_admin, immediate login | AC | TC-AUTH-028, TC-AUTH-087, TC-AUTH-112 | Direct |
+| AC-6: Successful login below threshold resets failed_login_count | AC | TC-AUTH-028, TC-AUTH-088 | Direct |
+| FR-1: Track consecutive failed login attempts in failed_login_count | FR | TC-AUTH-026, TC-AUTH-083, TC-AUTH-084, TC-AUTH-088, TC-AUTH-098, TC-AUTH-105, TC-AUTH-111 | Direct |
+| FR-2: Set locked_until to now + lockoutDuration on reaching max attempts | FR | TC-AUTH-026, TC-AUTH-084, TC-AUTH-086, TC-AUTH-089, TC-AUTH-092, TC-AUTH-105, TC-AUTH-111 | Direct |
+| FR-3: Lockout policy configurable per tenant (maxFailedAttempts, lockoutDurationMinutes) | FR | TC-AUTH-026, TC-AUTH-083, TC-AUTH-084, TC-AUTH-102, TC-AUTH-103 | Direct |
+| FR-4: On success reset failed_login_count to 0 and locked_until to null | FR | TC-AUTH-028, TC-AUTH-086, TC-AUTH-088, TC-AUTH-091 | Direct |
+| FR-5: Check locked_until before verifying credentials | FR | TC-AUTH-027, TC-AUTH-085, TC-AUTH-092, TC-AUTH-097 | Direct |
+| FR-6: Tenant admins can unlock accounts via user management | FR | TC-AUTH-028, TC-AUTH-087, TC-AUTH-093, TC-AUTH-094, TC-AUTH-107, TC-AUTH-112 | Direct |
+| FR-7: Lockout and unlock events in tenant + system audit log | FR | TC-AUTH-026, TC-AUTH-084, TC-AUTH-087, TC-AUTH-094, TC-AUTH-101 | Direct |
+| FR-8: Notification email on lockout | FR | TC-AUTH-026, TC-AUTH-100 | Direct |
+| FR-9: Progressive lockout -- duration doubles after repeated cycles | FR | TC-AUTH-089, TC-AUTH-106 | Direct |
+| FR-10: MFA failures count toward lockout threshold | FR | TC-AUTH-090, TC-AUTH-110 | Direct |
+| NFR-1: Lockout check adds <= 2 ms overhead | NFR | TC-AUTH-104 | Direct |
+| NFR-2: Atomic failed_login_count increment (database-level) | NFR | TC-AUTH-098 | Direct |
+| NFR-3: Lockout notification sent within 60 seconds via Hangfire | NFR | TC-AUTH-100 | Direct |
+| NFR-4: Timing-attack resistance (locked vs unlocked response time indistinguishable) | NFR | TC-AUTH-027, TC-AUTH-083, TC-AUTH-085, TC-AUTH-097 | Direct |
+| NFR-5: Lockout state in database, persists across restarts | NFR | TC-AUTH-099 | Direct |
+| BR-1: Lockout per global user account, blocks all tenants | BR | TC-AUTH-092, TC-AUTH-105 | Direct |
+| BR-2: Password reset clears lockout | BR | TC-AUTH-091 | Direct |
+| BR-3: Tenant admin can only unlock own-tenant users | BR | TC-AUTH-093, TC-AUTH-107 | Direct |
+| BR-4: System admin can unlock any user | BR | TC-AUTH-094 | Direct |
+| BR-5: Policy bounds (maxFailedAttempts 3-10, lockoutDurationMinutes 5-60) | BR | TC-AUTH-102, TC-AUTH-103 | Direct |
+| BR-6: Social login failures do not increment counter | BR | TC-AUTH-096 | Direct |
+| BR-7: Lockout does not revoke active sessions | BR | TC-AUTH-027, TC-AUTH-095 | Direct |
 
 ### US-AUTH-009 Detailed Requirements Traceability
 
@@ -280,10 +343,11 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-007 Requirement Coverage | 10/10 FR + 5/5 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-008 Requirement Coverage | 9/9 FR + 4/4 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-009 Requirement Coverage | 10/10 FR + 5/5 NFR + 6/6 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 19 (4 dedicated + 15 embedded) | >= 3 | PASS |
-| Security Test Cases | 34/86 (40%) | >= 30% | PASS |
+| US-AUTH-010 Requirement Coverage | 10/10 FR + 5/5 NFR + 7/7 BR = 100% | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 23 (4 dedicated + 19 embedded) | >= 3 | PASS |
+| Security Test Cases | 50/116 (43%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
-| API Endpoint Coverage | 30/30 (100%) | >= 90% | PASS |
+| API Endpoint Coverage | 31/31 (100%) | >= 90% | PASS |
 
 ---
 

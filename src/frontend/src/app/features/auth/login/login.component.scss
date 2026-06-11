@@ -36,6 +36,33 @@
   @apply w-4 h-4 flex-shrink-0 text-red-500;
 }
 
+/* ─── Account Lockout Banner (US-AUTH-010 AC-2/AC-3) ── */
+
+.lockout-alert {
+  @apply flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200
+    px-4 py-3.5 mb-6;
+}
+
+.lockout-icon-wrapper {
+  @apply flex-shrink-0 mt-0.5;
+}
+
+.lockout-icon {
+  @apply w-5 h-5 text-amber-600;
+}
+
+.lockout-content {
+  @apply flex-1 min-w-0;
+}
+
+.lockout-title {
+  @apply text-sm font-semibold text-amber-800;
+}
+
+.lockout-message {
+  @apply mt-0.5 text-sm text-amber-700 leading-relaxed;
+}
+
 /* ─── Form ────────────────────────────────────── */
 
 .login-form,

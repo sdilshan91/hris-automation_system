@@ -168,6 +168,47 @@ describe('AuthService', () => {
     req.flush({ message: 'ok' });
   });
 
+  // ─── Account Lockout (US-AUTH-010) ──────────────────────
+
+  it('unlocks a user account with credentials', () => {
+    service.unlockUser('user-locked').subscribe((resp) => {
+      expect(resp.message).toBe('Account unlocked');
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/tenant/users/user-locked/unlock`
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeNull();
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush({ message: 'Account unlocked' });
+  });
+
+  it('fetches tenant users list with credentials', () => {
+    service.getTenantUsers().subscribe((users) => {
+      expect(users.length).toBe(1);
+      expect(users[0].email).toBe('alice@acme.com');
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/tenant/users`
+    );
+    expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush([
+      {
+        userId: 'user-1',
+        email: 'alice@acme.com',
+        displayName: 'Alice Smith',
+        roles: ['Employee'],
+        isActive: true,
+        lockedUntil: null,
+        failedLoginCount: 0,
+        lastLoginAt: '2026-06-01T10:00:00Z',
+      },
+    ]);
+  });
+
   // ─── Tenant switch ──────────────────────────────────────
 
   it('replaces tenant-scoped claims before redirecting after a switch', () => {

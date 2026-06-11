@@ -152,7 +152,7 @@ export interface IMfaLoginVerifyRequest {
   email: string;
 }
 
-/** Tenant-level authentication settings (US-AUTH-005 + US-AUTH-009) */
+/** Tenant-level authentication settings (US-AUTH-005 + US-AUTH-009 + US-AUTH-010) */
 export interface ITenantAuthSettings {
   mfaPolicy: 'off' | 'optional' | 'required';
   mfaRequiredRoles: string[];
@@ -162,6 +162,10 @@ export interface ITenantAuthSettings {
   absoluteTimeoutHours?: number;
   maxConcurrentSessions?: number;
   concurrentSessionStrategy?: ConcurrentSessionStrategy;
+  // Lockout policy fields (US-AUTH-010 FR-3) -- optional; backend provides defaults.
+  maxFailedAttempts?: number;
+  lockoutDurationMinutes?: number;
+  progressiveLockoutEnabled?: boolean;
 }
 
 /** Concurrent session strategy (US-AUTH-009 FR-1) */
@@ -177,3 +181,39 @@ export interface ISessionPolicyUpdate {
 
 /** MFA enrollment step for the wizard UI */
 export type MfaEnrollStep = 'qr' | 'verify' | 'recovery';
+
+// ─── Account Lockout (US-AUTH-010) ─────────────────────────────
+
+/** Lockout policy fields within tenant auth settings (US-AUTH-010 FR-3) */
+export interface ILockoutPolicy {
+  maxFailedAttempts: number;
+  lockoutDurationMinutes: number;
+  progressiveLockoutEnabled: boolean;
+}
+
+/**
+ * Tenant user summary for admin user management lists.
+ * Includes lockout state so admins can see locked accounts (US-AUTH-010 AC-5).
+ */
+export interface ITenantUser {
+  userId: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+  roles: string[];
+  isActive: boolean;
+  /** Null when not locked; ISO timestamp of lockout expiry when locked */
+  lockedUntil: string | null;
+  failedLoginCount: number;
+  lastLoginAt: string | null;
+}
+
+/**
+ * Error body shape the backend returns on a lockout 401.
+ * The `code` field distinguishes a lockout from a generic credential failure.
+ */
+export interface ILoginErrorResponse {
+  message: string;
+  code?: 'account_locked' | 'invalid_credentials' | string;
+  lockoutMinutesRemaining?: number;
+}
