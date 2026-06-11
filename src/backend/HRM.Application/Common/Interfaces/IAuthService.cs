@@ -27,4 +27,10 @@ public interface IAuthService
     // Tenant auth settings
     Task<Result<TenantAuthSettingsResponse>> GetTenantAuthSettingsAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<Result> UpdateTenantAuthSettingsAsync(Guid tenantId, TenantAuthSettingsRequest request, CancellationToken cancellationToken = default);
+
+    // Session management (US-AUTH-009)
+    Task<Result<IReadOnlyList<SessionDto>>> GetUserSessionsAsync(Guid userId, Guid tenantId, Guid? currentSessionId, CancellationToken cancellationToken = default);
+    Task<Result> RevokeSessionAsync(Guid sessionId, Guid userId, Guid tenantId, Guid? currentSessionId, bool isAdminAction, CancellationToken cancellationToken = default);
+    Task<Result> UpdateSessionActivityAsync(Guid sessionId, CancellationToken cancellationToken = default);
+    Task<Guid?> GetSessionIdFromTokenAsync(string refreshToken, CancellationToken cancellationToken = default);
 }

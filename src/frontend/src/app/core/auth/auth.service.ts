@@ -186,6 +186,34 @@ export class AuthService {
     );
   }
 
+  // ─── Admin Session Management (US-AUTH-009) ─────────────
+
+  getUserSessions(userId: string): Observable<ISession[]> {
+    return this.http.get<ISession[]>(
+      `${this.apiUrl}/tenant/users/${userId}/sessions`,
+      { withCredentials: true }
+    );
+  }
+
+  revokeUserSession(userId: string, sessionId?: string): Observable<IMessageResponse> {
+    const body = sessionId ? { sessionId } : {};
+    return this.http.post<IMessageResponse>(
+      `${this.apiUrl}/tenant/users/${userId}/sessions/revoke`,
+      body,
+      { withCredentials: true }
+    );
+  }
+
+  // ─── Session Keep-Alive (US-AUTH-009 BR-6) ──────────────
+
+  keepAlive(): Observable<IMessageResponse> {
+    return this.http.post<IMessageResponse>(
+      `${this.apiUrl}/auth/me/keep-alive`,
+      null,
+      { withCredentials: true }
+    );
+  }
+
   // ─── MFA Enrollment (US-AUTH-005) ───────────────────────
 
   enrollMfa(): Observable<IMfaEnrollResponse> {

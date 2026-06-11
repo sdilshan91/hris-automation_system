@@ -51,7 +51,7 @@ public sealed class TenantAuthSettingsController : ControllerBase
     /// Updates the tenant's MFA policy. Restricted to Tenant Admin and System Admin roles.
     /// </summary>
     [HttpPut]
-    [Authorize(Roles = "Tenant Admin,System Admin")]
+    [Authorize(Roles = "Tenant Admin,Tenant Owner,System Admin")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]

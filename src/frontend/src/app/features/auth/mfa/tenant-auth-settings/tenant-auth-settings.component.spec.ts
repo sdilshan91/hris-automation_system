@@ -18,6 +18,10 @@ describe('TenantAuthSettingsComponent', () => {
   const mockSettings: ITenantAuthSettings = {
     mfaPolicy: 'optional',
     mfaRequiredRoles: ['Tenant Admin'],
+    idleTimeoutMinutes: 60,
+    absoluteTimeoutHours: 24,
+    maxConcurrentSessions: 5,
+    concurrentSessionStrategy: 'deny_new',
   };
 
   beforeEach(async () => {

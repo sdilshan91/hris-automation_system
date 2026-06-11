@@ -118,6 +118,32 @@ export const appRoutes: Routes = [
             './features/auth/mfa/tenant-auth-settings/tenant-auth-settings.component'
           ).then((m) => m.TenantAuthSettingsComponent),
       },
+      // Session policy settings (US-AUTH-009 FR-1)
+      {
+        path: 'admin/tenant/session-policy',
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+        loadComponent: () =>
+          import(
+            './features/auth/sessions/session-policy-settings/session-policy-settings.component'
+          ).then((m) => m.SessionPolicySettingsComponent),
+      },
+      // My active sessions (US-AUTH-009 AC-6)
+      {
+        path: 'auth/sessions',
+        loadComponent: () =>
+          import(
+            './features/auth/sessions/my-sessions/my-sessions.component'
+          ).then((m) => m.MySessionsComponent),
+      },
+      // Admin view of user sessions (US-AUTH-009 AC-4/AC-5)
+      {
+        path: 'admin/users/:userId/sessions',
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+        loadComponent: () =>
+          import(
+            './features/auth/sessions/admin-user-sessions/admin-user-sessions.component'
+          ).then((m) => m.AdminUserSessionsComponent),
+      },
       // Feature modules will be added here as they are implemented
       // {
       //   path: 'employees',

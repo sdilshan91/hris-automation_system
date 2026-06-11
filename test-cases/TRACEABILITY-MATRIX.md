@@ -3,7 +3,7 @@ title: Requirements Traceability Matrix
 project: HRM SaaS Platform
 created: 2026-05-11
 status: draft
-last_updated: 2026-06-09
+last_updated: 2026-06-11
 ---
 
 # Requirements Traceability Matrix
@@ -24,10 +24,10 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-006 | Role-based access control (RBAC) | Must Have | TC-AUTH-016, TC-AUTH-017, TC-AUTH-018, TC-AUTH-039, TC-AUTH-040, TC-AUTH-041, TC-AUTH-042, TC-AUTH-043, TC-AUTH-044, TC-AUTH-045, TC-AUTH-046, TC-AUTH-047, TC-AUTH-048, TC-AUTH-049, TC-AUTH-050 | 15 | 7/7 AC covered (deep) |
 | US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021, TC-AUTH-051, TC-AUTH-052, TC-AUTH-053, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057, TC-AUTH-058 | 11 | 6/6 AC covered (deep) |
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
-| US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025 | 2 | 6/6 AC covered |
+| US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-069, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-074, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078, TC-AUTH-079, TC-AUTH-080, TC-AUTH-081, TC-AUTH-082 | 20 | 6/6 AC covered (deep) |
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028 | 3 | 6/6 AC covered |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004 | 4 | -- |
-| **TOTAL** | | | **68 test cases** | **68** | **61/61 AC** |
+| **TOTAL** | | | **86 test cases** | **86** | **61/61 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -57,7 +57,7 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-022 | User switches tenant without re-auth | Functional | High | US-AUTH-008 | AC-1, AC-2, AC-5 |
 | TC-AUTH-023 | User cannot switch to tenant they don't belong to | Security | Critical | US-AUTH-008 | AC-3, AC-4 |
 | TC-AUTH-024 | Concurrent session limit enforced | Functional | High | US-AUTH-009 | AC-1, AC-2, AC-3 |
-| TC-AUTH-025 | Oldest session terminated when limit exceeded | Functional | High | US-AUTH-009 | AC-4, AC-5, AC-6 |
+| TC-AUTH-025 | Oldest session terminated when limit exceeded | Functional | High | US-AUTH-009 | AC-1, AC-4, AC-5, AC-6 |
 | TC-AUTH-026 | Account locked after N failed attempts | Security | Critical | US-AUTH-010 | AC-1, AC-2 |
 | TC-AUTH-027 | Locked account cannot login | Security | Critical | US-AUTH-010 | AC-3 |
 | TC-AUTH-028 | Account unlocks after cooldown period | Functional | Critical | US-AUTH-010 | AC-4, AC-5, AC-6 |
@@ -97,10 +97,60 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-062 | Tenant switch blocks impersonation and prevents cross-tenant data exposure | Security | Critical | US-AUTH-008 | AC-2, AC-3, AC-5, FR-3, FR-5, FR-7, BR-4, NFR-3, NFR-4 |
 | TC-AUTH-063 | Source session remains valid and MFA-required target triggers enrollment | Functional | High | US-AUTH-008 | AC-2, AC-5, FR-3, FR-4, FR-6, FR-8, BR-1, BR-3 |
 | TC-AUTH-064 | My-tenants cache performance and invalidation | Performance | Medium | US-AUTH-008 | AC-1, FR-1, FR-9, NFR-1, NFR-2, NFR-3, NFR-4, BR-5 |
+| TC-AUTH-065 | Concurrent session limit -- deny_new strategy blocks login at limit | Functional | Critical | US-AUTH-009 | AC-1, FR-1, FR-5, BR-1 |
+| TC-AUTH-066 | Concurrent session limit -- revoke_oldest strategy evicts oldest session | Functional | Critical | US-AUTH-009 | AC-1, FR-1, FR-5, FR-9, BR-1 |
+| TC-AUTH-067 | Idle timeout expires session and returns 401 on refresh | Functional | Critical | US-AUTH-009 | AC-2, FR-1, FR-2, FR-4, FR-9, BR-1, BR-6 |
+| TC-AUTH-068 | Absolute timeout forces re-authentication regardless of activity | Functional | Critical | US-AUTH-009 | AC-3, FR-1, FR-3, FR-9, BR-1 |
+| TC-AUTH-069 | Admin views a user's active sessions with device, browser, IP, and timestamps | Functional | High | US-AUTH-009 | AC-4, FR-6, NFR-5, BR-1 |
+| TC-AUTH-070 | Admin revokes a specific session and revokes all sessions for a user | Functional | Critical | US-AUTH-009 | AC-5, FR-8, FR-9, BR-1, BR-5 |
+| TC-AUTH-071 | User views own sessions and revokes a non-current session | Functional | High | US-AUTH-009 | AC-6, FR-7, FR-8, FR-9, BR-4 |
+| TC-AUTH-072 | User cannot revoke their own current session (BR-4) | Functional | High | US-AUTH-009 | AC-6, FR-8, BR-4 |
+| TC-AUTH-073 | Negative -- revoke non-existent session and non-admin calls admin endpoint | Security | High | US-AUTH-009 | AC-5, AC-6, FR-6, FR-8 |
+| TC-AUTH-074 | Boundary -- exactly at maxConcurrentSessions and timeout at exact threshold | Functional | High | US-AUTH-009 | AC-1, AC-2, AC-3, FR-1, FR-2, FR-3, FR-5, BR-1 |
+| TC-AUTH-075 | Cross-tenant session isolation -- policies and sessions are tenant-scoped | Security | Critical | US-AUTH-009 | AC-1, AC-4, AC-5, FR-1, FR-5, FR-6, FR-8, NFR-5, BR-1 |
+| TC-AUTH-076 | Session metadata is not exposed to other users (NFR-5) | Security | High | US-AUTH-009 | AC-4, AC-6, FR-6, FR-7, NFR-5 |
+| TC-AUTH-077 | Session list P95 <= 200 ms and last_active_at update overhead <= 2 ms | Performance | High | US-AUTH-009 | AC-4, AC-6, FR-4, FR-6, FR-7, NFR-1, NFR-2, NFR-3 |
+| TC-AUTH-078 | Audit trail records all session management event types | Security | High | US-AUTH-009 | AC-1, AC-2, AC-3, AC-5, AC-6, FR-9 |
+| TC-AUTH-079 | Hangfire background job cleans up expired and revoked refresh tokens | Functional | High | US-AUTH-009 | FR-10 |
+| TC-AUTH-080 | Session policy configuration via PUT /api/v1/tenant/auth-settings | Functional | High | US-AUTH-009 | AC-1, AC-2, AC-3, FR-1 |
+| TC-AUTH-081 | Idle timeout is reset by any authenticated API request (BR-6) | Functional | High | US-AUTH-009 | AC-2, FR-2, FR-4, BR-6 |
+| TC-AUTH-082 | System admin sessions follow system policy; impersonation sessions excluded from count | Security | High | US-AUTH-009 | AC-1, FR-1, FR-5, BR-2, BR-3 |
 | TC-AUTH-ISO-001 | Tenant A user cannot authenticate as Tenant B | Security | Critical | US-AUTH-001, US-AUTH-007 | -- |
 | TC-AUTH-ISO-002 | JWT claims include correct tenant_id | Security | Critical | US-AUTH-002, US-AUTH-006 | -- |
 | TC-AUTH-ISO-003 | API rejects requests with mismatched tenant context | Security | Critical | US-AUTH-002, US-AUTH-007 | -- |
 | TC-AUTH-ISO-004 | RBAC cross-tenant isolation -- roles, permissions, and cache keys are tenant-scoped | Security | Critical | US-AUTH-006 | FR-2, FR-10, NFR-2, BR-1 |
+
+### US-AUTH-009 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Concurrent session limit enforced per strategy | AC | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-074, TC-AUTH-075, TC-AUTH-078, TC-AUTH-080, TC-AUTH-082 | Direct |
+| AC-2: Idle timeout revokes refresh token and returns 401 | AC | TC-AUTH-024, TC-AUTH-067, TC-AUTH-074, TC-AUTH-075, TC-AUTH-078, TC-AUTH-080, TC-AUTH-081 | Direct |
+| AC-3: Absolute timeout forces re-authentication | AC | TC-AUTH-024, TC-AUTH-068, TC-AUTH-074, TC-AUTH-078, TC-AUTH-080 | Direct |
+| AC-4: Admin views active sessions with metadata | AC | TC-AUTH-025, TC-AUTH-069, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 | Direct |
+| AC-5: Admin revokes specific or all sessions; audit logged; forced re-auth | AC | TC-AUTH-025, TC-AUTH-070, TC-AUTH-073, TC-AUTH-075, TC-AUTH-078 | Direct |
+| AC-6: Self session view and self revoke; current session not revocable | AC | TC-AUTH-025, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078 | Direct |
+| FR-1: Session policy configurable per tenant via PUT /api/v1/tenant/auth-settings | FR | TC-AUTH-024, TC-AUTH-065, TC-AUTH-066, TC-AUTH-074, TC-AUTH-075, TC-AUTH-080, TC-AUTH-082 | Direct |
+| FR-2: Refresh endpoint checks idle timeout via last_active_at | FR | TC-AUTH-067, TC-AUTH-074, TC-AUTH-081 | Direct |
+| FR-3: Refresh endpoint checks absolute timeout via issued_at | FR | TC-AUTH-068, TC-AUTH-074 | Direct |
+| FR-4: last_active_at updated on each authenticated request (debounced) | FR | TC-AUTH-067, TC-AUTH-077, TC-AUTH-081 | Direct |
+| FR-5: Concurrent session check at login (count non-revoked, non-expired tokens) | FR | TC-AUTH-024, TC-AUTH-065, TC-AUTH-066, TC-AUTH-074, TC-AUTH-075, TC-AUTH-082 | Direct |
+| FR-6: Admin sessions endpoint GET /api/v1/tenant/users/{id}/sessions | FR | TC-AUTH-069, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 | Direct |
+| FR-7: Self sessions endpoint GET /api/v1/auth/me/sessions | FR | TC-AUTH-025, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 | Direct |
+| FR-8: Session revocation endpoints (admin and self) | FR | TC-AUTH-025, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-076 | Direct |
+| FR-9: All session management actions recorded in audit log | FR | TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-070, TC-AUTH-071, TC-AUTH-078 | Direct |
+| FR-10: Hangfire job cleans up expired/revoked tokens | FR | TC-AUTH-079 | Direct |
+| NFR-1: last_active_at tracking adds <= 2 ms overhead | NFR | TC-AUTH-077 | Direct |
+| NFR-2: Concurrent session counting performant with index | NFR | TC-AUTH-077 | Direct |
+| NFR-3: Session list queries P95 <= 200 ms | NFR | TC-AUTH-077 | Direct |
+| NFR-4: Clock drift handled gracefully (NTP, <= 1s) | NFR | TC-AUTH-074 | Direct |
+| NFR-5: Session metadata only visible to owner and admins | NFR | TC-AUTH-069, TC-AUTH-075, TC-AUTH-076 | Direct |
+| BR-1: Session policies are per-tenant | BR | TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-075, TC-AUTH-080 | Direct |
+| BR-2: System admin sessions follow system-level policies | BR | TC-AUTH-082 | Direct |
+| BR-3: Impersonation sessions excluded from concurrent count | BR | TC-AUTH-082 | Direct |
+| BR-4: Current session cannot be self-revoked | BR | TC-AUTH-072 | Direct |
+| BR-5: Admin revocation triggers notification to affected user | BR | TC-AUTH-070 | Direct |
+| BR-6: Idle timeout reset by any authenticated API request | BR | TC-AUTH-067, TC-AUTH-081 | Direct |
 
 ### US-AUTH-008 Detailed Requirements Traceability
 
@@ -229,10 +279,11 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-006 Requirement Coverage | 10/10 FR + 4/4 NFR + 7/7 BR = 100% | >= 85% | PASS |
 | US-AUTH-007 Requirement Coverage | 10/10 FR + 5/5 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-008 Requirement Coverage | 9/9 FR + 4/4 NFR + 5/5 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 17 (4 dedicated + 13 embedded) | >= 3 | PASS |
-| Security Test Cases | 29/68 (43%) | >= 30% | PASS |
+| US-AUTH-009 Requirement Coverage | 10/10 FR + 5/5 NFR + 6/6 BR = 100% | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 19 (4 dedicated + 15 embedded) | >= 3 | PASS |
+| Security Test Cases | 34/86 (40%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
-| API Endpoint Coverage | 26/26 (100%) | >= 90% | PASS |
+| API Endpoint Coverage | 30/30 (100%) | >= 90% | PASS |
 
 ---
 

@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Auth.DTOs;
@@ -290,7 +291,7 @@ public sealed class AuthService : IAuthService
             return Result<RefreshTokenResponse>.Failure("Account is inactive.", 401);
         }
 
-        // Check idle timeout
+        // Check idle timeout (US-AUTH-009 AC-2)
         if (storedToken.LastActiveAt.HasValue)
         {
             var idleMinutes = (DateTime.UtcNow - storedToken.LastActiveAt.Value).TotalMinutes;
@@ -298,16 +299,18 @@ public sealed class AuthService : IAuthService
             {
                 storedToken.RevokedAt = DateTime.UtcNow;
                 await _dbContext.SaveChangesAsync(cancellationToken);
+                await WriteAuditLogAsync(storedToken.UserId, "session_expired_idle", ipAddress, userAgent, cancellationToken, storedToken.TenantId);
                 return Result<RefreshTokenResponse>.Failure("Session expired due to inactivity.", 401);
             }
         }
 
-        // Check absolute timeout
+        // Check absolute timeout (US-AUTH-009 AC-3)
         var absoluteHours = (DateTime.UtcNow - storedToken.IssuedAt).TotalHours;
         if (absoluteHours > tenant.AbsoluteTimeoutHours)
         {
             storedToken.RevokedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
+            await WriteAuditLogAsync(storedToken.UserId, "session_expired_absolute", ipAddress, userAgent, cancellationToken, storedToken.TenantId);
             return Result<RefreshTokenResponse>.Failure("Session expired. Please log in again.", 401);
         }
 
@@ -476,9 +479,13 @@ public sealed class AuthService : IAuthService
             token.RevokedAt = DateTime.UtcNow;
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        if (tokens.Count > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await WriteAuditLogAsync(userId, "session_revoked_by_admin", null, null, cancellationToken, tenantId);
+        }
 
-        _logger.LogInformation("All sessions revoked for user {UserId} in tenant {TenantId}", userId, tenantId);
+        _logger.LogInformation("All sessions revoked ({Count}) for user {UserId} in tenant {TenantId}", tokens.Count, userId, tenantId);
 
         return Result.Success();
     }
@@ -1048,6 +1055,10 @@ public sealed class AuthService : IAuthService
         {
             MfaPolicy = tenant.MfaPolicy,
             MfaRequiredRoles = tenant.MfaRequiredRoles ?? [],
+            IdleTimeoutMinutes = tenant.IdleTimeoutMinutes,
+            AbsoluteTimeoutHours = tenant.AbsoluteTimeoutHours,
+            MaxConcurrentSessions = tenant.MaxConcurrentSessions,
+            ConcurrentSessionStrategy = tenant.ConcurrentSessionStrategy,
         });
     }
 
@@ -1074,12 +1085,158 @@ public sealed class AuthService : IAuthService
         tenant.MfaPolicy = request.MfaPolicy;
         tenant.MfaRequiredRoles = request.MfaRequiredRoles ?? [];
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await WriteAuditLogAsync(null, "tenant_mfa_policy_updated", null, null, cancellationToken, tenantId);
+        // Session policy settings (US-AUTH-009 FR-1)
+        if (request.IdleTimeoutMinutes.HasValue)
+        {
+            if (request.IdleTimeoutMinutes.Value < 1 || request.IdleTimeoutMinutes.Value > 1440)
+                return Result.Failure("Idle timeout must be between 1 and 1440 minutes.", 400);
+            tenant.IdleTimeoutMinutes = request.IdleTimeoutMinutes.Value;
+        }
 
-        _logger.LogInformation("Tenant {TenantId} MFA policy updated to {Policy}", tenantId, request.MfaPolicy);
+        if (request.AbsoluteTimeoutHours.HasValue)
+        {
+            if (request.AbsoluteTimeoutHours.Value < 1 || request.AbsoluteTimeoutHours.Value > 720)
+                return Result.Failure("Absolute timeout must be between 1 and 720 hours.", 400);
+            tenant.AbsoluteTimeoutHours = request.AbsoluteTimeoutHours.Value;
+        }
+
+        if (request.MaxConcurrentSessions.HasValue)
+        {
+            if (request.MaxConcurrentSessions.Value < 1 || request.MaxConcurrentSessions.Value > 100)
+                return Result.Failure("Max concurrent sessions must be between 1 and 100.", 400);
+            tenant.MaxConcurrentSessions = request.MaxConcurrentSessions.Value;
+        }
+
+        if (!string.IsNullOrEmpty(request.ConcurrentSessionStrategy))
+        {
+            var validStrategies = new[] { "deny_new", "revoke_oldest" };
+            if (!validStrategies.Contains(request.ConcurrentSessionStrategy))
+                return Result.Failure("Concurrent session strategy must be 'deny_new' or 'revoke_oldest'.", 400);
+            tenant.ConcurrentSessionStrategy = request.ConcurrentSessionStrategy;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await WriteAuditLogAsync(null, "tenant_auth_settings_updated", null, null, cancellationToken, tenantId);
+
+        _logger.LogInformation("Tenant {TenantId} auth settings updated (MFA: {Policy}, Session: idle={Idle}m abs={Abs}h max={Max} strategy={Strategy})",
+            tenantId, request.MfaPolicy, tenant.IdleTimeoutMinutes, tenant.AbsoluteTimeoutHours, tenant.MaxConcurrentSessions, tenant.ConcurrentSessionStrategy);
 
         return Result.Success();
+    }
+
+    #endregion
+
+    #region Session Management (US-AUTH-009)
+
+    public async Task<Result<IReadOnlyList<SessionDto>>> GetUserSessionsAsync(
+        Guid userId,
+        Guid tenantId,
+        Guid? currentSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var sessions = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(rt => rt.UserId == userId
+                && rt.TenantId == tenantId
+                && rt.RevokedAt == null
+                && rt.ExpiresAt > DateTime.UtcNow)
+            .OrderByDescending(rt => rt.LastActiveAt ?? rt.IssuedAt)
+            .ToListAsync(cancellationToken);
+
+        var result = sessions.Select(rt =>
+        {
+            var (device, browser, os) = UserAgentParser.Parse(rt.UserAgent);
+            return new SessionDto
+            {
+                SessionId = rt.Id,
+                Device = device,
+                Browser = browser,
+                Os = os,
+                IpAddress = rt.IpAddress,
+                IssuedAt = rt.IssuedAt,
+                LastActiveAt = rt.LastActiveAt,
+                IsCurrent = currentSessionId.HasValue && rt.Id == currentSessionId.Value,
+            };
+        }).ToList();
+
+        return Result<IReadOnlyList<SessionDto>>.Success(result);
+    }
+
+    public async Task<Result> RevokeSessionAsync(
+        Guid sessionId,
+        Guid userId,
+        Guid tenantId,
+        Guid? currentSessionId,
+        bool isAdminAction,
+        CancellationToken cancellationToken = default)
+    {
+        var token = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                rt => rt.Id == sessionId
+                    && rt.UserId == userId
+                    && rt.TenantId == tenantId
+                    && rt.RevokedAt == null
+                    && rt.ExpiresAt > DateTime.UtcNow,
+                cancellationToken);
+
+        if (token is null)
+        {
+            return Result.Failure("Session not found or already revoked.", 404);
+        }
+
+        // BR-4: User cannot revoke their own current session via self-service
+        if (!isAdminAction && currentSessionId.HasValue && token.Id == currentSessionId.Value)
+        {
+            return Result.Failure("Cannot revoke the current session. Use the logout function instead.", 400);
+        }
+
+        token.RevokedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var eventType = isAdminAction ? "session_revoked_by_admin" : "session_revoked_by_user";
+        await WriteAuditLogAsync(userId, eventType, null, null, cancellationToken, tenantId);
+
+        _logger.LogInformation("Session {SessionId} revoked for user {UserId} in tenant {TenantId} by {Actor}",
+            sessionId, userId, tenantId, isAdminAction ? "admin" : "user");
+
+        return Result.Success();
+    }
+
+    public async Task<Result> UpdateSessionActivityAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var token = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(rt => rt.Id == sessionId && rt.RevokedAt == null, cancellationToken);
+
+        if (token is not null)
+        {
+            token.LastActiveAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return Result.Success();
+    }
+
+    public async Task<Guid?> GetSessionIdFromTokenAsync(
+        string refreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(refreshToken))
+            return null;
+
+        var tokenHash = _jwtService.HashToken(refreshToken);
+        var session = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(rt => rt.TokenHash == tokenHash && rt.RevokedAt == null)
+            .Select(rt => (Guid?)rt.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return session;
     }
 
     #endregion
@@ -1132,11 +1289,13 @@ public sealed class AuthService : IAuthService
         {
             if (tenant.ConcurrentSessionStrategy == "deny_new")
             {
+                // US-AUTH-009 AC-1: Audit concurrent_session_denied
+                await WriteAuditLogAsync(user.Id, "concurrent_session_denied", ipAddress, userAgent, cancellationToken, tenant.Id);
                 return Result<LoginResponse>.Failure(
                     "Maximum concurrent sessions reached. Please log out from another device.", 403);
             }
 
-            // Revoke oldest session
+            // Revoke oldest session (US-AUTH-009 AC-1: revoke_oldest strategy)
             var oldestSession = await _dbContext.RefreshTokens
                 .IgnoreQueryFilters()
                 .Where(rt => rt.UserId == user.Id
@@ -1149,6 +1308,7 @@ public sealed class AuthService : IAuthService
             if (oldestSession is not null)
             {
                 oldestSession.RevokedAt = DateTime.UtcNow;
+                await WriteAuditLogAsync(user.Id, "concurrent_session_oldest_revoked", ipAddress, userAgent, cancellationToken, tenant.Id);
             }
         }
 
