@@ -150,7 +150,8 @@ public sealed class AuthTenantSwitchTests
             Substitute.For<ITotpService>(),
             _configuration,
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
-            Substitute.For<ILogger<AuthService>>());
+            Substitute.For<ILogger<AuthService>>(),
+            Substitute.For<Hangfire.IBackgroundJobClient>());
     }
 
     private AppDbContext CreateDbContext()

@@ -16,6 +16,7 @@ import { RouterLink, Router } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/auth/auth.service';
+import { ILoginErrorResponse } from '../../../core/auth/auth.models';
 
 @Component({
   selector: 'app-login',
@@ -47,6 +48,12 @@ export class LoginComponent implements OnInit {
   readonly errorMessage = signal('');
   readonly showPassword = signal(false);
 
+  /**
+   * US-AUTH-010 AC-2/AC-3: Distinguishes lockout errors from generic auth errors
+   * so the template can render a distinct lockout banner.
+   */
+  readonly isAccountLocked = signal(false);
+
   togglePassword(): void {
     this.showPassword.update((v) => !v);
   }
@@ -75,6 +82,7 @@ export class LoginComponent implements OnInit {
     }
 
     this.errorMessage.set('');
+    this.isAccountLocked.set(false);
 
     const { email, password } = this.loginForm.value;
 
@@ -134,9 +142,29 @@ export class LoginComponent implements OnInit {
 
   private handleLoginError(err: HttpErrorResponse): void {
     if (err.status === 401) {
-      const message =
-        err.error?.message || 'Invalid email or password.';
-      this.errorMessage.set(message);
+      const body = err.error as ILoginErrorResponse | undefined;
+
+      // US-AUTH-010 AC-2/AC-3: Detect lockout by the error code returned from
+      // the backend. Show a distinct lockout banner instead of the generic
+      // "Invalid email or password" message.
+      if (body?.code === 'account_locked') {
+        this.isAccountLocked.set(true);
+        const minutes = body.lockoutMinutesRemaining;
+        if (minutes && minutes > 0) {
+          this.errorMessage.set(
+            `Your account has been temporarily locked due to too many failed login attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'} or contact your administrator.`
+          );
+        } else {
+          this.errorMessage.set(
+            'Your account has been temporarily locked due to too many failed login attempts. Please try again later or contact your administrator.'
+          );
+        }
+      } else {
+        this.isAccountLocked.set(false);
+        const message =
+          body?.message || 'Invalid email or password.';
+        this.errorMessage.set(message);
+      }
     } else if (err.status === 403) {
       const message =
         err.error?.message ||

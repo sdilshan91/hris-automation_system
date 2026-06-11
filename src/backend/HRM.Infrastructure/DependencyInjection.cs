@@ -54,6 +54,9 @@ public static class DependencyInjection
         // Auth service
         services.AddScoped<IAuthService, AuthService>();
 
+        // Lockout notification service (US-AUTH-010 FR-8)
+        services.AddScoped<ILockoutNotificationService, LockoutNotificationService>();
+
         // RBAC service
         services.AddScoped<IRoleService, RoleService>();
 

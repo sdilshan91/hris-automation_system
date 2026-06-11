@@ -23,6 +23,7 @@ import {
   IMfaEnrollResponse,
   IMfaVerifyResponse,
   ITenantAuthSettings,
+  ITenantUser,
 } from './auth.models';
 
 @Injectable({ providedIn: 'root' })
@@ -290,6 +291,31 @@ export class AuthService {
   /** Cancel an in-progress MFA challenge and return to login */
   cancelMfaChallenge(): void {
     this.clearSession();
+  }
+
+  // ─── Account Lockout (US-AUTH-010) ─────────────────────────
+
+  /**
+   * Admin unlock of a locked user account (US-AUTH-010 AC-5).
+   * POST /tenant/users/{userId}/unlock
+   */
+  unlockUser(userId: string): Observable<IMessageResponse> {
+    return this.http.post<IMessageResponse>(
+      `${this.apiUrl}/tenant/users/${userId}/unlock`,
+      null,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * Get tenant users list for admin user management (US-AUTH-010 FR-6).
+   * GET /tenant/users
+   */
+  getTenantUsers(): Observable<ITenantUser[]> {
+    return this.http.get<ITenantUser[]>(
+      `${this.apiUrl}/tenant/users`,
+      { withCredentials: true }
+    );
   }
 
   // ─── Token Access ────────────────────────────────────────

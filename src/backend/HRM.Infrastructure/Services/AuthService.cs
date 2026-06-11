@@ -1,3 +1,4 @@
+using Hangfire;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
@@ -15,6 +16,7 @@ namespace HRM.Infrastructure.Services;
 /// <summary>
 /// Authentication service implementing login, token refresh, logout, password reset, and MFA flows.
 /// Handles multi-tenant context, account lockout, and token rotation with reuse detection.
+/// US-AUTH-010: Progressive lockout, audit events, lockout notification via Hangfire.
 /// </summary>
 public sealed class AuthService : IAuthService
 {
@@ -25,6 +27,7 @@ public sealed class AuthService : IAuthService
     private readonly IConfiguration _configuration;
     private readonly IDistributedCache _cache;
     private readonly ILogger<AuthService> _logger;
+    private readonly IBackgroundJobClient _backgroundJobClient;
 
     public AuthService(
         AppDbContext dbContext,
@@ -33,7 +36,8 @@ public sealed class AuthService : IAuthService
         ITotpService totpService,
         IConfiguration configuration,
         IDistributedCache cache,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        IBackgroundJobClient backgroundJobClient)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
@@ -42,6 +46,7 @@ public sealed class AuthService : IAuthService
         _configuration = configuration;
         _cache = cache;
         _logger = logger;
+        _backgroundJobClient = backgroundJobClient;
     }
 
     public async Task<Result<LoginResponse>> LoginAsync(
@@ -61,16 +66,33 @@ public sealed class AuthService : IAuthService
 
         if (user is null)
         {
+            // NFR-4: Do a dummy BCrypt.Verify to keep response time indistinguishable
+            // from a real password check. This prevents timing-based user enumeration.
+            BCrypt.Net.BCrypt.Verify(password, "$2a$12$000000000000000000000uDummy.HashForTimingResistance000000");
             _logger.LogWarning("Login failed: email {Email} not found", email);
             return Result<LoginResponse>.Failure("Invalid email or password.", 401);
         }
 
-        // 2. Check if account is locked out
-        if (user.IsLockedOut)
+        // 2. FR-5/AC-3: Check if account is locked BEFORE verifying password
+        if (user.LockedUntil.HasValue)
         {
-            _logger.LogWarning("Login failed: account locked for user {UserId}", user.Id);
-            return Result<LoginResponse>.Failure(
-                "Account temporarily locked. Try again later or contact your administrator.", 401);
+            if (user.LockedUntil.Value > DateTime.UtcNow)
+            {
+                // Account is still locked -- do NOT check password (AC-3)
+                // NFR-4: Do a dummy BCrypt.Verify to keep timing indistinguishable
+                BCrypt.Net.BCrypt.Verify(password, user.PasswordHash ?? "$2a$12$000000000000000000000uDummy.HashForTimingResistance000000");
+                _logger.LogWarning("Login failed: account locked for user {UserId} until {LockedUntil}",
+                    user.Id, user.LockedUntil.Value);
+                return Result<LoginResponse>.Failure(
+                    "Account temporarily locked. Try again later or contact your administrator.", 401);
+            }
+
+            // AC-4: Lockout has expired -- clear lockout state and log audit event
+            user.LockedUntil = null;
+            user.FailedLoginCount = 0;
+            user.MfaFailedAttemptCount = 0;
+            await WriteAuditLogAsync(user.Id, "account_unlocked_by_timeout", ipAddress, userAgent, cancellationToken);
+            _logger.LogInformation("Lockout expired for user {UserId}, cleared lockout state", user.Id);
         }
 
         // 3. Check if user is globally active
@@ -90,32 +112,36 @@ public sealed class AuthService : IAuthService
             // Increment failed login count
             user.FailedLoginCount++;
 
-            // Check tenant lockout policy
-            var maxAttempts = 5; // default
-            if (_tenantContext.IsResolved)
-            {
-                var tenant = await _dbContext.Tenants
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
-                if (tenant is not null)
-                    maxAttempts = tenant.MaxFailedAttempts;
-            }
+            // Resolve tenant lockout policy
+            var (maxAttempts, lockoutMinutes, progressiveLockoutEnabled) = await GetLockoutPolicyAsync(cancellationToken);
+
+            // Audit: login_failure with attempt count
+            await WriteAuditLogWithDetailAsync(user.Id, "login_failure", ipAddress, userAgent,
+                new { attemptCount = user.FailedLoginCount },
+                cancellationToken);
 
             if (user.FailedLoginCount >= maxAttempts)
             {
-                var lockoutMinutes = 15; // default
-                if (_tenantContext.IsResolved)
-                {
-                    var tenant = await _dbContext.Tenants
-                        .IgnoreQueryFilters()
-                        .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
-                    if (tenant is not null)
-                        lockoutMinutes = tenant.LockoutDurationMinutes;
-                }
+                // Calculate effective lockout duration (progressive lockout FR-9)
+                var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
+                    user, lockoutMinutes, progressiveLockoutEnabled);
 
-                user.LockedUntil = DateTime.UtcNow.AddMinutes(lockoutMinutes);
-                _logger.LogWarning("Account locked for user {UserId} after {Attempts} failed attempts",
-                    user.Id, user.FailedLoginCount);
+                user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
+                user.LockoutCount++;
+                user.LastLockoutAt = DateTime.UtcNow;
+
+                _logger.LogWarning(
+                    "Account locked for user {UserId} after {Attempts} failed attempts. Duration: {Duration}m (progressive: {Progressive})",
+                    user.Id, user.FailedLoginCount, effectiveLockoutMinutes, progressiveLockoutEnabled);
+
+                // Audit: account_locked with detail
+                await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
+                    new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, durationMinutes = effectiveLockoutMinutes },
+                    cancellationToken);
+
+                // FR-8/NFR-3: Enqueue lockout notification email via Hangfire
+                _backgroundJobClient.Enqueue<ILockoutNotificationService>(
+                    svc => svc.SendLockoutNotificationAsync(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes, default));
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -202,12 +228,27 @@ public sealed class AuthService : IAuthService
             }
             else
             {
+                // FR-10: MFA failures count toward lockout threshold (shared counter via FailedLoginCount)
                 user.MfaFailedAttemptCount++;
+                user.FailedLoginCount++;
 
                 var maxAttempts = currentTenant.MaxFailedAttempts > 0 ? currentTenant.MaxFailedAttempts : 5;
-                if (user.MfaFailedAttemptCount >= maxAttempts)
+                if (user.FailedLoginCount >= maxAttempts)
                 {
-                    user.LockedUntil = DateTime.UtcNow.AddMinutes(currentTenant.LockoutDurationMinutes > 0 ? currentTenant.LockoutDurationMinutes : 15);
+                    var lockoutMinutes = currentTenant.LockoutDurationMinutes > 0 ? currentTenant.LockoutDurationMinutes : 15;
+                    var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
+                        user, lockoutMinutes, currentTenant.ProgressiveLockoutEnabled);
+
+                    user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
+                    user.LockoutCount++;
+                    user.LastLockoutAt = DateTime.UtcNow;
+
+                    await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
+                        new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, source = "mfa_failure" },
+                        cancellationToken);
+
+                    _backgroundJobClient.Enqueue<ILockoutNotificationService>(
+                        svc => svc.SendLockoutNotificationAsync(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes, default));
                 }
 
                 await _dbContext.SaveChangesAsync(cancellationToken);
@@ -437,11 +478,14 @@ public sealed class AuthService : IAuthService
             return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
         }
 
-        // Hash and set new password
+        // Hash and set new password (BR-2: password reset clears lockout)
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
         user.PasswordChangedAt = DateTime.UtcNow;
         user.FailedLoginCount = 0;
         user.LockedUntil = null;
+        user.MfaFailedAttemptCount = 0;
+        user.LockoutCount = 0;
+        user.LastLockoutAt = null;
 
         // Revoke all refresh tokens across all tenants
         var allTokens = await _dbContext.RefreshTokens
@@ -860,10 +904,20 @@ public sealed class AuthService : IAuthService
             return Result<LoginResponse>.Failure("Invalid credentials.", 401);
         }
 
-        if (user.IsLockedOut)
+        // FR-5: Check lockout BEFORE verifying MFA code
+        if (user.LockedUntil.HasValue)
         {
-            return Result<LoginResponse>.Failure(
-                "Account temporarily locked. Try again later or contact your administrator.", 401);
+            if (user.LockedUntil.Value > DateTime.UtcNow)
+            {
+                return Result<LoginResponse>.Failure(
+                    "Account temporarily locked. Try again later or contact your administrator.", 401);
+            }
+
+            // Lockout expired -- clear state (AC-4)
+            user.LockedUntil = null;
+            user.FailedLoginCount = 0;
+            user.MfaFailedAttemptCount = 0;
+            await WriteAuditLogAsync(user.Id, "account_unlocked_by_timeout", ipAddress, userAgent, cancellationToken);
         }
 
         var codeIsValid = false;
@@ -901,29 +955,36 @@ public sealed class AuthService : IAuthService
 
         if (!codeIsValid)
         {
-            // Increment MFA failed attempt counter
+            // FR-10: MFA failures count toward lockout threshold (shared counter)
             user.MfaFailedAttemptCount++;
+            user.FailedLoginCount++;
 
             // Determine lockout policy from tenant
-            var maxAttempts = 5;
-            var lockoutMinutes = 15;
-            if (_tenantContext.IsResolved)
-            {
-                var lockoutTenant = await _dbContext.Tenants
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
-                if (lockoutTenant is not null)
-                {
-                    maxAttempts = lockoutTenant.MaxFailedAttempts > 0 ? lockoutTenant.MaxFailedAttempts : 5;
-                    lockoutMinutes = lockoutTenant.LockoutDurationMinutes > 0 ? lockoutTenant.LockoutDurationMinutes : 15;
-                }
-            }
+            var (maxAttempts, lockoutMinutes, progressiveLockoutEnabled) = await GetLockoutPolicyAsync(cancellationToken);
 
-            if (user.MfaFailedAttemptCount >= maxAttempts)
+            // Audit: login_failure
+            await WriteAuditLogWithDetailAsync(user.Id, "login_failure", ipAddress, userAgent,
+                new { attemptCount = user.FailedLoginCount, source = "mfa" },
+                cancellationToken);
+
+            if (user.FailedLoginCount >= maxAttempts)
             {
-                user.LockedUntil = DateTime.UtcNow.AddMinutes(lockoutMinutes);
-                _logger.LogWarning("Account locked for user {UserId} after {Attempts} failed MFA attempts",
-                    user.Id, user.MfaFailedAttemptCount);
+                var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
+                    user, lockoutMinutes, progressiveLockoutEnabled);
+
+                user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
+                user.LockoutCount++;
+                user.LastLockoutAt = DateTime.UtcNow;
+
+                _logger.LogWarning("Account locked for user {UserId} after {Attempts} failed MFA attempts. Duration: {Duration}m",
+                    user.Id, user.FailedLoginCount, effectiveLockoutMinutes);
+
+                await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
+                    new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, source = "mfa_failure" },
+                    cancellationToken);
+
+                _backgroundJobClient.Enqueue<ILockoutNotificationService>(
+                    svc => svc.SendLockoutNotificationAsync(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes, default));
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -932,7 +993,7 @@ public sealed class AuthService : IAuthService
             return Result<LoginResponse>.Failure("Invalid verification code.", 401);
         }
 
-        // MFA success - reset counter
+        // MFA success - reset counters
         user.MfaFailedAttemptCount = 0;
         await _dbContext.SaveChangesAsync(cancellationToken);
         await WriteAuditLogAsync(user.Id, "mfa_challenge_success", ipAddress, userAgent, cancellationToken);
@@ -1059,6 +1120,10 @@ public sealed class AuthService : IAuthService
             AbsoluteTimeoutHours = tenant.AbsoluteTimeoutHours,
             MaxConcurrentSessions = tenant.MaxConcurrentSessions,
             ConcurrentSessionStrategy = tenant.ConcurrentSessionStrategy,
+            // US-AUTH-010 FR-3: Lockout policy settings
+            MaxFailedAttempts = tenant.MaxFailedAttempts,
+            LockoutDurationMinutes = tenant.LockoutDurationMinutes,
+            ProgressiveLockoutEnabled = tenant.ProgressiveLockoutEnabled,
         });
     }
 
@@ -1115,11 +1180,34 @@ public sealed class AuthService : IAuthService
             tenant.ConcurrentSessionStrategy = request.ConcurrentSessionStrategy;
         }
 
+        // Lockout policy settings (US-AUTH-010 FR-3, BR-5)
+        if (request.MaxFailedAttempts.HasValue)
+        {
+            if (request.MaxFailedAttempts.Value < 3 || request.MaxFailedAttempts.Value > 10)
+                return Result.Failure("Max failed attempts must be between 3 and 10.", 400);
+            tenant.MaxFailedAttempts = request.MaxFailedAttempts.Value;
+        }
+
+        if (request.LockoutDurationMinutes.HasValue)
+        {
+            if (request.LockoutDurationMinutes.Value < 5 || request.LockoutDurationMinutes.Value > 60)
+                return Result.Failure("Lockout duration must be between 5 and 60 minutes.", 400);
+            tenant.LockoutDurationMinutes = request.LockoutDurationMinutes.Value;
+        }
+
+        if (request.ProgressiveLockoutEnabled.HasValue)
+        {
+            tenant.ProgressiveLockoutEnabled = request.ProgressiveLockoutEnabled.Value;
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         await WriteAuditLogAsync(null, "tenant_auth_settings_updated", null, null, cancellationToken, tenantId);
 
-        _logger.LogInformation("Tenant {TenantId} auth settings updated (MFA: {Policy}, Session: idle={Idle}m abs={Abs}h max={Max} strategy={Strategy})",
-            tenantId, request.MfaPolicy, tenant.IdleTimeoutMinutes, tenant.AbsoluteTimeoutHours, tenant.MaxConcurrentSessions, tenant.ConcurrentSessionStrategy);
+        _logger.LogInformation(
+            "Tenant {TenantId} auth settings updated (MFA: {Policy}, Session: idle={Idle}m abs={Abs}h max={Max} strategy={Strategy}, Lockout: maxAttempts={MaxAttempts} duration={LockoutDuration}m progressive={Progressive})",
+            tenantId, request.MfaPolicy, tenant.IdleTimeoutMinutes, tenant.AbsoluteTimeoutHours,
+            tenant.MaxConcurrentSessions, tenant.ConcurrentSessionStrategy,
+            tenant.MaxFailedAttempts, tenant.LockoutDurationMinutes, tenant.ProgressiveLockoutEnabled);
 
         return Result.Success();
     }
@@ -1237,6 +1325,55 @@ public sealed class AuthService : IAuthService
             .FirstOrDefaultAsync(cancellationToken);
 
         return session;
+    }
+
+    #endregion
+
+    #region Account Lockout Management (US-AUTH-010)
+
+    public async Task<Result> UnlockUserAsync(
+        Guid userId,
+        Guid tenantId,
+        Guid adminUserId,
+        CancellationToken cancellationToken = default)
+    {
+        // BR-3: Admin may only unlock users with a membership in their tenant
+        var userTenantMembership = await _dbContext.UserTenants
+            .IgnoreQueryFilters()
+            .AnyAsync(
+                ut => ut.UserId == userId && ut.TenantId == tenantId,
+                cancellationToken);
+
+        if (!userTenantMembership)
+        {
+            return Result.Failure("User does not have a membership in your tenant.", 403);
+        }
+
+        var user = await _dbContext.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            return Result.Failure("User not found.", 404);
+        }
+
+        // Clear lockout state (AC-5)
+        user.LockedUntil = null;
+        user.FailedLoginCount = 0;
+        user.MfaFailedAttemptCount = 0;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Audit: account_unlocked_by_admin
+        await WriteAuditLogWithDetailAsync(userId, "account_unlocked_by_admin", null, null,
+            new { adminUserId },
+            cancellationToken, tenantId);
+
+        _logger.LogInformation("User {UserId} unlocked by admin {AdminUserId} in tenant {TenantId}",
+            userId, adminUserId, tenantId);
+
+        return Result.Success();
     }
 
     #endregion
@@ -1444,6 +1581,94 @@ public sealed class AuthService : IAuthService
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes an audit log entry with structured detail JSON (US-AUTH-010 audit events).
+    /// </summary>
+    private async Task WriteAuditLogWithDetailAsync(
+        Guid? userId,
+        string eventType,
+        string? ipAddress,
+        string? userAgent,
+        object detail,
+        CancellationToken cancellationToken,
+        Guid? explicitTenantId = null)
+    {
+        var tenantId = explicitTenantId ?? (_tenantContext.IsResolved ? _tenantContext.TenantId : null);
+
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            UserId = userId,
+            EventType = eventType,
+            Detail = JsonSerializer.Serialize(detail),
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Resolves the lockout policy from the current tenant context, falling back to defaults.
+    /// Returns (maxAttempts, lockoutDurationMinutes, progressiveLockoutEnabled).
+    /// </summary>
+    private async Task<(int maxAttempts, int lockoutMinutes, bool progressiveLockoutEnabled)> GetLockoutPolicyAsync(
+        CancellationToken cancellationToken)
+    {
+        var maxAttempts = 5;
+        var lockoutMinutes = 15;
+        var progressiveLockoutEnabled = false;
+
+        if (_tenantContext.IsResolved)
+        {
+            var tenant = await _dbContext.Tenants
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
+            if (tenant is not null)
+            {
+                maxAttempts = tenant.MaxFailedAttempts > 0 ? tenant.MaxFailedAttempts : 5;
+                lockoutMinutes = tenant.LockoutDurationMinutes > 0 ? tenant.LockoutDurationMinutes : 15;
+                progressiveLockoutEnabled = tenant.ProgressiveLockoutEnabled;
+            }
+        }
+
+        return (maxAttempts, lockoutMinutes, progressiveLockoutEnabled);
+    }
+
+    /// <summary>
+    /// FR-9: Calculate effective lockout duration with progressive doubling.
+    /// If progressive lockout is enabled and the user has had multiple lockout cycles
+    /// within the last 24 hours, the duration doubles for each recent cycle.
+    /// </summary>
+    private static int CalculateProgressiveLockoutMinutes(
+        User user,
+        int baseLockoutMinutes,
+        bool progressiveLockoutEnabled)
+    {
+        if (!progressiveLockoutEnabled)
+            return baseLockoutMinutes;
+
+        // Count recent lockouts within the 24-hour window
+        var recentLockoutCount = 0;
+        if (user.LastLockoutAt.HasValue &&
+            (DateTime.UtcNow - user.LastLockoutAt.Value).TotalHours < 24)
+        {
+            recentLockoutCount = user.LockoutCount;
+        }
+
+        // Double duration for each recent lockout cycle, capped at 8x (3 doublings)
+        var multiplier = 1;
+        for (var i = 0; i < Math.Min(recentLockoutCount, 3); i++)
+        {
+            multiplier *= 2;
+        }
+
+        return baseLockoutMinutes * multiplier;
     }
 
     #endregion

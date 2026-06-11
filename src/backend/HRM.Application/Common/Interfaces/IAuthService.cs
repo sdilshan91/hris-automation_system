@@ -28,6 +28,9 @@ public interface IAuthService
     Task<Result<TenantAuthSettingsResponse>> GetTenantAuthSettingsAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<Result> UpdateTenantAuthSettingsAsync(Guid tenantId, TenantAuthSettingsRequest request, CancellationToken cancellationToken = default);
 
+    // Account lockout management (US-AUTH-010)
+    Task<Result> UnlockUserAsync(Guid userId, Guid tenantId, Guid adminUserId, CancellationToken cancellationToken = default);
+
     // Session management (US-AUTH-009)
     Task<Result<IReadOnlyList<SessionDto>>> GetUserSessionsAsync(Guid userId, Guid tenantId, Guid? currentSessionId, CancellationToken cancellationToken = default);
     Task<Result> RevokeSessionAsync(Guid sessionId, Guid userId, Guid tenantId, Guid? currentSessionId, bool isAdminAction, CancellationToken cancellationToken = default);

@@ -337,13 +337,29 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
 
+                    b.Property<DateTime?>("LastLockoutAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_lockout_at");
+
                     b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("locked_until");
 
+                    b.Property<int>("LockoutCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("lockout_count");
+
                     b.Property<bool>("MfaEnabled")
                         .HasColumnType("boolean")
                         .HasColumnName("mfa_enabled");
+
+                    b.Property<int>("MfaFailedAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("mfa_failed_attempt_count");
 
                     b.Property<string>("MfaSecret")
                         .HasMaxLength(200)
