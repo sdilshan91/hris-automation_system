@@ -35,7 +35,7 @@
 - [x] US-AUTH-006 — Role-based access control (RBAC) per tenant *(PR #2 open)*
 - [x] US-AUTH-007 — Tenant resolution from subdomain *(PR #5 open)*
 - [x] US-AUTH-008 — Cross-tenant user switching *(merged, PR #6)*
-- [~] US-AUTH-009 — Session management and concurrent session limits
+- [x] US-AUTH-009 — Session management and concurrent session limits *(PR #7)*
 - [ ] US-AUTH-010 — Account lockout after failed attempts
 
 ## 2. Core HR (12 stories)
