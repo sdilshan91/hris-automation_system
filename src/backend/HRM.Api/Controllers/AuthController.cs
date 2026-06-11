@@ -7,6 +7,8 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+// US-AUTH-009: Session management endpoints
+
 namespace HRM.Api.Controllers;
 
 /// <summary>
@@ -371,6 +373,68 @@ public sealed class AuthController : ControllerBase
         return Ok(ApiResponse.Ok("MFA has been disabled."));
     }
 
+    #region Session Management (US-AUTH-009)
+
+    /// <summary>
+    /// GET /api/v1/auth/me/sessions
+    /// Returns all active sessions for the current user in the current tenant (AC-6).
+    /// </summary>
+    [HttpGet("me/sessions")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<SessionDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetMySessions(CancellationToken cancellationToken)
+    {
+        var currentSessionId = await GetCurrentSessionIdAsync(cancellationToken);
+
+        var query = new GetUserSessionsQuery(
+            _currentUser.UserId,
+            _currentUser.TenantId,
+            currentSessionId);
+
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse<IReadOnlyList<SessionDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/auth/me/sessions/{sessionId}/revoke
+    /// Revokes a specific session for the current user (AC-6, BR-4).
+    /// Cannot revoke the current session — returns 400.
+    /// </summary>
+    [HttpPost("me/sessions/{sessionId:guid}/revoke")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevokeMySession(Guid sessionId, CancellationToken cancellationToken)
+    {
+        var currentSessionId = await GetCurrentSessionIdAsync(cancellationToken);
+
+        var command = new RevokeSessionCommand(
+            sessionId,
+            _currentUser.UserId,
+            _currentUser.TenantId,
+            currentSessionId,
+            IsAdminAction: false);
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse.Ok("Session revoked successfully."));
+    }
+
+    #endregion
+
     #region Private Helpers
 
     private void SetRefreshTokenCookie(string token)
@@ -399,6 +463,19 @@ public sealed class AuthController : ControllerBase
         };
 
         Response.Cookies.Append(RefreshTokenCookieName, string.Empty, cookieOptions);
+    }
+
+    /// <summary>
+    /// Resolves the current session ID from the refresh token cookie.
+    /// </summary>
+    private async Task<Guid?> GetCurrentSessionIdAsync(CancellationToken cancellationToken)
+    {
+        var refreshToken = Request.Cookies[RefreshTokenCookieName];
+        if (string.IsNullOrEmpty(refreshToken))
+            return null;
+
+        var authService = HttpContext.RequestServices.GetRequiredService<IAuthService>();
+        return await authService.GetSessionIdFromTokenAsync(refreshToken, cancellationToken);
     }
 
     private string? GetIpAddress()

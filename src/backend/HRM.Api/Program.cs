@@ -186,6 +186,9 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
+    // Session activity tracking — debounced last_active_at update (US-AUTH-009 FR-4)
+    app.UseMiddleware<SessionActivityMiddleware>();
+
     // Health check endpoint
     app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 

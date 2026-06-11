@@ -12,6 +12,8 @@ import { catchError, finalize } from 'rxjs/operators';
 import { AuthService } from '../../core/auth/auth.service';
 import { IUserTenant } from '../../core/auth/auth.models';
 import { TenantService } from '../../core/tenant/tenant.service';
+import { IdleTimeoutService } from '../../core/services/idle-timeout.service';
+import { IdleTimeoutWarningComponent } from '../../shared/components/idle-timeout-warning/idle-timeout-warning.component';
 
 interface INavItem {
   label: string;
@@ -23,7 +25,7 @@ interface INavItem {
 @Component({
   selector: 'app-main-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, IdleTimeoutWarningComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="main-layout" [class.sidebar-collapsed]="sidebarCollapsed()">
@@ -371,6 +373,9 @@ interface INavItem {
           <router-outlet />
         </main>
       </div>
+
+      <!-- Idle timeout warning modal (US-AUTH-009 BR-6) -->
+      <app-idle-timeout-warning />
     </div>
   `,
   styles: [`
@@ -628,6 +633,7 @@ interface INavItem {
 export class MainLayoutComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly tenantService = inject(TenantService);
+  private readonly idleTimeoutService = inject(IdleTimeoutService);
 
   readonly sidebarCollapsed = signal(false);
   readonly mobileMenuOpen = signal(false);
@@ -695,6 +701,7 @@ export class MainLayoutComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadTenants();
+    this.initIdleTimeout();
   }
 
   userInitials(): string {
@@ -789,6 +796,22 @@ export class MainLayoutComponent implements OnInit {
 
   tenantName(): string {
     return this.authService.currentTenant()?.name || this.tenantService.displayName();
+  }
+
+  /** Load tenant auth settings and start idle timeout tracking (US-AUTH-009). */
+  private initIdleTimeout(): void {
+    this.authService.getTenantAuthSettings().subscribe({
+      next: (settings) => {
+        const timeout = settings.idleTimeoutMinutes ?? 60;
+        if (timeout > 0) {
+          this.idleTimeoutService.start(timeout);
+        }
+      },
+      error: () => {
+        // Fallback to default 60 min idle timeout on settings load failure
+        this.idleTimeoutService.start(60);
+      },
+    });
   }
 
   private loadTenants(): void {

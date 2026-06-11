@@ -75,6 +75,101 @@ describe('AuthService', () => {
     ]);
   });
 
+  // ─── Session management (US-AUTH-009) ────────────────────
+
+  it('fetches user own sessions with credentials', () => {
+    const mockSessions = [
+      {
+        sessionId: 's1',
+        device: 'Desktop',
+        browser: 'Chrome',
+        os: 'Windows',
+        ipAddress: '1.2.3.4',
+        issuedAt: '2026-06-01T00:00:00Z',
+        lastActiveAt: '2026-06-01T01:00:00Z',
+        isCurrent: true,
+      },
+    ];
+
+    service.getMySessions().subscribe((sessions) => {
+      expect(sessions.length).toBe(1);
+      expect(sessions[0].sessionId).toBe('s1');
+    });
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/auth/me/sessions`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(mockSessions);
+  });
+
+  it('revokes user own session with credentials', () => {
+    service.revokeSession('s1').subscribe((resp) => {
+      expect(resp.message).toBe('Revoked');
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/auth/me/sessions/s1/revoke`
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush({ message: 'Revoked' });
+  });
+
+  it('fetches admin user sessions with credentials', () => {
+    service.getUserSessions('user-abc').subscribe((sessions) => {
+      expect(sessions.length).toBe(0);
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/tenant/users/user-abc/sessions`
+    );
+    expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush([]);
+  });
+
+  it('revokes a specific admin user session', () => {
+    service.revokeUserSession('user-abc', 's2').subscribe((resp) => {
+      expect(resp.message).toBe('Revoked');
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/tenant/users/user-abc/sessions/revoke`
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ sessionId: 's2' });
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush({ message: 'Revoked' });
+  });
+
+  it('revokes all admin user sessions (no sessionId)', () => {
+    service.revokeUserSession('user-abc').subscribe((resp) => {
+      expect(resp.message).toBe('All revoked');
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/tenant/users/user-abc/sessions/revoke`
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    req.flush({ message: 'All revoked' });
+  });
+
+  it('sends keep-alive request with credentials', () => {
+    service.keepAlive().subscribe((resp) => {
+      expect(resp.message).toBe('ok');
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/auth/me/keep-alive`
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush({ message: 'ok' });
+  });
+
+  // ─── Tenant switch ──────────────────────────────────────
+
   it('replaces tenant-scoped claims before redirecting after a switch', () => {
     const redirectSpy = spyOn<any>(service, 'redirectTo');
     const accessToken = tokenFor({

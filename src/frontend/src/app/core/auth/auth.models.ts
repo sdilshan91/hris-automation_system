@@ -152,10 +152,27 @@ export interface IMfaLoginVerifyRequest {
   email: string;
 }
 
-/** Tenant-level authentication settings */
+/** Tenant-level authentication settings (US-AUTH-005 + US-AUTH-009) */
 export interface ITenantAuthSettings {
   mfaPolicy: 'off' | 'optional' | 'required';
   mfaRequiredRoles: string[];
+  // Session policy fields (US-AUTH-009 FR-1) -- optional because
+  // they are new additions and the backend provides defaults.
+  idleTimeoutMinutes?: number;
+  absoluteTimeoutHours?: number;
+  maxConcurrentSessions?: number;
+  concurrentSessionStrategy?: ConcurrentSessionStrategy;
+}
+
+/** Concurrent session strategy (US-AUTH-009 FR-1) */
+export type ConcurrentSessionStrategy = 'deny_new' | 'revoke_oldest';
+
+/** Session policy update payload (subset for session-only updates) */
+export interface ISessionPolicyUpdate {
+  idleTimeoutMinutes: number;
+  absoluteTimeoutHours: number;
+  maxConcurrentSessions: number;
+  concurrentSessionStrategy: ConcurrentSessionStrategy;
 }
 
 /** MFA enrollment step for the wizard UI */
