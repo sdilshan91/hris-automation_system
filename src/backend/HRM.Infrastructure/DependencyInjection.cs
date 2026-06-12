@@ -70,6 +70,9 @@ public static class DependencyInjection
         // Employee service (US-CHR-001)
         services.AddScoped<IEmployeeService, EmployeeService>();
 
+        // Location service (US-CHR-007)
+        services.AddScoped<ILocationService, LocationService>();
+
         // Employee directory service (US-CHR-003)
         services.AddScoped<IEmployeeDirectoryService, EmployeeDirectoryService>();
 

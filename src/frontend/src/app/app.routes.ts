@@ -184,6 +184,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Core HR / Locations (US-CHR-007) ───────────────────
+      {
+        path: 'locations',
+        loadChildren: () =>
+          import('./features/core-hr/locations/locations.routes').then(
+            (m) => m.LOCATION_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',
