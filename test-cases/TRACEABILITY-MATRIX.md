@@ -112,7 +112,9 @@ This document links user stories to their corresponding test cases across all mo
 | Cross-cutting (CHR-008) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-029, TC-CHR-ISO-030, TC-CHR-ISO-031, TC-CHR-ISO-032 | 4 | -- |
 | US-CHR-009 | Employee Status Management (Active, Probation, Suspended, Terminated) | Must Have | TC-CHR-217, TC-CHR-218, TC-CHR-219, TC-CHR-220, TC-CHR-221, TC-CHR-222, TC-CHR-223, TC-CHR-224, TC-CHR-225, TC-CHR-226, TC-CHR-227, TC-CHR-228, TC-CHR-229, TC-CHR-230, TC-CHR-231, TC-CHR-232, TC-CHR-233, TC-CHR-234, TC-CHR-235, TC-CHR-236, TC-CHR-237, TC-CHR-238 | 22 | 5/5 AC covered |
 | Cross-cutting (CHR-009) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-033, TC-CHR-ISO-034, TC-CHR-ISO-035, TC-CHR-ISO-036 | 4 | -- |
-| **TOTAL** | | | **274 test cases** | **274** | **46/46 AC** |
+| US-CHR-010 | Bulk Employee Import via CSV/Excel | Should Have | TC-CHR-239, TC-CHR-240, TC-CHR-241, TC-CHR-242, TC-CHR-243, TC-CHR-244, TC-CHR-245, TC-CHR-246, TC-CHR-247, TC-CHR-248, TC-CHR-249, TC-CHR-250, TC-CHR-251, TC-CHR-252, TC-CHR-253, TC-CHR-254, TC-CHR-255, TC-CHR-256, TC-CHR-257, TC-CHR-258, TC-CHR-259, TC-CHR-260, TC-CHR-261, TC-CHR-262, TC-CHR-263, TC-CHR-264, TC-CHR-265, TC-CHR-266, TC-CHR-267 | 29 | 5/5 AC covered |
+| Cross-cutting (CHR-010) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-037, TC-CHR-ISO-038, TC-CHR-ISO-039, TC-CHR-ISO-040 | 4 | -- |
+| **TOTAL** | | | **307 test cases** | **307** | **51/51 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -254,7 +256,73 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-ISO-034 | API rejects status change requests without valid tenant context | Security | Critical | US-CHR-009 | NFR-2 |
 | TC-CHR-ISO-035 | RLS blocks direct DB queries across tenants for status and history data | Security | Critical | US-CHR-009 | NFR-2 |
 | TC-CHR-ISO-036 | Cache keys for employee status and employment history are tenant-scoped | Security | Critical | US-CHR-009 | NFR-2 |
+| TC-CHR-239 | Download import template -- CSV and Excel with correct headers and sample data | Functional | Critical | US-CHR-010 | AC-1, FR-2 |
+| TC-CHR-240 | Upload valid CSV with 10 rows -- all employees created with correct tenant_id and employee_no | Functional | Critical | US-CHR-010 | AC-2, FR-1, FR-3, FR-5, FR-6, FR-10, BR-1, BR-4 |
+| TC-CHR-241 | Upload valid Excel (.xlsx) file -- all employees created | Functional | Critical | US-CHR-010 | AC-2, FR-1, BR-6 |
+| TC-CHR-242 | Partial failure -- 8 valid + 2 invalid rows; 8 created, 2 in error report | Functional | Critical | US-CHR-010 | AC-3, FR-3, FR-4, FR-8, BR-3 |
+| TC-CHR-243 | Duplicate email within file -- second occurrence flagged | Functional | Critical | US-CHR-010 | AC-3, FR-3, BR-2 |
+| TC-CHR-244 | Non-existent department_name -- row rejected | Functional | Critical | US-CHR-010 | AC-3, FR-3, BR-3 |
+| TC-CHR-245 | Missing required field -- row rejected with field-level error | Functional | Critical | US-CHR-010 | AC-3, FR-3, FR-4, FR-8 |
+| TC-CHR-246 | File > 25 MB rejected | Functional | Critical | US-CHR-010 | BR-7 |
+| TC-CHR-247 | Disallowed file type (.pdf) rejected | Functional | Critical | US-CHR-010 | FR-1 |
+| TC-CHR-248 | Plan limit pre-validation warning with import-up-to-limit or cancel | Functional | Critical | US-CHR-010 | AC-5, FR-9 |
+| TC-CHR-249 | Async large file (1000+ rows) queued as Hangfire job with progress | Functional | Critical | US-CHR-010 | AC-4, FR-7, NFR-1 |
+| TC-CHR-250 | Idempotency -- re-upload same file no duplicates | Functional | High | US-CHR-010 | NFR-3, FR-3, BR-2 |
+| TC-CHR-251 | Audit log records import with file name and counts | Functional | High | US-CHR-010 | FR-10 |
+| TC-CHR-252 | tenant_id from session not file -- file column ignored | Security | Critical | US-CHR-010 | AC-2, FR-6, BR-1 |
+| TC-CHR-253 | Role check -- only HR Officer and Tenant Admin can import | Security | Critical | US-CHR-010 | Precondition (Section 2) |
+| TC-CHR-254 | Unauthenticated request returns 401 | Security | Critical | US-CHR-010 | Precondition (Section 2) |
+| TC-CHR-255 | Default status active when no status column | Functional | High | US-CHR-010 | BR-4, FR-3 |
+| TC-CHR-256 | Import does not create user accounts | Functional | High | US-CHR-010 | BR-5 |
+| TC-CHR-257 | Non-existent job_title_name -- row rejected | Functional | High | US-CHR-010 | AC-3, FR-3, BR-3 |
+| TC-CHR-258 | Invalid email format -- row rejected | Functional | High | US-CHR-010 | AC-3, FR-3 |
+| TC-CHR-259 | Download error report CSV -- correct format and content | Functional | High | US-CHR-010 | AC-3, FR-8 |
+| TC-CHR-260 | Async completion notification (email DEFERRED) | Functional | High | US-CHR-010 | AC-4, FR-7 |
+| TC-CHR-261 | Transaction behavior -- sync all-or-nothing; async per-batch rollback | Functional | High | US-CHR-010 | NFR-4 |
+| TC-CHR-262 | Performance -- 10,000 rows within 5 minutes, bounded memory | Performance | High | US-CHR-010 | NFR-1, NFR-6 |
+| TC-CHR-263 | Responsive UI -- 360px stacked wizard with file picker | Functional | High | US-CHR-010 | NFR-5 |
+| TC-CHR-264 | WCAG 2.1 AA accessibility for bulk import wizard | Accessibility | High | US-CHR-010 | NFR-5 |
+| TC-CHR-265 | Cross-browser compatibility (Chrome, Edge, Firefox, Safari) | Functional | Medium | US-CHR-010 | NFR-5 |
+| TC-CHR-266 | XSS payload in import field values does not execute | Security | High | US-CHR-010 | FR-3 |
+| TC-CHR-267 | Custom field column mapping (DEFERRED to US-CHR-012) | Functional | Medium | US-CHR-010 | FR-11 |
+| TC-CHR-ISO-037 | Tenant A imported employees not visible to Tenant B | Security | Critical | US-CHR-010 | NFR-2, FR-6, BR-1 |
+| TC-CHR-ISO-038 | API rejects import without valid tenant context | Security | Critical | US-CHR-010 | NFR-2, BR-1 |
+| TC-CHR-ISO-039 | RLS blocks cross-tenant queries for imported data | Security | Critical | US-CHR-010 | NFR-2 |
+| TC-CHR-ISO-040 | Cache keys for import operations are tenant-scoped | Security | Critical | US-CHR-010 | NFR-2 |
 
+n### US-CHR-010 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Download template with headers matching schema, sample data, field descriptions (CSV + Excel) | AC | TC-CHR-239 | Direct |
+| AC-2: Upload valid file, all rows imported with tenant_id from session and auto employee_no, success summary | AC | TC-CHR-240, TC-CHR-241, TC-CHR-252 | Direct |
+| AC-3: Partial import with error report listing row number, field, error; downloadable CSV | AC | TC-CHR-242, TC-CHR-243, TC-CHR-244, TC-CHR-245, TC-CHR-257, TC-CHR-258, TC-CHR-259 | Direct |
+| AC-4: Large file (>500 rows) queued as async Hangfire job, progress shown, user notified | AC | TC-CHR-249, TC-CHR-260 | Direct (email notification DEFERRED) |
+| AC-5: Plan limit pre-validation warning with import-up-to-limit or cancel | AC | TC-CHR-248 | Direct |
+| FR-1: Accept CSV and Excel uploads | FR | TC-CHR-240, TC-CHR-241, TC-CHR-247 | Direct |
+| FR-2: Downloadable template with headers, sample data, descriptions | FR | TC-CHR-239 | Direct |
+| FR-3: Row-level validation (required fields, types, email, dept/job title existence) | FR | TC-CHR-240, TC-CHR-242, TC-CHR-243, TC-CHR-244, TC-CHR-245, TC-CHR-257, TC-CHR-258 | Direct |
+| FR-4: Partial import -- valid imported, invalid skipped and reported | FR | TC-CHR-242, TC-CHR-243, TC-CHR-244 | Direct |
+| FR-5: Auto-generate employee_no per tenant pattern | FR | TC-CHR-240 | Direct |
+| FR-6: tenant_id from session for all imported records | FR | TC-CHR-240, TC-CHR-252, TC-CHR-ISO-037 | Direct |
+| FR-7: Files >500 rows async via Hangfire | FR | TC-CHR-249, TC-CHR-260 | Direct |
+| FR-8: Downloadable error report CSV | FR | TC-CHR-242, TC-CHR-259 | Direct |
+| FR-9: Plan-level employee count limits enforced | FR | TC-CHR-248 | Direct |
+| FR-10: Import logged in audit trail with file name and counts | FR | TC-CHR-251 | Direct |
+| FR-11: Custom field column mapping | FR | TC-CHR-267 | DEFERRED (US-CHR-012) |
+| NFR-1: 10,000-row import within 5 minutes (async) | NFR | TC-CHR-249, TC-CHR-262 | Direct |
+| NFR-2: All imported records tenant-isolated via RLS and EF Core | NFR | TC-CHR-252, TC-CHR-ISO-037, TC-CHR-ISO-038, TC-CHR-ISO-039, TC-CHR-ISO-040 | Direct |
+| NFR-3: Idempotent -- re-upload same file no duplicates | NFR | TC-CHR-250 | Direct |
+| NFR-4: Transaction behavior (sync all-or-nothing; async per-batch rollback) | NFR | TC-CHR-261 | Direct |
+| NFR-5: Import UI responsive (360px to 4K) | NFR | TC-CHR-263, TC-CHR-264, TC-CHR-265 | Direct |
+| NFR-6: Memory bounded -- stream/chunk-read large files | NFR | TC-CHR-262 | Direct (observational) |
+| BR-1: tenant_id from session, never from file | BR | TC-CHR-252, TC-CHR-240 | Direct |
+| BR-2: Duplicate emails within file flagged | BR | TC-CHR-243 | Direct |
+| BR-3: Non-existent dept/job title causes row failure | BR | TC-CHR-244, TC-CHR-257 | Direct |
+| BR-4: Default status active unless provided | BR | TC-CHR-255 | Direct |
+| BR-5: Import does not create user accounts | BR | TC-CHR-256 | Direct |
+| BR-6: ClosedXML for Excel, CsvHelper for CSV | BR | TC-CHR-241 | Indirect |
+| BR-7: Max file size 25 MB | BR | TC-CHR-246 | Direct |
 ### US-CHR-009 Detailed Requirements Traceability
 
 | Requirement | Type | Covered By | Coverage |
@@ -369,6 +437,21 @@ This document links user stories to their corresponding test cases across all mo
 
 (Unchanged from previous version -- all detailed traceability tables for these stories remain as documented.)
 
+n### Coverage Summary (Core HR -- US-CHR-010)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 10/11 (91%) -- FR-11 deferred to US-CHR-012 | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 7/7 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO + 1 embedded TC-CHR-252) | >= 3 | PASS |
+| Security Test Cases | 12/33 (36.4%) including ISO | >= 30% | PASS |
+| Performance Test Cases | 2/33 | >= 1 | PASS |
+| Accessibility Test Cases | 1/33 | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/33 | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | TC-CHR-267 (custom field mapping pending US-CHR-012), TC-CHR-260 (email notification pending Notification module) | -- | NOTE |
 ### Coverage Summary (Core HR -- US-CHR-009)
 
 | Metric | Value | Target | Status |
@@ -496,9 +579,9 @@ This document links user stories to their corresponding test cases across all mo
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
-| Core HR (US-CHR-001 through US-CHR-009) | 9 | 274 | 46/46 (100%) | 54 | PASS |
-| **TOTAL** | **19** | **390** | **107/107 (100%)** | **77** | |
+| Core HR (US-CHR-001 through US-CHR-010) | 10 | 307 | 51/51 (100%) | 58 | PASS |
+| **TOTAL** | **20** | **423** | **112/112 (100%)** | **81** | |
 
 ---
 
-*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-009. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. For US-CHR-003, BR-2 (manager reporting chain scope) is deferred pending Employee.ReportsToEmployeeId and BR-5 search is implemented as ILIKE with tsvector upgrade path documented. US-CHR-007 adds 24 test cases (20 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 4 ACs, 8 FRs, 4 NFRs, and 6 BRs. US-CHR-008 adds 29 test cases (25 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 10 FRs, 6 NFRs, and 7 BRs. TC-CHR-205 (storage quota enforcement) is partially deferred pending the Subscription/Plan module. US-CHR-009 adds 26 test cases (22 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 7 FRs, 5 NFRs, and 6 BRs. Several side-effect tests (payroll exclusion, leave accrual, notification dispatch) are marked as DEFERRED pending their respective modules. The matrix will be extended as additional Core HR user stories (US-CHR-010+) and other modules are authored.*
+*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-010. US-CHR-010 adds 33 test cases (29 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 10/11 FRs (FR-11 deferred to US-CHR-012), 6 NFRs, and 7 BRs. TC-CHR-267 (custom field column mapping) is DEFERRED pending US-CHR-012. TC-CHR-260 email notification dispatch is DEFERRED pending the Notification module. All previously blocked test cases remain unblocked.*

@@ -137,6 +137,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.SendLockoutNotificationJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ApplyFutureDatedStatusChangesJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProbationReminderJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.BulkEmployeeImportJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")

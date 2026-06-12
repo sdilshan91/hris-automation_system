@@ -85,6 +85,9 @@ public static class DependencyInjection
         // Employee status management service (US-CHR-009)
         services.AddScoped<IEmployeeStatusService, EmployeeStatusService>();
 
+        // Bulk employee import service (US-CHR-010)
+        services.AddScoped<IBulkEmployeeImportService, BulkEmployeeImportService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>
