@@ -129,6 +129,12 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasForeignKey(e => e.UserId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // US-CHR-007: FK to Location (optional)
+        builder.HasOne(e => e.LocationEntity)
+            .WithMany(l => l.Employees)
+            .HasForeignKey(e => e.LocationId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // US-CHR-002: Emergency contacts collection
         builder.HasMany(e => e.EmergencyContacts)
             .WithOne(ec => ec.Employee)

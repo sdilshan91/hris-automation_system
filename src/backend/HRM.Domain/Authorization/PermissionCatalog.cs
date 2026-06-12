@@ -27,6 +27,15 @@ public static class PermissionCatalog
         public const string Deactivate = "JobTitle.Deactivate";
     }
 
+    // ── Location Module (US-CHR-007) ─────────────────────────────────
+    public static class Location
+    {
+        public const string View = "Location.View";
+        public const string Create = "Location.Create";
+        public const string Edit = "Location.Edit";
+        public const string Deactivate = "Location.Deactivate";
+    }
+
     // ── Employee Module ──────────────────────────────────────────────
     public static class Employee
     {
@@ -163,6 +172,9 @@ public static class PermissionCatalog
         // Job Title
         JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
 
+        // Location
+        Location.View, Location.Create, Location.Edit, Location.Deactivate,
+
         // Employee
         Employee.ViewOwn, Employee.ViewTeam, Employee.ViewAll,
         Employee.Create, Employee.Edit, Employee.EditOwn, Employee.Delete, Employee.Export,
@@ -273,6 +285,7 @@ public static class PermissionCatalog
         {
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
+            Location.View, Location.Create, Location.Edit, Location.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -292,6 +305,7 @@ public static class PermissionCatalog
         {
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
+            Location.View, Location.Create, Location.Edit, Location.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -307,6 +321,7 @@ public static class PermissionCatalog
         {
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
+            Location.View, Location.Create, Location.Edit, Location.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,
@@ -319,6 +334,7 @@ public static class PermissionCatalog
         {
             Department.View,
             JobTitle.View,
+            Location.View,
             Employee.ViewTeam,
             Leave.ViewTeam, Leave.ApproveTeam,
             Attendance.ViewTeam,

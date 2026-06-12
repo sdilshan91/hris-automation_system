@@ -101,9 +101,15 @@ public sealed class Employee : BaseEntity
 
     /// <summary>
     /// Work location (free-text, e.g. "New York", "Remote").
-    /// FK to a Location entity is deferred to US-CHR-007; for now this is a simple string.
+    /// Legacy field from US-CHR-003; kept for backward compatibility.
+    /// Prefer LocationId FK for structured location assignment (US-CHR-007).
     /// </summary>
     public string? Location { get; set; }
+
+    /// <summary>
+    /// FK to Location entity (US-CHR-007). Nullable because location assignment is optional (BR-6).
+    /// </summary>
+    public Guid? LocationId { get; set; }
 
     /// <summary>
     /// Whether the employee is active (mirrors IsDeleted for soft-delete, but allows
@@ -134,6 +140,11 @@ public sealed class Employee : BaseEntity
     /// Linked user account for portal access (nullable).
     /// </summary>
     public User? User { get; set; }
+
+    /// <summary>
+    /// Location entity assigned to this employee (US-CHR-007).
+    /// </summary>
+    public Location? LocationEntity { get; set; }
 
     /// <summary>
     /// Emergency contacts for this employee (US-CHR-002).

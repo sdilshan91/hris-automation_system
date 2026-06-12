@@ -422,6 +422,72 @@ On screens < 768px (`md:` breakpoint), the tree switches to a collapsible vertic
 
 The `/org-tree` route uses `roleGuard(['Tenant Admin', 'HR Officer', 'Manager'])` because all three personas need to view the org chart per the user story.
 
+## Locations (US-CHR-007)
+
+### Backend API endpoints (implemented)
+
+- `GET    /api/v1/tenant/locations` -- list all for tenant (optional `?activeOnly=true`), includes `employeeCount` per location
+- `GET    /api/v1/tenant/locations/{id}` -- single by ID, includes `employeeCount`
+- `POST   /api/v1/tenant/locations` -- create
+- `PUT    /api/v1/tenant/locations/{id}` -- update
+- `POST   /api/v1/tenant/locations/{id}/deactivate` -- soft-deactivate (blocks if active employees assigned)
+
+Endpoint uses `/tenant/locations` matching the vault convention for tenant-scoped entities. Deactivate uses `POST` (not `PATCH`).
+
+### Frontend implementation
+
+#### Static reference data: countries + time zones (no external dependency)
+
+Country list: ~195 ISO 3166-1 entries bundled in `location-data.constants.ts`. No flag icons (to keep bundle small); country stored as the full name string (e.g. "United States"), not the ISO code -- the backend `country` column is `varchar(100)`.
+
+Time zone list: ~70 IANA identifiers in the same file. Common zones (16 entries) are flagged `isCommon: true` and displayed in a "Common" group at the top of the searchable dropdown. The selected value stored in the form and sent to the API is the IANA identifier string (e.g. "America/New_York").
+
+Both lists are pure TypeScript constants with zero runtime cost. If the backend wants to serve these lists via API instead, the form can be adapted by replacing the static arrays with service calls.
+
+#### Employee count badge navigation (AC-2, FR-7)
+
+The employee count badge in each location row is clickable when count > 0 and navigates to `/employees?location={locationName}`. This aligns with US-CHR-003's `filterLocation` signal which reads the `location` query parameter.
+
+Current limitation: the employee directory filters by location name (string match). When US-CHR-007 backend adds a proper `Location` entity with FK, the directory filter should be updated to use `locationId` instead of name. For now, name-based matching works because location names are unique within a tenant (BR-1).
+
+#### Address section collapsible
+
+The address fields (street, line2, city, state, country, postal code) are grouped in a collapsible section in the form. In create mode, the section starts collapsed. In edit mode, it auto-expands if any address field has data. This reduces visual noise for locations that only need a name and time zone.
+
+#### Country and time zone selectors: custom searchable dropdowns
+
+Both selectors use a custom `<input>` + dropdown-list pattern (not Angular Material autocomplete) to stay consistent with the Notion-inspired design and avoid adding `MatAutocompleteModule` to the bundle. The pattern: type to filter, click/mousedown to select, blur closes with 150ms delay (to allow click events to register).
+
+### Employee.LocationId FK (cross-cutting change)
+
+US-CHR-003 added a free-text `Employee.Location` string. US-CHR-007 adds a proper `Employee.LocationId` nullable FK to the `locations` table. Both fields coexist:
+- `Employee.Location` (string) -- legacy free-text field from US-CHR-003, kept for backward compatibility.
+- `Employee.LocationId` (Guid?, FK) -- structured reference to the `Location` entity. Used for deactivation guard (AC-3/FR-5) and employee count per location (FR-7).
+
+The navigation property is named `Employee.LocationEntity` (not `Employee.Location`) to avoid collision with the legacy string property. The FK uses `ON DELETE SET NULL`.
+
+**Migration note:** When employee create/update flows are extended to use the Location entity, they should set `LocationId` (and optionally sync the free-text `Location` string for display). The directory filter (US-CHR-003) currently uses the free-text `Location` field; it should be updated to use `LocationId` for structured filtering.
+
+### Deactivation guard (AC-3, FR-5)
+
+The deactivation guard checks `Employees.Count(e => e.LocationId == locationId && e.IsActive)`. This uses the FK, not the free-text string. Employees must be assigned via `LocationId` for the guard to work correctly. Until employee creation is updated to set `LocationId`, new employees assigned via the free-text field only will not block deactivation.
+
+### Tenant isolation layers (same pattern as Department/JobTitle)
+
+1. **Global query filter** in `AppDbContext`: `l => !l.IsDeleted && (!_tenantContext.IsResolved || l.TenantId == _tenantContext.TenantId)`
+2. **TenantInterceptor**: auto-stamps `TenantId` on new `BaseEntity` rows during `SaveChanges`.
+3. **Service-level**: `LocationService` checks `_tenantContext.IsResolved` before every operation.
+
+### Location permissions (implemented)
+
+Added to `PermissionCatalog` following the same pattern as Departments/Job Titles:
+- `Location.View` -- granted to Tenant Admin, HR Manager, HR Officer, Manager
+- `Location.Create` -- granted to Tenant Admin, HR Manager, HR Officer
+- `Location.Edit` -- granted to Tenant Admin, HR Manager, HR Officer
+- `Location.Deactivate` -- granted to Tenant Admin, HR Manager, HR Officer
+
+The route guard uses `roleGuard(['Tenant Admin', 'HR Officer'])` matching the story's persona.
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."

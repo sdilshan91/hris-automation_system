@@ -34,6 +34,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
     public DbSet<EmploymentHistory> EmploymentHistories => Set<EmploymentHistory>();
     public DbSet<EmployeeFieldAuditLog> EmployeeFieldAuditLogs => Set<EmployeeFieldAuditLog>();
+    public DbSet<Location> Locations => Set<Location>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -74,5 +75,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-CHR-002: EmploymentHistory tenant isolation + soft-delete filter
         modelBuilder.Entity<EmploymentHistory>()
             .HasQueryFilter(eh => !eh.IsDeleted && (!_tenantContext.IsResolved || eh.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-007: Location tenant isolation + soft-delete filter
+        modelBuilder.Entity<Location>()
+            .HasQueryFilter(l => !l.IsDeleted && (!_tenantContext.IsResolved || l.TenantId == _tenantContext.TenantId));
     }
 }
