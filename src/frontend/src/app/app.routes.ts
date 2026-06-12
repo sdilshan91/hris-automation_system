@@ -173,6 +173,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Core HR / Job Titles (US-CHR-005) ─────────────────
+      {
+        path: 'job-titles',
+        loadChildren: () =>
+          import('./features/core-hr/job-titles/job-titles.routes').then(
+            (m) => m.JOB_TITLE_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer']),
+        ],
+      },
       // Feature modules will be added here as they are implemented
       // {
       //   path: 'employees',
