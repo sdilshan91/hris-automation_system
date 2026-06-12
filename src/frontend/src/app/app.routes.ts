@@ -195,6 +195,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Core HR / Organization Tree (US-CHR-006) ──────────
+      {
+        path: 'org-tree',
+        loadChildren: () =>
+          import('./features/core-hr/org-tree/org-tree.routes').then(
+            (m) => m.ORG_TREE_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer', 'Manager']),
+        ],
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },

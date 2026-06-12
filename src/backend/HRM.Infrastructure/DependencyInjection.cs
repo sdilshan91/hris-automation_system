@@ -73,6 +73,9 @@ public static class DependencyInjection
         // Employee directory service (US-CHR-003)
         services.AddScoped<IEmployeeDirectoryService, EmployeeDirectoryService>();
 
+        // Organization tree service (US-CHR-006)
+        services.AddScoped<IOrganizationTreeService, OrganizationTreeService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>
