@@ -40,7 +40,7 @@
 
 ## 2. Core HR (12 stories)
 - [x] US-CHR-001 — Add new employee with personal information *(PR #11)*
-- [~] US-CHR-002 — View and edit employee profile
+- [x] US-CHR-002 — View and edit employee profile *(PR #13)*
 - [ ] US-CHR-003 — Employee directory with search and filters
 - [x] US-CHR-004 — Create and manage departments *(PR #9; built ahead of CHR-001 per dependency order)*
 - [x] US-CHR-005 — Create and manage job titles and positions *(PR #10)*
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **6** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5)
-- In progress: **2** (AUTH-005 in PR #1; AUTH-008 active)
-- Pending: **94**
+- Done: **7** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; CHR-002 PR #13)
+- In progress: **1** (AUTH-005 in PR #1)
+- Pending: **93**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
