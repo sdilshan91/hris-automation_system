@@ -1,0 +1,78 @@
+name: CI Gate
+
+# Required-status-check gate for PRs into main.
+# Runs the SAME verify gate the /implement-all loop runs locally:
+#   backend  -> dotnet build + dotnet test  (EF Core InMemory; no DB service needed)
+#   frontend -> npm run build + ng test     (Karma + headless Chrome)
+# No Anthropic API / secrets required — this is free CI (GitHub Actions minutes only).
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same PR to save minutes.
+concurrency:
+  group: ci-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore src/backend/HRM.sln
+
+      - name: Build
+        run: dotnet build src/backend/HRM.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test src/backend/HRM.sln --no-build -c Release --logger "trx;LogFileName=backend-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: '**/backend-tests.trx'
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test (headless Chrome)
+        # GitHub-hosted ubuntu-latest is a non-root VM with google-chrome
+        # preinstalled, so ChromeHeadless works without --no-sandbox.
+        # If a Chrome sandbox error ever appears, add a karma.conf.js with a
+        # ChromeHeadlessNoSandbox launcher and switch --browsers to it.
+        run: npx ng test --watch=false --browsers=ChromeHeadless

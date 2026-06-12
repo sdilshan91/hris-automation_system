@@ -1,22 +1,11 @@
 name: Claude Agent Pipeline
 
 on:
-  # Trigger when user stories are pushed
-  push:
-    paths:
-      - 'user-stories/**'
-    branches:
-      - 'feature/user-stories-*'
-
-  # Trigger via PR events
-  pull_request:
-    types: [opened, synchronize]
-
-  # Allow @claude mentions in issues/PRs
-  issue_comment:
-    types: [created]
-
-  # Manual trigger
+  # Manual-only. The automatic push / pull_request / issue_comment triggers were
+  # removed: they fired this credit-consuming agent pipeline on every PR and failed
+  # noisily when ANTHROPIC_API_KEY was unset. Per-PR automation is now handled by
+  # ci-gate.yml (free test gate) + pr-review.yml (opt-in AI review). Run this
+  # full BA->dev->QA pipeline on demand from the Actions tab when you want it.
   workflow_dispatch:
     inputs:
       agent:
@@ -104,12 +93,13 @@ jobs:
   # Stage 2: Parallel Dev + QA (after stories merged)
   # ============================================
   frontend-dev:
-    if: >
-      (github.event_name == 'push' && contains(github.event.head_commit.message, 'user-stories')) ||
-      (github.event_name == 'workflow_dispatch' && (inputs.agent == 'frontend-dev' || inputs.agent == 'orchestrate'))
-    runs-on: ubuntu-latest
     needs: [business-analysis]
-    if: always() && (needs.business-analysis.result == 'success' || needs.business-analysis.result == 'skipped')
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.agent == 'frontend-dev' || inputs.agent == 'orchestrate') &&
+      (needs.business-analysis.result == 'success' || needs.business-analysis.result == 'skipped')
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -154,9 +144,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   backend-dev:
-    if: always() && (needs.business-analysis.result == 'success' || needs.business-analysis.result == 'skipped')
-    runs-on: ubuntu-latest
     needs: [business-analysis]
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.agent == 'backend-dev' || inputs.agent == 'orchestrate') &&
+      (needs.business-analysis.result == 'success' || needs.business-analysis.result == 'skipped')
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -201,9 +195,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   qa-engineer:
-    if: always() && (needs.business-analysis.result == 'success' || needs.business-analysis.result == 'skipped')
-    runs-on: ubuntu-latest
     needs: [business-analysis]
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.agent == 'qa-engineer' || inputs.agent == 'orchestrate') &&
+      (needs.business-analysis.result == 'success' || needs.business-analysis.result == 'skipped')
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
