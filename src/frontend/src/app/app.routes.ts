@@ -184,13 +184,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
-      // Feature modules will be added here as they are implemented
-      // {
-      //   path: 'employees',
-      //   loadChildren: () => import('./features/employees/employees.routes')
-      //     .then(m => m.EMPLOYEE_ROUTES),
-      //   canActivate: [permissionGuard(['Employee.View.All', 'Employee.View.Team'])],
-      // },
+      // ─── Core HR / Employees (US-CHR-001) ──────────────────
+      {
+        path: 'employees',
+        loadChildren: () =>
+          import('./features/core-hr/employees/employees.routes').then(
+            (m) => m.EMPLOYEE_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer']),
+        ],
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },

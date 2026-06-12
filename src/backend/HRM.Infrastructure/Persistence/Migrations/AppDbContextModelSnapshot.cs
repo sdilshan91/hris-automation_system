@@ -141,6 +141,9 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_departments");
 
+                    b.HasIndex("ManagerId")
+                        .HasDatabaseName("ix_departments_manager_id");
+
                     b.HasIndex("ParentDepartmentId")
                         .HasDatabaseName("ix_departments_parent_department_id");
 
@@ -155,6 +158,156 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasFilter("is_deleted = false");
 
                     b.ToTable("departments", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.Employee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("CustomFields")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("custom_fields");
+
+                    b.Property<DateTime?>("DateOfBirth")
+                        .HasColumnType("date")
+                        .HasColumnName("date_of_birth");
+
+                    b.Property<DateTime>("DateOfJoining")
+                        .HasColumnType("date")
+                        .HasColumnName("date_of_joining");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("department_id");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("EmployeeNo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("employee_no");
+
+                    b.Property<string>("EmploymentType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("employment_type");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("first_name");
+
+                    b.Property<string>("Gender")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("gender");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("JobTitleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_title_id");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("last_name");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("ProfilePhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("profile_photo_url");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Active")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_employees");
+
+                    b.HasIndex("DepartmentId")
+                        .HasDatabaseName("ix_employees_department_id");
+
+                    b.HasIndex("JobTitleId")
+                        .HasDatabaseName("ix_employees_job_title_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_employees_user_id");
+
+                    b.HasIndex("TenantId", "DepartmentId")
+                        .HasDatabaseName("ix_employees_tenant_id_department_id");
+
+                    b.HasIndex("TenantId", "Email")
+                        .IsUnique()
+                        .HasDatabaseName("ix_employees_tenant_id_email")
+                        .HasFilter("is_deleted = false");
+
+                    b.HasIndex("TenantId", "EmployeeNo")
+                        .IsUnique()
+                        .HasDatabaseName("ix_employees_tenant_id_employee_no")
+                        .HasFilter("is_deleted = false");
+
+                    b.HasIndex("TenantId", "JobTitleId")
+                        .HasDatabaseName("ix_employees_tenant_id_job_title_id");
+
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("ix_employees_tenant_id_status");
+
+                    b.ToTable("employees", (string)null);
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.JobTitle", b =>
@@ -442,6 +595,10 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("max_concurrent_sessions");
 
+                    b.Property<int?>("MaxEmployees")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_employees");
+
                     b.Property<int>("MaxFailedAttempts")
                         .HasColumnType("integer")
                         .HasColumnName("max_failed_attempts");
@@ -709,13 +866,50 @@ namespace HRM.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("HRM.Domain.Entities.Department", b =>
                 {
+                    b.HasOne("HRM.Domain.Entities.Employee", "Manager")
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_departments_employees_manager_id");
+
                     b.HasOne("HRM.Domain.Entities.Department", "ParentDepartment")
                         .WithMany("ChildDepartments")
                         .HasForeignKey("ParentDepartmentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_departments_departments_parent_department_id");
 
+                    b.Navigation("Manager");
+
                     b.Navigation("ParentDepartment");
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.Employee", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.Department", "Department")
+                        .WithMany("Employees")
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_employees_departments_department_id");
+
+                    b.HasOne("HRM.Domain.Entities.JobTitle", "JobTitle")
+                        .WithMany()
+                        .HasForeignKey("JobTitleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_employees_job_titles_job_title_id");
+
+                    b.HasOne("HRM.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_employees_users_user_id");
+
+                    b.Navigation("Department");
+
+                    b.Navigation("JobTitle");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.MfaRecoveryCode", b =>
@@ -826,6 +1020,8 @@ namespace HRM.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("HRM.Domain.Entities.Department", b =>
                 {
                     b.Navigation("ChildDepartments");
+
+                    b.Navigation("Employees");
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.Role", b =>

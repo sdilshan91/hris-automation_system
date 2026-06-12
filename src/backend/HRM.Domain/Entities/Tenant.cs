@@ -33,6 +33,12 @@ public sealed class Tenant
     public string MfaPolicy { get; set; } = "off"; // "off" | "optional" | "required"
     public List<string> MfaRequiredRoles { get; set; } = new(); // jsonb: roles that require MFA when policy is "required"
 
+    /// <summary>
+    /// Maximum number of employees allowed for this tenant's subscription plan (FR-5).
+    /// Null means unlimited. TODO(subscription): move to a proper Subscription/Plan entity.
+    /// </summary>
+    public int? MaxEmployees { get; set; }
+
     // Password policy
     public int MinPasswordLength { get; set; } = 12;
     public bool RequireUppercase { get; set; } = true;

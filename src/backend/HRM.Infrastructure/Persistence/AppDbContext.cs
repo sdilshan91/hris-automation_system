@@ -30,6 +30,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<JobTitle> JobTitles => Set<JobTitle>();
+    public DbSet<Employee> Employees => Set<Employee>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,5 +59,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-CHR-005: JobTitle tenant isolation + soft-delete filter
         modelBuilder.Entity<JobTitle>()
             .HasQueryFilter(j => !j.IsDeleted && (!_tenantContext.IsResolved || j.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-001: Employee tenant isolation + soft-delete filter
+        modelBuilder.Entity<Employee>()
+            .HasQueryFilter(e => !e.IsDeleted && (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId));
     }
 }

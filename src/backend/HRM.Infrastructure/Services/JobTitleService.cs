@@ -125,12 +125,14 @@ public sealed class JobTitleService : IJobTitleService
         if (!jobTitle.IsActive)
             return Result.Failure("Job title is already deactivated.", 400);
 
-        // AC-5 / FR-7: Cannot deactivate if there are active employees assigned.
-        // TODO(US-CHR-001): When Employee entity exists, add:
-        //   var activeEmployeeCount = await _dbContext.Employees
-        //       .CountAsync(e => e.JobTitleId == jobTitleId && e.IsActive, ct);
-        //   if (activeEmployeeCount > 0)
-        //       return Result.Failure($"This job title is assigned to {activeEmployeeCount} active employees. Reassign them before deactivating.");
+        // AC-5 / FR-7: Cannot deactivate if there are active employees assigned (US-CHR-001 wiring).
+        var activeEmployeeCount = await _dbContext.Employees
+            .CountAsync(e => e.JobTitleId == jobTitleId && e.IsActive, cancellationToken);
+
+        if (activeEmployeeCount > 0)
+            return Result.Failure(
+                $"This job title is assigned to {activeEmployeeCount} active employee(s). Reassign them before deactivating.",
+                400);
 
         jobTitle.IsActive = false;
 
@@ -157,7 +159,11 @@ public sealed class JobTitleService : IJobTitleService
         if (jobTitle is null)
             return Result<JobTitleDto>.Failure("Job title not found.", 404);
 
-        return Result<JobTitleDto>.Success(ToDto(jobTitle));
+        // US-CHR-001: Real employee count
+        var employeeCount = await _dbContext.Employees
+            .CountAsync(e => e.JobTitleId == jobTitleId && e.IsActive, cancellationToken);
+
+        return Result<JobTitleDto>.Success(ToDto(jobTitle, employeeCount));
     }
 
     public async Task<Result<IReadOnlyList<JobTitleDto>>> GetAllAsync(
@@ -176,20 +182,28 @@ public sealed class JobTitleService : IJobTitleService
             .OrderBy(j => j.TitleName)
             .ToListAsync(cancellationToken);
 
-        var dtos = jobTitles.Select(ToDto).ToList();
+        // US-CHR-001: Batch-load employee counts for all job titles in one query
+        var jobTitleIds = jobTitles.Select(j => j.Id).ToList();
+        var employeeCounts = await _dbContext.Employees
+            .Where(e => jobTitleIds.Contains(e.JobTitleId) && e.IsActive)
+            .GroupBy(e => e.JobTitleId)
+            .Select(g => new { JobTitleId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.JobTitleId, g => g.Count, cancellationToken);
+
+        var dtos = jobTitles.Select(j =>
+            ToDto(j, employeeCounts.GetValueOrDefault(j.Id, 0))).ToList();
         return Result<IReadOnlyList<JobTitleDto>>.Success(dtos);
     }
 
     // ── Private helpers ──────────────────────────────────────────────
 
-    private static JobTitleDto ToDto(JobTitle j) => new()
+    private JobTitleDto ToDto(JobTitle j, int? employeeCount = null) => new()
     {
         Id = j.Id,
         TitleName = j.TitleName,
         Description = j.Description,
         GradeId = j.GradeId,
-        // TODO(US-CHR-001): Wire to real employee count when Employee entity exists.
-        EmployeeCount = 0,
+        EmployeeCount = employeeCount ?? 0,
         IsActive = j.IsActive,
         CreatedAt = j.CreatedAt,
         UpdatedAt = j.UpdatedAt,

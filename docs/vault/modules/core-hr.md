@@ -141,7 +141,49 @@ Added to `PermissionCatalog`:
 - `JobTitle.Edit` -- granted to Tenant Admin, HR Manager, HR Officer
 - `JobTitle.Deactivate` -- granted to Tenant Admin, HR Manager, HR Officer
 
+## Employees (US-CHR-001)
+
+### Backend domain rules
+
+- Employee numbers (`employee_no`) auto-generated per tenant with pattern "EMP-NNNN" (FR-2, BR-1). Sequence isolated per tenant via `IgnoreQueryFilters()` + `WHERE tenant_id = ...` to include soft-deleted records and avoid reuse.
+- Employee email is unique within a tenant but may duplicate across tenants (FR-3, BR-2). Enforced by partial unique index `WHERE is_deleted = false`.
+- Default status on creation is `Active` unless explicitly set to `Probation` (BR-3).
+- `date_of_joining` cannot be more than 90 days in the future (BR-4). Validated by FluentValidation.
+- Minimum age is 16 years (validated from `date_of_birth`).
+- Plan-level employee limit enforced from `Tenant.MaxEmployees` (nullable; null = unlimited). Blocks with 403 when limit reached (AC-5, FR-5).
+- Profile photo upload: MIME validation (JPEG/PNG/WebP), max 5 MB, virus scan via `IVirusScanner`, EXIF stripping stub (AC-4, FR-6, NFR-3).
+- Custom fields stored as JSONB; no schema validation until US-CHR-012 adds tenant custom-field configuration.
+- Soft-delete via `is_deleted = true`; EF global query filter also checks `!IsDeleted`.
+
+### Deferred FKs wired by US-CHR-001
+
+1. **Department.manager_id FK**: Now a real FK to `employees.id` with `ON DELETE SET NULL`. Navigation property `Department.Manager` and `Department.Employees` collection added. DepartmentConfiguration updated.
+2. **JobTitle employee count**: `JobTitleService.ToDto()` now queries real employee count instead of returning 0. `GetAllAsync` uses batch query via `GroupBy`.
+3. **Deactivation guards**: Both `DepartmentService.DeactivateAsync` and `JobTitleService.DeactivateAsync` now check `_dbContext.Employees.CountAsync(...)` and block if active employees are assigned.
+
+### Tenant.MaxEmployees
+
+Added nullable `int? MaxEmployees` to the Tenant entity. Default is null (unlimited). TODO(subscription): move to a proper Subscription/Plan entity when the billing module is built.
+
+### File storage and virus scanning seams
+
+- `IFileStorage` (Application interface) with `LocalFileStorage` (Infrastructure, dev provider). Path convention: `{tenantId}/core-hr/{employeeId}/profile/{filename}`.
+- `IVirusScanner` (Application interface) with `AllowWithLogVirusScanner` (Infrastructure, stub that logs warnings). TODO(prod): wire ClamAV.
+- Both registered via DI in `DependencyInjection.AddInfrastructure`.
+
+### API endpoints (backend)
+
+- `GET    /api/v1/tenant/employees` -- paginated list (optional `?activeOnly=true&search=...&page=1&pageSize=20`)
+- `GET    /api/v1/tenant/employees/{id}` -- single by ID
+- `POST   /api/v1/tenant/employees` -- create
+- `POST   /api/v1/tenant/employees/{id}/profile-photo` -- upload profile photo
+
+### Employee permissions (US-CHR-001)
+
+Already existed in `PermissionCatalog`:
+- `Employee.View.Own`, `Employee.View.Team`, `Employee.View.All`
+- `Employee.Create`, `Employee.Edit`, `Employee.Edit.Own`, `Employee.Delete`, `Employee.Export`
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."
-- Employee count enforcement (AC-5) is a TODO until Employee entity exists.

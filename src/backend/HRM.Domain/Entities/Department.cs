@@ -29,10 +29,8 @@ public sealed class Department : BaseEntity
     public Guid? ParentDepartmentId { get; set; }
 
     /// <summary>
-    /// Optional department manager. Stored as a nullable UUID column
-    /// WITHOUT a hard FK constraint because the Employee entity does not
-    /// exist yet (US-CHR-001 builds it).
-    /// TODO(US-CHR-001): wire ManagerId FK to Employee entity once it exists.
+    /// Optional department manager. FK to Employee (US-CHR-001).
+    /// ON DELETE SET NULL — removing the employee clears the manager slot.
     /// </summary>
     public Guid? ManagerId { get; set; }
 
@@ -53,4 +51,14 @@ public sealed class Department : BaseEntity
     /// Child departments forming the subtree.
     /// </summary>
     public ICollection<Department> ChildDepartments { get; set; } = new List<Department>();
+
+    /// <summary>
+    /// Department manager (Employee). Wired by US-CHR-001.
+    /// </summary>
+    public Employee? Manager { get; set; }
+
+    /// <summary>
+    /// Employees assigned to this department.
+    /// </summary>
+    public ICollection<Employee> Employees { get; set; } = new List<Employee>();
 }

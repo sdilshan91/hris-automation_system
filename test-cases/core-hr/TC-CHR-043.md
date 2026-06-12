@@ -4,26 +4,29 @@ user_story: US-CHR-005
 module: Core HR
 priority: critical
 type: functional
-status: blocked
+status: draft
 created: 2026-06-12
+updated: 2026-06-12
+unblocked_by: US-CHR-001
 ---
 
-# TC-CHR-043: Deactivate job title blocked when assigned to active employees [BLOCKED on US-CHR-001]
+# TC-CHR-043: Deactivate job title blocked when assigned to active employees
 
 ## 1. Test Objective
-Verify that the system prevents deactivation of a job title that is currently assigned to active employees, displaying the warning message specified in AC-5: "This job title is assigned to X active employees. Reassign them before deactivating." This test is BLOCKED because it requires the Employee entity from US-CHR-001 to assign employees to job titles.
+Verify that the system prevents deactivation of a job title that is currently assigned to active employees, displaying the warning message specified in AC-5: "This job title is assigned to X active employees. Reassign them before deactivating." Previously BLOCKED on US-CHR-001 -- now unblocked.
 
 ## 2. Related Requirements
 - User Story: US-CHR-005
 - Acceptance Criteria: AC-5
 - Functional Requirements: FR-7
 - Business Rules: BR-3
+- Dependencies: US-CHR-001 (Employees) -- now available
 
 ## 3. Preconditions
-- **BLOCKED**: Requires US-CHR-001 (Employee entity) to be implemented.
 - Tenant "acme" exists with status `active`.
 - A user with Tenant Admin role is authenticated in the "acme" tenant context.
-- A job title "Software Engineer" exists with 3 active employees assigned to it.
+- A job title "Software Engineer" exists.
+- 3 active employees are assigned to the "Software Engineer" job title (created via US-CHR-001 employee creation flow with job_title_id pointing to "Software Engineer").
 
 ## 4. Test Data
 | Field | Value | Notes |
@@ -31,7 +34,7 @@ Verify that the system prevents deactivation of a job title that is currently as
 | Subdomain | acme.yourhrm.com | Active tenant |
 | User Role | Tenant Admin | Authorized role |
 | Job Title | Software Engineer | Has active employees assigned |
-| Assigned Employee Count | 3 | Active employees |
+| Assigned Employee Count | 3 | Active employees with this job_title_id |
 
 ## 5. Test Steps
 | Step | Action | Expected Result |
@@ -40,11 +43,14 @@ Verify that the system prevents deactivation of a job title that is currently as
 | 2 | Click the "Deactivate" action on the "Software Engineer" row | A confirmation dialog or warning message appears. |
 | 3 | Observe the warning message | Warning message reads: "This job title is assigned to 3 active employees. Reassign them before deactivating." |
 | 4 | Verify the deactivation action is blocked (Save/Confirm button is disabled or the action is refused) | The system does not allow proceeding with deactivation. |
-| 5 | Verify API call (if made) returns an error | Response status is 409 Conflict or 422 Unprocessable Entity with the warning message. |
+| 5 | Verify API call (if made) returns an error | Response status is 409 Conflict or 422 Unprocessable Entity with the warning message and error code `has_active_employees`. |
 | 6 | Verify the job title remains active | `is_active` is still `true` in the database. |
+| 7 | Reassign all 3 employees to a different job title (e.g., "Senior Engineer") | Employees updated to new job_title_id. |
+| 8 | Retry deactivation of "Software Engineer" | Deactivation now succeeds (0 active employees assigned). |
 
 ## 6. Postconditions
-- The job title "Software Engineer" remains active and unchanged.
+- The job title "Software Engineer" remains active when employees are assigned.
+- After reassigning all employees, deactivation succeeds.
 - No audit log entry is created for a blocked deactivation.
 
 ## 7. Test Category Tags
@@ -56,8 +62,3 @@ Verify that the system prevents deactivation of a job title that is currently as
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
-
-## 8. Blocked Status
-- **Blocked By**: US-CHR-001 (Create and Manage Employees)
-- **Reason**: The Employee entity does not exist yet. AC-5 and FR-7 require employees to be assignable to job titles. This test case cannot be executed until employee management is implemented and employees can be assigned job titles.
-- **Unblock Criteria**: US-CHR-001 is delivered and employees can be assigned `job_title_id` values.

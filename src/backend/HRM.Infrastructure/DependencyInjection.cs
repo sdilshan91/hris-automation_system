@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure;
 
@@ -65,6 +66,22 @@ public static class DependencyInjection
 
         // Job title service (US-CHR-005)
         services.AddScoped<IJobTitleService, JobTitleService>();
+
+        // Employee service (US-CHR-001)
+        services.AddScoped<IEmployeeService, EmployeeService>();
+
+        // File storage (US-CHR-001 FR-6)
+        // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
+        services.AddSingleton<IFileStorage>(sp =>
+        {
+            var basePath = configuration["FileStorage:BasePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+            var logger = sp.GetRequiredService<ILogger<LocalFileStorage>>();
+            return new LocalFileStorage(basePath, logger);
+        });
+
+        // Virus scanner (US-CHR-001 NFR-3)
+        // TODO(prod): Wire ClamAV or equivalent production scanner.
+        services.AddSingleton<IVirusScanner, AllowWithLogVirusScanner>();
 
         // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
         services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
