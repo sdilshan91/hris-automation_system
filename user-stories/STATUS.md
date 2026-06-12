@@ -48,7 +48,7 @@
 - [x] US-CHR-007 — Manage office locations *(PR #17)*
 - [x] US-CHR-008 — Employee document management *(PR #18)*
 - [x] US-CHR-009 — Employee status management *(PR #19)*
-- [ ] US-CHR-010 — Bulk employee import via CSV/Excel
+- [~] US-CHR-010 — Bulk employee import via CSV/Excel
 - [ ] US-CHR-011 — Employee reporting structure
 - [ ] US-CHR-012 — Custom fields per tenant
 
