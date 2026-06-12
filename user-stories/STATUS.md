@@ -44,7 +44,7 @@
 - [x] US-CHR-003 — Employee directory with search and filters *(PR #14)*
 - [x] US-CHR-004 — Create and manage departments *(PR #9; built ahead of CHR-001 per dependency order)*
 - [x] US-CHR-005 — Create and manage job titles and positions *(PR #10)*
-- [~] US-CHR-006 — Organization tree/hierarchy visualization
+- [x] US-CHR-006 — Organization tree/hierarchy visualization *(PR #16)*
 - [ ] US-CHR-007 — Manage office locations
 - [ ] US-CHR-008 — Employee document management
 - [ ] US-CHR-009 — Employee status management
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **8** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; CHR-002 PR #13; CHR-003 PR #14)
+- Done: **9** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; CHR-002 PR #13; CHR-003 PR #14; CHR-006 PR #16)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **92**
+- Pending: **91**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
