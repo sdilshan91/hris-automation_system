@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 
 /**
- * US-CHR-001 / US-CHR-002 / US-CHR-003 / US-CHR-010: Employee management routes.
+ * US-CHR-001 / US-CHR-002 / US-CHR-003 / US-CHR-010 / US-CHR-011: Employee management routes.
  *
  * Lazy-loaded under the 'employees' path in app.routes.ts.
  * The parent route applies roleGuard(['Tenant Admin', 'HR Officer']).
@@ -12,6 +12,9 @@ import { Routes } from '@angular/router';
  *
  * US-CHR-010: Bulk import route. Role-guarded by the parent employees route
  * (Tenant Admin, HR Officer). Placed before :id to avoid path collision.
+ *
+ * US-CHR-011: My Team route. Accessible to Manager, HR Officer, Tenant Admin.
+ * Placed before :id to avoid path collision.
  */
 export const EMPLOYEE_ROUTES: Routes = [
   {
@@ -33,6 +36,13 @@ export const EMPLOYEE_ROUTES: Routes = [
     loadComponent: () =>
       import('./components/bulk-import/bulk-import.component').then(
         (m) => m.BulkImportComponent
+      ),
+  },
+  {
+    path: 'my-team',
+    loadComponent: () =>
+      import('./components/my-team/my-team.component').then(
+        (m) => m.MyTeamComponent
       ),
   },
   {

@@ -381,6 +381,8 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
             case EmployeeStatus.Suspended:
                 // Disable linked user login (AC-3, FR-5)
                 await DisableUserLoginAsync(employee, cancellationToken);
+                // US-CHR-011 BR-4: If a manager is terminated/suspended, notify HR to reassign direct reports
+                await NotifyDirectReportsReassignmentAsync(employee, newStatus, cancellationToken);
                 // TODO(leave): Pause leave accrual when Leave module is built
                 // TODO(payroll): Exclude from payroll when Payroll module is built
                 // TODO(onboarding): Trigger offboarding workflow when Onboarding module is built
@@ -408,12 +410,38 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
             case EmployeeStatus.Terminated:
             case EmployeeStatus.Suspended:
                 await DisableUserLoginAsync(employee, cancellationToken);
+                await NotifyDirectReportsReassignmentAsync(employee, newStatus, cancellationToken);
                 break;
 
             case EmployeeStatus.Active:
                 await EnableUserLoginAsync(employee, cancellationToken);
                 break;
         }
+    }
+
+    /// <summary>
+    /// US-CHR-011 BR-4: When a manager is terminated or suspended, log an HR reminder
+    /// to reassign their direct reports. Does NOT auto-reassign.
+    /// TODO(notification): Dispatch an actual notification when the Notification module is built.
+    /// </summary>
+    private async Task NotifyDirectReportsReassignmentAsync(
+        Employee employee,
+        EmployeeStatus newStatus,
+        CancellationToken cancellationToken)
+    {
+        var directReportCount = await _dbContext.Employees
+            .CountAsync(e => e.ReportsToEmployeeId == employee.Id, cancellationToken);
+
+        if (directReportCount == 0)
+            return;
+
+        // TODO(notification): Replace with actual notification dispatch when Notification module is built.
+        _logger.LogWarning(
+            "MANAGER_STATUS_CHANGE_REASSIGNMENT_NEEDED: Manager {EmployeeId} ({FirstName} {LastName}) " +
+            "has been {NewStatus}. They have {DirectReportCount} direct report(s) that need to be reassigned. " +
+            "TenantId={TenantId}.",
+            employee.Id, employee.FirstName, employee.LastName, newStatus,
+            directReportCount, employee.TenantId);
     }
 
     /// <summary>

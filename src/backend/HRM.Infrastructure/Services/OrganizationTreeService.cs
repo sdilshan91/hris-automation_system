@@ -105,102 +105,67 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
         if (!_tenantContext.IsResolved)
             return Result<OrgTreeResult>.Failure("Tenant context is not resolved.", 400);
 
-        // NOTE: Employee.ReportsTo FK does not exist yet (deferred to US-CHR-011).
-        // Best-effort implementation: show department managers as root-level "manager" nodes,
-        // with their department's employees as children.
-        // This gives the client a meaningful reporting view using available data.
-
-        var deptQuery = _dbContext.Departments
-            .Include(d => d.Manager)
-                .ThenInclude(m => m!.JobTitle)
-            .AsNoTracking();
-
-        if (!includeInactive)
-            deptQuery = deptQuery.Where(d => d.IsActive);
-
-        var departments = await deptQuery
-            .Where(d => d.ManagerId != null)
-            .OrderBy(d => d.Name)
-            .ToListAsync(cancellationToken);
-
-        // For each department with a manager, load that department's employees.
-        var deptIds = departments.Select(d => d.Id).ToHashSet();
+        // US-CHR-011: Real reporting structure using Employee.ReportsToEmployeeId.
+        // Root nodes are employees with no manager (ReportsToEmployeeId == null).
+        // Children are loaded by ReportsToEmployeeId.
+        // Note: no Include(e => e.JobTitle) — load job titles separately for InMemory compatibility.
 
         var empQuery = _dbContext.Employees
-            .Include(e => e.JobTitle)
             .AsNoTracking();
 
         if (!includeInactive)
             empQuery = empQuery.Where(e => e.IsActive);
 
-        var employees = await empQuery
-            .Where(e => deptIds.Contains(e.DepartmentId))
+        var allEmployees = await empQuery
             .OrderBy(e => e.FirstName)
             .ThenBy(e => e.LastName)
             .ToListAsync(cancellationToken);
 
-        var employeesByDept = employees.ToLookup(e => e.DepartmentId);
+        // Load job title names in a batch for display
+        var jtIds = allEmployees.Select(e => e.JobTitleId).Distinct().ToList();
+        var jobTitleNames = jtIds.Count > 0
+            ? await _dbContext.JobTitles.AsNoTracking()
+                .Where(j => jtIds.Contains(j.Id))
+                .ToDictionaryAsync(j => j.Id, j => j.TitleName, cancellationToken)
+            : new Dictionary<Guid, string>();
+
+        // Build lookup by manager ID for tree construction.
+        var childrenLookup = allEmployees.ToLookup(e => e.ReportsToEmployeeId);
 
         if (parentId.HasValue)
         {
-            // Lazy load: parentId should be an employee (manager) ID.
-            // Find the department managed by this employee and return their reports.
-            var managedDept = departments.FirstOrDefault(d => d.ManagerId == parentId.Value);
-            if (managedDept is null)
+            // Lazy load: return direct reports of the specified manager.
+            var parentExists = allEmployees.Any(e => e.Id == parentId.Value);
+            if (!parentExists)
                 return Result<OrgTreeResult>.Success(new OrgTreeResult
                 {
                     Nodes = [],
                     View = "reporting",
-                    ReportingViewAvailable = false,
+                    ReportingViewAvailable = true,
                 });
 
-            var directReports = employeesByDept[managedDept.Id]
-                .Where(e => e.Id != parentId.Value) // exclude the manager themselves
-                .Select(e => ToEmployeeNode(e, parentId.Value))
+            var directReports = childrenLookup[parentId.Value]
+                .Select(e => BuildReportingNode(e, childrenLookup, jobTitleNames, depth, 1))
                 .ToList();
 
             return Result<OrgTreeResult>.Success(new OrgTreeResult
             {
                 Nodes = directReports,
                 View = "reporting",
-                ReportingViewAvailable = false,
+                ReportingViewAvailable = true,
             });
         }
 
-        // Build manager nodes with their direct reports (depth-limited).
-        var managerNodes = new List<OrgTreeNodeDto>();
-
-        foreach (var dept in departments)
-        {
-            var manager = dept.Manager!;
-            var reports = employeesByDept[dept.Id]
-                .Where(e => e.Id != manager.Id) // exclude the manager from their own reports
-                .ToList();
-
-            var children = depth > 1
-                ? reports.Select(e => ToEmployeeNode(e, manager.Id)).ToList()
-                : [];
-
-            managerNodes.Add(new OrgTreeNodeDto
-            {
-                NodeId = manager.Id,
-                NodeType = "employee",
-                Name = $"{manager.FirstName} {manager.LastName}",
-                Title = manager.JobTitle?.TitleName,
-                AvatarUrl = manager.ProfilePhotoUrl,
-                EmployeeCount = null,
-                ChildrenCount = reports.Count,
-                ParentId = null,
-                IsActive = manager.IsActive,
-                Children = children,
-            });
-        }
+        // Full tree: root nodes are employees with no manager.
+        var rootNodes = childrenLookup[null]
+            .Select(e => BuildReportingNode(e, childrenLookup, jobTitleNames, depth, 1))
+            .ToList();
 
         return Result<OrgTreeResult>.Success(new OrgTreeResult
         {
-            Nodes = managerNodes,
+            Nodes = rootNodes,
             View = "reporting",
-            ReportingViewAvailable = false, // Deferred: true reporting chain requires Employee.ReportsTo (US-CHR-011)
+            ReportingViewAvailable = true,
         });
     }
 
@@ -240,20 +205,36 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
         };
     }
 
-    private static OrgTreeNodeDto ToEmployeeNode(Employee emp, Guid parentManagerId)
+    /// <summary>
+    /// Recursively builds a reporting-structure node from Employee.ReportsToEmployeeId (US-CHR-011).
+    /// </summary>
+    private static OrgTreeNodeDto BuildReportingNode(
+        Employee emp,
+        ILookup<Guid?, Employee> childrenLookup,
+        Dictionary<Guid, string> jobTitleNames,
+        int maxDepth,
+        int currentDepth)
     {
+        var directReports = childrenLookup[emp.Id].ToList();
+
+        var children = currentDepth < maxDepth
+            ? directReports
+                .Select(child => BuildReportingNode(child, childrenLookup, jobTitleNames, maxDepth, currentDepth + 1))
+                .ToList()
+            : [];
+
         return new OrgTreeNodeDto
         {
             NodeId = emp.Id,
             NodeType = "employee",
             Name = $"{emp.FirstName} {emp.LastName}",
-            Title = emp.JobTitle?.TitleName,
+            Title = jobTitleNames.TryGetValue(emp.JobTitleId, out var jt) ? jt : null,
             AvatarUrl = emp.ProfilePhotoUrl,
             EmployeeCount = null,
-            ChildrenCount = 0, // Leaf node; true reporting chain deferred to US-CHR-011
-            ParentId = parentManagerId,
+            ChildrenCount = directReports.Count,
+            ParentId = emp.ReportsToEmployeeId,
             IsActive = emp.IsActive,
-            Children = [],
+            Children = children,
         };
     }
 }

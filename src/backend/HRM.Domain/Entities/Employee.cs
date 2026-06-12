@@ -112,6 +112,12 @@ public sealed class Employee : BaseEntity
     public Guid? LocationId { get; set; }
 
     /// <summary>
+    /// Self-referencing FK to the employee's direct reporting manager (US-CHR-011 FR-1, BR-1).
+    /// Nullable: top-level employees (e.g. CEO) have no manager (FR-8).
+    /// </summary>
+    public Guid? ReportsToEmployeeId { get; set; }
+
+    /// <summary>
     /// Whether the employee is active (mirrors IsDeleted for soft-delete, but allows
     /// Active/Inactive/Terminated status transitions beyond just soft-delete).
     /// </summary>
@@ -145,6 +151,17 @@ public sealed class Employee : BaseEntity
     /// Location entity assigned to this employee (US-CHR-007).
     /// </summary>
     public Location? LocationEntity { get; set; }
+
+    /// <summary>
+    /// The employee's direct reporting manager (US-CHR-011 FR-1).
+    /// Null when the employee has no manager (top-level / CEO).
+    /// </summary>
+    public Employee? Manager { get; set; }
+
+    /// <summary>
+    /// Employees who directly report to this employee (US-CHR-011 FR-5).
+    /// </summary>
+    public ICollection<Employee> DirectReports { get; set; } = new List<Employee>();
 
     /// <summary>
     /// Emergency contacts for this employee (US-CHR-002).

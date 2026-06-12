@@ -30,6 +30,8 @@ import {
   EMPLOYEE_STATUS_OPTIONS,
   EMPLOYMENT_TYPE_OPTIONS,
   PAGE_SIZE_OPTIONS,
+  IBulkAssignResult,
+  getInitialsFromName,
 } from '../../models/employee.models';
 
 /**
@@ -548,6 +550,16 @@ import {
           <table class="w-full text-sm text-left" role="grid">
             <thead>
               <tr class="border-b border-neutral-100">
+                <th scope="col" class="table-header !w-10 !px-3">
+                  <input
+                    type="checkbox"
+                    class="w-4 h-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+                    [checked]="allVisibleSelected()"
+                    [indeterminate]="someVisibleSelected() && !allVisibleSelected()"
+                    (change)="toggleSelectAll()"
+                    aria-label="Select all visible employees"
+                  />
+                </th>
                 <th scope="col" class="table-header">Employee</th>
                 <th scope="col" class="table-header">Employee No.</th>
                 <th scope="col" class="table-header">Department</th>
@@ -564,10 +576,20 @@ import {
                 <tr
                   class="table-row cursor-pointer"
                   [class.bg-neutral-50]="odd"
+                  [class.!bg-brand-50/40]="isSelected(employee.employeeId)"
                   tabindex="0"
                   (click)="viewEmployee(employee.employeeId)"
                   (keydown.enter)="viewEmployee(employee.employeeId)"
                 >
+                  <td class="table-cell !w-10 !px-3" (click)="$event.stopPropagation()">
+                    <input
+                      type="checkbox"
+                      class="w-4 h-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+                      [checked]="isSelected(employee.employeeId)"
+                      (change)="toggleSelect(employee.employeeId)"
+                      [attr.aria-label]="'Select ' + employee.firstName + ' ' + employee.lastName"
+                    />
+                  </td>
                   <td class="table-cell">
                     <div class="flex items-center gap-3">
                       <div class="avatar-circle !w-8 !h-8 !text-xs">
@@ -614,6 +636,197 @@ import {
               }
             </tbody>
           </table>
+        </div>
+      }
+
+      <!-- US-CHR-011 AC-5: Bulk action floating toolbar -->
+      @if (selectedEmployeeIds().length > 0) {
+        <div
+          class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3
+            bg-neutral-900 text-white rounded-xl shadow-xl px-5 py-3"
+          @fadeSlideIn
+          role="toolbar"
+          aria-label="Bulk actions"
+        >
+          <span class="text-sm font-medium">
+            {{ selectedEmployeeIds().length }} selected
+          </span>
+          <div class="w-px h-5 bg-neutral-700"></div>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 text-sm font-medium text-white
+              hover:text-brand-300 transition-colors px-2 py-1 rounded-md hover:bg-white/10"
+            (click)="openBulkAssignModal()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+              <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z"/>
+            </svg>
+            Assign Manager
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center text-sm text-neutral-400 hover:text-white
+              transition-colors px-2 py-1 rounded-md hover:bg-white/10"
+            (click)="clearSelection()"
+            aria-label="Clear selection"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+            </svg>
+          </button>
+        </div>
+      }
+
+      <!-- US-CHR-011: Bulk Assign Manager Modal -->
+      @if (showBulkAssignModal()) {
+        <div
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          (click)="closeBulkAssignModal()"
+          (keydown.escape)="closeBulkAssignModal()"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulk-assign-title"
+          @fadeSlideIn
+        >
+          <div
+            class="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="flex items-center justify-between px-6 pt-5 pb-3">
+              <h3 id="bulk-assign-title" class="text-lg font-semibold text-neutral-900">
+                @if (bulkAssignResults().length > 0) {
+                  Assignment Results
+                } @else {
+                  Assign Manager to {{ selectedEmployeeIds().length }} Employees
+                }
+              </h3>
+              <button
+                type="button"
+                class="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+                (click)="closeBulkAssignModal()"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="px-6 pb-6">
+              <!-- Results view -->
+              @if (bulkAssignResults().length > 0) {
+                <div class="space-y-2 mb-4">
+                  @for (result of bulkAssignResults(); track result.employeeId) {
+                    <div
+                      class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                      [class.border-green-200]="result.success"
+                      [class.bg-green-50/50]="result.success"
+                      [class.border-red-200]="!result.success"
+                      [class.bg-red-50/50]="!result.success"
+                    >
+                      <span [class.text-green-800]="result.success" [class.text-red-800]="!result.success">
+                        {{ result.employeeName }}
+                      </span>
+                      @if (result.success) {
+                        <span class="text-xs text-green-600 font-medium">Assigned</span>
+                      } @else {
+                        <span class="text-xs text-red-600">{{ result.error }}</span>
+                      }
+                    </div>
+                  }
+                </div>
+                <div class="flex justify-end">
+                  <button
+                    type="button"
+                    class="btn-primary"
+                    (click)="closeBulkAssignModal(); clearSelection()"
+                  >
+                    Done
+                  </button>
+                </div>
+              } @else {
+                <!-- Search for manager -->
+                <div class="relative mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"/>
+                  </svg>
+                  <input
+                    type="search"
+                    class="input-notion !pl-9"
+                    placeholder="Search for a manager..."
+                    [ngModel]="bulkManagerSearchTerm()"
+                    (ngModelChange)="onBulkManagerSearch($event)"
+                    aria-label="Search for a manager to assign"
+                  />
+                </div>
+
+                @if (isBulkSearching()) {
+                  <div class="flex items-center justify-center py-6">
+                    <div class="inline-block w-5 h-5 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin"></div>
+                    <span class="ml-2 text-sm text-neutral-500">Searching...</span>
+                  </div>
+                } @else if (bulkManagerSearchResults().length > 0) {
+                  <div class="max-h-48 overflow-y-auto -mx-1 mb-4">
+                    @for (emp of bulkManagerSearchResults(); track emp.employeeId) {
+                      <button
+                        type="button"
+                        class="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors"
+                        [class.bg-brand-50]="bulkSelectedManagerId() === emp.employeeId"
+                        [class.hover:bg-neutral-50]="bulkSelectedManagerId() !== emp.employeeId"
+                        (click)="bulkSelectedManagerId.set(emp.employeeId); bulkSelectedManagerName.set(emp.firstName + ' ' + emp.lastName)"
+                        [attr.aria-label]="'Select ' + emp.firstName + ' ' + emp.lastName + ' as manager'"
+                      >
+                        <div class="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center overflow-hidden flex-shrink-0">
+                          @if (emp.profilePhotoUrl) {
+                            <img [src]="emp.profilePhotoUrl" [alt]="emp.firstName" class="w-full h-full object-cover" />
+                          } @else {
+                            <span>{{ getBulkInitials(emp.firstName, emp.lastName) }}</span>
+                          }
+                        </div>
+                        <div class="min-w-0 flex-1">
+                          <p class="text-sm font-medium text-neutral-900 truncate">{{ emp.firstName }} {{ emp.lastName }}</p>
+                          <p class="text-xs text-neutral-500 truncate">{{ emp.jobTitleName || 'No title' }}</p>
+                        </div>
+                        @if (bulkSelectedManagerId() === emp.employeeId) {
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-brand-600" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd"/>
+                          </svg>
+                        }
+                      </button>
+                    }
+                  </div>
+                } @else if (bulkManagerSearchTerm().length >= 2) {
+                  <p class="text-sm text-neutral-400 text-center py-4 mb-4">No active employees found.</p>
+                } @else {
+                  <p class="text-sm text-neutral-400 text-center py-4 mb-4">Type at least 2 characters to search for a manager.</p>
+                }
+
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    (click)="closeBulkAssignModal()"
+                    [disabled]="isBulkAssigning()"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-primary"
+                    [disabled]="!bulkSelectedManagerId() || isBulkAssigning()"
+                    (click)="confirmBulkAssign()"
+                  >
+                    @if (isBulkAssigning()) {
+                      <span class="inline-block w-4 h-4 mr-2 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      Assigning...
+                    } @else {
+                      Confirm
+                    }
+                  </button>
+                </div>
+              }
+            </div>
+          </div>
         </div>
       }
 
@@ -808,6 +1021,18 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
   readonly skeletonCards = Array.from({ length: 8 }, (_, i) => i);
   readonly skeletonRows = Array.from({ length: 6 }, (_, i) => i);
 
+  // ─── US-CHR-011: Bulk selection + assignment signals ─────
+  readonly selectedEmployeeIds = signal<string[]>([]);
+  readonly showBulkAssignModal = signal(false);
+  readonly bulkManagerSearchTerm = signal('');
+  readonly bulkManagerSearchResults = signal<IEmployee[]>([]);
+  readonly isBulkSearching = signal(false);
+  readonly isBulkAssigning = signal(false);
+  readonly bulkSelectedManagerId = signal<string | null>(null);
+  readonly bulkSelectedManagerName = signal('');
+  readonly bulkAssignResults = signal<IBulkAssignResult[]>([]);
+  private bulkSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Search debounce
   private readonly searchSubject = new Subject<string>();
 
@@ -852,6 +1077,18 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
     if (this.filterDojFrom() || this.filterDojTo()) count++;
     if (this.filterIncludeArchived()) count++;
     return count;
+  });
+
+  readonly allVisibleSelected = computed(() => {
+    const emps = this.employees();
+    const selected = this.selectedEmployeeIds();
+    return emps.length > 0 && emps.every(e => selected.includes(e.employeeId));
+  });
+
+  readonly someVisibleSelected = computed(() => {
+    const emps = this.employees();
+    const selected = this.selectedEmployeeIds();
+    return emps.some(e => selected.includes(e.employeeId));
   });
 
   readonly hasActiveFiltersOrSearch = computed(
@@ -1274,6 +1511,125 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
     if (this.activeFilterCount() > 0) {
       this.showFilters.set(true);
     }
+  }
+
+  // ─── US-CHR-011: Selection + Bulk Assignment ───────────────
+
+  isSelected(employeeId: string): boolean {
+    return this.selectedEmployeeIds().includes(employeeId);
+  }
+
+  toggleSelect(employeeId: string): void {
+    const current = this.selectedEmployeeIds();
+    if (current.includes(employeeId)) {
+      this.selectedEmployeeIds.set(current.filter(id => id !== employeeId));
+    } else {
+      this.selectedEmployeeIds.set([...current, employeeId]);
+    }
+  }
+
+  toggleSelectAll(): void {
+    if (this.allVisibleSelected()) {
+      // Deselect all visible
+      const visibleIds = new Set(this.employees().map(e => e.employeeId));
+      this.selectedEmployeeIds.set(
+        this.selectedEmployeeIds().filter(id => !visibleIds.has(id))
+      );
+    } else {
+      // Select all visible (merge with existing)
+      const existing = new Set(this.selectedEmployeeIds());
+      for (const emp of this.employees()) {
+        existing.add(emp.employeeId);
+      }
+      this.selectedEmployeeIds.set(Array.from(existing));
+    }
+  }
+
+  clearSelection(): void {
+    this.selectedEmployeeIds.set([]);
+  }
+
+  openBulkAssignModal(): void {
+    this.showBulkAssignModal.set(true);
+    this.bulkManagerSearchTerm.set('');
+    this.bulkManagerSearchResults.set([]);
+    this.bulkSelectedManagerId.set(null);
+    this.bulkSelectedManagerName.set('');
+    this.bulkAssignResults.set([]);
+    this.isBulkAssigning.set(false);
+  }
+
+  closeBulkAssignModal(): void {
+    this.showBulkAssignModal.set(false);
+    if (this.bulkSearchTimer) {
+      clearTimeout(this.bulkSearchTimer);
+      this.bulkSearchTimer = null;
+    }
+  }
+
+  onBulkManagerSearch(term: string): void {
+    this.bulkManagerSearchTerm.set(term);
+    if (this.bulkSearchTimer) {
+      clearTimeout(this.bulkSearchTimer);
+    }
+    if (term.length < 2) {
+      this.bulkManagerSearchResults.set([]);
+      this.isBulkSearching.set(false);
+      return;
+    }
+    this.isBulkSearching.set(true);
+    this.bulkSearchTimer = setTimeout(() => {
+      this.employeeService
+        .searchActiveEmployees(term)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (response) => {
+            this.bulkManagerSearchResults.set(response.data);
+            this.isBulkSearching.set(false);
+          },
+          error: () => {
+            this.bulkManagerSearchResults.set([]);
+            this.isBulkSearching.set(false);
+          },
+        });
+    }, 300);
+  }
+
+  confirmBulkAssign(): void {
+    const managerId = this.bulkSelectedManagerId();
+    if (!managerId) return;
+
+    this.isBulkAssigning.set(true);
+    this.employeeService
+      .bulkAssignManager({
+        employeeIds: this.selectedEmployeeIds(),
+        managerEmployeeId: managerId,
+      })
+      .pipe(
+        finalize(() => this.isBulkAssigning.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (response) => {
+          this.bulkAssignResults.set(response.results);
+          if (response.totalFailed === 0) {
+            this.toastr.success(
+              `Manager assigned to ${response.totalSuccess} employee${response.totalSuccess === 1 ? '' : 's'} successfully.`
+            );
+          } else {
+            this.toastr.warning(
+              `${response.totalSuccess} assigned, ${response.totalFailed} failed. See details.`
+            );
+          }
+        },
+        error: () => {
+          this.toastr.error('Failed to assign manager. Please try again.');
+        },
+      });
+  }
+
+  getBulkInitials(firstName: string, lastName: string): string {
+    return getInitialsFromName(firstName, lastName);
   }
 
   // ─── Helpers ───────────────────────────────────────────────

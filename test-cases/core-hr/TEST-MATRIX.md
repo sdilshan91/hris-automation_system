@@ -1,7 +1,7 @@
 ---
 module: Core HR
-total_user_stories: 10
-total_test_cases: 307
+total_user_stories: 11
+total_test_cases: 338
 created: 2026-06-11
 updated: 2026-06-12
 status: draft
@@ -13,11 +13,11 @@ status: draft
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 10 (US-CHR-001, US-CHR-002, US-CHR-003, US-CHR-004, US-CHR-005, US-CHR-006, US-CHR-007, US-CHR-008, US-CHR-009, US-CHR-010) |
-| Total Test Cases | 307 |
-| Critical Priority | 122 |
-| High Priority | 140 |
-| Medium Priority | 45 |
+| Total User Stories Covered | 11 (US-CHR-001, US-CHR-002, US-CHR-003, US-CHR-004, US-CHR-005, US-CHR-006, US-CHR-007, US-CHR-008, US-CHR-009, US-CHR-010, US-CHR-011) |
+| Total Test Cases | 338 |
+| Critical Priority | 137 |
+| High Priority | 155 |
+| Medium Priority | 46 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 (previously 4 -- all unblocked by US-CHR-001) |
 | Status | All Draft |
@@ -36,6 +36,7 @@ status: draft
 | US-CHR-008 | Employee Document Management (Upload, View, Download) | TC-CHR-192, TC-CHR-193, TC-CHR-194, TC-CHR-195, TC-CHR-196, TC-CHR-197, TC-CHR-198, TC-CHR-199, TC-CHR-200, TC-CHR-201, TC-CHR-202, TC-CHR-203, TC-CHR-204, TC-CHR-205, TC-CHR-206, TC-CHR-207, TC-CHR-208, TC-CHR-209, TC-CHR-210, TC-CHR-211, TC-CHR-212, TC-CHR-213, TC-CHR-214, TC-CHR-215, TC-CHR-216 | 25 |
 | US-CHR-009 | Employee Status Management (Active, Probation, Suspended, Terminated) | TC-CHR-217, TC-CHR-218, TC-CHR-219, TC-CHR-220, TC-CHR-221, TC-CHR-222, TC-CHR-223, TC-CHR-224, TC-CHR-225, TC-CHR-226, TC-CHR-227, TC-CHR-228, TC-CHR-229, TC-CHR-230, TC-CHR-231, TC-CHR-232, TC-CHR-233, TC-CHR-234, TC-CHR-235, TC-CHR-236, TC-CHR-237, TC-CHR-238 | 22 |
 | US-CHR-010 | Bulk Employee Import via CSV/Excel | TC-CHR-239, TC-CHR-240, TC-CHR-241, TC-CHR-242, TC-CHR-243, TC-CHR-244, TC-CHR-245, TC-CHR-246, TC-CHR-247, TC-CHR-248, TC-CHR-249, TC-CHR-250, TC-CHR-251, TC-CHR-252, TC-CHR-253, TC-CHR-254, TC-CHR-255, TC-CHR-256, TC-CHR-257, TC-CHR-258, TC-CHR-259, TC-CHR-260, TC-CHR-261, TC-CHR-262, TC-CHR-263, TC-CHR-264, TC-CHR-265, TC-CHR-266, TC-CHR-267 | 29 |
+| US-CHR-011 | Employee Reporting Structure (Manager Assignment) | TC-CHR-268, TC-CHR-269, TC-CHR-270, TC-CHR-271, TC-CHR-272, TC-CHR-273, TC-CHR-274, TC-CHR-275, TC-CHR-276, TC-CHR-277, TC-CHR-278, TC-CHR-279, TC-CHR-280, TC-CHR-281, TC-CHR-282, TC-CHR-283, TC-CHR-284, TC-CHR-285, TC-CHR-286, TC-CHR-287, TC-CHR-288, TC-CHR-289, TC-CHR-290, TC-CHR-291, TC-CHR-292, TC-CHR-293, TC-CHR-294 | 27 |
 | Cross-cutting (CHR-001) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 4 |
 | Cross-cutting (CHR-002) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 4 |
 | Cross-cutting (CHR-003) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-017, TC-CHR-ISO-018, TC-CHR-ISO-019, TC-CHR-ISO-020 | 4 |
@@ -46,6 +47,7 @@ status: draft
 | Cross-cutting (CHR-008) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-029, TC-CHR-ISO-030, TC-CHR-ISO-031, TC-CHR-ISO-032 | 4 |
 | Cross-cutting (CHR-009) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-033, TC-CHR-ISO-034, TC-CHR-ISO-035, TC-CHR-ISO-036 | 4 |
 | Cross-cutting (CHR-010) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-037, TC-CHR-ISO-038, TC-CHR-ISO-039, TC-CHR-ISO-040 | 4 |
+| Cross-cutting (CHR-011) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-041, TC-CHR-ISO-042, TC-CHR-ISO-043, TC-CHR-ISO-044 | 4 |
 
 ## Test Type Distribution
 
@@ -61,6 +63,7 @@ status: draft
 | Functional (CHR-008) | TC-CHR-192, TC-CHR-193, TC-CHR-194, TC-CHR-195, TC-CHR-196, TC-CHR-202, TC-CHR-203, TC-CHR-204, TC-CHR-205, TC-CHR-206, TC-CHR-208, TC-CHR-213, TC-CHR-214, TC-CHR-216 | 14 |
 | Functional (CHR-009) | TC-CHR-217, TC-CHR-218, TC-CHR-219, TC-CHR-220, TC-CHR-221, TC-CHR-222, TC-CHR-223, TC-CHR-224, TC-CHR-225, TC-CHR-231, TC-CHR-232, TC-CHR-233, TC-CHR-236, TC-CHR-237, TC-CHR-238 | 15 |
 | Functional (CHR-010) | TC-CHR-239, TC-CHR-240, TC-CHR-241, TC-CHR-242, TC-CHR-243, TC-CHR-244, TC-CHR-245, TC-CHR-246, TC-CHR-247, TC-CHR-248, TC-CHR-249, TC-CHR-250, TC-CHR-251, TC-CHR-255, TC-CHR-256, TC-CHR-257, TC-CHR-258, TC-CHR-259, TC-CHR-260, TC-CHR-261, TC-CHR-263, TC-CHR-265, TC-CHR-267 | 23 |
+| Functional (CHR-011) | TC-CHR-268, TC-CHR-269, TC-CHR-270, TC-CHR-271, TC-CHR-272, TC-CHR-273, TC-CHR-274, TC-CHR-275, TC-CHR-276, TC-CHR-277, TC-CHR-278, TC-CHR-279, TC-CHR-280, TC-CHR-281, TC-CHR-282, TC-CHR-283, TC-CHR-293, TC-CHR-294 | 18 |
 | Security (CHR-001) | TC-CHR-067, TC-CHR-068, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-083, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-100, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 15 |
 | Security (CHR-002) | TC-CHR-107, TC-CHR-110, TC-CHR-111, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 13 |
 | Security (CHR-003) | TC-CHR-138, TC-CHR-139, TC-CHR-140, TC-CHR-141, TC-CHR-142, TC-CHR-ISO-017, TC-CHR-ISO-018, TC-CHR-ISO-019, TC-CHR-ISO-020 | 9 |
@@ -71,6 +74,7 @@ status: draft
 | Security (CHR-008) | TC-CHR-197, TC-CHR-198, TC-CHR-199, TC-CHR-200, TC-CHR-201, TC-CHR-207, TC-CHR-212, TC-CHR-215, TC-CHR-ISO-029, TC-CHR-ISO-030, TC-CHR-ISO-031, TC-CHR-ISO-032 | 12 |
 | Security (CHR-009) | TC-CHR-226, TC-CHR-227, TC-CHR-228, TC-CHR-229, TC-CHR-230, TC-CHR-ISO-033, TC-CHR-ISO-034, TC-CHR-ISO-035, TC-CHR-ISO-036 | 9 |
 | Security (CHR-010) | TC-CHR-252, TC-CHR-253, TC-CHR-254, TC-CHR-266, TC-CHR-ISO-037, TC-CHR-ISO-038, TC-CHR-ISO-039, TC-CHR-ISO-040 | 8 |
+| Security (CHR-011) | TC-CHR-284, TC-CHR-285, TC-CHR-286, TC-CHR-287, TC-CHR-288, TC-CHR-ISO-041, TC-CHR-ISO-042, TC-CHR-ISO-043, TC-CHR-ISO-044 | 9 |
 | Performance (CHR-001) | TC-CHR-095, TC-CHR-096 | 2 |
 | Performance (CHR-002) | TC-CHR-119, TC-CHR-120 | 2 |
 | Performance (CHR-003) | TC-CHR-143, TC-CHR-144, TC-CHR-145 | 3 |
@@ -81,6 +85,7 @@ status: draft
 | Performance (CHR-008) | TC-CHR-209 | 1 |
 | Performance (CHR-009) | TC-CHR-234 | 1 |
 | Performance (CHR-010) | TC-CHR-262 | 1 |
+| Performance (CHR-011) | TC-CHR-289, TC-CHR-290, TC-CHR-291 | 3 |
 | Accessibility (CHR-001) | TC-CHR-097 | 1 |
 | Accessibility (CHR-002) | TC-CHR-121 | 1 |
 | Accessibility (CHR-003) | TC-CHR-146 | 1 |
@@ -91,6 +96,7 @@ status: draft
 | Accessibility (CHR-008) | TC-CHR-210 | 1 |
 | Accessibility (CHR-009) | TC-CHR-235 | 1 |
 | Accessibility (CHR-010) | TC-CHR-264 | 1 |
+| Accessibility (CHR-011) | TC-CHR-292 | 1 |
 
 ## Test Category Coverage
 
@@ -711,6 +717,69 @@ status: draft
 | Blocked Test Cases | 0 | -- | CLEAR |
 | Deferred Test Cases | TC-CHR-267 (custom field mapping -- pending US-CHR-012), TC-CHR-260 (email notification dispatch -- pending Notification module) | -- | NOTE |
 
+## Acceptance Criteria Coverage (US-CHR-011)
+
+| AC | Description | Covered By Test Cases |
+|----|-------------|-----------------------|
+| AC-1 | Reporting Manager field shows current manager (avatar + name) or "Not Assigned"; edit button allows selecting new manager via search/autocomplete | TC-CHR-268, TC-CHR-269, TC-CHR-292 |
+| AC-2 | Assign manager updates FK, recorded in employment history timeline, audit log captures before/after | TC-CHR-268, TC-CHR-278, TC-CHR-280 |
+| AC-3 | Circular reporting chain detected and rejected with exact error message | TC-CHR-272, TC-CHR-273, TC-CHR-290 |
+| AC-4 | Manager views team dashboard with direct reports: name, job title, department, status, quick actions | TC-CHR-270 |
+| AC-5 | Bulk assign managers via employee directory: modal selection, all employees updated, changes logged individually | TC-CHR-271 |
+
+## Functional Requirements Coverage (US-CHR-011)
+
+| FR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| FR-1 | Store reporting manager as FK (reports_to_employee_id), nullable | TC-CHR-268, TC-CHR-276, TC-CHR-280 | Direct |
+| FR-2 | Support assigning one direct reporting manager per employee | TC-CHR-268, TC-CHR-280 | Direct |
+| FR-3 | Detect and prevent circular reporting chains at any depth | TC-CHR-272, TC-CHR-273, TC-CHR-274, TC-CHR-290 | Direct |
+| FR-4 | Support bulk manager assignment for multiple employees at once | TC-CHR-271, TC-CHR-291 | Direct |
+| FR-5 | Provide My Team / direct reports view for managers | TC-CHR-270, TC-CHR-282 | Direct |
+| FR-6 | Record every manager assignment change in employment history timeline | TC-CHR-268, TC-CHR-271, TC-CHR-278 | Direct |
+| FR-7 | Propagate manager assignments to approval workflows automatically | -- | Deferred (pending Leave/Attendance/Performance modules) |
+| FR-8 | Allow employee to have no manager assigned (nullable FK, org-tree root) | TC-CHR-276 | Direct |
+| FR-9 | All queries scoped by tenant_id via RLS and EF Core global query filters | TC-CHR-ISO-041, TC-CHR-ISO-042, TC-CHR-ISO-043, TC-CHR-ISO-044 | Direct |
+
+## Non-Functional Requirements Coverage (US-CHR-011)
+
+| NFR | Description | Covered By | Coverage |
+|-----|-------------|------------|----------|
+| NFR-1 | Manager assignment API response time <= 800ms P95 including cycle detection | TC-CHR-289 | Direct |
+| NFR-2 | Cycle detection within 200ms for hierarchies up to 500 employees deep | TC-CHR-290 | Direct |
+| NFR-3 | All reporting structure data tenant-isolated via RLS and EF Core global query filters | TC-CHR-ISO-041, TC-CHR-ISO-042, TC-CHR-ISO-043, TC-CHR-ISO-044 | Direct |
+| NFR-4 | Manager assignment UI fully responsive (360px to 4K) | TC-CHR-293, TC-CHR-294 | Direct |
+| NFR-5 | Manager assignment changes audited with before/after snapshots | TC-CHR-268, TC-CHR-278 | Direct |
+| NFR-6 | Bulk manager assignment for up to 100 employees within 5 seconds | TC-CHR-291 | Direct |
+
+## Business Rules Coverage (US-CHR-011)
+
+| BR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| BR-1 | An employee can have at most one direct reporting manager | TC-CHR-280 | Direct |
+| BR-2 | A manager can have unlimited direct reports (no system-enforced limit) | TC-CHR-281 | Direct |
+| BR-3 | Only active employees can be assigned as managers | TC-CHR-275 | Direct |
+| BR-4 | Manager terminated/suspended: system sends notification to HR to reassign direct reports | TC-CHR-277 | Direct (notification dispatch DEFERRED pending Notification module) |
+| BR-5 | Reporting hierarchy independent of department hierarchy; cross-department reporting allowed | TC-CHR-279 | Direct |
+| BR-6 | Manager assignment determines approval chain for leave, attendance, performance | -- | Deferred (pending respective modules) |
+| BR-7 | Self-assignment (employee reports to themselves) is not allowed | TC-CHR-274 | Direct |
+
+## Coverage Summary (US-CHR-011)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/9 (89%) -- FR-7 deferred to Leave/Attendance/Performance modules | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 6/7 (86%) -- BR-6 deferred to respective modules | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated ISO (TC-CHR-ISO-041 through TC-CHR-ISO-044) | >= 3 | PASS |
+| Security Test Cases | 9/31 (29%) + 4 ISO = 13/31 (41.9%) | >= 30% | PASS |
+| Performance Test Cases | 3/31 (TC-CHR-289, TC-CHR-290, TC-CHR-291) | >= 1 | PASS |
+| Accessibility Test Cases | 1/31 (TC-CHR-292) | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/31 (TC-CHR-293, TC-CHR-294) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | TC-CHR-277 notification dispatch (pending Notification module), FR-7 approval workflow propagation (pending Leave/Attendance/Performance modules), BR-6 approval chain (pending respective modules) | -- | NOTE |
+
 ---
 
-*Note: This test matrix now covers US-CHR-001 through US-CHR-010. US-CHR-010 adds 33 test cases (29 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 10/11 FRs (FR-11 deferred to US-CHR-012), 6 NFRs, and 7 BRs. TC-CHR-267 (custom field column mapping) is DEFERRED pending US-CHR-012. TC-CHR-260 email notification dispatch is DEFERRED pending the Notification module. All previously blocked test cases remain unblocked.*
+*Note: This test matrix now covers US-CHR-001 through US-CHR-011. US-CHR-011 adds 31 test cases (27 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 8/9 FRs (FR-7 deferred to Leave/Attendance/Performance modules), 6 NFRs, and 6/7 BRs. TC-CHR-277 notification dispatch is DEFERRED pending the Notification module. All previously blocked test cases remain unblocked.*

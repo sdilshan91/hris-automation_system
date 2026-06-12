@@ -230,9 +230,13 @@ export interface IEmployeeProfile extends IEmployee {
   state: string | null;
   postalCode: string | null;
   country: string | null;
-  /** Reporting manager name for display */
+  /** Reporting manager info for display (US-CHR-011 AC-1) */
   reportingManagerId: string | null;
   reportingManagerName: string | null;
+  reportingManagerJobTitle: string | null;
+  reportingManagerPhotoUrl: string | null;
+  /** Upward reporting chain (US-CHR-011, derived from manager lookups) */
+  reportingChain: IReportingChainNode[];
   /** Sub-entities */
   emergencyContacts: IEmergencyContact[];
   education: IEducationRecord[];
@@ -408,4 +412,97 @@ export function getStatusBadgeClasses(status: EmployeeStatus | string): string {
     case 'inactive':   return 'bg-slate-100 text-slate-800';
     default:           return 'bg-neutral-100 text-neutral-600';
   }
+}
+
+// ─── US-CHR-011: Reporting Structure models ───────────────
+
+/**
+ * Manager info for the mini-card on the employee profile (AC-1).
+ * Also used as a node in the reporting chain breadcrumb.
+ */
+export interface IManagerInfo {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  jobTitleName: string | null;
+  profilePhotoUrl: string | null;
+}
+
+/**
+ * Direct report entry for the "My Team" view (AC-4, FR-5).
+ * Compact card data: avatar, name, title, department, status.
+ */
+export interface IDirectReport {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  jobTitleName: string | null;
+  departmentName: string | null;
+  status: EmployeeStatus;
+  profilePhotoUrl: string | null;
+  email: string;
+  employeeNo: string;
+}
+
+/**
+ * Request payload for assigning a reporting manager to an employee (AC-2).
+ * POST /api/v1/tenant/employees/:id/manager
+ */
+export interface IAssignManagerRequest {
+  managerEmployeeId: string | null;
+}
+
+/**
+ * Response from the assign-manager endpoint.
+ * Returns the updated employee profile (with new manager info and timeline entry).
+ */
+export interface IAssignManagerResponse {
+  profile: IEmployeeProfile;
+}
+
+/**
+ * Request payload for bulk manager assignment (AC-5, FR-4).
+ * POST /api/v1/tenant/employees/bulk-assign-manager
+ */
+export interface IBulkAssignManagerRequest {
+  employeeIds: string[];
+  managerEmployeeId: string;
+}
+
+/**
+ * Per-employee result within the bulk assign response.
+ */
+export interface IBulkAssignResult {
+  employeeId: string;
+  employeeName: string;
+  success: boolean;
+  error: string | null;
+}
+
+/**
+ * Response from the bulk-assign-manager endpoint (AC-5).
+ */
+export interface IBulkAssignManagerResponse {
+  results: IBulkAssignResult[];
+  totalSuccess: number;
+  totalFailed: number;
+}
+
+/**
+ * Node in the upward reporting chain breadcrumb on the profile (Section 8).
+ * Derived from repeated manager lookups or a dedicated chain endpoint.
+ */
+export interface IReportingChainNode {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  jobTitleName: string | null;
+  profilePhotoUrl: string | null;
+}
+
+/**
+ * Extract initials from a first + last name (pure utility).
+ */
+export function getInitialsFromName(firstName: string, lastName: string): string {
+  return ((firstName?.[0] ?? '') + (lastName?.[0] ?? '')).toUpperCase();
 }
