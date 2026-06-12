@@ -501,9 +501,10 @@ describe('EmployeeProfileComponent', () => {
     }));
   });
 
-  // ─── isSectionEditable utility ─────────────────────────────
+});
 
-  describe('isSectionEditable utility function', () => {
+// ─── isSectionEditable utility (pure function — no TestBed/HTTP afterEach) ───
+describe('isSectionEditable utility function', () => {
     it('HR Officer can edit all sections', () => {
       expect(isSectionEditable('personal-info', 'hr_officer')).toBeTrue();
       expect(isSectionEditable('contact', 'hr_officer')).toBeTrue();
@@ -538,4 +539,3 @@ describe('EmployeeProfileComponent', () => {
       expect(isSectionEditable('custom-fields', 'manager')).toBeFalse();
     });
   });
-});

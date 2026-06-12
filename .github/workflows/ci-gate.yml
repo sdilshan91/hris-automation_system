@@ -48,6 +48,73 @@ jobs:
           path: '**/backend-tests.trx'
           if-no-files-found: ignore
 
+  migrations:
+    name: Migrations (real PostgreSQL apply)
+    # Applies the EF Core migration chain to a real PostgreSQL service container
+    # and asserts the expected schema exists. This catches non-discoverable /
+    # hand-written migrations that the InMemory-based unit tests cannot see
+    # (a migration with no [Migration] attribute is silently skipped by
+    # Database.MigrateAsync — see fix/employee-migrations-discoverable).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hrm
+          POSTGRES_PASSWORD: hrm
+          POSTGRES_DB: hrm_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hrm"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Overrides ConnectionStrings:DefaultConnection from appsettings.json.
+      # Jwt:PrivateKey is intentionally left blank (as in appsettings.json) — Program.cs
+      # skips PEM parsing when it is empty; a non-empty invalid value would throw at
+      # host build and break the design-time DbContext creation.
+      ConnectionStrings__DefaultConnection: 'Host=localhost;Port=5432;Database=hrm_ci;Username=hrm;Password=hrm'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 10.0.*
+
+      - name: Restore
+        run: dotnet restore src/backend/HRM.sln
+
+      - name: Apply migrations to PostgreSQL
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef database update \
+            --project src/backend/HRM.Infrastructure \
+            --startup-project src/backend/HRM.Api
+
+      - name: Assert expected schema exists
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          export PGPASSWORD=hrm
+          PSQL="psql -h localhost -U hrm -d hrm_ci -tAc"
+          fail=0
+          for t in employees emergency_contacts employment_histories employee_field_audit_logs; do
+            exists=$($PSQL "SELECT to_regclass('public.$t') IS NOT NULL")
+            echo "table $t -> $exists"
+            [ "$exists" = "t" ] || { echo "::error::expected table '$t' was not created by migrations"; fail=1; }
+          done
+          for c in lockout_count last_lockout_at mfa_failed_attempt_count; do
+            exists=$($PSQL "SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='$c')")
+            echo "users.$c -> $exists"
+            [ "$exists" = "t" ] || { echo "::error::expected column users.$c was not created by migrations"; fail=1; }
+          done
+          exit $fail
+
   frontend:
     name: Frontend (build + test)
     runs-on: ubuntu-latest
