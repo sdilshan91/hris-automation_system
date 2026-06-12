@@ -36,6 +36,15 @@ public static class PermissionCatalog
         public const string Deactivate = "Location.Deactivate";
     }
 
+    // ── Employee Document Module (US-CHR-008) ──────────────────────
+    public static class EmployeeDocument
+    {
+        public const string View = "EmployeeDocument.View";
+        public const string ViewOwn = "EmployeeDocument.ViewOwn";
+        public const string Upload = "EmployeeDocument.Upload";
+        public const string Delete = "EmployeeDocument.Delete";
+    }
+
     // ── Employee Module ──────────────────────────────────────────────
     public static class Employee
     {
@@ -175,6 +184,9 @@ public static class PermissionCatalog
         // Location
         Location.View, Location.Create, Location.Edit, Location.Deactivate,
 
+        // Employee Document
+        EmployeeDocument.View, EmployeeDocument.ViewOwn, EmployeeDocument.Upload, EmployeeDocument.Delete,
+
         // Employee
         Employee.ViewOwn, Employee.ViewTeam, Employee.ViewAll,
         Employee.Create, Employee.Edit, Employee.EditOwn, Employee.Delete, Employee.Export,
@@ -286,6 +298,7 @@ public static class PermissionCatalog
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
+            EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -306,6 +319,7 @@ public static class PermissionCatalog
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
+            EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -322,6 +336,7 @@ public static class PermissionCatalog
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
+            EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             Employee.ViewAll, Employee.Create, Employee.Edit,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,
@@ -345,6 +360,7 @@ public static class PermissionCatalog
         BuiltInRoles.Employee => new[]
         {
             Employee.ViewOwn, Employee.EditOwn,
+            EmployeeDocument.ViewOwn,
             Leave.ViewOwn, Leave.Apply,
             Attendance.ViewOwn, Attendance.CheckIn,
             Payroll.ViewOwn,

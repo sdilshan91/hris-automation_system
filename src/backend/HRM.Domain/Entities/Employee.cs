@@ -155,4 +155,9 @@ public sealed class Employee : BaseEntity
     /// Employment history timeline entries (US-CHR-002 FR-6).
     /// </summary>
     public ICollection<EmploymentHistory> EmploymentHistories { get; set; } = new List<EmploymentHistory>();
+
+    /// <summary>
+    /// Documents attached to this employee (US-CHR-008).
+    /// </summary>
+    public ICollection<EmployeeDocument> Documents { get; set; } = new List<EmployeeDocument>();
 }
