@@ -11,6 +11,7 @@ import {
   IEmployeeProfile,
   ICreateEmployeeRequest,
   IUpdateSectionRequest,
+  IEmployeeDirectoryParams,
 } from '../models/employee.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -102,6 +103,188 @@ describe('EmployeeService', () => {
       req.flush(mockEmployee);
     });
   });
+
+  // ─── US-CHR-003: Directory queries ────────────────────────
+
+  describe('queryDirectory', () => {
+    it('should send GET with search, page, and pageSize params', () => {
+      const params: IEmployeeDirectoryParams = {
+        search: 'John',
+        page: 1,
+        pageSize: 20,
+        sort: 'name',
+        sortDirection: 'asc',
+      };
+
+      service.queryDirectory(params).subscribe((response) => {
+        expect(response.data.length).toBe(1);
+        expect(response.total).toBe(1);
+      });
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === baseUrl &&
+          r.params.get('search') === 'John' &&
+          r.params.get('page') === '1' &&
+          r.params.get('pageSize') === '20' &&
+          r.params.get('sort') === 'name' &&
+          r.params.get('sortDirection') === 'asc'
+      );
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ data: [mockEmployee], total: 1, page: 1, pageSize: 20 });
+    });
+
+    it('should send multi-select filters as comma-separated values', () => {
+      const params: IEmployeeDirectoryParams = {
+        departments: ['Engineering', 'Sales'],
+        statuses: ['active', 'probation'],
+        employmentTypes: ['Full-Time', 'Contract'],
+        page: 1,
+        pageSize: 20,
+      };
+
+      service.queryDirectory(params).subscribe();
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === baseUrl &&
+          r.params.get('departments') === 'Engineering,Sales' &&
+          r.params.get('statuses') === 'active,probation' &&
+          r.params.get('employmentTypes') === 'Full-Time,Contract'
+      );
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+    });
+
+    it('should send date range filter params', () => {
+      const params: IEmployeeDirectoryParams = {
+        dateOfJoiningFrom: '2026-01-01',
+        dateOfJoiningTo: '2026-12-31',
+        page: 1,
+        pageSize: 20,
+      };
+
+      service.queryDirectory(params).subscribe();
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === baseUrl &&
+          r.params.get('dateOfJoiningFrom') === '2026-01-01' &&
+          r.params.get('dateOfJoiningTo') === '2026-12-31'
+      );
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+    });
+
+    it('should include includeArchived param when set', () => {
+      const params: IEmployeeDirectoryParams = {
+        includeArchived: true,
+        page: 1,
+        pageSize: 20,
+      };
+
+      service.queryDirectory(params).subscribe();
+
+      const req = httpMock.expectOne(
+        (r) => r.url === baseUrl && r.params.get('includeArchived') === 'true'
+      );
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+    });
+
+    it('should omit undefined/empty params', () => {
+      const params: IEmployeeDirectoryParams = {
+        page: 1,
+        pageSize: 20,
+      };
+
+      service.queryDirectory(params).subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === baseUrl);
+      expect(req.request.params.has('search')).toBeFalse();
+      expect(req.request.params.has('departments')).toBeFalse();
+      expect(req.request.params.has('location')).toBeFalse();
+      expect(req.request.params.has('includeArchived')).toBeFalse();
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+    });
+  });
+
+  describe('exportDirectory', () => {
+    it('should request CSV export as blob', () => {
+      const params: IEmployeeDirectoryParams = {
+        search: 'John',
+        page: 1,
+        pageSize: 20,
+      };
+
+      service.exportDirectory(params, 'csv').subscribe((blob) => {
+        expect(blob).toBeTruthy();
+        expect(blob instanceof Blob).toBeTrue();
+      });
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/export` &&
+          r.params.get('format') === 'csv' &&
+          r.params.get('search') === 'John'
+      );
+      expect(req.request.method).toBe('GET');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(new Blob(['csv-data'], { type: 'text/csv' }));
+    });
+
+    it('should request Excel export as blob', () => {
+      const params: IEmployeeDirectoryParams = {
+        departments: ['Engineering'],
+        page: 1,
+        pageSize: 20,
+      };
+
+      service.exportDirectory(params, 'excel').subscribe();
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/export` &&
+          r.params.get('format') === 'excel' &&
+          r.params.get('departments') === 'Engineering'
+      );
+      req.flush(
+        new Blob(['xlsx-data'], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        })
+      );
+    });
+  });
+
+  describe('buildDirectoryParams', () => {
+    it('should build HttpParams from directory params', () => {
+      const params: IEmployeeDirectoryParams = {
+        search: 'test',
+        departments: ['A', 'B'],
+        sort: 'department',
+        sortDirection: 'desc',
+        page: 2,
+        pageSize: 50,
+      };
+
+      const httpParams = service.buildDirectoryParams(params);
+
+      expect(httpParams.get('search')).toBe('test');
+      expect(httpParams.get('departments')).toBe('A,B');
+      expect(httpParams.get('sort')).toBe('department');
+      expect(httpParams.get('sortDirection')).toBe('desc');
+      expect(httpParams.get('page')).toBe('2');
+      expect(httpParams.get('pageSize')).toBe('50');
+    });
+
+    it('should skip undefined/empty values', () => {
+      const params: IEmployeeDirectoryParams = {};
+
+      const httpParams = service.buildDirectoryParams(params);
+
+      expect(httpParams.keys().length).toBe(0);
+    });
+  });
+
+  // ─── US-CHR-001 existing tests ────────────────────────────
 
   describe('createEmployee', () => {
     const createRequest: ICreateEmployeeRequest = {

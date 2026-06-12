@@ -76,6 +76,9 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.CustomFields)
             .HasColumnType("jsonb");
 
+        builder.Property(e => e.Location)
+            .HasMaxLength(200);
+
         builder.Property(e => e.IsActive)
             .HasDefaultValue(true)
             .IsRequired();
@@ -148,5 +151,15 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
 
         builder.HasIndex(e => new { e.TenantId, e.Status })
             .HasDatabaseName("ix_employees_tenant_id_status");
+
+        // US-CHR-003: indexes for directory search and filtering
+        builder.HasIndex(e => new { e.TenantId, e.EmploymentType })
+            .HasDatabaseName("ix_employees_tenant_id_employment_type");
+
+        builder.HasIndex(e => new { e.TenantId, e.DateOfJoining })
+            .HasDatabaseName("ix_employees_tenant_id_date_of_joining");
+
+        builder.HasIndex(e => new { e.TenantId, e.Location })
+            .HasDatabaseName("ix_employees_tenant_id_location");
     }
 }

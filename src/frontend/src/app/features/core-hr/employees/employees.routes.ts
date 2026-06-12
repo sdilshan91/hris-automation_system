@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 
 /**
- * US-CHR-001 + US-CHR-002: Employee management routes.
+ * US-CHR-001 / US-CHR-002 / US-CHR-003: Employee management routes.
  *
  * Lazy-loaded under the 'employees' path in app.routes.ts.
  * The parent route applies roleGuard(['Tenant Admin', 'HR Officer']).

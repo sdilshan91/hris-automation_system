@@ -100,6 +100,12 @@ public sealed class Employee : BaseEntity
     public Guid? UserId { get; set; }
 
     /// <summary>
+    /// Work location (free-text, e.g. "New York", "Remote").
+    /// FK to a Location entity is deferred to US-CHR-007; for now this is a simple string.
+    /// </summary>
+    public string? Location { get; set; }
+
+    /// <summary>
     /// Whether the employee is active (mirrors IsDeleted for soft-delete, but allows
     /// Active/Inactive/Terminated status transitions beyond just soft-delete).
     /// </summary>
