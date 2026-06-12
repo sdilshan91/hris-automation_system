@@ -213,6 +213,12 @@ try
             "cleanup-expired-tokens",
             job => job.RunAsync(),
             Cron.Daily);
+
+        // US-CHR-008 FR-8 / BR-4: Document expiry notification job (daily at 09:00 UTC)
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.DocumentExpiryNotificationJob>(
+            "document-expiry-notifications",
+            job => job.RunAsync(),
+            "0 9 * * *"); // 09:00 UTC daily
     }
 
     app.Run();

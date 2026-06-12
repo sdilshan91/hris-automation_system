@@ -101,6 +101,7 @@ This document links user stories to their corresponding test cases across all mo
 | US-CHR-005 | Create and Manage Job Titles and Positions | Must Have | TC-CHR-035 through TC-CHR-063 | 29 | 5/5 AC covered (all unblocked) |
 | US-CHR-006 | Organization Tree / Hierarchy Visualization | Should Have | TC-CHR-151, TC-CHR-152, TC-CHR-153, TC-CHR-154, TC-CHR-155, TC-CHR-156, TC-CHR-157, TC-CHR-158, TC-CHR-159, TC-CHR-160, TC-CHR-161, TC-CHR-162, TC-CHR-163, TC-CHR-164, TC-CHR-165, TC-CHR-166, TC-CHR-167, TC-CHR-168, TC-CHR-169, TC-CHR-170, TC-CHR-171 | 21 | 5/5 AC covered |
 | US-CHR-007 | Manage Office Locations | Should Have | TC-CHR-172, TC-CHR-173, TC-CHR-174, TC-CHR-175, TC-CHR-176, TC-CHR-177, TC-CHR-178, TC-CHR-179, TC-CHR-180, TC-CHR-181, TC-CHR-182, TC-CHR-183, TC-CHR-184, TC-CHR-185, TC-CHR-186, TC-CHR-187, TC-CHR-188, TC-CHR-189, TC-CHR-190, TC-CHR-191 | 20 | 4/4 AC covered |
+| US-CHR-008 | Employee Document Management (Upload, View, Download) | Should Have | TC-CHR-192, TC-CHR-193, TC-CHR-194, TC-CHR-195, TC-CHR-196, TC-CHR-197, TC-CHR-198, TC-CHR-199, TC-CHR-200, TC-CHR-201, TC-CHR-202, TC-CHR-203, TC-CHR-204, TC-CHR-205, TC-CHR-206, TC-CHR-207, TC-CHR-208, TC-CHR-209, TC-CHR-210, TC-CHR-211, TC-CHR-212, TC-CHR-213, TC-CHR-214, TC-CHR-215, TC-CHR-216 | 25 | 5/5 AC covered |
 | Cross-cutting (CHR-001) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 4 | -- |
 | Cross-cutting (CHR-002) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 4 | -- |
 | Cross-cutting (CHR-003) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-017, TC-CHR-ISO-018, TC-CHR-ISO-019, TC-CHR-ISO-020 | 4 | -- |
@@ -108,7 +109,8 @@ This document links user stories to their corresponding test cases across all mo
 | Cross-cutting (CHR-005) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008 | 4 | -- |
 | Cross-cutting (CHR-006) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-021, TC-CHR-ISO-022, TC-CHR-ISO-023, TC-CHR-ISO-024 | 4 | -- |
 | Cross-cutting (CHR-007) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-025, TC-CHR-ISO-026, TC-CHR-ISO-027, TC-CHR-ISO-028 | 4 | -- |
-| **TOTAL** | | | **219 test cases** | **219** | **36/36 AC** |
+| Cross-cutting (CHR-008) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-029, TC-CHR-ISO-030, TC-CHR-ISO-031, TC-CHR-ISO-032 | 4 | -- |
+| **TOTAL** | | | **248 test cases** | **248** | **41/41 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -167,6 +169,31 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-189 | Locations management page meets WCAG 2.1 AA accessibility standards | Accessibility | High | US-CHR-007 | NFR-3 |
 | TC-CHR-190 | Responsive layout -- 360px viewport collapses to card list | Functional | High | US-CHR-007 | NFR-3 |
 | TC-CHR-191 | Cross-browser compatibility for Locations management page | Functional | Medium | US-CHR-007 | NFR-3 |
+| TC-CHR-192 | Upload valid 5 MB PDF -- stored at tenant/employee-prefixed path with metadata row and appears in document list (happy path) | Functional | Critical | US-CHR-008 | AC-1, AC-2, FR-1, FR-2, FR-3, FR-9, NFR-2, BR-1 |
+| TC-CHR-193 | Download document as owner employee via signed URL (happy path) | Functional | Critical | US-CHR-008 | AC-4, FR-6, FR-10, NFR-6, BR-2 |
+| TC-CHR-194 | Upload .exe file is rejected (negative) | Functional | Critical | US-CHR-008 | AC-3, FR-2, BR-7 |
+| TC-CHR-195 | Upload 15 MB file is rejected with size limit error (negative) | Functional | Critical | US-CHR-008 | AC-3, FR-2, BR-7 |
+| TC-CHR-196 | Upload disallowed MIME type (e.g., .svg, .html) is rejected (negative) | Functional | Critical | US-CHR-008 | AC-3, FR-2, BR-7 |
+| TC-CHR-197 | Cross-tenant download attempt returns 403 and triggers security alert | Security | Critical | US-CHR-008 | AC-4, FR-6, NFR-3, BR-2 |
+| TC-CHR-198 | Tenant isolation on document list -- Tenant A documents not visible to Tenant B | Security | Critical | US-CHR-008 | FR-3, FR-9, NFR-2, BR-1 |
+| TC-CHR-199 | Role-based access -- HR uploads/deletes, Employee views/downloads own only, Manager denied | Security | Critical | US-CHR-008 | FR-10, BR-1, BR-2, BR-3 |
+| TC-CHR-200 | Unauthenticated request to document API returns 401 | Security | Critical | US-CHR-008 | FR-6, FR-9, FR-10, NFR-2 |
+| TC-CHR-201 | Virus scan rejects EICAR test file on upload | Security | Critical | US-CHR-008 | FR-4, NFR-2 |
+| TC-CHR-202 | Boundary -- exactly 10 MB file allowed, 10 MB + 1 byte rejected | Functional | High | US-CHR-008 | AC-3, FR-2 |
+| TC-CHR-203 | Expiry badge thresholds -- green (>30d), amber (<30d), red (<7d), red/expired | Functional | High | US-CHR-008 | FR-8, FR-9 |
+| TC-CHR-204 | Expiry notification -- background job generates notifications at 30/7/1 day marks | Functional | High | US-CHR-008 | AC-5, FR-8, BR-4 |
+| TC-CHR-205 | Storage quota -- 80% warning and block at plan limit | Functional | High | US-CHR-008 | NFR-4, BR-6 |
+| TC-CHR-206 | Soft delete -- is_deleted set to true, file retained in storage | Functional | High | US-CHR-008 | FR-7, BR-5 |
+| TC-CHR-207 | Audit trail -- document view and download events logged | Security | High | US-CHR-008 | FR-6, FR-9, NFR-6 |
+| TC-CHR-208 | Responsive layout -- 360px viewport shows card stack and file picker instead of drag-drop | Functional | High | US-CHR-008 | NFR-5 |
+| TC-CHR-209 | Performance -- file upload within 5 seconds for 10 MB; API read/write within SLA | Performance | High | US-CHR-008 | NFR-1 |
+| TC-CHR-210 | WCAG 2.1 AA accessibility for document management UI | Accessibility | High | US-CHR-008 | NFR-5 |
+| TC-CHR-211 | Cross-browser compatibility for document management (Chrome, Edge, Firefox, Safari) | Functional | Medium | US-CHR-008 | NFR-5 |
+| TC-CHR-212 | EXIF data stripped from image uploads | Security | High | US-CHR-008 | FR-5 |
+| TC-CHR-213 | Document categorized list displays all metadata columns correctly | Functional | High | US-CHR-008 | FR-9 |
+| TC-CHR-214 | Category filter tabs (All, Contracts, IDs, Certificates, Other) filter the document list | Functional | High | US-CHR-008 | FR-9 |
+| TC-CHR-215 | Input sanitization -- XSS in document description field | Security | High | US-CHR-008 | FR-1, NFR-2 |
+| TC-CHR-216 | Upload form displays all required fields (AC-1 detail) | Functional | Critical | US-CHR-008 | AC-1, FR-1 |
 | TC-CHR-ISO-001 | Tenant A cannot see Tenant B's departments | Security | Critical | US-CHR-004 | NFR-2, BR-1 |
 | TC-CHR-ISO-002 | API rejects department requests without valid tenant context | Security | Critical | US-CHR-004 | NFR-2 |
 | TC-CHR-ISO-003 | RLS blocks direct DB queries across tenants for departments | Security | Critical | US-CHR-004 | NFR-2, BR-1, BR-3 |
@@ -195,6 +222,43 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-ISO-026 | API rejects location requests without valid tenant context | Security | Critical | US-CHR-007 | FR-8, NFR-2 |
 | TC-CHR-ISO-027 | RLS blocks direct DB queries across tenants for locations | Security | Critical | US-CHR-007 | FR-8, NFR-2 |
 | TC-CHR-ISO-028 | Cache keys for locations are tenant-scoped | Security | Critical | US-CHR-007 | NFR-2 |
+| TC-CHR-ISO-029 | Tenant A cannot see Tenant B's employee documents | Security | Critical | US-CHR-008 | FR-3, NFR-2 |
+| TC-CHR-ISO-030 | API rejects document requests without valid tenant context | Security | Critical | US-CHR-008 | NFR-2 |
+| TC-CHR-ISO-031 | RLS blocks direct DB queries across tenants for employee documents | Security | Critical | US-CHR-008 | NFR-2 |
+| TC-CHR-ISO-032 | Document storage paths and cache keys are tenant-scoped | Security | Critical | US-CHR-008 | FR-3, NFR-2 |
+
+### US-CHR-008 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Upload Document form with file selection (drag-and-drop or file picker), category, optional description, optional expiry date | AC | TC-CHR-192, TC-CHR-216 | Direct |
+| AC-2: File stored in tenant-isolated object storage at `{tenantId}/core-hr/{employeeId}/{yyyy}/{mm}/{filename}`, metadata record with `tenant_id`, appears in list | AC | TC-CHR-192 | Direct |
+| AC-3: Upload rejected for files exceeding 10 MB or with disallowed MIME type, with clear error message | AC | TC-CHR-194, TC-CHR-195, TC-CHR-196, TC-CHR-202 | Direct |
+| AC-4: Download via short-lived signed URL (5-minute expiry) with authorization check; cross-tenant download returns 403 | AC | TC-CHR-193, TC-CHR-197 | Direct |
+| AC-5: Expiry date stored; background job checks at 30/7/1 days and sends notifications to HR Officer and employee | AC | TC-CHR-204 | Direct |
+| FR-1: Document upload with metadata (file, category, description, expiry date) | FR | TC-CHR-192, TC-CHR-215, TC-CHR-216 | Direct |
+| FR-2: File size limits (default 10 MB) and MIME type whitelists | FR | TC-CHR-194, TC-CHR-195, TC-CHR-196, TC-CHR-202 | Direct |
+| FR-3: Tenant-isolated object storage paths `{tenantId}/core-hr/{employeeId}/{yyyy}/{mm}/{filename}` | FR | TC-CHR-192, TC-CHR-198, TC-CHR-ISO-029, TC-CHR-ISO-032 | Direct |
+| FR-4: Malware scan (ClamAV) before persisting storage reference | FR | TC-CHR-201 | Direct |
+| FR-5: EXIF data stripped from image uploads | FR | TC-CHR-212 | Direct |
+| FR-6: Short-lived signed download URLs (5-minute expiry) with authorization check | FR | TC-CHR-193, TC-CHR-197, TC-CHR-200, TC-CHR-207 | Direct |
+| FR-7: Soft delete by HR Officer with audit trail | FR | TC-CHR-206 | Direct |
+| FR-8: Document expiry tracking and notification jobs | FR | TC-CHR-203, TC-CHR-204 | Direct |
+| FR-9: Categorized document list with file name, category, upload date, size, uploader, expiry date | FR | TC-CHR-192, TC-CHR-198, TC-CHR-200, TC-CHR-207, TC-CHR-213, TC-CHR-214 | Direct |
+| FR-10: Employees view/download own docs; only HR Officers can upload/delete | FR | TC-CHR-193, TC-CHR-199, TC-CHR-200 | Direct |
+| NFR-1: File upload within 5 seconds for 10 MB on stable connection | NFR | TC-CHR-209 | Direct |
+| NFR-2: All document metadata and storage paths tenant-isolated via RLS, EF Core filters, storage path prefixing | NFR | TC-CHR-192, TC-CHR-198, TC-CHR-200, TC-CHR-201, TC-CHR-215, TC-CHR-ISO-029, TC-CHR-ISO-030, TC-CHR-ISO-031, TC-CHR-ISO-032 | Direct |
+| NFR-3: Cross-tenant download attempts return 403 and trigger security alert | NFR | TC-CHR-197 | Direct |
+| NFR-4: Storage usage counts toward tenant plan quota; uploads blocked at threshold with 80% warning | NFR | TC-CHR-205 | Direct (deferred pending Subscription module) |
+| NFR-5: Document management UI fully responsive (360px to 4K) | NFR | TC-CHR-208, TC-CHR-210, TC-CHR-211 | Direct |
+| NFR-6: Document access (view/download) logged in audit trail for compliance | NFR | TC-CHR-193, TC-CHR-207 | Direct |
+| BR-1: Only HR Officers can upload and delete documents on any employee's record | BR | TC-CHR-192, TC-CHR-198, TC-CHR-199 | Direct |
+| BR-2: Employees can view and download documents on their own record only | BR | TC-CHR-193, TC-CHR-197, TC-CHR-199 | Direct |
+| BR-3: Managers cannot access employee documents unless explicitly granted permission | BR | TC-CHR-199 | Direct |
+| BR-4: Document expiry notifications sent at 30, 7, and 1 days before expiry | BR | TC-CHR-204 | Direct |
+| BR-5: Deleted documents are soft-deleted; file retained for configured retention period | BR | TC-CHR-206 | Direct |
+| BR-6: System tracks total storage usage per tenant against plan limits | BR | TC-CHR-205 | Direct (deferred pending Subscription module) |
+| BR-7: Supported file types: PDF, JPEG, PNG, DOCX, XLSX; executables always rejected | BR | TC-CHR-194, TC-CHR-195, TC-CHR-196 | Direct |
 
 ### US-CHR-007 Detailed Requirements Traceability
 
@@ -248,6 +312,22 @@ This document links user stories to their corresponding test cases across all mo
 ### US-CHR-002, US-CHR-001, US-CHR-004, US-CHR-005 Detailed Requirements Traceability
 
 (Unchanged from previous version -- all detailed traceability tables for these stories remain as documented.)
+
+### Coverage Summary (Core HR -- US-CHR-008)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 10/10 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 7/7 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 7 (4 dedicated ISO + 3 embedded in TC-CHR-192, TC-CHR-197, TC-CHR-198) | >= 3 | PASS |
+| Security Test Cases | 12/29 (41.4%) | >= 30% | PASS |
+| Performance Test Cases | 1/29 | >= 1 | PASS |
+| Accessibility Test Cases | 1/29 | >= 1 | PASS |
+| Cross-Browser Test Cases | 1/29 (TC-CHR-211) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | TC-CHR-205 (storage quota -- pending Subscription module) | -- | NOTE |
 
 ### Coverage Summary (Core HR -- US-CHR-007)
 
@@ -344,9 +424,9 @@ This document links user stories to their corresponding test cases across all mo
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
-| Core HR (US-CHR-001 through US-CHR-007) | 7 | 219 | 36/36 (100%) | 43 | PASS |
-| **TOTAL** | **17** | **335** | **97/97 (100%)** | **66** | |
+| Core HR (US-CHR-001 through US-CHR-008) | 8 | 248 | 41/41 (100%) | 50 | PASS |
+| **TOTAL** | **18** | **364** | **102/102 (100%)** | **73** | |
 
 ---
 
-*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-007. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. For US-CHR-003, BR-2 (manager reporting chain scope) is deferred pending Employee.ReportsToEmployeeId and BR-5 search is implemented as ILIKE with tsvector upgrade path documented. US-CHR-007 adds 24 test cases (20 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 4 ACs, 8 FRs, 4 NFRs, and 6 BRs. The matrix will be extended as additional Core HR user stories (US-CHR-008+) and other modules are authored.*
+*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-008. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. For US-CHR-003, BR-2 (manager reporting chain scope) is deferred pending Employee.ReportsToEmployeeId and BR-5 search is implemented as ILIKE with tsvector upgrade path documented. US-CHR-007 adds 24 test cases (20 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 4 ACs, 8 FRs, 4 NFRs, and 6 BRs. US-CHR-008 adds 29 test cases (25 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 10 FRs, 6 NFRs, and 7 BRs. TC-CHR-205 (storage quota enforcement) is partially deferred pending the Subscription/Plan module. The matrix will be extended as additional Core HR user stories (US-CHR-009+) and other modules are authored.*

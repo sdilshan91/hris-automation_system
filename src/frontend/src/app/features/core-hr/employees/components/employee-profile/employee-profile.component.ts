@@ -32,6 +32,7 @@ import {
   GENDER_OPTIONS,
   EmployeeGender,
 } from '../../models/employee.models';
+import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
 
 /**
  * US-CHR-002: Comprehensive Employee Profile view + edit component.
@@ -45,7 +46,7 @@ import {
 @Component({
   selector: 'app-employee-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, EmployeeDocumentsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -897,15 +898,13 @@ import {
             </section>
           }
 
-          <!-- Documents & Custom Fields placeholders -->
+          <!-- Documents Section (US-CHR-008) -->
           @if (activeTab() === 8) {
             <section @fadeIn class="card-notion" [attr.aria-label]="'Documents'">
               <div class="section-header">
                 <h3 class="section-title">Documents</h3>
               </div>
-              <p class="text-sm text-neutral-400 py-4">
-                Document management is not yet available. This section will be enabled in a future release.
-              </p>
+              <app-employee-documents [employeeId]="employeeId" />
             </section>
           }
 
@@ -1169,7 +1168,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   workHistoryForm!: FormGroup;
   dependentsForm!: FormGroup;
 
-  private employeeId = '';
+  employeeId = '';
 
   get emergencyContactControls(): FormArray {
     return this.emergencyContactsForm.get('contacts') as FormArray;

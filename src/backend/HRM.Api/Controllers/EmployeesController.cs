@@ -236,6 +236,112 @@ public sealed class EmployeesController : ControllerBase
         return File(export.FileBytes, export.ContentType, export.FileName);
     }
 
+    // ── Document Management (US-CHR-008) ──────────────────────────
+
+    /// <summary>
+    /// POST /api/v1/tenant/employees/{employeeId}/documents
+    /// Uploads a document for an employee (US-CHR-008 FR-1).
+    /// Multipart form with file + metadata (category, description, expiryDate).
+    /// </summary>
+    [HttpPost("{employeeId:guid}/documents")]
+    [RequirePermission("EmployeeDocument.Upload")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeDocumentDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [RequestSizeLimit(11 * 1024 * 1024)] // Slightly above 10MB for multipart overhead
+    public async Task<IActionResult> UploadDocument(
+        Guid employeeId,
+        IFormFile file,
+        [FromForm] string category,
+        [FromForm] string? description = null,
+        [FromForm] DateTime? expiryDate = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse.Fail("No file uploaded."));
+
+        await using var stream = file.OpenReadStream();
+        var command = new UploadEmployeeDocumentCommand(
+            employeeId, stream, file.FileName, file.ContentType, file.Length,
+            category, description, expiryDate);
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<EmployeeDocumentDto>.Ok(result.Value!, "Document uploaded successfully."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/{employeeId}/documents
+    /// Lists documents for an employee (US-CHR-008 FR-9).
+    /// </summary>
+    [HttpGet("{employeeId:guid}/documents")]
+    [Authorize] // Permission check at service level (EmployeeDocument.View or EmployeeDocument.ViewOwn)
+    [ProducesResponseType(typeof(ApiResponse<EmployeeDocumentListResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDocuments(
+        Guid employeeId,
+        [FromQuery] string? category = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetEmployeeDocumentsQuery(employeeId, category);
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<EmployeeDocumentListResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/{employeeId}/documents/{documentId}/download
+    /// Generates a short-lived signed URL for downloading a document (US-CHR-008 FR-6, AC-4).
+    /// </summary>
+    [HttpGet("{employeeId:guid}/documents/{documentId:guid}/download")]
+    [Authorize] // Permission check at service level
+    [ProducesResponseType(typeof(ApiResponse<DocumentDownloadResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadDocument(
+        Guid employeeId,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetDocumentDownloadQuery(employeeId, documentId);
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<DocumentDownloadResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// DELETE /api/v1/tenant/employees/{employeeId}/documents/{documentId}
+    /// Soft-deletes a document (US-CHR-008 FR-7). HR Officer only.
+    /// </summary>
+    [HttpDelete("{employeeId:guid}/documents/{documentId:guid}")]
+    [RequirePermission("EmployeeDocument.Delete")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteDocument(
+        Guid employeeId,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new DeleteEmployeeDocumentCommand(employeeId, documentId);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse.Ok("Document deleted successfully."));
+    }
+
     /// <summary>
     /// POST /api/v1/tenant/employees/{id}/profile-photo
     /// Uploads a profile photo for an employee (AC-4, FR-6).
