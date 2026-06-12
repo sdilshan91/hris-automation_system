@@ -1,0 +1,62 @@
+name: PR Review (Claude)
+
+# Adversarial AI review of each PR — posts findings as comments. ADVISORY ONLY:
+# it never approves or merges; a human still makes the merge decision.
+#
+# COST: this is the ONLY piece here that uses the Anthropic API and incurs
+# per-PR cost (metered, separate from the free in-session /implement-all loop).
+# It is therefore OPT-IN and will NOT run until BOTH are set:
+#   1. Repo secret   ANTHROPIC_API_KEY   (Settings > Secrets and variables > Actions)
+#   2. Repo variable ENABLE_AI_REVIEW = true  (same screen, "Variables" tab)
+# Until ENABLE_AI_REVIEW is "true", this workflow is a no-op and costs nothing.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Adversarial review
+    # Opt-in gate: does nothing (and costs nothing) until you flip this variable.
+    if: ${{ vars.ENABLE_AI_REVIEW == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review the PR
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Sonnet keeps per-PR review cost down; bump to claude-opus-4-8 for depth.
+          model: claude-sonnet-4-6
+          prompt: |
+            You are an ADVERSARIAL senior reviewer for this multi-tenant HRM SaaS
+            (Angular 20 + ASP.NET Core 10 + PostgreSQL). Review ONLY the diff of
+            this pull request. Your job is to find what's wrong, not to praise.
+
+            Prioritise, in order:
+            1. Multi-tenant isolation leaks — any query/cache key/endpoint not
+               tenant-scoped (CLAUDE.md critical rule #1). This is the #1 risk.
+            2. Security — auth/authorization gaps, secrets in code, and especially
+               whether a stub seam is being passed off as production-ready
+               (e.g. IVirusScanner / IFileStorage dev stubs, fake token validation).
+            3. Correctness bugs and broken edge cases.
+            4. Whether the tests actually VERIFY behaviour or just assert the code's
+               own assumptions (the code and tests were likely written together).
+
+            Post findings as specific PR review comments citing file:line. If you
+            find nothing material, say so briefly. Do NOT approve and do NOT merge —
+            a human owns the merge decision.
+          claude_args: "--max-turns 30"
