@@ -8,7 +8,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { EmployeeService } from './employee.service';
 import {
   IEmployee,
+  IEmployeeProfile,
   ICreateEmployeeRequest,
+  IUpdateSectionRequest,
 } from '../models/employee.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -209,6 +211,77 @@ describe('EmployeeService', () => {
 
       const parsed = EmployeeService.parseError(httpErr);
       expect(parsed).toBeNull();
+    });
+  });
+
+  // ─── US-CHR-002: Profile methods ──────────────────────────
+
+  describe('getEmployeeProfile (US-CHR-002)', () => {
+    const mockProfile: IEmployeeProfile = {
+      ...mockEmployee,
+      xmin: '12345',
+      personalEmail: 'john@personal.com',
+      address: '123 Main St',
+      city: 'Colombo',
+      state: 'Western',
+      postalCode: '10100',
+      country: 'Sri Lanka',
+      reportingManagerId: null,
+      reportingManagerName: null,
+      emergencyContacts: [],
+      education: [],
+      workHistory: [],
+      dependents: [],
+      employmentHistory: [],
+    };
+
+    it('should GET the full employee profile', () => {
+      service.getEmployeeProfile('emp-1').subscribe((profile) => {
+        expect(profile.employeeId).toBe('emp-1');
+        expect(profile.xmin).toBe('12345');
+        expect(profile.emergencyContacts).toEqual([]);
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/profile`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockProfile);
+    });
+  });
+
+  describe('updateProfileSection (US-CHR-002)', () => {
+    it('should PATCH a section with xmin concurrency token', () => {
+      const request: IUpdateSectionRequest = {
+        xmin: '12345',
+        data: { phone: '+94779999999' },
+      };
+
+      service
+        .updateProfileSection('emp-1', 'contact', request)
+        .subscribe((response) => {
+          expect(response.xmin).toBe('12346');
+        });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/sections/contact`);
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body.xmin).toBe('12345');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ xmin: '12346', profile: {} });
+    });
+
+    it('should call the correct section URL', () => {
+      const request: IUpdateSectionRequest = {
+        xmin: '100',
+        data: { firstName: 'Jane' },
+      };
+
+      service
+        .updateProfileSection('emp-2', 'personal-info', request)
+        .subscribe();
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-2/sections/personal-info`);
+      expect(req.request.method).toBe('PATCH');
+      req.flush({ xmin: '101', profile: {} });
     });
   });
 });

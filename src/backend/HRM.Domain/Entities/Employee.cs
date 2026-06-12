@@ -6,6 +6,8 @@ namespace HRM.Domain.Entities;
 /// Represents an employee within a tenant's organization.
 /// Tenant-scoped via BaseEntity.TenantId. Supports soft-delete (IsDeleted).
 /// US-CHR-001: Add New Employee with Personal Information.
+/// US-CHR-002: View and Edit Employee Profile (extended with address, personal email,
+///   emergency contacts, employment history, concurrency token).
 /// </summary>
 public sealed class Employee : BaseEntity
 {
@@ -31,9 +33,19 @@ public sealed class Employee : BaseEntity
     public string Email { get; set; } = string.Empty;
 
     /// <summary>
+    /// Personal email, editable by Employee role (US-CHR-002 AC-4).
+    /// </summary>
+    public string? PersonalEmail { get; set; }
+
+    /// <summary>
     /// Phone number, optional. E.164 format preferred.
     /// </summary>
     public string? Phone { get; set; }
+
+    /// <summary>
+    /// Residential/mailing address, editable by Employee role (US-CHR-002 AC-4).
+    /// </summary>
+    public string? Address { get; set; }
 
     /// <summary>
     /// Date of birth, optional. Must be in the past, age >= 16.
@@ -93,6 +105,13 @@ public sealed class Employee : BaseEntity
     /// </summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// PostgreSQL xmin system column, used as an optimistic concurrency token (US-CHR-002 FR-4).
+    /// EF Core maps this via UseXminAsConcurrencyToken(). The property is populated on read
+    /// and checked on SaveChanges to detect concurrent modifications.
+    /// </summary>
+    public uint RowVersion { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
 
     /// <summary>
@@ -109,4 +128,14 @@ public sealed class Employee : BaseEntity
     /// Linked user account for portal access (nullable).
     /// </summary>
     public User? User { get; set; }
+
+    /// <summary>
+    /// Emergency contacts for this employee (US-CHR-002).
+    /// </summary>
+    public ICollection<EmergencyContact> EmergencyContacts { get; set; } = new List<EmergencyContact>();
+
+    /// <summary>
+    /// Employment history timeline entries (US-CHR-002 FR-6).
+    /// </summary>
+    public ICollection<EmploymentHistory> EmploymentHistories { get; set; } = new List<EmploymentHistory>();
 }

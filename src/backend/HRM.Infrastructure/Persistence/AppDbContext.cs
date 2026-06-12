@@ -31,6 +31,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<JobTitle> JobTitles => Set<JobTitle>();
     public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
+    public DbSet<EmploymentHistory> EmploymentHistories => Set<EmploymentHistory>();
+    public DbSet<EmployeeFieldAuditLog> EmployeeFieldAuditLogs => Set<EmployeeFieldAuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -63,5 +66,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-CHR-001: Employee tenant isolation + soft-delete filter
         modelBuilder.Entity<Employee>()
             .HasQueryFilter(e => !e.IsDeleted && (!_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-002: EmergencyContact tenant isolation + soft-delete filter
+        modelBuilder.Entity<EmergencyContact>()
+            .HasQueryFilter(ec => !ec.IsDeleted && (!_tenantContext.IsResolved || ec.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-002: EmploymentHistory tenant isolation + soft-delete filter
+        modelBuilder.Entity<EmploymentHistory>()
+            .HasQueryFilter(eh => !eh.IsDeleted && (!_tenantContext.IsResolved || eh.TenantId == _tenantContext.TenantId));
     }
 }

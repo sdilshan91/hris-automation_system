@@ -95,7 +95,9 @@ import { IEmployee } from '../../models/employee.models';
       @if (!isLoading() && employees().length > 0) {
         <div @fadeSlideIn class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           @for (employee of employees(); track employee.employeeId) {
-            <div class="employee-card">
+            <div class="employee-card" (click)="viewProfile(employee.employeeId)"
+              role="link" tabindex="0" (keydown.enter)="viewProfile(employee.employeeId)"
+              [attr.aria-label]="'View profile for ' + employee.firstName + ' ' + employee.lastName">
               <div class="flex items-center gap-3 mb-3">
                 <div class="avatar-circle">
                   @if (employee.profilePhotoUrl) {
@@ -157,7 +159,7 @@ import { IEmployee } from '../../models/employee.models';
 
     .employee-card {
       @apply rounded-xl bg-white border border-neutral-100 shadow-notion p-4
-        hover:shadow-notion-md transition-shadow duration-200;
+        hover:shadow-notion-md transition-shadow duration-200 cursor-pointer;
     }
 
     .avatar-circle {
@@ -196,6 +198,11 @@ export class EmployeeListComponent implements OnInit {
 
   addEmployee(): void {
     this.router.navigate(['/employees/new']);
+  }
+
+  /** US-CHR-002: Navigate to employee profile page */
+  viewProfile(employeeId: string): void {
+    this.router.navigate(['/employees', employeeId]);
   }
 
   getInitials(employee: IEmployee): string {

@@ -4,8 +4,12 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
 import {
   IEmployee,
+  IEmployeeProfile,
   ICreateEmployeeRequest,
   IEmployeeErrorResponse,
+  IUpdateSectionRequest,
+  IUpdateSectionResponse,
+  ProfileSection,
 } from '../models/employee.models';
 
 /**
@@ -20,6 +24,10 @@ import {
  *   POST   /api/v1/employees           - create employee (multipart for photo)
  *   PUT    /api/v1/employees/:id       - update employee
  *   DELETE /api/v1/employees/:id       - soft-delete employee
+ *
+ * US-CHR-002 additions (assumed contract — backend agent building in parallel):
+ *   GET    /api/v1/employees/:id/profile          - full profile with sub-entities
+ *   PATCH  /api/v1/employees/:id/sections/:section - per-section update with xmin concurrency
  */
 @Injectable({ providedIn: 'root' })
 export class EmployeeService {
@@ -64,6 +72,41 @@ export class EmployeeService {
     return this.http.post<IEmployee>(this.baseUrl, request, {
       withCredentials: true,
     });
+  }
+
+  // ─── US-CHR-002: Profile ──────────────────────────────────
+
+  /**
+   * Get full employee profile with all sub-entities (AC-1).
+   * Returns IEmployeeProfile including xmin concurrency token.
+   *
+   * Endpoint assumption: GET /api/v1/employees/:id/profile
+   */
+  getEmployeeProfile(employeeId: string): Observable<IEmployeeProfile> {
+    return this.http.get<IEmployeeProfile>(
+      `${this.baseUrl}/${employeeId}/profile`,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * Update a specific profile section (AC-2, AC-3, FR-2).
+   * Sends xmin token for optimistic concurrency.
+   * Backend returns 409 on stale xmin (AC-3).
+   * Backend returns 403 if Employee role attempts restricted field edits (AC-5).
+   *
+   * Endpoint assumption: PATCH /api/v1/employees/:id/sections/:section
+   */
+  updateProfileSection(
+    employeeId: string,
+    section: ProfileSection,
+    request: IUpdateSectionRequest
+  ): Observable<IUpdateSectionResponse> {
+    return this.http.patch<IUpdateSectionResponse>(
+      `${this.baseUrl}/${employeeId}/sections/${section}`,
+      request,
+      { withCredentials: true }
+    );
   }
 
   // ─── Helpers ─────────────────────────────────────────────
