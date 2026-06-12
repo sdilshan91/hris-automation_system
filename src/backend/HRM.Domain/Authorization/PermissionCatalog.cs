@@ -18,6 +18,15 @@ public static class PermissionCatalog
         public const string Deactivate = "Department.Deactivate";
     }
 
+    // ── Job Title Module (US-CHR-005) ──────────────────────────────────
+    public static class JobTitle
+    {
+        public const string View = "JobTitle.View";
+        public const string Create = "JobTitle.Create";
+        public const string Edit = "JobTitle.Edit";
+        public const string Deactivate = "JobTitle.Deactivate";
+    }
+
     // ── Employee Module ──────────────────────────────────────────────
     public static class Employee
     {
@@ -151,6 +160,9 @@ public static class PermissionCatalog
         // Department
         Department.View, Department.Create, Department.Edit, Department.Deactivate,
 
+        // Job Title
+        JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
+
         // Employee
         Employee.ViewOwn, Employee.ViewTeam, Employee.ViewAll,
         Employee.Create, Employee.Edit, Employee.EditOwn, Employee.Delete, Employee.Export,
@@ -260,6 +272,7 @@ public static class PermissionCatalog
         BuiltInRoles.TenantAdmin => new[]
         {
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
+            JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -278,6 +291,7 @@ public static class PermissionCatalog
         BuiltInRoles.HRManager => new[]
         {
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
+            JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -292,6 +306,7 @@ public static class PermissionCatalog
         BuiltInRoles.HROfficer => new[]
         {
             Department.View, Department.Create, Department.Edit, Department.Deactivate,
+            JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,
@@ -303,6 +318,7 @@ public static class PermissionCatalog
         BuiltInRoles.Manager => new[]
         {
             Department.View,
+            JobTitle.View,
             Employee.ViewTeam,
             Leave.ViewTeam, Leave.ApproveTeam,
             Attendance.ViewTeam,

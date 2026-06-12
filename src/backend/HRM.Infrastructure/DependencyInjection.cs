@@ -63,6 +63,9 @@ public static class DependencyInjection
         // Department service (US-CHR-004)
         services.AddScoped<IDepartmentService, DepartmentService>();
 
+        // Job title service (US-CHR-005)
+        services.AddScoped<IJobTitleService, JobTitleService>();
+
         // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
         services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
 
