@@ -110,7 +110,9 @@ This document links user stories to their corresponding test cases across all mo
 | Cross-cutting (CHR-006) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-021, TC-CHR-ISO-022, TC-CHR-ISO-023, TC-CHR-ISO-024 | 4 | -- |
 | Cross-cutting (CHR-007) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-025, TC-CHR-ISO-026, TC-CHR-ISO-027, TC-CHR-ISO-028 | 4 | -- |
 | Cross-cutting (CHR-008) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-029, TC-CHR-ISO-030, TC-CHR-ISO-031, TC-CHR-ISO-032 | 4 | -- |
-| **TOTAL** | | | **248 test cases** | **248** | **41/41 AC** |
+| US-CHR-009 | Employee Status Management (Active, Probation, Suspended, Terminated) | Must Have | TC-CHR-217, TC-CHR-218, TC-CHR-219, TC-CHR-220, TC-CHR-221, TC-CHR-222, TC-CHR-223, TC-CHR-224, TC-CHR-225, TC-CHR-226, TC-CHR-227, TC-CHR-228, TC-CHR-229, TC-CHR-230, TC-CHR-231, TC-CHR-232, TC-CHR-233, TC-CHR-234, TC-CHR-235, TC-CHR-236, TC-CHR-237, TC-CHR-238 | 22 | 5/5 AC covered |
+| Cross-cutting (CHR-009) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-033, TC-CHR-ISO-034, TC-CHR-ISO-035, TC-CHR-ISO-036 | 4 | -- |
+| **TOTAL** | | | **274 test cases** | **274** | **46/46 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -226,6 +228,60 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-ISO-030 | API rejects document requests without valid tenant context | Security | Critical | US-CHR-008 | NFR-2 |
 | TC-CHR-ISO-031 | RLS blocks direct DB queries across tenants for employee documents | Security | Critical | US-CHR-008 | NFR-2 |
 | TC-CHR-ISO-032 | Document storage paths and cache keys are tenant-scoped | Security | Critical | US-CHR-008 | FR-3, NFR-2 |
+| TC-CHR-217 | Change active to suspended -- status updated, history entry, audit log, portal access disabled (happy path) | Functional | Critical | US-CHR-009 | AC-1, AC-2, FR-3, FR-4, FR-5, NFR-5, BR-1, BR-2 |
+| TC-CHR-218 | Status transition form shows only valid transitions based on current status | Functional | Critical | US-CHR-009 | AC-1, FR-2, BR-1 |
+| TC-CHR-219 | Invalid transition terminated to probation via API returns 400 with exact error message | Functional | Critical | US-CHR-009 | AC-5, FR-2, BR-1, BR-3 |
+| TC-CHR-220 | Status change without reason rejected with validation error | Functional | High | US-CHR-009 | FR-3 |
+| TC-CHR-221 | Status change without effective date rejected with validation error | Functional | High | US-CHR-009 | FR-3 |
+| TC-CHR-222 | Terminate employee -- login disabled, headcount excluded, payroll exclusion hook | Functional | Critical | US-CHR-009 | AC-3, FR-5, BR-3, BR-5 |
+| TC-CHR-223 | State machine boundary -- all allowed transitions succeed, terminated is terminal | Functional | Critical | US-CHR-009 | FR-1, FR-2, BR-1, BR-3 |
+| TC-CHR-224 | Probation reminder -- daily job sends HR notification, no auto-transition | Functional | High | US-CHR-009 | AC-4, FR-6, BR-6 |
+| TC-CHR-225 | Future-dated status change -- not applied today, background job applies on effective date | Functional | Critical | US-CHR-009 | BR-4, FR-3, FR-4 |
+| TC-CHR-226 | Idempotency -- duplicate request with same Idempotency-Key yields one transition | Security | High | US-CHR-009 | NFR-3 |
+| TC-CHR-227 | Manager role blocked from changing employee status | Security | Critical | US-CHR-009 | BR-2 |
+| TC-CHR-228 | Employee role blocked from changing any employee status | Security | Critical | US-CHR-009 | BR-2 |
+| TC-CHR-229 | Unauthenticated request to status change API returns 401 | Security | Critical | US-CHR-009 | BR-2, NFR-2 |
+| TC-CHR-230 | Audit log records before/after snapshot for status change | Functional | High | US-CHR-009 | NFR-5, FR-4 |
+| TC-CHR-231 | Employment history -- 3 status changes produce 3 timeline entries | Functional | High | US-CHR-009 | FR-4, AC-2 |
+| TC-CHR-232 | Responsive -- 360px viewport shows bottom sheet instead of modal | Functional | High | US-CHR-009 | NFR-4 |
+| TC-CHR-233 | Status badge color-coded on employee profile and directory | Functional | High | US-CHR-009 | FR-7 |
+| TC-CHR-234 | Status change API response time within 800ms P95 | Performance | High | US-CHR-009 | NFR-1 |
+| TC-CHR-235 | Status change form and timeline meet WCAG 2.1 AA accessibility | Accessibility | High | US-CHR-009 | NFR-4 |
+| TC-CHR-236 | Cross-browser compatibility for status change flow | Functional | Medium | US-CHR-009 | NFR-4 |
+| TC-CHR-237 | Suspended employee excluded from active headcount but data retained | Functional | High | US-CHR-009 | BR-5, FR-5 |
+| TC-CHR-238 | Reactivating to Active re-enables portal access and resumes leave accrual | Functional | High | US-CHR-009 | FR-5 |
+| TC-CHR-ISO-033 | Tenant A status change and employment history not visible to Tenant B | Security | Critical | US-CHR-009 | NFR-2 |
+| TC-CHR-ISO-034 | API rejects status change requests without valid tenant context | Security | Critical | US-CHR-009 | NFR-2 |
+| TC-CHR-ISO-035 | RLS blocks direct DB queries across tenants for status and history data | Security | Critical | US-CHR-009 | NFR-2 |
+| TC-CHR-ISO-036 | Cache keys for employee status and employment history are tenant-scoped | Security | Critical | US-CHR-009 | NFR-2 |
+
+### US-CHR-009 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Status transition form shows available transitions based on current status; invalid transitions not shown | AC | TC-CHR-217, TC-CHR-218 | Direct |
+| AC-2: Status change recorded in employment history with reason, effective date, and officer; audit log created | AC | TC-CHR-217, TC-CHR-230, TC-CHR-231 | Direct |
+| AC-3: Terminated employee: login deactivated, removed from headcount, excluded from payroll, portal disabled, data retained | AC | TC-CHR-222, TC-CHR-237 | Direct |
+| AC-4: Daily background job sends HR notification for approaching probation end; does NOT auto-transition | AC | TC-CHR-224 | Direct |
+| AC-5: Invalid status transition rejected with exact error message | AC | TC-CHR-219, TC-CHR-223 | Direct |
+| FR-1: System supports statuses: active, probation, suspended, terminated, inactive | FR | TC-CHR-218, TC-CHR-223, TC-CHR-233 | Direct |
+| FR-2: Valid state machine enforced | FR | TC-CHR-218, TC-CHR-219, TC-CHR-223 | Direct |
+| FR-3: Every status change requires reason and effective date | FR | TC-CHR-217, TC-CHR-220, TC-CHR-221 | Direct |
+| FR-4: All status changes recorded in employment history | FR | TC-CHR-217, TC-CHR-230, TC-CHR-231 | Direct |
+| FR-5: Side effects based on new status (portal access, leave accrual, payroll) | FR | TC-CHR-217, TC-CHR-222, TC-CHR-238 | Direct (leave/payroll deferred) |
+| FR-6: Daily background job checks probation end dates within 7 days | FR | TC-CHR-224 | Direct (notification dispatch deferred if module not built) |
+| FR-7: Status displayed as color-coded badge on profile and directory | FR | TC-CHR-233 | Direct |
+| NFR-1: Status change API response time <= 800ms P95 | NFR | TC-CHR-234 | Direct |
+| NFR-2: All status data tenant-isolated via RLS and EF Core global query filters | NFR | TC-CHR-ISO-033, TC-CHR-ISO-034, TC-CHR-ISO-035, TC-CHR-ISO-036 | Direct |
+| NFR-3: Status changes idempotent via Idempotency-Key header | NFR | TC-CHR-226 | Direct |
+| NFR-4: Status change UI fully responsive (360px to 4K) | NFR | TC-CHR-232, TC-CHR-236 | Direct |
+| NFR-5: Status change operations fully audited with before/after snapshots | NFR | TC-CHR-217, TC-CHR-230 | Direct |
+| BR-1: State machine enforced server-side; UI only presents valid transitions | BR | TC-CHR-218, TC-CHR-219, TC-CHR-223 | Direct |
+| BR-2: Only HR Officers and Tenant Admins can change status | BR | TC-CHR-227, TC-CHR-228, TC-CHR-229 | Direct |
+| BR-3: Terminated is terminal state; rehired employees get new record | BR | TC-CHR-219, TC-CHR-223 | Direct |
+| BR-4: Future effective date stored but not applied until that date | BR | TC-CHR-225 | Direct |
+| BR-5: Suspended employees excluded from active headcount; records retained | BR | TC-CHR-237 | Direct |
+| BR-6: Probation periods configured per tenant (default 90 days) | BR | TC-CHR-224 | Direct |
 
 ### US-CHR-008 Detailed Requirements Traceability
 
@@ -312,6 +368,22 @@ This document links user stories to their corresponding test cases across all mo
 ### US-CHR-002, US-CHR-001, US-CHR-004, US-CHR-005 Detailed Requirements Traceability
 
 (Unchanged from previous version -- all detailed traceability tables for these stories remain as documented.)
+
+### Coverage Summary (Core HR -- US-CHR-009)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 7/7 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 5/5 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 6/6 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated ISO (TC-CHR-ISO-033 through TC-CHR-ISO-036) | >= 3 | PASS |
+| Security Test Cases | 9/26 (34.6%) | >= 30% | PASS |
+| Performance Test Cases | 1/26 (TC-CHR-234) | >= 1 | PASS |
+| Accessibility Test Cases | 1/26 (TC-CHR-235) | >= 1 | PASS |
+| Cross-Browser Test Cases | 1/26 (TC-CHR-236) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | Payroll exclusion hook, notification dispatch, leave accrual resume (pending respective modules) | -- | NOTE |
 
 ### Coverage Summary (Core HR -- US-CHR-008)
 
@@ -424,9 +496,9 @@ This document links user stories to their corresponding test cases across all mo
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
-| Core HR (US-CHR-001 through US-CHR-008) | 8 | 248 | 41/41 (100%) | 50 | PASS |
-| **TOTAL** | **18** | **364** | **102/102 (100%)** | **73** | |
+| Core HR (US-CHR-001 through US-CHR-009) | 9 | 274 | 46/46 (100%) | 54 | PASS |
+| **TOTAL** | **19** | **390** | **107/107 (100%)** | **77** | |
 
 ---
 
-*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-008. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. For US-CHR-003, BR-2 (manager reporting chain scope) is deferred pending Employee.ReportsToEmployeeId and BR-5 search is implemented as ILIKE with tsvector upgrade path documented. US-CHR-007 adds 24 test cases (20 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 4 ACs, 8 FRs, 4 NFRs, and 6 BRs. US-CHR-008 adds 29 test cases (25 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 10 FRs, 6 NFRs, and 7 BRs. TC-CHR-205 (storage quota enforcement) is partially deferred pending the Subscription/Plan module. The matrix will be extended as additional Core HR user stories (US-CHR-009+) and other modules are authored.*
+*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-009. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. For US-CHR-003, BR-2 (manager reporting chain scope) is deferred pending Employee.ReportsToEmployeeId and BR-5 search is implemented as ILIKE with tsvector upgrade path documented. US-CHR-007 adds 24 test cases (20 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 4 ACs, 8 FRs, 4 NFRs, and 6 BRs. US-CHR-008 adds 29 test cases (25 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 10 FRs, 6 NFRs, and 7 BRs. TC-CHR-205 (storage quota enforcement) is partially deferred pending the Subscription/Plan module. US-CHR-009 adds 26 test cases (22 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs, 7 FRs, 5 NFRs, and 6 BRs. Several side-effect tests (payroll exclusion, leave accrual, notification dispatch) are marked as DEFERRED pending their respective modules. The matrix will be extended as additional Core HR user stories (US-CHR-010+) and other modules are authored.*

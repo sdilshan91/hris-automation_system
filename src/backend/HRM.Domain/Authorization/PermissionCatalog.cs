@@ -56,6 +56,11 @@ public static class PermissionCatalog
         public const string EditOwn = "Employee.Edit.Own";
         public const string Delete = "Employee.Delete";
         public const string Export = "Employee.Export";
+        /// <summary>
+        /// Permission to change employee status (US-CHR-009 BR-2).
+        /// Granted to HR Officer and Tenant Admin roles.
+        /// </summary>
+        public const string ChangeStatus = "Employee.ChangeStatus";
     }
 
     // ── Leave Module ─────────────────────────────────────────────────
@@ -190,6 +195,7 @@ public static class PermissionCatalog
         // Employee
         Employee.ViewOwn, Employee.ViewTeam, Employee.ViewAll,
         Employee.Create, Employee.Edit, Employee.EditOwn, Employee.Delete, Employee.Export,
+        Employee.ChangeStatus,
 
         // Leave
         Leave.ViewOwn, Leave.ViewTeam, Leave.ViewAll,
@@ -299,7 +305,7 @@ public static class PermissionCatalog
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
-            Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export,
+            Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
@@ -320,7 +326,7 @@ public static class PermissionCatalog
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
-            Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export,
+            Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
             Payroll.View, Payroll.Run,
@@ -337,7 +343,7 @@ public static class PermissionCatalog
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
-            Employee.ViewAll, Employee.Create, Employee.Edit,
+            Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,
             Recruitment.View, Recruitment.Manage,

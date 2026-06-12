@@ -135,6 +135,8 @@ try
     // ===== Background Jobs =====
     builder.Services.AddScoped<HRM.Api.Jobs.TokenCleanupJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.SendLockoutNotificationJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ApplyFutureDatedStatusChangesJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ProbationReminderJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
@@ -219,6 +221,18 @@ try
             "document-expiry-notifications",
             job => job.RunAsync(),
             "0 9 * * *"); // 09:00 UTC daily
+
+        // US-CHR-009 BR-4: Apply future-dated employee status changes (daily at 00:15 UTC)
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ApplyFutureDatedStatusChangesJob>(
+            "apply-future-dated-status-changes",
+            job => job.RunAsync(),
+            "15 0 * * *"); // 00:15 UTC daily
+
+        // US-CHR-009 FR-6 / BR-6: Probation end date reminder (daily at 08:00 UTC)
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ProbationReminderJob>(
+            "probation-end-reminders",
+            job => job.RunAsync(),
+            "0 8 * * *"); // 08:00 UTC daily
     }
 
     app.Run();

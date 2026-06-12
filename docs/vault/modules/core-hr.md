@@ -488,6 +488,112 @@ Added to `PermissionCatalog` following the same pattern as Departments/Job Title
 
 The route guard uses `roleGuard(['Tenant Admin', 'HR Officer'])` matching the story's persona.
 
+## Employee Status Management (US-CHR-009)
+
+### Frontend implementation
+
+#### Status badge color mapping (FR-7)
+
+Extended `EmployeeStatus` type to include `'inactive'` (was missing from the original US-CHR-001/003 type). All 5 statuses now have color-coded badges matching the story spec:
+
+| Status | Badge CSS class (profile) | Badge CSS class (list) |
+|--------|---------------------------|------------------------|
+| active | `badge-active` (green-50/green-700) | `status-active` (green-50/green-700) |
+| probation | `badge-probation` (amber-50/amber-700) | `status-probation` (amber-50/amber-700) |
+| suspended | `badge-suspended` (gray-100/gray-800) | `status-suspended` (gray-100/gray-800) |
+| terminated | `badge-terminated` (red-50/red-700) | `status-terminated` (red-100/red-800) |
+| inactive | `badge-inactive` (slate-100/slate-800) | `status-inactive` (slate-100/slate-800) |
+
+The `getStatusBadgeClasses()` pure function in `employee.models.ts` uses the exact Tailwind classes from Section 7 (`bg-green-100 text-green-800` etc.) and is separately testable without TestBed.
+
+#### Cross-cutting change: employee-list status badge colors
+
+The employee-list component (US-CHR-003) had `suspended` styled as red and `terminated` as neutral -- these were swapped vs. the story spec. US-CHR-009 corrected both to match the story's color mapping (suspended=gray, terminated=red) and added the `inactive` badge class. This is a **shared-file change** that affects the US-CHR-003 directory view.
+
+#### Status transition source of truth (BR-1, AC-1)
+
+Valid transitions are fetched from the backend via `GET /api/v1/tenant/employees/:id/status/transitions`. The frontend does NOT hardcode the transition matrix. The dropdown in the status change modal only shows transitions returned by the backend.
+
+#### Backend API contract assumptions (US-CHR-009)
+
+- `GET /api/v1/tenant/employees/:id/status/transitions` -- returns `IStatusTransition[]` (targetStatus, label, sideEffects[])
+- `POST /api/v1/tenant/employees/:id/status` -- body: `{ newStatus, effectiveDate, reason }`, header: `Idempotency-Key: <uuid>`. Returns `{ profile: IEmployeeProfile }` on success, 400 with `{ message }` on invalid transition.
+
+The `IChangeStatusResponse` returns the full updated `IEmployeeProfile` so the client can update the badge and timeline in one round-trip without a separate GET.
+
+#### Idempotency (NFR-3)
+
+Each status change submission generates a new UUID via `crypto.randomUUID()` and sends it as the `Idempotency-Key` header. This prevents duplicate transitions if the user retries on a network timeout.
+
+#### Employment history timeline reason display
+
+Added optional `reason` field to `IEmploymentHistoryEntry`. Status change entries (`changeType === 'status_change' || 'status'`) render with inline status badges (previous -> new) and the reason in italics.
+
+#### Modal responsive behavior (NFR-4)
+
+On mobile (<640px), the modal overlay aligns to bottom and the modal card uses `rounded-b-none rounded-t-2xl` (bottom-sheet pattern) with full width. On desktop, it centers with `max-w-md`.
+
+### Backend implementation (US-CHR-009)
+
+#### State machine (FR-2, BR-1)
+
+Hardcoded in `EmployeeStatusStateMachine` (Domain layer). The state machine is a pure static class with no dependencies, making it trivially testable and reusable from any layer. Transitions:
+
+| From | Valid targets |
+|------|--------------|
+| Probation | Active, Terminated |
+| Active | Suspended, Terminated, Inactive |
+| Suspended | Active, Terminated |
+| Inactive | Active, Terminated |
+| Terminated | (terminal, no outbound) |
+
+Invalid transitions return a structured error message: "Invalid status transition. {From} employees cannot be moved to {To}."
+
+#### EmployeeStatus enum extended
+
+Added `Suspended = 4` to the `EmployeeStatus` enum. The enum is stored as a string in PostgreSQL (via `HasConversion<string>()`), so adding a new value requires no schema migration for the `employees.status` column.
+
+#### Idempotency approach (NFR-3)
+
+Database-backed idempotency via the `idempotency_records` table (new). Scoped per tenant + operation name + key. Records expire after 24 hours. The approach is pragmatic:
+- On first call: execute the operation, save the response JSON + status code.
+- On duplicate call (same key): return the cached response without re-executing.
+- Race condition on concurrent duplicate inserts is handled via unique constraint catch-and-ignore.
+- No in-memory caching layer (simplicity first; the DB unique index provides correctness).
+
+#### Future-dated changes (BR-4)
+
+Stored in the `future_dated_status_changes` table. When effectiveDate > today, the change is persisted but NOT applied. A daily Hangfire job (`ApplyFutureDatedStatusChangesJob`, runs at 00:15 UTC) queries all pending records with `effectiveDate <= today` and applies them. If the transition is no longer valid at application time (e.g., the employee's status changed since scheduling), the record is marked `is_cancelled = true` with a log warning.
+
+#### Side effects (FR-5, AC-3) -- CROSS-CUTTING AUTH CHANGE
+
+On `terminated` or `suspended`: the linked User account's `IsActive` is set to `false` and all active RefreshTokens are revoked. This is a **cross-cutting change** that touches the User entity (auth module). The change is minimal (two fields: `User.IsActive = false` + `RefreshToken.RevokedAt = now`).
+
+On `active` (reactivation from suspended/inactive): the linked User account's `IsActive` is re-enabled.
+
+Leave accrual pause/resume and payroll exclusion are left as TODO hooks for their respective modules.
+
+#### Probation reminder (FR-6, AC-4, BR-6)
+
+Daily Hangfire job (`ProbationReminderJob`, runs at 08:00 UTC) checks employees in `Probation` status whose `date_of_joining + 90 days` falls within the next 7 days. Currently logs a structured `PROBATION_REMINDER` warning. Actual notification dispatch is deferred to the Notification module (TODO).
+
+#### Permission: `Employee.ChangeStatus`
+
+New permission in `PermissionCatalog`. Granted by default to Tenant Admin, HR Manager, and HR Officer roles. The `POST .../status` endpoint is gated with `[RequirePermission("Employee.ChangeStatus")]`.
+
+#### API endpoints (backend)
+
+- `POST /api/v1/tenant/employees/{id}/status` -- change status (with `Idempotency-Key` header)
+- `GET /api/v1/tenant/employees/{id}/status/transitions` -- valid transitions query
+
+#### Migration: `AddEmployeeStatusManagement` (20260612154506)
+
+Creates two new tables:
+1. `future_dated_status_changes` -- stores pending future-dated status changes
+2. `idempotency_records` -- stores idempotency keys with response cache
+
+No change to the `employees` table (the `Suspended` enum value is stored as a string).
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."

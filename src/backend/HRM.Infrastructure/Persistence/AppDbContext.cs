@@ -36,6 +36,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<EmployeeFieldAuditLog> EmployeeFieldAuditLogs => Set<EmployeeFieldAuditLog>();
     public DbSet<Location> Locations => Set<Location>();
     public DbSet<EmployeeDocument> EmployeeDocuments => Set<EmployeeDocument>();
+    public DbSet<FutureDatedStatusChange> FutureDatedStatusChanges => Set<FutureDatedStatusChange>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,5 +86,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-CHR-008: EmployeeDocument tenant isolation + soft-delete filter
         modelBuilder.Entity<EmployeeDocument>()
             .HasQueryFilter(d => !d.IsDeleted && (!_tenantContext.IsResolved || d.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-009: FutureDatedStatusChange tenant isolation + soft-delete filter
+        modelBuilder.Entity<FutureDatedStatusChange>()
+            .HasQueryFilter(f => !f.IsDeleted && (!_tenantContext.IsResolved || f.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-009: IdempotencyRecord — no soft-delete; tenant isolation only
+        modelBuilder.Entity<IdempotencyRecord>()
+            .HasQueryFilter(i => !_tenantContext.IsResolved || i.TenantId == _tenantContext.TenantId);
     }
 }

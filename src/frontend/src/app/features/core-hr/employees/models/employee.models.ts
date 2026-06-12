@@ -31,13 +31,14 @@ export type EmploymentType =
   | 'Contract'
   | 'Intern';
 
-export type EmployeeStatus = 'active' | 'probation' | 'suspended' | 'terminated';
+export type EmployeeStatus = 'active' | 'probation' | 'suspended' | 'terminated' | 'inactive';
 
 export const EMPLOYEE_STATUS_OPTIONS: EmployeeStatus[] = [
   'active',
   'probation',
   'suspended',
   'terminated',
+  'inactive',
 ];
 
 export const GENDER_OPTIONS: EmployeeGender[] = [
@@ -158,7 +159,8 @@ export type EmployeeProfileStatus =
   | 'active'
   | 'probation'
   | 'terminated'
-  | 'suspended';
+  | 'suspended'
+  | 'inactive';
 
 /** Emergency contact sub-entity */
 export interface IEmergencyContact {
@@ -203,9 +205,10 @@ export interface IDependentRecord {
 export interface IEmploymentHistoryEntry {
   id: string;
   effectiveDate: string;
-  changeType: 'department' | 'job_title' | 'status' | 'reporting_manager' | string;
+  changeType: 'department' | 'job_title' | 'status' | 'status_change' | 'reporting_manager' | string;
   previousValue: string | null;
   newValue: string;
+  reason?: string | null;
   changedBy: string | null;
   changedAt: string;
 }
@@ -360,4 +363,49 @@ export interface IActiveFilterChip {
   label: string;
   value: string;
   filterKey: keyof IEmployeeDirectoryParams;
+}
+
+// ─── US-CHR-009: Employee Status Management models ─────────
+
+/**
+ * Valid status transition returned by the backend.
+ * The backend is the source of truth for the transition matrix (BR-1).
+ */
+export interface IStatusTransition {
+  targetStatus: EmployeeStatus;
+  label: string;
+  sideEffects: string[];
+}
+
+/**
+ * Request payload for changing employee status.
+ * POST /api/v1/tenant/employees/:id/status
+ */
+export interface IChangeStatusRequest {
+  newStatus: EmployeeStatus;
+  effectiveDate: string;
+  reason: string;
+}
+
+/**
+ * Response from the change-status endpoint.
+ * Returns the updated employee profile (with new status and new timeline entry).
+ */
+export interface IChangeStatusResponse {
+  profile: IEmployeeProfile;
+}
+
+/**
+ * Status badge color mapping (US-CHR-009 Section 7).
+ * Returns the CSS class suffix for a given employee status.
+ */
+export function getStatusBadgeClasses(status: EmployeeStatus | string): string {
+  switch (status) {
+    case 'active':     return 'bg-green-100 text-green-800';
+    case 'probation':  return 'bg-amber-100 text-amber-800';
+    case 'suspended':  return 'bg-gray-100 text-gray-800';
+    case 'terminated': return 'bg-red-100 text-red-800';
+    case 'inactive':   return 'bg-slate-100 text-slate-800';
+    default:           return 'bg-neutral-100 text-neutral-600';
+  }
 }
