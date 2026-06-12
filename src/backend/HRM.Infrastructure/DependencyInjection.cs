@@ -60,6 +60,9 @@ public static class DependencyInjection
         // RBAC service
         services.AddScoped<IRoleService, RoleService>();
 
+        // Department service (US-CHR-004)
+        services.AddScoped<IDepartmentService, DepartmentService>();
+
         // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
         services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
 

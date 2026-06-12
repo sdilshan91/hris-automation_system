@@ -162,6 +162,17 @@ export const appRoutes: Routes = [
             './features/auth/lockout/admin-user-lockout/admin-user-lockout.component'
           ).then((m) => m.AdminUserLockoutComponent),
       },
+      // ─── Core HR / Departments (US-CHR-004) ───────────────
+      {
+        path: 'departments',
+        loadChildren: () =>
+          import('./features/core-hr/departments/departments.routes').then(
+            (m) => m.DEPARTMENT_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer']),
+        ],
+      },
       // Feature modules will be added here as they are implemented
       // {
       //   path: 'employees',
