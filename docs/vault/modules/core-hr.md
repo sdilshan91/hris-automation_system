@@ -250,6 +250,107 @@ Role classification is done by inspecting `ICurrentUser.Permissions` rather than
 - `Employee.View.Team` without Edit -> Manager (read-only)
 
 The PATCH controller endpoint uses `[Authorize]` (not `[RequirePermission]`) because the attribute only supports single-permission AND logic. The service enforces OR logic: callers need either `Employee.Edit` or `Employee.Edit.Own`.
+## Employee Directory (US-CHR-003)
+
+### Backend implementation
+
+New dedicated `GET /api/v1/tenant/employees/directory` endpoint with richer search/filter/sort/export, separate from the existing basic list endpoint at `GET /api/v1/tenant/employees`.
+
+New `GET /api/v1/tenant/employees/directory/export?format=Csv|Excel` endpoint for CSV and Excel exports.
+
+Architecture: `GetEmployeeDirectoryQuery` -> `GetEmployeeDirectoryQueryHandler` -> `IEmployeeDirectoryService` -> `EmployeeDirectoryService`. Separate from the existing `IEmployeeService.GetAllAsync` to avoid breaking the original endpoint contract.
+
+### Search strategy: ILIKE, not tsvector (deliberate deferral)
+
+The story calls for PostgreSQL full-text search (`tsvector`, BR-5). We implemented ILIKE-based (`.ToLower().Contains()`) partial match across `first_name`, `last_name`, `email`, `employee_no`, and `phone`. This translates to `ILIKE '%term%'` on PostgreSQL and performs well up to a few thousand employees per tenant.
+
+**Why not tsvector now:** Adding a tsvector generated column requires a migration that alters the `employees` table with a `GENERATED ALWAYS AS (to_tsvector('english', ...))` expression. Without a live DB to test this migration (and given the risk of partial-word matching semantics differing from ILIKE), we opted for correctness over hypothetical performance.
+
+**Upgrade path to tsvector:**
+1. Add a `search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(first_name, '') || ' ' || coalesce(last_name, '') || ' ' || coalesce(email, '') || ' ' || coalesce(employee_no, '') || ' ' || coalesce(phone, ''))) STORED` column.
+2. Create a GIN index: `CREATE INDEX ix_employees_search_vector ON employees USING gin(search_vector)`.
+3. Change the EF query to use `EF.Functions.ToTsQuery` and `@@` operator.
+4. Partial word matching requires `to_tsquery('english', term || ':*')` prefix matching.
+
+### Location field
+
+Added `Employee.Location` as a nullable string (max 200 chars). This is a free-text field -- the story references US-CHR-007 (Location entity) which does not exist yet. When US-CHR-007 lands:
+1. Create a `Location` entity with tenant-scoped FK.
+2. Replace `Employee.Location` (string) with `Employee.LocationId` (FK).
+3. Update directory filters to use location IDs instead of string matching.
+
+### Role-based field visibility (FR-9, BR-2/3/4)
+
+Three visibility tiers based on the caller's permissions:
+- **Full** (`Employee.View.All`): All fields including email, phone, dateOfJoining, employmentType.
+- **Manager** (`Employee.View.Team`): Same as Full but scoped to reporting chain (see deferral below).
+- **Basic** (`Employee.View.Own`): Strips email, phone, dateOfJoining, employmentType from both API responses and exports.
+
+### Manager reporting-chain scope (deferred)
+
+BR-2 requires managers see only employees in their reporting chain. The Employee entity has no `ManagerId` or `ReportsToEmployeeId` field, and the `Department.ManagerId` only links one manager per department without expressing indirect reports.
+
+**What is implemented:** The `DirectoryFieldVisibility.Manager` tier applies field visibility (same as Full) but does NOT filter to reporting chain. All employees in the tenant are visible. This is explicitly flagged as a deferral.
+
+**When a reporting hierarchy is added:**
+1. Add `Employee.ReportsToEmployeeId` (nullable FK to self).
+2. In `EmployeeDirectoryService.BuildFilteredQuery`, when visibility is `Manager`, add a recursive CTE or ancestor-walk filter to include only direct/indirect reports.
+3. Update the query handler to pass the current user's employee ID for the chain lookup.
+
+### Show Archived toggle (BR-1)
+
+Uses `IgnoreQueryFilters()` when `showArchived=true`, which strips the `IsDeleted` filter AND the tenant filter. The query explicitly re-applies `WHERE tenant_id = @tenantId` to maintain tenant isolation. Only honored when the caller has `Employee.View.All` (HR Officer tier); the query handler silently ignores the flag for lower visibility tiers.
+
+### Export (FR-8, BR-4)
+
+- CSV: UTF-8 with BOM, RFC 4180 escaping. Columns match the role-based visibility tier.
+- Excel: ClosedXML (.xlsx), single worksheet "Employee Directory", auto-fit columns, bold headers.
+- Both formats respect the same filters as the directory query.
+- Synchronous implementation. For very large tenants (>10k employees), an async Hangfire export path should be added (NFR-5 deferral).
+
+### Migration: AddEmployeeDirectoryFields
+
+- Adds `employees.location` column (varchar 200, nullable).
+- Adds indexes: `ix_employees_tenant_id_employment_type`, `ix_employees_tenant_id_date_of_joining`, `ix_employees_tenant_id_location`.
+
+### Cross-cutting change: Location on CreateEmployee
+
+Adding the `Location` property to `Employee` required updating `CreateEmployeeCommand`, `CreateEmployeeCommandHandler`, `CreateEmployeeRequest`, and the controller mapping. This is a minimal change to keep the create flow consistent with the new field.
+
+### Frontend (US-CHR-003)
+
+#### API contract assumptions (frontend -> backend alignment)
+
+The frontend's `EmployeeService.queryDirectory()` calls `GET /api/v1/tenant/employees` (not `/directory`) with query params:
+- `search`, `departments` (csv), `jobTitles` (csv), `statuses` (csv), `employmentTypes` (csv), `location`, `dateOfJoiningFrom`, `dateOfJoiningTo`, `sort`, `sortDirection`, `page`, `pageSize`, `includeArchived`
+- Expected response: `{ data: IEmployee[], total: number, page: number, pageSize: number }`
+- Export: `GET /api/v1/tenant/employees/export?format=csv|excel&...same filters` returns `Blob`
+
+If the backend uses `/api/v1/tenant/employees/directory` instead, update `EmployeeService.baseUrl` or add a separate `directoryUrl`. The story doc says `GET /api/v1/employees` but the vault notes above mention `/employees/directory`. The backend agent needs to confirm the canonical URL.
+
+#### EmployeeStatus extended to include 'suspended' and 'terminated'
+
+The original `EmployeeStatus` type from US-CHR-001 only had `'active' | 'probation'`. US-CHR-003 adds `'suspended' | 'terminated'` as stated in FR-2 and the multi-select filter options. The card view shows status-specific badge colors for all four statuses.
+
+#### Enhanced existing employee-list component (no new component)
+
+The existing `EmployeeListComponent` was enhanced in place rather than creating a separate `EmployeeDirectoryComponent`. The component now serves both the simple card list role (US-CHR-001) and the full directory (US-CHR-003). The old `getEmployees()` call is replaced by `queryDirectory()` which returns a paginated response.
+
+#### Filter option dropdowns are empty until populated
+
+Department and job title filter dropdowns are declared as `signal<string[]>([])`. In the current implementation these are not auto-populated from a backend endpoint -- they need either:
+1. A dedicated `GET /api/v1/tenant/employees/filter-options` endpoint that returns distinct departments/jobTitles/locations, or
+2. Reusing the existing `DepartmentService.getDepartments()` and `JobTitleService.getJobTitles()` calls.
+
+When the backend provides this, call the endpoint in `loadFilterOptions()` and populate `departmentOptions` / `jobTitleOptions` signals.
+
+#### URL state sync via Router.navigate with queryParams
+
+Search/filter/sort/page state is persisted as URL query params using `router.navigate([], { queryParams, replaceUrl: true })`. On init, `restoreFromUrl()` reads `ActivatedRoute.snapshot.queryParamMap` and pre-fills signals. This enables deep-linking and browser back/forward (FR-6).
+
+#### View mode responsive default
+
+On screens < 768px, the component defaults to card view. The view mode is not persisted per-user (no localStorage) -- only via URL `?view=table|card` param.
 
 ## Open questions
 

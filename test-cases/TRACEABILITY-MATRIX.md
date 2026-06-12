@@ -359,13 +359,15 @@ This document links user stories to their corresponding test cases across all mo
 |---------------|-----------------|----------|------------|----------|----------|
 | US-CHR-001 | Add New Employee with Personal Information | Must Have | TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-067, TC-CHR-068, TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-075, TC-CHR-076, TC-CHR-077, TC-CHR-078, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-095, TC-CHR-096, TC-CHR-097, TC-CHR-098, TC-CHR-099, TC-CHR-100, TC-CHR-101, TC-CHR-102, TC-CHR-103 | 40 | 6/6 AC covered |
 | US-CHR-002 | View and Edit Employee Profile | Must Have | TC-CHR-104, TC-CHR-105, TC-CHR-106, TC-CHR-107, TC-CHR-108, TC-CHR-109, TC-CHR-110, TC-CHR-111, TC-CHR-112, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-119, TC-CHR-120, TC-CHR-121, TC-CHR-122, TC-CHR-123, TC-CHR-124, TC-CHR-125, TC-CHR-126 | 23 | 6/6 AC covered |
+| US-CHR-003 | Employee Directory with Search and Filters | Must Have | TC-CHR-127, TC-CHR-128, TC-CHR-129, TC-CHR-130, TC-CHR-131, TC-CHR-132, TC-CHR-133, TC-CHR-134, TC-CHR-135, TC-CHR-136, TC-CHR-137, TC-CHR-138, TC-CHR-139, TC-CHR-140, TC-CHR-141, TC-CHR-142, TC-CHR-143, TC-CHR-144, TC-CHR-145, TC-CHR-146, TC-CHR-147, TC-CHR-148, TC-CHR-149, TC-CHR-150 | 24 | 5/5 AC covered |
 | US-CHR-004 | Create and Manage Departments | Must Have | TC-CHR-001 through TC-CHR-034 | 34 | 5/5 AC covered (all unblocked) |
 | US-CHR-005 | Create and Manage Job Titles and Positions | Must Have | TC-CHR-035 through TC-CHR-063 | 29 | 5/5 AC covered (all unblocked) |
 | Cross-cutting (CHR-001) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 4 | -- |
 | Cross-cutting (CHR-002) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 4 | -- |
+| Cross-cutting (CHR-003) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-017, TC-CHR-ISO-018, TC-CHR-ISO-019, TC-CHR-ISO-020 | 4 | -- |
 | Cross-cutting (CHR-004) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004 | 4 | -- |
 | Cross-cutting (CHR-005) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008 | 4 | -- |
-| **TOTAL** | | | **142 test cases** | **142** | **22/22 AC** |
+| **TOTAL** | | | **170 test cases** | **170** | **27/27 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -497,6 +499,30 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-124 | HR Officer changes department -- employment history entry and reporting structure update | Functional | High | US-CHR-002 | AC-6, FR-6, BR-4 |
 | TC-CHR-125 | Soft-deleted employee not visible in normal views; accessible via Archived filter | Functional | Medium | US-CHR-002 | BR-6 |
 | TC-CHR-126 | Cross-browser compatibility for employee profile page | Functional | Medium | US-CHR-002 | NFR-5 |
+| TC-CHR-127 | Employee directory loads paginated, sorted by name ascending (happy path) | Functional | Critical | US-CHR-003 | AC-1, AC-4, FR-4, FR-5, FR-7 |
+| TC-CHR-128 | Search directory by partial name, email, and employee_no (happy path) | Functional | Critical | US-CHR-003 | AC-2, FR-1, BR-5 |
+| TC-CHR-129 | Filter by department and status with chips and URL params (happy path) | Functional | Critical | US-CHR-003 | AC-3, FR-2, FR-6 |
+| TC-CHR-130 | Search with no matches displays empty state | Functional | High | US-CHR-003 | AC-2, FR-1 |
+| TC-CHR-131 | Invalid and out-of-range page parameter handled gracefully | Functional | High | US-CHR-003 | AC-4, FR-5 |
+| TC-CHR-132 | Pagination boundary -- 55 employees at page size 20 yields 3 pages | Functional | High | US-CHR-003 | AC-4, FR-5 |
+| TC-CHR-133 | Export filtered employee list as CSV with correct columns and row count | Functional | Critical | US-CHR-003 | AC-5, FR-8, BR-4 |
+| TC-CHR-134 | Export employee directory as Excel (.xlsx) with correct formatting | Functional | High | US-CHR-003 | AC-5, FR-8 |
+| TC-CHR-135 | View mode toggle between card/grid and table/list view | Functional | High | US-CHR-003 | FR-3 |
+| TC-CHR-136 | Sort by date of joining descending and other sort options | Functional | High | US-CHR-003 | FR-4, FR-6 |
+| TC-CHR-137 | Show Archived toggle includes soft-deleted employees (BR-1) | Functional | High | US-CHR-003 | BR-1, FR-7 |
+| TC-CHR-138 | Role-based field visibility -- Employee role sees basic directory only (FR-9, BR-3) | Security | Critical | US-CHR-003 | FR-9, BR-3, BR-4 |
+| TC-CHR-139 | Manager sees only reporting chain (BR-2) -- deferred but visibility tier applied | Security | Critical | US-CHR-003 | BR-2, FR-9 |
+| TC-CHR-140 | Export respects role-based visibility (BR-4) | Security | High | US-CHR-003 | BR-4, FR-8, FR-9 |
+| TC-CHR-141 | Unauthenticated request to directory API returns 401 | Security | Critical | US-CHR-003 | FR-7, NFR-3 |
+| TC-CHR-142 | XSS and SQL injection in search and filter parameters | Security | High | US-CHR-003 | FR-1, FR-2, NFR-3 |
+| TC-CHR-143 | Directory page load within 2.5 seconds P95 at 5,000 employees (NFR-1) | Performance | Critical | US-CHR-003 | NFR-1 |
+| TC-CHR-144 | Search results update within 500ms of user stopping typing (NFR-2) | Performance | High | US-CHR-003 | NFR-2 |
+| TC-CHR-145 | Export 10,000 rows completes within 5 minutes or is async (NFR-5) | Performance | High | US-CHR-003 | NFR-5 |
+| TC-CHR-146 | WCAG 2.1 AA keyboard navigation for filters and pagination (NFR-6) | Accessibility | Medium | US-CHR-003 | NFR-6 |
+| TC-CHR-147 | Responsive grid reflow from 4 columns to 1 column (NFR-4) | Functional | Medium | US-CHR-003 | NFR-4 |
+| TC-CHR-148 | Cross-browser compatibility (Chrome, Edge, Firefox, Safari) | Functional | Medium | US-CHR-003 | NFR-4 |
+| TC-CHR-149 | Multi-filter combination -- department + status + job title + employment type | Functional | High | US-CHR-003 | AC-3, FR-2, FR-6 |
+| TC-CHR-150 | URL state restoration for deep-linking and browser back/forward (FR-6) | Functional | High | US-CHR-003 | FR-6 |
 | TC-CHR-ISO-001 | Tenant A cannot see Tenant B's departments | Security | Critical | US-CHR-004 | NFR-2, BR-1 |
 | TC-CHR-ISO-002 | API rejects department requests without valid tenant context | Security | Critical | US-CHR-004 | NFR-2 |
 | TC-CHR-ISO-003 | RLS blocks direct DB queries across tenants for departments | Security | Critical | US-CHR-004 | NFR-2, BR-1, BR-3 |
@@ -513,6 +539,40 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-ISO-014 | API rejects employee profile requests without valid tenant context | Security | Critical | US-CHR-002 | FR-7, NFR-3 |
 | TC-CHR-ISO-015 | RLS blocks direct DB queries across tenants for employee profiles | Security | Critical | US-CHR-002 | FR-7, NFR-3 |
 | TC-CHR-ISO-016 | Cache keys for employee profiles are tenant-scoped | Security | Critical | US-CHR-002 | NFR-3 |
+| TC-CHR-ISO-017 | Tenant A directory shows zero Tenant B employees | Security | Critical | US-CHR-003 | FR-7, NFR-3 |
+| TC-CHR-ISO-018 | API rejects directory requests without valid tenant context | Security | Critical | US-CHR-003 | FR-7, NFR-3 |
+| TC-CHR-ISO-019 | RLS blocks direct DB queries across tenants for directory data | Security | Critical | US-CHR-003 | FR-7, NFR-3, BR-1 |
+| TC-CHR-ISO-020 | Cache keys for directory queries are tenant-scoped | Security | Critical | US-CHR-003 | FR-7, NFR-3 |
+
+### US-CHR-003 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Paginated card/grid directory sorted by name ascending | AC | TC-CHR-127, TC-CHR-135, TC-CHR-146, TC-CHR-147 | Direct |
+| AC-2: Search by partial name, email, employee_no, phone with 300ms debounce | AC | TC-CHR-128, TC-CHR-130, TC-CHR-142, TC-CHR-144 | Direct |
+| AC-3: Filter by department + status with chips and URL params | AC | TC-CHR-129, TC-CHR-149, TC-CHR-150 | Direct |
+| AC-4: Paginated results (default 20/page) with page controls and total count | AC | TC-CHR-127, TC-CHR-131, TC-CHR-132, TC-CHR-143 | Direct |
+| AC-5: Export filtered list as CSV or Excel with matching columns, tenant-scoped | AC | TC-CHR-133, TC-CHR-134, TC-CHR-140, TC-CHR-145 | Direct |
+| FR-1: Full-text search across name, email, employee_no, phone | FR | TC-CHR-128, TC-CHR-130, TC-CHR-142 | Direct |
+| FR-2: Filter controls for department, job title, status, employment type, location, date of joining | FR | TC-CHR-129, TC-CHR-149 | Direct |
+| FR-3: Two view modes: card/grid and table/list | FR | TC-CHR-135 | Direct |
+| FR-4: Sorting by name, employee_no, date of joining, department | FR | TC-CHR-127, TC-CHR-136 | Direct |
+| FR-5: Pagination with configurable page sizes (10, 20, 50) | FR | TC-CHR-127, TC-CHR-131, TC-CHR-132 | Direct |
+| FR-6: Filter/search state persisted in URL query parameters | FR | TC-CHR-129, TC-CHR-136, TC-CHR-150 | Direct |
+| FR-7: All queries scoped by tenant_id automatically | FR | TC-CHR-127, TC-CHR-137, TC-CHR-141, TC-CHR-ISO-017, TC-CHR-ISO-018, TC-CHR-ISO-019, TC-CHR-ISO-020 | Direct |
+| FR-8: CSV and Excel export of filtered dataset | FR | TC-CHR-133, TC-CHR-134, TC-CHR-140 | Direct |
+| FR-9: Role-based visibility (Manager: team; Employee: basic fields) | FR | TC-CHR-138, TC-CHR-139, TC-CHR-140 | Direct |
+| NFR-1: Directory page load within 2.5s P95 for 5,000 employees | NFR | TC-CHR-143 | Direct |
+| NFR-2: Search results update within 500ms | NFR | TC-CHR-144 | Direct |
+| NFR-3: All queries tenant-isolated via RLS and EF Core | NFR | TC-CHR-ISO-017, TC-CHR-ISO-018, TC-CHR-ISO-019, TC-CHR-ISO-020 | Direct |
+| NFR-4: Fully responsive; mobile defaults to card view | NFR | TC-CHR-147 | Direct |
+| NFR-5: Export 10,000 rows within 5 minutes | NFR | TC-CHR-145 | Direct |
+| NFR-6: WCAG 2.1 AA keyboard navigation for filters and pagination | NFR | TC-CHR-146 | Direct |
+| BR-1: Soft-deleted excluded by default; HR can toggle Show Archived | BR | TC-CHR-137, TC-CHR-ISO-019 | Direct |
+| BR-2: Managers see only reporting chain (deferred) | BR | TC-CHR-139 | Direct (deferred scope) |
+| BR-3: Employees see simplified directory | BR | TC-CHR-138 | Direct |
+| BR-4: Export respects role-based field visibility | BR | TC-CHR-133, TC-CHR-140 | Direct |
+| BR-5: Search uses PostgreSQL full-text search (tsvector deferred; ILIKE implemented) | BR | TC-CHR-128, TC-CHR-143 | Indirect |
 
 ### US-CHR-002 Detailed Requirements Traceability
 
@@ -576,6 +636,20 @@ This document links user stories to their corresponding test cases across all mo
 | BR-5: Emergency contact recommended but not mandatory | BR | TC-CHR-102 | Direct |
 | BR-6: Soft delete (is_deleted = true); never hard-deleted via UI | BR | TC-CHR-080 | Direct |
 
+### Coverage Summary (Core HR -- US-CHR-003)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 9/9 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 5/5 (100%) -- BR-2 scope deferred, BR-5 search ILIKE | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO + 1 embedded) | >= 3 | PASS |
+| Security Test Cases | 9/28 (32.1%) | >= 30% | PASS |
+| Performance Test Cases | 3/28 | >= 1 | PASS |
+| Accessibility Test Cases | 1/28 | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/28 | >= 1 | PASS |
+
 ### Coverage Summary (Core HR -- US-CHR-002)
 
 | Metric | Value | Target | Status |
@@ -627,9 +701,9 @@ This document links user stories to their corresponding test cases across all mo
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
-| Core HR (US-CHR-001, US-CHR-002, US-CHR-004, US-CHR-005) | 4 | 142 | 22/22 (100%) | 30 | PASS |
-| **TOTAL** | **14** | **258** | **83/83 (100%)** | **53** | |
+| Core HR (US-CHR-001, US-CHR-002, US-CHR-003, US-CHR-004, US-CHR-005) | 5 | 170 | 27/27 (100%) | 34 | PASS |
+| **TOTAL** | **15** | **286** | **88/88 (100%)** | **57** | |
 
 ---
 
-*Note: This traceability matrix covers all test cases for US-CHR-001, US-CHR-002, US-CHR-004, and US-CHR-005. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. The matrix will be extended as additional Core HR user stories (US-CHR-003, US-CHR-006+) and other modules are authored.*
+*Note: This traceability matrix covers all test cases for US-CHR-001, US-CHR-002, US-CHR-003, US-CHR-004, and US-CHR-005. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented. For US-CHR-003, BR-2 (manager reporting chain scope) is deferred pending Employee.ReportsToEmployeeId and BR-5 search is implemented as ILIKE with tsvector upgrade path documented. The matrix will be extended as additional Core HR user stories (US-CHR-006+) and other modules are authored.*

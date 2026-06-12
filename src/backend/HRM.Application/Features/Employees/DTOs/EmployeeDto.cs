@@ -23,6 +23,7 @@ public sealed record EmployeeDto
     public string EmploymentType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public string? ProfilePhotoUrl { get; init; }
+    public string? Location { get; init; }
     public string? CustomFields { get; init; }
     public Guid? UserId { get; init; }
     public bool IsActive { get; init; }
@@ -57,6 +58,7 @@ public sealed record CreateEmployeeRequest
     public Guid JobTitleId { get; init; }
     public EmploymentType EmploymentType { get; init; }
     public EmployeeStatus? Status { get; init; }
+    public string? Location { get; init; }
     public string? CustomFields { get; init; }
     public Guid? UserId { get; init; }
 }

@@ -20,6 +20,7 @@ public sealed record CreateEmployeeCommand(
     Guid JobTitleId,
     EmploymentType EmploymentType,
     EmployeeStatus? Status,
+    string? Location,
     string? CustomFields,
     Guid? UserId
 ) : IRequest<Result<EmployeeDto>>;

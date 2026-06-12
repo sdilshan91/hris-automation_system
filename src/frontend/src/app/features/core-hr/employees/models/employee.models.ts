@@ -31,7 +31,14 @@ export type EmploymentType =
   | 'Contract'
   | 'Intern';
 
-export type EmployeeStatus = 'active' | 'probation';
+export type EmployeeStatus = 'active' | 'probation' | 'suspended' | 'terminated';
+
+export const EMPLOYEE_STATUS_OPTIONS: EmployeeStatus[] = [
+  'active',
+  'probation',
+  'suspended',
+  'terminated',
+];
 
 export const GENDER_OPTIONS: EmployeeGender[] = [
   'Male',
@@ -288,4 +295,69 @@ export function isSectionEditable(
     'dependents',
   ];
   return employeeEditableSections.includes(section);
+}
+
+// ─── Directory models (US-CHR-003) ──────────────────────────
+
+/** Paginated response wrapper from the backend (AC-4, FR-5) */
+export interface IPaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Query parameters for the employee directory endpoint.
+ * Maps to GET /api/v1/tenant/employees with query string params.
+ * Multi-select filters are sent as comma-separated values.
+ */
+export interface IEmployeeDirectoryParams {
+  search?: string;
+  departments?: string[];
+  jobTitles?: string[];
+  statuses?: EmployeeStatus[];
+  employmentTypes?: EmploymentType[];
+  location?: string;
+  dateOfJoiningFrom?: string;
+  dateOfJoiningTo?: string;
+  sort?: EmployeeSortField;
+  sortDirection?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+  includeArchived?: boolean;
+}
+
+/** Sortable fields for the directory (FR-4) */
+export type EmployeeSortField =
+  | 'name'
+  | 'employee_no'
+  | 'date_of_joining'
+  | 'department';
+
+export const EMPLOYEE_SORT_OPTIONS: { value: EmployeeSortField; label: string }[] = [
+  { value: 'name', label: 'Name' },
+  { value: 'employee_no', label: 'Employee No.' },
+  { value: 'date_of_joining', label: 'Date of Joining' },
+  { value: 'department', label: 'Department' },
+];
+
+/** Page size options for the directory (FR-5) */
+export const PAGE_SIZE_OPTIONS: number[] = [10, 20, 50];
+
+/** View mode for the directory (FR-3) */
+export type DirectoryViewMode = 'card' | 'table';
+
+/** Export format options (FR-8, AC-5) */
+export type ExportFormat = 'csv' | 'excel';
+
+/**
+ * Represents an active filter chip displayed below the search bar.
+ * Each chip corresponds to one filter value that can be individually removed.
+ */
+export interface IActiveFilterChip {
+  category: string;
+  label: string;
+  value: string;
+  filterKey: keyof IEmployeeDirectoryParams;
 }

@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
 import {
@@ -10,6 +10,9 @@ import {
   IUpdateSectionRequest,
   IUpdateSectionResponse,
   ProfileSection,
+  IEmployeeDirectoryParams,
+  IPaginatedResponse,
+  ExportFormat,
 } from '../models/employee.models';
 
 /**
@@ -48,6 +51,94 @@ export class EmployeeService {
     return this.http.get<IEmployee>(`${this.baseUrl}/${employeeId}`, {
       withCredentials: true,
     });
+  }
+
+  // ─── Directory (US-CHR-003) ──────────────────────────────
+
+  /**
+   * Query the employee directory with search, filters, sort, and pagination.
+   * Backend contract: GET /api/v1/tenant/employees
+   * Query params: search, departments (csv), jobTitles (csv), statuses (csv),
+   *   employmentTypes (csv), location, dateOfJoiningFrom, dateOfJoiningTo,
+   *   sort, sortDirection, page, pageSize, includeArchived
+   * Response: { data: IEmployee[], total: number, page: number, pageSize: number }
+   */
+  queryDirectory(
+    params: IEmployeeDirectoryParams
+  ): Observable<IPaginatedResponse<IEmployee>> {
+    const httpParams = this.buildDirectoryParams(params);
+    return this.http.get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
+      params: httpParams,
+      withCredentials: true,
+    });
+  }
+
+  /**
+   * Export filtered employee directory as CSV or Excel.
+   * Backend contract: GET /api/v1/tenant/employees/export?format=csv|excel&...filters
+   * Returns a Blob for file download (AC-5, FR-8).
+   */
+  exportDirectory(
+    params: IEmployeeDirectoryParams,
+    format: ExportFormat
+  ): Observable<Blob> {
+    let httpParams = this.buildDirectoryParams(params);
+    httpParams = httpParams.set('format', format);
+    return this.http.get(`${this.baseUrl}/export`, {
+      params: httpParams,
+      responseType: 'blob',
+      withCredentials: true,
+    });
+  }
+
+  /**
+   * Build HttpParams from directory query parameters.
+   * Multi-select arrays are sent as comma-separated values.
+   */
+  buildDirectoryParams(params: IEmployeeDirectoryParams): HttpParams {
+    let httpParams = new HttpParams();
+
+    if (params.search) {
+      httpParams = httpParams.set('search', params.search);
+    }
+    if (params.departments?.length) {
+      httpParams = httpParams.set('departments', params.departments.join(','));
+    }
+    if (params.jobTitles?.length) {
+      httpParams = httpParams.set('jobTitles', params.jobTitles.join(','));
+    }
+    if (params.statuses?.length) {
+      httpParams = httpParams.set('statuses', params.statuses.join(','));
+    }
+    if (params.employmentTypes?.length) {
+      httpParams = httpParams.set('employmentTypes', params.employmentTypes.join(','));
+    }
+    if (params.location) {
+      httpParams = httpParams.set('location', params.location);
+    }
+    if (params.dateOfJoiningFrom) {
+      httpParams = httpParams.set('dateOfJoiningFrom', params.dateOfJoiningFrom);
+    }
+    if (params.dateOfJoiningTo) {
+      httpParams = httpParams.set('dateOfJoiningTo', params.dateOfJoiningTo);
+    }
+    if (params.sort) {
+      httpParams = httpParams.set('sort', params.sort);
+    }
+    if (params.sortDirection) {
+      httpParams = httpParams.set('sortDirection', params.sortDirection);
+    }
+    if (params.page != null) {
+      httpParams = httpParams.set('page', params.page.toString());
+    }
+    if (params.pageSize != null) {
+      httpParams = httpParams.set('pageSize', params.pageSize.toString());
+    }
+    if (params.includeArchived) {
+      httpParams = httpParams.set('includeArchived', 'true');
+    }
+
+    return httpParams;
   }
 
   // ─── Write ───────────────────────────────────────────────

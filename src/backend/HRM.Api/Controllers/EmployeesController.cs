@@ -6,6 +6,7 @@ using HRM.Infrastructure.Identity;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace HRM.Api.Controllers;
 
@@ -129,8 +130,8 @@ public sealed class EmployeesController : ControllerBase
             request.FirstName, request.LastName, request.Email,
             request.Phone, request.DateOfBirth, request.Gender,
             request.DateOfJoining, request.DepartmentId, request.JobTitleId,
-            request.EmploymentType, request.Status, request.CustomFields,
-            request.UserId);
+            request.EmploymentType, request.Status, request.Location,
+            request.CustomFields, request.UserId);
 
         var result = await _mediator.Send(command, cancellationToken);
 
@@ -141,6 +142,98 @@ public sealed class EmployeesController : ControllerBase
             nameof(GetEmployeeById),
             new { id = result.Value!.Id },
             ApiResponse<EmployeeDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/directory
+    /// Extended directory search with multi-select filters, sorting, and role-based visibility (US-CHR-003).
+    /// </summary>
+    [HttpGet("directory")]
+    [RequirePermission("Employee.View.Own")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeDirectoryResult>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDirectory(
+        [FromQuery] string? search = null,
+        [FromQuery] Guid[]? departmentIds = null,
+        [FromQuery] string[]? jobTitles = null,
+        [FromQuery] string[]? statuses = null,
+        [FromQuery] string[]? employmentTypes = null,
+        [FromQuery] string[]? locations = null,
+        [FromQuery] DateTime? dateOfJoiningFrom = null,
+        [FromQuery] DateTime? dateOfJoiningTo = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool sortDescending = false,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] bool showArchived = false,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetEmployeeDirectoryQuery(
+            Search: search,
+            DepartmentIds: departmentIds?.Length > 0 ? departmentIds : null,
+            JobTitles: jobTitles?.Length > 0 ? jobTitles : null,
+            Statuses: statuses?.Length > 0 ? statuses : null,
+            EmploymentTypes: employmentTypes?.Length > 0 ? employmentTypes : null,
+            Locations: locations?.Length > 0 ? locations : null,
+            DateOfJoiningFrom: dateOfJoiningFrom,
+            DateOfJoiningTo: dateOfJoiningTo,
+            SortBy: sortBy,
+            SortDescending: sortDescending,
+            Page: page,
+            PageSize: pageSize,
+            ShowArchived: showArchived);
+
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<EmployeeDirectoryResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/directory/export
+    /// Exports filtered directory as CSV or Excel (US-CHR-003 FR-8, AC-5, BR-4).
+    /// Respects role-based field visibility.
+    /// </summary>
+    [HttpGet("directory/export")]
+    [RequirePermission("Employee.Export")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ExportDirectory(
+        [FromQuery, Required] ExportFormat format,
+        [FromQuery] string? search = null,
+        [FromQuery] Guid[]? departmentIds = null,
+        [FromQuery] string[]? jobTitles = null,
+        [FromQuery] string[]? statuses = null,
+        [FromQuery] string[]? employmentTypes = null,
+        [FromQuery] string[]? locations = null,
+        [FromQuery] DateTime? dateOfJoiningFrom = null,
+        [FromQuery] DateTime? dateOfJoiningTo = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool sortDescending = false,
+        [FromQuery] bool showArchived = false,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new ExportEmployeeDirectoryQuery(
+            Format: format,
+            Search: search,
+            DepartmentIds: departmentIds?.Length > 0 ? departmentIds : null,
+            JobTitles: jobTitles?.Length > 0 ? jobTitles : null,
+            Statuses: statuses?.Length > 0 ? statuses : null,
+            EmploymentTypes: employmentTypes?.Length > 0 ? employmentTypes : null,
+            Locations: locations?.Length > 0 ? locations : null,
+            DateOfJoiningFrom: dateOfJoiningFrom,
+            DateOfJoiningTo: dateOfJoiningTo,
+            SortBy: sortBy,
+            SortDescending: sortDescending,
+            ShowArchived: showArchived);
+
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        var export = result.Value!;
+        return File(export.FileBytes, export.ContentType, export.FileName);
     }
 
     /// <summary>
