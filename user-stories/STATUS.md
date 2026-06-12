@@ -41,7 +41,7 @@
 ## 2. Core HR (12 stories)
 - [x] US-CHR-001 — Add new employee with personal information *(PR #11)*
 - [x] US-CHR-002 — View and edit employee profile *(PR #13)*
-- [ ] US-CHR-003 — Employee directory with search and filters
+- [~] US-CHR-003 — Employee directory with search and filters
 - [x] US-CHR-004 — Create and manage departments *(PR #9; built ahead of CHR-001 per dependency order)*
 - [x] US-CHR-005 — Create and manage job titles and positions *(PR #10)*
 - [ ] US-CHR-006 — Organization tree/hierarchy visualization
