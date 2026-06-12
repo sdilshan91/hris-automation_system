@@ -46,7 +46,7 @@
 - [x] US-CHR-005 — Create and manage job titles and positions *(PR #10)*
 - [x] US-CHR-006 — Organization tree/hierarchy visualization *(PR #16)*
 - [x] US-CHR-007 — Manage office locations *(PR #17)*
-- [ ] US-CHR-008 — Employee document management
+- [~] US-CHR-008 — Employee document management
 - [ ] US-CHR-009 — Employee status management
 - [ ] US-CHR-010 — Bulk employee import via CSV/Excel
 - [ ] US-CHR-011 — Employee reporting structure
