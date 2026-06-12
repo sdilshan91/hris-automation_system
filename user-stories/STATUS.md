@@ -49,7 +49,7 @@
 - [x] US-CHR-008 — Employee document management *(PR #18)*
 - [x] US-CHR-009 — Employee status management *(PR #19)*
 - [x] US-CHR-010 — Bulk employee import via CSV/Excel *(PR #20)*
-- [ ] US-CHR-011 — Employee reporting structure
+- [~] US-CHR-011 — Employee reporting structure
 - [ ] US-CHR-012 — Custom fields per tenant
 
 ## 3. Leave Management (12 stories)
