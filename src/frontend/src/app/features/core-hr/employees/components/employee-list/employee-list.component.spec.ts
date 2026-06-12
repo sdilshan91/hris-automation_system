@@ -620,6 +620,180 @@ describe('EmployeeListComponent', () => {
     expect(component.isPrivilegedUser()).toBeTrue();
   });
 
+  // ─── US-CHR-011: Bulk selection + assignment (AC-5) ─────
+
+  it('should toggle employee selection', () => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    expect(component.selectedEmployeeIds().length).toBe(0);
+
+    component.toggleSelect('emp-1');
+    expect(component.selectedEmployeeIds()).toContain('emp-1');
+
+    component.toggleSelect('emp-1');
+    expect(component.selectedEmployeeIds()).not.toContain('emp-1');
+  });
+
+  it('should select/deselect all visible employees', () => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee, { ...mockEmployee, employeeId: 'emp-2' }], 2);
+
+    expect(component.allVisibleSelected()).toBeFalse();
+
+    component.toggleSelectAll();
+    expect(component.selectedEmployeeIds().length).toBe(2);
+    expect(component.allVisibleSelected()).toBeTrue();
+
+    component.toggleSelectAll();
+    expect(component.selectedEmployeeIds().length).toBe(0);
+  });
+
+  it('should clear selection', () => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    component.toggleSelect('emp-1');
+    expect(component.selectedEmployeeIds().length).toBe(1);
+
+    component.clearSelection();
+    expect(component.selectedEmployeeIds().length).toBe(0);
+  });
+
+  it('should open and close bulk assign modal', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+
+    component.toggleSelect('emp-1');
+    component.openBulkAssignModal();
+    expect(component.showBulkAssignModal()).toBeTrue();
+
+    component.closeBulkAssignModal();
+    expect(component.showBulkAssignModal()).toBeFalse();
+  });
+
+  it('should search for managers in bulk assign modal', fakeAsync(() => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    component.openBulkAssignModal();
+    component.onBulkManagerSearch('Al');
+    tick(350);
+
+    const searchReq = httpMock.expectOne(
+      (r) => r.url === baseUrl &&
+        r.params.get('search') === 'Al' &&
+        r.params.get('statuses') === 'active'
+    );
+    searchReq.flush({
+      data: [{ ...mockEmployee, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    tick();
+
+    expect(component.bulkManagerSearchResults().length).toBe(1);
+    expect(component.isBulkSearching()).toBeFalse();
+  }));
+
+  it('should confirm bulk assignment and show results', fakeAsync(() => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    component.selectedEmployeeIds.set(['emp-1', 'emp-2']);
+    component.openBulkAssignModal();
+    component.bulkSelectedManagerId.set('mgr-1');
+    component.bulkSelectedManagerName.set('Alice Boss');
+
+    component.confirmBulkAssign();
+
+    const req = httpMock.expectOne(`${baseUrl}/bulk-assign-manager`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.employeeIds).toEqual(['emp-1', 'emp-2']);
+    expect(req.request.body.managerEmployeeId).toBe('mgr-1');
+
+    req.flush({
+      results: [
+        { employeeId: 'emp-1', employeeName: 'John Doe', success: true, error: null },
+        { employeeId: 'emp-2', employeeName: 'Jane Smith', success: true, error: null },
+      ],
+      totalSuccess: 2,
+      totalFailed: 0,
+    });
+    tick();
+
+    expect(component.bulkAssignResults().length).toBe(2);
+    expect(component.isBulkAssigning()).toBeFalse();
+    expect(toastrSpy.success).toHaveBeenCalledWith(
+      'Manager assigned to 2 employees successfully.'
+    );
+  }));
+
+  it('should show warning toast for partial bulk assignment failure', fakeAsync(() => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    component.selectedEmployeeIds.set(['emp-1', 'emp-2']);
+    component.openBulkAssignModal();
+    component.bulkSelectedManagerId.set('mgr-1');
+
+    component.confirmBulkAssign();
+
+    const req = httpMock.expectOne(`${baseUrl}/bulk-assign-manager`);
+    req.flush({
+      results: [
+        { employeeId: 'emp-1', employeeName: 'John', success: true, error: null },
+        { employeeId: 'emp-2', employeeName: 'Jane', success: false, error: 'Circular chain' },
+      ],
+      totalSuccess: 1,
+      totalFailed: 1,
+    });
+    tick();
+
+    expect(toastrSpy.warning).toHaveBeenCalledWith(
+      '1 assigned, 1 failed. See details.'
+    );
+  }));
+
+  it('should show error toast on bulk assign API failure', fakeAsync(() => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    component.selectedEmployeeIds.set(['emp-1']);
+    component.openBulkAssignModal();
+    component.bulkSelectedManagerId.set('mgr-1');
+
+    component.confirmBulkAssign();
+
+    const req = httpMock.expectOne(`${baseUrl}/bulk-assign-manager`);
+    req.error(new ProgressEvent('error'), { status: 500 });
+    tick();
+
+    expect(toastrSpy.error).toHaveBeenCalledWith(
+      'Failed to assign manager. Please try again.'
+    );
+    expect(component.isBulkAssigning()).toBeFalse();
+  }));
+
+  it('should compute someVisibleSelected correctly', () => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee, { ...mockEmployee, employeeId: 'emp-2' }], 2);
+
+    expect(component.someVisibleSelected()).toBeFalse();
+
+    component.toggleSelect('emp-1');
+    expect(component.someVisibleSelected()).toBeTrue();
+    expect(component.allVisibleSelected()).toBeFalse();
+  });
+
+  it('should return correct initials from getBulkInitials', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+
+    expect(component.getBulkInitials('Alice', 'Manager')).toBe('AM');
+  });
+
   // ─── Error handling ───────────────────────────────────────
 
   it('should handle API errors gracefully', () => {

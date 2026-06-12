@@ -135,6 +135,13 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasForeignKey(e => e.LocationId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // US-CHR-011: Self-referencing FK for reporting manager.
+        // ON DELETE SET NULL: when a manager is deleted, direct reports' FK is nulled.
+        builder.HasOne(e => e.Manager)
+            .WithMany(e => e.DirectReports)
+            .HasForeignKey(e => e.ReportsToEmployeeId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // US-CHR-002: Emergency contacts collection
         builder.HasMany(e => e.EmergencyContacts)
             .WithOne(ec => ec.Employee)
@@ -167,5 +174,9 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
 
         builder.HasIndex(e => new { e.TenantId, e.Location })
             .HasDatabaseName("ix_employees_tenant_id_location");
+
+        // US-CHR-011: Index for direct-reports lookups by manager
+        builder.HasIndex(e => new { e.TenantId, e.ReportsToEmployeeId })
+            .HasDatabaseName("ix_employees_tenant_id_reports_to_employee_id");
     }
 }

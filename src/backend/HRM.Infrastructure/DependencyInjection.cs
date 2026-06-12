@@ -88,6 +88,9 @@ public static class DependencyInjection
         // Bulk employee import service (US-CHR-010)
         services.AddScoped<IBulkEmployeeImportService, BulkEmployeeImportService>();
 
+        // Reporting structure service (US-CHR-011)
+        services.AddScoped<IReportingStructureService, ReportingStructureService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>

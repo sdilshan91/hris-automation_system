@@ -25,6 +25,7 @@ import { AuthService } from '@core/auth/auth.service';
 import { EmployeeService } from '../../services/employee.service';
 import {
   IEmployeeProfile,
+  IEmployee,
   IUpdateSectionRequest,
   ProfileSection,
   ProfileViewerRole,
@@ -33,7 +34,10 @@ import {
   EmployeeGender,
   IStatusTransition,
   IChangeStatusRequest,
+  IReportingChainNode,
+  getInitialsFromName,
 } from '../../models/employee.models';
+import { FormsModule } from '@angular/forms';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
 
 /**
@@ -48,7 +52,7 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
 @Component({
   selector: 'app-employee-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, EmployeeDocumentsComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -609,11 +613,90 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
                     <dt class="data-label">Date of Joining</dt>
                     <dd class="data-value">{{ profile()!.dateOfJoining | date:'mediumDate' }}</dd>
                   </div>
-                  <div class="data-field">
+
+                  <!-- US-CHR-011 AC-1: Reporting Manager mini-card -->
+                  <div class="data-field col-span-full">
                     <dt class="data-label">Reporting Manager</dt>
-                    <dd class="data-value">{{ profile()!.reportingManagerName || 'Not assigned' }}</dd>
+                    <dd class="data-value">
+                      <div class="flex items-center gap-3 mt-1">
+                        @if (profile()!.reportingManagerId) {
+                          <div
+                            class="manager-mini-card cursor-pointer"
+                            role="link"
+                            tabindex="0"
+                            [attr.aria-label]="'View profile of ' + profile()!.reportingManagerName"
+                            (click)="navigateToManager()"
+                            (keydown.enter)="navigateToManager()"
+                          >
+                            <div class="manager-avatar">
+                              @if (profile()!.reportingManagerPhotoUrl) {
+                                <img
+                                  [src]="profile()!.reportingManagerPhotoUrl"
+                                  [alt]="profile()!.reportingManagerName || ''"
+                                  class="w-full h-full object-cover"
+                                />
+                              } @else {
+                                <span class="text-xs">{{ getManagerInitials() }}</span>
+                              }
+                            </div>
+                            <div class="min-w-0">
+                              <p class="text-sm font-medium text-neutral-900 truncate">
+                                {{ profile()!.reportingManagerName }}
+                              </p>
+                              @if (profile()!.reportingManagerJobTitle) {
+                                <p class="text-xs text-neutral-500 truncate">
+                                  {{ profile()!.reportingManagerJobTitle }}
+                                </p>
+                              }
+                            </div>
+                          </div>
+                        } @else {
+                          <span class="text-sm text-neutral-400">Not Assigned</span>
+                        }
+                        @if (canEditSection('employment')) {
+                          <button
+                            type="button"
+                            class="edit-btn !px-2 !py-1"
+                            (click)="openManagerSelector()"
+                            aria-label="Change reporting manager"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
+                              <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
+                              <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
+                            </svg>
+                            Change
+                          </button>
+                        }
+                      </div>
+                    </dd>
                   </div>
                 </div>
+
+                <!-- US-CHR-011: Reporting chain breadcrumb -->
+                @if (reportingChain().length > 0) {
+                  <div class="mt-4 pt-4 border-t border-neutral-100">
+                    <p class="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-2">Reporting Chain</p>
+                    <nav class="flex flex-wrap items-center gap-1" aria-label="Reporting chain">
+                      <span class="chain-node chain-node-current" aria-current="true">
+                        {{ profile()!.firstName }} {{ profile()!.lastName }}
+                      </span>
+                      @for (node of reportingChain(); track node.employeeId) {
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
+                          class="w-3.5 h-3.5 text-neutral-300 flex-shrink-0" aria-hidden="true">
+                          <path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
+                        </svg>
+                        <button
+                          type="button"
+                          class="chain-node"
+                          (click)="navigateToEmployee(node.employeeId)"
+                          [attr.aria-label]="'Navigate to ' + node.firstName + ' ' + node.lastName"
+                        >
+                          {{ node.firstName }} {{ node.lastName }}
+                        </button>
+                      }
+                    </nav>
+                  </div>
+                }
               }
             </section>
           }
@@ -975,6 +1058,129 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
               }
             </section>
           }
+        </div>
+      }
+
+      <!-- US-CHR-011: Manager Selector Modal -->
+      @if (showManagerSelector()) {
+        <div
+          class="modal-overlay"
+          @modalOverlay
+          (click)="closeManagerSelector()"
+          (keydown.escape)="closeManagerSelector()"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manager-modal-title"
+        >
+          <div
+            class="modal-card manager-selector-card"
+            @modalSlide
+            (click)="$event.stopPropagation()"
+          >
+            <div class="modal-header">
+              <h3 id="manager-modal-title" class="text-lg font-semibold text-neutral-900">
+                Select Reporting Manager
+              </h3>
+              <button
+                type="button"
+                class="modal-close-btn"
+                (click)="closeManagerSelector()"
+                aria-label="Close manager selector"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <!-- Search input -->
+              <div class="relative mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                  class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"/>
+                </svg>
+                <input
+                  type="search"
+                  class="input-notion !pl-9"
+                  placeholder="Search active employees by name or email..."
+                  [ngModel]="managerSearchTerm()"
+                  (ngModelChange)="onManagerSearch($event)"
+                  aria-label="Search for a manager"
+                  autofocus
+                />
+              </div>
+
+              <!-- Remove manager option -->
+              @if (profile()!.reportingManagerId) {
+                <button
+                  type="button"
+                  class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors mb-2"
+                  (click)="assignManagerToEmployee(null)"
+                >
+                  Remove current manager
+                </button>
+              }
+
+              <!-- Search results -->
+              @if (isSearchingManagers()) {
+                <div class="flex items-center justify-center py-6">
+                  <div class="btn-spinner border-brand-300 border-t-brand-600 w-5 h-5"></div>
+                  <span class="ml-2 text-sm text-neutral-500">Searching...</span>
+                </div>
+              } @else if (managerSearchResults().length > 0) {
+                <div class="max-h-64 overflow-y-auto -mx-1">
+                  @for (emp of managerSearchResults(); track emp.employeeId) {
+                    <button
+                      type="button"
+                      class="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 transition-colors"
+                      [class.opacity-50]="emp.employeeId === employeeId"
+                      [class.pointer-events-none]="emp.employeeId === employeeId"
+                      [disabled]="emp.employeeId === employeeId"
+                      (click)="assignManagerToEmployee(emp.employeeId)"
+                      [attr.aria-label]="'Assign ' + emp.firstName + ' ' + emp.lastName + ' as manager'"
+                    >
+                      <div class="manager-avatar">
+                        @if (emp.profilePhotoUrl) {
+                          <img [src]="emp.profilePhotoUrl" [alt]="emp.firstName + ' ' + emp.lastName" class="w-full h-full object-cover" />
+                        } @else {
+                          <span class="text-xs">{{ getInitialsFor(emp.firstName, emp.lastName) }}</span>
+                        }
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-neutral-900 truncate">
+                          {{ emp.firstName }} {{ emp.lastName }}
+                        </p>
+                        <p class="text-xs text-neutral-500 truncate">
+                          {{ emp.jobTitleName || 'No title' }}
+                          @if (emp.departmentName) {
+                            &middot; {{ emp.departmentName }}
+                          }
+                        </p>
+                      </div>
+                      @if (emp.employeeId === profile()!.reportingManagerId) {
+                        <span class="text-xs text-brand-600 font-medium">Current</span>
+                      }
+                      @if (emp.employeeId === employeeId) {
+                        <span class="text-xs text-neutral-400">Self</span>
+                      }
+                    </button>
+                  }
+                </div>
+              } @else if (managerSearchTerm().length >= 2) {
+                <p class="text-sm text-neutral-400 text-center py-6">No active employees found.</p>
+              } @else {
+                <p class="text-sm text-neutral-400 text-center py-6">Type at least 2 characters to search.</p>
+              }
+
+              <!-- Assigning spinner -->
+              @if (isAssigningManager()) {
+                <div class="flex items-center justify-center py-4 mt-2 border-t border-neutral-100">
+                  <div class="btn-spinner border-brand-300 border-t-brand-600 w-5 h-5"></div>
+                  <span class="ml-2 text-sm text-neutral-500">Assigning manager...</span>
+                </div>
+              }
+            </div>
+          </div>
         </div>
       }
 
@@ -1386,6 +1592,14 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
       @apply text-[10px] font-medium px-1.5 py-0.5 rounded-full;
     }
 
+    .manager-mini-card { display:flex; align-items:center; gap:0.625rem; border-radius:0.5rem; border:1px solid #e5e5e5; background:#fafafa80; padding:0.5rem 0.75rem; transition:all 200ms; }
+    .manager-mini-card:hover { box-shadow:0 1px 2px rgb(0 0 0/0.05); border-color:#d4d4d4; }
+    .manager-avatar { width:2rem; height:2rem; border-radius:9999px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; font-size:0.875rem; font-weight:600; }
+    .chain-node { display:inline-flex; align-items:center; font-size:0.75rem; font-weight:500; padding:0.25rem 0.5rem; border-radius:0.375rem; transition:all 150ms; cursor:pointer; }
+    .chain-node-current { cursor:default; }
+    .manager-selector-card { max-width:32rem; }
+    @media(max-width:639px){ .manager-selector-card{ max-width:100%; max-height:90vh; } }
+
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -1439,6 +1653,21 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     const transition = this.validTransitions().find(t => t.targetStatus === selected);
     return transition?.sideEffects ?? [];
   }
+
+  // ─── US-CHR-011: Manager assignment signals ────────────
+  readonly showManagerSelector = signal(false);
+  readonly managerSearchTerm = signal('');
+  readonly managerSearchResults = signal<IEmployee[]>([]);
+  readonly isSearchingManagers = signal(false);
+  readonly isAssigningManager = signal(false);
+  private managerSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Computed reporting chain from profile data */
+  readonly reportingChain = computed<IReportingChainNode[]>(() => {
+    const p = this.profile();
+    if (!p) return [];
+    return p.reportingChain ?? [];
+  });
 
   /** Resolved viewer role for field-level permissions */
   readonly viewerRole = computed<ProfileViewerRole>(() => {
@@ -1629,6 +1858,107 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
             );
           } else {
             this.toastr.error('Failed to change employee status. Please try again.');
+          }
+        },
+      });
+  }
+
+  // ─── US-CHR-011: Manager assignment methods ────────────
+
+  getManagerInitials(): string {
+    const p = this.profile();
+    if (!p?.reportingManagerName) return '';
+    const parts = p.reportingManagerName.split(' ');
+    return getInitialsFromName(parts[0] || '', parts[1] || '');
+  }
+
+  getInitialsFor(firstName: string, lastName: string): string {
+    return getInitialsFromName(firstName, lastName);
+  }
+
+  navigateToManager(): void {
+    const managerId = this.profile()?.reportingManagerId;
+    if (managerId) {
+      this.router.navigate(['/employees', managerId]);
+    }
+  }
+
+  navigateToEmployee(employeeId: string): void {
+    this.router.navigate(['/employees', employeeId]);
+  }
+
+  openManagerSelector(): void {
+    this.showManagerSelector.set(true);
+    this.managerSearchTerm.set('');
+    this.managerSearchResults.set([]);
+    this.isSearchingManagers.set(false);
+    this.isAssigningManager.set(false);
+  }
+
+  closeManagerSelector(): void {
+    this.showManagerSelector.set(false);
+    this.managerSearchTerm.set('');
+    this.managerSearchResults.set([]);
+    if (this.managerSearchTimer) {
+      clearTimeout(this.managerSearchTimer);
+      this.managerSearchTimer = null;
+    }
+  }
+
+  onManagerSearch(term: string): void {
+    this.managerSearchTerm.set(term);
+    if (this.managerSearchTimer) {
+      clearTimeout(this.managerSearchTimer);
+    }
+    if (term.length < 2) {
+      this.managerSearchResults.set([]);
+      this.isSearchingManagers.set(false);
+      return;
+    }
+    this.isSearchingManagers.set(true);
+    this.managerSearchTimer = setTimeout(() => {
+      this.employeeService
+        .searchActiveEmployees(term)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (response) => {
+            this.managerSearchResults.set(response.data);
+            this.isSearchingManagers.set(false);
+          },
+          error: () => {
+            this.managerSearchResults.set([]);
+            this.isSearchingManagers.set(false);
+          },
+        });
+    }, 300);
+  }
+
+  assignManagerToEmployee(managerId: string | null): void {
+    this.isAssigningManager.set(true);
+    this.employeeService
+      .assignManager(this.employeeId, managerId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.isAssigningManager.set(false);
+          this.profile.set(response.profile);
+          this.closeManagerSelector();
+          if (managerId) {
+            this.toastr.success('Reporting manager assigned successfully.');
+          } else {
+            this.toastr.success('Reporting manager removed successfully.');
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.isAssigningManager.set(false);
+          if (err.status === 400) {
+            // AC-3: Circular chain detected — show backend error message
+            const body = EmployeeService.parseError(err);
+            this.toastr.error(
+              body?.message ?? 'Failed to assign manager. A circular reporting chain was detected.'
+            );
+          } else {
+            this.toastr.error('Failed to assign manager. Please try again.');
           }
         },
       });

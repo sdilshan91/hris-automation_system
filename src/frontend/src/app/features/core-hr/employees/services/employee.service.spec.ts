@@ -12,6 +12,8 @@ import {
   ICreateEmployeeRequest,
   IUpdateSectionRequest,
   IEmployeeDirectoryParams,
+  IBulkAssignManagerResponse,
+  IDirectReport,
 } from '../models/employee.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -472,6 +474,119 @@ describe('EmployeeService', () => {
     });
   });
 
+  // ─── US-CHR-011: Reporting Structure ──────────────────────
+
+  describe('assignManager (US-CHR-011)', () => {
+    it('should POST to assign a manager', () => {
+      service.assignManager('emp-1', 'mgr-1').subscribe((response) => {
+        expect(response.profile).toBeTruthy();
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/manager`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.managerEmployeeId).toBe('mgr-1');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ profile: { ...mockEmployee, reportingManagerId: 'mgr-1' } });
+    });
+
+    it('should POST with null to remove manager', () => {
+      service.assignManager('emp-1', null).subscribe((response) => {
+        expect(response.profile).toBeTruthy();
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/manager`);
+      expect(req.request.body.managerEmployeeId).toBeNull();
+      req.flush({ profile: { ...mockEmployee, reportingManagerId: null } });
+    });
+
+    it('should handle 400 circular chain error', () => {
+      service.assignManager('emp-1', 'emp-2').subscribe({
+        error: (err) => {
+          expect(err.status).toBe(400);
+        },
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/manager`);
+      req.flush(
+        { message: 'Circular reporting chain detected.' },
+        { status: 400, statusText: 'Bad Request' }
+      );
+    });
+  });
+
+  describe('getDirectReports (US-CHR-011)', () => {
+    it('should GET direct reports for a manager', () => {
+      const mockReports: IDirectReport[] = [
+        {
+          employeeId: 'emp-2',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          jobTitleName: 'QA',
+          departmentName: 'Engineering',
+          status: 'active',
+          profilePhotoUrl: null,
+          email: 'jane@test.com',
+          employeeNo: 'EMP-0002',
+        },
+      ];
+
+      service.getDirectReports('emp-1').subscribe((reports) => {
+        expect(reports.length).toBe(1);
+        expect(reports[0].firstName).toBe('Jane');
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/direct-reports`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockReports);
+    });
+  });
+
+  describe('bulkAssignManager (US-CHR-011)', () => {
+    it('should POST bulk assignment and return results', () => {
+      const mockResponse: IBulkAssignManagerResponse = {
+        results: [
+          { employeeId: 'emp-2', employeeName: 'Jane Smith', success: true, error: null },
+          { employeeId: 'emp-3', employeeName: 'Bob', success: false, error: 'Circular chain detected' },
+        ],
+        totalSuccess: 1,
+        totalFailed: 1,
+      };
+
+      service
+        .bulkAssignManager({ employeeIds: ['emp-2', 'emp-3'], managerEmployeeId: 'emp-1' })
+        .subscribe((response) => {
+          expect(response.results.length).toBe(2);
+          expect(response.totalSuccess).toBe(1);
+          expect(response.totalFailed).toBe(1);
+        });
+
+      const req = httpMock.expectOne(`${baseUrl}/bulk-assign-manager`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.employeeIds).toEqual(['emp-2', 'emp-3']);
+      expect(req.request.body.managerEmployeeId).toBe('emp-1');
+      req.flush(mockResponse);
+    });
+  });
+
+  describe('searchActiveEmployees (US-CHR-011)', () => {
+    it('should query directory with active status filter', () => {
+      service.searchActiveEmployees('John').subscribe((response) => {
+        expect(response.data.length).toBe(1);
+      });
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === baseUrl &&
+          r.params.get('search') === 'John' &&
+          r.params.get('statuses') === 'active' &&
+          r.params.get('pageSize') === '10'
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ data: [mockEmployee], total: 1, page: 1, pageSize: 10 });
+    });
+  });
+
   // ─── US-CHR-002: Profile methods ──────────────────────────
 
   describe('getEmployeeProfile (US-CHR-002)', () => {
@@ -486,6 +601,9 @@ describe('EmployeeService', () => {
       country: 'Sri Lanka',
       reportingManagerId: null,
       reportingManagerName: null,
+      reportingManagerJobTitle: null,
+      reportingManagerPhotoUrl: null,
+      reportingChain: [],
       emergencyContacts: [],
       education: [],
       workHistory: [],

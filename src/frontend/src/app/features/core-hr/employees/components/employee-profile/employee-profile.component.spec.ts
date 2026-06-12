@@ -14,6 +14,7 @@ import {
   IEmployeeProfile,
   isSectionEditable,
   getStatusBadgeClasses,
+  getInitialsFromName,
 } from '../../models/employee.models';
 import { environment } from '../../../../../../environments/environment';
 
@@ -67,6 +68,9 @@ describe('EmployeeProfileComponent', () => {
     country: 'Sri Lanka',
     reportingManagerId: null,
     reportingManagerName: null,
+    reportingManagerJobTitle: null,
+    reportingManagerPhotoUrl: null,
+    reportingChain: [],
     emergencyContacts: [
       { id: 'ec-1', name: 'Jane Doe', relationship: 'Spouse', phone: '+94779876543' },
     ],
@@ -783,6 +787,235 @@ describe('EmployeeProfileComponent', () => {
     }));
   });
 
+  // ─── US-CHR-011: Reporting Manager field ──────────────────
+
+  describe('US-CHR-011: Reporting manager display (AC-1)', () => {
+    it('should show "Not Assigned" when no manager is set', fakeAsync(() => {
+      setupTestBed('HR Officer');
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+      fixture.detectChanges();
+
+      // Navigate to Employment tab (index 3)
+      component.activeTab.set(3);
+      fixture.detectChanges();
+
+      expect(component.profile()!.reportingManagerId).toBeNull();
+    }));
+
+    it('should show manager mini-card when manager is assigned', fakeAsync(() => {
+      setupTestBed('HR Officer');
+      fixture.detectChanges();
+
+      const profileWithManager = {
+        ...mockProfile,
+        reportingManagerId: 'mgr-1',
+        reportingManagerName: 'Alice Manager',
+        reportingManagerJobTitle: 'Engineering Lead',
+        reportingManagerPhotoUrl: null,
+        reportingChain: [
+          { employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Manager', jobTitleName: 'Engineering Lead', profilePhotoUrl: null },
+        ],
+      };
+      httpMock.expectOne(profileUrl).flush(profileWithManager);
+      tick();
+      fixture.detectChanges();
+
+      component.activeTab.set(3);
+      fixture.detectChanges();
+
+      expect(component.profile()!.reportingManagerName).toBe('Alice Manager');
+      expect(component.reportingChain().length).toBe(1);
+    }));
+
+    it('should show change button only for HR Officer role', fakeAsync(() => {
+      setupTestBed('HR Officer');
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.canEditSection('employment')).toBeTrue();
+    }));
+
+    it('should not show change button for Employee role', fakeAsync(() => {
+      setupTestBed('Employee');
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.canEditSection('employment')).toBeFalse();
+    }));
+  });
+
+  describe('US-CHR-011: Manager assignment via modal', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('should open and close manager selector modal', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openManagerSelector();
+      expect(component.showManagerSelector()).toBeTrue();
+
+      component.closeManagerSelector();
+      expect(component.showManagerSelector()).toBeFalse();
+    }));
+
+    it('should search for active employees on input', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openManagerSelector();
+      component.onManagerSearch('Al');
+      tick(350);
+
+      const searchReq = httpMock.expectOne(
+        (r) => r.url === `${environment.apiBaseUrl}/employees` &&
+          r.params.get('search') === 'Al' &&
+          r.params.get('statuses') === 'active'
+      );
+      searchReq.flush({
+        data: [{ ...mockProfile, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      });
+      tick();
+
+      expect(component.managerSearchResults().length).toBe(1);
+      expect(component.isSearchingManagers()).toBeFalse();
+    }));
+
+    it('should not search when term is less than 2 characters', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openManagerSelector();
+      component.onManagerSearch('A');
+      tick(350);
+
+      expect(component.managerSearchResults().length).toBe(0);
+      expect(component.isSearchingManagers()).toBeFalse();
+    }));
+
+    it('should call assignManager service and update profile on success', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openManagerSelector();
+      component.assignManagerToEmployee('mgr-1');
+
+      const req = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/manager`
+      );
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.managerEmployeeId).toBe('mgr-1');
+
+      const updatedProfile = {
+        ...mockProfile,
+        reportingManagerId: 'mgr-1',
+        reportingManagerName: 'Alice Manager',
+        reportingManagerJobTitle: 'Lead',
+        reportingManagerPhotoUrl: null,
+        reportingChain: [{ employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Manager', jobTitleName: 'Lead', profilePhotoUrl: null }],
+      };
+      req.flush({ profile: updatedProfile });
+      tick();
+
+      expect(component.profile()!.reportingManagerId).toBe('mgr-1');
+      expect(component.showManagerSelector()).toBeFalse();
+      expect(toastrSpy.success).toHaveBeenCalledWith('Reporting manager assigned successfully.');
+    }));
+
+    it('should show circular chain error from backend (AC-3)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openManagerSelector();
+      component.assignManagerToEmployee('emp-1');
+
+      const req = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/manager`
+      );
+      req.flush(
+        { message: 'Circular reporting chain detected. Employee A cannot report to Employee B because Employee B already reports to Employee A.' },
+        { status: 400, statusText: 'Bad Request' }
+      );
+      tick();
+
+      expect(toastrSpy.error).toHaveBeenCalledWith(
+        jasmine.stringContaining('Circular reporting chain detected')
+      );
+      expect(component.isAssigningManager()).toBeFalse();
+    }));
+
+    it('should remove manager when assigning null', fakeAsync(() => {
+      fixture.detectChanges();
+      const profileWithManager = {
+        ...mockProfile,
+        reportingManagerId: 'mgr-1',
+        reportingManagerName: 'Alice',
+        reportingManagerJobTitle: 'Lead',
+        reportingManagerPhotoUrl: null,
+        reportingChain: [],
+      };
+      httpMock.expectOne(profileUrl).flush(profileWithManager);
+      tick();
+
+      component.openManagerSelector();
+      component.assignManagerToEmployee(null);
+
+      const req = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/manager`
+      );
+      expect(req.request.body.managerEmployeeId).toBeNull();
+      req.flush({ profile: { ...mockProfile, reportingManagerId: null, reportingManagerName: null } });
+      tick();
+
+      expect(component.profile()!.reportingManagerId).toBeNull();
+      expect(toastrSpy.success).toHaveBeenCalledWith('Reporting manager removed successfully.');
+    }));
+  });
+
+  describe('US-CHR-011: Reporting chain breadcrumb', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('should compute empty chain when profile has no chain data', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.reportingChain().length).toBe(0);
+    }));
+
+    it('should compute chain from profile data', fakeAsync(() => {
+      fixture.detectChanges();
+      const chainProfile = {
+        ...mockProfile,
+        reportingChain: [
+          { employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Manager', jobTitleName: 'Lead', profilePhotoUrl: null },
+          { employeeId: 'dir-1', firstName: 'Bob', lastName: 'Director', jobTitleName: 'Director', profilePhotoUrl: null },
+        ],
+      };
+      httpMock.expectOne(profileUrl).flush(chainProfile);
+      tick();
+
+      expect(component.reportingChain().length).toBe(2);
+      expect(component.reportingChain()[0].firstName).toBe('Alice');
+      expect(component.reportingChain()[1].firstName).toBe('Bob');
+    }));
+  });
+
   describe('US-CHR-009: formatChangeType includes status_change', () => {
     beforeEach(() => {
       setupTestBed('HR Officer');
@@ -858,5 +1091,24 @@ describe('getStatusBadgeClasses utility function (US-CHR-009)', () => {
 
   it('should return neutral classes for unknown status', () => {
     expect(getStatusBadgeClasses('unknown')).toBe('bg-neutral-100 text-neutral-600');
+  });
+});
+
+// ─── US-CHR-011: getInitialsFromName (pure function — no TestBed/HTTP) ───
+describe('getInitialsFromName utility function (US-CHR-011)', () => {
+  it('should return initials from first and last name', () => {
+    expect(getInitialsFromName('John', 'Doe')).toBe('JD');
+  });
+
+  it('should handle empty strings', () => {
+    expect(getInitialsFromName('', '')).toBe('');
+  });
+
+  it('should handle single-char names', () => {
+    expect(getInitialsFromName('A', 'B')).toBe('AB');
+  });
+
+  it('should uppercase initials', () => {
+    expect(getInitialsFromName('jane', 'smith')).toBe('JS');
   });
 });

@@ -16,6 +16,11 @@ import {
   IStatusTransition,
   IChangeStatusRequest,
   IChangeStatusResponse,
+  IAssignManagerRequest,
+  IAssignManagerResponse,
+  IDirectReport,
+  IBulkAssignManagerRequest,
+  IBulkAssignManagerResponse,
 } from '../models/employee.models';
 
 /**
@@ -242,6 +247,74 @@ export class EmployeeService {
         headers: { 'Idempotency-Key': idempotencyKey },
       }
     );
+  }
+
+  // ─── US-CHR-011: Reporting Structure ──────────────────────
+
+  /**
+   * Assign a reporting manager to an employee (AC-1, AC-2).
+   * Pass null managerEmployeeId to remove the manager assignment (FR-8).
+   * Backend detects circular chains and returns 400 (AC-3).
+   *
+   * Endpoint assumption: POST /api/v1/tenant/employees/:id/manager
+   */
+  assignManager(
+    employeeId: string,
+    managerEmployeeId: string | null
+  ): Observable<IAssignManagerResponse> {
+    const body: IAssignManagerRequest = { managerEmployeeId };
+    return this.http.post<IAssignManagerResponse>(
+      `${this.baseUrl}/${employeeId}/manager`,
+      body,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * Get direct reports for a manager (AC-4, FR-5).
+   *
+   * Endpoint assumption: GET /api/v1/tenant/employees/:managerId/direct-reports
+   */
+  getDirectReports(managerId: string): Observable<IDirectReport[]> {
+    return this.http.get<IDirectReport[]>(
+      `${this.baseUrl}/${managerId}/direct-reports`,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * Bulk assign a manager to multiple employees (AC-5, FR-4).
+   * Returns per-employee success/failure results.
+   *
+   * Endpoint assumption: POST /api/v1/tenant/employees/bulk-assign-manager
+   */
+  bulkAssignManager(
+    request: IBulkAssignManagerRequest
+  ): Observable<IBulkAssignManagerResponse> {
+    return this.http.post<IBulkAssignManagerResponse>(
+      `${this.baseUrl}/bulk-assign-manager`,
+      request,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * Search active employees for manager autocomplete (AC-1).
+   * Reuses the directory endpoint with status=active filter.
+   */
+  searchActiveEmployees(
+    search: string,
+    pageSize = 10
+  ): Observable<IPaginatedResponse<IEmployee>> {
+    let params = new HttpParams()
+      .set('search', search)
+      .set('statuses', 'active')
+      .set('page', '1')
+      .set('pageSize', pageSize.toString());
+    return this.http.get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
+      params,
+      withCredentials: true,
+    });
   }
 
   // ─── Helpers ─────────────────────────────────────────────

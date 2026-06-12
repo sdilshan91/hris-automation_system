@@ -706,6 +706,49 @@ Added `<InternalsVisibleTo Include="HRM.Tests" />` to `HRM.Infrastructure.csproj
 - Pure functions (`validateImportFile`, `generateErrorReportCsv`, type guards) are exported from the component file and tested in a separate top-level `describe` block without TestBed, avoiding `httpMock.verify()` conflicts.
 - `triggerBlobDownload` is a non-private method on the component specifically for testability -- tests spy on it to prevent `anchor.click()` which would reload Karma and disconnect the browser.
 
+## Employee Reporting Structure (US-CHR-011)
+
+### Frontend implementation
+
+#### Backend API contract assumptions (frontend -> backend alignment)
+
+The frontend assumes these endpoints:
+- `POST /api/v1/tenant/employees/:id/manager` -- body: `{ managerEmployeeId: string | null }`. Returns `{ profile: IEmployeeProfile }` on success. Returns 400 with `{ message }` on circular chain or self-assignment.
+- `GET /api/v1/tenant/employees/:managerId/direct-reports` -- returns `IDirectReport[]` (employeeId, firstName, lastName, jobTitleName, departmentName, status, profilePhotoUrl, email, employeeNo).
+- `POST /api/v1/tenant/employees/bulk-assign-manager` -- body: `{ employeeIds: string[], managerEmployeeId: string }`. Returns `{ results: IBulkAssignResult[], totalSuccess: number, totalFailed: number }`.
+- Active employee search for manager autocomplete reuses the existing directory endpoint (`GET /api/v1/tenant/employees?statuses=active&search=...`).
+
+#### IEmployeeProfile extended fields
+
+US-CHR-011 adds to `IEmployeeProfile`:
+- `reportingManagerJobTitle: string | null`
+- `reportingManagerPhotoUrl: string | null`
+- `reportingChain: IReportingChainNode[]` -- upward chain from the employee's manager to the root
+
+These fields are expected from the backend in the `GET /employees/:id/profile` response. If the backend does not provide `reportingChain`, the frontend gracefully shows no breadcrumb (empty array fallback).
+
+#### Reporting chain breadcrumb: derived from backend profile data, not client-side recursion
+
+The reporting chain breadcrumb shows the upward chain (Employee -> Manager -> Manager's Manager -> ... -> Top). Rather than making recursive `getEmployeeProfile` calls client-side (which would be N+1 round-trips), the frontend expects the backend to return the full chain in the `reportingChain` field of the profile response. If the backend does not provide a dedicated chain endpoint, it can build this from the `reports_to_employee_id` chain during the profile query.
+
+#### My Team route: /employees/my-team
+
+Lazy-loaded under `/employees/my-team`. The route is placed before `:id` in the route config to avoid collision. The component calls `GET /employees/:managerId/direct-reports` using the current user's `employeeId` from the auth context. If the user object does not expose `employeeId`, it falls back to `'me'` as a special identifier for the backend to resolve.
+
+#### Bulk manager assignment: checkbox selection in directory (AC-5)
+
+Checkbox column added to the employee directory table view. A floating action toolbar appears at the bottom when employees are selected, with an "Assign Manager" action. The modal provides the same active-employee search as the profile-level manager selector. Per-employee results are shown in the modal after assignment.
+
+**Shared-file changes:**
+1. `employee-list.component.ts` (US-CHR-003 directory) -- added selection signals, checkbox column in table, bulk action toolbar, bulk assign modal.
+2. `employee-profile.component.ts` (US-CHR-002 profile) -- replaced plain-text "Reporting Manager" field with mini-card + edit button + manager selector modal + reporting chain breadcrumb.
+3. `employee.models.ts` -- added `IManagerInfo`, `IDirectReport`, `IAssignManagerRequest/Response`, `IBulkAssignManagerRequest/Response`, `IBulkAssignResult`, `IReportingChainNode`, `getInitialsFromName`. Extended `IEmployeeProfile` with `reportingManagerJobTitle`, `reportingManagerPhotoUrl`, `reportingChain`.
+4. `employee.service.ts` -- added `assignManager`, `getDirectReports`, `bulkAssignManager`, `searchActiveEmployees`.
+
+#### Style budget
+
+The employee-profile component's compiled CSS is close to the 16 kB `maximumError` budget. The US-CHR-011 additions (manager mini-card, chain breadcrumb, selector modal) used raw CSS instead of Tailwind `@apply` directives for the new styles to minimize compiled output. Further component decomposition (extracting the manager selector into a child component) would be the clean fix if future stories push it over.
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."

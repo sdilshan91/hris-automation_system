@@ -287,6 +287,73 @@ public sealed class EmployeesController : ControllerBase
         return Ok(ApiResponse<ValidTransitionsResult>.Ok(result.Value!));
     }
 
+    // ── Reporting Structure (US-CHR-011) ──────────────────────────
+
+    /// <summary>
+    /// POST /api/v1/tenant/employees/{id}/manager
+    /// Assigns or unassigns a reporting manager for an employee (US-CHR-011 AC-2).
+    /// Send { managerEmployeeId: null } to unassign (FR-8).
+    /// </summary>
+    [HttpPost("{id:guid}/manager")]
+    [RequirePermission("Employee.AssignManager")]
+    [ProducesResponseType(typeof(ApiResponse<AssignManagerResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AssignManager(
+        Guid id,
+        [FromBody] AssignManagerRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = new AssignManagerCommand(id, request.ManagerEmployeeId, request.Reason);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<AssignManagerResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/tenant/employees/bulk-assign-manager
+    /// Bulk-assigns a manager to multiple employees (US-CHR-011 FR-4, AC-5).
+    /// </summary>
+    [HttpPost("bulk-assign-manager")]
+    [RequirePermission("Employee.AssignManager")]
+    [ProducesResponseType(typeof(ApiResponse<BulkAssignManagerResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> BulkAssignManager(
+        [FromBody] BulkAssignManagerRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = new BulkAssignManagerCommand(request.EmployeeIds, request.ManagerEmployeeId, request.Reason);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<BulkAssignManagerResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/{managerId}/direct-reports
+    /// Returns direct reports for a manager (US-CHR-011 FR-5, AC-4).
+    /// </summary>
+    [HttpGet("{managerId:guid}/direct-reports")]
+    [RequirePermission("Employee.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<DirectReportsResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDirectReports(
+        Guid managerId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetDirectReportsQuery(managerId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<DirectReportsResult>.Ok(result.Value!));
+    }
+
     // ── Document Management (US-CHR-008) ──────────────────────────
 
     /// <summary>

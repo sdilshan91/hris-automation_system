@@ -408,10 +408,12 @@ public sealed class OrganizationTreeServiceTests : IDisposable
         var (emp1, _) = await SeedEmployeeWithJobTitle(eng.Id, "Alice", "Dev", "alice@t.com");
         var (emp2, _) = await SeedEmployeeWithJobTitle(eng.Id, "Bob", "Dev", "bob@t.com");
 
-        // Set manager on department
+        // US-CHR-011: reports point to the manager via ReportsToEmployeeId
         using var db = TestDbContextFactory.Create(_tenantContext, _dbName);
-        var dept = await db.Departments.FindAsync(eng.Id);
-        dept!.ManagerId = manager.Id;
+        var aliceRow = await db.Employees.FindAsync(emp1.Id);
+        var bobRow = await db.Employees.FindAsync(emp2.Id);
+        aliceRow!.ReportsToEmployeeId = manager.Id;
+        bobRow!.ReportsToEmployeeId = manager.Id;
         await db.SaveChangesAsync();
 
         var service = CreateService();
@@ -419,9 +421,9 @@ public sealed class OrganizationTreeServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.View.Should().Be("reporting");
-        result.Value.ReportingViewAvailable.Should().BeFalse("Employee.ReportsTo FK deferred to US-CHR-011");
+        result.Value.ReportingViewAvailable.Should().BeTrue("Employee.ReportsTo implemented in US-CHR-011");
 
-        // Should have one manager node
+        // Manager is the only root (no manager of their own); reports are children
         result.Value.Nodes.Should().HaveCount(1);
         var managerNode = result.Value.Nodes[0];
         managerNode.NodeType.Should().Be("employee");
@@ -455,8 +457,8 @@ public sealed class OrganizationTreeServiceTests : IDisposable
         var (emp1, _) = await SeedEmployeeWithJobTitle(eng.Id, "Alice", "Dev", "alice@t.com");
 
         using var db = TestDbContextFactory.Create(_tenantContext, _dbName);
-        var dept = await db.Departments.FindAsync(eng.Id);
-        dept!.ManagerId = manager.Id;
+        var aliceRow = await db.Employees.FindAsync(emp1.Id);
+        aliceRow!.ReportsToEmployeeId = manager.Id;
         await db.SaveChangesAsync();
 
         var service = CreateService();
@@ -531,8 +533,8 @@ public sealed class OrganizationTreeServiceTests : IDisposable
         var (emp, _) = await SeedEmployeeWithJobTitle(eng.Id, "Alice", "Dev", "alice@t.com", "Developer");
 
         using var db = TestDbContextFactory.Create(_tenantContext, _dbName);
-        var dept = await db.Departments.FindAsync(eng.Id);
-        dept!.ManagerId = manager.Id;
+        var aliceRow = await db.Employees.FindAsync(emp.Id);
+        aliceRow!.ReportsToEmployeeId = manager.Id;
         await db.SaveChangesAsync();
 
         var service = CreateService();
@@ -546,7 +548,7 @@ public sealed class OrganizationTreeServiceTests : IDisposable
         var empNode = managerNode.Children[0];
         empNode.NodeType.Should().Be("employee");
         empNode.ParentId.Should().Be(manager.Id);
-        empNode.ChildrenCount.Should().Be(0, "leaf employees have no children (deferred to US-CHR-011)");
+        empNode.ChildrenCount.Should().Be(0, "leaf employee has no direct reports");
     }
 
     public void Dispose()
