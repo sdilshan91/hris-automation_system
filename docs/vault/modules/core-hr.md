@@ -594,6 +594,118 @@ Creates two new tables:
 
 No change to the `employees` table (the `Suspended` enum value is stored as a string).
 
+## Bulk Employee Import (US-CHR-010)
+
+### Frontend implementation
+
+#### Route: `/employees/import`
+
+Lazy-loaded under the existing employees route group. Placed before the `:id` wildcard route to avoid path collision. Role-guarded by the parent employees route (`Tenant Admin`, `HR Officer`).
+
+#### Backend API contract assumptions (frontend -> backend alignment)
+
+The frontend assumes these endpoints (backend agent building in parallel):
+- `GET  /api/v1/employees/import/template?format=csv|xlsx` -- returns Blob (template download)
+- `POST /api/v1/employees/import` -- multipart file upload. Body: `FormData` with `file` + optional `importUpToLimit=true`. Returns either:
+  - `IImportResult { total, success, failed, errors[] }` for sync imports (<= 500 rows)
+  - `IImportJobRef { jobId, status }` for async imports (> 500 rows)
+  - HTTP 409 with `IPlanLimitWarning { code: 'plan_limit_exceeded', message, maxAllowed, currentCount, fileRecordCount, importableCount }` when plan limit would be exceeded
+- `GET  /api/v1/employees/import/jobs/:jobId` -- returns `IImportJobStatus { jobId, status, progress (0-100), result (nullable) }` for polling
+- `GET  /api/v1/employees/import/jobs/:jobId/error-report` -- returns Blob (CSV error report)
+
+All endpoints are tenant-scoped via the tenantInterceptor `X-Tenant-Subdomain` header.
+
+#### Async import polling approach (AC-4)
+
+The component polls `GET /import/jobs/:jobId` every 3 seconds using `setInterval`. When `status === 'completed'` and `result` is present, polling stops and the results are displayed. When `status === 'failed'`, polling stops and an error toast is shown. Polling failures are silently ignored (non-fatal; next tick retries).
+
+This is a pragmatic choice over WebSocket/SSE: simpler to implement, no additional infrastructure, and the 3-second interval is acceptable for a background job that runs for minutes. If the user navigates away, `ngOnDestroy` cleans up the interval.
+
+#### Client-side error report CSV generation
+
+When the import result is from a sync response (no `jobId`), the error report CSV is generated client-side from the `errors[]` array rather than calling the backend. This avoids an extra round-trip for data the frontend already has. When a `jobId` exists (async import), the backend endpoint is used instead.
+
+#### Upload progress via HttpRequest + reportProgress
+
+The `uploadImport` method uses `new HttpRequest('POST', ...)` with `reportProgress: true` instead of `http.post()`. This enables the component to show a percentage progress bar during file upload. The progress bar is distinct from the async job progress bar (which shows processing progress, not upload progress).
+
+#### File validation is extension-based, not MIME-based
+
+Client-side validation checks `.csv` and `.xlsx` extensions rather than MIME types. MIME type checking is unreliable across browsers (some report `.csv` as `text/plain`, others as `text/csv`, and drag-and-drop often loses MIME metadata). The backend should validate the actual file content.
+
+### Backend implementation (US-CHR-010)
+
+#### API endpoints
+
+- `GET  /api/v1/tenant/employees/import/template?format=Csv|Excel` -- download template (FR-2, AC-1)
+- `POST /api/v1/tenant/employees/import?importUpToLimit=false` -- upload and process (AC-2/AC-3/AC-4)
+- `GET  /api/v1/tenant/employees/import/{jobId}/status` -- async job status (AC-4)
+- `GET  /api/v1/tenant/employees/import/{jobId}/errors` -- error report CSV download (FR-8)
+
+All gated by `Employee.Import` permission (new in PermissionCatalog).
+
+#### Sync/async threshold (FR-7)
+
+Files with <= 500 data rows are processed synchronously in-request. Files with > 500 rows are saved to temp disk, a `BulkImportJob` record is created (status: Pending), and a Hangfire background job is enqueued. The Hangfire job restores the tenant context before calling `ProcessImportJobAsync`. Threshold constant: `BulkEmployeeImportService.AsyncThreshold = 500`.
+
+#### Batch commits (NFR-4)
+
+Both sync and async paths process rows in batches of 100. Each batch is a separate `SaveChangesAsync` call. On batch failure, the failed entities are detached and errors are recorded per-row. Subsequent batches continue normally. This avoids all-or-nothing rollback for the entire file.
+
+#### Plan-limit enforcement (FR-9, AC-5)
+
+Pre-validated before processing. If the import would exceed `Tenant.MaxEmployees`:
+- Without `importUpToLimit=true`: returns HTTP 409 with a message indicating available slots.
+- With `importUpToLimit=true`: trims the row list to the available slot count and imports only those.
+
+For async jobs, the plan limit is re-checked at processing time (it may have changed since queuing).
+
+#### Employee number generation
+
+Reuses the same pattern as `EmployeeService.GenerateEmployeeNoAsync`: queries the max `employee_no` across all employees (including soft-deleted, via `IgnoreQueryFilters`) for the tenant, parses the sequence number, and increments. For batch imports, the sequence is allocated once per batch to avoid per-row queries.
+
+#### Per-row validation
+
+Reference data (departments, job titles, locations) is loaded once per import in batch queries, then looked up by name from in-memory dictionaries. Email uniqueness is checked against both existing tenant employees and within the file itself (BR-2). Invalid rows are collected as `BulkImportRowError` objects with `rowNumber`, `field`, and `error`. The `Failed` count in the result is the number of unique failed rows (a row with multiple field errors counts as 1 failed row).
+
+#### File parsing
+
+- CSV: CsvHelper (new NuGet dependency, MIT license, `CsvHelper` v33). Supports RFC 4180 with trimming. Comment lines (starting with `#`) are skipped.
+- Excel: ClosedXML (already in project). Searches first 5 rows for the header row containing `first_name`. Supports date cells stored as both strings and Excel date values.
+
+#### Custom fields (FR-11) -- DEFERRED
+
+The `custom_field_*` columns from the data requirements table are not implemented. They depend on US-CHR-012 (tenant custom-field configuration), which does not exist yet. The template and parser ignore custom field columns.
+
+#### Completion notification -- DEFERRED
+
+The Notification module is not built. Async job completion is logged but no in-app or email notification is dispatched. Marked with `TODO(notification)` in the service.
+
+#### Migration: `AddBulkImportJobs` (20260612161924)
+
+Creates the `bulk_import_jobs` table with:
+- `error_details` column as `jsonb` (stores serialized `BulkImportRowError[]`)
+- Composite index on `(tenant_id, status)` for efficient job queries
+- Standard `BaseEntity` audit fields (`tenant_id`, `created_at`, `is_deleted`, etc.)
+
+#### Audit (FR-10)
+
+Every import (sync or async) creates a `BulkImportJob` record with file name, row count, success count, failure count, and the initiating user's email. This doubles as both the audit trail and the job status record.
+
+#### Idempotency (NFR-3)
+
+Import idempotency is achieved via email uniqueness within the tenant. Re-uploading the same file will not create duplicate employees because the email uniqueness check in per-row validation catches already-existing emails. No separate `Idempotency-Key` header mechanism is needed for the import endpoint.
+
+#### InternalsVisibleTo
+
+Added `<InternalsVisibleTo Include="HRM.Tests" />` to `HRM.Infrastructure.csproj` so unit tests can directly call `internal` methods (`ParseCsvRows`, `ParseExcelRows`, `ValidateRowsAsync`). This is a cross-cutting change.
+
+### Design decisions
+
+- The component uses inline template (no separate `.html` file) consistent with other core-hr components.
+- Pure functions (`validateImportFile`, `generateErrorReportCsv`, type guards) are exported from the component file and tested in a separate top-level `describe` block without TestBed, avoiding `httpMock.verify()` conflicts.
+- `triggerBlobDownload` is a non-private method on the component specifically for testability -- tests spy on it to prevent `anchor.click()` which would reload Karma and disconnect the browser.
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."

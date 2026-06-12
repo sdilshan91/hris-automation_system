@@ -393,6 +393,113 @@ public sealed class EmployeesController : ControllerBase
         return Ok(ApiResponse.Ok("Document deleted successfully."));
     }
 
+    // ── Bulk Import (US-CHR-010) ──────────────────────────────────
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/import/template
+    /// Downloads a bulk import template in CSV or Excel format (US-CHR-010 FR-2, AC-1).
+    /// </summary>
+    [HttpGet("import/template")]
+    [RequirePermission("Employee.Import")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetImportTemplate(
+        [FromQuery] ExportFormat format = ExportFormat.Csv,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetBulkImportTemplateQuery(format), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        var template = result.Value!;
+        return File(template.FileBytes, template.ContentType, template.FileName);
+    }
+
+    /// <summary>
+    /// POST /api/v1/tenant/employees/import
+    /// Uploads and processes a bulk employee import file (US-CHR-010 AC-2/AC-3/AC-4).
+    /// For <= 500 rows: synchronous processing. For > 500 rows: queued as a Hangfire job.
+    /// </summary>
+    [HttpPost("import")]
+    [RequirePermission("Employee.Import")]
+    [ProducesResponseType(typeof(ApiResponse<BulkImportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [RequestSizeLimit(26 * 1024 * 1024)] // 25 MB + multipart overhead
+    public async Task<IActionResult> BulkImport(
+        IFormFile file,
+        [FromQuery] bool importUpToLimit = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse.Fail("No file uploaded."));
+
+        await using var stream = file.OpenReadStream();
+        var command = new BulkImportEmployeesCommand(
+            stream, file.FileName, file.Length, importUpToLimit);
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        // If async, enqueue the Hangfire job
+        if (result.Value!.JobId.HasValue && !result.Value.IsComplete)
+        {
+            var tenantContext = HttpContext.RequestServices.GetRequiredService<Application.Common.Interfaces.ITenantContext>();
+            var jobId = result.Value.JobId.Value;
+
+            Hangfire.BackgroundJob.Enqueue<Jobs.BulkEmployeeImportJob>(
+                job => job.RunAsync(jobId, tenantContext.TenantId, tenantContext.Subdomain));
+        }
+
+        return Ok(ApiResponse<BulkImportResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/import/{jobId}/status
+    /// Gets the status of a bulk import job (US-CHR-010 AC-4).
+    /// </summary>
+    [HttpGet("import/{jobId:guid}/status")]
+    [RequirePermission("Employee.Import")]
+    [ProducesResponseType(typeof(ApiResponse<BulkImportJobStatus>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetImportJobStatus(
+        Guid jobId,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetBulkImportJobStatusQuery(jobId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<BulkImportJobStatus>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/import/{jobId}/errors
+    /// Downloads the error report CSV for a completed import job (US-CHR-010 FR-8).
+    /// </summary>
+    [HttpGet("import/{jobId:guid}/errors")]
+    [RequirePermission("Employee.Import")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetImportErrorReport(
+        Guid jobId,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetBulkImportErrorReportQuery(jobId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        var report = result.Value!;
+        return File(report.FileBytes, report.ContentType, report.FileName);
+    }
+
     /// <summary>
     /// POST /api/v1/tenant/employees/{id}/profile-photo
     /// Uploads a profile photo for an employee (AC-4, FR-6).
