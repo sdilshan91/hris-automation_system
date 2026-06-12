@@ -184,6 +184,74 @@ Already existed in `PermissionCatalog`:
 - `Employee.View.Own`, `Employee.View.Team`, `Employee.View.All`
 - `Employee.Create`, `Employee.Edit`, `Employee.Edit.Own`, `Employee.Delete`, `Employee.Export`
 
+## Employee Profile (US-CHR-002)
+
+### Backend API endpoints (implemented)
+
+- `GET /api/v1/tenant/employees/{id}/profile` -- comprehensive profile with emergency contacts, employment history, and `rowVersion` (xmin concurrency token).
+- `PATCH /api/v1/tenant/employees/{id}/profile` -- section-based update. Request body: `UpdateEmployeeProfileRequest` with optional section objects (`personalInfo`, `contactInfo`, `employmentInfo`, `emergencyContacts`, `customFields`). `rowVersion` is required for optimistic concurrency.
+- 409 returned on stale `rowVersion` (concurrency conflict). Message: "This record was modified by another user. Please refresh and try again."
+- 403 returned when Employee role attempts to update restricted sections (`personalInfo`, `employmentInfo`, `customFields`).
+- 403 returned for Manager role (read-only access to all sections).
+
+**Note:** The frontend assumed per-section endpoints (`PATCH .../sections/:section`), but the backend implements a single PATCH endpoint with optional section objects. The frontend should adapt to send all changed sections in a single request. This is simpler, reduces round-trips, and ensures a single concurrency check per save.
+
+### Frontend API contract assumptions
+
+The backend agent is building the matching API in parallel. The frontend assumes these endpoints:
+
+- `GET /api/v1/employees/:id/profile` -- returns `IEmployeeProfile` which extends `IEmployee` with `xmin`, `personalEmail`, address fields, and sub-entity arrays (`emergencyContacts`, `education`, `workHistory`, `dependents`, `employmentHistory`).
+- `PATCH /api/v1/employees/:id/sections/:section` -- per-section update. Request body: `{ xmin: string, data: Record<string, unknown> }`. Response: `{ xmin: string, profile: IEmployeeProfile }`. Sections: `personal-info`, `contact`, `emergency-contacts`, `employment`, `education`, `work-history`, `dependents`, `custom-fields`.
+- 409 returned on stale `xmin` (concurrency conflict).
+- 403 returned when Employee role attempts to PATCH restricted sections (`personal-info`, `employment`, `custom-fields`).
+
+### Field-level permissions (frontend enforcement)
+
+The `isSectionEditable(section, role)` function in `employee.models.ts` governs whether the Edit button renders for a section. This is a UI-only gate; the backend must also enforce restrictions (AC-5).
+
+| Role | Editable sections |
+|------|-------------------|
+| HR Officer / Tenant Admin | All |
+| Employee | contact, emergency-contacts, education, work-history, dependents |
+| Manager | None (read-only) |
+
+### Design decisions
+
+- Section navigation uses `MatTabGroup`-style custom tabs on desktop (styled with Tailwind, not Material tabs, to keep the bundle lean) and a native `<select>` dropdown on mobile (<768px). This avoids the Angular Material tab dependency and keeps the component self-contained.
+- Employment history timeline is rendered as a custom vertical timeline with CSS pseudo-elements, not a third-party library.
+- Skeleton loading uses CSS `@keyframes shimmer` animation on placeholder divs, consistent with the Notion-inspired design language.
+- The profile route is `:id` under the employees path (`/employees/:id`), lazy-loaded. The parent `roleGuard` allows HR Officer + Tenant Admin; Employee and Manager self-service routes will need a separate entry point (e.g., `/my-profile`) wired to their own employee ID.
+
+### Backend architecture decisions (US-CHR-002)
+
+#### Concurrency token: RowVersion (uint) mapped to PostgreSQL xmin
+
+The `Employee.RowVersion` property is a `uint` mapped to the PostgreSQL `xmin` system column via EF Core's `IsConcurrencyToken()`. On PostgreSQL, xmin auto-updates on every row write (it holds the inserting/updating transaction ID). EF Core checks the original value on UPDATE and throws `DbUpdateConcurrencyException` if stale.
+
+For unit tests using InMemory provider, xmin is not auto-managed. The tests simulate concurrency by manually setting `RowVersion` to a different value and passing a stale token. This tests the service's catch/handling logic even though the InMemory provider doesn't enforce xmin natively.
+
+#### Separate EmployeeFieldAuditLog table (not reusing AuditLog)
+
+The existing `AuditLog` entity tracks security events (login, MFA, etc.) with a simple string `Detail` field. US-CHR-002 requires JSONB before/after snapshots per section, which is a different shape. A dedicated `employee_field_audit_logs` table avoids polluting the security audit stream and allows JSONB queries on field-level changes. Columns: `before_snapshot jsonb`, `after_snapshot jsonb`, `section`, `employee_id`.
+
+#### Emergency contacts: full replace on update
+
+Emergency contacts are managed as a set: the PATCH endpoint receives the full list and replaces all existing contacts. This is simpler than individual CRUD on contacts and avoids orphan issues. The audit log captures the before/after list.
+
+#### Deferred entities: education, work history, dependents, documents
+
+The user story lists these as profile sections (AC-1), but no entities exist for them yet. Rather than creating stub entities, the backend defers them. `EmployeeProfileDto` includes `EmergencyContacts` and `EmploymentHistory` (which are implemented); education, work history, dependents, and documents sections will be added by future stories. The frontend should render placeholder/empty sections for these.
+
+#### Field-level permission via ICurrentUser.Permissions
+
+Role classification is done by inspecting `ICurrentUser.Permissions` rather than role names, matching the existing RBAC pattern:
+- `Employee.Edit` -> HR Officer (full access)
+- `Employee.Edit.Own` -> Employee (contact + emergency contacts only)
+- `Employee.View.Team` without Edit -> Manager (read-only)
+
+The PATCH controller endpoint uses `[Authorize]` (not `[RequirePermission]`) because the attribute only supports single-permission AND logic. The service enforces OR logic: callers need either `Employee.Edit` or `Employee.Edit.Own`.
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."
+- US-CHR-002: The `/employees/:id` route is currently behind `roleGuard(['Tenant Admin', 'HR Officer'])`. Employee self-service and Manager read-only access will need either a separate `/my-profile` route or the guard expanded to allow any authenticated user with backend-side ownership checks.

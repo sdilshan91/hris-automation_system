@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers;
 
 /// <summary>
-/// Tenant-scoped employee management endpoints (US-CHR-001).
+/// Tenant-scoped employee management endpoints (US-CHR-001, US-CHR-002).
 /// Requires Employee.* permissions.
 /// </summary>
 [ApiController]
@@ -64,6 +64,53 @@ public sealed class EmployeesController : ControllerBase
             return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
 
         return Ok(ApiResponse<EmployeeDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/{id}/profile
+    /// Gets a comprehensive employee profile with all sections (US-CHR-002 AC-1).
+    /// Includes emergency contacts, employment history, and concurrency token.
+    /// </summary>
+    [HttpGet("{id:guid}/profile")]
+    [RequirePermission("Employee.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetEmployeeProfile(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetEmployeeProfileQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<EmployeeProfileDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// PATCH /api/v1/tenant/employees/{id}/profile
+    /// Updates an employee profile with field-level role permissions,
+    /// optimistic concurrency, audit logging, and employment history (US-CHR-002 AC-2, AC-3, AC-4, AC-5, AC-6).
+    /// Returns 409 Conflict on stale xmin token.
+    /// Returns 403 Forbidden if Employee role attempts to edit restricted fields.
+    /// </summary>
+    [HttpPatch("{id:guid}/profile")]
+    [Authorize] // Permission enforcement is done at service level (Employee.Edit OR Employee.Edit.Own)
+    [ProducesResponseType(typeof(ApiResponse<EmployeeProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateEmployeeProfile(
+        Guid id,
+        [FromBody] UpdateEmployeeProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = new UpdateEmployeeProfileCommand(id, request);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<EmployeeProfileDto>.Ok(result.Value!));
     }
 
     /// <summary>

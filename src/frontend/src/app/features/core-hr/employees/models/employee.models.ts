@@ -140,3 +140,152 @@ export const WIZARD_STEPS: IWizardStep[] = [
 export const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 export const MAX_PHOTO_SIZE_LABEL = '5 MB';
+
+// ─── US-CHR-002: Employee Profile models ─────────────────────
+
+/**
+ * Extended employee status to include terminated/suspended states
+ * visible on the profile page (AC-1 status badge).
+ */
+export type EmployeeProfileStatus =
+  | 'active'
+  | 'probation'
+  | 'terminated'
+  | 'suspended';
+
+/** Emergency contact sub-entity */
+export interface IEmergencyContact {
+  id?: string;
+  name: string;
+  relationship: string;
+  phone: string;
+}
+
+/** Education record sub-entity */
+export interface IEducationRecord {
+  id?: string;
+  institution: string;
+  degree: string;
+  fieldOfStudy?: string | null;
+  startYear?: string | null;
+  endYear?: string | null;
+}
+
+/** Work history record sub-entity (prior employment) */
+export interface IWorkHistoryRecord {
+  id?: string;
+  company: string;
+  position: string;
+  fromDate: string | null;
+  toDate: string | null;
+  description?: string | null;
+}
+
+/** Dependent sub-entity */
+export interface IDependentRecord {
+  id?: string;
+  name: string;
+  relationship: string;
+  dateOfBirth: string | null;
+}
+
+/**
+ * Employment history timeline entry (FR-6, AC-6).
+ * Append-only log of changes to department, job title, status, reporting manager.
+ */
+export interface IEmploymentHistoryEntry {
+  id: string;
+  effectiveDate: string;
+  changeType: 'department' | 'job_title' | 'status' | 'reporting_manager' | string;
+  previousValue: string | null;
+  newValue: string;
+  changedBy: string | null;
+  changedAt: string;
+}
+
+/**
+ * Full employee profile returned by GET /employees/:id/profile (US-CHR-002 AC-1).
+ *
+ * Extends IEmployee with related sub-entities for all profile sections.
+ * Includes `xmin` for optimistic concurrency (AC-3, FR-4).
+ */
+export interface IEmployeeProfile extends IEmployee {
+  /** Optimistic concurrency token (PostgreSQL xmin) */
+  xmin: string;
+  /** Personal email (separate from work email) */
+  personalEmail: string | null;
+  /** Address fields */
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string | null;
+  /** Reporting manager name for display */
+  reportingManagerId: string | null;
+  reportingManagerName: string | null;
+  /** Sub-entities */
+  emergencyContacts: IEmergencyContact[];
+  education: IEducationRecord[];
+  workHistory: IWorkHistoryRecord[];
+  dependents: IDependentRecord[];
+  employmentHistory: IEmploymentHistoryEntry[];
+}
+
+/**
+ * Section keys for per-section PATCH updates.
+ * Maps to the backend PATCH /employees/:id/sections/:section endpoint.
+ */
+export type ProfileSection =
+  | 'personal-info'
+  | 'contact'
+  | 'emergency-contacts'
+  | 'employment'
+  | 'education'
+  | 'work-history'
+  | 'dependents'
+  | 'custom-fields';
+
+/**
+ * Generic section update request payload.
+ * Carries the xmin token for optimistic concurrency (AC-3).
+ */
+export interface IUpdateSectionRequest {
+  xmin: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Section update response — returns the updated profile and new xmin.
+ */
+export interface IUpdateSectionResponse {
+  xmin: string;
+  profile: IEmployeeProfile;
+}
+
+/**
+ * User role for field-level permission resolution (AC-4, AC-5, FR-3).
+ */
+export type ProfileViewerRole = 'hr_officer' | 'employee' | 'manager';
+
+/**
+ * Field-level edit permissions per role (Section 7 Data Requirements table).
+ * Returns true if the given section is editable by the role.
+ */
+export function isSectionEditable(
+  section: ProfileSection,
+  role: ProfileViewerRole
+): boolean {
+  if (role === 'manager') return false; // managers: read-only for all
+
+  if (role === 'hr_officer') return true; // HR: full access
+
+  // Employee role: limited subset
+  const employeeEditableSections: ProfileSection[] = [
+    'contact',
+    'emergency-contacts',
+    'education',
+    'work-history',
+    'dependents',
+  ];
+  return employeeEditableSections.includes(section);
+}

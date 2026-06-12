@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
@@ -261,7 +262,457 @@ public sealed class EmployeeService : IEmployeeService
         return Result<string>.Success(signedUrl);
     }
 
+    /// <summary>
+    /// Gets a comprehensive employee profile with all sections (US-CHR-002 AC-1).
+    /// </summary>
+    public async Task<Result<EmployeeProfileDto>> GetProfileAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<EmployeeProfileDto>.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await _dbContext.Employees
+            .Include(e => e.Department)
+            .Include(e => e.JobTitle)
+            .Include(e => e.EmergencyContacts)
+            .Include(e => e.EmploymentHistories)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+
+        if (employee is null)
+            return Result<EmployeeProfileDto>.Failure("Employee not found.", 404);
+
+        return Result<EmployeeProfileDto>.Success(ToProfileDto(employee));
+    }
+
+    /// <summary>
+    /// Updates an employee profile with field-level role permissions, optimistic concurrency,
+    /// audit logging with before/after JSONB snapshots, and employment history entries (US-CHR-002).
+    /// </summary>
+    public async Task<Result<EmployeeProfileDto>> UpdateProfileAsync(
+        Guid employeeId,
+        UpdateEmployeeProfileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<EmployeeProfileDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Determine caller's role for field-level permission enforcement (AC-4, AC-5, FR-3)
+        var callerRole = DetermineCallerRole();
+
+        // Field-level permission check: Employee role can only update Contact and EmergencyContacts
+        if (callerRole == CallerRole.Employee)
+        {
+            if (request.PersonalInfo is not null)
+                return Result<EmployeeProfileDto>.Failure(
+                    "Employees cannot modify personal info fields (name, date of birth, gender). These are read-only for your role.", 403);
+
+            if (request.EmploymentInfo is not null)
+                return Result<EmployeeProfileDto>.Failure(
+                    "Employees cannot modify employment fields (department, job title, status). These are read-only for your role.", 403);
+
+            if (request.UpdateCustomFields)
+                return Result<EmployeeProfileDto>.Failure(
+                    "Employees cannot modify custom fields. These are read-only for your role.", 403);
+        }
+
+        // Manager role is read-only for direct reports (FR-3)
+        if (callerRole == CallerRole.Manager)
+        {
+            return Result<EmployeeProfileDto>.Failure(
+                "Managers have read-only access to employee profiles.", 403);
+        }
+
+        // Load the employee with tracking for update
+        var employee = await _dbContext.Employees
+            .Include(e => e.Department)
+            .Include(e => e.JobTitle)
+            .Include(e => e.EmergencyContacts)
+            .Include(e => e.EmploymentHistories)
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+
+        if (employee is null)
+            return Result<EmployeeProfileDto>.Failure("Employee not found.", 404);
+
+        // Set the expected concurrency token for optimistic concurrency (FR-4, AC-3)
+        _dbContext.Entry(employee).Property(e => e.RowVersion).OriginalValue = request.RowVersion;
+
+        // Build before-snapshot for audit
+        var beforeSnapshots = new Dictionary<string, object>();
+        var afterSnapshots = new Dictionary<string, object>();
+
+        // Apply PersonalInfo section
+        if (request.PersonalInfo is not null)
+        {
+            var before = new Dictionary<string, object?>();
+            var after = new Dictionary<string, object?>();
+
+            if (request.PersonalInfo.FirstName is not null && request.PersonalInfo.FirstName != employee.FirstName)
+            {
+                before["FirstName"] = employee.FirstName;
+                employee.FirstName = request.PersonalInfo.FirstName;
+                after["FirstName"] = employee.FirstName;
+            }
+            if (request.PersonalInfo.LastName is not null && request.PersonalInfo.LastName != employee.LastName)
+            {
+                before["LastName"] = employee.LastName;
+                employee.LastName = request.PersonalInfo.LastName;
+                after["LastName"] = employee.LastName;
+            }
+            if (request.PersonalInfo.DateOfBirth.HasValue && request.PersonalInfo.DateOfBirth != employee.DateOfBirth)
+            {
+                before["DateOfBirth"] = employee.DateOfBirth;
+                employee.DateOfBirth = request.PersonalInfo.DateOfBirth;
+                after["DateOfBirth"] = employee.DateOfBirth;
+            }
+            if (request.PersonalInfo.Gender.HasValue && request.PersonalInfo.Gender != employee.Gender)
+            {
+                before["Gender"] = employee.Gender?.ToString();
+                employee.Gender = request.PersonalInfo.Gender;
+                after["Gender"] = employee.Gender?.ToString();
+            }
+
+            if (before.Count > 0)
+            {
+                beforeSnapshots["PersonalInfo"] = before;
+                afterSnapshots["PersonalInfo"] = after;
+            }
+        }
+
+        // Apply ContactInfo section
+        if (request.ContactInfo is not null)
+        {
+            var before = new Dictionary<string, object?>();
+            var after = new Dictionary<string, object?>();
+
+            if (request.ContactInfo.Phone is not null && request.ContactInfo.Phone != employee.Phone)
+            {
+                before["Phone"] = employee.Phone;
+                employee.Phone = request.ContactInfo.Phone;
+                after["Phone"] = employee.Phone;
+            }
+            if (request.ContactInfo.PersonalEmail is not null && request.ContactInfo.PersonalEmail != employee.PersonalEmail)
+            {
+                before["PersonalEmail"] = employee.PersonalEmail;
+                employee.PersonalEmail = request.ContactInfo.PersonalEmail;
+                after["PersonalEmail"] = employee.PersonalEmail;
+            }
+            if (request.ContactInfo.Address is not null && request.ContactInfo.Address != employee.Address)
+            {
+                before["Address"] = employee.Address;
+                employee.Address = request.ContactInfo.Address;
+                after["Address"] = employee.Address;
+            }
+
+            if (before.Count > 0)
+            {
+                beforeSnapshots["ContactInfo"] = before;
+                afterSnapshots["ContactInfo"] = after;
+            }
+        }
+
+        // Apply EmploymentInfo section (HR only, triggers employment history)
+        if (request.EmploymentInfo is not null)
+        {
+            var before = new Dictionary<string, object?>();
+            var after = new Dictionary<string, object?>();
+            var effectiveDate = request.EmploymentInfo.EffectiveDate ?? DateTime.UtcNow.Date;
+            var changedBy = _currentUser.IsAuthenticated ? _currentUser.Email : "system";
+
+            // Department change (BR-4, AC-6)
+            if (request.EmploymentInfo.DepartmentId.HasValue &&
+                request.EmploymentInfo.DepartmentId.Value != employee.DepartmentId)
+            {
+                var newDeptId = request.EmploymentInfo.DepartmentId.Value;
+                var deptExists = await _dbContext.Departments
+                    .AnyAsync(d => d.Id == newDeptId && d.IsActive, cancellationToken);
+                if (!deptExists)
+                    return Result<EmployeeProfileDto>.Failure("Department not found or is not active.", 400);
+
+                var oldDeptName = employee.Department?.Name ?? employee.DepartmentId.ToString();
+                var newDept = await _dbContext.Departments.AsNoTracking()
+                    .FirstAsync(d => d.Id == newDeptId, cancellationToken);
+
+                before["DepartmentId"] = employee.DepartmentId;
+                before["DepartmentName"] = oldDeptName;
+
+                employee.DepartmentId = newDeptId;
+
+                after["DepartmentId"] = employee.DepartmentId;
+                after["DepartmentName"] = newDept.Name;
+
+                // Employment history entry
+                _dbContext.EmploymentHistories.Add(new EmploymentHistory
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    ChangeType = "Department",
+                    PreviousValue = oldDeptName,
+                    NewValue = newDept.Name,
+                    PreviousReferenceId = before["DepartmentId"] as Guid?,
+                    NewReferenceId = newDeptId,
+                    EffectiveDate = effectiveDate,
+                    Reason = request.EmploymentInfo.Reason,
+                    ChangedBy = changedBy,
+                });
+            }
+
+            // Job title change (BR-4, AC-6)
+            if (request.EmploymentInfo.JobTitleId.HasValue &&
+                request.EmploymentInfo.JobTitleId.Value != employee.JobTitleId)
+            {
+                var newJtId = request.EmploymentInfo.JobTitleId.Value;
+                var jtExists = await _dbContext.JobTitles
+                    .AnyAsync(j => j.Id == newJtId && j.IsActive, cancellationToken);
+                if (!jtExists)
+                    return Result<EmployeeProfileDto>.Failure("Job title not found or is not active.", 400);
+
+                var oldJtName = employee.JobTitle?.TitleName ?? employee.JobTitleId.ToString();
+                var newJt = await _dbContext.JobTitles.AsNoTracking()
+                    .FirstAsync(j => j.Id == newJtId, cancellationToken);
+
+                before["JobTitleId"] = employee.JobTitleId;
+                before["JobTitleName"] = oldJtName;
+
+                employee.JobTitleId = newJtId;
+
+                after["JobTitleId"] = employee.JobTitleId;
+                after["JobTitleName"] = newJt.TitleName;
+
+                _dbContext.EmploymentHistories.Add(new EmploymentHistory
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    ChangeType = "JobTitle",
+                    PreviousValue = oldJtName,
+                    NewValue = newJt.TitleName,
+                    PreviousReferenceId = before["JobTitleId"] as Guid?,
+                    NewReferenceId = newJtId,
+                    EffectiveDate = effectiveDate,
+                    Reason = request.EmploymentInfo.Reason,
+                    ChangedBy = changedBy,
+                });
+            }
+
+            // Status change (BR-4)
+            if (request.EmploymentInfo.Status.HasValue &&
+                request.EmploymentInfo.Status.Value != employee.Status)
+            {
+                before["Status"] = employee.Status.ToString();
+                var oldStatus = employee.Status;
+                employee.Status = request.EmploymentInfo.Status.Value;
+                after["Status"] = employee.Status.ToString();
+
+                // Update IsActive based on status
+                employee.IsActive = employee.Status is EmployeeStatus.Active or EmployeeStatus.Probation;
+
+                _dbContext.EmploymentHistories.Add(new EmploymentHistory
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    ChangeType = "Status",
+                    PreviousValue = oldStatus.ToString(),
+                    NewValue = employee.Status.ToString(),
+                    EffectiveDate = effectiveDate,
+                    Reason = request.EmploymentInfo.Reason,
+                    ChangedBy = changedBy,
+                });
+            }
+
+            // Employment type change
+            if (request.EmploymentInfo.EmploymentType.HasValue &&
+                request.EmploymentInfo.EmploymentType.Value != employee.EmploymentType)
+            {
+                before["EmploymentType"] = employee.EmploymentType.ToString();
+                employee.EmploymentType = request.EmploymentInfo.EmploymentType.Value;
+                after["EmploymentType"] = employee.EmploymentType.ToString();
+            }
+
+            if (before.Count > 0)
+            {
+                beforeSnapshots["EmploymentInfo"] = before;
+                afterSnapshots["EmploymentInfo"] = after;
+            }
+        }
+
+        // Apply EmergencyContacts section (full replace)
+        if (request.EmergencyContacts is not null)
+        {
+            var beforeEc = employee.EmergencyContacts
+                .Select(ec => new { ec.Id, ec.ContactName, ec.Relationship, ec.Phone, ec.IsPrimary })
+                .ToList();
+
+            // Remove existing contacts
+            _dbContext.EmergencyContacts.RemoveRange(employee.EmergencyContacts);
+
+            // Add new contacts
+            foreach (var input in request.EmergencyContacts)
+            {
+                _dbContext.EmergencyContacts.Add(new EmergencyContact
+                {
+                    Id = input.Id ?? BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    ContactName = input.ContactName,
+                    Relationship = input.Relationship,
+                    Phone = input.Phone,
+                    AlternatePhone = input.AlternatePhone,
+                    Email = input.Email,
+                    IsPrimary = input.IsPrimary,
+                });
+            }
+
+            var afterEc = request.EmergencyContacts
+                .Select(ec => new { ec.Id, ec.ContactName, ec.Relationship, ec.Phone, ec.IsPrimary })
+                .ToList();
+
+            beforeSnapshots["EmergencyContacts"] = beforeEc;
+            afterSnapshots["EmergencyContacts"] = afterEc;
+        }
+
+        // Apply CustomFields
+        if (request.UpdateCustomFields)
+        {
+            var before = new Dictionary<string, object?> { ["CustomFields"] = employee.CustomFields };
+            employee.CustomFields = request.CustomFields;
+            var after = new Dictionary<string, object?> { ["CustomFields"] = employee.CustomFields };
+
+            beforeSnapshots["CustomFields"] = before;
+            afterSnapshots["CustomFields"] = after;
+        }
+
+        // Write audit log entries for each changed section (FR-5, AC-2)
+        if (beforeSnapshots.Count > 0)
+        {
+            foreach (var section in beforeSnapshots.Keys)
+            {
+                _dbContext.EmployeeFieldAuditLogs.Add(new EmployeeFieldAuditLog
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    Section = section,
+                    BeforeSnapshot = JsonSerializer.Serialize(beforeSnapshots[section]),
+                    AfterSnapshot = JsonSerializer.Serialize(afterSnapshots[section]),
+                    ChangedByUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+                    ChangedBy = _currentUser.IsAuthenticated ? _currentUser.Email : "system",
+                });
+            }
+        }
+
+        // Save with optimistic concurrency check (FR-4, AC-3)
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _logger.LogWarning(
+                "Concurrency conflict updating employee {EmployeeId} in tenant {TenantId}",
+                employeeId, _tenantContext.TenantId);
+            return Result<EmployeeProfileDto>.Failure(
+                "This record was modified by another user. Please refresh and try again.", 409);
+        }
+
+        _logger.LogInformation(
+            "Employee profile updated. Id={EmployeeId}, Sections={Sections}, TenantId={TenantId}, By={User}",
+            employeeId, string.Join(",", beforeSnapshots.Keys), _tenantContext.TenantId, _currentUser.Email);
+
+        // Reload the full profile to return the updated state
+        return await GetProfileAsync(employeeId, cancellationToken);
+    }
+
     // ── Private helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Determines the caller's effective role for field-level permission enforcement.
+    /// HR Officer / HR Manager / Tenant Admin / Tenant Owner -> HrOfficer (full access)
+    /// Employee -> Employee (limited access)
+    /// Manager -> Manager (read-only)
+    /// </summary>
+    private CallerRole DetermineCallerRole()
+    {
+        var roles = _currentUser.Roles;
+        var permissions = _currentUser.Permissions;
+
+        // Check for HR-level edit permission first
+        if (permissions.Contains("Employee.Edit"))
+            return CallerRole.HrOfficer;
+
+        // Check for Employee self-edit
+        if (permissions.Contains("Employee.Edit.Own"))
+            return CallerRole.Employee;
+
+        // Check for Manager view-team (read-only)
+        if (permissions.Contains("Employee.View.Team"))
+            return CallerRole.Manager;
+
+        // Default to most restrictive
+        return CallerRole.Manager;
+    }
+
+    private static EmployeeProfileDto ToProfileDto(Employee e) => new()
+    {
+        Id = e.Id,
+        EmployeeNo = e.EmployeeNo,
+        FirstName = e.FirstName,
+        LastName = e.LastName,
+        Email = e.Email,
+        PersonalEmail = e.PersonalEmail,
+        Phone = e.Phone,
+        Address = e.Address,
+        DateOfBirth = e.DateOfBirth,
+        Gender = e.Gender?.ToString(),
+        DateOfJoining = e.DateOfJoining,
+        DepartmentId = e.DepartmentId,
+        DepartmentName = e.Department?.Name,
+        JobTitleId = e.JobTitleId,
+        JobTitleName = e.JobTitle?.TitleName,
+        EmploymentType = e.EmploymentType.ToString(),
+        Status = e.Status.ToString(),
+        ProfilePhotoUrl = e.ProfilePhotoUrl,
+        CustomFields = e.CustomFields,
+        UserId = e.UserId,
+        IsActive = e.IsActive,
+        CreatedAt = e.CreatedAt,
+        UpdatedAt = e.UpdatedAt,
+        RowVersion = e.RowVersion,
+        EmergencyContacts = e.EmergencyContacts
+            .Where(ec => !ec.IsDeleted)
+            .Select(ec => new EmergencyContactDto
+            {
+                Id = ec.Id,
+                ContactName = ec.ContactName,
+                Relationship = ec.Relationship,
+                Phone = ec.Phone,
+                AlternatePhone = ec.AlternatePhone,
+                Email = ec.Email,
+                IsPrimary = ec.IsPrimary,
+            })
+            .ToList(),
+        EmploymentHistory = e.EmploymentHistories
+            .Where(eh => !eh.IsDeleted)
+            .OrderByDescending(eh => eh.EffectiveDate)
+            .ThenByDescending(eh => eh.CreatedAt)
+            .Select(eh => new EmploymentHistoryDto
+            {
+                Id = eh.Id,
+                ChangeType = eh.ChangeType,
+                PreviousValue = eh.PreviousValue,
+                NewValue = eh.NewValue,
+                PreviousReferenceId = eh.PreviousReferenceId,
+                NewReferenceId = eh.NewReferenceId,
+                EffectiveDate = eh.EffectiveDate,
+                Reason = eh.Reason,
+                ChangedBy = eh.ChangedBy,
+                CreatedAt = eh.CreatedAt,
+            })
+            .ToList(),
+    };
 
     /// <summary>
     /// Enforces plan-level employee count limit (AC-5, FR-5).
@@ -366,4 +817,14 @@ public sealed class EmployeeService : IEmployeeService
         CreatedAt = e.CreatedAt,
         UpdatedAt = e.UpdatedAt,
     };
+
+    /// <summary>
+    /// Caller role classification for field-level permission enforcement (US-CHR-002 FR-3).
+    /// </summary>
+    private enum CallerRole
+    {
+        HrOfficer,
+        Employee,
+        Manager,
+    }
 }

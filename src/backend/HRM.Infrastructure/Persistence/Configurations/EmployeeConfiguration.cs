@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace HRM.Infrastructure.Persistence.Configurations;
 
 /// <summary>
-/// EF Core configuration for the Employee entity (US-CHR-001).
+/// EF Core configuration for the Employee entity (US-CHR-001, US-CHR-002).
 /// Maps to the "employees" table with snake_case naming convention.
+/// US-CHR-002: adds personal_email, address, xmin concurrency token, and navigations.
 /// </summary>
 public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
 {
@@ -36,8 +37,16 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasMaxLength(150)
             .IsRequired();
 
+        // US-CHR-002: personal email, editable by Employee role
+        builder.Property(e => e.PersonalEmail)
+            .HasMaxLength(150);
+
         builder.Property(e => e.Phone)
             .HasMaxLength(20);
+
+        // US-CHR-002: address, editable by Employee role
+        builder.Property(e => e.Address)
+            .HasMaxLength(500);
 
         builder.Property(e => e.DateOfBirth)
             .HasColumnType("date");
@@ -75,6 +84,16 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasDefaultValue(false)
             .IsRequired();
 
+        // US-CHR-002 FR-4: Optimistic concurrency token.
+        // On PostgreSQL, this maps to the xmin system column (transaction ID of last write).
+        // EF Core checks this value on UPDATE to detect concurrent modifications.
+        // The property is configured as ValueGeneratedOnAddOrUpdate so the DB manages it.
+        builder.Property(e => e.RowVersion)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
+
         // ── Unique constraints ──────────────────────────────────────
 
         // FR-2 / BR-1: employee_no unique per tenant
@@ -106,6 +125,18 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .WithMany()
             .HasForeignKey(e => e.UserId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // US-CHR-002: Emergency contacts collection
+        builder.HasMany(e => e.EmergencyContacts)
+            .WithOne(ec => ec.Employee)
+            .HasForeignKey(ec => ec.EmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // US-CHR-002: Employment history collection
+        builder.HasMany(e => e.EmploymentHistories)
+            .WithOne(eh => eh.Employee)
+            .HasForeignKey(eh => eh.EmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // ── Indexes for common queries ──────────────────────────────
 

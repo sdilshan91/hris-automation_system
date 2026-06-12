@@ -1,7 +1,7 @@
 ---
 module: Core HR
-total_user_stories: 3
-total_test_cases: 115
+total_user_stories: 4
+total_test_cases: 142
 created: 2026-06-11
 updated: 2026-06-12
 status: draft
@@ -13,11 +13,11 @@ status: draft
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 3 (US-CHR-001, US-CHR-004, US-CHR-005) |
-| Total Test Cases | 115 |
-| Critical Priority | 42 |
-| High Priority | 50 |
-| Medium Priority | 23 |
+| Total User Stories Covered | 4 (US-CHR-001, US-CHR-002, US-CHR-004, US-CHR-005) |
+| Total Test Cases | 142 |
+| Critical Priority | 51 |
+| High Priority | 63 |
+| Medium Priority | 28 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 (previously 4 -- all unblocked by US-CHR-001) |
 | Status | All Draft |
@@ -27,26 +27,32 @@ status: draft
 | User Story | Title | Test Cases | Count |
 |------------|-------|------------|-------|
 | US-CHR-001 | Add New Employee with Personal Information | TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-067, TC-CHR-068, TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-075, TC-CHR-076, TC-CHR-077, TC-CHR-078, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-095, TC-CHR-096, TC-CHR-097, TC-CHR-098, TC-CHR-099, TC-CHR-100, TC-CHR-101, TC-CHR-102, TC-CHR-103 | 40 |
+| US-CHR-002 | View and Edit Employee Profile | TC-CHR-104, TC-CHR-105, TC-CHR-106, TC-CHR-107, TC-CHR-108, TC-CHR-109, TC-CHR-110, TC-CHR-111, TC-CHR-112, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-119, TC-CHR-120, TC-CHR-121, TC-CHR-122, TC-CHR-123, TC-CHR-124, TC-CHR-125, TC-CHR-126 | 23 |
 | US-CHR-004 | Create and Manage Departments | TC-CHR-001 through TC-CHR-034 | 34 |
 | US-CHR-005 | Create and Manage Job Titles and Positions | TC-CHR-035 through TC-CHR-063 | 29 |
+| Cross-cutting (CHR-001) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 4 |
+| Cross-cutting (CHR-002) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 4 |
 | Cross-cutting (CHR-004) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004 | 4 |
 | Cross-cutting (CHR-005) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008 | 4 |
-| Cross-cutting (CHR-001) | Multi-tenant isolation (mandatory) | TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 4 |
 
 ## Test Type Distribution
 
 | Type | Test Cases | Count |
 |------|------------|-------|
 | Functional (CHR-001) | TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-075, TC-CHR-076, TC-CHR-077, TC-CHR-078, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-098, TC-CHR-099, TC-CHR-101, TC-CHR-102, TC-CHR-103 | 23 |
+| Functional (CHR-002) | TC-CHR-104, TC-CHR-105, TC-CHR-106, TC-CHR-108, TC-CHR-109, TC-CHR-110, TC-CHR-112, TC-CHR-122, TC-CHR-123, TC-CHR-124, TC-CHR-125, TC-CHR-126 | 12 |
 | Functional (CHR-004) | TC-CHR-001, TC-CHR-002, TC-CHR-003, TC-CHR-005, TC-CHR-006, TC-CHR-007, TC-CHR-008, TC-CHR-009, TC-CHR-010, TC-CHR-011, TC-CHR-012, TC-CHR-013, TC-CHR-017, TC-CHR-018, TC-CHR-020, TC-CHR-022, TC-CHR-023, TC-CHR-024, TC-CHR-030, TC-CHR-031, TC-CHR-033, TC-CHR-034 | 22 |
 | Functional (CHR-005) | TC-CHR-035, TC-CHR-036, TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-040, TC-CHR-041, TC-CHR-043, TC-CHR-044, TC-CHR-045, TC-CHR-046, TC-CHR-047, TC-CHR-048, TC-CHR-049, TC-CHR-050, TC-CHR-056, TC-CHR-061, TC-CHR-062, TC-CHR-063 | 19 |
 | Security (CHR-001) | TC-CHR-067, TC-CHR-068, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-083, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-100, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 15 |
+| Security (CHR-002) | TC-CHR-107, TC-CHR-110, TC-CHR-111, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 13 |
 | Security (CHR-004) | TC-CHR-004, TC-CHR-014, TC-CHR-015, TC-CHR-016, TC-CHR-019, TC-CHR-021, TC-CHR-025, TC-CHR-032, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004 | 12 |
 | Security (CHR-005) | TC-CHR-042, TC-CHR-051, TC-CHR-052, TC-CHR-053, TC-CHR-054, TC-CHR-055, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008 | 10 |
 | Performance (CHR-001) | TC-CHR-095, TC-CHR-096 | 2 |
+| Performance (CHR-002) | TC-CHR-119, TC-CHR-120 | 2 |
 | Performance (CHR-004) | TC-CHR-026, TC-CHR-027, TC-CHR-028 | 3 |
 | Performance (CHR-005) | TC-CHR-057, TC-CHR-058, TC-CHR-059 | 3 |
 | Accessibility (CHR-001) | TC-CHR-097 | 1 |
+| Accessibility (CHR-002) | TC-CHR-121 | 1 |
 | Accessibility (CHR-004) | TC-CHR-029 | 1 |
 | Accessibility (CHR-005) | TC-CHR-060 | 1 |
 
@@ -54,14 +60,14 @@ status: draft
 
 | Category | Test Cases | Count |
 |----------|------------|-------|
-| Happy Path | TC-CHR-001, TC-CHR-002, TC-CHR-005, TC-CHR-008, TC-CHR-009, TC-CHR-011, TC-CHR-015, TC-CHR-020, TC-CHR-031, TC-CHR-033, TC-CHR-035, TC-CHR-036, TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-040, TC-CHR-048, TC-CHR-049, TC-CHR-050, TC-CHR-052, TC-CHR-056, TC-CHR-063, TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-068, TC-CHR-069, TC-CHR-075, TC-CHR-076, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-084, TC-CHR-101, TC-CHR-102, TC-CHR-103 | 37 |
-| Negative Test | TC-CHR-003, TC-CHR-006, TC-CHR-007, TC-CHR-010, TC-CHR-012, TC-CHR-014, TC-CHR-016, TC-CHR-017, TC-CHR-021, TC-CHR-022, TC-CHR-023, TC-CHR-025, TC-CHR-032, TC-CHR-041, TC-CHR-042, TC-CHR-043, TC-CHR-044, TC-CHR-045, TC-CHR-047, TC-CHR-051, TC-CHR-053, TC-CHR-054, TC-CHR-055, TC-CHR-067, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-077, TC-CHR-078, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-103, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 55 |
-| Boundary Test | TC-CHR-013, TC-CHR-017, TC-CHR-018, TC-CHR-022, TC-CHR-024, TC-CHR-028, TC-CHR-046, TC-CHR-047, TC-CHR-059, TC-CHR-070, TC-CHR-074, TC-CHR-077, TC-CHR-078, TC-CHR-086, TC-CHR-088, TC-CHR-089 | 16 |
-| Security Test | TC-CHR-004, TC-CHR-013, TC-CHR-014, TC-CHR-015, TC-CHR-016, TC-CHR-019, TC-CHR-021, TC-CHR-025, TC-CHR-031, TC-CHR-032, TC-CHR-042, TC-CHR-051, TC-CHR-052, TC-CHR-053, TC-CHR-054, TC-CHR-055, TC-CHR-068, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-083, TC-CHR-087, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-100, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 39 |
-| Multi-Tenant Isolation | TC-CHR-004, TC-CHR-021, TC-CHR-025, TC-CHR-032, TC-CHR-042, TC-CHR-055, TC-CHR-066, TC-CHR-068, TC-CHR-069, TC-CHR-073, TC-CHR-083, TC-CHR-084, TC-CHR-087, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 25 |
-| Performance Test | TC-CHR-026, TC-CHR-027, TC-CHR-028, TC-CHR-057, TC-CHR-058, TC-CHR-059, TC-CHR-095, TC-CHR-096 | 8 |
-| Accessibility Test | TC-CHR-029, TC-CHR-030, TC-CHR-060, TC-CHR-061, TC-CHR-097 | 5 |
-| Cross-Browser Test | TC-CHR-030, TC-CHR-034, TC-CHR-061, TC-CHR-062, TC-CHR-098, TC-CHR-099 | 6 |
+| Happy Path | TC-CHR-001, TC-CHR-002, TC-CHR-005, TC-CHR-008, TC-CHR-009, TC-CHR-011, TC-CHR-015, TC-CHR-020, TC-CHR-031, TC-CHR-033, TC-CHR-035, TC-CHR-036, TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-040, TC-CHR-048, TC-CHR-049, TC-CHR-050, TC-CHR-052, TC-CHR-056, TC-CHR-063, TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-068, TC-CHR-069, TC-CHR-075, TC-CHR-076, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-084, TC-CHR-101, TC-CHR-102, TC-CHR-103, TC-CHR-104, TC-CHR-105, TC-CHR-106, TC-CHR-110, TC-CHR-123, TC-CHR-124, TC-CHR-125 | 44 |
+| Negative Test | TC-CHR-003, TC-CHR-006, TC-CHR-007, TC-CHR-010, TC-CHR-012, TC-CHR-014, TC-CHR-016, TC-CHR-017, TC-CHR-021, TC-CHR-022, TC-CHR-023, TC-CHR-025, TC-CHR-032, TC-CHR-041, TC-CHR-042, TC-CHR-043, TC-CHR-044, TC-CHR-045, TC-CHR-047, TC-CHR-051, TC-CHR-053, TC-CHR-054, TC-CHR-055, TC-CHR-067, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-077, TC-CHR-078, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-103, TC-CHR-107, TC-CHR-108, TC-CHR-111, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 67 |
+| Boundary Test | TC-CHR-013, TC-CHR-017, TC-CHR-018, TC-CHR-022, TC-CHR-024, TC-CHR-028, TC-CHR-046, TC-CHR-047, TC-CHR-059, TC-CHR-070, TC-CHR-074, TC-CHR-077, TC-CHR-078, TC-CHR-086, TC-CHR-088, TC-CHR-089, TC-CHR-109, TC-CHR-112 | 18 |
+| Security Test | TC-CHR-004, TC-CHR-013, TC-CHR-014, TC-CHR-015, TC-CHR-016, TC-CHR-019, TC-CHR-021, TC-CHR-025, TC-CHR-031, TC-CHR-032, TC-CHR-042, TC-CHR-051, TC-CHR-052, TC-CHR-053, TC-CHR-054, TC-CHR-055, TC-CHR-068, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-083, TC-CHR-087, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-100, TC-CHR-107, TC-CHR-110, TC-CHR-111, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 52 |
+| Multi-Tenant Isolation | TC-CHR-004, TC-CHR-021, TC-CHR-025, TC-CHR-032, TC-CHR-042, TC-CHR-055, TC-CHR-066, TC-CHR-068, TC-CHR-069, TC-CHR-073, TC-CHR-083, TC-CHR-084, TC-CHR-087, TC-CHR-113, TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | 30 |
+| Performance Test | TC-CHR-026, TC-CHR-027, TC-CHR-028, TC-CHR-057, TC-CHR-058, TC-CHR-059, TC-CHR-095, TC-CHR-096, TC-CHR-119, TC-CHR-120 | 10 |
+| Accessibility Test | TC-CHR-029, TC-CHR-030, TC-CHR-060, TC-CHR-061, TC-CHR-097, TC-CHR-121 | 6 |
+| Cross-Browser Test | TC-CHR-030, TC-CHR-034, TC-CHR-061, TC-CHR-062, TC-CHR-098, TC-CHR-099, TC-CHR-122, TC-CHR-126 | 8 |
 
 ## Acceptance Criteria Coverage (US-CHR-001)
 
@@ -73,6 +79,17 @@ status: draft
 | AC-4 | Profile photo upload, tenant-isolated storage, EXIF stripped, signed URL | TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073 |
 | AC-5 | Plan employee limit reached, creation blocked | TC-CHR-074 |
 | AC-6 | Custom fields persisted to JSONB and shown on profile | TC-CHR-075, TC-CHR-084 |
+
+## Acceptance Criteria Coverage (US-CHR-002)
+
+| AC | Description | Covered By Test Cases |
+|----|-------------|-----------------------|
+| AC-1 | Comprehensive profile displayed in card-based sections (Summary Header, Personal Info, Contact, Emergency Contacts, Employment Details, Education, Work History, Dependents, Documents, Custom Fields) | TC-CHR-104, TC-CHR-106, TC-CHR-110, TC-CHR-121, TC-CHR-122 |
+| AC-2 | Edit section, save with optimistic concurrency (xmin), audit log with before/after JSONB snapshots, success toast | TC-CHR-105, TC-CHR-108, TC-CHR-112, TC-CHR-123 |
+| AC-3 | Concurrency conflict detection -- stale xmin rejected with message, first change preserved | TC-CHR-108 |
+| AC-4 | Employee self-service: full profile read-only except permitted editable fields (phone, personal email, address, emergency contacts) | TC-CHR-106, TC-CHR-123 |
+| AC-5 | Employee cannot edit restricted fields (salary, department, job title); API rejects PATCH with 403 | TC-CHR-107, TC-CHR-111 |
+| AC-6 | Department/job title change records employment history timeline entry and updates reporting structure | TC-CHR-109, TC-CHR-124 |
 
 ## Acceptance Criteria Coverage (US-CHR-004)
 
@@ -93,6 +110,40 @@ status: draft
 | AC-3 | Duplicate title name rejected within tenant; same name allowed cross-tenant | TC-CHR-041, TC-CHR-042, TC-CHR-045, TC-CHR-047 |
 | AC-4 | Link job title to salary grade; grade displayed on employee profile | TC-CHR-037, TC-CHR-063 (UNBLOCKED by US-CHR-001) |
 | AC-5 | Deactivate blocked when assigned to active employees; warning message | TC-CHR-040, TC-CHR-043 (UNBLOCKED by US-CHR-001) |
+
+## Functional Requirements Coverage (US-CHR-002)
+
+| FR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| FR-1 | Profile displayed in card-based sections, each independently collapsible | TC-CHR-104, TC-CHR-121 | Direct |
+| FR-2 | Inline editing (click-to-edit) or modal edit form per section | TC-CHR-105, TC-CHR-112, TC-CHR-123 | Direct |
+| FR-3 | Field-level permissions by role (HR: all; Employee: limited; Manager: read-only) | TC-CHR-106, TC-CHR-107, TC-CHR-110, TC-CHR-111, TC-CHR-114, TC-CHR-115 | Direct |
+| FR-4 | Optimistic concurrency via PostgreSQL xmin column | TC-CHR-105, TC-CHR-108 | Direct |
+| FR-5 | Audit log with before/after JSONB snapshots for every field change | TC-CHR-105, TC-CHR-118, TC-CHR-123, TC-CHR-124 | Direct |
+| FR-6 | Employment history timeline with changes to department, title, status, manager | TC-CHR-109, TC-CHR-124 | Direct |
+| FR-7 | All queries scoped by tenant_id via EF Core global filter and RLS | TC-CHR-113, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | Direct |
+
+## Non-Functional Requirements Coverage (US-CHR-002)
+
+| NFR | Description | Covered By | Coverage |
+|-----|-------------|------------|----------|
+| NFR-1 | Profile page load within 2.5s P95 on 4G | TC-CHR-119 | Direct |
+| NFR-2 | API read response time <= 400ms P95 | TC-CHR-120 | Direct |
+| NFR-3 | Tenant-isolated via PostgreSQL RLS and EF Core query filters | TC-CHR-113, TC-CHR-ISO-013, TC-CHR-ISO-014, TC-CHR-ISO-015, TC-CHR-ISO-016 | Direct |
+| NFR-4 | PII access recorded in audit log | TC-CHR-118 | Direct |
+| NFR-5 | Fully responsive (360px to 4K) with card reflow on mobile | TC-CHR-122 | Direct |
+| NFR-6 | WCAG 2.1 AA standards | TC-CHR-121 | Direct |
+
+## Business Rules Coverage (US-CHR-002)
+
+| BR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| BR-1 | Employees can only view/edit their own profile | TC-CHR-106, TC-CHR-115 | Direct |
+| BR-2 | HR Officers can view/edit any employee within their tenant | TC-CHR-104, TC-CHR-105, TC-CHR-118 | Direct |
+| BR-3 | Managers read-only for direct reports | TC-CHR-110, TC-CHR-114 | Direct |
+| BR-4 | Employment-critical field changes trigger history entry | TC-CHR-109, TC-CHR-124 | Direct |
+| BR-5 | Profile edits on sensitive fields may require HR approval (configurable) | -- | Deferred (configurable per tenant; not yet implemented) |
+| BR-6 | Soft-deleted employees hidden in normal views, accessible via Archived filter | TC-CHR-125 | Direct |
 
 ## Functional Requirements Coverage (US-CHR-001)
 
@@ -206,6 +257,21 @@ status: draft
 
 ---
 
+## Coverage Summary (US-CHR-002)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 6/6 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 7/7 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 5/6 (83.3%) -- BR-5 deferred (configurable approval) | >= 85% | NOTE |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO + 1 embedded) | >= 3 | PASS |
+| Security Test Cases | 13/27 (48.1%) | >= 30% | PASS |
+| Performance Test Cases | 2/27 | >= 1 | PASS |
+| Accessibility Test Cases | 1/27 | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/27 | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+
 ## Coverage Summary (US-CHR-001)
 
 | Metric | Value | Target | Status |
@@ -247,4 +313,4 @@ status: draft
 
 ---
 
-*Note: This test matrix covers US-CHR-001, US-CHR-004, and US-CHR-005. It will be extended as additional Core HR user stories (US-CHR-002, US-CHR-003, US-CHR-006+) are analyzed and test cases are authored. All previously blocked test cases have been unblocked by the delivery of US-CHR-001.*
+*Note: This test matrix covers US-CHR-001, US-CHR-002, US-CHR-004, and US-CHR-005. It will be extended as additional Core HR user stories (US-CHR-003, US-CHR-006+) are analyzed and test cases are authored. All previously blocked test cases have been unblocked by the delivery of US-CHR-001. BR-5 for US-CHR-002 (HR approval for sensitive field edits) is deferred as it depends on tenant-configurable approval workflows not yet implemented.*

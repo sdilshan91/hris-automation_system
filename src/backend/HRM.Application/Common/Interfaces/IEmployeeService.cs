@@ -4,7 +4,7 @@ using HRM.Application.Features.Employees.DTOs;
 namespace HRM.Application.Common.Interfaces;
 
 /// <summary>
-/// Service interface for employee CRUD operations (US-CHR-001).
+/// Service interface for employee CRUD operations (US-CHR-001, US-CHR-002).
 /// All operations are tenant-scoped via ITenantContext.
 /// </summary>
 public interface IEmployeeService
@@ -33,5 +33,22 @@ public interface IEmployeeService
         string fileName,
         string contentType,
         long fileSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a comprehensive employee profile with all sections (US-CHR-002 AC-1).
+    /// Includes emergency contacts, employment history, and the xmin concurrency token.
+    /// </summary>
+    Task<Result<EmployeeProfileDto>> GetProfileAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates an employee profile with field-level permission checks,
+    /// optimistic concurrency via xmin, audit logging, and employment history (US-CHR-002).
+    /// </summary>
+    Task<Result<EmployeeProfileDto>> UpdateProfileAsync(
+        Guid employeeId,
+        UpdateEmployeeProfileRequest request,
         CancellationToken cancellationToken = default);
 }
