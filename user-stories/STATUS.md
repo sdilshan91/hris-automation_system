@@ -43,7 +43,7 @@
 - [ ] US-CHR-002 — View and edit employee profile
 - [ ] US-CHR-003 — Employee directory with search and filters
 - [x] US-CHR-004 — Create and manage departments *(PR #9; built ahead of CHR-001 per dependency order)*
-- [~] US-CHR-005 — Create and manage job titles and positions
+- [x] US-CHR-005 — Create and manage job titles and positions *(PR #10)*
 - [ ] US-CHR-006 — Organization tree/hierarchy visualization
 - [ ] US-CHR-007 — Manage office locations
 - [ ] US-CHR-008 — Employee document management
