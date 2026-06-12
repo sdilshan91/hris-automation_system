@@ -47,7 +47,7 @@
 - [x] US-CHR-006 — Organization tree/hierarchy visualization *(PR #16)*
 - [x] US-CHR-007 — Manage office locations *(PR #17)*
 - [x] US-CHR-008 — Employee document management *(PR #18)*
-- [~] US-CHR-009 — Employee status management
+- [x] US-CHR-009 — Employee status management *(PR #19)*
 - [ ] US-CHR-010 — Bulk employee import via CSV/Excel
 - [ ] US-CHR-011 — Employee reporting structure
 - [ ] US-CHR-012 — Custom fields per tenant
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **11** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; CHR-002 PR #13; CHR-003 PR #14; CHR-006 PR #16; CHR-007 PR #17; CHR-008 PR #18)
+- Done: **12** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; CHR-002 PR #13; CHR-003 PR #14; CHR-006 PR #16; CHR-007 PR #17; CHR-008 PR #18; CHR-009 PR #19)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **89**
+- Pending: **88**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
