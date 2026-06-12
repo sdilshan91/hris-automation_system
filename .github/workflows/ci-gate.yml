@@ -72,9 +72,10 @@ jobs:
           --health-retries 5
     env:
       # Overrides ConnectionStrings:DefaultConnection from appsettings.json.
+      # Jwt:PrivateKey is intentionally left blank (as in appsettings.json) — Program.cs
+      # skips PEM parsing when it is empty; a non-empty invalid value would throw at
+      # host build and break the design-time DbContext creation.
       ConnectionStrings__DefaultConnection: 'Host=localhost;Port=5432;Database=hrm_ci;Username=hrm;Password=hrm'
-      # Program.cs builds the full host at design time; supply a dummy signing key.
-      Jwt__PrivateKey: 'ci-dummy-signing-key-not-used-for-migration-apply-0123456789'
     steps:
       - uses: actions/checkout@v4
 
