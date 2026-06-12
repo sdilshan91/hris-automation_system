@@ -352,6 +352,76 @@ Search/filter/sort/page state is persisted as URL query params using `router.nav
 
 On screens < 768px, the component defaults to card view. The view mode is not persisted per-user (no localStorage) -- only via URL `?view=table|card` param.
 
+## Organization Tree (US-CHR-006)
+
+### Backend implementation
+
+New `GET /api/v1/tenant/org-tree?view=department|reporting&parentId=&depth=&includeInactive=` endpoint.
+
+Architecture: `GetOrgTreeQuery` -> `GetOrgTreeQueryHandler` -> `IOrganizationTreeService` -> `OrganizationTreeService`. Read-only; no schema change or migration required.
+
+### Department hierarchy view (fully implemented)
+
+- Loads all tenant departments in a single query; builds the tree in-memory.
+- Employee counts per department are loaded via a batch `GroupBy` query.
+- Lazy loading: `parentId` returns only children of that department; `depth` controls how many levels are expanded (default 2, max 10).
+- `includeInactive=true` includes inactive departments and counts inactive employees.
+- Department nodes expose the department manager's name via the `Title` field and their avatar via `AvatarUrl`.
+- Tenant isolation via EF global query filter on both Department and Employee entities.
+- Permission: `Department.View` (same as existing department endpoints).
+
+### Reporting structure view (deferred to US-CHR-011)
+
+`Employee.ReportsTo` FK does not exist. The reporting view is best-effort: it shows department managers as top-level nodes with their department's employees as children. This is explicitly flagged via `ReportingViewAvailable = false` in the response so the frontend can show a disclaimer.
+
+When US-CHR-011 adds `Employee.ReportsToEmployeeId`:
+1. Update `OrganizationTreeService.GetReportingTreeAsync` to build the tree from the `ReportsTo` chain instead of `Department.ManagerId`.
+2. Support recursive lazy loading by manager ID.
+3. Set `ReportingViewAvailable = true`.
+4. Employees without a `ReportsTo` assignment appear under their department node (BR-3).
+
+### No migration required
+
+This story is pure read-only over existing Department and Employee data. No schema changes.
+
+### Frontend (US-CHR-006)
+
+#### API contract assumptions (frontend -> backend alignment)
+
+The frontend's `OrgTreeService` calls:
+- `GET /api/v1/org-tree?view=department|reporting&parentId=&depth=` -- returns `IOrgTreeNode[]` (flat array)
+- `GET /api/v1/org-tree/search?q=&view=` -- returns `IOrgTreeSearchResult[]` with ancestor paths
+
+Note: the user story doc says `GET /api/v1/org-tree` but the backend vault section above says `GET /api/v1/tenant/org-tree`. The frontend uses the environment `apiBaseUrl` prefix (`/api/v1`) + `/org-tree`. If the backend uses `/api/v1/tenant/org-tree` instead, update `OrgTreeService.baseUrl` to include `/tenant`.
+
+#### Search: client-side first, server fallback deferred
+
+The search endpoint (`/org-tree/search`) is defined as an assumption but the component currently performs client-side search across all loaded nodes. If the backend implements the search endpoint, the service method is ready to use. Server-side search becomes important only when the tree is large enough that not all nodes are loaded.
+
+#### PNG export approach (no new dependency)
+
+Export uses SVG foreignObject + canvas drawImage. This works for the component's own rendered HTML but may not capture all CSS perfectly (e.g., Tailwind utility classes not inlined). A more robust approach would use html2canvas or dom-to-image, but both are additional dependencies. The current approach is zero-dependency and handles the common case. If fidelity is insufficient, add `html2canvas` (free/MIT, ~40 kB gzipped).
+
+#### PDF export deferred
+
+The story asks for PNG or PDF (FR-7). PNG is implemented. PDF would require a library like `jspdf` + `html2canvas` (~100 kB combined). Deferred to avoid bundle size impact for a secondary feature.
+
+#### Reporting Structure view: graceful empty state
+
+The reporting view may return an empty array if `Employee.ReportsTo` FK is not modeled yet (US-CHR-011). The component shows a specific empty-state message: "No reporting structure available yet. Manager assignments may not be configured. Try the Department Hierarchy view." No error toast is shown for this case.
+
+#### Zoom/pan implementation: CSS transform, no third-party lib
+
+Pan and zoom are implemented via CSS `transform: scale() translate()` on the tree viewport div. Desktop only (hidden on mobile). Mouse drag for pan, scroll wheel for zoom. This avoids adding d3-zoom or a similar dependency. The zoom range is 30%-200%.
+
+#### Mobile responsive: accordion/vertical list
+
+On screens < 768px (`md:` breakpoint), the tree switches to a collapsible vertical accordion with left border indent lines per level, matching the Notion-inspired design language. No horizontal scrolling or canvas zoom on mobile.
+
+#### Route guard includes Manager role
+
+The `/org-tree` route uses `roleGuard(['Tenant Admin', 'HR Officer', 'Manager'])` because all three personas need to view the org chart per the user story.
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."
