@@ -39,7 +39,7 @@
 - [x] US-AUTH-010 — Account lockout after failed attempts *(PR #8)*
 
 ## 2. Core HR (12 stories)
-- [~] US-CHR-001 — Add new employee with personal information
+- [x] US-CHR-001 — Add new employee with personal information *(PR #11)*
 - [ ] US-CHR-002 — View and edit employee profile
 - [ ] US-CHR-003 — Employee directory with search and filters
 - [x] US-CHR-004 — Create and manage departments *(PR #9; built ahead of CHR-001 per dependency order)*
