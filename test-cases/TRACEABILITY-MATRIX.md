@@ -357,11 +357,13 @@ This document links user stories to their corresponding test cases across all mo
 
 | User Story ID | User Story Title | Priority | Test Cases | TC Count | Coverage |
 |---------------|-----------------|----------|------------|----------|----------|
-| US-CHR-004 | Create and Manage Departments | Must Have | TC-CHR-001, TC-CHR-002, TC-CHR-003, TC-CHR-004, TC-CHR-005, TC-CHR-006, TC-CHR-007, TC-CHR-008, TC-CHR-009, TC-CHR-010, TC-CHR-011, TC-CHR-012, TC-CHR-013, TC-CHR-014, TC-CHR-015, TC-CHR-016, TC-CHR-017, TC-CHR-018, TC-CHR-019, TC-CHR-020, TC-CHR-021, TC-CHR-022, TC-CHR-023, TC-CHR-024, TC-CHR-025, TC-CHR-026, TC-CHR-027, TC-CHR-028, TC-CHR-029, TC-CHR-030, TC-CHR-031, TC-CHR-032, TC-CHR-033, TC-CHR-034 | 34 | 5/5 AC covered |
-| US-CHR-005 | Create and Manage Job Titles and Positions | Must Have | TC-CHR-035, TC-CHR-036, TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-040, TC-CHR-041, TC-CHR-042, TC-CHR-043, TC-CHR-044, TC-CHR-045, TC-CHR-046, TC-CHR-047, TC-CHR-048, TC-CHR-049, TC-CHR-050, TC-CHR-051, TC-CHR-052, TC-CHR-053, TC-CHR-054, TC-CHR-055, TC-CHR-056, TC-CHR-057, TC-CHR-058, TC-CHR-059, TC-CHR-060, TC-CHR-061, TC-CHR-062, TC-CHR-063 | 29 | 5/5 AC covered (3 TCs blocked on US-CHR-001) |
+| US-CHR-001 | Add New Employee with Personal Information | Must Have | TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-067, TC-CHR-068, TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-075, TC-CHR-076, TC-CHR-077, TC-CHR-078, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-095, TC-CHR-096, TC-CHR-097, TC-CHR-098, TC-CHR-099, TC-CHR-100, TC-CHR-101, TC-CHR-102, TC-CHR-103 | 40 | 6/6 AC covered |
+| US-CHR-004 | Create and Manage Departments | Must Have | TC-CHR-001 through TC-CHR-034 | 34 | 5/5 AC covered (all unblocked) |
+| US-CHR-005 | Create and Manage Job Titles and Positions | Must Have | TC-CHR-035 through TC-CHR-063 | 29 | 5/5 AC covered (all unblocked) |
+| Cross-cutting (CHR-001) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | 4 | -- |
 | Cross-cutting (CHR-004) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-001, TC-CHR-ISO-002, TC-CHR-ISO-003, TC-CHR-ISO-004 | 4 | -- |
 | Cross-cutting (CHR-005) | Multi-tenant isolation (mandatory) | Critical | TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008 | 4 | -- |
-| **TOTAL** | | | **71 test cases** | **71** | **10/10 AC** |
+| **TOTAL** | | | **115 test cases** | **115** | **16/16 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -386,7 +388,7 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-017 | Create department with empty required fields fails validation | Functional | High | US-CHR-004 | AC-1, AC-2, FR-1 |
 | TC-CHR-018 | Department name boundary values (max length, whitespace, special chars) | Functional | High | US-CHR-004 | AC-2, FR-1, FR-2 |
 | TC-CHR-019 | Input sanitization -- XSS and SQL injection in department name | Security | High | US-CHR-004 | FR-1, NFR-2 |
-| TC-CHR-020 | Assign department manager (BLOCKED -- depends on US-CHR-001) | Functional | High | US-CHR-004 | AC-1, FR-4, BR-2 |
+| TC-CHR-020 | Assign department manager (UNBLOCKED by US-CHR-001) | Functional | High | US-CHR-004 | AC-1, FR-4, BR-2 |
 | TC-CHR-021 | Parent department must belong to the same tenant | Security | High | US-CHR-004 | AC-4, FR-3, BR-3, NFR-2 |
 | TC-CHR-022 | Duplicate name check is case-insensitive within tenant | Functional | High | US-CHR-004 | AC-3, FR-2, BR-1 |
 | TC-CHR-023 | Edit department name to an existing name is rejected | Functional | High | US-CHR-004 | AC-3, FR-1, FR-2, BR-1 |
@@ -409,13 +411,13 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-040 | Deactivate job title with no assigned employees (success) | Functional | High | US-CHR-005 | AC-5, FR-1, FR-5, FR-7, NFR-4, BR-3 |
 | TC-CHR-041 | Reject duplicate job title name within the same tenant | Functional | Critical | US-CHR-005 | AC-3, FR-2, BR-1 |
 | TC-CHR-042 | Same job title name allowed in different tenants | Security | Critical | US-CHR-005 | AC-3, FR-2, NFR-2, BR-1 |
-| TC-CHR-043 | Deactivate job title blocked when assigned to active employees (BLOCKED on US-CHR-001) | Functional | Critical | US-CHR-005 | AC-5, FR-7, BR-3 |
+| TC-CHR-043 | Deactivate job title blocked when assigned to active employees (UNBLOCKED by US-CHR-001) | Functional | Critical | US-CHR-005 | AC-5, FR-7, BR-3 |
 | TC-CHR-044 | Create job title with empty required fields fails validation | Functional | High | US-CHR-005 | AC-2, FR-1, FR-2 |
 | TC-CHR-045 | Edit job title name to an existing name is rejected | Functional | High | US-CHR-005 | AC-3, FR-1, FR-2, BR-1 |
 | TC-CHR-046 | Title name boundary values (max 150 chars, whitespace, special chars) | Functional | High | US-CHR-005 | AC-2, FR-1, FR-2 |
 | TC-CHR-047 | Duplicate title name check is case-insensitive within tenant | Functional | High | US-CHR-005 | AC-3, FR-2, BR-1 |
 | TC-CHR-048 | Deactivated job titles hidden from assignment dropdowns, visible in admin | Functional | High | US-CHR-005 | FR-5, BR-3 |
-| TC-CHR-049 | Employee count badge displays correct count per job title (BLOCKED on US-CHR-001) | Functional | High | US-CHR-005 | AC-1, FR-4, BR-3 |
+| TC-CHR-049 | Employee count badge displays correct count per job title (UNBLOCKED by US-CHR-001) | Functional | High | US-CHR-005 | AC-1, FR-4, BR-3 |
 | TC-CHR-050 | Employment types reference entity supports defined values | Functional | High | US-CHR-005 | FR-6 |
 | TC-CHR-051 | Unauthorized role (Employee) cannot manage job titles -- 403 | Security | Critical | US-CHR-005 | FR-1 |
 | TC-CHR-052 | HR Officer role can manage job titles | Security | High | US-CHR-005 | FR-1 |
@@ -429,7 +431,51 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-060 | Job titles management UI accessibility (WCAG 2.1 AA) | Accessibility | Medium | US-CHR-005 | NFR-3 |
 | TC-CHR-061 | Job titles management UI responsive design (360px to 1920px) | Functional | Medium | US-CHR-005 | NFR-3 |
 | TC-CHR-062 | Cross-browser compatibility (Chrome, Edge, Firefox, Safari) | Functional | Medium | US-CHR-005 | NFR-3 |
-| TC-CHR-063 | Grade linked to job title displayed on employee profile (BLOCKED on US-CHR-001) | Functional | High | US-CHR-005 | AC-4, FR-3, BR-5 |
+| TC-CHR-063 | Grade linked to job title displayed on employee profile (UNBLOCKED by US-CHR-001) | Functional | High | US-CHR-005 | AC-4, FR-3, BR-5 |
+| TC-CHR-064 | Multi-step wizard renders all sections (AC-1) | Functional | Critical | US-CHR-001 | AC-1, FR-1 |
+| TC-CHR-065 | Create employee with all mandatory fields -- happy path (AC-2) | Functional | Critical | US-CHR-001 | AC-2, FR-2, FR-4, FR-7, BR-1, BR-3 |
+| TC-CHR-066 | Employee_no auto-generation pattern and per-tenant sequence isolation | Functional | Critical | US-CHR-001 | AC-2, FR-2, BR-1 |
+| TC-CHR-067 | Duplicate email in same tenant rejected (AC-3) | Functional | Critical | US-CHR-001 | AC-3, FR-3, BR-2 |
+| TC-CHR-068 | Same email allowed in different tenant (AC-3, BR-2) | Security | Critical | US-CHR-001 | AC-3, FR-3, BR-2, NFR-2 |
+| TC-CHR-069 | Profile photo upload with EXIF stripping and signed URL (AC-4) | Functional | Critical | US-CHR-001 | AC-4, FR-6 |
+| TC-CHR-070 | Profile photo oversized (>5 MB) rejected | Functional | High | US-CHR-001 | AC-4, FR-6 |
+| TC-CHR-071 | Profile photo disallowed MIME type (.exe) rejected | Security | High | US-CHR-001 | AC-4, FR-6 |
+| TC-CHR-072 | Malware scan seam invoked on photo upload (NFR-3) | Security | High | US-CHR-001 | AC-4, FR-6, NFR-3 |
+| TC-CHR-073 | Profile photo tenant-isolated storage path | Security | Critical | US-CHR-001 | AC-4, FR-6, NFR-2 |
+| TC-CHR-074 | Plan employee limit reached -- creation blocked (AC-5) | Functional | Critical | US-CHR-001 | AC-5, FR-5 |
+| TC-CHR-075 | Custom fields persisted to JSONB and shown on profile (AC-6) | Functional | Critical | US-CHR-001 | AC-6, FR-9 |
+| TC-CHR-076 | Employee_no configurable pattern per tenant | Functional | High | US-CHR-001 | AC-2, FR-2, BR-1 |
+| TC-CHR-077 | Date of joining not more than 90 days in the future (BR-4) | Functional | High | US-CHR-001 | BR-4 |
+| TC-CHR-078 | Date of birth age validation -- must be >= 16 years old | Functional | High | US-CHR-001 | Data Requirements |
+| TC-CHR-079 | Default status "active" and explicit "probation" (BR-3) | Functional | High | US-CHR-001 | BR-3 |
+| TC-CHR-080 | Soft delete -- is_deleted flag, never hard deleted (BR-6) | Functional | High | US-CHR-001 | BR-6 |
+| TC-CHR-081 | Audit columns auto-populated on employee creation (FR-7) | Functional | High | US-CHR-001 | FR-7 |
+| TC-CHR-082 | Optional user_id linking for self-service portal (FR-8) | Functional | Medium | US-CHR-001 | FR-8 |
+| TC-CHR-083 | Tenant_id set from session context, not from user input (FR-4) | Security | Critical | US-CHR-001 | FR-4, NFR-2 |
+| TC-CHR-084 | Dynamic custom fields rendering per tenant configuration (FR-9) | Functional | High | US-CHR-001 | AC-6, FR-9 |
+| TC-CHR-085 | Create employee with missing mandatory fields fails validation | Functional | High | US-CHR-001 | AC-2 |
+| TC-CHR-086 | Invalid email format rejected | Functional | High | US-CHR-001 | FR-3 |
+| TC-CHR-087 | Department_id and job_title_id must exist in tenant | Functional | High | US-CHR-001 | NFR-2 |
+| TC-CHR-088 | First name and last name boundary values (min 1, max 100) | Functional | High | US-CHR-001 | Data Requirements |
+| TC-CHR-089 | Email field boundary value (max 150 chars) | Functional | Medium | US-CHR-001 | Data Requirements |
+| TC-CHR-090 | Invalid employment_type value rejected | Functional | High | US-CHR-001 | Data Requirements |
+| TC-CHR-091 | Unauthenticated request to employee API returns 401 | Security | Critical | US-CHR-001 | Auth dependency |
+| TC-CHR-092 | Unauthorized role cannot create employees -- 403 | Security | Critical | US-CHR-001 | Auth dependency |
+| TC-CHR-093 | Input sanitization -- XSS and SQL injection in employee fields | Security | High | US-CHR-001 | NFR-2 |
+| TC-CHR-094 | CSRF protection on employee creation endpoint | Security | High | US-CHR-001 | Security |
+| TC-CHR-095 | Employee creation API response time within SLA (NFR-1) | Performance | High | US-CHR-001 | NFR-1 |
+| TC-CHR-096 | Employee form page load within 2.5 seconds | Performance | High | US-CHR-001 | NFR-4 |
+| TC-CHR-097 | WCAG 2.1 AA accessibility -- keyboard navigation and screen reader | Accessibility | Medium | US-CHR-001 | NFR-5 |
+| TC-CHR-098 | Responsive design -- form at 360px, 768px, 1024px, 1920px | Functional | Medium | US-CHR-001 | NFR-4 |
+| TC-CHR-099 | Cross-browser compatibility (Chrome, Edge, Firefox, Safari) | Functional | Medium | US-CHR-001 | NFR-4, NFR-5 |
+| TC-CHR-100 | PII fields audit trail on access (NFR-6) | Security | High | US-CHR-001 | NFR-6 |
+| TC-CHR-101 | Wizard Save as Draft and Save & Continue functionality | Functional | High | US-CHR-001 | UI/UX Section 8 |
+| TC-CHR-102 | Emergency contact recommended but not mandatory (BR-5) | Functional | Medium | US-CHR-001 | BR-5 |
+| TC-CHR-103 | Gender field accepts defined values including Prefer Not To Say | Functional | Medium | US-CHR-001 | Data Requirements |
+| TC-CHR-ISO-009 | Tenant A cannot see Tenant B's employees | Security | Critical | US-CHR-001 | NFR-2, BR-1, BR-2 |
+| TC-CHR-ISO-010 | API rejects employee requests without valid tenant context | Security | Critical | US-CHR-001 | NFR-2, FR-4 |
+| TC-CHR-ISO-011 | RLS blocks direct DB queries across tenants for employees | Security | Critical | US-CHR-001 | NFR-2 |
+| TC-CHR-ISO-012 | Cache keys for employees are tenant-scoped | Security | Critical | US-CHR-001 | NFR-2 |
 | TC-CHR-ISO-001 | Tenant A cannot see Tenant B's departments | Security | Critical | US-CHR-004 | NFR-2, BR-1 |
 | TC-CHR-ISO-002 | API rejects department requests without valid tenant context | Security | Critical | US-CHR-004 | NFR-2 |
 | TC-CHR-ISO-003 | RLS blocks direct DB queries across tenants for departments | Security | Critical | US-CHR-004 | NFR-2, BR-1, BR-3 |
@@ -438,6 +484,38 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-ISO-006 | API rejects job title requests without valid tenant context | Security | Critical | US-CHR-005 | NFR-2 |
 | TC-CHR-ISO-007 | RLS blocks direct DB queries across tenants for job titles | Security | Critical | US-CHR-005 | NFR-2, BR-1, BR-4 |
 | TC-CHR-ISO-008 | Cache keys for job titles are tenant-scoped | Security | Critical | US-CHR-005 | NFR-2 |
+
+### US-CHR-001 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Multi-step wizard with all sections | AC | TC-CHR-064, TC-CHR-097, TC-CHR-098, TC-CHR-101 | Direct |
+| AC-2: Create with mandatory fields, status active, auto employee_no, tenant_id from session | AC | TC-CHR-065, TC-CHR-066, TC-CHR-076, TC-CHR-079, TC-CHR-081, TC-CHR-083, TC-CHR-085 | Direct |
+| AC-3: Duplicate email same tenant rejected; same email allowed cross-tenant | AC | TC-CHR-067, TC-CHR-068 | Direct |
+| AC-4: Profile photo upload, tenant-isolated storage, EXIF stripped, signed URL | AC | TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073 | Direct |
+| AC-5: Plan employee limit reached, creation blocked | AC | TC-CHR-074 | Direct |
+| AC-6: Custom fields persisted to JSONB and shown on profile | AC | TC-CHR-075, TC-CHR-084 | Direct |
+| FR-1: Multi-step form with all sections | FR | TC-CHR-064, TC-CHR-097 | Direct |
+| FR-2: Auto-generate unique employee_no with configurable pattern | FR | TC-CHR-065, TC-CHR-066, TC-CHR-076 | Direct |
+| FR-3: Email uniqueness within tenant scope | FR | TC-CHR-067, TC-CHR-068, TC-CHR-086 | Direct |
+| FR-4: tenant_id from session context, never from user input | FR | TC-CHR-065, TC-CHR-083, TC-CHR-ISO-010 | Direct |
+| FR-5: Plan-level employee count limits enforced | FR | TC-CHR-074 | Direct |
+| FR-6: Profile photo upload with MIME validation, max 5 MB, EXIF stripping | FR | TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073 | Direct |
+| FR-7: Audit columns auto-populated | FR | TC-CHR-081 | Direct |
+| FR-8: Optional user_id FK for self-service portal | FR | TC-CHR-082 | Direct |
+| FR-9: Tenant-configured custom fields rendered dynamically | FR | TC-CHR-075, TC-CHR-084 | Direct |
+| NFR-1: Employee creation API response <= 800 ms (P95) | NFR | TC-CHR-095 | Direct |
+| NFR-2: All employee data tenant-isolated via RLS and EF global query filters | NFR | TC-CHR-068, TC-CHR-073, TC-CHR-083, TC-CHR-087, TC-CHR-093, TC-CHR-ISO-009, TC-CHR-ISO-010, TC-CHR-ISO-011, TC-CHR-ISO-012 | Direct |
+| NFR-3: Profile photo scanned for malware (ClamAV) | NFR | TC-CHR-072 | Direct |
+| NFR-4: Form fully responsive from 360px to 4K | NFR | TC-CHR-096, TC-CHR-098, TC-CHR-099 | Direct |
+| NFR-5: WCAG 2.1 AA accessibility standards | NFR | TC-CHR-097 | Direct |
+| NFR-6: PII fields logged in audit trail when accessed | NFR | TC-CHR-100 | Direct |
+| BR-1: employee_no unique within tenant, may repeat cross-tenant | BR | TC-CHR-065, TC-CHR-066, TC-CHR-076 | Direct |
+| BR-2: email unique within tenant, may repeat cross-tenant | BR | TC-CHR-067, TC-CHR-068 | Direct |
+| BR-3: Default status "active" unless explicitly "probation" | BR | TC-CHR-079 | Direct |
+| BR-4: date_of_joining not > 90 days in the future | BR | TC-CHR-077 | Direct |
+| BR-5: Emergency contact recommended but not mandatory | BR | TC-CHR-102 | Direct |
+| BR-6: Soft delete (is_deleted = true); never hard-deleted via UI | BR | TC-CHR-080 | Direct |
 
 ### US-CHR-004 Detailed Requirements Traceability
 
@@ -451,7 +529,7 @@ This document links user stories to their corresponding test cases across all mo
 | FR-1: CRUD scoped to current tenant | FR | TC-CHR-001, TC-CHR-008, TC-CHR-014, TC-CHR-015, TC-CHR-016, TC-CHR-017, TC-CHR-018, TC-CHR-023 | Direct |
 | FR-2: Unique department names within tenant | FR | TC-CHR-003, TC-CHR-004, TC-CHR-018, TC-CHR-022, TC-CHR-023 | Direct |
 | FR-3: Hierarchical parent-child via parent_department_id | FR | TC-CHR-002, TC-CHR-005, TC-CHR-006, TC-CHR-007, TC-CHR-009, TC-CHR-021, TC-CHR-024 | Direct |
-| FR-4: Assign department manager (FK to employee) | FR | TC-CHR-020 (BLOCKED) | Blocked |
+| FR-4: Assign department manager (FK to employee) | FR | TC-CHR-020 (UNBLOCKED by US-CHR-001) | Direct |
 | FR-5: Prevent circular parent-child references | FR | TC-CHR-006, TC-CHR-007 | Direct |
 | FR-6: Prevent deactivation with active employees | FR | TC-CHR-010, TC-CHR-011, TC-CHR-012 | Direct |
 | FR-7: Soft delete; hidden from dropdowns, visible in admin | FR | TC-CHR-011, TC-CHR-013, TC-CHR-033 | Direct |
@@ -462,7 +540,7 @@ This document links user stories to their corresponding test cases across all mo
 | NFR-4: Support 500 departments per tenant | NFR | TC-CHR-028 | Direct |
 | NFR-5: Audit log for create, update, deactivate | NFR | TC-CHR-001, TC-CHR-008, TC-CHR-011, TC-CHR-031 | Direct |
 | BR-1: Names unique per tenant, may duplicate cross-tenant | BR | TC-CHR-003, TC-CHR-004, TC-CHR-022, TC-CHR-023, TC-CHR-ISO-001 | Direct |
-| BR-2: Department has at most one manager | BR | TC-CHR-020 (BLOCKED) | Blocked |
+| BR-2: Department has at most one manager | BR | TC-CHR-020 (UNBLOCKED by US-CHR-001) | Direct |
 | BR-3: Parent must belong to same tenant | BR | TC-CHR-002, TC-CHR-009, TC-CHR-021, TC-CHR-ISO-003 | Direct |
 | BR-4: Root departments form top level of org tree | BR | TC-CHR-001, TC-CHR-005, TC-CHR-024 | Direct |
 | BR-5: Deactivated departments cannot be assigned to new employees | BR | TC-CHR-010, TC-CHR-011, TC-CHR-013, TC-CHR-033 | Direct |
@@ -475,63 +553,67 @@ This document links user stories to their corresponding test cases across all mo
 | AC-1: Job titles list page with columns (Title Name, Grade, Employee Count, Status, actions) | AC | TC-CHR-035, TC-CHR-036, TC-CHR-039, TC-CHR-049 | Direct |
 | AC-2: Create job title with tenant_id from session, unique title_name | AC | TC-CHR-036, TC-CHR-038, TC-CHR-044, TC-CHR-046 | Direct |
 | AC-3: Duplicate title name rejected within tenant; same name allowed cross-tenant | AC | TC-CHR-041, TC-CHR-042, TC-CHR-045, TC-CHR-047 | Direct |
-| AC-4: Link job title to salary grade; grade displayed on employee profile | AC | TC-CHR-037, TC-CHR-063 (BLOCKED on US-CHR-001) | Direct (grade link); Blocked (employee profile display) |
-| AC-5: Deactivate blocked when assigned to active employees; warning message | AC | TC-CHR-040 (no employees), TC-CHR-043 (BLOCKED on US-CHR-001) | Direct (zero-employee path); Blocked (employee-assigned path) |
+| AC-4: Link job title to salary grade; grade displayed on employee profile | AC | TC-CHR-037, TC-CHR-063 (UNBLOCKED by US-CHR-001) | Direct |
+| AC-5: Deactivate blocked when assigned to active employees; warning message | AC | TC-CHR-040 (no employees), TC-CHR-043 (UNBLOCKED by US-CHR-001) | Direct |
 | FR-1: CRUD operations on job titles scoped to current tenant | FR | TC-CHR-035, TC-CHR-036, TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-040, TC-CHR-044, TC-CHR-045, TC-CHR-051, TC-CHR-052, TC-CHR-053, TC-CHR-054 | Direct |
 | FR-2: Unique title_name within tenant | FR | TC-CHR-036, TC-CHR-041, TC-CHR-042, TC-CHR-044, TC-CHR-045, TC-CHR-046, TC-CHR-047 | Direct |
-| FR-3: Optionally link job title to salary grade (grade_id FK, nullable) | FR | TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-063 (BLOCKED) | Direct |
-| FR-4: Display count of employees assigned to each job title | FR | TC-CHR-049 (BLOCKED on US-CHR-001) | Blocked |
+| FR-3: Optionally link job title to salary grade (grade_id FK, nullable) | FR | TC-CHR-037, TC-CHR-038, TC-CHR-039, TC-CHR-063 (UNBLOCKED) | Direct |
+| FR-4: Display count of employees assigned to each job title | FR | TC-CHR-049 (UNBLOCKED by US-CHR-001) | Direct |
 | FR-5: Soft delete; deactivated hidden from assignment dropdowns, visible in admin | FR | TC-CHR-040, TC-CHR-048 | Direct |
 | FR-6: Employment types (Full-Time, Part-Time, Contract, Intern) as reference entity | FR | TC-CHR-050 | Direct |
-| FR-7: Prevent deactivation of job titles with active employee assignments | FR | TC-CHR-043 (BLOCKED on US-CHR-001) | Blocked |
+| FR-7: Prevent deactivation of job titles with active employee assignments | FR | TC-CHR-043 (UNBLOCKED by US-CHR-001) | Direct |
 | NFR-1: Job title CRUD API response time <= 400ms read, <= 800ms write (P95) | NFR | TC-CHR-057, TC-CHR-058, TC-CHR-059 | Direct |
 | NFR-2: All job title data tenant-isolated via RLS and EF Core global query filters | NFR | TC-CHR-042, TC-CHR-054, TC-CHR-055, TC-CHR-ISO-005, TC-CHR-ISO-006, TC-CHR-ISO-007, TC-CHR-ISO-008 | Direct |
 | NFR-3: Management page fully responsive (360px to 4K) | NFR | TC-CHR-060, TC-CHR-061, TC-CHR-062 | Direct |
 | NFR-4: Audit log entries for all create, update, deactivate operations | NFR | TC-CHR-036, TC-CHR-039, TC-CHR-040, TC-CHR-056 | Direct |
 | BR-1: Job title names unique within tenant, may duplicate cross-tenant | BR | TC-CHR-041, TC-CHR-042, TC-CHR-045, TC-CHR-047, TC-CHR-ISO-005 | Direct |
 | BR-2: A job title can exist without a linked grade | BR | TC-CHR-038, TC-CHR-039 | Direct |
-| BR-3: Deactivated titles cannot be assigned to new employees but remain on existing records | BR | TC-CHR-040, TC-CHR-043 (BLOCKED), TC-CHR-048 | Direct (dropdown hiding); Blocked (existing-record retention) |
+| BR-3: Deactivated titles cannot be assigned to new employees but remain on existing records | BR | TC-CHR-040, TC-CHR-043 (UNBLOCKED), TC-CHR-048 | Direct |
 | BR-4: Job titles are tenant-specific master data; no system-wide predefined titles | BR | TC-CHR-036, TC-CHR-042, TC-CHR-055, TC-CHR-ISO-005, TC-CHR-ISO-007 | Direct |
-| BR-5: Grades, if used, are also tenant-specific entities | BR | TC-CHR-037, TC-CHR-063 | Direct |
+| BR-5: Grades, if used, are also tenant-specific entities | BR | TC-CHR-037, TC-CHR-063 (UNBLOCKED) | Direct |
+
+### Coverage Summary (Core HR -- US-CHR-001)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 6/6 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 9/9 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 6/6 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 11 (4 dedicated ISO + 7 embedded) | >= 3 | PASS |
+| Security Test Cases | 15/44 (34.1%) | >= 30% | PASS |
+| Performance Test Cases | 2/44 | >= 1 | PASS |
+| Accessibility Test Cases | 1/44 | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
 
 ### Coverage Summary (Core HR -- US-CHR-004)
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
 | Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
-| Functional Requirements Coverage | 7/8 FR directly covered (FR-4 blocked on US-CHR-001) | >= 85% | PASS (87.5%) |
+| Functional Requirements Coverage | 8/8 (100%) -- FR-4 now unblocked | >= 85% | PASS |
 | Non-Functional Requirements Coverage | 5/5 (100%) | >= 85% | PASS |
-| Business Rules Coverage | 5/6 BR directly covered (BR-2 blocked on US-CHR-001) | >= 85% | PASS (83%, blocked items excluded = 100%) |
-| Multi-Tenant Isolation Tests | 8 (4 dedicated + 4 embedded) | >= 3 | PASS |
-| Security Test Cases | 12/38 (31.6%) | >= 30% | PASS |
-| Performance Test Cases | 3/38 | >= 1 | PASS |
-| Accessibility Test Cases | 2/38 | >= 1 | PASS |
-| Blocked Test Cases | 1 (TC-CHR-020 on US-CHR-001) | -- | FLAGGED |
+| Business Rules Coverage | 6/6 (100%) -- BR-2 now unblocked | >= 85% | PASS |
+| Blocked Test Cases | 0 (TC-CHR-020 unblocked by US-CHR-001) | -- | CLEAR |
 
 ### Coverage Summary (Core HR -- US-CHR-005)
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
 | Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
-| Functional Requirements Coverage | 5/7 FR directly covered (FR-4 and FR-7 blocked on US-CHR-001) | >= 85% | PASS (71.4%; excluding blocked = 100%) |
+| Functional Requirements Coverage | 7/7 (100%) -- FR-4 and FR-7 now unblocked | >= 85% | PASS |
 | Non-Functional Requirements Coverage | 4/4 (100%) | >= 85% | PASS |
 | Business Rules Coverage | 5/5 (100%) | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 10 (4 dedicated + 6 embedded) | >= 3 | PASS |
-| Security Test Cases | 10/33 (30.3%) | >= 30% | PASS |
-| Performance Test Cases | 3/33 | >= 1 | PASS |
-| Accessibility Test Cases | 2/33 | >= 1 | PASS |
-| Blocked Test Cases | 3 (TC-CHR-043, TC-CHR-049, TC-CHR-063 on US-CHR-001) | -- | FLAGGED |
-
----
+| Blocked Test Cases | 0 (TC-CHR-043, TC-CHR-049, TC-CHR-063 unblocked by US-CHR-001) | -- | CLEAR |
 
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
-| Core HR (US-CHR-004, US-CHR-005) | 2 | 71 | 10/10 (100%) | 18 | PASS (4 TCs blocked) |
-| **TOTAL** | **12** | **187** | **71/71 (100%)** | **41** | |
+| Core HR (US-CHR-001, US-CHR-004, US-CHR-005) | 3 | 115 | 16/16 (100%) | 25 | PASS (0 TCs blocked) |
+| **TOTAL** | **13** | **231** | **77/77 (100%)** | **48** | |
 
 ---
 
-*Note: This traceability matrix will be extended as test cases for additional Core HR user stories (US-CHR-001 through US-CHR-003, US-CHR-006+) and other modules (Leave Management, Attendance, Payroll, etc.) are authored. Blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) should be unblocked once US-CHR-001 is delivered.*
+*Note: This traceability matrix covers all test cases for US-CHR-001, US-CHR-004, and US-CHR-005. All previously blocked test cases (TC-CHR-020, TC-CHR-043, TC-CHR-049, TC-CHR-063) have been unblocked by the delivery of US-CHR-001. The matrix will be extended as additional Core HR user stories (US-CHR-002, US-CHR-003, US-CHR-006+) and other modules are authored.*

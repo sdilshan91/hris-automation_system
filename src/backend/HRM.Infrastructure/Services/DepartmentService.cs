@@ -187,12 +187,14 @@ public sealed class DepartmentService : IDepartmentService
                 $"Cannot deactivate this department. It has {activeChildCount} active child department(s). Please reassign or deactivate them first.",
                 400);
 
-        // AC-5 / FR-6: Cannot deactivate if there are active employees assigned.
-        // TODO(US-CHR-001): When Employee entity exists, add:
-        //   var activeEmployeeCount = await _dbContext.Employees
-        //       .CountAsync(e => e.DepartmentId == departmentId && e.IsActive, ct);
-        //   if (activeEmployeeCount > 0)
-        //       return Result.Failure($"This department has {activeEmployeeCount} active employees...");
+        // AC-5 / FR-6: Cannot deactivate if there are active employees assigned (US-CHR-001 wiring).
+        var activeEmployeeCount = await _dbContext.Employees
+            .CountAsync(e => e.DepartmentId == departmentId && e.IsActive, cancellationToken);
+
+        if (activeEmployeeCount > 0)
+            return Result.Failure(
+                $"Cannot deactivate this department. It has {activeEmployeeCount} active employee(s) assigned. Please reassign them before deactivating.",
+                400);
 
         department.IsActive = false;
 

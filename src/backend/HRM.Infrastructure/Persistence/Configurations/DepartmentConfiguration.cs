@@ -38,10 +38,11 @@ public sealed class DepartmentConfiguration : IEntityTypeConfiguration<Departmen
             .HasDefaultValue(false)
             .IsRequired();
 
-        // ManagerId is a nullable UUID column WITHOUT a hard FK constraint.
-        // The Employee entity does not exist yet (US-CHR-001 builds it).
-        // TODO(US-CHR-001): wire ManagerId FK to Employee entity once it exists.
-        builder.Property(d => d.ManagerId);
+        // US-CHR-001: ManagerId FK to Employee (nullable, ON DELETE SET NULL).
+        builder.HasOne(d => d.Manager)
+            .WithMany()
+            .HasForeignKey(d => d.ManagerId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Unique constraint: department name per tenant (FR-2, BR-1)
         builder.HasIndex(d => new { d.TenantId, d.Name })
