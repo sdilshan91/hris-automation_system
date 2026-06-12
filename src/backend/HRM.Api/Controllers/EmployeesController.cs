@@ -236,6 +236,57 @@ public sealed class EmployeesController : ControllerBase
         return File(export.FileBytes, export.ContentType, export.FileName);
     }
 
+    // ── Status Management (US-CHR-009) ──────────────────────────
+
+    /// <summary>
+    /// POST /api/v1/tenant/employees/{id}/status
+    /// Changes an employee's status with state machine validation (US-CHR-009 FR-3).
+    /// Supports Idempotency-Key header (NFR-3) and future-dated changes (BR-4).
+    /// </summary>
+    [HttpPost("{id:guid}/status")]
+    [RequirePermission("Employee.ChangeStatus")]
+    [ProducesResponseType(typeof(ApiResponse<ChangeEmployeeStatusResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ChangeStatus(
+        Guid id,
+        [FromBody] ChangeEmployeeStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault();
+
+        var command = new ChangeEmployeeStatusCommand(
+            id, request.NewStatus, request.Reason, request.EffectiveDate, idempotencyKey);
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<ChangeEmployeeStatusResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/employees/{id}/status/transitions
+    /// Returns valid status transitions for the employee's current status (US-CHR-009 FR-2).
+    /// </summary>
+    [HttpGet("{id:guid}/status/transitions")]
+    [RequirePermission("Employee.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<ValidTransitionsResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetValidTransitions(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GetValidStatusTransitionsQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<ValidTransitionsResult>.Ok(result.Value!));
+    }
+
     // ── Document Management (US-CHR-008) ──────────────────────────
 
     /// <summary>

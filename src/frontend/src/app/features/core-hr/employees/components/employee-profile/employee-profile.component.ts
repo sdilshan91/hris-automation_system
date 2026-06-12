@@ -31,6 +31,8 @@ import {
   isSectionEditable,
   GENDER_OPTIONS,
   EmployeeGender,
+  IStatusTransition,
+  IChangeStatusRequest,
 } from '../../models/employee.models';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
 
@@ -62,6 +64,24 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
       ]),
       transition(':leave', [
         animate('200ms ease-in', style({ opacity: 0, height: '0', overflow: 'hidden' })),
+      ]),
+    ]),
+    trigger('modalOverlay', [
+      transition(':enter', [
+        style({ opacity: 0 }),
+        animate('200ms ease-out', style({ opacity: 1 })),
+      ]),
+      transition(':leave', [
+        animate('150ms ease-in', style({ opacity: 0 })),
+      ]),
+    ]),
+    trigger('modalSlide', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'translateY(16px) scale(0.97)' }),
+        animate('250ms ease-out', style({ opacity: 1, transform: 'translateY(0) scale(1)' })),
+      ]),
+      transition(':leave', [
+        animate('150ms ease-in', style({ opacity: 0, transform: 'translateY(8px) scale(0.98)' })),
       ]),
     ]),
   ],
@@ -200,14 +220,29 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
                     {{ profile()!.departmentName }}
                   </span>
                 }
-                <!-- Status badge -->
+                <!-- Status badge (US-CHR-009 FR-7) -->
                 <span
-                  class="badge"
+                  class="badge status-badge-animated"
                   [ngClass]="getStatusBadgeClass(profile()!.status)"
                   aria-label="Employment status"
                 >
                   {{ profile()!.status | titlecase }}
                 </span>
+                <!-- Change Status button (BR-2: HR Officer / Tenant Admin only) -->
+                @if (canChangeStatus()) {
+                  <button
+                    type="button"
+                    class="change-status-btn"
+                    (click)="openStatusChangeModal()"
+                    aria-label="Change employee status"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
+                      <path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.379 2.624l-1.436 1.436a.75.75 0 0 1-1.06-1.06l1.436-1.437A5.502 5.502 0 0 1 7.5 4.5a.75.75 0 0 1 0 1.5 4 4 0 1 0 3.394 6.107.75.75 0 1 1 1.272.793A5.48 5.48 0 0 1 10 14.5a5.48 5.48 0 0 1-2.688-.697l-1.436 1.436a.75.75 0 0 1-1.06-1.06l1.436-1.437Z" clip-rule="evenodd"/>
+                      <path fill-rule="evenodd" d="M13.78 1.72a.75.75 0 0 1 0 1.06L6.56 10H9.25a.75.75 0 0 1 0 1.5H5a.75.75 0 0 1-.75-.75V6.5a.75.75 0 0 1 1.5 0v2.69l7.22-7.22a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd"/>
+                    </svg>
+                    Change Status
+                  </button>
+                }
               </div>
             </div>
           </div>
@@ -872,18 +907,31 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
                 <div class="timeline">
                   @for (entry of profile()!.employmentHistory; track entry.id) {
                     <div class="timeline-item">
-                      <div class="timeline-dot"></div>
+                      <div class="timeline-dot" [class.timeline-dot-status]="entry.changeType === 'status_change' || entry.changeType === 'status'"></div>
                       <div class="timeline-content">
                         <p class="text-sm font-medium text-neutral-900">
                           {{ formatChangeType(entry.changeType) }}
                         </p>
-                        <p class="text-sm text-neutral-600">
-                          @if (entry.previousValue) {
-                            {{ entry.previousValue }} &rarr; {{ entry.newValue }}
+                        <div class="text-sm text-neutral-600">
+                          @if (entry.changeType === 'status_change' || entry.changeType === 'status') {
+                            @if (entry.previousValue) {
+                              <span class="badge badge-sm" [ngClass]="getStatusBadgeClass(entry.previousValue)">{{ entry.previousValue | titlecase }}</span>
+                              <span class="mx-1">&rarr;</span>
+                              <span class="badge badge-sm" [ngClass]="getStatusBadgeClass(entry.newValue)">{{ entry.newValue | titlecase }}</span>
+                            } @else {
+                              Set to <span class="badge badge-sm" [ngClass]="getStatusBadgeClass(entry.newValue)">{{ entry.newValue | titlecase }}</span>
+                            }
                           } @else {
-                            Set to {{ entry.newValue }}
+                            @if (entry.previousValue) {
+                              {{ entry.previousValue }} &rarr; {{ entry.newValue }}
+                            } @else {
+                              Set to {{ entry.newValue }}
+                            }
                           }
-                        </p>
+                        </div>
+                        @if (entry.reason) {
+                          <p class="text-xs text-neutral-500 mt-0.5 italic">"{{ entry.reason }}"</p>
+                        }
                         <p class="text-xs text-neutral-400 mt-0.5">
                           {{ entry.effectiveDate | date:'mediumDate' }}
                           @if (entry.changedBy) {
@@ -927,6 +975,184 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
               }
             </section>
           }
+        </div>
+      }
+
+      <!-- US-CHR-009: Status Change Modal -->
+      @if (showStatusModal()) {
+        <div
+          class="modal-overlay"
+          @modalOverlay
+          (click)="closeStatusModal()"
+          (keydown.escape)="closeStatusModal()"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="status-modal-title"
+        >
+          <div
+            class="modal-card"
+            @modalSlide
+            (click)="$event.stopPropagation()"
+          >
+            <!-- Step 1: Status change form -->
+            @if (!showConfirmation()) {
+              <div class="modal-header">
+                <h3 id="status-modal-title" class="text-lg font-semibold text-neutral-900">
+                  Change Employee Status
+                </h3>
+                <button
+                  type="button"
+                  class="modal-close-btn"
+                  (click)="closeStatusModal()"
+                  aria-label="Close status change dialog"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+                    <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="modal-body">
+                @if (isLoadingTransitions()) {
+                  <div class="flex items-center justify-center py-8">
+                    <div class="btn-spinner border-brand-300 border-t-brand-600 w-6 h-6"></div>
+                    <span class="ml-3 text-sm text-neutral-500">Loading available transitions...</span>
+                  </div>
+                } @else if (validTransitions().length === 0) {
+                  <div class="text-center py-8">
+                    <p class="text-sm text-neutral-500">No status transitions are available for the current status.</p>
+                    <button type="button" class="btn-secondary mt-4" (click)="closeStatusModal()">Close</button>
+                  </div>
+                } @else {
+                  <form [formGroup]="statusChangeForm" (ngSubmit)="proceedToConfirmation()">
+                    <div class="space-y-4">
+                      <!-- Current status display -->
+                      <div>
+                        <p class="text-sm text-neutral-500 mb-1">Current Status</p>
+                        <span
+                          class="badge"
+                          [ngClass]="getStatusBadgeClass(profile()!.status)"
+                        >
+                          {{ profile()!.status | titlecase }}
+                        </span>
+                      </div>
+
+                      <!-- New Status dropdown (FR-3, AC-1) -->
+                      <div class="form-field">
+                        <label class="label-notion" for="sc-newStatus">New Status <span class="text-red-500">*</span></label>
+                        <select
+                          id="sc-newStatus"
+                          formControlName="newStatus"
+                          class="input-notion select-input"
+                          aria-required="true"
+                        >
+                          <option value="">Select a status...</option>
+                          @for (t of validTransitions(); track t.targetStatus) {
+                            <option [value]="t.targetStatus">{{ t.label }}</option>
+                          }
+                        </select>
+                        @if (statusChangeForm.get('newStatus')?.touched && statusChangeForm.get('newStatus')?.hasError('required')) {
+                          <p class="text-xs text-red-500 mt-1" role="alert">New status is required.</p>
+                        }
+                      </div>
+
+                      <!-- Effective Date (FR-3) -->
+                      <div class="form-field">
+                        <label class="label-notion" for="sc-effectiveDate">Effective Date <span class="text-red-500">*</span></label>
+                        <input
+                          id="sc-effectiveDate"
+                          type="date"
+                          formControlName="effectiveDate"
+                          class="input-notion"
+                          aria-required="true"
+                        />
+                        @if (statusChangeForm.get('effectiveDate')?.touched && statusChangeForm.get('effectiveDate')?.hasError('required')) {
+                          <p class="text-xs text-red-500 mt-1" role="alert">Effective date is required.</p>
+                        }
+                      </div>
+
+                      <!-- Reason textarea (FR-3) -->
+                      <div class="form-field">
+                        <label class="label-notion" for="sc-reason">Reason <span class="text-red-500">*</span></label>
+                        <textarea
+                          id="sc-reason"
+                          formControlName="reason"
+                          class="input-notion"
+                          rows="3"
+                          placeholder="Provide a reason for this status change..."
+                          aria-required="true"
+                        ></textarea>
+                        @if (statusChangeForm.get('reason')?.touched && statusChangeForm.get('reason')?.hasError('required')) {
+                          <p class="text-xs text-red-500 mt-1" role="alert">Reason is required.</p>
+                        }
+                      </div>
+                    </div>
+                    <div class="form-actions">
+                      <button type="button" class="btn-secondary" (click)="closeStatusModal()">Cancel</button>
+                      <button
+                        type="submit"
+                        class="btn-primary"
+                        [disabled]="statusChangeForm.invalid"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </form>
+                }
+              </div>
+            }
+
+            <!-- Step 2: Confirmation (UI/UX notes) -->
+            @if (showConfirmation()) {
+              <div class="modal-header">
+                <h3 id="status-modal-title" class="text-lg font-semibold text-neutral-900">
+                  Confirm Status Change
+                </h3>
+              </div>
+              <div class="modal-body">
+                <div class="rounded-lg bg-amber-50 border border-amber-200 p-4 mb-4">
+                  <p class="text-sm text-amber-800 font-medium mb-2">
+                    Are you sure you want to change {{ profile()!.firstName }} {{ profile()!.lastName }}'s status
+                    from <strong>{{ profile()!.status | titlecase }}</strong>
+                    to <strong>{{ statusChangeForm.value.newStatus | titlecase }}</strong>?
+                  </p>
+                  @if (selectedTransitionSideEffects().length > 0) {
+                    <p class="text-sm text-amber-700 mb-1">This will:</p>
+                    <ul class="list-disc list-inside text-sm text-amber-700 space-y-0.5">
+                      @for (effect of selectedTransitionSideEffects(); track effect) {
+                        <li>{{ effect }}</li>
+                      }
+                    </ul>
+                  }
+                </div>
+                <div class="text-sm text-neutral-600 space-y-1 mb-4">
+                  <p><span class="font-medium">Effective Date:</span> {{ statusChangeForm.value.effectiveDate }}</p>
+                  <p><span class="font-medium">Reason:</span> {{ statusChangeForm.value.reason }}</p>
+                </div>
+                <div class="form-actions">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    (click)="backToForm()"
+                    [disabled]="isSubmittingStatus()"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-primary btn-danger"
+                    (click)="submitStatusChange()"
+                    [disabled]="isSubmittingStatus()"
+                  >
+                    @if (isSubmittingStatus()) {
+                      <span class="btn-spinner"></span> Submitting...
+                    } @else {
+                      Confirm Change
+                    }
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
         </div>
       }
     </div>
@@ -988,7 +1214,53 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
       @apply bg-red-50 text-red-700;
     }
     .badge-suspended {
-      @apply bg-neutral-100 text-neutral-500;
+      @apply bg-gray-100 text-gray-800;
+    }
+    .badge-inactive {
+      @apply bg-slate-100 text-slate-800;
+    }
+    .status-badge-animated {
+      transition: background-color 200ms ease, color 200ms ease;
+    }
+
+    /* ─── Change Status button ─────────────── */
+    .change-status-btn {
+      @apply inline-flex items-center gap-1 text-xs font-medium
+        text-brand-600 hover:text-brand-700 transition-colors duration-150
+        px-2 py-1 rounded-md hover:bg-brand-50 cursor-pointer;
+    }
+
+    /* ─── Modal ────────────────────────────── */
+    .modal-overlay {
+      @apply fixed inset-0 z-50 flex items-center justify-center
+        bg-black/40 backdrop-blur-sm p-4;
+    }
+    @media (max-width: 639px) {
+      .modal-overlay {
+        @apply items-end p-0;
+      }
+    }
+    .modal-card {
+      @apply bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto;
+    }
+    @media (max-width: 639px) {
+      .modal-card {
+        @apply rounded-b-none rounded-t-2xl max-w-full;
+      }
+    }
+    .modal-header {
+      @apply flex items-center justify-between px-6 pt-5 pb-3;
+    }
+    .modal-close-btn {
+      @apply w-8 h-8 rounded-lg flex items-center justify-center
+        text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100
+        transition-colors duration-150;
+    }
+    .modal-body {
+      @apply px-6 pb-6;
+    }
+    .btn-danger {
+      @apply bg-red-600 hover:bg-red-700;
     }
 
     /* ─── Tab navigation ───────────────────── */
@@ -1104,8 +1376,14 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
     .timeline-dot {
       @apply absolute -left-6 top-1 w-4 h-4 rounded-full bg-brand-100 border-2 border-brand-500;
     }
+    .timeline-dot-status {
+      @apply bg-amber-100 border-amber-500;
+    }
     .timeline-content {
       @apply pl-2;
+    }
+    .badge-sm {
+      @apply text-[10px] font-medium px-1.5 py-0.5 rounded-full;
     }
 
     @keyframes spin {
@@ -1148,6 +1426,20 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   readonly editingSection = signal<ProfileSection | null>(null);
   readonly activeTab = signal(0);
 
+  // ─── US-CHR-009: Status management signals ────────────────
+  readonly showStatusModal = signal(false);
+  readonly showConfirmation = signal(false);
+  readonly isLoadingTransitions = signal(false);
+  readonly isSubmittingStatus = signal(false);
+  readonly validTransitions = signal<IStatusTransition[]>([]);
+  /** Get side effects for the currently selected new-status in the form */
+  selectedTransitionSideEffects(): string[] {
+    const selected = this.statusChangeForm?.value?.newStatus;
+    if (!selected) return [];
+    const transition = this.validTransitions().find(t => t.targetStatus === selected);
+    return transition?.sideEffects ?? [];
+  }
+
   /** Resolved viewer role for field-level permissions */
   readonly viewerRole = computed<ProfileViewerRole>(() => {
     if (this.authService.hasRole('HR Officer') || this.authService.hasRole('Tenant Admin')) {
@@ -1167,6 +1459,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   educationForm!: FormGroup;
   workHistoryForm!: FormGroup;
   dependentsForm!: FormGroup;
+  statusChangeForm!: FormGroup;
 
   employeeId = '';
 
@@ -1248,8 +1541,97 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       case 'probation': return 'badge-probation';
       case 'terminated': return 'badge-terminated';
       case 'suspended': return 'badge-suspended';
+      case 'inactive': return 'badge-inactive';
       default: return 'badge-neutral';
     }
+  }
+
+  // ─── US-CHR-009: Status change (BR-2, AC-1, AC-2) ─────────
+
+  /** Only HR Officer and Tenant Admin can change status (BR-2) */
+  canChangeStatus(): boolean {
+    return this.viewerRole() === 'hr_officer';
+  }
+
+  openStatusChangeModal(): void {
+    this.showStatusModal.set(true);
+    this.showConfirmation.set(false);
+    this.isLoadingTransitions.set(true);
+    this.validTransitions.set([]);
+    this.statusChangeForm.reset({ newStatus: '', effectiveDate: '', reason: '' });
+
+    this.employeeService
+      .getValidTransitions(this.employeeId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (transitions) => {
+          this.validTransitions.set(transitions);
+          this.isLoadingTransitions.set(false);
+        },
+        error: () => {
+          this.isLoadingTransitions.set(false);
+          this.toastr.error('Failed to load available status transitions.');
+        },
+      });
+  }
+
+  closeStatusModal(): void {
+    this.showStatusModal.set(false);
+    this.showConfirmation.set(false);
+  }
+
+  proceedToConfirmation(): void {
+    if (this.statusChangeForm.invalid) {
+      this.statusChangeForm.markAllAsTouched();
+      return;
+    }
+    this.showConfirmation.set(true);
+  }
+
+  backToForm(): void {
+    this.showConfirmation.set(false);
+  }
+
+  submitStatusChange(): void {
+    const p = this.profile();
+    if (!p) return;
+
+    this.isSubmittingStatus.set(true);
+
+    const request: IChangeStatusRequest = {
+      newStatus: this.statusChangeForm.value.newStatus,
+      effectiveDate: this.statusChangeForm.value.effectiveDate,
+      reason: this.statusChangeForm.value.reason,
+    };
+
+    // Generate UUID for idempotency (NFR-3)
+    const idempotencyKey = crypto.randomUUID();
+
+    this.employeeService
+      .changeStatus(this.employeeId, request, idempotencyKey)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.isSubmittingStatus.set(false);
+          this.profile.set(response.profile);
+          this.closeStatusModal();
+          this.toastr.success(
+            `Status changed to ${request.newStatus} successfully.`
+          );
+        },
+        error: (err: HttpErrorResponse) => {
+          this.isSubmittingStatus.set(false);
+          if (err.status === 400) {
+            // AC-5: invalid transition — show backend error message
+            const body = EmployeeService.parseError(err);
+            this.toastr.error(
+              body?.message ?? 'Invalid status transition.'
+            );
+          } else {
+            this.toastr.error('Failed to change employee status. Please try again.');
+          }
+        },
+      });
   }
 
   formatAddress(): string {
@@ -1265,6 +1647,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       case 'department': return 'Department Change';
       case 'job_title': return 'Job Title Change';
       case 'status': return 'Status Change';
+      case 'status_change': return 'Status Change';
       case 'reporting_manager': return 'Reporting Manager Change';
       default: return type;
     }
@@ -1413,6 +1796,13 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
 
     this.dependentsForm = this.fb.group({
       records: this.fb.array([]),
+    });
+
+    // US-CHR-009: Status change form
+    this.statusChangeForm = this.fb.group({
+      newStatus: ['', [Validators.required]],
+      effectiveDate: ['', [Validators.required]],
+      reason: ['', [Validators.required]],
     });
   }
 

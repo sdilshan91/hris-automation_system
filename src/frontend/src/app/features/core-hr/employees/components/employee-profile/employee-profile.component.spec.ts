@@ -13,6 +13,7 @@ import { AuthService } from '@core/auth/auth.service';
 import {
   IEmployeeProfile,
   isSectionEditable,
+  getStatusBadgeClasses,
 } from '../../models/employee.models';
 import { environment } from '../../../../../../environments/environment';
 
@@ -501,6 +502,299 @@ describe('EmployeeProfileComponent', () => {
     }));
   });
 
+  // ─── US-CHR-009: Status management ──────────────────────────
+
+  describe('US-CHR-009: Status badge colors', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('should return correct badge class for all 5 statuses including inactive', () => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+
+      expect(component.getStatusBadgeClass('active')).toBe('badge-active');
+      expect(component.getStatusBadgeClass('probation')).toBe('badge-probation');
+      expect(component.getStatusBadgeClass('terminated')).toBe('badge-terminated');
+      expect(component.getStatusBadgeClass('suspended')).toBe('badge-suspended');
+      expect(component.getStatusBadgeClass('inactive')).toBe('badge-inactive');
+      expect(component.getStatusBadgeClass('unknown')).toBe('badge-neutral');
+    });
+  });
+
+  describe('US-CHR-009: Change Status button visibility (BR-2)', () => {
+    it('should show Change Status button for HR Officer', fakeAsync(() => {
+      setupTestBed('HR Officer');
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.canChangeStatus()).toBeTrue();
+    }));
+
+    it('should hide Change Status button for Employee role', fakeAsync(() => {
+      setupTestBed('Employee');
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.canChangeStatus()).toBeFalse();
+    }));
+
+    it('should hide Change Status button for Manager role', fakeAsync(() => {
+      setupTestBed('Manager');
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.canChangeStatus()).toBeFalse();
+    }));
+  });
+
+  describe('US-CHR-009: Status change modal', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('should open modal and load valid transitions', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      expect(component.showStatusModal()).toBeTrue();
+      expect(component.isLoadingTransitions()).toBeTrue();
+
+      const transReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      );
+      expect(transReq.request.method).toBe('GET');
+      transReq.flush([
+        { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access'] },
+        { targetStatus: 'terminated', label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
+      ]);
+      tick();
+
+      expect(component.isLoadingTransitions()).toBeFalse();
+      expect(component.validTransitions().length).toBe(2);
+    }));
+
+    it('should show only valid transitions from backend (not hardcoded)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      const transReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      );
+      // Backend returns only one transition
+      transReq.flush([
+        { targetStatus: 'inactive', label: 'Inactive', sideEffects: [] },
+      ]);
+      tick();
+
+      expect(component.validTransitions().length).toBe(1);
+      expect(component.validTransitions()[0].targetStatus).toBe('inactive');
+    }));
+
+    it('should close modal on closeStatusModal', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([]);
+      tick();
+
+      component.closeStatusModal();
+      expect(component.showStatusModal()).toBeFalse();
+    }));
+
+    it('should require newStatus, effectiveDate, and reason fields', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([
+        { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
+      ]);
+      tick();
+
+      // Form should be invalid with empty values
+      expect(component.statusChangeForm.valid).toBeFalse();
+      expect(component.statusChangeForm.get('newStatus')?.hasError('required')).toBeTrue();
+      expect(component.statusChangeForm.get('effectiveDate')?.hasError('required')).toBeTrue();
+      expect(component.statusChangeForm.get('reason')?.hasError('required')).toBeTrue();
+
+      // Attempt to proceed with invalid form
+      component.proceedToConfirmation();
+      expect(component.showConfirmation()).toBeFalse();
+    }));
+
+    it('should proceed to confirmation when form is valid', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([
+        { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access'] },
+      ]);
+      tick();
+
+      component.statusChangeForm.patchValue({
+        newStatus: 'suspended',
+        effectiveDate: '2026-06-15',
+        reason: 'Pending investigation',
+      });
+
+      component.proceedToConfirmation();
+      expect(component.showConfirmation()).toBeTrue();
+    }));
+
+    it('should go back from confirmation to form', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([
+        { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
+      ]);
+      tick();
+
+      component.statusChangeForm.patchValue({
+        newStatus: 'suspended',
+        effectiveDate: '2026-06-15',
+        reason: 'Test reason',
+      });
+      component.proceedToConfirmation();
+      expect(component.showConfirmation()).toBeTrue();
+
+      component.backToForm();
+      expect(component.showConfirmation()).toBeFalse();
+    }));
+
+    it('should submit status change with Idempotency-Key header', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([
+        { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
+      ]);
+      tick();
+
+      component.statusChangeForm.patchValue({
+        newStatus: 'suspended',
+        effectiveDate: '2026-06-15',
+        reason: 'Pending investigation',
+      });
+      component.proceedToConfirmation();
+      component.submitStatusChange();
+
+      const statusReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status`
+      );
+      expect(statusReq.request.method).toBe('POST');
+      expect(statusReq.request.headers.has('Idempotency-Key')).toBeTrue();
+      expect(statusReq.request.headers.get('Idempotency-Key')).toBeTruthy();
+      expect(statusReq.request.body.newStatus).toBe('suspended');
+      expect(statusReq.request.body.effectiveDate).toBe('2026-06-15');
+      expect(statusReq.request.body.reason).toBe('Pending investigation');
+
+      const updatedProfile = { ...mockProfile, status: 'suspended' };
+      statusReq.flush({ profile: updatedProfile });
+      tick();
+
+      expect(component.profile()!.status).toBe('suspended');
+      expect(component.showStatusModal()).toBeFalse();
+      expect(toastrSpy.success).toHaveBeenCalledWith('Status changed to suspended successfully.');
+    }));
+
+    it('should handle 400 invalid transition error from backend (AC-5)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([
+        { targetStatus: 'probation', label: 'Probation', sideEffects: [] },
+      ]);
+      tick();
+
+      component.statusChangeForm.patchValue({
+        newStatus: 'probation',
+        effectiveDate: '2026-06-15',
+        reason: 'Attempt invalid transition',
+      });
+      component.proceedToConfirmation();
+      component.submitStatusChange();
+
+      const statusReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status`
+      );
+      statusReq.flush(
+        { message: 'Invalid status transition. Terminated employees cannot be moved to probation.' },
+        { status: 400, statusText: 'Bad Request' }
+      );
+      tick();
+
+      expect(toastrSpy.error).toHaveBeenCalledWith(
+        'Invalid status transition. Terminated employees cannot be moved to probation.'
+      );
+      expect(component.isSubmittingStatus()).toBeFalse();
+    }));
+
+    it('should compute side effects for selected transition', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.openStatusChangeModal();
+      httpMock.expectOne(
+        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+      ).flush([
+        { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access', 'Pause leave accrual'] },
+        { targetStatus: 'terminated', label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
+      ]);
+      tick();
+
+      component.statusChangeForm.patchValue({ newStatus: 'suspended' });
+      expect(component.selectedTransitionSideEffects()).toEqual(['Disable portal access', 'Pause leave accrual']);
+
+      component.statusChangeForm.patchValue({ newStatus: 'terminated' });
+      expect(component.selectedTransitionSideEffects()).toEqual(['Disable portal access', 'Exclude from payroll']);
+    }));
+  });
+
+  describe('US-CHR-009: formatChangeType includes status_change', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('should format status_change as Status Change', () => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+
+      expect(component.formatChangeType('status_change')).toBe('Status Change');
+    });
+  });
 });
 
 // ─── isSectionEditable utility (pure function — no TestBed/HTTP afterEach) ───
@@ -539,3 +833,30 @@ describe('isSectionEditable utility function', () => {
       expect(isSectionEditable('custom-fields', 'manager')).toBeFalse();
     });
   });
+
+// ─── US-CHR-009: getStatusBadgeClasses (pure function — no TestBed/HTTP) ───
+describe('getStatusBadgeClasses utility function (US-CHR-009)', () => {
+  it('should return green classes for active', () => {
+    expect(getStatusBadgeClasses('active')).toBe('bg-green-100 text-green-800');
+  });
+
+  it('should return amber classes for probation', () => {
+    expect(getStatusBadgeClasses('probation')).toBe('bg-amber-100 text-amber-800');
+  });
+
+  it('should return gray classes for suspended', () => {
+    expect(getStatusBadgeClasses('suspended')).toBe('bg-gray-100 text-gray-800');
+  });
+
+  it('should return red classes for terminated', () => {
+    expect(getStatusBadgeClasses('terminated')).toBe('bg-red-100 text-red-800');
+  });
+
+  it('should return slate classes for inactive', () => {
+    expect(getStatusBadgeClasses('inactive')).toBe('bg-slate-100 text-slate-800');
+  });
+
+  it('should return neutral classes for unknown status', () => {
+    expect(getStatusBadgeClasses('unknown')).toBe('bg-neutral-100 text-neutral-600');
+  });
+});

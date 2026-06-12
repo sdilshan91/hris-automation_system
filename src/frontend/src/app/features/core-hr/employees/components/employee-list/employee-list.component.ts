@@ -517,6 +517,7 @@ import {
                   [class.status-probation]="employee.status === 'probation'"
                   [class.status-suspended]="employee.status === 'suspended'"
                   [class.status-terminated]="employee.status === 'terminated'"
+                  [class.status-inactive]="employee.status === 'inactive'"
                 >
                   {{ employee.status }}
                 </span>
@@ -727,11 +728,15 @@ import {
     }
 
     .status-suspended {
-      @apply bg-red-50 text-red-700;
+      @apply bg-gray-100 text-gray-800;
     }
 
     .status-terminated {
-      @apply bg-neutral-100 text-neutral-500;
+      @apply bg-red-100 text-red-800;
+    }
+
+    .status-inactive {
+      @apply bg-slate-100 text-slate-800;
     }
 
     .table-header {

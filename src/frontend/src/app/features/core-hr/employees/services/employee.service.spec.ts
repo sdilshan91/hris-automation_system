@@ -354,6 +354,81 @@ describe('EmployeeService', () => {
     });
   });
 
+  // ─── US-CHR-009: Status management ─────────────────────────
+
+  describe('getValidTransitions (US-CHR-009)', () => {
+    it('should GET valid transitions for an employee', () => {
+      const mockTransitions = [
+        { targetStatus: 'suspended' as const, label: 'Suspended', sideEffects: ['Disable portal access'] },
+        { targetStatus: 'terminated' as const, label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
+      ];
+
+      service.getValidTransitions('emp-1').subscribe((transitions) => {
+        expect(transitions.length).toBe(2);
+        expect(transitions[0].targetStatus).toBe('suspended');
+        expect(transitions[1].sideEffects.length).toBe(2);
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/status/transitions`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockTransitions);
+    });
+
+    it('should return empty array for terminal status', () => {
+      service.getValidTransitions('emp-2').subscribe((transitions) => {
+        expect(transitions.length).toBe(0);
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-2/status/transitions`);
+      req.flush([]);
+    });
+  });
+
+  describe('changeStatus (US-CHR-009)', () => {
+    it('should POST status change with Idempotency-Key header', () => {
+      const request = {
+        newStatus: 'suspended' as const,
+        effectiveDate: '2026-06-15',
+        reason: 'Pending investigation',
+      };
+      const idempotencyKey = 'test-uuid-1234';
+
+      service.changeStatus('emp-1', request, idempotencyKey).subscribe((response) => {
+        expect(response.profile).toBeTruthy();
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/status`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.withCredentials).toBeTrue();
+      expect(req.request.headers.get('Idempotency-Key')).toBe('test-uuid-1234');
+      expect(req.request.body.newStatus).toBe('suspended');
+      expect(req.request.body.effectiveDate).toBe('2026-06-15');
+      expect(req.request.body.reason).toBe('Pending investigation');
+      req.flush({ profile: { ...mockEmployee, status: 'suspended' } });
+    });
+
+    it('should handle 400 error for invalid transition', () => {
+      const request = {
+        newStatus: 'probation' as const,
+        effectiveDate: '2026-06-15',
+        reason: 'Attempting invalid transition',
+      };
+
+      service.changeStatus('emp-1', request, 'key-123').subscribe({
+        error: (err) => {
+          expect(err.status).toBe(400);
+        },
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/status`);
+      req.flush(
+        { message: 'Invalid status transition. Terminated employees cannot be moved to probation.' },
+        { status: 400, statusText: 'Bad Request' }
+      );
+    });
+  });
+
   describe('parseError', () => {
     it('should parse a duplicate_email error response', () => {
       const httpErr = new HttpErrorResponse({

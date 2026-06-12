@@ -13,6 +13,9 @@ import {
   IEmployeeDirectoryParams,
   IPaginatedResponse,
   ExportFormat,
+  IStatusTransition,
+  IChangeStatusRequest,
+  IChangeStatusResponse,
 } from '../models/employee.models';
 
 /**
@@ -197,6 +200,47 @@ export class EmployeeService {
       `${this.baseUrl}/${employeeId}/sections/${section}`,
       request,
       { withCredentials: true }
+    );
+  }
+
+  // ─── US-CHR-009: Status Management ─────────────────────────
+
+  /**
+   * Get valid status transitions for an employee (AC-1, BR-1).
+   * Backend is the source of truth — the frontend does NOT hardcode the matrix.
+   *
+   * Endpoint assumption: GET /api/v1/tenant/employees/:id/status/transitions
+   * Returns: IStatusTransition[] — only the transitions valid from the current status.
+   */
+  getValidTransitions(employeeId: string): Observable<IStatusTransition[]> {
+    return this.http.get<IStatusTransition[]>(
+      `${this.baseUrl}/${employeeId}/status/transitions`,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * Change an employee's status (AC-2, FR-3, NFR-3).
+   * Sends an Idempotency-Key header to prevent duplicate transitions on retry.
+   *
+   * Endpoint assumption: POST /api/v1/tenant/employees/:id/status
+   * Body: { newStatus, effectiveDate, reason }
+   * Header: Idempotency-Key: <uuid>
+   * Returns 200 with updated profile on success.
+   * Returns 400 with error message on invalid transition (AC-5).
+   */
+  changeStatus(
+    employeeId: string,
+    request: IChangeStatusRequest,
+    idempotencyKey: string
+  ): Observable<IChangeStatusResponse> {
+    return this.http.post<IChangeStatusResponse>(
+      `${this.baseUrl}/${employeeId}/status`,
+      request,
+      {
+        withCredentials: true,
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }
     );
   }
 
