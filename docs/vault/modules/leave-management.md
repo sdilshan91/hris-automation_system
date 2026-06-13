@@ -307,3 +307,76 @@ On every rule create, update (including inline cell edit), the success toast exp
 ### Priority / specificity transparency (AC-2)
 
 A blue info banner at the top of the Entitlement Rules page shows the priority help text explaining the specificity ordering. Each rule row shows its numeric priority in a circular badge. The user story's full FR-2 specificity engine is enforced by the backend — the frontend displays the priority to make conflict resolution transparent.
+
+## Frontend (US-LV-003) — Employee Applies for Leave
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+The frontend `LeaveRequestService` targets a **new, employee-facing `/leaves` resource**
+(distinct from the admin `/tenant/leave-types` and `/tenant/leave-entitlements` resources).
+`environment.apiBaseUrl` already includes `/api/v1`, so the resource base is `${apiBaseUrl}/leaves`.
+
+| Method | Path | Body / Params | Response |
+|--------|------|---------------|----------|
+| POST | `/api/v1/leaves` | `ICreateLeaveRequest` `{ leaveTypeId, startDate, endDate, isHalfDay, halfDaySession, reason, attachments[] }` | `ILeaveRequest` (id, status `Pending`, `totalDays`) |
+| GET | `/api/v1/leaves/mine` | — | `ILeaveRequest[]` (current employee's own requests) |
+| GET | `/api/v1/leaves/balances` | — | `ILeaveBalance[]` `{ leaveTypeId, entitlementDays, usedDays, remainingDays }` |
+
+**Response shape expectations the backend must satisfy:**
+- `ILeaveRequest` carries **denormalized** `leaveTypeName` and `leaveTypeColor` so the My Leaves
+  list and success toast need no extra lookup. If the backend can't denormalize, the FE list
+  must be changed to join against leave-types client-side.
+- `halfDaySession` is `'AM' | 'PM' | null`; FE sends `null` whenever `isHalfDay` is false.
+- `attachments[]` is sent as a string array. **Blob upload is DEFERRED** (NFR-3): the drop-zone
+  currently collects file *names* locally and submits them as the `attachments[]` payload. The
+  backend should accept already-hosted URLs / metadata here until the real upload endpoint exists.
+  TODO(blob-upload) marker is in `leave-application.component.ts`.
+
+**Balance endpoint note:** I added a dedicated `GET /leaves/balances` rather than reusing
+`/tenant/leave-entitlements/compute-effective`, because the latter returns only *entitlement* days
+(no used/remaining). The apply form needs current + projected remaining (AC-2), which requires
+used-days too. If the backend prefers to fold balances into the entitlement resource, only
+`LeaveRequestService.getMyBalances()` + `ILeaveBalance` mapping change.
+
+### Error contract (surfaced via toast/inline)
+
+`ILeaveRequestErrorResponse { message, code? }` where `code ∈ { 'overlap' (AC-5),
+'insufficient_balance' (AC-2), 'document_required' (AC-3), ... }`. The FE shows `message`
+verbatim; backend is the source of truth for overlap/balance/holiday-adjusted day count.
+
+### Day-count is a client *estimate* only (AC-6)
+
+`countWorkingDays()` (pure, in `leave-request.models.ts`) excludes **weekends only** (Sat/Sun).
+Public holidays (AC-6) and the 5- vs 6-day work week (FR-3) are **not** modelled client-side — the
+backend returns the authoritative `totalDays`. The "N days" chip is a fast-feedback estimate; the
+holiday-calendar visual blocks (US-LV-007) and team calendar (US-LV-009) are deferred (field/seam only).
+
+### Validation split
+
+Client-side (fast feedback, mirrors ACs): required fields, start ≤ end, half-day must be single-day
++ session required (AC-4), insufficient-balance block (AC-2), sick-leave document-required hint that
+becomes a hard pre-submit block when over `documentDayThreshold` with no attachment (AC-3).
+`negativeBalanceAllowed` on the leave type suppresses the insufficient flag (e.g. Unpaid Leave).
+Everything else (overlap AC-5, past/future window BR-1/2, max consecutive BR-3, gender/probation
+BR-4/5) is enforced by the backend and surfaced via toast.
+
+### Routes (NEW `/leave` registration)
+
+The existing nav "Leave" item already pointed at `/leave` (gated by `Leave.View` permission) but
+**no `/leave` route existed**. Added `LEAVE_REQUEST_ROUTES` to `leave-management.routes.ts` and
+registered `/leave` in `app.routes.ts` under `MainLayoutComponent`:
+- `/leave/apply` → `LeaveApplicationComponent`
+- `/leave/my-requests` → `MyLeaveRequestsComponent`
+- `/leave` → redirects to `my-requests`
+- Role guard: `roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin'])`.
+
+The admin config routes stay under `/leave-types` (unchanged). The nav menu was **not** modified —
+the pre-existing `/leave` nav item now resolves.
+
+### Shared-file changes (flagged)
+
+1. `app.routes.ts` — added the `/leave` lazy route block (US-LV-003).
+2. `leave-management.routes.ts` — added the `LEAVE_REQUEST_ROUTES` export (shared with US-LV-001/002 file).
+3. `leave-management/index.ts` — barrel exports for the new request models + service.
+
+No nav-menu, employee-profile, or backend/test-case files were touched.

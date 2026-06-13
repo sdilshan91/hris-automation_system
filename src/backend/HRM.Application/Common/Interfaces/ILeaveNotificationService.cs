@@ -1,0 +1,23 @@
+namespace HRM.Application.Common.Interfaces;
+
+/// <summary>
+/// Dispatches leave-related notifications to approvers (US-LV-003 FR-6, AC-1).
+///
+/// SEAM: There is no notification platform yet. The default implementation
+/// (<c>LogOnlyLeaveNotificationService</c>) emits a structured "leave-requested" log event
+/// instead of sending a real notification, so the application flow is complete and observable.
+/// TODO(notifications): Replace with a queue/notification-service-backed implementation
+/// (the notification service is asynchronous/fire-and-forget per §10).
+/// </summary>
+public interface ILeaveNotificationService
+{
+    /// <summary>
+    /// Notifies the employee's reporting manager that a leave request was submitted (AC-1).
+    /// Fire-and-forget from the caller's perspective; must never throw into the request path.
+    /// </summary>
+    Task NotifyLeaveRequestedAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid? managerEmployeeId,
+        CancellationToken cancellationToken = default);
+}
