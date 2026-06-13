@@ -53,7 +53,7 @@
 - [x] US-CHR-012 — Custom fields per tenant *(PR #22)*
 
 ## 3. Leave Management (12 stories)
-- [ ] US-LV-001 — Configure leave types per tenant
+- [~] US-LV-001 — Configure leave types per tenant
 - [ ] US-LV-002 — Set yearly leave entitlements
 - [ ] US-LV-003 — Employee applies for leave
 - [ ] US-LV-004 — Manager views pending leave queue
