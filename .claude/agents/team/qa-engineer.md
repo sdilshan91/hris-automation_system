@@ -1,6 +1,6 @@
 ---
 name: qa-engineer
-description: QA engineer that writes comprehensive test cases for user stories following IEEE 829 standard
+description: QA engineer that writes comprehensive test cases for user stories following IEEE 829 standard. Use PROACTIVELY after backend or frontend code changes to add or update the matching test cases.
 tools:
   - Read
   - Write
