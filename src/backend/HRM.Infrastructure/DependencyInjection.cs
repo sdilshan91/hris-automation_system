@@ -103,6 +103,9 @@ public static class DependencyInjection
         // Leave request service (US-LV-003)
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
+        // Leave balance dashboard read/aggregation service (US-LV-006)
+        services.AddScoped<ILeaveDashboardService, LeaveDashboardService>();
+
         // Holiday provider seam — no-op until US-LV-007 builds the holiday calendar.
         services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
 

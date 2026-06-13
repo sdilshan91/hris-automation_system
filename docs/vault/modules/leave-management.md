@@ -528,3 +528,168 @@ success toast. `TODO(US-ADM-007)` marker in `onActionSuccess`.
   exact behavior (not a weakening).
 
 No nav-menu, route, backend, or test-case files were touched.
+
+## Frontend (US-LV-006) — Employee Leave Balance Dashboard
+
+The Employee's default landing view for the Leave module (§10). New standalone
+`LeaveDashboardComponent` (signals + OnPush) + sibling `LeaveDashboardService` +
+`leave-dashboard.models.ts`. Mirrors the US-LV-003/004/005 structure exactly
+(Angular Material + Tailwind, ngx-toastr, no Bootstrap, no NgModules).
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+Added to the existing employee-facing **`/leaves`** resource (sibling to US-LV-003's
+`/mine`, `/balances`). `apiBaseUrl` already includes `/api/v1`.
+
+| Method | Path | Params | Response |
+|--------|------|--------|----------|
+| GET | `/api/v1/leaves/my-balance` | `?year={year}` | `ILeaveBalanceSummary[]` |
+| GET | `/api/v1/leaves/my-ledger` | `?leaveTypeId={id}&year={year}` | `ILeaveLedgerEntry[]` (ordered by occurredAt) |
+| GET | `/api/v1/leaves/my-upcoming` | — | `ILeaveRequest[]` (approved + future-pending) |
+
+`ILeaveBalanceSummary = { leaveTypeId, leaveTypeName, color, entitlement, used,
+pending, balance, carryForward, expired, isArchived? }`.
+- **`balance` is authoritative from the backend** (BR-1: entitlement + carryForward
+  − used − expired + adjustments). `computeBalance()` is a pure helper used only to
+  cross-check / unit-test the identity; the UI renders the backend `balance` verbatim.
+- **`pending` is shown separately and never deducted from `balance`** (BR-2). Rendered
+  in its own row (amber) on the card.
+- **`isArchived: true`** → deactivated type with a remaining balance, rendered in a
+  collapsed "Archived (n)" section (BR-3). Distinct from US-LV-003's `ILeaveBalance`
+  (that one has only entitlement/used/remaining for the apply-form preview); this is a
+  richer summary, so a **new** model + endpoint was added rather than overloading it.
+
+**History (FR-6) reuses `GET /leaves/mine`** (US-LV-003 `LeaveRequestService.getMyLeaveRequests`)
+— no new call. The component keeps only terminal-state rows (Approved/Rejected/Cancelled)
+and offers an All/Approved/Rejected/Cancelled filter pill-group.
+
+### Charting — custom SVG arc (no new dependency, §10)
+
+`package.json` has **no** charting lib (ngx-charts/Chart.js not installed). Per §10's
+"custom SVG is acceptable" carve-out, the circular indicator is a hand-rolled two-circle
+SVG using `stroke-dasharray`/`stroke-dashoffset`. The fraction is `usedFraction()`
+(used/entitlement, clamped [0,1], 0 when entitlement is 0 to avoid divide-by-zero for
+unpaid/zero-entitlement types). **No heavy charting dependency was added.**
+
+### Accessibility (NFR-4)
+
+Color is never the sole indicator: every card shows numeric entitlement/used/pending/
+remaining text, and the SVG arc carries `role="img"` + an explicit `aria-label`
+("{type}: {used} of {entitlement} days used, {balance} remaining, {pending} pending").
+The ledger slide-over is `role="dialog" aria-modal`. Year + history pill-groups use
+`role="group"` + `aria-pressed`.
+
+### Routing — dashboard is the Leave landing (§10)
+
+`leave-management.routes.ts` `LEAVE_REQUEST_ROUTES`: added a `dashboard` child and
+**changed the empty `/leave` redirect from `my-requests` → `dashboard`** so the nav
+"Leave" item (already `/leave`, gated by `Leave.View`) lands the Employee on the
+dashboard. The `/leave` parent guard (`roleGuard(['Employee','Manager','HR Officer',
+'Tenant Admin'])`) is unchanged; no new app.routes.ts entry and **no nav-menu edit** —
+the existing `/leave` item now resolves to the dashboard.
+
+### DEFERRED (seam + TODO only)
+
+- **Redis-cached balance source (FR-5)** — backend concern; FE just consumes whatever
+  `my-balance` returns.
+- **Real-time balance push** — balances re-fetch on load / year-change only.
+  `TODO(realtime-balance-push)` marker in `loadYear()`.
+
+### Shared files touched (all within `features/leave-management`, flagged)
+
+1. `leave-management.routes.ts` — added `dashboard` child route; flipped `/leave`
+   empty-redirect `my-requests` → `dashboard`.
+2. `index.ts` — barrel exports for `leave-dashboard.models` + `leave-dashboard.service`.
+
+No `app.routes.ts`, nav-menu, employee-profile, backend, or test-case files were touched.
+
+## Leave Balance Dashboard (US-LV-006) — Backend
+
+Pure **read/aggregation** story over existing US-LV-002..005 data. **No new entity, no
+migration, no permission-catalog change.** New read service `ILeaveDashboardService` /
+`LeaveDashboardService` (kept separate from `ILeaveRequestService` so the write/decision
+service stays focused; the dashboard is read-only). Three MediatR queries + handlers:
+`GetMyLeaveBalanceQuery(year?)`, `GetMyLeaveLedgerQuery(leaveTypeId, year?)`,
+`GetMyUpcomingLeavesQuery`.
+
+### Endpoints (all `[RequirePermission("Leave.View.Own")]`, self-service)
+
+| Method | Path | Query |
+|--------|------|-------|
+| GET | `/api/v1/leaves/my-balance` | `?year={year}` (defaults to current leave year) |
+| GET | `/api/v1/leaves/my-ledger` | `?leaveTypeId={id}&year={year}` |
+| GET | `/api/v1/leaves/my-upcoming` | — |
+
+Same permission as `/mine` + `/balance-preview` (the existing self endpoints). The acting
+employee is resolved from `ICurrentUser.UserId` via `Employee.UserId` (same
+`GetCurrentEmployee` pattern as US-LV-003/004/005). FE contract above matches verbatim;
+the backend DTO additionally carries `adjustments` and `leaveYear` (additive, harmless).
+
+### Balance formula (BR-1) — entitlement from engine, components from ledger
+
+`Balance = Entitlement + CarryForward − Used − Expired + Adjustments`, computed
+**component-wise** from `LeaveLedger` grouped by `EntryType` — distinct from the
+`BalanceAfter` running-total approach used by US-LV-003/004/005 (which answers "what's left
+*right now*" for an apply/approve check). The dashboard needs the **broken-out components**
+the story's FR-2 lists, so it sums the ledger by type instead of reading the last
+`BalanceAfter`.
+- **Entitlement** is resolved by the **US-LV-002 entitlement engine** (reused via
+  `ILeaveEntitlementService.ComputeEffectiveEntitlementAsync` → `ProratedEntitlementDays`:
+  override > rule > default, pro-rated). It is NOT re-derived from the ledger Accrual sum —
+  so `Accrual` entries are intentionally **not** added into the balance (they realise the
+  engine entitlement; adding both would double-count). This means a dashboard balance can
+  differ from the raw ledger `BalanceAfter` if a tenant's accrual entries don't equal the
+  engine's resolved entitlement (e.g. mid-year rule change before re-accrual). The engine is
+  the source of truth for "granted", the ledger for "consumed/adjusted".
+- **Used** also folds in `Encashed` (both are consumption); exposed as a positive magnitude.
+  `Expired` likewise positive-magnitude; `Adjustments` is **signed**.
+
+### Leave-year boundary (BR-4) — calendar year reused
+
+No tenant fiscal-year config entity exists, so the established **calendar-year** convention
+from US-LV-002..005 is reused (`year ?? DateTime.UtcNow.Year`; pending matched on
+`StartDate.Year`). `TODO(tenant-settings)` marker in `ResolveLeaveYear`. The `year` param
+serves BR-5 (previous-year selector) without any extra caching.
+
+### Pending (BR-2) and archived (BR-3)
+
+- **Pending** = sum of `TotalDays` of the employee's `Pending` requests for the type/year,
+  surfaced in its own field and **never** subtracted from `Balance`.
+- **Active** types are always returned. A **deactivated** type is included with
+  `IsArchived = true` **only** if it still carries a non-zero balance for the year; otherwise
+  it is dropped. (Active-types query: `lt.IsActive || ledgerTypeIds.Contains(lt.Id)`, then the
+  zero-balance archived rows are filtered out.)
+
+### History (FR-6) — reuses `GET /leaves/mine`
+
+No new history query/endpoint. The existing `GetMyLeaveRequestsQuery` (US-LV-003) already
+returns ALL of the employee's requests (incl. Approved/Rejected/Cancelled) newest-first; the
+FE filters terminal states client-side. Not extended — reuse only.
+
+### AC-5 empty state
+
+A new joiner with no leave types configured returns an **empty list** (never throws). With
+active types but no ledger, the balance equals the engine entitlement (typically the type
+default) — the FE shows the empty/"being set up" state based on its own emptiness check.
+
+### Redis balance cache (FR-5/NFR-1) — DEFERRED
+
+Consistent with the module-wide decision (US-LV-001..005): balances are computed from the
+ledger on every request. `TODO(redis-balance-cache)` marker on `LeaveDashboardService` (key
+`tenant:{tenantId}:leave_balance:{employeeId}:{leaveTypeId}`, invalidate on ledger writes).
+
+### Tenant + self isolation
+
+All three queries are tenant-scoped by the EF global query filters and additionally filtered
+to the resolved employee's own id — an employee can only read their own balance/ledger/
+upcoming. Integration tests assert both (Tenant A ≠ Tenant B; caller ≠ teammate).
+
+### Shared files touched (flagged)
+
+- `LeaveRequestsController.cs` — added the three `my-*` GET actions (extends the US-LV-003
+  controller; no change to existing actions).
+- `DependencyInjection.cs` (Infrastructure) — registered `ILeaveDashboardService`.
+
+New files: `ILeaveDashboardService`, `LeaveDashboardService`, the three queries + handlers,
+`LeaveDashboardDtos.cs`, and Unit/Integration test classes. No entity/migration/permission
+changes. Existing 743 tests unaffected; 16 new tests (759 total green).
