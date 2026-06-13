@@ -98,6 +98,67 @@ public sealed class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/leaves/my-balance?year={year}
+    /// Returns the current employee's leave-balance dashboard: one summary per active leave type
+    /// (entitlement, used, pending, balance, carry-forward, expired) for the leave year
+    /// (defaults to the current leave year). Deactivated types that still carry a balance are
+    /// flagged IsArchived (US-LV-006 FR-1/FR-2, AC-1/AC-5, BR-1..BR-4).
+    /// </summary>
+    [HttpGet("my-balance")]
+    [RequirePermission("Leave.View.Own")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<LeaveBalanceDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyBalance(
+        [FromQuery] int? year, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyLeaveBalanceQuery(year), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<IReadOnlyList<LeaveBalanceDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/leaves/my-ledger?leaveTypeId={id}&amp;year={year}
+    /// Returns the current employee's full ledger transaction log (accruals, usages, adjustments,
+    /// carry-forwards, expirations) for one leave type and year, ordered chronologically
+    /// (US-LV-006 FR-3, AC-2).
+    /// </summary>
+    [HttpGet("my-ledger")]
+    [RequirePermission("Leave.View.Own")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<LeaveLedgerEntryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyLedger(
+        [FromQuery] Guid leaveTypeId,
+        [FromQuery] int? year,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyLeaveLedgerQuery(leaveTypeId, year), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<IReadOnlyList<LeaveLedgerEntryDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/leaves/my-upcoming
+    /// Returns the current employee's Approved + Pending future leaves (start_date &gt;= today),
+    /// ordered by start date (US-LV-006 FR-4, AC-3).
+    /// </summary>
+    [HttpGet("my-upcoming")]
+    [RequirePermission("Leave.View.Own")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<UpcomingLeaveDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyUpcoming(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyUpcomingLeavesQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<IReadOnlyList<UpcomingLeaveDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/leaves/pending
     /// Returns the current manager's pending-approval queue: pending requests from their
     /// direct reports, with inline balance, overdue flag, and team-conflict count

@@ -32,6 +32,15 @@ export const LEAVE_MANAGEMENT_ROUTES: Routes = [
  */
 export const LEAVE_REQUEST_ROUTES: Routes = [
   {
+    // US-LV-006: Employee's Leave Balance Dashboard — the default landing
+    // view within the Leave module for the Employee persona (§10).
+    path: 'dashboard',
+    loadComponent: () =>
+      import('./components/leave-dashboard/leave-dashboard.component').then(
+        (m) => m.LeaveDashboardComponent
+      ),
+  },
+  {
     path: 'apply',
     loadComponent: () =>
       import('./components/leave-application/leave-application.component').then(
@@ -58,5 +67,6 @@ export const LEAVE_REQUEST_ROUTES: Routes = [
         (m) => m.LeaveApprovalsComponent
       ),
   },
-  { path: '', redirectTo: 'my-requests', pathMatch: 'full' },
+  // US-LV-006: the dashboard is the Employee landing view for the Leave module (§10).
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 ];
