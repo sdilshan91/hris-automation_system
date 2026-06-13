@@ -50,7 +50,7 @@
 - [x] US-CHR-009 — Employee status management *(PR #19)*
 - [x] US-CHR-010 — Bulk employee import via CSV/Excel *(PR #20)*
 - [x] US-CHR-011 — Employee reporting structure *(PR #21)*
-- [~] US-CHR-012 — Custom fields per tenant
+- [x] US-CHR-012 — Custom fields per tenant *(PR #22)*
 
 ## 3. Leave Management (12 stories)
 - [ ] US-LV-001 — Configure leave types per tenant
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **14** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; CHR-002 PR #13; CHR-003 PR #14; CHR-006 PR #16; CHR-007 PR #17; CHR-008 PR #18; CHR-009 PR #19; CHR-010 PR #20; CHR-011 PR #21)
+- Done: **15** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — CHR-002 #13, CHR-003 #14, CHR-006 #16, CHR-007 #17, CHR-008 #18, CHR-009 #19, CHR-010 #20, CHR-011 #21, CHR-012 #22)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **86**
+- Pending: **85**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
