@@ -114,6 +114,8 @@ codebase** — used to investigate, not to edit code. Driven by the `@browser-de
 
 > **Optional — .NET reference skills.** Installing the third-party MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) plugin (`/plugin marketplace add Aaronontheweb/dotnet-skills`) gives `@backend-dev` battle-tested C#/EF Core reference knowledge. Lean on **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test approach), `database-performance`, `csharp-api-design`/`-coding-standards`, and the `microsoft-extensions-*` DI/config skills. Off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`) are muted via `skillOverrides` in [.claude/settings.json](.claude/settings.json). Installed as a plugin (auto-updates), not vendored.
 
+> **Optional — Angular reference skills.** The Angular team's official [`angular/skills`](https://github.com/angular/skills) package (`npx skills add https://github.com/angular/skills`) gives `@frontend-dev` current, idiomatic Angular reference knowledge — `angular-developer` (signals/`linkedSignal`/`resource`, standalone components, forms, DI, routing, SSR, a11y, testing) and `angular-new-app`. It tracks the latest Angular, matching our Angular 20 + signals + OnPush stack. The frontend counterpart to `dotnet-skills` above. (Note: prefer this over the now-deprecated `analogjs/angular-skills`.)
+
 ### `/implement-all` — autonomous story loop
 
 Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.md). Per story it:
