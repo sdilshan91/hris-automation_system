@@ -109,6 +109,7 @@ codebase** — used to investigate, not to edit code. Driven by the `@browser-de
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
 | `/research-story US-{ID}` | Local + MCP | **Feasibility gate (RPI-style).** Read-only: reads ONE story + codebase + vault and writes `research/US-{ID}.md` with a GO / GO-WITH-CONDITIONS / NO-GO verdict. Run before implementing a large/risky/unclear story. |
 | `/implement-story US-{ID}` | Local + MCP | Implement ONE specific story end-to-end (manual single-shot; does NOT touch STATUS.md) |
+| `/security-audit [scope]` | Local + MCP | **HRM security gate.** Reviews a diff (branch/US-ID/path) against this platform's threat model — tenant isolation, authz, injection, secrets, PII — and writes `security-reviews/{scope}.md` with severity-by-exploitability findings + fixes. Read-only; run before opening a PR. `--deep` fans out parallel reviewers. |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
