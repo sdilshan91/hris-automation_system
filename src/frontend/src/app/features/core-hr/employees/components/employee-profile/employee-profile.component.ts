@@ -39,6 +39,7 @@ import {
 } from '../../models/employee.models';
 import { FormsModule } from '@angular/forms';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
+import { EmployeeLeaveOverridesComponent } from '../../../../leave-management/components/employee-leave-overrides/employee-leave-overrides.component';
 import { CustomFieldService } from '../../../custom-fields/services/custom-field.service';
 import {
   ICustomFieldDefinition,
@@ -57,7 +58,7 @@ import {
 @Component({
   selector: 'app-employee-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -1044,7 +1045,17 @@ import {
             </section>
           }
 
+          <!-- US-LV-002 AC-3: Leave entitlement overrides tab -->
           @if (activeTab() === 9) {
+            <section @fadeIn class="card-notion" [attr.aria-label]="'Leave Entitlements'">
+              <div class="section-header">
+                <h3 class="section-title">Leave Entitlements</h3>
+              </div>
+              <app-employee-leave-overrides [employeeId]="employeeId" />
+            </section>
+          }
+
+          @if (activeTab() === 10) {
             <section @fadeIn class="card-notion" [attr.aria-label]="'Custom Fields'">
               <div class="section-header">
                 <h3 class="section-title">Custom Fields</h3>
@@ -1731,6 +1742,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     { key: 'dependents', label: 'Dependents' },
     { key: 'employment-history', label: 'Timeline' },
     { key: 'documents', label: 'Documents' },
+    { key: 'leave' as any, label: 'Leave' },
     { key: 'custom-fields', label: 'Custom Fields' },
   ];
 

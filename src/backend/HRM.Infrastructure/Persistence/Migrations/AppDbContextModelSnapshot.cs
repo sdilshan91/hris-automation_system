@@ -1089,6 +1089,269 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.ToTable("job_titles", (string)null);
                 });
 
+            modelBuilder.Entity("HRM.Domain.Entities.LeaveEntitlementOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("employee_id");
+
+                    b.Property<decimal>("EntitlementDays")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("entitlement_days");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("LeaveTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("leave_type_id");
+
+                    b.Property<int>("LeaveYear")
+                        .HasColumnType("integer")
+                        .HasColumnName("leave_year");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_leave_entitlement_overrides");
+
+                    b.HasIndex("EmployeeId")
+                        .HasDatabaseName("ix_leave_entitlement_overrides_employee_id");
+
+                    b.HasIndex("LeaveTypeId")
+                        .HasDatabaseName("ix_leave_entitlement_overrides_leave_type_id");
+
+                    b.HasIndex("TenantId", "EmployeeId", "LeaveTypeId", "LeaveYear")
+                        .IsUnique()
+                        .HasDatabaseName("ix_leave_entitlement_overrides_unique")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("leave_entitlement_overrides", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.LeaveEntitlementRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("department_id");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to");
+
+                    b.Property<string>("EmploymentType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("employment_type");
+
+                    b.Property<decimal>("EntitlementDays")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("entitlement_days");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid?>("JobLevelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_level_id");
+
+                    b.Property<Guid?>("JobTitleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_title_id");
+
+                    b.Property<Guid>("LeaveTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("leave_type_id");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer")
+                        .HasColumnName("priority");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int?>("TenureMaxMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("tenure_max_months");
+
+                    b.Property<int?>("TenureMinMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("tenure_min_months");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_leave_entitlement_rules");
+
+                    b.HasIndex("DepartmentId")
+                        .HasDatabaseName("ix_leave_entitlement_rules_department_id");
+
+                    b.HasIndex("JobTitleId")
+                        .HasDatabaseName("ix_leave_entitlement_rules_job_title_id");
+
+                    b.HasIndex("LeaveTypeId")
+                        .HasDatabaseName("ix_leave_entitlement_rules_leave_type_id");
+
+                    b.HasIndex("TenantId", "LeaveTypeId")
+                        .HasDatabaseName("ix_leave_entitlement_rules_tenant_id_leave_type_id");
+
+                    b.HasIndex("TenantId", "IsActive", "Priority")
+                        .HasDatabaseName("ix_leave_entitlement_rules_tenant_active_priority");
+
+                    b.ToTable("leave_entitlement_rules", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.LeaveLedger", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<decimal>("BalanceAfter")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("balance_after");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("employee_id");
+
+                    b.Property<string>("EntryType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("entry_type");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("LeaveTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("leave_type_id");
+
+                    b.Property<int>("LeaveYear")
+                        .HasColumnType("integer")
+                        .HasColumnName("leave_year");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_leave_ledger");
+
+                    b.HasIndex("EmployeeId")
+                        .HasDatabaseName("ix_leave_ledger_employee_id");
+
+                    b.HasIndex("LeaveTypeId")
+                        .HasDatabaseName("ix_leave_ledger_leave_type_id");
+
+                    b.HasIndex("TenantId", "OccurredAt")
+                        .HasDatabaseName("ix_leave_ledger_tenant_occurred_at");
+
+                    b.HasIndex("TenantId", "EmployeeId", "LeaveTypeId", "LeaveYear")
+                        .HasDatabaseName("ix_leave_ledger_tenant_emp_type_year");
+
+                    b.ToTable("leave_ledger", (string)null);
+                });
+
             modelBuilder.Entity("HRM.Domain.Entities.LeaveType", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1943,6 +2206,76 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_future_dated_status_changes_employees_employee_id");
 
                     b.Navigation("Employee");
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.LeaveEntitlementOverride", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_leave_entitlement_overrides_employees_employee_id");
+
+                    b.HasOne("HRM.Domain.Entities.LeaveType", "LeaveType")
+                        .WithMany()
+                        .HasForeignKey("LeaveTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_leave_entitlement_overrides_leave_types_leave_type_id");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("LeaveType");
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.LeaveEntitlementRule", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.Department", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_leave_entitlement_rules_departments_department_id");
+
+                    b.HasOne("HRM.Domain.Entities.JobTitle", "JobTitle")
+                        .WithMany()
+                        .HasForeignKey("JobTitleId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_leave_entitlement_rules_job_titles_job_title_id");
+
+                    b.HasOne("HRM.Domain.Entities.LeaveType", "LeaveType")
+                        .WithMany()
+                        .HasForeignKey("LeaveTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_leave_entitlement_rules_leave_types_leave_type_id");
+
+                    b.Navigation("Department");
+
+                    b.Navigation("JobTitle");
+
+                    b.Navigation("LeaveType");
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.LeaveLedger", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_leave_ledger_employees_employee_id");
+
+                    b.HasOne("HRM.Domain.Entities.LeaveType", "LeaveType")
+                        .WithMany()
+                        .HasForeignKey("LeaveTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_leave_ledger_leave_types_leave_type_id");
+
+                    b.Navigation("Employee");
+
+                    b.Navigation("LeaveType");
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.MfaRecoveryCode", b =>
