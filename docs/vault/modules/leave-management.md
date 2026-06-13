@@ -121,8 +121,87 @@ Creates:
 ## Related stories
 
 - `US-LV-001` -- Configure Leave Types Per Tenant (this story)
-- `US-LV-002` -- Leave Request Application (will consume leave types for dropdown/validation)
+- `US-LV-002` -- Set Yearly Leave Entitlements by Job Level/Department
 - `US-LV-003+` -- Leave Balances, Accruals, Carry-Forward processing
+
+## Leave Entitlements (US-LV-002)
+
+### Entities
+
+1. **LeaveEntitlementRule** -- rule-based entitlement mapping. Dimensions: leave_type_id (FK), department_id (nullable FK), job_title_id (nullable FK), job_level_id (nullable UUID, no FK -- see below), employment_type (nullable enum), tenure_min_months / tenure_max_months, entitlement_days, priority, effective_from / effective_to, is_active.
+2. **LeaveEntitlementOverride** -- per-employee override. Unique per (tenant, employee, leave_type, leave_year). Takes precedence over all rules.
+3. **LeaveLedger** -- immutable transaction log: entry_type enum (Accrual/Used/Adjusted/Encashed/CarryForward/Expired), employee_id, leave_type_id, leave_year, amount, balance_after, description, occurred_at.
+
+### Rule priority/specificity engine (FR-2, AC-2)
+
+Resolution order (highest precedence first):
+
+1. Employee override (AC-3)
+2. Rule: department + job_title + employment_type (specificity score 7)
+3. Rule: department + job_title (specificity score 6)
+4. Rule: department only (specificity score 4)
+5. Rule: job_title only (specificity score 2)
+6. Leave type default annual_entitlement
+
+Within the same specificity tier, the rule with the **lowest Priority value** wins.
+Tenure brackets are applied as an additional filter, not a specificity dimension.
+
+Implementation: `LeaveEntitlementEngine.Resolve()` -- pure static C#, no I/O, fully unit-testable.
+
+### job_level_id -- DEFERRED (no JobLevel entity)
+
+The story lists `job_level_id` as a dimension (FR-1). There is **no JobLevel entity** in this codebase. The column is included as a **nullable UUID WITHOUT a hard FK** (same pattern as JobTitle.GradeId). It is stored in the database and round-tripped via DTOs, but ignored by the specificity engine until a JobLevel entity exists.
+
+TODO(job-level): When a JobLevel entity is created, wire FK and add specificity score (3, between dept and job_title) to `LeaveEntitlementEngine.Resolve()`.
+
+### FTE pro-rata -- DEFERRED (no FTE field)
+
+BR-2 requires part-time employees receive entitlement proportional to FTE. The Employee entity has no FTE field. `LeaveEntitlementEngine.CalculateProRata()` accepts an `fte` parameter but always receives 1.0m from the service.
+
+TODO(part-time): Add `Employee.Fte` (decimal, default 1.0) and pass it to `CalculateProRata`.
+
+### Redis balance cache -- DEFERRED (consistent with US-LV-001)
+
+FR-6 requires Redis caching with key pattern `tenant:{tenantId}:leave_balance:{employeeId}:{leaveTypeId}`. Deferred, consistent with the US-LV-001 caching decision. No cache layer built; balance is read from LeaveLedger running total.
+
+TODO: When a tenant-scoped cache pattern is established, add `IDistributedCache`-based caching for leave balances.
+
+### API endpoints (backend)
+
+Base: `/api/v1/tenant/leave-entitlements`
+
+| Method | Path | Description | Permission |
+|--------|------|-------------|------------|
+| GET | `/rules` | List rules (optional `?leaveTypeId`) | Leave.ConfigurePolicy |
+| GET | `/rules/{id}` | Get rule by ID | Leave.ConfigurePolicy |
+| POST | `/rules` | Create rule | Leave.ConfigurePolicy |
+| PUT | `/rules/{id}` | Update rule | Leave.ConfigurePolicy |
+| DELETE | `/rules/{id}` | Soft-delete rule | Leave.ConfigurePolicy |
+| POST | `/rules/bulk` | Bulk create rules | Leave.ConfigurePolicy |
+| GET | `/overrides` | List overrides (optional `?employeeId&leaveTypeId&leaveYear`) | Leave.ConfigurePolicy |
+| POST | `/overrides` | Upsert override | Leave.ConfigurePolicy |
+| DELETE | `/overrides/{id}` | Soft-delete override | Leave.ConfigurePolicy |
+| GET | `/effective` | Compute effective entitlement (`?employeeId&leaveTypeId&leaveYear`) | Leave.ConfigurePolicy |
+
+### Hangfire job: LeaveAccrualJob
+
+- Registered as `leave-entitlement-accruals` (daily at 00:30 UTC).
+- Iterates all active/trial tenants, sets tenant context, calls `ILeaveEntitlementService.ProcessAccrualsAsync(leaveYear)`.
+- For each employee x leave type: resolves entitlement (override > rule > default), pro-rates for mid-year joiners, writes a LeaveLedger accrual entry.
+- Idempotent: skips if an accrual entry already exists for the employee/leave type/year.
+- Batch size: 500 employees per query page. Handles 5,000+ employees across batches.
+- BR-3: Skips probation-ineligible leave types for probation employees.
+
+### Migration: `AddLeaveEntitlements` (20260613123300)
+
+Creates three tables:
+1. `leave_entitlement_rules` -- with FKs to leave_types (RESTRICT), departments (SET NULL), job_titles (SET NULL). Indexes: (tenant_id, leave_type_id), (tenant_id, is_active, priority).
+2. `leave_entitlement_overrides` -- with FKs to employees (CASCADE), leave_types (RESTRICT). Unique index: (tenant_id, employee_id, leave_type_id, leave_year) WHERE is_deleted = false. 
+3. `leave_ledger` -- with FKs to employees (CASCADE), leave_types (RESTRICT). Indexes: (tenant_id, employee_id, leave_type_id, leave_year), (tenant_id, occurred_at).
+
+### Audit trail
+
+Rule and override changes are audit-logged via the existing `AuditInterceptor` (CreatedAt/CreatedBy/UpdatedAt/UpdatedBy on BaseEntity). Structured logging with RuleId, TenantId emitted for every create/update/delete operation.
 
 ## Edge cases
 
@@ -183,3 +262,48 @@ Toggle-gated child fields are nullified when the parent toggle is off:
 ### Shared-file change
 
 Only `app.routes.ts` was modified (added the `leave-types` route entry).
+
+## Frontend (US-LV-002) — Leave Entitlement Configuration
+
+### "Job level" dimension omitted
+
+The user story FR-1 lists "job level" as a dimension. There is no `job_level` backend entity in the codebase — departments, job titles, locations, and custom fields exist, but not job levels. The entitlement rule form omits the job level dropdown entirely. If a `job_level` entity is added later, a `<select>` for it should be added to `EntitlementRuleFormComponent` and the service filter.
+
+### API contract assumptions (backend building in parallel)
+
+Base path: `/api/v1/tenant/leave-entitlements`
+
+| Method | Path | Body / Params | Response |
+|--------|------|---------------|----------|
+| GET | `/rules` | `?leaveTypeId&departmentId&employmentType&activeOnly` | `IEntitlementRule[]` |
+| GET | `/rules/:id` | — | `IEntitlementRule` |
+| POST | `/rules` | `ICreateEntitlementRuleRequest` | `IEntitlementRule` |
+| PUT | `/rules/:id` | `IUpdateEntitlementRuleRequest` | `IEntitlementRule` |
+| PATCH | `/rules/:id/days` | `{ entitlementDays: number }` | `IEntitlementRule` |
+| DELETE | `/rules/:id` | — | `void` |
+| GET | `/overrides` | `?employeeId&leaveYear` | `IEntitlementOverride[]` |
+| POST | `/overrides` | `{ employeeId, leaveTypeId, leaveYear, entitlementDays, reason? }` | `IEntitlementOverride` (upsert) |
+| DELETE | `/overrides/:id` | — | `void` |
+| GET | `/compute-effective` | `?employeeId` | `IEffectiveEntitlement[]` |
+| POST | `/bulk` | `IBulkEntitlementRequest` | `IBulkEntitlementResponse` |
+
+The response for rules includes denormalized `leaveTypeName`, `departmentName`, `jobTitleName` — the frontend uses these for display and filter-extraction (no extra lookup calls needed for the matrix view).
+
+### Route
+
+`/leave-types/entitlements` under `MainLayoutComponent`, lazy-loaded. Same role guard as leave types: `Tenant Admin`, `HR Officer`.
+
+### Shared-file changes
+
+1. `employee-profile.component.ts` — Added a **Leave** tab (index 9) that renders `<app-employee-leave-overrides>`. Custom Fields shifted from index 9 to index 10.
+2. `employee-profile.component.spec.ts` — Updated section count assertion from 10 to 11.
+3. `leave-management.routes.ts` — Added `entitlements` child route.
+4. `leave-management/index.ts` — Added barrel exports for new models + service.
+
+### Recalculation toast (AC-5)
+
+On every rule create, update (including inline cell edit), the success toast explicitly says "Background recalculation of affected employees has been triggered." The backend is expected to queue a Hangfire job; the frontend just informs the user.
+
+### Priority / specificity transparency (AC-2)
+
+A blue info banner at the top of the Entitlement Rules page shows the priority help text explaining the specificity ordering. Each rule row shows its numeric priority in a circular badge. The user story's full FR-2 specificity engine is enforced by the backend — the frontend displays the priority to make conflict resolution transparent.

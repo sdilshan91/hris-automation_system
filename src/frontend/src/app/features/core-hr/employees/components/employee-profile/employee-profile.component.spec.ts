@@ -211,14 +211,14 @@ describe('EmployeeProfileComponent', () => {
       expect(component.loadError()).toBe('Employee not found.');
     }));
 
-    it('should show all 10 section tabs', fakeAsync(() => {
+    it('should show all 11 section tabs (including Leave tab from US-LV-002)', fakeAsync(() => {
       fixture.detectChanges();
       const req = httpMock.expectOne(profileUrl);
       req.flush(mockProfile);
       tick();
       fixture.detectChanges();
 
-      expect(component.sectionList.length).toBe(10);
+      expect(component.sectionList.length).toBe(11);
     }));
 
     it('should display employee initials when no photo URL', fakeAsync(() => {

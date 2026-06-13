@@ -745,6 +745,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 ---
 
+
 ## Leave Management Module
 
 ### Forward Traceability (User Stories --> Test Cases)
@@ -753,7 +754,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 |---------------|-----------------|----------|------------|----------|----------|
 | US-LV-001 | Configure Leave Types Per Tenant | Must Have | TC-LV-001, TC-LV-002, TC-LV-003, TC-LV-004, TC-LV-005, TC-LV-006, TC-LV-007, TC-LV-008, TC-LV-009, TC-LV-010, TC-LV-011, TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-016, TC-LV-017, TC-LV-018, TC-LV-019, TC-LV-020, TC-LV-021, TC-LV-022, TC-LV-023, TC-LV-024, TC-LV-025 | 25 | 5/5 AC covered |
 | Cross-cutting (LV-001) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | 4 | -- |
-| **TOTAL** | | | **29 test cases** | **29** | **5/5 AC** |
+| US-LV-002 | Set Yearly Leave Entitlements by Job Level/Department | Must Have | TC-LV-026, TC-LV-027, TC-LV-028, TC-LV-029, TC-LV-030, TC-LV-031, TC-LV-032, TC-LV-033, TC-LV-034, TC-LV-035, TC-LV-036, TC-LV-037, TC-LV-038, TC-LV-039, TC-LV-040, TC-LV-041, TC-LV-042, TC-LV-043, TC-LV-044, TC-LV-045, TC-LV-046, TC-LV-047 | 22 | 5/5 AC covered |
+| Cross-cutting (LV-002) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | 4 | -- |
+| **TOTAL** | | | **55 test cases** | **55** | **10/10 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -784,10 +787,36 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-LV-023 | Leave type write API response within 800ms P95 | Performance | High | US-LV-001 | NFR-1 |
 | TC-LV-024 | Create all accrual frequency types (monthly, quarterly, yearly, upfront) | Functional | High | US-LV-001 | AC-1, FR-2 |
 | TC-LV-025 | Negative balance configuration -- allowed with limit and disallowed | Functional | High | US-LV-001 | FR-2, BR-3 |
+| TC-LV-026 | Create entitlement rule mapping leave type to department and job level (happy path) | Functional | Critical | US-LV-002 | AC-1, FR-1, FR-2, NFR-2, BR-1 |
+| TC-LV-027 | Rule priority -- most specific rule wins when overlapping rules exist | Functional | Critical | US-LV-002 | AC-2, FR-2, BR-1 |
+| TC-LV-028 | Per-employee override takes precedence over all rule-based entitlements | Functional | Critical | US-LV-002 | AC-3, FR-2 |
+| TC-LV-029 | Pro-rata entitlement calculation for mid-year joiners | Functional | Critical | US-LV-002 | AC-4, FR-3 |
+| TC-LV-030 | Modify entitlement rule triggers Hangfire recalculation and audit log | Functional | Critical | US-LV-002 | AC-5, FR-5, NFR-1 |
+| TC-LV-031 | Part-time FTE proration (DEFERRED -- FTE field pending) | Functional | High | US-LV-002 | BR-2, FR-1 |
+| TC-LV-032 | Probation employee only accrues probation_eligible leave types | Functional | Critical | US-LV-002 | BR-3, FR-1 |
+| TC-LV-033 | Entitlement cannot be negative -- minimum clamped to zero | Functional | High | US-LV-002 | BR-4 |
+| TC-LV-034 | Department transfer mid-year triggers pro-rata recalculation for both periods | Functional | High | US-LV-002 | BR-5, FR-3 |
+| TC-LV-035 | Leave year configuration -- calendar year vs fiscal year per tenant | Functional | High | US-LV-002 | BR-1 |
+| TC-LV-036 | Hangfire accrual job creates correct leave_ledger entries | Functional | Critical | US-LV-002 | AC-1, FR-5, Section 7 |
+| TC-LV-037 | Bulk entitlement assignment UI for mass updates | Functional | High | US-LV-002 | FR-4 |
+| TC-LV-038 | Entitlement rule CRUD validation -- invalid inputs rejected | Functional | High | US-LV-002 | FR-1, BR-4 |
+| TC-LV-039 | Only Leave.Configure permission can manage entitlement rules | Security | Critical | US-LV-002 | Preconditions Section 2, NFR-2 |
+| TC-LV-040 | Unauthenticated request to entitlement API returns 401 | Security | Critical | US-LV-002 | Preconditions Section 2 |
+| TC-LV-041 | Entitlement recalculation for 5,000 employees within 60 seconds | Performance | Critical | US-LV-002 | NFR-1 |
+| TC-LV-042 | Redis cache for leave balances with 24h TTL and invalidation (DEFERRED) | Performance | High | US-LV-002 | NFR-3, FR-6 |
+| TC-LV-043 | Responsive UI -- entitlement matrix collapses to card list on mobile | Functional | High | US-LV-002 | Section 8 |
+| TC-LV-044 | WCAG 2.1 AA accessibility for entitlement configuration page | Accessibility | High | US-LV-002 | Section 8 |
+| TC-LV-045 | Cross-browser compatibility for entitlement configuration page | Functional | Medium | US-LV-002 | Section 8 |
+| TC-LV-046 | Job-level dimension in entitlement rules (DEFERRED) | Functional | High | US-LV-002 | FR-1, Section 7 |
+| TC-LV-047 | Input sanitization -- XSS in entitlement rule and override fields | Security | High | US-LV-002 | NFR-2 |
 | TC-LV-ISO-001 | Tenant A cannot see Tenant B's leave types | Security | Critical | US-LV-001 | NFR-2, BR-1 |
 | TC-LV-ISO-002 | API rejects leave type requests without valid tenant context | Security | Critical | US-LV-001 | NFR-2 |
 | TC-LV-ISO-003 | RLS blocks direct DB queries across tenants for leave types | Security | Critical | US-LV-001 | NFR-2, Section 7 |
 | TC-LV-ISO-004 | Cache keys for leave types are tenant-scoped | Security | Critical | US-LV-001 | NFR-1, NFR-2 |
+| TC-LV-ISO-005 | Tenant A cannot see Tenant B's entitlement rules or overrides | Security | Critical | US-LV-002 | NFR-2 |
+| TC-LV-ISO-006 | API rejects entitlement requests without valid tenant context | Security | Critical | US-LV-002 | NFR-2 |
+| TC-LV-ISO-007 | RLS blocks direct DB queries across tenants for entitlement data | Security | Critical | US-LV-002 | NFR-2 |
+| TC-LV-ISO-008 | Cache keys for leave balances are tenant-scoped (DEFERRED -- partial) | Security | Critical | US-LV-002 | NFR-2, NFR-3, FR-6 |
 
 ### US-LV-001 Detailed Requirements Traceability
 
@@ -813,6 +842,30 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | BR-4: Gender-specific types shown only to matching gender employees | BR | TC-LV-010 | Direct (employee-facing filtering forward-looking) |
 | BR-5: Config changes do not retroactively affect approved requests | BR | TC-LV-002, TC-LV-004 | Direct |
 
+### US-LV-002 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Create entitlement rule, matching employees get correct days on next accrual | AC | TC-LV-026, TC-LV-036 | Direct |
+| AC-2: Overlapping rules resolved by specificity (most specific wins) | AC | TC-LV-027 | Direct |
+| AC-3: Per-employee override takes precedence over all rules | AC | TC-LV-028 | Direct |
+| AC-4: Mid-year joiner entitlement pro-rated based on joining date | AC | TC-LV-029 | Direct |
+| AC-5: Rule modification triggers Hangfire recalculation and audit log | AC | TC-LV-030 | Direct |
+| FR-1: Entitlement rules support dimensions: leave type, department, job level, job title, employment type, tenure brackets | FR | TC-LV-026, TC-LV-027, TC-LV-038, TC-LV-046 | Direct (tenure and job-level as standalone dimension DEFERRED in TC-LV-046) |
+| FR-2: Rule priority/specificity engine | FR | TC-LV-027, TC-LV-028 | Direct |
+| FR-3: Pro-rata calculation for mid-year joiners | FR | TC-LV-029, TC-LV-034 | Direct |
+| FR-4: Bulk entitlement assignment UI | FR | TC-LV-037 | Direct |
+| FR-5: Hangfire recurring job for accrual processing | FR | TC-LV-030, TC-LV-036, TC-LV-041 | Direct |
+| FR-6: Computed balances cached in Redis with tenant-scoped key pattern | FR | TC-LV-042 | DEFERRED (Redis caching not implemented) |
+| NFR-1: Recalculation for 5,000 employees within 60 seconds (Hangfire) | NFR | TC-LV-041 | Direct |
+| NFR-2: All entitlement data tenant-isolated via EF Core filters and PostgreSQL RLS | NFR | TC-LV-039, TC-LV-040, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | Direct |
+| NFR-3: Redis cache for leave balances with 24h TTL and event-driven invalidation | NFR | TC-LV-042, TC-LV-ISO-008 | DEFERRED (Redis caching not implemented) |
+| BR-1: Entitlement rules effective per leave year (calendar or fiscal per tenant) | BR | TC-LV-035 | Direct |
+| BR-2: Part-time employees receive entitlement proportional to FTE ratio | BR | TC-LV-031 | DEFERRED (FTE field not on Employee entity) |
+| BR-3: Probation employees only accrue probation_eligible leave types | BR | TC-LV-032 | Direct |
+| BR-4: Entitlement cannot be negative; minimum is zero | BR | TC-LV-033 | Direct |
+| BR-5: Department transfer mid-year triggers pro-rata recalculation for both periods | BR | TC-LV-034 | Direct |
+
 ### Coverage Summary (Leave Management -- US-LV-001)
 
 | Metric | Value | Target | Status |
@@ -829,15 +882,31 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Blocked Test Cases | 0 | -- | CLEAR |
 | Deferred Test Cases | TC-LV-021 (onboarding seeding -- pending US-TENANT-*), TC-LV-ISO-004 partial (cache -- pending Redis implementation) | -- | NOTE |
 
+### Coverage Summary (Leave Management -- US-LV-002)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 5/6 (83%) -- FR-6 deferred (Redis caching) | >= 85% | NOTE (FR-6 is infrastructure dependency) |
+| Non-Functional Requirements Coverage | 2/3 (67%) -- NFR-3 deferred (Redis caching) | >= 85% | NOTE (NFR-3 is infrastructure dependency) |
+| Business Rules Coverage | 4/5 (80%) -- BR-2 deferred (FTE field) | >= 85% | NOTE (BR-2 is entity-level dependency) |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO + 1 embedded TC-LV-042) | >= 3 | PASS |
+| Security Test Cases | 7/26 (26.9%) including ISO | >= 30% | NOTE (close; all critical security vectors covered: auth, authz, tenant isolation, XSS) |
+| Performance Test Cases | 2/26 (TC-LV-041, TC-LV-042) | >= 1 | PASS |
+| Accessibility Test Cases | 1/26 (TC-LV-044) | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/26 (TC-LV-043, TC-LV-045) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | TC-LV-031 (FTE proration -- FTE field pending), TC-LV-042 (Redis cache -- pending implementation), TC-LV-046 (job-level/tenure dimensions -- pending entity), TC-LV-ISO-008 partial (cache keys -- pending Redis) | -- | NOTE |
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
 | Core HR (US-CHR-001 through US-CHR-012) | 12 | 372 | 61/61 (100%) | 67 | PASS |
-| Leave Management (US-LV-001) | 1 | 29 | 5/5 (100%) | 5 | PASS |
-| **TOTAL** | **23** | **517** | **127/127 (100%)** | **95** | |
+| Leave Management (US-LV-001, US-LV-002) | 2 | 55 | 10/10 (100%) | 10 | PASS |
+| **TOTAL** | **24** | **543** | **132/132 (100%)** | **100** | |
 
 ---
 
-*Note: This traceability matrix covers Authentication & Authorization (10 stories, 116 TCs), Core HR (12 stories, 372 TCs), and Leave Management (1 story, 29 TCs). Leave Management US-LV-001 is the first story of the module with 25 functional test cases + 4 dedicated multi-tenant isolation tests. FR-4 (onboarding seeding) is DEFERRED pending the Tenant provisioning module (US-TENANT-*). TC-LV-ISO-004 cache-specific steps are DEFERRED pending Redis caching implementation for leave types. Several forward-looking steps in TC-LV-004, TC-LV-005, and TC-LV-010 depend on the leave-request module (US-LV-002+). All existing Core HR and Authentication test cases remain unchanged.*
+*Note: This traceability matrix covers Authentication & Authorization (10 stories, 116 TCs), Core HR (12 stories, 372 TCs), and Leave Management (2 stories, 55 TCs). US-LV-002 adds 22 functional test cases + 4 dedicated multi-tenant isolation tests for leave entitlement configuration. Deferred items in US-LV-002: TC-LV-031 (FTE proration -- Employee entity lacks FTE field), TC-LV-042 (Redis balance cache -- caching not yet implemented), TC-LV-046 (job-level/tenure dimensions as standalone rule criteria -- entity dependencies), TC-LV-ISO-008 partial (cache key isolation -- pending Redis). FR-6 (Redis caching) and NFR-3 (cache TTL/invalidation) are infrastructure dependencies. BR-2 (FTE proration) requires FTE field on Employee entity. All 5 acceptance criteria for US-LV-002 have direct test coverage. All existing test cases for US-LV-001, Core HR, and Authentication remain unchanged.*

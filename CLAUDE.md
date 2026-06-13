@@ -107,6 +107,7 @@ codebase** — used to investigate, not to edit code. Driven by the `@browser-de
 | `/implement-all [module\|US-ID]` | Local + MCP | **Loop driver.** Picks the next pending story from `user-stories/STATUS.md`, builds it end-to-end (BE + FE + QA in parallel), runs the full verify gate with an autonomous remediation loop, then commits + opens a PR. One story per call; rerun (or `/loop`) to continue. See below. |
 | `/orchestrate` | Local + MCP | Full pipeline: BA → (FE + BE + QA in parallel via worktrees) |
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
+| `/research-story US-{ID}` | Local + MCP | **Feasibility gate (RPI-style).** Read-only: reads ONE story + codebase + vault and writes `research/US-{ID}.md` with a GO / GO-WITH-CONDITIONS / NO-GO verdict. Run before implementing a large/risky/unclear story. |
 | `/implement-story US-{ID}` | Local + MCP | Implement ONE specific story end-to-end (manual single-shot; does NOT touch STATUS.md) |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
@@ -128,6 +129,7 @@ Run continuously with `/loop /implement-all [scope]` — it re-fires until the s
 |------|---------|--------|
 | `post-user-story-commit` | User story files committed | Notifies dev + QA agents to start |
 | `post-dev-commit` | Frontend/backend code committed | Notifies QA to review test cases |
+| `sound notifications` | `Stop`, `Notification`, `PermissionRequest`, `SubagentStop` | Plays a short sound via `python .claude/hooks/scripts/hooks.py` so you know when a long `/implement-all` run finishes or needs you. Toggle per-hook in `.claude/hooks/config/hooks-config.json` (or git-ignored `…local.json`); disable all via `disableAllHooks` in `settings.local.json`. Needs Python 3. |
 
 ## Pipeline Flow (Local + MCP)
 
@@ -227,6 +229,17 @@ All agents share a persistent markdown knowledge base at `docs/vault/`. Open as 
 - When handing off to another agent in the same run, drop a note in `docs/vault/handoffs/` with frontmatter `from:` and `to:`.
 - Use Obsidian wiki links `[[note-name]]` between vault notes so backlinks work.
 - Never put secrets, generated logs, or transient task state in the vault.
+
+### Vault vs. built-in agent memory
+
+There are **two** distinct memory stores — keep them separate so knowledge doesn't fragment:
+
+| Store | What it is | Use for |
+|---|---|---|
+| **Obsidian vault** (`docs/vault/`) | Manual, **shared**, human-browsable. The cross-agent source of truth. | Domain rules, ADRs, handoffs, anything another agent/human should read. |
+| **Built-in agent memory** (`.claude/agent-memory/{agent}/`) | Auto-loaded each run via `memory: project` in agent frontmatter. **Private to that one agent.** | An agent's own operational notes ("tried X, it failed", recurring gotchas) it wants auto-recalled next run. |
+
+Rule of thumb: if it's worth sharing, it goes in the **vault**; if it's just one agent's working memory, the built-in store is fine. Never duplicate the same fact into both. Secrets/logs go in neither.
 
 ## Critical Rules
 1. **Tenant isolation is non-negotiable** — every query, cache key, and API call must be tenant-scoped

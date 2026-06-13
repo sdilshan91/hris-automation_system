@@ -41,6 +41,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<BulkImportJob> BulkImportJobs => Set<BulkImportJob>();
     public DbSet<CustomFieldDefinition> CustomFieldDefinitions => Set<CustomFieldDefinition>();
     public DbSet<LeaveType> LeaveTypes => Set<LeaveType>();
+    public DbSet<LeaveEntitlementRule> LeaveEntitlementRules => Set<LeaveEntitlementRule>();
+    public DbSet<LeaveEntitlementOverride> LeaveEntitlementOverrides => Set<LeaveEntitlementOverride>();
+    public DbSet<LeaveLedger> LeaveLedgerEntries => Set<LeaveLedger>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -109,5 +112,17 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-LV-001: LeaveType tenant isolation + soft-delete filter
         modelBuilder.Entity<LeaveType>()
             .HasQueryFilter(lt => !lt.IsDeleted && (!_tenantContext.IsResolved || lt.TenantId == _tenantContext.TenantId));
+
+        // US-LV-002: LeaveEntitlementRule tenant isolation + soft-delete filter
+        modelBuilder.Entity<LeaveEntitlementRule>()
+            .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
+
+        // US-LV-002: LeaveEntitlementOverride tenant isolation + soft-delete filter
+        modelBuilder.Entity<LeaveEntitlementOverride>()
+            .HasQueryFilter(o => !o.IsDeleted && (!_tenantContext.IsResolved || o.TenantId == _tenantContext.TenantId));
+
+        // US-LV-002: LeaveLedger tenant isolation + soft-delete filter
+        modelBuilder.Entity<LeaveLedger>()
+            .HasQueryFilter(l => !l.IsDeleted && (!_tenantContext.IsResolved || l.TenantId == _tenantContext.TenantId));
     }
 }

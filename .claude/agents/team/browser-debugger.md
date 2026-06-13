@@ -24,7 +24,9 @@ tools:
   - mcp__playwright__browser_resize
   - mcp__playwright__browser_handle_dialog
   - mcp__playwright__browser_close
-model: claude-opus-4-6
+model: claude-opus-4-8
+maxTurns: 30
+memory: project
 ---
 
 # Browser Debugger Agent

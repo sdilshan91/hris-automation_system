@@ -97,6 +97,9 @@ public static class DependencyInjection
         // Leave type service (US-LV-001)
         services.AddScoped<ILeaveTypeService, LeaveTypeService>();
 
+        // Leave entitlement service (US-LV-002)
+        services.AddScoped<ILeaveEntitlementService, LeaveEntitlementService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>

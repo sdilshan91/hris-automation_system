@@ -138,6 +138,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ApplyFutureDatedStatusChangesJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProbationReminderJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.BulkEmployeeImportJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.LeaveAccrualJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
@@ -234,6 +235,12 @@ try
             "probation-end-reminders",
             job => job.RunAsync(),
             "0 8 * * *"); // 08:00 UTC daily
+
+        // US-LV-002 FR-5 / AC-5: Leave entitlement accrual processing (daily at 00:30 UTC)
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.LeaveAccrualJob>(
+            "leave-entitlement-accruals",
+            job => job.RunAsync(),
+            "30 0 * * *"); // 00:30 UTC daily
     }
 
     app.Run();
