@@ -45,6 +45,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<LeaveEntitlementOverride> LeaveEntitlementOverrides => Set<LeaveEntitlementOverride>();
     public DbSet<LeaveLedger> LeaveLedgerEntries => Set<LeaveLedger>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<LeaveApprovalHistory> LeaveApprovalHistories => Set<LeaveApprovalHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -129,5 +130,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-LV-003: LeaveRequest tenant isolation + soft-delete filter
         modelBuilder.Entity<LeaveRequest>()
             .HasQueryFilter(lr => !lr.IsDeleted && (!_tenantContext.IsResolved || lr.TenantId == _tenantContext.TenantId));
+
+        // US-LV-005: LeaveApprovalHistory tenant isolation + soft-delete filter
+        modelBuilder.Entity<LeaveApprovalHistory>()
+            .HasQueryFilter(h => !h.IsDeleted && (!_tenantContext.IsResolved || h.TenantId == _tenantContext.TenantId));
     }
 }

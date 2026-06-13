@@ -57,7 +57,7 @@
 - [x] US-LV-002 — Set yearly leave entitlements *(PR #24)*
 - [x] US-LV-003 — Employee applies for leave *(PR #29)*
 - [x] US-LV-004 — Manager views pending leave queue *(PR #30)*
-- [ ] US-LV-005 — Manager approves or rejects leave
+- [~] US-LV-005 — Manager approves or rejects leave
 - [ ] US-LV-006 — Leave balance dashboard
 - [ ] US-LV-007 — Holiday calendar management
 - [ ] US-LV-008 — Leave carry-forward and expiry rules

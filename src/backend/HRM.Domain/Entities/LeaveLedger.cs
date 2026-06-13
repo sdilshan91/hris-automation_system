@@ -29,6 +29,13 @@ public sealed class LeaveLedger : BaseEntity
     public int LeaveYear { get; set; }
 
     /// <summary>
+    /// Optional FK to the leave request that produced this entry (US-LV-005 §7).
+    /// Set on the "Used" deduction written when a request is approved; null for accruals,
+    /// adjustments, carry-forwards, etc. that are not tied to a specific request.
+    /// </summary>
+    public Guid? LeaveRequestId { get; set; }
+
+    /// <summary>
     /// Amount of days (positive for accrual/carry-forward, negative for used/encashed/expired).
     /// </summary>
     public decimal Amount { get; set; }
@@ -52,4 +59,5 @@ public sealed class LeaveLedger : BaseEntity
 
     public Employee? Employee { get; set; }
     public LeaveType? LeaveType { get; set; }
+    public LeaveRequest? LeaveRequest { get; set; }
 }

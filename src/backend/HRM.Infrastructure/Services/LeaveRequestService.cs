@@ -438,6 +438,234 @@ public sealed class LeaveRequestService : ILeaveRequestService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Approve / Reject (US-LV-005 FR-1..FR-7, AC-1..AC-3/AC-5, BR-1..BR-5)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<LeaveApprovalResultDto>> ApproveAsync(
+        Guid leaveRequestId,
+        string? comment,
+        CancellationToken cancellationToken = default)
+    {
+        var ctx = await LoadForDecisionAsync(leaveRequestId, cancellationToken);
+        if (ctx.Failure is not null)
+            return ctx.Failure;
+
+        var request = ctx.Request!;
+        var leaveType = ctx.LeaveType!;
+        var manager = ctx.Manager!;
+
+        // BR-4: payroll-lock check is DEFERRED — no payroll module exists yet.
+        // TODO(payroll): block approval when the request period falls in a payroll-locked period
+        //   ("Cannot approve leave for a payroll-locked period.").
+
+        // BR-5 / AC-3: recompute balance at approval time (not at request time). If insufficient
+        // and the leave type does NOT allow a negative balance -> block (400). If negative is
+        // allowed, the API approves (the manager "confirmation" modal is a UI concern, AC-3).
+        int leaveYear = request.StartDate.Year;
+        decimal currentBalance = await GetLedgerBalanceAsync(
+            request.EmployeeId, leaveType.Id, leaveYear, cancellationToken);
+
+        decimal projected = currentBalance - request.TotalDays;
+        if (projected < 0m && !leaveType.NegativeBalanceAllowed)
+        {
+            return Result<LeaveApprovalResultDto>.Failure(
+                $"Insufficient leave balance to approve. Available: {currentBalance} day(s), requested: {request.TotalDays} day(s).",
+                400);
+        }
+
+        // FR-3 / AC-1: append a LeaveLedger "Used" deduction, linked to the request, computing
+        // balance_after from the running total (reuses the US-LV-002 accrual ledger-append logic).
+        var ledgerEntry = new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            EntryType = LedgerEntryType.Used,
+            EmployeeId = request.EmployeeId,
+            LeaveTypeId = leaveType.Id,
+            LeaveYear = leaveYear,
+            LeaveRequestId = request.Id,
+            Amount = -request.TotalDays,
+            BalanceAfter = projected,
+            Description = $"Leave approved ({leaveType.Name}): {request.TotalDays} day(s)",
+            OccurredAt = DateTime.UtcNow,
+        };
+
+        request.Status = LeaveRequestStatus.Approved;
+
+        var history = NewHistory(request.Id, manager.Id, LeaveApprovalAction.Approved, comment);
+
+        _dbContext.LeaveLedgerEntries.Add(ledgerEntry);
+        _dbContext.LeaveApprovalHistories.Add(history);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // AC-5 / FR-6 / NFR-4: another approver actioned this request first (xmin token).
+            return Result<LeaveApprovalResultDto>.Failure(
+                "This request has already been actioned.", 409);
+        }
+
+        _logger.LogInformation(
+            "Leave request {LeaveRequestId} approved by manager {ManagerEmployeeId} for employee {EmployeeId}: " +
+            "ledger {LedgerEntryId}, balance {BalanceAfter} in tenant {TenantId}. Action {AuditAction} resource {Resource}.",
+            request.Id, manager.Id, request.EmployeeId, ledgerEntry.Id, projected, _tenantContext.TenantId,
+            "Leave.Approved", "LeaveRequest");
+
+        // FR-3 / AC-1: invalidate the Redis balance cache. Redis caching is DEFERRED module-wide
+        // (vault decision); the ledger total is the single source of truth.
+        // TODO(redis-balance-cache): invalidate key tenant:{tenantId}:leave_balance:{empId}:{leaveTypeId}.
+
+        // NFR-2 / AC-1: queue a "leave-approved" notification (fire-and-forget log-only seam).
+        await _notificationService.NotifyLeaveApprovedAsync(
+            request.Id, request.EmployeeId, manager.Id, cancellationToken);
+
+        return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
+        {
+            RequestId = request.Id,
+            Status = request.Status.ToString(),
+            Action = LeaveApprovalAction.Approved.ToString(),
+            ApprovalLevel = history.ApprovalLevel,
+            LedgerEntryId = ledgerEntry.Id,
+            BalanceAfter = projected,
+            ActionedAt = history.ActionedAt,
+        });
+    }
+
+    public async Task<Result<LeaveApprovalResultDto>> RejectAsync(
+        Guid leaveRequestId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        // BR-2: reason is mandatory (also enforced by the validator; guard defensively here).
+        if (string.IsNullOrWhiteSpace(reason))
+            return Result<LeaveApprovalResultDto>.Failure("A rejection reason is required.", 400);
+
+        var ctx = await LoadForDecisionAsync(leaveRequestId, cancellationToken);
+        if (ctx.Failure is not null)
+            return ctx.Failure;
+
+        var request = ctx.Request!;
+        var manager = ctx.Manager!;
+
+        // FR-4: no ledger entry on rejection — only a status update and approval-history record.
+        request.Status = LeaveRequestStatus.Rejected;
+
+        var history = NewHistory(request.Id, manager.Id, LeaveApprovalAction.Rejected, reason);
+        _dbContext.LeaveApprovalHistories.Add(history);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // AC-5: another approver actioned this request first.
+            return Result<LeaveApprovalResultDto>.Failure(
+                "This request has already been actioned.", 409);
+        }
+
+        _logger.LogInformation(
+            "Leave request {LeaveRequestId} rejected by manager {ManagerEmployeeId} for employee {EmployeeId} " +
+            "in tenant {TenantId}. Action {AuditAction} resource {Resource}.",
+            request.Id, manager.Id, request.EmployeeId, _tenantContext.TenantId, "Leave.Rejected", "LeaveRequest");
+
+        // NFR-2 / AC-2: queue a "leave-rejected" notification with the reason (log-only seam).
+        await _notificationService.NotifyLeaveRejectedAsync(
+            request.Id, request.EmployeeId, manager.Id, reason, cancellationToken);
+
+        return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
+        {
+            RequestId = request.Id,
+            Status = request.Status.ToString(),
+            Action = LeaveApprovalAction.Rejected.ToString(),
+            ApprovalLevel = history.ApprovalLevel,
+            LedgerEntryId = null,
+            BalanceAfter = null,
+            ActionedAt = history.ActionedAt,
+        });
+    }
+
+    /// <summary>
+    /// Shared load + authorization + state checks for approve/reject (BR-1, BR-3).
+    /// Returns a populated context on success, or a context whose <c>Failure</c> is set.
+    /// </summary>
+    private async Task<DecisionContext> LoadForDecisionAsync(
+        Guid leaveRequestId, CancellationToken cancellationToken)
+    {
+        if (!_tenantContext.IsResolved)
+            return DecisionContext.Fail("Tenant context is not resolved.", 400);
+
+        var manager = await GetCurrentEmployeeAsync(cancellationToken);
+        if (manager is null)
+            return DecisionContext.Fail("No employee record is linked to the current user.", 403);
+
+        // Tracked load (we mutate Status). Tenant-scoped by the global query filter.
+        var request = await _dbContext.LeaveRequests
+            .FirstOrDefaultAsync(lr => lr.Id == leaveRequestId, cancellationToken);
+        if (request is null)
+            return DecisionContext.Fail("Leave request not found.", 404);
+
+        // BR-1: only the request's approver — the manager of the requesting employee — may act.
+        // Single-level direct-report scope (same as US-LV-004). Multi-level routing is deferred.
+        // TODO(US-ADM-007): when a tenant approval-workflow config entity exists, route by level
+        //   (1-3) and introduce the "Pending L2 Approval" status (FR-5 / AC-4, currently deferred).
+        var requester = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == request.EmployeeId, cancellationToken);
+        if (requester is null || requester.ReportsToEmployeeId != manager.Id)
+            return DecisionContext.Fail(
+                "You are not the approver for this leave request.", 403);
+
+        // BR-3: a request that has already been actioned (Approved/Rejected/Cancelled) cannot be
+        // re-actioned. Only Pending requests are actionable.
+        if (request.Status != LeaveRequestStatus.Pending)
+            return DecisionContext.Fail(
+                $"This request has already been actioned (status: {request.Status}).", 409);
+
+        var leaveType = await _dbContext.LeaveTypes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(lt => lt.Id == request.LeaveTypeId, cancellationToken);
+        if (leaveType is null)
+            return DecisionContext.Fail("Leave type not found.", 404);
+
+        return new DecisionContext
+        {
+            Request = request,
+            LeaveType = leaveType,
+            Manager = manager,
+        };
+    }
+
+    private LeaveApprovalHistory NewHistory(
+        Guid leaveRequestId, Guid approverEmployeeId, LeaveApprovalAction action, string? comment) => new()
+    {
+        Id = BaseEntity.NewUuidV7(),
+        TenantId = _tenantContext.TenantId,
+        LeaveRequestId = leaveRequestId,
+        ApproverEmployeeId = approverEmployeeId,
+        ApprovalLevel = 1, // single-level only (FR-5/AC-4 multi-level deferred to US-ADM-007)
+        Action = action,
+        Comment = comment,
+        ActionedAt = DateTime.UtcNow,
+    };
+
+    private sealed class DecisionContext
+    {
+        public LeaveRequest? Request { get; init; }
+        public LeaveType? LeaveType { get; init; }
+        public Employee? Manager { get; init; }
+        public Result<LeaveApprovalResultDto>? Failure { get; init; }
+
+        public static DecisionContext Fail(string error, int statusCode) => new()
+        {
+            Failure = Result<LeaveApprovalResultDto>.Failure(error, statusCode),
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
 

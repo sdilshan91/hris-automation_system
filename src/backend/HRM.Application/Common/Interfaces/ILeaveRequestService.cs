@@ -43,4 +43,28 @@ public interface ILeaveRequestService
     Task<Result<PendingLeaveQueueResult>> GetPendingForManagerAsync(
         PendingLeaveQueueQueryParams queryParams,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Approves a pending leave request from one of the current manager's direct reports
+    /// (US-LV-005 FR-1/FR-3, AC-1/AC-3/AC-5, BR-1/BR-3/BR-5). Sets the status to Approved,
+    /// appends a LeaveLedger "Used" deduction, and records a LeaveApprovalHistory row.
+    /// Returns 403 if the caller is not the request's approver, 404 if the request is not found,
+    /// 400/409 if it has already been actioned or the balance is insufficient, and 409 on a
+    /// concurrent-action conflict (xmin). Comment is optional.
+    /// </summary>
+    Task<Result<LeaveApprovalResultDto>> ApproveAsync(
+        Guid leaveRequestId,
+        string? comment,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rejects a pending leave request from one of the current manager's direct reports
+    /// (US-LV-005 FR-2/FR-4, AC-2/AC-5, BR-1/BR-2/BR-3). Sets the status to Rejected and records
+    /// a LeaveApprovalHistory row; writes no ledger entry. The reason is mandatory (BR-2).
+    /// Returns 403/404/400/409 under the same conditions as <see cref="ApproveAsync"/>.
+    /// </summary>
+    Task<Result<LeaveApprovalResultDto>> RejectAsync(
+        Guid leaveRequestId,
+        string reason,
+        CancellationToken cancellationToken = default);
 }

@@ -5,12 +5,14 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { provideToastr, ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { LeaveApprovalsComponent } from './leave-approvals.component';
 import { LeaveApprovalsService } from '../../services/leave-approvals.service';
 import { LeaveTypeService } from '../../services/leave-type.service';
 import {
   IPendingLeaveRequest,
   IPendingLeaveResponse,
+  ILeaveActionResult,
   balanceTier,
 } from '../../models/pending-leave.models';
 
@@ -58,8 +60,18 @@ describe('LeaveApprovalsComponent', () => {
   };
 
   beforeEach(async () => {
-    approvalsSpy = jasmine.createSpyObj('LeaveApprovalsService', ['getPendingQueue']);
+    approvalsSpy = jasmine.createSpyObj('LeaveApprovalsService', [
+      'getPendingQueue',
+      'approve',
+      'reject',
+    ]);
     approvalsSpy.getPendingQueue.and.returnValue(of(page1));
+    approvalsSpy.approve.and.returnValue(
+      of({ requestId: 'lr-1', status: 'Approved' } as ILeaveActionResult)
+    );
+    approvalsSpy.reject.and.returnValue(
+      of({ requestId: 'lr-1', status: 'Rejected' } as ILeaveActionResult)
+    );
     typeSpy = jasmine.createSpyObj('LeaveTypeService', ['getLeaveTypes']);
     typeSpy.getLeaveTypes.and.returnValue(
       of([{ leaveTypeId: 'lt-1', name: 'Annual Leave', color: '#2563eb' } as any])
@@ -242,13 +254,13 @@ describe('LeaveApprovalsComponent', () => {
       expect(panel).toBeTruthy();
     });
 
-    it('renders disabled approve/reject buttons (deferred to US-LV-005)', () => {
+    it('renders enabled approve/reject buttons (US-LV-005)', () => {
       component.openDetail(page1.items[0]);
       fixture.detectChanges();
       const approve = fixture.nativeElement.querySelector('[data-test="approve-btn"]');
       const reject = fixture.nativeElement.querySelector('[data-test="reject-btn"]');
-      expect(approve.disabled).toBeTrue();
-      expect(reject.disabled).toBeTrue();
+      expect(approve.disabled).toBeFalse();
+      expect(reject.disabled).toBeFalse();
     });
 
     it('closeDetail clears the selection', () => {
@@ -257,6 +269,214 @@ describe('LeaveApprovalsComponent', () => {
       fixture.detectChanges();
       expect(component.selected()).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-test="detail-panel"]')).toBeNull();
+    });
+  });
+
+  // ─── US-LV-005: Approve / Reject actions ───────────────────────
+  describe('approve / reject actions', () => {
+    let toastr: ToastrService;
+    let successSpy: jasmine.Spy;
+    let errorSpy: jasmine.Spy;
+    let infoSpy: jasmine.Spy;
+
+    beforeEach(() => {
+      toastr = TestBed.inject(ToastrService);
+      successSpy = spyOn(toastr, 'success');
+      errorSpy = spyOn(toastr, 'error');
+      infoSpy = spyOn(toastr, 'info');
+      component.openDetail(page1.items[0]); // lr-1 / Ada Lovelace
+      fixture.detectChanges();
+    });
+
+    it('starts idle with both action buttons visible', () => {
+      expect(component.actionMode()).toBe('none');
+      expect(fixture.nativeElement.querySelector('[data-test="approve-btn"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-test="reject-btn"]')).toBeTruthy();
+    });
+
+    // ── Approve (AC-1) ───────────────────────────────────────────
+    it('clicking Approve expands the optional comment textarea', () => {
+      component.startApprove();
+      fixture.detectChanges();
+      expect(component.actionMode()).toBe('approve');
+      expect(fixture.nativeElement.querySelector('[data-test="approve-comment"]')).toBeTruthy();
+    });
+
+    it('approves WITHOUT a comment (comment omitted from body)', () => {
+      component.startApprove();
+      component.confirmApprove();
+      expect(approvalsSpy.approve).toHaveBeenCalledWith('lr-1', { comment: undefined });
+    });
+
+    it('approves WITH a comment', () => {
+      component.startApprove();
+      component.comment.set('  Enjoy your break  ');
+      component.confirmApprove();
+      expect(approvalsSpy.approve).toHaveBeenCalledWith('lr-1', { comment: 'Enjoy your break' });
+    });
+
+    it('on approve success removes the item from the queue + decrements count + toasts', () => {
+      component.startApprove();
+      component.confirmApprove();
+      fixture.detectChanges();
+      expect(component.requests().some((r) => r.requestId === 'lr-1')).toBeFalse();
+      expect(component.requests().length).toBe(1);
+      expect(component.totalCount()).toBe(44); // 45 -> 44
+      expect(component.selected()).toBeNull();
+      expect(successSpy).toHaveBeenCalledWith('Leave request approved for Ada Lovelace');
+    });
+
+    // ── Reject (AC-2, BR-2) ──────────────────────────────────────
+    it('clicking Reject reveals the mandatory reason textarea', () => {
+      component.startReject();
+      fixture.detectChanges();
+      expect(component.actionMode()).toBe('reject');
+      expect(fixture.nativeElement.querySelector('[data-test="reject-reason"]')).toBeTruthy();
+    });
+
+    it('reject confirm button is DISABLED until the reason is non-empty', () => {
+      component.startReject();
+      fixture.detectChanges();
+      const btn = fixture.nativeElement.querySelector('[data-test="confirm-reject"]');
+      expect(btn.disabled).toBeTrue();
+
+      component.rejectReason.set('Not enough cover this week');
+      fixture.detectChanges();
+      expect(btn.disabled).toBeFalse();
+    });
+
+    it('confirmReject is a no-op when the reason is only whitespace (BR-2)', () => {
+      component.startReject();
+      component.rejectReason.set('   ');
+      component.confirmReject();
+      expect(approvalsSpy.reject).not.toHaveBeenCalled();
+    });
+
+    it('rejects with the reason and removes the item + toasts', () => {
+      component.startReject();
+      component.rejectReason.set('Insufficient cover');
+      component.confirmReject();
+      fixture.detectChanges();
+      expect(approvalsSpy.reject).toHaveBeenCalledWith('lr-1', { reason: 'Insufficient cover' });
+      expect(component.requests().some((r) => r.requestId === 'lr-1')).toBeFalse();
+      expect(successSpy).toHaveBeenCalledWith('Leave request rejected for Ada Lovelace');
+    });
+
+    // ── Insufficient balance (AC-3) ──────────────────────────────
+    it('shows the confirm modal on a 400 insufficient_balance with negative allowed', () => {
+      approvalsSpy.approve.and.returnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: {
+                message: 'Balance is now negative.',
+                code: 'insufficient_balance',
+                negativeBalanceAllowed: true,
+              },
+            })
+        )
+      );
+      component.startApprove();
+      component.confirmApprove();
+      fixture.detectChanges();
+      expect(component.confirmNegative()?.message).toBe('Balance is now negative.');
+      expect(fixture.nativeElement.querySelector('[data-test="negative-modal"]')).toBeTruthy();
+      // item NOT removed yet — awaiting confirmation
+      expect(component.requests().some((r) => r.requestId === 'lr-1')).toBeTrue();
+    });
+
+    it('confirming the negative-balance modal retries with confirmNegativeBalance:true', () => {
+      approvalsSpy.approve.and.returnValues(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: { message: 'Negative.', code: 'insufficient_balance', negativeBalanceAllowed: true },
+            })
+        ),
+        of({ requestId: 'lr-1', status: 'Approved' } as ILeaveActionResult)
+      );
+      component.startApprove();
+      component.comment.set('approved despite balance');
+      component.confirmApprove();
+      fixture.detectChanges();
+      component.approveWithNegative();
+      fixture.detectChanges();
+      expect(approvalsSpy.approve).toHaveBeenCalledTimes(2);
+      expect(approvalsSpy.approve.calls.mostRecent().args[1]).toEqual({
+        comment: 'approved despite balance',
+        confirmNegativeBalance: true,
+      });
+      expect(component.requests().some((r) => r.requestId === 'lr-1')).toBeFalse();
+      expect(successSpy).toHaveBeenCalled();
+    });
+
+    it('HARD-blocks (toast, no modal) on insufficient_balance when negative NOT allowed', () => {
+      approvalsSpy.approve.and.returnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: { message: 'No balance and negative not allowed.', code: 'insufficient_balance' },
+            })
+        )
+      );
+      component.startApprove();
+      component.confirmApprove();
+      fixture.detectChanges();
+      expect(component.confirmNegative()).toBeNull();
+      expect(errorSpy).toHaveBeenCalledWith('No balance and negative not allowed.');
+      expect(component.requests().some((r) => r.requestId === 'lr-1')).toBeTrue();
+    });
+
+    // ── Concurrency conflict (AC-5) ──────────────────────────────
+    it('on 409 toasts "already actioned" + refreshes the queue', () => {
+      approvalsSpy.approve.and.returnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              error: { message: 'This request has already been actioned' },
+            })
+        )
+      );
+      approvalsSpy.getPendingQueue.calls.reset();
+      component.startApprove();
+      component.confirmApprove();
+      fixture.detectChanges();
+      expect(errorSpy).toHaveBeenCalledWith('This request has already been actioned');
+      expect(approvalsSpy.getPendingQueue).toHaveBeenCalledTimes(1); // refresh
+      expect(component.selected()).toBeNull();
+    });
+
+    // ── Multi-level (AC-4, DEFERRED) ─────────────────────────────
+    it('treats a "Pending L2 Approval" status as info + removes the item (AC-4 deferred)', () => {
+      approvalsSpy.approve.and.returnValue(
+        of({ requestId: 'lr-1', status: 'Pending L2 Approval' } as ILeaveActionResult)
+      );
+      component.startApprove();
+      component.confirmApprove();
+      fixture.detectChanges();
+      expect(infoSpy).toHaveBeenCalled();
+      expect(component.requests().some((r) => r.requestId === 'lr-1')).toBeFalse();
+    });
+
+    // ── Generic error ────────────────────────────────────────────
+    it('surfaces a generic toast on an unexpected error', () => {
+      component.startReject();
+      component.rejectReason.set('reason');
+      approvalsSpy.reject.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      component.confirmReject();
+      expect(errorSpy).toHaveBeenCalledWith('Failed to action this leave request.');
+    });
+
+    it('cancelAction collapses the panel and clears inputs', () => {
+      component.startReject();
+      component.rejectReason.set('typing');
+      component.cancelAction();
+      expect(component.actionMode()).toBe('none');
+      expect(component.rejectReason()).toBe('');
     });
   });
 

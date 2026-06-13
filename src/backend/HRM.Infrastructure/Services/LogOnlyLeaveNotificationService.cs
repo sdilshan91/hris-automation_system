@@ -32,4 +32,31 @@ public sealed class LogOnlyLeaveNotificationService : ILeaveNotificationService
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyLeaveApprovedAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid approverEmployeeId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for leave request {LeaveRequestId}: approver {ApproverEmployeeId} -> employee {EmployeeId}",
+            "leave-approved", leaveRequestId, approverEmployeeId, employeeId);
+
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyLeaveRejectedAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid approverEmployeeId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for leave request {LeaveRequestId}: approver {ApproverEmployeeId} -> employee {EmployeeId} (reason: {Reason})",
+            "leave-rejected", leaveRequestId, approverEmployeeId, employeeId, reason);
+
+        return Task.CompletedTask;
+    }
 }

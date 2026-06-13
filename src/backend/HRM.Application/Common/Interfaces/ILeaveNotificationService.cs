@@ -20,4 +20,26 @@ public interface ILeaveNotificationService
         Guid employeeId,
         Guid? managerEmployeeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the requesting employee that their leave request was approved (US-LV-005 AC-1,
+    /// "leave-approved"). Fire-and-forget; must never throw into the request path (NFR-2 — the
+    /// approval is committed even if notification queuing fails, §10).
+    /// </summary>
+    Task NotifyLeaveApprovedAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid approverEmployeeId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the requesting employee that their leave request was rejected, with the reason
+    /// (US-LV-005 AC-2, "leave-rejected"). Fire-and-forget; must never throw into the request path.
+    /// </summary>
+    Task NotifyLeaveRejectedAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid approverEmployeeId,
+        string reason,
+        CancellationToken cancellationToken = default);
 }

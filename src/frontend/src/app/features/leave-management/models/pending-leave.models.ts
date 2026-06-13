@@ -175,3 +175,83 @@ export const PENDING_SORT_OPTIONS: { value: PendingLeaveSortBy; label: string }[
   { value: 'requestedAt', label: 'Requested date (oldest first)' },
   { value: 'startDate', label: 'Start date (earliest first)' },
 ];
+
+/**
+ * US-LV-005: Approve / Reject action contract (backend building in parallel — RECONCILE).
+ *
+ *   POST /api/v1/leaves/{id}/approve  body { comment? }  -> ILeaveActionResult
+ *   POST /api/v1/leaves/{id}/reject   body { reason }    -> ILeaveActionResult  (reason required, BR-2)
+ *
+ * Error mapping (surfaced via toast / modal in the component):
+ *   - 409 Conflict          -> request already actioned by another manager (AC-5). Refresh queue.
+ *   - 400 Bad Request with `code: 'insufficient_balance'` and `negativeBalanceAllowed: true`
+ *                           -> blocked pending confirmation; FE shows the confirm modal and
+ *                              retries the approve with `confirmNegativeBalance: true` (AC-3).
+ *   - 400 Bad Request with `code: 'insufficient_balance'` and `negativeBalanceAllowed: false`
+ *                           -> hard block; FE surfaces `message` via toast (AC-3).
+ *   - 400 Bad Request with `code: 'payroll_locked'` -> surface `message` via toast (BR-4, deferred).
+ *   - Any other error       -> surface `message` (or a generic fallback) via toast.
+ */
+
+/** Body for the approve action (AC-1). Comment is optional (BR-2). */
+export interface IApproveLeaveRequest {
+  /** Optional manager comment. */
+  comment?: string;
+  /**
+   * Set true on the second attempt after the insufficient-balance confirmation
+   * modal, telling the backend the manager accepts going negative (AC-3).
+   */
+  confirmNegativeBalance?: boolean;
+}
+
+/** Body for the reject action (AC-2, BR-2). Reason is mandatory. */
+export interface IRejectLeaveRequest {
+  /** Mandatory rejection reason. */
+  reason: string;
+}
+
+/**
+ * Result of an approve/reject action. The backend returns the updated request
+ * status; the FE uses the status to surface the right confirmation and, for
+ * multi-level (AC-4, DEFERRED), to show a "Pending L2 Approval"-style status
+ * rather than treating it as fully approved.
+ */
+export interface ILeaveActionResult {
+  requestId: string;
+  /** New status, e.g. "Approved", "Rejected", or "Pending L2 Approval" (AC-4). */
+  status: string;
+  /** Updated remaining balance after approval, when the backend supplies it. */
+  currentBalance?: number;
+}
+
+/**
+ * Typed error body for approve/reject failures (AC-3, AC-5, BR-4).
+ * `code` is the machine-readable discriminator; `message` is shown verbatim.
+ */
+export interface ILeaveActionErrorResponse {
+  message: string;
+  code?:
+    | 'insufficient_balance'
+    | 'payroll_locked'
+    | 'already_actioned'
+    | string;
+  /**
+   * Only meaningful with `code: 'insufficient_balance'`. True when the leave
+   * type permits a negative balance — the FE then asks for confirmation and
+   * retries; false/absent means a hard block (AC-3).
+   */
+  negativeBalanceAllowed?: boolean;
+}
+
+/**
+ * AC-4 (DEFERRED): statuses that indicate a request moved to a further approval
+ * level rather than being finalized. When the backend returns one of these the
+ * FE shows it as a status badge and still removes the item from THIS manager's
+ * queue (it is no longer pending at this level). TODO(US-ADM-007): level routing.
+ */
+export function isFurtherApprovalStatus(status: string | null | undefined): boolean {
+  if (!status) {
+    return false;
+  }
+  return /pending\s*l?\d|pending\s*level|next\s*approval/i.test(status);
+}
