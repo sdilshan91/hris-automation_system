@@ -206,6 +206,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin']),
         ],
       },
+      // ─── Leave Management / Leave Types (US-LV-001) ─────────
+      {
+        path: 'leave-types',
+        loadChildren: () =>
+          import('./features/leave-management/leave-management.routes').then(
+            (m) => m.LEAVE_MANAGEMENT_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',

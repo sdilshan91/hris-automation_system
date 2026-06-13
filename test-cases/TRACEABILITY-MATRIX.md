@@ -742,14 +742,102 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Blocked Test Cases | 0 | -- | CLEAR |
 | Deferred Test Cases | TC-CHR-300, TC-CHR-323 (plan limits -- Subscription module), TC-CHR-315 (export/import integration) | -- | NOTE |
 
+
+---
+
+## Leave Management Module
+
+### Forward Traceability (User Stories --> Test Cases)
+
+| User Story ID | User Story Title | Priority | Test Cases | TC Count | Coverage |
+|---------------|-----------------|----------|------------|----------|----------|
+| US-LV-001 | Configure Leave Types Per Tenant | Must Have | TC-LV-001, TC-LV-002, TC-LV-003, TC-LV-004, TC-LV-005, TC-LV-006, TC-LV-007, TC-LV-008, TC-LV-009, TC-LV-010, TC-LV-011, TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-016, TC-LV-017, TC-LV-018, TC-LV-019, TC-LV-020, TC-LV-021, TC-LV-022, TC-LV-023, TC-LV-024, TC-LV-025 | 25 | 5/5 AC covered |
+| Cross-cutting (LV-001) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | 4 | -- |
+| **TOTAL** | | | **29 test cases** | **29** | **5/5 AC** |
+
+### Backward Traceability (Test Cases --> User Stories)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | Requirements Covered |
+|-------------|----------------|------|----------|------------|---------------------|
+| TC-LV-001 | Create a leave type with full configuration (happy path) | Functional | Critical | US-LV-001 | AC-1, FR-1, FR-2, NFR-2, NFR-3, BR-1 |
+| TC-LV-002 | Edit leave type entitlement and carry-forward with audit trail | Functional | Critical | US-LV-001 | AC-2, FR-1, FR-2, NFR-3, BR-5 |
+| TC-LV-003 | Duplicate leave type name rejected (case-insensitive) | Functional | Critical | US-LV-001 | AC-3, FR-1, BR-1 |
+| TC-LV-004 | Deactivate leave type -- hidden from apply dropdown, existing requests unaffected | Functional | Critical | US-LV-001 | AC-4, FR-1, FR-5, BR-5 |
+| TC-LV-005 | Configure documents-required threshold and enforcement on apply | Functional | Critical | US-LV-001 | AC-5, FR-1, FR-2 |
+| TC-LV-006 | Negative entitlement rejected; zero allowed for unpaid leave | Functional | Critical | US-LV-001 | AC-1, FR-1, FR-2, BR-3 |
+| TC-LV-007 | Invalid color, gender, and accrual frequency values rejected | Functional | High | US-LV-001 | AC-1, FR-2 |
+| TC-LV-008 | Boundary -- max field values and name/code length limits | Functional | High | US-LV-001 | AC-1, FR-2, Section 7 |
+| TC-LV-009 | Reorder leave types via display_order | Functional | High | US-LV-001 | FR-3, Section 8 |
+| TC-LV-010 | Gender-specific leave type only shown to matching gender employees | Functional | High | US-LV-001 | FR-2, BR-4 |
+| TC-LV-011 | Cannot hard-delete a leave type referenced by requests (soft delete only) | Functional | Critical | US-LV-001 | FR-1, FR-5, BR-2 |
+| TC-LV-012 | Same leave type name allowed in different tenants (cross-tenant uniqueness) | Security | Critical | US-LV-001 | AC-1, FR-1, NFR-2, BR-1 |
+| TC-LV-013 | Only Leave.Configure / Tenant Admin can manage leave types (role check) | Security | Critical | US-LV-001 | Preconditions Section 2, NFR-2 |
+| TC-LV-014 | Unauthenticated request to leave types API returns 401 | Security | Critical | US-LV-001 | Preconditions Section 2, US-AUTH-* |
+| TC-LV-015 | Input sanitization -- XSS in leave type name and description | Security | High | US-LV-001 | NFR-2 |
+| TC-LV-016 | Leave type list API response within 200ms P95 | Performance | High | US-LV-001 | NFR-1 |
+| TC-LV-017 | Audit trail captures before/after JSON on configuration changes | Functional | High | US-LV-001 | AC-2, NFR-3 |
+| TC-LV-018 | Responsive UI at 360px -- stacked form and accordion Advanced section | Functional | High | US-LV-001 | NFR-4, Section 8 |
+| TC-LV-019 | WCAG 2.1 AA accessibility for leave type configuration page | Accessibility | High | US-LV-001 | NFR-4 |
+| TC-LV-020 | Cross-browser compatibility for leave types management page | Functional | Medium | US-LV-001 | NFR-4 |
+| TC-LV-021 | New tenant gets default leave types on provisioning (DEFERRED) | Functional | High | US-LV-001 | FR-4, Section 10 |
+| TC-LV-022 | Required fields validation -- name, code, entitlement missing | Functional | High | US-LV-001 | AC-1, FR-1, FR-2 |
+| TC-LV-023 | Leave type write API response within 800ms P95 | Performance | High | US-LV-001 | NFR-1 |
+| TC-LV-024 | Create all accrual frequency types (monthly, quarterly, yearly, upfront) | Functional | High | US-LV-001 | AC-1, FR-2 |
+| TC-LV-025 | Negative balance configuration -- allowed with limit and disallowed | Functional | High | US-LV-001 | FR-2, BR-3 |
+| TC-LV-ISO-001 | Tenant A cannot see Tenant B's leave types | Security | Critical | US-LV-001 | NFR-2, BR-1 |
+| TC-LV-ISO-002 | API rejects leave type requests without valid tenant context | Security | Critical | US-LV-001 | NFR-2 |
+| TC-LV-ISO-003 | RLS blocks direct DB queries across tenants for leave types | Security | Critical | US-LV-001 | NFR-2, Section 7 |
+| TC-LV-ISO-004 | Cache keys for leave types are tenant-scoped | Security | Critical | US-LV-001 | NFR-1, NFR-2 |
+
+### US-LV-001 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Create leave type with full config, tenant-scoped | AC | TC-LV-001, TC-LV-006, TC-LV-007, TC-LV-008, TC-LV-012, TC-LV-022, TC-LV-024 | Direct |
+| AC-2: Edit entitlement/carry-forward with audit trail, effective next cycle | AC | TC-LV-002, TC-LV-017 | Direct |
+| AC-3: Duplicate name rejected case-insensitive | AC | TC-LV-003 | Direct |
+| AC-4: Deactivate hides from dropdown, existing requests unaffected | AC | TC-LV-004 | Direct |
+| AC-5: Documents-required threshold enforced on apply | AC | TC-LV-005 | Direct |
+| FR-1: CRUD operations for leave types scoped to tenant_id | FR | TC-LV-001, TC-LV-002, TC-LV-003, TC-LV-004, TC-LV-005, TC-LV-006, TC-LV-011, TC-LV-012, TC-LV-022 | Direct |
+| FR-2: All configurable fields supported | FR | TC-LV-001, TC-LV-005, TC-LV-006, TC-LV-007, TC-LV-008, TC-LV-010, TC-LV-022, TC-LV-024, TC-LV-025 | Direct |
+| FR-3: Leave types orderable via display_order | FR | TC-LV-009 | Direct |
+| FR-4: Default leave types seeded during tenant onboarding | FR | TC-LV-021 | DEFERRED (onboarding wizard not implemented) |
+| FR-5: Soft delete -- deactivated types hidden from forms but retained | FR | TC-LV-004, TC-LV-011 | Direct |
+| NFR-1: Leave type list API <= 200ms P95 with Redis cache; cache invalidation on write | NFR | TC-LV-016, TC-LV-023, TC-LV-ISO-004 | Direct (cache steps DEFERRED if not implemented) |
+| NFR-2: Tenant-isolated via EF Core global query filters and PostgreSQL RLS | NFR | TC-LV-012, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | Direct |
+| NFR-3: Config changes audit-logged with before/after JSON | NFR | TC-LV-002, TC-LV-017 | Direct |
+| NFR-4: UI fully responsive 360px to 4K | NFR | TC-LV-018, TC-LV-019, TC-LV-020 | Direct |
+| BR-1: Leave type names unique within tenant (case-insensitive) | BR | TC-LV-003, TC-LV-012 | Direct |
+| BR-2: Cannot hard-delete if leave requests reference it; deactivate only | BR | TC-LV-011 | Direct (forward-looking; leave-request module pending) |
+| BR-3: Entitlement must be positive; zero allowed for unpaid | BR | TC-LV-006, TC-LV-025 | Direct |
+| BR-4: Gender-specific types shown only to matching gender employees | BR | TC-LV-010 | Direct (employee-facing filtering forward-looking) |
+| BR-5: Config changes do not retroactively affect approved requests | BR | TC-LV-002, TC-LV-004 | Direct |
+
+### Coverage Summary (Leave Management -- US-LV-001)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 4/5 (80%) -- FR-4 deferred (onboarding wizard) | >= 85% | NOTE (FR-4 is cross-module dependency) |
+| Non-Functional Requirements Coverage | 4/4 (100%) | >= 85% | PASS |
+| Business Rules Coverage | 5/5 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO + 1 embedded TC-LV-012) | >= 3 | PASS |
+| Security Test Cases | 8/29 (27.6%) | >= 30% | NOTE (close; all critical security vectors covered) |
+| Performance Test Cases | 2/29 (TC-LV-016, TC-LV-023) | >= 1 | PASS |
+| Accessibility Test Cases | 1/29 (TC-LV-019) | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/29 (TC-LV-018, TC-LV-020) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | TC-LV-021 (onboarding seeding -- pending US-TENANT-*), TC-LV-ISO-004 partial (cache -- pending Redis implementation) | -- | NOTE |
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
 | Core HR (US-CHR-001 through US-CHR-012) | 12 | 372 | 61/61 (100%) | 67 | PASS |
-| **TOTAL** | **22** | **488** | **122/122 (100%)** | **90** | |
+| Leave Management (US-LV-001) | 1 | 29 | 5/5 (100%) | 5 | PASS |
+| **TOTAL** | **23** | **517** | **127/127 (100%)** | **95** | |
 
 ---
 
-*Note: This traceability matrix covers all test cases for US-CHR-001 through US-CHR-012 (Core HR module COMPLETE). US-CHR-012 adds 34 test cases (30 functional/security/performance/accessibility/cross-browser + 4 dedicated multi-tenant isolation) with 100% coverage of all 5 ACs. FR-6 (plan limits) and FR-10 (export/import) are DEFERRED pending the Subscription and export/import modules. Plan-tier limit tests (TC-CHR-300, TC-CHR-323) and export/import tests (TC-CHR-315) are DEFERRED. All previously blocked test cases remain unblocked.*
+*Note: This traceability matrix covers Authentication & Authorization (10 stories, 116 TCs), Core HR (12 stories, 372 TCs), and Leave Management (1 story, 29 TCs). Leave Management US-LV-001 is the first story of the module with 25 functional test cases + 4 dedicated multi-tenant isolation tests. FR-4 (onboarding seeding) is DEFERRED pending the Tenant provisioning module (US-TENANT-*). TC-LV-ISO-004 cache-specific steps are DEFERRED pending Redis caching implementation for leave types. Several forward-looking steps in TC-LV-004, TC-LV-005, and TC-LV-010 depend on the leave-request module (US-LV-002+). All existing Core HR and Authentication test cases remain unchanged.*
