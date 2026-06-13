@@ -130,6 +130,8 @@ Run continuously with `/loop /implement-all [scope]` — it re-fires until the s
 | `post-user-story-commit` | User story files committed | Notifies dev + QA agents to start |
 | `post-dev-commit` | Frontend/backend code committed | Notifies QA to review test cases |
 | `sound notifications` | `Stop`, `Notification`, `PermissionRequest`, `SubagentStop` | Plays a short sound via `python .claude/hooks/scripts/hooks.py` so you know when a long `/implement-all` run finishes or needs you. Toggle per-hook in `.claude/hooks/config/hooks-config.json` (or git-ignored `…local.json`); disable all via `disableAllHooks` in `settings.local.json`. Needs Python 3. |
+| `secret-guard` | `PreToolUse` on `Write\|Edit` | **Enforces** Critical Rule #6. Blocks a write whose *pending* content contains a hardcoded secret (Postgres `Password=…`, DB connection URLs with creds, `Jwt:PrivateKey`, private-key blocks, GitHub/AWS tokens, JWTs). Exempts gitignored secret files (`.env`, `*.local.json`). Fails open. Override for one run with `CLAUDE_DISABLE_SECRET_GUARD=1`. |
+| `test-integrity-guard` | `PreToolUse` on `Write\|Edit` | **Enforces** the "never weaken/skip/delete a test to go green" rule. Blocks edits to test files (`*.spec.ts`, `*Tests.cs`, …) that introduce skip/focus markers (`xit`/`fit`/`.skip`/`.only`/`[Fact(Skip)]`/`[Ignore]`) or remove test cases. Fails open. Override with `CLAUDE_DISABLE_TEST_GUARD=1`. |
 
 ## Pipeline Flow (Local + MCP)
 
