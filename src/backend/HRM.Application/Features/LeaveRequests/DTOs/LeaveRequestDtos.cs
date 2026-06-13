@@ -54,3 +54,72 @@ public sealed record LeaveBalancePreviewDto
     /// <summary>Balance after the request would be deducted (CurrentBalance - RequestedDays).</summary>
     public decimal ProjectedBalance { get; init; }
 }
+
+/// <summary>
+/// One row in a manager's pending-leave-approval queue (US-LV-004 FR-2).
+/// The current leave balance, overdue flag, and team-conflict count are computed
+/// per-request by the service.
+/// </summary>
+public sealed record PendingLeaveRequestDto
+{
+    public Guid RequestId { get; init; }
+    public Guid EmployeeId { get; init; }
+    public string EmployeeName { get; init; } = string.Empty;
+    /// <summary>Employee profile photo URL (Employee.ProfilePhotoUrl); null if none.</summary>
+    public string? EmployeePhoto { get; init; }
+    public Guid LeaveTypeId { get; init; }
+    public string LeaveTypeName { get; init; } = string.Empty;
+    /// <summary>Hex colour of the leave type (e.g. "#4CAF50"); null if not configured.</summary>
+    public string? LeaveTypeColor { get; init; }
+    public DateOnly StartDate { get; init; }
+    public DateOnly EndDate { get; init; }
+    public decimal TotalDays { get; init; }
+    public string? Reason { get; init; }
+    /// <summary>True when the request has one or more supporting attachments (FR-2).</summary>
+    public bool HasAttachments { get; init; }
+    /// <summary>Real-time balance for this employee + leave type from the ledger (BR-4).</summary>
+    public decimal CurrentBalance { get; init; }
+    public DateTime RequestedAt { get; init; }
+    /// <summary>True when the request has been pending &gt; 30 days without action (BR-3).</summary>
+    public bool IsOverdue { get; init; }
+    /// <summary>
+    /// Number of this employee's team-mates (same manager's direct reports) with an
+    /// Approved leave overlapping this request's date range (FR-5).
+    /// </summary>
+    public int TeamConflictCount { get; init; }
+}
+
+/// <summary>
+/// Server-side paged result for the pending-leave queue (US-LV-004 FR-4, AC-2).
+/// Mirrors the EmployeeListResult envelope (Items + TotalCount + Page + PageSize).
+/// </summary>
+public sealed record PendingLeaveQueueResult
+{
+    public IReadOnlyList<PendingLeaveRequestDto> Items { get; init; } = [];
+    public int TotalCount { get; init; }
+    public int Page { get; init; }
+    public int PageSize { get; init; }
+}
+
+/// <summary>
+/// Filter/sort/paging parameters for the pending-leave queue (US-LV-004 FR-3, FR-4).
+/// </summary>
+public sealed record PendingLeaveQueueQueryParams
+{
+    /// <summary>Optional filter: only requests of this leave type.</summary>
+    public Guid? LeaveTypeId { get; init; }
+    /// <summary>Optional filter: only requests from this employee.</summary>
+    public Guid? EmployeeId { get; init; }
+    /// <summary>Optional filter: only requests whose period ends on/after this date.</summary>
+    public DateOnly? StartDate { get; init; }
+    /// <summary>Optional filter: only requests whose period starts on/before this date.</summary>
+    public DateOnly? EndDate { get; init; }
+    /// <summary>Sort field: "requestedAt" (default) or "startDate".</summary>
+    public string? SortBy { get; init; }
+    /// <summary>True (default) for ascending (oldest first per AC-1); false for descending.</summary>
+    public bool SortAscending { get; init; } = true;
+    /// <summary>1-based page number (default 1).</summary>
+    public int Page { get; init; } = 1;
+    /// <summary>Page size (default 20, capped at 50 per §10).</summary>
+    public int PageSize { get; init; } = 20;
+}

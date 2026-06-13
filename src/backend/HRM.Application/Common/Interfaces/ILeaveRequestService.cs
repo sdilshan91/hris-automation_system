@@ -33,4 +33,14 @@ public interface ILeaveRequestService
         DateOnly? endDate,
         bool isHalfDay,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the pending leave requests of the current manager's direct reports (US-LV-004,
+    /// FR-1..FR-5, BR-1), tenant-scoped, with inline balance, overdue flag, and team-conflict
+    /// count, filtered/sorted/paged. If the current user has no employee record, returns an
+    /// empty page (does not fail).
+    /// </summary>
+    Task<Result<PendingLeaveQueueResult>> GetPendingForManagerAsync(
+        PendingLeaveQueueQueryParams queryParams,
+        CancellationToken cancellationToken = default);
 }

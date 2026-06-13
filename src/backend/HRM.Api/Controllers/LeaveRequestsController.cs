@@ -96,4 +96,45 @@ public sealed class LeaveRequestsController : ControllerBase
 
         return Ok(ApiResponse<LeaveBalancePreviewDto>.Ok(result.Value!));
     }
+
+    /// <summary>
+    /// GET /api/v1/leaves/pending
+    /// Returns the current manager's pending-approval queue: pending requests from their
+    /// direct reports, with inline balance, overdue flag, and team-conflict count
+    /// (US-LV-004 FR-1..FR-5, AC-1..AC-3). Supports filtering, sorting, and server-side paging.
+    /// </summary>
+    [HttpGet("pending")]
+    [RequirePermission("Leave.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<PendingLeaveQueueResult>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPending(
+        [FromQuery] Guid? leaveTypeId,
+        [FromQuery] Guid? employeeId,
+        [FromQuery] DateOnly? startDate,
+        [FromQuery] DateOnly? endDate,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortAscending = true,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var queryParams = new PendingLeaveQueueQueryParams
+        {
+            LeaveTypeId = leaveTypeId,
+            EmployeeId = employeeId,
+            StartDate = startDate,
+            EndDate = endDate,
+            SortBy = sortBy,
+            SortAscending = sortAscending,
+            Page = page,
+            PageSize = pageSize,
+        };
+
+        var result = await _mediator.Send(
+            new GetPendingLeaveRequestsQuery(queryParams), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<PendingLeaveQueueResult>.Ok(result.Value!));
+    }
 }
