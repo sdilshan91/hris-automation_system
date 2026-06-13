@@ -106,6 +106,18 @@
       }
     ]
   },
+  "skillOverrides": {
+    "akka-aspire-configuration": "off",
+    "akka-best-practices": "off",
+    "akka-hosting-actor-patterns": "off",
+    "akka-management": "off",
+    "akka-testing-patterns": "off",
+    "aspire-configuration": "off",
+    "aspire-integration-testing": "off",
+    "aspire-mailpit-integration": "off",
+    "aspire-service-defaults": "off",
+    "playwright-blazor": "off"
+  },
   "mcpServers": {
     "github": {
       "type": "http",
