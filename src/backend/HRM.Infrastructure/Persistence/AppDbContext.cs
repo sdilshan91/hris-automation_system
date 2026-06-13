@@ -40,6 +40,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<BulkImportJob> BulkImportJobs => Set<BulkImportJob>();
     public DbSet<CustomFieldDefinition> CustomFieldDefinitions => Set<CustomFieldDefinition>();
+    public DbSet<LeaveType> LeaveTypes => Set<LeaveType>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -104,5 +105,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-CHR-012: CustomFieldDefinition tenant isolation + soft-delete filter
         modelBuilder.Entity<CustomFieldDefinition>()
             .HasQueryFilter(c => !c.IsDeleted && (!_tenantContext.IsResolved || c.TenantId == _tenantContext.TenantId));
+
+        // US-LV-001: LeaveType tenant isolation + soft-delete filter
+        modelBuilder.Entity<LeaveType>()
+            .HasQueryFilter(lt => !lt.IsDeleted && (!_tenantContext.IsResolved || lt.TenantId == _tenantContext.TenantId));
     }
 }

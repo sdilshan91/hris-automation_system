@@ -96,6 +96,15 @@ public static class PermissionCatalog
         public const string ConfigurePolicy = "Leave.ConfigurePolicy";
     }
 
+    // ── Leave Type Configuration (US-LV-001) ─────────────────────────
+    public static class LeaveType
+    {
+        public const string View = "LeaveType.View";
+        public const string Create = "LeaveType.Create";
+        public const string Edit = "LeaveType.Edit";
+        public const string Deactivate = "LeaveType.Deactivate";
+    }
+
     // ── Attendance Module ────────────────────────────────────────────
     public static class Attendance
     {
@@ -225,6 +234,9 @@ public static class PermissionCatalog
         Leave.ViewOwn, Leave.ViewTeam, Leave.ViewAll,
         Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy,
 
+        // Leave Type
+        LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
+
         // Attendance
         Attendance.ViewOwn, Attendance.ViewTeam, Attendance.ViewAll,
         Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -330,6 +342,7 @@ public static class PermissionCatalog
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
+            LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -352,6 +365,7 @@ public static class PermissionCatalog
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
+            LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -369,6 +383,7 @@ public static class PermissionCatalog
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
+            LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,

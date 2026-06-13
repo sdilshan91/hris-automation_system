@@ -94,6 +94,9 @@ public static class DependencyInjection
         // Custom field service (US-CHR-012)
         services.AddScoped<ICustomFieldService, CustomFieldService>();
 
+        // Leave type service (US-LV-001)
+        services.AddScoped<ILeaveTypeService, LeaveTypeService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>
