@@ -100,6 +100,15 @@ public static class DependencyInjection
         // Leave entitlement service (US-LV-002)
         services.AddScoped<ILeaveEntitlementService, LeaveEntitlementService>();
 
+        // Leave request service (US-LV-003)
+        services.AddScoped<ILeaveRequestService, LeaveRequestService>();
+
+        // Holiday provider seam — no-op until US-LV-007 builds the holiday calendar.
+        services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
+
+        // Leave notification seam — log-only until the notification service exists (FR-6).
+        services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>

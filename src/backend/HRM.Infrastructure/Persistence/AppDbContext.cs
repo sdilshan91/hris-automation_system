@@ -44,6 +44,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<LeaveEntitlementRule> LeaveEntitlementRules => Set<LeaveEntitlementRule>();
     public DbSet<LeaveEntitlementOverride> LeaveEntitlementOverrides => Set<LeaveEntitlementOverride>();
     public DbSet<LeaveLedger> LeaveLedgerEntries => Set<LeaveLedger>();
+    public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -124,5 +125,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-LV-002: LeaveLedger tenant isolation + soft-delete filter
         modelBuilder.Entity<LeaveLedger>()
             .HasQueryFilter(l => !l.IsDeleted && (!_tenantContext.IsResolved || l.TenantId == _tenantContext.TenantId));
+
+        // US-LV-003: LeaveRequest tenant isolation + soft-delete filter
+        modelBuilder.Entity<LeaveRequest>()
+            .HasQueryFilter(lr => !lr.IsDeleted && (!_tenantContext.IsResolved || lr.TenantId == _tenantContext.TenantId));
     }
 }
