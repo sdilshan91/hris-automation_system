@@ -75,6 +75,15 @@ public static class PermissionCatalog
         public const string AssignManager = "Employee.AssignManager";
     }
 
+    // ── Custom Field Module (US-CHR-012) ────────────────────────────
+    public static class CustomField
+    {
+        public const string View = "CustomField.View";
+        public const string Create = "CustomField.Create";
+        public const string Edit = "CustomField.Edit";
+        public const string Deactivate = "CustomField.Deactivate";
+    }
+
     // ── Leave Module ─────────────────────────────────────────────────
     public static class Leave
     {
@@ -204,6 +213,9 @@ public static class PermissionCatalog
         // Employee Document
         EmployeeDocument.View, EmployeeDocument.ViewOwn, EmployeeDocument.Upload, EmployeeDocument.Delete,
 
+        // Custom Field
+        CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
+
         // Employee
         Employee.ViewOwn, Employee.ViewTeam, Employee.ViewAll,
         Employee.Create, Employee.Edit, Employee.EditOwn, Employee.Delete, Employee.Export,
@@ -317,6 +329,7 @@ public static class PermissionCatalog
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
+            CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -338,6 +351,7 @@ public static class PermissionCatalog
             JobTitle.View, JobTitle.Create, JobTitle.Edit, JobTitle.Deactivate,
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
+            CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,

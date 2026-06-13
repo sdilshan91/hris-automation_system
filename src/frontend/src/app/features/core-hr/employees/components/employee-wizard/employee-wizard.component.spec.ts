@@ -19,6 +19,7 @@ describe('EmployeeWizardComponent', () => {
 
   const deptsUrl = `${environment.apiBaseUrl}/departments`;
   const jtUrl = `${environment.apiBaseUrl}/job-titles`;
+  const cfUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
   const empUrl = `${environment.apiBaseUrl}/employees`;
 
   const mockDepartments = [
@@ -93,6 +94,10 @@ describe('EmployeeWizardComponent', () => {
     const jtReq = httpMock.expectOne(jtUrl);
     jtReq.flush(mockJobTitles);
 
+    // US-CHR-012: also flush custom fields
+    const cfReq = httpMock.expectOne(cfUrl);
+    cfReq.flush([]);
+
     fixture.detectChanges();
   }
 
@@ -129,6 +134,9 @@ describe('EmployeeWizardComponent', () => {
 
     const jtReq = httpMock.expectOne(jtUrl);
     jtReq.flush(mockJobTitles);
+
+    const cfReq = httpMock.expectOne(cfUrl);
+    cfReq.flush([]);
     fixture.detectChanges();
 
     expect(component.departments().length).toBe(1);

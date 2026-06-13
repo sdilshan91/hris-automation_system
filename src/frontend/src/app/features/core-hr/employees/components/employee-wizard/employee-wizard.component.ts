@@ -38,6 +38,12 @@ import { IDepartment } from '../../../departments/models/department.models';
 import { JobTitleService } from '../../../job-titles/services/job-title.service';
 import { IJobTitle } from '../../../job-titles/models/job-title.models';
 import { PhotoUploadComponent } from '../photo-upload/photo-upload.component';
+import { CustomFieldService } from '../../../custom-fields/services/custom-field.service';
+import {
+  ICustomFieldDefinition,
+  fieldTypeHasOptions,
+  fieldTypeToInputType,
+} from '../../../custom-fields/models/custom-field.models';
 
 /**
  * US-CHR-001 AC-1: Multi-step card wizard for adding a new employee.
@@ -576,11 +582,91 @@ import { PhotoUploadComponent } from '../photo-upload/photo-upload.component';
                   </div>
                 </div>
 
-                <!--
-                  TODO(US-CHR-012): Custom fields (AC-6).
-                  Render tenant-configured custom fields dynamically here.
-                  No custom-field config endpoint exists yet — skip rendering.
-                -->
+                <!-- US-CHR-012: Dynamic custom fields (FR-9, AC-2) -->
+                @if (customFields().length > 0) {
+                  <div class="mt-6 pt-4 border-t border-neutral-100">
+                    <h3 class="text-sm font-semibold text-neutral-700 mb-4">Custom Fields</h3>
+                    <div class="form-grid" formGroupName="customFieldValues">
+                      @for (cf of customFields(); track cf.fieldKey) {
+                        <div class="form-section">
+                          <label class="label-notion" [for]="'cf-' + cf.fieldKey">
+                            {{ cf.fieldName }}
+                            @if (cf.isRequired) {
+                              <span class="text-red-500" aria-hidden="true">*</span>
+                            }
+                          </label>
+                          @switch (cf.fieldType) {
+                            @case ('textarea') {
+                              <textarea
+                                [id]="'cf-' + cf.fieldKey"
+                                [formControlName]="cf.fieldKey"
+                                class="input-notion textarea-notion"
+                                rows="2"
+                                [placeholder]="'Enter ' + cf.fieldName"
+                              ></textarea>
+                            }
+                            @case ('checkbox') {
+                              <div class="flex items-center gap-2 mt-1">
+                                <input
+                                  [id]="'cf-' + cf.fieldKey"
+                                  type="checkbox"
+                                  [formControlName]="cf.fieldKey"
+                                  class="w-4 h-4 rounded border-neutral-300 text-brand-600"
+                                />
+                                <span class="text-sm text-neutral-600">{{ cf.fieldName }}</span>
+                              </div>
+                            }
+                            @case ('dropdown') {
+                              <select
+                                [id]="'cf-' + cf.fieldKey"
+                                [formControlName]="cf.fieldKey"
+                                class="input-notion select-input"
+                              >
+                                <option value="">Select...</option>
+                                @for (opt of cf.options; track opt) {
+                                  <option [value]="opt">{{ opt }}</option>
+                                }
+                              </select>
+                            }
+                            @case ('multi_select') {
+                              <div class="space-y-1">
+                                @for (opt of cf.options; track opt) {
+                                  <label class="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      class="w-4 h-4 rounded border-neutral-300 text-brand-600"
+                                      [checked]="isMultiSelectChecked(cf.fieldKey, opt)"
+                                      (change)="toggleMultiSelectOption(cf.fieldKey, opt)"
+                                    />
+                                    {{ opt }}
+                                  </label>
+                                }
+                              </div>
+                            }
+                            @default {
+                              <input
+                                [id]="'cf-' + cf.fieldKey"
+                                [type]="getCustomFieldInputType(cf)"
+                                [formControlName]="cf.fieldKey"
+                                class="input-notion"
+                                [placeholder]="'Enter ' + cf.fieldName"
+                              />
+                            }
+                          }
+                          @if (showCustomFieldError(cf.fieldKey)) {
+                            <p class="field-error" role="alert">
+                              @if (cf.isRequired) {
+                                {{ cf.fieldName }} is required.
+                              } @else {
+                                Please enter a valid {{ cf.fieldName }}.
+                              }
+                            </p>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
               </div>
             }
 
@@ -1048,6 +1134,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   private readonly employeeService = inject(EmployeeService);
   private readonly departmentService = inject(DepartmentService);
   private readonly jobTitleService = inject(JobTitleService);
+  private readonly customFieldService = inject(CustomFieldService);
 
   private readonly destroy$ = new Subject<void>();
 
@@ -1068,6 +1155,9 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   readonly selectedPhoto = signal<File | null>(null);
   readonly duplicateEmailError = signal<string | null>(null);
   readonly planLimitError = signal<string | null>(null);
+
+  // US-CHR-012: Custom field definitions loaded for employee forms
+  readonly customFields = signal<ICustomFieldDefinition[]>([]);
 
   // ─── Form ─────────────────────────────────────────────────
 
@@ -1152,13 +1242,17 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
     forkJoin({
       departments: this.departmentService.getDepartments(),
       jobTitles: this.jobTitleService.getJobTitles(),
+      customFields: this.customFieldService.getActiveCustomFields('employee'),
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: ({ departments, jobTitles }) => {
+        next: ({ departments, jobTitles, customFields }) => {
           // Filter to only active items (BR-5: inactive departments hidden from assignment)
           this.departments.set(departments.filter((d) => d.isActive));
           this.jobTitles.set(jobTitles.filter((jt) => jt.isActive));
+          // US-CHR-012: Store active custom fields and add dynamic controls
+          this.customFields.set(customFields);
+          this.addCustomFieldControls(customFields);
           this.isLoadingData.set(false);
         },
         error: () => {
@@ -1166,6 +1260,47 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
           this.isLoadingData.set(false);
         },
       });
+  }
+
+  // ─── US-CHR-012: Dynamic custom field form controls ───────
+
+  /**
+   * Add reactive form controls for each active custom field definition (FR-9).
+   * Called once after loading reference data. Controls are added to the
+   * 'customFields' FormGroup nested under the main form.
+   */
+  private addCustomFieldControls(fields: ICustomFieldDefinition[]): void {
+    const group: Record<string, unknown> = {};
+    for (const field of fields) {
+      const validators = field.isRequired ? [Validators.required] : [];
+      if (field.fieldType === 'email') {
+        validators.push(Validators.email);
+      }
+      if (field.fieldType === 'url') {
+        validators.push(Validators.pattern(/^https?:\/\/.+/));
+      }
+      const defaultValue = field.fieldType === 'checkbox' ? false
+        : field.fieldType === 'multi_select' ? []
+        : '';
+      group[field.fieldKey] = [defaultValue, validators];
+    }
+    this.form.addControl('customFieldValues', this.fb.group(group));
+  }
+
+  /** Helper for template: get the HTML input type for a custom field */
+  getCustomFieldInputType(field: ICustomFieldDefinition): string {
+    return fieldTypeToInputType(field.fieldType);
+  }
+
+  /** Helper for template: check if a custom field type has options */
+  customFieldHasOptions(field: ICustomFieldDefinition): boolean {
+    return fieldTypeHasOptions(field.fieldType);
+  }
+
+  /** Helper for template: show error for a custom field */
+  showCustomFieldError(fieldKey: string): boolean {
+    const control = this.form.get('customFieldValues.' + fieldKey);
+    return !!control && control.invalid && control.touched;
   }
 
   // ─── Custom validators ────────────────────────────────────
@@ -1349,6 +1484,27 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
     this.dependentControls.removeAt(index);
   }
 
+  // ─── US-CHR-012: Multi-select helpers ──────────────────────
+
+  isMultiSelectChecked(fieldKey: string, option: string): boolean {
+    const val = this.form.get('customFieldValues.' + fieldKey)?.value;
+    return Array.isArray(val) && val.includes(option);
+  }
+
+  toggleMultiSelectOption(fieldKey: string, option: string): void {
+    const ctrl = this.form.get('customFieldValues.' + fieldKey);
+    if (!ctrl) return;
+    const current: string[] = Array.isArray(ctrl.value) ? [...ctrl.value] : [];
+    const idx = current.indexOf(option);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(option);
+    }
+    ctrl.setValue(current);
+    ctrl.markAsTouched();
+  }
+
   // ─── Photo handling ───────────────────────────────────────
 
   onPhotoSelected(file: File): void {
@@ -1399,6 +1555,19 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
         formValue.emergencyContactRelationship?.trim() || null,
       emergencyContactPhone: formValue.emergencyContactPhone?.trim() || null,
     };
+
+    // US-CHR-012: Include custom field values in the request (FR-9, AC-3)
+    if (formValue.customFieldValues) {
+      const customFieldData: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(formValue.customFieldValues)) {
+        if (value !== null && value !== undefined && value !== '') {
+          customFieldData[key] = value;
+        }
+      }
+      if (Object.keys(customFieldData).length > 0) {
+        request.customFields = customFieldData;
+      }
+    }
 
     this.employeeService
       .createEmployee(request, this.selectedPhoto())

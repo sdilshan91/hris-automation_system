@@ -91,6 +91,9 @@ public static class DependencyInjection
         // Reporting structure service (US-CHR-011)
         services.AddScoped<IReportingStructureService, ReportingStructureService>();
 
+        // Custom field service (US-CHR-012)
+        services.AddScoped<ICustomFieldService, CustomFieldService>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>

@@ -35,6 +35,7 @@ describe('EmployeeProfileComponent', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const profileUrl = `${environment.apiBaseUrl}/employees/emp-1/profile`;
+  const customFieldsUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
 
   /** Minimal profile fixture matching IEmployeeProfile */
   const mockProfile: IEmployeeProfile = {
@@ -148,6 +149,9 @@ describe('EmployeeProfileComponent', () => {
   }
 
   afterEach(() => {
+    // US-CHR-012: Flush any outstanding custom field requests before verify
+    const cfReqs = httpMock.match(customFieldsUrl);
+    cfReqs.forEach(r => { if (!r.cancelled) { r.flush([]); } });
     httpMock.verify();
   });
 

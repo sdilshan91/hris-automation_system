@@ -28,6 +28,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     private readonly ICurrentUser _currentUser;
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
+    private readonly ICustomFieldService _customFieldService;
     private readonly ILogger<EmployeeService> _logger;
 
     public EmployeeProfileServiceTests()
@@ -51,13 +52,17 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         _virusScanner.ScanAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(VirusScanResult.Clean());
 
+        _customFieldService = Substitute.For<ICustomFieldService>();
+        _customFieldService.ValidateCustomFieldValuesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Application.Common.Models.Result.Success());
+
         _logger = Substitute.For<ILogger<EmployeeService>>();
     }
 
     private EmployeeService CreateService(ICurrentUser? currentUser = null)
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
-        return new EmployeeService(dbContext, _tenantContext, currentUser ?? _currentUser, _fileStorage, _virusScanner, _logger);
+        return new EmployeeService(dbContext, _tenantContext, currentUser ?? _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
     }
 
     private HRM.Infrastructure.Persistence.AppDbContext CreateDbContext()
@@ -630,7 +635,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var createResult = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Secret", LastName = "Employee", Email = "secret@test.com",
@@ -644,7 +649,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         ctxB.TenantId.Returns(tenantB);
         ctxB.IsResolved.Returns(true);
         var serviceB = new EmployeeService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _logger);
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
 
         var result = await serviceB.GetProfileAsync(createResult.Value!.Id);
 

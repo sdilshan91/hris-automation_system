@@ -39,6 +39,11 @@ import {
 } from '../../models/employee.models';
 import { FormsModule } from '@angular/forms';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
+import { CustomFieldService } from '../../../custom-fields/services/custom-field.service';
+import {
+  ICustomFieldDefinition,
+  fieldTypeToInputType,
+} from '../../../custom-fields/models/custom-field.models';
 
 /**
  * US-CHR-002: Comprehensive Employee Profile view + edit component.
@@ -1043,18 +1048,114 @@ import { EmployeeDocumentsComponent } from '../employee-documents/employee-docum
             <section @fadeIn class="card-notion" [attr.aria-label]="'Custom Fields'">
               <div class="section-header">
                 <h3 class="section-title">Custom Fields</h3>
+                @if (canEditSection('custom-fields') && activeCustomFields().length > 0) {
+                  <button
+                    type="button"
+                    class="edit-btn"
+                    [attr.aria-label]="editingSection() === 'custom-fields' ? 'Cancel editing custom fields' : 'Edit custom fields'"
+                    (click)="toggleEdit('custom-fields')"
+                  >
+                    @if (editingSection() === 'custom-fields') {
+                      Cancel
+                    } @else {
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
+                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
+                      </svg>
+                      Edit
+                    }
+                  </button>
+                }
               </div>
-              @if (profile()!.customFields && objectKeys(profile()!.customFields!).length > 0) {
-                <div class="data-grid">
-                  @for (key of objectKeys(profile()!.customFields!); track key) {
-                    <div class="data-field">
-                      <dt class="data-label">{{ key }}</dt>
-                      <dd class="data-value">{{ profile()!.customFields![key] }}</dd>
-                    </div>
-                  }
-                </div>
+              @if (editingSection() === 'custom-fields') {
+                <form [formGroup]="customFieldsForm" (ngSubmit)="saveSection('custom-fields')" @sectionExpand>
+                  <div class="form-grid">
+                    @for (cf of activeCustomFields(); track cf.fieldKey) {
+                      <div class="form-field">
+                        <label class="label-notion" [for]="'cfe-' + cf.fieldKey">
+                          {{ cf.fieldName }}
+                          @if (cf.isRequired) {
+                            <span class="text-red-500" aria-hidden="true">*</span>
+                          }
+                        </label>
+                        @switch (cf.fieldType) {
+                          @case ('textarea') {
+                            <textarea
+                              [id]="'cfe-' + cf.fieldKey"
+                              [formControlName]="cf.fieldKey"
+                              class="input-notion"
+                              rows="2"
+                            ></textarea>
+                          }
+                          @case ('checkbox') {
+                            <div class="flex items-center gap-2 mt-1">
+                              <input
+                                [id]="'cfe-' + cf.fieldKey"
+                                type="checkbox"
+                                [formControlName]="cf.fieldKey"
+                                class="w-4 h-4 rounded border-neutral-300 text-brand-600"
+                              />
+                            </div>
+                          }
+                          @case ('dropdown') {
+                            <select
+                              [id]="'cfe-' + cf.fieldKey"
+                              [formControlName]="cf.fieldKey"
+                              class="input-notion select-input"
+                            >
+                              <option value="">Select...</option>
+                              @for (opt of cf.options; track opt) {
+                                <option [value]="opt">{{ opt }}</option>
+                              }
+                            </select>
+                          }
+                          @case ('multi_select') {
+                            <div class="space-y-1">
+                              @for (opt of cf.options; track opt) {
+                                <label class="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    class="w-4 h-4 rounded border-neutral-300 text-brand-600"
+                                    [checked]="isProfileMultiSelectChecked(cf.fieldKey, opt)"
+                                    (change)="toggleProfileMultiSelectOption(cf.fieldKey, opt)"
+                                  />
+                                  {{ opt }}
+                                </label>
+                              }
+                            </div>
+                          }
+                          @default {
+                            <input
+                              [id]="'cfe-' + cf.fieldKey"
+                              [type]="getCustomFieldInputType(cf)"
+                              [formControlName]="cf.fieldKey"
+                              class="input-notion"
+                            />
+                          }
+                        }
+                      </div>
+                    }
+                  </div>
+                  <div class="form-actions">
+                    <button type="button" class="btn-secondary" (click)="cancelEdit()">Cancel</button>
+                    <button type="submit" class="btn-primary" [disabled]="isSaving() || customFieldsForm.invalid">
+                      @if (isSaving()) { <span class="btn-spinner"></span> Saving... } @else { Save }
+                    </button>
+                  </div>
+                </form>
               } @else {
-                <p class="text-sm text-neutral-400 py-4">No custom fields configured.</p>
+                @if (activeCustomFields().length === 0) {
+                  <p class="text-sm text-neutral-400 py-4">No custom fields configured.</p>
+                } @else {
+                  <div class="data-grid" @sectionExpand>
+                    @for (cf of activeCustomFields(); track cf.fieldKey) {
+                      <div class="data-field">
+                        <dt class="data-label">{{ cf.fieldName }}</dt>
+                        <dd class="data-value">{{ getCustomFieldDisplayValue(cf) }}</dd>
+                      </div>
+                    }
+                  </div>
+                }
               }
             </section>
           }
@@ -1612,6 +1713,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   private readonly toastr = inject(ToastrService);
   private readonly employeeService = inject(EmployeeService);
   private readonly authService = inject(AuthService);
+  private readonly customFieldService = inject(CustomFieldService);
 
   private readonly destroy$ = new Subject<void>();
 
@@ -1662,6 +1764,9 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   readonly isAssigningManager = signal(false);
   private managerSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // US-CHR-012: Custom fields
+  readonly activeCustomFields = signal<ICustomFieldDefinition[]>([]);
+
   /** Computed reporting chain from profile data */
   readonly reportingChain = computed<IReportingChainNode[]>(() => {
     const p = this.profile();
@@ -1689,6 +1794,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   workHistoryForm!: FormGroup;
   dependentsForm!: FormGroup;
   statusChangeForm!: FormGroup;
+  customFieldsForm!: FormGroup;
 
   employeeId = '';
 
@@ -1714,6 +1820,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     this.employeeId = this.route.snapshot.paramMap.get('id') ?? '';
     this.initForms();
     this.loadProfile();
+    this.loadCustomFieldDefinitions();
   }
 
   ngOnDestroy(): void {
@@ -1962,6 +2069,90 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           }
         },
       });
+  }
+
+  // ─── US-CHR-012: Custom field methods ──────────────────────
+
+  private loadCustomFieldDefinitions(): void {
+    this.customFieldService
+      .getActiveCustomFields('employee')
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (fields) => {
+          this.activeCustomFields.set(fields);
+          this.buildCustomFieldsForm(fields);
+        },
+        error: () => {
+          // Non-fatal: custom fields section will show "no custom fields"
+        },
+      });
+  }
+
+  private buildCustomFieldsForm(fields: ICustomFieldDefinition[]): void {
+    const group: Record<string, unknown> = {};
+    for (const field of fields) {
+      const validators = field.isRequired ? [Validators.required] : [];
+      if (field.fieldType === 'email') {
+        validators.push(Validators.email);
+      }
+      if (field.fieldType === 'url') {
+        validators.push(Validators.pattern(/^https?:\/\/.+/));
+      }
+      const defaultValue = field.fieldType === 'checkbox' ? false
+        : field.fieldType === 'multi_select' ? []
+        : '';
+      group[field.fieldKey] = [defaultValue, validators];
+    }
+    this.customFieldsForm = this.fb.group(group);
+  }
+
+  getCustomFieldInputType(field: ICustomFieldDefinition): string {
+    return fieldTypeToInputType(field.fieldType);
+  }
+
+  getCustomFieldDisplayValue(cf: ICustomFieldDefinition): string {
+    const val = this.profile()?.customFields?.[cf.fieldKey];
+    if (val === null || val === undefined || val === '') return 'Not set';
+    if (cf.fieldType === 'checkbox') return val ? 'Yes' : 'No';
+    if (Array.isArray(val)) return val.join(', ');
+    return String(val);
+  }
+
+  isProfileMultiSelectChecked(fieldKey: string, option: string): boolean {
+    const val = this.customFieldsForm?.get(fieldKey)?.value;
+    return Array.isArray(val) && val.includes(option);
+  }
+
+  toggleProfileMultiSelectOption(fieldKey: string, option: string): void {
+    const ctrl = this.customFieldsForm?.get(fieldKey);
+    if (!ctrl) return;
+    const current: string[] = Array.isArray(ctrl.value) ? [...ctrl.value] : [];
+    const idx = current.indexOf(option);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(option);
+    }
+    ctrl.setValue(current);
+    ctrl.markAsTouched();
+  }
+
+  private populateCustomFieldsForm(): void {
+    const p = this.profile();
+    if (!p || !this.customFieldsForm) return;
+    for (const cf of this.activeCustomFields()) {
+      const val = p.customFields?.[cf.fieldKey];
+      const ctrl = this.customFieldsForm.get(cf.fieldKey);
+      if (ctrl) {
+        if (cf.fieldType === 'checkbox') {
+          ctrl.setValue(val === true || val === 'true');
+        } else if (cf.fieldType === 'multi_select') {
+          ctrl.setValue(Array.isArray(val) ? val : []);
+        } else {
+          ctrl.setValue(val ?? '');
+        }
+      }
+    }
   }
 
   formatAddress(): string {
@@ -2224,6 +2415,10 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           );
         }
         break;
+
+      case 'custom-fields':
+        this.populateCustomFieldsForm();
+        break;
     }
   }
 
@@ -2236,6 +2431,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       case 'education': return this.educationForm;
       case 'work-history': return this.workHistoryForm;
       case 'dependents': return this.dependentsForm;
+      case 'custom-fields': return this.customFieldsForm;
       default: return null;
     }
   }

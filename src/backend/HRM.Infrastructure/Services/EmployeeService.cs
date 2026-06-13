@@ -21,6 +21,7 @@ public sealed class EmployeeService : IEmployeeService
     private readonly ICurrentUser _currentUser;
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
+    private readonly ICustomFieldService _customFieldService;
     private readonly ILogger<EmployeeService> _logger;
 
     // Allowed MIME types for profile photos (FR-6)
@@ -40,6 +41,7 @@ public sealed class EmployeeService : IEmployeeService
         ICurrentUser currentUser,
         IFileStorage fileStorage,
         IVirusScanner virusScanner,
+        ICustomFieldService customFieldService,
         ILogger<EmployeeService> logger)
     {
         _dbContext = dbContext;
@@ -47,6 +49,7 @@ public sealed class EmployeeService : IEmployeeService
         _currentUser = currentUser;
         _fileStorage = fileStorage;
         _virusScanner = virusScanner;
+        _customFieldService = customFieldService;
         _logger = logger;
     }
 
@@ -86,6 +89,16 @@ public sealed class EmployeeService : IEmployeeService
         var planLimitResult = await CheckPlanLimitAsync(cancellationToken);
         if (planLimitResult.IsFailure)
             return Result<EmployeeDto>.Failure(planLimitResult.Error!, planLimitResult.StatusCode ?? 403);
+
+        // US-CHR-012: Validate custom field values against active definitions
+        // CROSS-CUTTING: This wiring was added by US-CHR-012 and touches US-CHR-001 create flow.
+        if (!string.IsNullOrWhiteSpace(request.CustomFields))
+        {
+            var cfValidation = await _customFieldService.ValidateCustomFieldValuesAsync(
+                "employee", request.CustomFields, cancellationToken);
+            if (cfValidation.IsFailure)
+                return Result<EmployeeDto>.Failure(cfValidation.Error!, cfValidation.StatusCode ?? 400);
+        }
 
         // FR-2 / BR-1: auto-generate unique employee_no per tenant
         var employeeNo = await GenerateEmployeeNoAsync(cancellationToken);
@@ -578,6 +591,16 @@ public sealed class EmployeeService : IEmployeeService
         // Apply CustomFields
         if (request.UpdateCustomFields)
         {
+            // US-CHR-012: Validate custom field values against active definitions
+            // CROSS-CUTTING: This wiring was added by US-CHR-012 and touches US-CHR-002 profile update flow.
+            if (!string.IsNullOrWhiteSpace(request.CustomFields))
+            {
+                var cfValidation = await _customFieldService.ValidateCustomFieldValuesAsync(
+                    "employee", request.CustomFields, cancellationToken);
+                if (cfValidation.IsFailure)
+                    return Result<EmployeeProfileDto>.Failure(cfValidation.Error!, cfValidation.StatusCode ?? 400);
+            }
+
             var before = new Dictionary<string, object?> { ["CustomFields"] = employee.CustomFields };
             employee.CustomFields = request.CustomFields;
             var after = new Dictionary<string, object?> { ["CustomFields"] = employee.CustomFields };

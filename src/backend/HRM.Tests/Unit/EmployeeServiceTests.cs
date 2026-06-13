@@ -29,6 +29,7 @@ public sealed class EmployeeServiceTests : IDisposable
     private readonly ICurrentUser _currentUser;
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
+    private readonly ICustomFieldService _customFieldService;
     private readonly ILogger<EmployeeService> _logger;
 
     public EmployeeServiceTests()
@@ -53,13 +54,17 @@ public sealed class EmployeeServiceTests : IDisposable
         _virusScanner.ScanAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(VirusScanResult.Clean());
 
+        _customFieldService = Substitute.For<ICustomFieldService>();
+        _customFieldService.ValidateCustomFieldValuesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Application.Common.Models.Result.Success());
+
         _logger = Substitute.For<ILogger<EmployeeService>>();
     }
 
     private EmployeeService CreateService()
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
-        return new EmployeeService(dbContext, _tenantContext, _currentUser, _fileStorage, _virusScanner, _logger);
+        return new EmployeeService(dbContext, _tenantContext, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
     }
 
     private Infrastructure.Persistence.AppDbContext CreateDbContext()
@@ -271,7 +276,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var r1 = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "John", LastName = "Doe", Email = "same@test.com",
@@ -290,7 +295,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantB);
 
         var dbB = TestDbContextFactory.Create(ctxB, _dbName);
-        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var r2 = await serviceB.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Jane", LastName = "Doe", Email = "same@test.com",
@@ -319,7 +324,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var r1 = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "A1", LastName = "Test", Email = "a1@test.com",
@@ -337,7 +342,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantB);
 
         var dbB = TestDbContextFactory.Create(ctxB, _dbName);
-        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var r2 = await serviceB.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "B1", LastName = "Test", Email = "b1@test.com",
@@ -529,7 +534,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Tenant A", LastName = "Employee", Email = "a@test.com",
@@ -546,7 +551,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantB);
 
         var dbB = TestDbContextFactory.Create(ctxB, _dbName);
-        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         await serviceB.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Tenant B", LastName = "Employee", Email = "b@test.com",
@@ -556,7 +561,7 @@ public sealed class EmployeeServiceTests : IDisposable
 
         // Query from tenant A
         var queryServiceA = new EmployeeService(
-            TestDbContextFactory.Create(ctxA, _dbName), ctxA, _currentUser, _fileStorage, _virusScanner, _logger);
+            TestDbContextFactory.Create(ctxA, _dbName), ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var resultA = await queryServiceA.GetAllAsync();
 
         resultA.IsSuccess.Should().BeTrue();
@@ -565,7 +570,7 @@ public sealed class EmployeeServiceTests : IDisposable
 
         // Query from tenant B
         var queryServiceB = new EmployeeService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _logger);
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var resultB = await queryServiceB.GetAllAsync();
 
         resultB.IsSuccess.Should().BeTrue();
@@ -587,7 +592,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
         var createResult = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Secret", LastName = "Employee", Email = "secret@test.com",
@@ -600,7 +605,7 @@ public sealed class EmployeeServiceTests : IDisposable
         ctxB.TenantId.Returns(tenantB);
         ctxB.IsResolved.Returns(true);
         var serviceB = new EmployeeService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _logger);
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
 
         var result = await serviceB.GetByIdAsync(createResult.Value!.Id);
 
