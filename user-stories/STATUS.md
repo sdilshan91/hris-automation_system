@@ -54,7 +54,7 @@
 
 ## 3. Leave Management (12 stories)
 - [x] US-LV-001 — Configure leave types per tenant *(PR #23)*
-- [~] US-LV-002 — Set yearly leave entitlements
+- [x] US-LV-002 — Set yearly leave entitlements *(PR #24)*
 - [ ] US-LV-003 — Employee applies for leave
 - [ ] US-LV-004 — Manager views pending leave queue
 - [ ] US-LV-005 — Manager approves or rejects leave
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **16** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — CHR-002 #13, CHR-003 #14, CHR-006 #16, CHR-007 #17, CHR-008 #18, CHR-009 #19, CHR-010 #20, CHR-011 #21, CHR-012 #22; LV-001 #23)
+- Done: **17** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; Leave: LV-001 #23, LV-002 #24)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **84**
+- Pending: **83**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
