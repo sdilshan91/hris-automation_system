@@ -39,6 +39,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<FutureDatedStatusChange> FutureDatedStatusChanges => Set<FutureDatedStatusChange>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<BulkImportJob> BulkImportJobs => Set<BulkImportJob>();
+    public DbSet<CustomFieldDefinition> CustomFieldDefinitions => Set<CustomFieldDefinition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -99,5 +100,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-CHR-010: BulkImportJob tenant isolation + soft-delete filter
         modelBuilder.Entity<BulkImportJob>()
             .HasQueryFilter(b => !b.IsDeleted && (!_tenantContext.IsResolved || b.TenantId == _tenantContext.TenantId));
+
+        // US-CHR-012: CustomFieldDefinition tenant isolation + soft-delete filter
+        modelBuilder.Entity<CustomFieldDefinition>()
+            .HasQueryFilter(c => !c.IsDeleted && (!_tenantContext.IsResolved || c.TenantId == _tenantContext.TenantId));
     }
 }

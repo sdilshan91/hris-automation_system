@@ -39,6 +39,13 @@ public sealed class Tenant
     /// </summary>
     public int? MaxEmployees { get; set; }
 
+    /// <summary>
+    /// Maximum number of custom fields per entity type for this tenant (US-CHR-012 FR-6).
+    /// Null means use the default (20). TODO(subscription): replace with plan-tier lookup
+    /// (Starter=5, Professional=20, Enterprise=unlimited) when the Subscription module exists.
+    /// </summary>
+    public int? MaxCustomFields { get; set; }
+
     // Password policy
     public int MinPasswordLength { get; set; } = 12;
     public bool RequireUppercase { get; set; } = true;

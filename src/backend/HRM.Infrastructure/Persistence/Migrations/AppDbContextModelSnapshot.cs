@@ -164,6 +164,99 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.ToTable("bulk_import_jobs", (string)null);
                 });
 
+            modelBuilder.Entity("HRM.Domain.Entities.CustomFieldDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("display_order");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("entity_type");
+
+                    b.Property<string>("FieldKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("field_key");
+
+                    b.Property<string>("FieldName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("field_name");
+
+                    b.Property<string>("FieldType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("field_type");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<bool>("IsRequired")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_required");
+
+                    b.Property<string>("Options")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("options");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_custom_field_definitions");
+
+                    b.HasIndex("TenantId", "EntityType", "FieldKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_custom_field_definitions_tenant_entity_key")
+                        .HasFilter("is_deleted = false");
+
+                    b.HasIndex("TenantId", "EntityType", "FieldName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_custom_field_definitions_tenant_entity_name")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("custom_field_definitions", (string)null);
+                });
+
             modelBuilder.Entity("HRM.Domain.Entities.Department", b =>
                 {
                     b.Property<Guid>("Id")
@@ -480,6 +573,11 @@ namespace HRM.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_employees");
+
+                    b.HasIndex("CustomFields")
+                        .HasDatabaseName("ix_employees_custom_fields_gin");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("CustomFields"), "gin");
 
                     b.HasIndex("DepartmentId")
                         .HasDatabaseName("ix_employees_department_id");
@@ -1307,6 +1405,10 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.Property<int>("MaxConcurrentSessions")
                         .HasColumnType("integer")
                         .HasColumnName("max_concurrent_sessions");
+
+                    b.Property<int?>("MaxCustomFields")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_custom_fields");
 
                     b.Property<int?>("MaxEmployees")
                         .HasColumnType("integer")

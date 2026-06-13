@@ -178,5 +178,11 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         // US-CHR-011: Index for direct-reports lookups by manager
         builder.HasIndex(e => new { e.TenantId, e.ReportsToEmployeeId })
             .HasDatabaseName("ix_employees_tenant_id_reports_to_employee_id");
+
+        // US-CHR-012 FR-11, NFR-3: GIN index on custom_fields JSONB column
+        // for efficient querying of employee custom field values.
+        builder.HasIndex(e => e.CustomFields)
+            .HasDatabaseName("ix_employees_custom_fields_gin")
+            .HasMethod("gin");
     }
 }

@@ -749,6 +749,105 @@ Checkbox column added to the employee directory table view. A floating action to
 
 The employee-profile component's compiled CSS is close to the 16 kB `maximumError` budget. The US-CHR-011 additions (manager mini-card, chain breadcrumb, selector modal) used raw CSS instead of Tailwind `@apply` directives for the new styles to minimize compiled output. Further component decomposition (extracting the manager selector into a child component) would be the clean fix if future stories push it over.
 
+## Custom Fields (US-CHR-012)
+
+### Backend implementation
+
+New `CustomFieldDefinition` entity (BaseEntity) with CRUD endpoints under `GET/POST/PUT /api/v1/tenant/custom-fields`, plus `POST .../deactivate`, `POST .../reactivate`, and `POST .../reorder`.
+
+Architecture: CQRS commands/queries in `Features/CustomFields/`, `ICustomFieldService` interface, `CustomFieldService` implementation. Follows the same pattern as Location/Department/JobTitle.
+
+### Plan-limit approach (FR-6, AC-4, BR-4)
+
+The Subscription/Plan module does not exist. Plan-limit enforcement uses:
+1. `Tenant.MaxCustomFields` -- nullable `int?` column added to the Tenant entity. Null means use the default.
+2. `CustomFieldService.DefaultMaxCustomFields = 20` -- the fallback when `MaxCustomFields` is null.
+
+When the Subscription module is built, replace `Tenant.MaxCustomFields` and the constant with a plan-tier lookup (Starter=5, Professional=20, Enterprise=unlimited). Marked with `TODO(subscription)` in the service.
+
+### Custom field value validation (FR-5, AC-3) -- CROSS-CUTTING CHANGE
+
+The `ICustomFieldService.ValidateCustomFieldValuesAsync` method validates JSONB values against active definitions. It is called from:
+1. `EmployeeService.CreateAsync` (US-CHR-001 create flow) -- before saving
+2. `EmployeeService.UpdateProfileAsync` (US-CHR-002 profile update flow) -- in the `UpdateCustomFields` block
+
+This is a **cross-cutting change** that adds the `ICustomFieldService` dependency to `EmployeeService`. The constructor was updated, and all existing test files that instantiate `EmployeeService` were updated to pass a mock `ICustomFieldService`.
+
+All type validation logic is in C# (not raw SQL JSONB operators) so it is fully unit-testable with the InMemory provider.
+
+### GIN index on employees.custom_fields (FR-11, NFR-3)
+
+Configured in `EmployeeConfiguration` with `.HasMethod("gin")`. The migration emits `CREATE INDEX ... USING gin` via `.Annotation("Npgsql:IndexMethod", "gin")`. The InMemory provider ignores this; CI PostgreSQL will exercise the actual DDL.
+
+### Export/Import inclusion (FR-10) -- DEFERRED
+
+Wiring custom-field columns into the directory export (US-CHR-003) and bulk-import template (US-CHR-010) is deferred. Both modules would need to query active custom field definitions per tenant, dynamically add/parse columns, and this is a non-trivial change across multiple services. Marked with `TODO(US-CHR-012)` for future implementation.
+
+### BR-5: Field type immutability
+
+Field type (`field_type`) and field key (`field_key`) are immutable after creation. The `UpdateAsync` method does not allow changing either field. If data exists and the type needs to change, the field must be deactivated and a new one created.
+
+### BR-6: Dropdown option removal guard
+
+`UpdateAsync` checks whether any removed dropdown options are in use by existing employee records. If an option is in use, the update is rejected with a descriptive error message. The check is done in C# by scanning employee `custom_fields` JSONB values.
+
+### Custom field permissions (US-CHR-012)
+
+Added to `PermissionCatalog`:
+- `CustomField.View` -- granted to Tenant Admin, HR Manager
+- `CustomField.Create` -- granted to Tenant Admin, HR Manager
+- `CustomField.Edit` -- granted to Tenant Admin, HR Manager
+- `CustomField.Deactivate` -- granted to Tenant Admin, HR Manager
+
+### Migration: `AddCustomFieldDefinitions` (20260613031947)
+
+Creates:
+1. `custom_field_definitions` table with all columns per the data requirements
+2. GIN index on `employees.custom_fields` (`ix_employees_custom_fields_gin`)
+3. Unique indexes on `(tenant_id, entity_type, field_name)` and `(tenant_id, entity_type, field_key)` with `WHERE is_deleted = false`
+4. `tenants.max_custom_fields` nullable integer column
+
+### Frontend (US-CHR-012)
+
+#### API contract assumptions (frontend -> backend alignment)
+
+The frontend assumes these endpoints (backend agent building in parallel):
+- `GET /api/v1/tenant/custom-fields?entityType=employee` -- returns `{ definitions: ICustomFieldDefinition[], planLimits: { currentCount, maxAllowed } }`
+- `GET /api/v1/tenant/custom-fields/active?entityType=employee` -- returns `ICustomFieldDefinition[]` (active only, sorted by display_order; used by employee forms)
+- `POST /api/v1/tenant/custom-fields` -- create definition. Returns 403 with `{ code: 'plan_limit_exceeded' }` when limit reached.
+- `PUT /api/v1/tenant/custom-fields/:id` -- update (name, required, options, displayOrder; type and key immutable)
+- `POST /api/v1/tenant/custom-fields/:id/deactivate` -- soft-deactivate
+- `POST /api/v1/tenant/custom-fields/:id/activate` -- reactivate
+- `POST /api/v1/tenant/custom-fields/reorder` -- body: `{ orderedIds: string[] }`
+
+If the backend uses a different endpoint shape (e.g., single list endpoint with `?activeOnly=true` instead of `/active`), update `CustomFieldService.getActiveCustomFields()`.
+
+#### Route: `/settings/custom-fields`
+
+Lazy-loaded under authenticated routes. Role-guarded by `Tenant Admin` only (per story persona). Not placed under the employees feature since custom fields are a tenant-level configuration concept.
+
+#### Reorder approach: arrow buttons (no Angular CDK drag-drop)
+
+Although Angular CDK is available, reordering uses up/down arrow buttons only. This keeps the component simpler, works on mobile (NFR-4), and avoids the accessibility challenges of drag-and-drop. The story allows "drag handle on desktop; up/down arrow buttons on mobile" -- the arrow-button approach works consistently on both.
+
+#### Dynamic rendering on employee forms (FR-9, AC-2, AC-3) -- CROSS-CUTTING
+
+Custom fields are dynamically rendered on:
+1. **Employee Wizard** (US-CHR-001): in Step 3 (Employment Details), under a "Custom Fields" sub-section. The wizard's `forkJoin` was extended to also load `getActiveCustomFields('employee')`. Dynamic form controls are added to a `customFieldValues` FormGroup with per-type validators (required, email, URL pattern).
+2. **Employee Profile** (US-CHR-002): in the "Custom Fields" tab (index 9). Supports both read-only display and inline editing via a dedicated `customFieldsForm`. The form is saved via the existing `saveSection('custom-fields')` mechanism, which uses `PATCH /employees/:id/sections/custom-fields`.
+
+Both are **shared-file changes** that modify:
+- `employee-wizard.component.ts` -- imports, service injection, template, helpers
+- `employee-profile.component.ts` -- imports, service injection, template, helpers
+
+#### Multi-select rendering
+
+Multi-select fields use individual checkboxes per option (not a `<select multiple>`), matching the Notion-inspired design. State is managed as a `string[]` in the form control, toggled via `toggleMultiSelectOption`.
+
+#### Test impact on sibling specs
+
+The wizard tests (`employee-wizard.component.spec.ts`) now flush an additional `getActiveCustomFields` HTTP request in `flushReferenceData()`. The profile tests (`employee-profile.component.spec.ts`) handle the custom fields request via `httpMock.match()` in `afterEach` to avoid modifying every individual test case.
+
 ## Open questions
 
 - Should deactivating a parent department cascade-deactivate all children, or block? Currently blocks (BR-6). The story text says "requires reassigning or deactivating all child departments first."

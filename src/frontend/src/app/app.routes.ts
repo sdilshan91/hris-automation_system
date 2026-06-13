@@ -195,6 +195,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Core HR / Custom Fields (US-CHR-012) ────────────────
+      {
+        path: 'settings/custom-fields',
+        loadChildren: () =>
+          import('./features/core-hr/custom-fields/custom-fields.routes').then(
+            (m) => m.CUSTOM_FIELD_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',
