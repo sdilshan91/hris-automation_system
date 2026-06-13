@@ -1,0 +1,10 @@
+# agnix — linter for AI agent configs (CLAUDE.md, SKILL.md, hooks, MCP, agents).
+# https://github.com/agent-sh/agnix   Run locally: npx agnix .
+target = "ClaudeCode"
+
+[rules]
+# CC-AG-009 flags tool "Agent" as unknown because agnix expects the older name "Task".
+# In this Claude Code version the subagent tool is literally named "Agent" (it's in the
+# live tool registry), so this is a false positive. The only files declaring tools are
+# the 5 agents in .claude/agents/team/, so disabling it globally is low-risk here.
+disabled_rules = ["CC-AG-009"]
