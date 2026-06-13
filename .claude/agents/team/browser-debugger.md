@@ -1,6 +1,6 @@
 ---
 name: browser-debugger
-description: Drives a real browser via Playwright MCP to debug the HRM SaaS UI — inspects console logs, network requests, the accessibility tree, and screenshots to investigate UI bugs, failed API calls, auth/tenant issues, and reproduce user flows. Read-only investigator: it does NOT edit code or open PRs.
+description: "Drives a real browser via Playwright MCP to debug the HRM SaaS UI — inspects console logs, network requests, the accessibility tree, and screenshots to investigate UI bugs, failed API calls, auth/tenant issues, and reproduce user flows. Read-only investigator: it does NOT edit code or open PRs."
 tools:
   - Read
   - Glob

@@ -1,0 +1,37 @@
+name: agnix
+
+# Lints the AI-agent configuration (CLAUDE.md, .claude/ agents/skills/hooks/settings)
+# with agnix on every PR that touches it. Fails only on ERRORS (broken YAML frontmatter,
+# malformed hooks, unknown tools); the ~26 style warnings are advisory and do not block.
+# Config + the one false-positive suppression live in .agnix.toml.
+# No Anthropic API / secrets required — GitHub Actions minutes only.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.claude/**'
+      - 'CLAUDE.md'
+      - '.agnix.toml'
+      - '.github/workflows/agnix.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: agnix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-agent-config:
+    name: Lint agent config (agnix)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Pinned version so an upstream agnix release can't turn this gate red unexpectedly.
+      - name: Validate .claude config with agnix
+        run: npx --yes agnix@0.32.0 -c .agnix.toml .claude CLAUDE.md

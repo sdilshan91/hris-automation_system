@@ -4,3 +4,4 @@ settings.local.json
 # Hooks: personal overrides and debug logs (not committed)
 hooks/config/hooks-config.local.json
 hooks/logs/
+hooks/scripts/__pycache__/
