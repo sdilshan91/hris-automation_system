@@ -63,6 +63,17 @@ public sealed class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRe
             .HasDefaultValue(false)
             .IsRequired();
 
+        // US-LV-005 FR-6 / AC-5 / NFR-4: optimistic concurrency via the PostgreSQL xmin system
+        // column. A uint property marked IsRowVersion() (i.e. a concurrency token generated
+        // on-add-or-update) is detected by Npgsql's model-finalizing convention and mapped to the
+        // existing xmin SYSTEM column, producing NO schema DDL (xmin is present on every table).
+        // We must NOT override the column name/type here — doing so defeats the convention and
+        // scaffolds a spurious ADD COLUMN xmin that fails on PostgreSQL. Concurrent approve/reject
+        // on the same row raises DbUpdateConcurrencyException, which the approval service translates
+        // to a 409. The InMemory provider used by the test suite ignores this annotation (xmin has
+        // no equivalent there), so existing InMemory tests are unaffected.
+        builder.Property(lr => lr.Version).IsRowVersion();
+
         // ── Relationships ──────────────────────────────────────────
 
         builder.HasOne(lr => lr.Employee)

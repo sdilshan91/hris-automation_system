@@ -462,3 +462,69 @@ this story (contrast US-LV-003 which added `Leave.Apply`).
 
 No new EF migration was needed (reuses the US-LV-003 `leave_request` table + `ix_leave_pending` index).
 No DI change (service already registered). No PermissionCatalog change.
+
+## Frontend (US-LV-005) — Manager Approves / Rejects Leave
+
+Extends the US-LV-004 `LeaveApprovalsComponent` detail-panel footer (the Approve/Reject buttons
+were present-but-DISABLED). No parallel queue was created; the same component, service, and models
+were extended in place.
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+Added to the existing **`/leaves`** resource (sibling to the US-LV-004 `GET /pending`):
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| POST | `/api/v1/leaves/{id}/approve` | `{ comment?, confirmNegativeBalance? }` | `ApiResponse<ILeaveActionResult>` |
+| POST | `/api/v1/leaves/{id}/reject`  | `{ reason }` (required, BR-2) | `ApiResponse<ILeaveActionResult>` |
+
+`ILeaveActionResult = { requestId, status, currentBalance? }`. Both unwrap the standard
+`ApiResponse<T>` envelope (`.data`), tolerating a bare body, exactly like `getPendingQueue`.
+
+**Error contract the FE maps to the §8 UX** (`ILeaveActionErrorResponse { message, code?, negativeBalanceAllowed? }`):
+- **409** → already actioned by another manager (AC-5): toast `message` (fallback "This request has
+  already been actioned.") + close panel + `refresh()` the queue.
+- **400 `code:'insufficient_balance'` + `negativeBalanceAllowed:true`** → soft block (AC-3): FE shows
+  the confirmation modal, then retries `approve` with `confirmNegativeBalance:true`.
+- **400 `code:'insufficient_balance'`** without that flag → hard block: toast `message`.
+- **400 `code:'payroll_locked'`** (BR-4) and any other error → toast `message` verbatim (generic
+  fallback "Failed to action this leave request."). Payroll-lock is just surfaced, not modelled.
+
+The FE drives the insufficient-balance branch **entirely off the API response** (it does not pre-judge
+from the inline `currentBalance`), so the backend is the single source of truth for whether negative
+is allowed. If the backend prefers to return a non-error signal for the soft case, only `onActionError`
+changes.
+
+### UX decisions (§8)
+
+- **Approve** = green solid + checkmark; click expands an **optional** comment textarea (`@expand`
+  animation), then "Confirm approval". Empty comment is sent as `comment: undefined`.
+- **Reject** = red **outlined** + X; click reveals a **mandatory** reason textarea. The "Confirm
+  rejection" button is `[disabled]` until `rejectReason().trim().length > 0` (AC-2, BR-2); the
+  textarea gets a red error ring + helper text while empty.
+- Footer uses a 3-state `ActionMode` signal (`'none' | 'approve' | 'reject'`). Buttons are
+  `flex-col sm:flex-row` so they are **full-width stacked on mobile** (§8) and inline on ≥sm.
+- On success the actioned row leaves the queue via a `@rowOut` (`:leave`) slide-out animation; the
+  item is removed from the `requests()` signal and `totalCount` is decremented (no full reload).
+- `closeDetail()`/`dismissNegative()` are guarded against `isActioning()` so the panel can't be
+  dropped mid-request.
+
+### Multi-level approval (AC-4) — DEFERRED to US-ADM-007
+
+No tenant workflow config / approval-level entity exists. The FE does **not** build level-routing UI.
+If `approve` returns a "Pending L2 Approval"-style `status` (`isFurtherApprovalStatus()` regex), the
+item still leaves this manager's queue and an **info** toast notes the next-level status instead of a
+success toast. `TODO(US-ADM-007)` marker in `onActionSuccess`.
+
+### Shared files touched (all within `features/leave-management`, flagged)
+
+- `models/pending-leave.models.ts` — added `IApproveLeaveRequest`, `IRejectLeaveRequest`,
+  `ILeaveActionResult`, `ILeaveActionErrorResponse`, `isFurtherApprovalStatus()`.
+- `services/leave-approvals.service.ts` — added `approve()`, `reject()`, static `parseActionError()`.
+- `components/leave-approvals/leave-approvals.component.ts` — wired the footer actions + modal.
+- The barrel `index.ts` already re-exports the model + service files (no edit needed).
+- **Test note:** the US-LV-004 sibling spec assertion "renders disabled approve/reject buttons" was
+  flipped to "renders enabled" — the only sibling test edit, required because the story changes that
+  exact behavior (not a weakening).
+
+No nav-menu, route, backend, or test-case files were touched.

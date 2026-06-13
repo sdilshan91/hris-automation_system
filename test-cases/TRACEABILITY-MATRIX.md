@@ -760,7 +760,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (LV-003) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 4 | -- |
 | US-LV-004 | Manager Views Pending Leave Queue with Balance Inline | Must Have | TC-LV-066, TC-LV-067, TC-LV-068, TC-LV-069, TC-LV-070, TC-LV-071, TC-LV-072, TC-LV-073, TC-LV-074, TC-LV-075, TC-LV-076, TC-LV-077, TC-LV-078, TC-LV-079, TC-LV-080, TC-LV-081, TC-LV-082, TC-LV-083, TC-LV-084, TC-LV-085, TC-LV-086, TC-LV-087, TC-LV-088 | 23 | 5/5 AC covered |
 | Cross-cutting (LV-004) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015, TC-LV-ISO-016 | 4 | -- |
-| **TOTAL** | | | **104 test cases** | **104** | **21/21 AC** |
+| US-LV-005 | Manager Approves or Rejects Leave Request | Must Have | TC-LV-089, TC-LV-090, TC-LV-091, TC-LV-092, TC-LV-093, TC-LV-094, TC-LV-095, TC-LV-096, TC-LV-097, TC-LV-098, TC-LV-099, TC-LV-100, TC-LV-101, TC-LV-102, TC-LV-103, TC-LV-104, TC-LV-105, TC-LV-106, TC-LV-107, TC-LV-108 | 20 | 5/5 AC covered |
+| Cross-cutting (LV-005) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-017, TC-LV-ISO-018, TC-LV-ISO-019, TC-LV-ISO-020 | 4 | -- |
+| **TOTAL** | | | **128 test cases** | **128** | **26/26 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -870,6 +872,30 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-LV-ISO-014 | API rejects pending-queue requests without valid tenant context | Security | Critical | US-LV-004 | NFR-3, US-AUTH-007 |
 | TC-LV-ISO-015 | EF global query filters block cross-tenant access to pending leave_request rows | Security | Critical | US-LV-004 | NFR-3, Section 7 |
 | TC-LV-ISO-016 | Inline-balance cache keys for the pending queue are tenant-scoped (DEFERRED -- partial) | Security | Critical | US-LV-004 | NFR-2, Section 7 |
+| TC-LV-089 | Approve -- status Approved, used-ledger entry, balance decreased, audit, notification queued (happy path) | Functional | Critical | US-LV-005 | AC-1, FR-1, FR-3, FR-7, BR-5 |
+| TC-LV-090 | Reject with mandatory reason -- status Rejected, no ledger, audit, notification with reason, reason in approval history | Functional | Critical | US-LV-005 | AC-2, FR-2, FR-4, FR-7, BR-2 |
+| TC-LV-091 | Optional approval comment persisted; approval succeeds without a comment | Functional | High | US-LV-005 | AC-1, FR-1, FR-5, BR-2 |
+| TC-LV-092 | Approval blocked when balance insufficient and negative not allowed | Functional | Critical | US-LV-005 | AC-3, BR-5, FR-3 |
+| TC-LV-093 | Approval with insufficient balance prompts confirmation when negative allowed | Functional | High | US-LV-005 | AC-3, BR-5, FR-3 |
+| TC-LV-094 | Rejection with empty/missing reason rejected with validation error | Functional | Critical | US-LV-005 | BR-2, FR-2 |
+| TC-LV-095 | Already-actioned (Rejected/Approved) request cannot be re-actioned | Functional | Critical | US-LV-005 | BR-3, FR-1, FR-2 |
+| TC-LV-096 | Concurrent approve/reject -- only first succeeds, second gets 409 (xmin) | Functional | Critical | US-LV-005 | AC-5, FR-6, NFR-4 |
+| TC-LV-097 | Multi-level approval -- first approval -> Pending L2, notifies next approver (CONDITIONAL on US-ADM-007) | Functional | High | US-LV-005 | AC-4, FR-5 (multi-level CONDITIONAL on approval-workflow config US-ADM-007) |
+| TC-LV-098 | Approving leave for a payroll-locked period is blocked (CONDITIONAL on payroll module) | Functional | High | US-LV-005 | BR-4 (CONDITIONAL on payroll module period-lock) |
+| TC-LV-099 | Only the designated approver can action -- another manager denied | Security | Critical | US-LV-005 | BR-1, FR-1, FR-2 |
+| TC-LV-100 | User without Leave.Approve.Team is denied approve/reject | Security | Critical | US-LV-005 | Preconditions Section 2, NFR-3 |
+| TC-LV-101 | Unauthenticated request to approve/reject API returns 401 | Security | Critical | US-LV-005 | Preconditions Section 2, US-AUTH-* |
+| TC-LV-102 | Input sanitization -- XSS/SQLi in approval comment and rejection reason | Security | High | US-LV-005 | NFR-3, FR-1, FR-2 |
+| TC-LV-103 | Approve/Reject API responds within 500ms P95 | Performance | High | US-LV-005 | NFR-1, NFR-2 |
+| TC-LV-104 | Approve/Reject detail-panel actions usable on mobile 360px+ and WCAG 2.1 AA (labeled mandatory-reason, error announced) | Accessibility | High | US-LV-005 | Section 8, BR-2 |
+| TC-LV-105 | Audit log records Leave.Approved/Leave.Rejected with before/after JSON | Functional | High | US-LV-005 | FR-7, NFR-3 |
+| TC-LV-106 | A request cancelled by the employee cannot be approved or rejected | Functional | High | US-LV-005 | Preconditions Section 2, BR-3 |
+| TC-LV-107 | Notification queuing asynchronous and best-effort -- decision commits even if queuing fails | Functional | Medium | US-LV-005 | NFR-2, Section 10 (notification dispatch DEFERRED) |
+| TC-LV-108 | Cross-browser compatibility for the approve/reject flow | Functional | Medium | US-LV-005 | Section 8, NFR-1 |
+| TC-LV-ISO-017 | Manager in Tenant A cannot approve or reject Tenant B's request | Security | Critical | US-LV-005 | NFR-3, BR-1 |
+| TC-LV-ISO-018 | API rejects approve/reject requests without a valid tenant context | Security | Critical | US-LV-005 | NFR-3, US-AUTH-007 |
+| TC-LV-ISO-019 | EF global query filters block cross-tenant access to leave_request/approval_history/ledger rows during approval | Security | Critical | US-LV-005 | NFR-3, Section 7 |
+| TC-LV-ISO-020 | Balance-cache keys invalidated on approval are tenant-scoped (DEFERRED -- partial) | Security | Critical | US-LV-005 | NFR-2, NFR-3, FR-3 |
 
 ### US-LV-001 Detailed Requirements Traceability
 
@@ -972,6 +998,32 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | BR-3: Requests older than 30 days without action highlighted as overdue | BR | TC-LV-076 | Direct |
 | BR-4: Balance shown is current real-time balance, not balance at request time | BR | TC-LV-066, TC-LV-080 | Direct |
 
+### US-LV-005 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Approve -> Approved, used-ledger entry, balance decreased, audit, leave-approved notification queued, Redis cache invalidated | AC | TC-LV-089, TC-LV-091, TC-LV-105 | Direct (Redis invalidation DEFERRED; notification seam DEFERRED; ledger/balance/audit verified) |
+| AC-2: Reject with mandatory reason -> Rejected, no ledger entry, audit, leave-rejected notification with reason, reason in approval history | AC | TC-LV-090, TC-LV-094, TC-LV-105 | Direct |
+| AC-3: Insufficient balance at approval -> block (negative not allowed) or confirm (negative allowed) | AC | TC-LV-092, TC-LV-093 | Direct |
+| AC-4: Multi-level approval -> first approval moves to Pending L2 and notifies next approver | AC | TC-LV-097 | CONDITIONAL on approval-workflow config (US-ADM-007); single-level default verified now |
+| AC-5: Two simultaneous decisions -> only first succeeds, second gets 409 (xmin optimistic concurrency) | AC | TC-LV-096 | Direct |
+| FR-1: POST /api/v1/leaves/{id}/approve with optional comment | FR | TC-LV-089, TC-LV-091, TC-LV-095, TC-LV-099 | Direct |
+| FR-2: POST /api/v1/leaves/{id}/reject with required reason | FR | TC-LV-090, TC-LV-094, TC-LV-095, TC-LV-099 | Direct |
+| FR-3: On approval insert leave_ledger 'used' entry; invalidate Redis balance cache | FR | TC-LV-089, TC-LV-092, TC-LV-093, TC-LV-ISO-020 | Direct (Redis invalidation DEFERRED; ledger + DB-fallback balance verified) |
+| FR-4: On rejection no ledger entry; only status update and audit | FR | TC-LV-090 | Direct |
+| FR-5: Multi-level approval chain (1-3 levels); track approval history | FR | TC-LV-091, TC-LV-097 | Direct for history; multi-level CONDITIONAL on US-ADM-007 |
+| FR-6: Optimistic concurrency via PostgreSQL xmin (UseXminAsConcurrencyToken) | FR | TC-LV-096 | Direct |
+| FR-7: Audit log Leave.Approved/Leave.Rejected, resource_type LeaveRequest, before/after JSON | FR | TC-LV-089, TC-LV-090, TC-LV-105 | Direct |
+| NFR-1: Approve/Reject API responds within 500ms P95 | NFR | TC-LV-103 | Direct |
+| NFR-2: Notification queuing asynchronous and non-blocking | NFR | TC-LV-089, TC-LV-090, TC-LV-103, TC-LV-107 | Direct (notification dispatch DEFERRED on notifications module; non-blocking/best-effort verified) |
+| NFR-3: All operations tenant-isolated via EF Core filters (RLS-equivalent per vault) | NFR | TC-LV-099, TC-LV-102, TC-LV-105, TC-LV-ISO-017, TC-LV-ISO-018, TC-LV-ISO-019, TC-LV-ISO-020 | Direct |
+| NFR-4: Concurrency handling prevents double-approval / approve-then-reject races | NFR | TC-LV-096 | Direct |
+| BR-1: Only the designated approver (or current-level approver) can approve/reject | BR | TC-LV-099, TC-LV-ISO-017 | Direct |
+| BR-2: Rejection reason mandatory; approval comment optional | BR | TC-LV-090, TC-LV-091, TC-LV-094 | Direct |
+| BR-3: A rejected (already-actioned) request cannot be re-approved | BR | TC-LV-095, TC-LV-106 | Direct |
+| BR-4: Approving leave for a payroll-locked period is blocked | BR | TC-LV-098 | CONDITIONAL on payroll module period-lock (non-locked path verified) |
+| BR-5: Approval deducts balance at approval time, not request time | BR | TC-LV-089, TC-LV-092, TC-LV-093 | Direct |
+
 ### Coverage Summary (Leave Management -- US-LV-001)
 
 | Metric | Value | Target | Status |
@@ -1036,15 +1088,31 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Blocked Test Cases | 0 | -- | CLEAR |
 | Deferred Test Cases | TC-LV-079 (SignalR real-time push -- notifications module), TC-LV-077 (history/team-calendar subsections -- US-LV-009), TC-LV-088 (multi-level approval -- approval workflow story), TC-LV-ISO-016 partial (balance cache keys -- pending Redis) | -- | NOTE |
 
+### Coverage Summary (Leave Management -- US-LV-005)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 7/7 (100%) -- FR-3 Redis invalidation DEFERRED (ledger + DB-fallback verified); FR-5 multi-level CONDITIONAL on US-ADM-007 | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 4/4 (100%) -- NFR-2 notification dispatch DEFERRED (non-blocking verified) | >= 85% | PASS |
+| Business Rules Coverage | 5/5 (100%) -- BR-4 payroll-lock CONDITIONAL on payroll module | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO-017..020 + embedded approver-scope in TC-LV-099) | >= 3 | PASS |
+| Security Test Cases | 8/24 (33%) including ISO | >= 30% | PASS |
+| Performance Test Cases | 2/24 (TC-LV-103, TC-LV-107 non-blocking) | >= 1 | PASS |
+| Accessibility Test Cases | 1/24 (TC-LV-104) | >= 1 | PASS |
+| Cross-Browser Test Cases | 1/24 (TC-LV-108) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred / Conditional Test Cases | TC-LV-097 (multi-level approval -- CONDITIONAL on US-ADM-007), TC-LV-098 (payroll-lock -- CONDITIONAL on payroll module), TC-LV-107 (async notification dispatch -- DEFERRED on notifications module), TC-LV-ISO-020 partial (balance cache keys -- pending Redis) | -- | NOTE |
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
 |--------|------------|------------|-------------|-------------------|--------|
 | Authentication & Authorization | 10 | 116 | 61/61 (100%) | 23 | PASS |
 | Core HR (US-CHR-001 through US-CHR-012) | 12 | 372 | 61/61 (100%) | 67 | PASS |
-| Leave Management (US-LV-001, US-LV-002, US-LV-003, US-LV-004) | 4 | 104 | 21/21 (100%) | 19 | PASS |
-| **TOTAL** | **26** | **592** | **143/143 (100%)** | **119** | |
+| Leave Management (US-LV-001, US-LV-002, US-LV-003, US-LV-004, US-LV-005) | 5 | 128 | 26/26 (100%) | 24 | PASS |
+| **TOTAL** | **27** | **616** | **148/148 (100%)** | **124** | |
 
 ---
 
-*Note: This traceability matrix covers Authentication & Authorization (10 stories, 116 TCs), Core HR (12 stories, 372 TCs), and Leave Management (4 stories, 104 TCs). US-LV-004 adds 23 functional/security/performance/accessibility test cases (TC-LV-066..088) + 4 dedicated multi-tenant isolation tests (TC-LV-ISO-013..016) for the manager pending-leave-queue flow. All 5 acceptance criteria for US-LV-004 have direct coverage. US-LV-004 notes: TC-LV-079 verifies the queue includes new requests on API reload while the real-time SignalR push (AC-5/FR-6) is dependent/deferred on the notifications module; TC-LV-077 detail-panel history-summary and team-calendar subsections are deferred on leave-history/US-LV-009 (the FR-5 numeric conflict count in TC-LV-078 still renders); TC-LV-088 multi-level-approval Scenario B is forward-looking on the leave-approval workflow story (direct-reports default verified now); TC-LV-ISO-016 balance-cache-key isolation is partial pending Redis (DB-fallback path and tenant-scoped key pattern verified now). US-LV-003 notes unchanged: TC-LV-056 holiday-exclusion steps depend on the holiday calendar (US-LV-007) and are conditionally blocked on it if that story is not yet implemented (weekend exclusion passes independently); FR-7 (multi-level approval routing) is downstream of submission and belongs to the leave-approval story; TC-LV-ISO-012 balance-cache-key isolation is partial pending Redis. US-LV-001/US-LV-002 deferred items unchanged: TC-LV-031 (FTE proration -- Employee entity lacks FTE field), TC-LV-042 (Redis balance cache), TC-LV-046 (job-level/tenure dimensions), TC-LV-ISO-008 partial (cache key isolation). All existing test cases for US-LV-001, US-LV-002, US-LV-003, Core HR, and Authentication remain unchanged.*
+*Note: This traceability matrix covers Authentication & Authorization (10 stories, 116 TCs), Core HR (12 stories, 372 TCs), and Leave Management (5 stories, 128 TCs). US-LV-005 adds 20 functional/security/performance/accessibility test cases (TC-LV-089..108) + 4 dedicated multi-tenant isolation tests (TC-LV-ISO-017..020) for the manager approve/reject flow. All 5 acceptance criteria for US-LV-005 have direct coverage. US-LV-005 notes: TC-LV-089/TC-LV-090 verify the DB/status/ledger/audit effects of approve/reject while the leave-approved/leave-rejected notification dispatch is the log-only seam DEFERRED on the notifications module and the Redis balance-cache invalidation (FR-3) is DEFERRED module-wide (the LeaveLedger running-total DB-fallback is verified); TC-LV-096 is the key concurrency test (PostgreSQL xmin optimistic concurrency -> 409 "already been actioned" on the second decision); TC-LV-097 multi-level approval (AC-4/FR-5) is CONDITIONAL/forward-looking on the approval-workflow configuration story (US-ADM-007), with single-level the verified default now; TC-LV-098 payroll-lock block (BR-4) is CONDITIONAL on the payroll module (non-locked approval verified now); TC-LV-ISO-020 balance-cache-key isolation is partial pending Redis (tenant-scoped key pattern and DB-fallback verified now). US-LV-004 notes: TC-LV-079 verifies the queue includes new requests on API reload while the real-time SignalR push (AC-5/FR-6) is dependent/deferred on the notifications module; TC-LV-077 detail-panel history-summary and team-calendar subsections are deferred on leave-history/US-LV-009 (the FR-5 numeric conflict count in TC-LV-078 still renders); TC-LV-088 multi-level-approval Scenario B is forward-looking on the leave-approval workflow story (direct-reports default verified now); TC-LV-ISO-016 balance-cache-key isolation is partial pending Redis (DB-fallback path and tenant-scoped key pattern verified now). US-LV-003 notes unchanged: TC-LV-056 holiday-exclusion steps depend on the holiday calendar (US-LV-007) and are conditionally blocked on it if that story is not yet implemented (weekend exclusion passes independently); FR-7 (multi-level approval routing) is downstream of submission and belongs to the leave-approval story; TC-LV-ISO-012 balance-cache-key isolation is partial pending Redis. US-LV-001/US-LV-002 deferred items unchanged: TC-LV-031 (FTE proration -- Employee entity lacks FTE field), TC-LV-042 (Redis balance cache), TC-LV-046 (job-level/tenure dimensions), TC-LV-ISO-008 partial (cache key isolation). All existing test cases for US-LV-001, US-LV-002, US-LV-003, US-LV-004, Core HR, and Authentication remain unchanged.*

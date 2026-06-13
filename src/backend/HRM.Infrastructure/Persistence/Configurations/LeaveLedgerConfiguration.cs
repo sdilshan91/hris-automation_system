@@ -33,6 +33,10 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
         builder.Property(l => l.LeaveYear)
             .IsRequired();
 
+        // US-LV-005 §7: optional FK to the leave request that produced this entry (set on the
+        // "Used" deduction written at approval; null for accruals and other entry types).
+        builder.Property(l => l.LeaveRequestId);
+
         builder.Property(l => l.Amount)
             .HasColumnType("numeric(5,2)")
             .IsRequired();
@@ -62,6 +66,13 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
             .WithMany()
             .HasForeignKey(l => l.LeaveTypeId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // US-LV-005 §7: optional FK to the originating leave request. SET NULL so deleting a
+        // request (rare; requests are soft-deleted) does not orphan the immutable ledger entry.
+        builder.HasOne(l => l.LeaveRequest)
+            .WithMany()
+            .HasForeignKey(l => l.LeaveRequestId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // ── Indexes ────────────────────────────────────────────────
 

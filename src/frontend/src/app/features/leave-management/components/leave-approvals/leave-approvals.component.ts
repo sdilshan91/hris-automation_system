@@ -13,6 +13,7 @@ import { trigger, transition, style, animate } from '@angular/animations';
 import { ToastrService } from 'ngx-toastr';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
+import { HttpErrorResponse } from '@angular/common/http';
 import { LeaveApprovalsService } from '../../services/leave-approvals.service';
 import { LeaveTypeService } from '../../services/leave-type.service';
 import { ILeaveType } from '../../models/leave-type.models';
@@ -25,7 +26,13 @@ import {
   PENDING_SORT_OPTIONS,
   BALANCE_TIER_CLASSES,
   balanceTier,
+  IApproveLeaveRequest,
+  ILeaveActionResult,
+  isFurtherApprovalStatus,
 } from '../../models/pending-leave.models';
+
+/** Which action panel is currently expanded in the detail footer (US-LV-005). */
+type ActionMode = 'none' | 'approve' | 'reject';
 
 /**
  * US-LV-004: Manager pending leave-approval queue with inline balance.
@@ -37,10 +44,22 @@ import {
  * detail panel slides in from the right (AC-4). Overdue rows get a red left-border
  * (BR-3, §8); inline balance pill is color-coded by remaining/entitlement (§8).
  *
+ * US-LV-005 wires the Approve / Reject actions in the detail footer:
+ *  - Approve (green + check): expands an OPTIONAL comment textarea, then confirms (AC-1).
+ *  - Reject (red outline + X): reveals a MANDATORY reason textarea; submit disabled
+ *    until the reason is non-empty (AC-2, BR-2).
+ *  - Insufficient-balance confirm modal: on a 400 `insufficient_balance` with
+ *    `negativeBalanceAllowed`, ask for confirmation then retry the approve with
+ *    `confirmNegativeBalance: true`; a hard block surfaces the error via toast (AC-3).
+ *  - On success the actioned item slides out of the queue + a toast confirms (§8).
+ *  - 409 conflict -> "already actioned" toast + refresh the queue (AC-5).
+ *
  * DEFER (seam + TODO, not built here):
- *  - Approve / Reject quick actions -> US-LV-005 (buttons present but DISABLED).
+ *  - Multi-level approval routing UI (AC-4) -> US-ADM-007. A "Pending L2"-style
+ *    status is shown as a badge in the success toast; the item still leaves the queue.
  *  - Real-time SignalR push (FR-6/AC-5) -> manual "Refresh" affordance only;
  *    TODO(SignalR) hub at /hubs/notifications.
+ *  - Payroll-lock messaging beyond surfacing the API error (BR-4) -> payroll module.
  *  - Leave-history (last 3) + team-calendar detail subsections -> rendered as
  *    clearly-labeled TODO seams since the API does not yet supply that data.
  */
@@ -68,6 +87,25 @@ import {
     trigger('backdrop', [
       transition(':enter', [style({ opacity: 0 }), animate('200ms ease-out', style({ opacity: 1 }))]),
       transition(':leave', [animate('200ms ease-in', style({ opacity: 0 }))]),
+    ]),
+    // US-LV-005: the actioned row slides out of the queue on success (§8).
+    trigger('rowOut', [
+      transition(':leave', [
+        animate(
+          '300ms cubic-bezier(0.4, 0, 1, 1)',
+          style({ opacity: 0, transform: 'translateX(24px)', height: 0 })
+        ),
+      ]),
+    ]),
+    // US-LV-005: comment / reason textarea reveal (AC-1, AC-2).
+    trigger('expand', [
+      transition(':enter', [
+        style({ opacity: 0, height: 0 }),
+        animate('200ms ease-out', style({ opacity: 1, height: '*' })),
+      ]),
+      transition(':leave', [
+        animate('150ms ease-in', style({ opacity: 0, height: 0 })),
+      ]),
     ]),
   ],
   template: `
@@ -215,7 +253,7 @@ import {
             </thead>
             <tbody>
               @for (req of requests(); track req.requestId) {
-                <tr class="row" [class.row-overdue]="req.isOverdue"
+                <tr class="row" [class.row-overdue]="req.isOverdue" @rowOut
                   tabindex="0" role="button"
                   [attr.aria-label]="'View request from ' + req.employeeName"
                   (click)="openDetail(req)" (keydown.enter)="openDetail(req)"
@@ -263,7 +301,7 @@ import {
         <!-- Mobile cards -->
         <div class="md:hidden space-y-3" @fadeIn>
           @for (req of requests(); track req.requestId) {
-            <div class="card-notion cursor-pointer" [class.row-overdue]="req.isOverdue"
+            <div class="card-notion cursor-pointer" [class.row-overdue]="req.isOverdue" @rowOut
               tabindex="0" role="button"
               [attr.aria-label]="'View request from ' + req.employeeName"
               (click)="openDetail(req)" (keydown.enter)="openDetail(req)"
@@ -450,18 +488,117 @@ import {
           </div>
         </div>
 
-        <!-- Quick actions: DISABLED. Approve/Reject is US-LV-005 (do not implement here). -->
-        <div class="sticky bottom-0 bg-white border-t border-neutral-100 px-6 py-4 flex gap-3">
-          <button type="button" class="btn-approve flex-1" disabled
-            title="Approve/Reject is delivered in US-LV-005" data-test="approve-btn">
-            Approve
-          </button>
-          <button type="button" class="btn-reject flex-1" disabled
-            title="Approve/Reject is delivered in US-LV-005" data-test="reject-btn">
-            Reject
-          </button>
+        <!-- Quick actions (US-LV-005, §8). Mobile: full-width buttons at the bottom. -->
+        <div class="sticky bottom-0 bg-white border-t border-neutral-100 px-6 py-4 space-y-3">
+          <!-- Approve panel: optional comment textarea (AC-1, BR-2). -->
+          @if (actionMode() === 'approve') {
+            <div @expand data-test="approve-panel">
+              <label for="approve-comment" class="detail-label mb-1 block">
+                Comment <span class="text-neutral-300 normal-case">(optional)</span>
+              </label>
+              <textarea id="approve-comment" rows="2" class="action-textarea"
+                [ngModel]="comment()" (ngModelChange)="comment.set($event)"
+                placeholder="Add an optional note for the employee…"
+                data-test="approve-comment"></textarea>
+            </div>
+          }
+
+          <!-- Reject panel: mandatory reason textarea (AC-2, BR-2). -->
+          @if (actionMode() === 'reject') {
+            <div @expand data-test="reject-panel">
+              <label for="reject-reason" class="detail-label mb-1 block">
+                Reason <span class="text-red-400 normal-case">(required)</span>
+              </label>
+              <textarea id="reject-reason" rows="2" class="action-textarea"
+                [class.textarea-error]="rejectReason().length === 0"
+                [ngModel]="rejectReason()" (ngModelChange)="rejectReason.set($event)"
+                placeholder="Explain why this request is being rejected…"
+                aria-required="true" data-test="reject-reason"></textarea>
+              @if (rejectReason().trim().length === 0) {
+                <p class="text-xs text-red-500 mt-1">A rejection reason is required.</p>
+              }
+            </div>
+          }
+
+          @if (actionMode() === 'none') {
+            <!-- Idle: the two primary action buttons. -->
+            <div class="flex flex-col sm:flex-row gap-3">
+              <button type="button" class="btn-approve flex-1" (click)="startApprove()"
+                [disabled]="isActioning()" data-test="approve-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                  class="w-4 h-4 mr-1.5" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
+                </svg>
+                Approve
+              </button>
+              <button type="button" class="btn-reject flex-1" (click)="startReject()"
+                [disabled]="isActioning()" data-test="reject-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                  class="w-4 h-4 mr-1.5" aria-hidden="true">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+                </svg>
+                Reject
+              </button>
+            </div>
+          } @else {
+            <!-- Confirm / cancel for the chosen action. -->
+            <div class="flex flex-col sm:flex-row gap-3">
+              <button type="button" class="btn-secondary flex-1" (click)="cancelAction()"
+                [disabled]="isActioning()" data-test="action-cancel">
+                Cancel
+              </button>
+              @if (actionMode() === 'approve') {
+                <button type="button" class="btn-approve flex-1" (click)="confirmApprove()"
+                  [disabled]="isActioning()" data-test="confirm-approve">
+                  {{ isActioning() ? 'Approving…' : 'Confirm approval' }}
+                </button>
+              } @else {
+                <button type="button" class="btn-reject-solid flex-1" (click)="confirmReject()"
+                  [disabled]="isActioning() || rejectReason().trim().length === 0"
+                  data-test="confirm-reject">
+                  {{ isActioning() ? 'Rejecting…' : 'Confirm rejection' }}
+                </button>
+              }
+            </div>
+          }
         </div>
       </aside>
+    }
+
+    <!-- Insufficient-balance confirmation modal (AC-3). Shown only when the API
+         signals an insufficient balance that the leave type allows going negative. -->
+    @if (confirmNegative(); as ctx) {
+      <div class="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4"
+        @backdrop role="dialog" aria-modal="true" aria-labelledby="neg-title"
+        data-test="negative-modal">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" @fadeIn>
+          <div class="flex items-start gap-3 mb-3">
+            <div class="w-9 h-9 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/>
+              </svg>
+            </div>
+            <div>
+              <h3 id="neg-title" class="text-base font-semibold text-neutral-900">Insufficient balance</h3>
+              <p class="text-sm text-neutral-600 mt-1" data-test="negative-message">{{ ctx.message }}</p>
+            </div>
+          </div>
+          <p class="text-xs text-neutral-500 mb-4">
+            This leave type allows a negative balance. Approving will take the employee's
+            balance below zero. Do you want to continue?
+          </p>
+          <div class="flex flex-col sm:flex-row gap-3">
+            <button type="button" class="btn-secondary flex-1" (click)="dismissNegative()"
+              [disabled]="isActioning()" data-test="negative-cancel">
+              Cancel
+            </button>
+            <button type="button" class="btn-approve flex-1" (click)="approveWithNegative()"
+              [disabled]="isActioning()" data-test="negative-confirm">
+              {{ isActioning() ? 'Approving…' : 'Approve anyway' }}
+            </button>
+          </div>
+        </div>
+      </div>
     }
   `,
   styles: [`
@@ -513,8 +650,18 @@ import {
     }
     .btn-reject {
       @apply inline-flex items-center justify-center rounded-lg border border-red-200 bg-white px-4 py-2.5
-        text-sm font-medium text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+        text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed;
     }
+    .btn-reject-solid {
+      @apply inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2.5
+        text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed;
+    }
+    .action-textarea {
+      @apply block w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm
+        text-neutral-800 transition-colors resize-none
+        focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none;
+    }
+    .textarea-error { @apply border-red-300 focus:border-red-400 focus:ring-red-400; }
     .pagination-btn {
       @apply inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm
         text-neutral-600 hover:bg-neutral-100 transition-colors
@@ -536,6 +683,21 @@ export class LeaveApprovalsComponent implements OnInit, OnDestroy {
   readonly isLoading = signal(true);
   readonly leaveTypes = signal<ILeaveType[]>([]);
   readonly selected = signal<IPendingLeaveRequest | null>(null);
+
+  // ─── US-LV-005 action state ─────────────────────────────────
+  /** Which inline action panel is expanded in the detail footer. */
+  readonly actionMode = signal<ActionMode>('none');
+  /** Optional approve comment (AC-1, BR-2). */
+  readonly comment = signal('');
+  /** Mandatory reject reason (AC-2, BR-2). */
+  readonly rejectReason = signal('');
+  /** True while an approve/reject HTTP call is in flight (disables buttons). */
+  readonly isActioning = signal(false);
+  /**
+   * Insufficient-balance confirmation context (AC-3). Non-null while the modal
+   * is shown; holds the API message to display before the manager confirms.
+   */
+  readonly confirmNegative = signal<{ message: string } | null>(null);
 
   // Pending (un-applied) filter inputs
   readonly filterLeaveTypeId = signal<string | null>(null);
@@ -732,10 +894,178 @@ export class LeaveApprovalsComponent implements OnInit, OnDestroy {
   // ─── Detail panel (AC-4) ────────────────────────────────────
   openDetail(req: IPendingLeaveRequest): void {
     this.selected.set(req);
+    this.resetActionState();
   }
 
   closeDetail(): void {
+    if (this.isActioning()) {
+      return; // don't drop the panel mid-request
+    }
     this.selected.set(null);
+    this.resetActionState();
+  }
+
+  // ─── US-LV-005: Approve / Reject ────────────────────────────
+
+  /** Reset the action footer + modal to their idle state. */
+  private resetActionState(): void {
+    this.actionMode.set('none');
+    this.comment.set('');
+    this.rejectReason.set('');
+    this.confirmNegative.set(null);
+  }
+
+  /** AC-1: expand the optional comment textarea. */
+  startApprove(): void {
+    this.actionMode.set('approve');
+  }
+
+  /** AC-2: reveal the mandatory reason textarea. */
+  startReject(): void {
+    this.actionMode.set('reject');
+  }
+
+  /** Collapse the expanded panel without submitting. */
+  cancelAction(): void {
+    this.actionMode.set('none');
+    this.comment.set('');
+    this.rejectReason.set('');
+  }
+
+  /** AC-1: confirm approval (optionally with comment). */
+  confirmApprove(): void {
+    const req = this.selected();
+    if (!req || this.isActioning()) {
+      return;
+    }
+    const comment = this.comment().trim();
+    this.sendApprove(req, { comment: comment || undefined });
+  }
+
+  /** AC-2 / BR-2: confirm rejection. No-op if the reason is empty (submit is also disabled). */
+  confirmReject(): void {
+    const req = this.selected();
+    const reason = this.rejectReason().trim();
+    if (!req || this.isActioning() || reason.length === 0) {
+      return;
+    }
+    this.isActioning.set(true);
+    this.approvalsService
+      .reject(req.requestId, { reason })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => this.onActionSuccess(req, res, 'rejected'),
+        error: (err: HttpErrorResponse) => this.onActionError(err),
+      });
+  }
+
+  /** AC-3: user accepted the negative-balance warning — retry with the override flag. */
+  approveWithNegative(): void {
+    const req = this.selected();
+    if (!req || this.isActioning()) {
+      return;
+    }
+    const comment = this.comment().trim();
+    this.confirmNegative.set(null);
+    this.sendApprove(req, {
+      comment: comment || undefined,
+      confirmNegativeBalance: true,
+    });
+  }
+
+  /** Dismiss the insufficient-balance modal without approving (AC-3). */
+  dismissNegative(): void {
+    if (this.isActioning()) {
+      return;
+    }
+    this.confirmNegative.set(null);
+  }
+
+  /** Shared approve call used by both the first attempt and the negative-balance retry. */
+  private sendApprove(req: IPendingLeaveRequest, body: IApproveLeaveRequest): void {
+    this.isActioning.set(true);
+    this.approvalsService
+      .approve(req.requestId, body)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => this.onActionSuccess(req, res, 'approved'),
+        error: (err: HttpErrorResponse) => this.onActionError(err),
+      });
+  }
+
+  /**
+   * Success path for approve/reject: remove the actioned item from the queue
+   * (it slides out via @rowOut), close the panel, and toast the confirmation (§8).
+   * For a multi-level "Pending L2"-style status (AC-4, DEFERRED) the item still
+   * leaves THIS manager's queue and the toast notes the next-level status.
+   */
+  private onActionSuccess(
+    req: IPendingLeaveRequest,
+    res: ILeaveActionResult,
+    verb: 'approved' | 'rejected'
+  ): void {
+    this.isActioning.set(false);
+    this.removeFromQueue(req.requestId);
+    this.closeAfterAction();
+
+    // TODO(US-ADM-007): when multi-level approval is configured, route to the
+    // next-level queue instead of just badging the status in the toast.
+    if (verb === 'approved' && isFurtherApprovalStatus(res?.status)) {
+      this.toastr.info(
+        `Leave request for ${req.employeeName} moved to "${res.status}".`
+      );
+    } else {
+      this.toastr.success(`Leave request ${verb} for ${req.employeeName}`);
+    }
+  }
+
+  /**
+   * Error path. Maps the API contract to the §8 UX:
+   *  - 409 -> already actioned by another manager; toast + refresh (AC-5).
+   *  - 400 insufficient_balance + negativeBalanceAllowed -> confirm modal (AC-3).
+   *  - everything else (hard block, payroll lock BR-4, validation) -> toast the message.
+   */
+  private onActionError(err: HttpErrorResponse): void {
+    this.isActioning.set(false);
+    const parsed = LeaveApprovalsService.parseActionError(err);
+
+    if (err.status === 409) {
+      this.toastr.error(
+        parsed?.message ?? 'This request has already been actioned.'
+      );
+      this.closeAfterAction();
+      this.refresh(); // the item was already handled — re-sync the queue (AC-5).
+      return;
+    }
+
+    if (
+      err.status === 400 &&
+      parsed?.code === 'insufficient_balance' &&
+      parsed.negativeBalanceAllowed
+    ) {
+      // Soft block: ask the manager to confirm going negative, then retry (AC-3).
+      this.confirmNegative.set({
+        message:
+          parsed.message ??
+          'The employee no longer has enough balance for this request.',
+      });
+      return;
+    }
+
+    // Hard block / payroll lock (BR-4) / validation / unknown — surface verbatim.
+    this.toastr.error(parsed?.message ?? 'Failed to action this leave request.');
+  }
+
+  /** Remove an actioned request from the in-memory queue + decrement the count. */
+  private removeFromQueue(requestId: string): void {
+    this.requests.update((list) => list.filter((r) => r.requestId !== requestId));
+    this.totalCount.update((n) => Math.max(0, n - 1));
+  }
+
+  /** Close the detail panel + clear action state after a completed action. */
+  private closeAfterAction(): void {
+    this.selected.set(null);
+    this.resetActionState();
   }
 
   // ─── View helpers ───────────────────────────────────────────

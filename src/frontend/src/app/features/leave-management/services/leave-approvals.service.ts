@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
@@ -7,6 +7,10 @@ import {
   IPendingLeaveQuery,
   IPendingLeaveResponse,
   IApiEnvelope,
+  IApproveLeaveRequest,
+  IRejectLeaveRequest,
+  ILeaveActionResult,
+  ILeaveActionErrorResponse,
 } from '../models/pending-leave.models';
 
 /**
@@ -28,8 +32,13 @@ import {
  *
  * NOTE: `apiBaseUrl` already includes `/api/v1`, so the resource is `${apiBaseUrl}/leaves`.
  *
- * DEFER: Approve/Reject actions are US-LV-005; real-time SignalR push is FR-6/AC-5.
- * Neither is implemented here -- the queue exposes a manual refresh only.
+ * US-LV-005 adds the write actions:
+ *   POST /api/v1/leaves/{id}/approve  body { comment?, confirmNegativeBalance? } -> ILeaveActionResult
+ *   POST /api/v1/leaves/{id}/reject   body { reason }                            -> ILeaveActionResult
+ * Both unwrap the standard ApiResponse<T> envelope (tolerating a bare body too).
+ *
+ * DEFER: real-time SignalR push (FR-6/AC-5) and multi-level routing (AC-4) are not
+ * built here -- the queue exposes a manual refresh and surfaces L2 status as a badge.
  */
 @Injectable({ providedIn: 'root' })
 export class LeaveApprovalsService {
@@ -78,5 +87,45 @@ export class LeaveApprovalsService {
     }
 
     return params;
+  }
+
+  // --- Write actions (US-LV-005) -----------------------------
+
+  /**
+   * Approve a pending leave request (AC-1). `comment` is optional (BR-2).
+   * Pass `confirmNegativeBalance: true` on the retry after the insufficient-
+   * balance confirmation modal (AC-3). Returns the updated request status.
+   */
+  approve(requestId: string, body: IApproveLeaveRequest = {}): Observable<ILeaveActionResult> {
+    return this.http
+      .post<IApiEnvelope<ILeaveActionResult>>(
+        `${this.baseUrl}/${requestId}/approve`,
+        body,
+        { withCredentials: true }
+      )
+      .pipe(map((res) => res?.data ?? (res as unknown as ILeaveActionResult)));
+  }
+
+  /**
+   * Reject a pending leave request (AC-2). `reason` is mandatory (BR-2) — the
+   * component disables submit until it is non-empty, so this is the API guard.
+   */
+  reject(requestId: string, body: IRejectLeaveRequest): Observable<ILeaveActionResult> {
+    return this.http
+      .post<IApiEnvelope<ILeaveActionResult>>(
+        `${this.baseUrl}/${requestId}/reject`,
+        body,
+        { withCredentials: true }
+      )
+      .pipe(map((res) => res?.data ?? (res as unknown as ILeaveActionResult)));
+  }
+
+  /** Parse an approve/reject error body into the typed shape (AC-3, AC-5, BR-4). */
+  static parseActionError(err: HttpErrorResponse): ILeaveActionErrorResponse | null {
+    const body = err.error;
+    if (body && typeof body === 'object' && 'message' in body) {
+      return body as ILeaveActionErrorResponse;
+    }
+    return null;
   }
 }

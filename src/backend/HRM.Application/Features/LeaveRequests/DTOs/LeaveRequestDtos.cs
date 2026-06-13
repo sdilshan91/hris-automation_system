@@ -102,6 +102,45 @@ public sealed record PendingLeaveQueueResult
 }
 
 /// <summary>
+/// Request body for POST /api/v1/leaves/{id}/approve (US-LV-005 FR-1). Comment is optional (BR-2).
+/// </summary>
+public sealed record ApproveLeaveRequestRequest
+{
+    /// <summary>Optional approval comment shown to the employee (BR-2).</summary>
+    public string? Comment { get; init; }
+}
+
+/// <summary>
+/// Request body for POST /api/v1/leaves/{id}/reject (US-LV-005 FR-2). Reason is mandatory (BR-2).
+/// </summary>
+public sealed record RejectLeaveRequestRequest
+{
+    /// <summary>Mandatory rejection reason shown to the employee (BR-2, AC-2).</summary>
+    public string Reason { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Result of an approve/reject decision on a leave request (US-LV-005 AC-1, AC-2).
+/// Returns the new status and, for an approval, the ledger entry that recorded the deduction.
+/// </summary>
+public sealed record LeaveApprovalResultDto
+{
+    public Guid RequestId { get; init; }
+    /// <summary>New request status: "Approved" or "Rejected".</summary>
+    public string Status { get; init; } = string.Empty;
+    /// <summary>The action recorded in approval history: "Approved" or "Rejected".</summary>
+    public string Action { get; init; } = string.Empty;
+    /// <summary>Approval level the decision was recorded at (always 1 in this story).</summary>
+    public int ApprovalLevel { get; init; }
+    /// <summary>The id of the LeaveLedger "Used" entry written on approval; null on rejection.</summary>
+    public Guid? LedgerEntryId { get; init; }
+    /// <summary>The balance after deduction on approval; null on rejection.</summary>
+    public decimal? BalanceAfter { get; init; }
+    /// <summary>When the decision was taken.</summary>
+    public DateTime ActionedAt { get; init; }
+}
+
+/// <summary>
 /// Filter/sort/paging parameters for the pending-leave queue (US-LV-004 FR-3, FR-4).
 /// </summary>
 public sealed record PendingLeaveQueueQueryParams

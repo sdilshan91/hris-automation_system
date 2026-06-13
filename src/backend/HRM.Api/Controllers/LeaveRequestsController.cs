@@ -137,4 +137,58 @@ public sealed class LeaveRequestsController : ControllerBase
 
         return Ok(ApiResponse<PendingLeaveQueueResult>.Ok(result.Value!));
     }
+
+    /// <summary>
+    /// POST /api/v1/leaves/{id}/approve
+    /// Approves a pending leave request from one of the current manager's direct reports
+    /// (US-LV-005 FR-1, AC-1/AC-3/AC-5). Sets the status to Approved, deducts the balance via a
+    /// LeaveLedger "Used" entry, and records approval history. Comment is optional (BR-2).
+    /// </summary>
+    [HttpPost("{id:guid}/approve")]
+    [RequirePermission("Leave.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<LeaveApprovalResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Approve(
+        [FromRoute] Guid id,
+        [FromBody] ApproveLeaveRequestRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ApproveLeaveRequestCommand(id, request?.Comment), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<LeaveApprovalResultDto>.Ok(result.Value!, "Leave request approved."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/leaves/{id}/reject
+    /// Rejects a pending leave request from one of the current manager's direct reports
+    /// (US-LV-005 FR-2, AC-2/AC-5). Sets the status to Rejected and records approval history;
+    /// no balance is deducted. The rejection reason is mandatory (BR-2).
+    /// </summary>
+    [HttpPost("{id:guid}/reject")]
+    [RequirePermission("Leave.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<LeaveApprovalResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Reject(
+        [FromRoute] Guid id,
+        [FromBody] RejectLeaveRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new RejectLeaveRequestCommand(id, request.Reason), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<LeaveApprovalResultDto>.Ok(result.Value!, "Leave request rejected."));
+    }
 }

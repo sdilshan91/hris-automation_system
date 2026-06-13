@@ -68,6 +68,15 @@ public sealed class LeaveRequest : BaseEntity
     /// </summary>
     public List<string> AttachmentUrls { get; set; } = new();
 
+    /// <summary>
+    /// Optimistic-concurrency token (US-LV-005 FR-6, AC-5, NFR-4). A <see cref="uint"/> rowversion
+    /// property that the Npgsql model-finalizing convention maps to the PostgreSQL <c>xmin</c>
+    /// system column — it requires NO migration DDL (xmin exists on every table). Concurrent
+    /// approve/reject attempts on the same request cause EF to throw
+    /// <c>DbUpdateConcurrencyException</c>, which the approval service translates to a clean 409.
+    /// </summary>
+    public uint Version { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
 
     public Employee? Employee { get; set; }
