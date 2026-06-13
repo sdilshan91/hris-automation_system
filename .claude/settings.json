@@ -55,8 +55,8 @@
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/secret-guard.py" },
-          { "type": "command", "command": "python .claude/hooks/scripts/test-integrity-guard.py" }
+          { "type": "command", "command": "python .claude/hooks/scripts/secret-guard.py", "timeout": 5 },
+          { "type": "command", "command": "python .claude/hooks/scripts/test-integrity-guard.py", "timeout": 5 }
         ]
       }
     ],
@@ -66,11 +66,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/post-user-story-commit.sh"
+            "command": "bash .claude/hooks/post-user-story-commit.sh",
+            "timeout": 10
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/post-dev-commit.sh"
+            "command": "bash .claude/hooks/post-dev-commit.sh",
+            "timeout": 10
           }
         ]
       }
@@ -78,28 +80,28 @@
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py" }
+          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
         ]
       }
     ],
     "Notification": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py" }
+          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
         ]
       }
     ],
     "PermissionRequest": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py" }
+          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
         ]
       }
     ],
     "SubagentStop": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py" }
+          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
         ]
       }
     ]
