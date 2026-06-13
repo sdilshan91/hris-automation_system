@@ -56,7 +56,7 @@
 - [x] US-LV-001 — Configure leave types per tenant *(PR #23)*
 - [x] US-LV-002 — Set yearly leave entitlements *(PR #24)*
 - [x] US-LV-003 — Employee applies for leave *(PR #29)*
-- [ ] US-LV-004 — Manager views pending leave queue
+- [~] US-LV-004 — Manager views pending leave queue
 - [ ] US-LV-005 — Manager approves or rejects leave
 - [ ] US-LV-006 — Leave balance dashboard
 - [ ] US-LV-007 — Holiday calendar management

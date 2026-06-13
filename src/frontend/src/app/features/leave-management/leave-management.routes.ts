@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { roleGuard } from '../../core/auth/auth.guard';
 
 /**
  * US-LV-001 / US-LV-002: Leave configuration routes (admin / HR).
@@ -42,6 +43,19 @@ export const LEAVE_REQUEST_ROUTES: Routes = [
     loadComponent: () =>
       import('./components/my-leave-requests/my-leave-requests.component').then(
         (m) => m.MyLeaveRequestsComponent
+      ),
+  },
+  {
+    // US-LV-004: Manager's pending leave-approval queue.
+    // The parent '/leave' route already requires authentication + one of
+    // Employee/Manager/HR Officer/Tenant Admin; this child further restricts
+    // to leave-approver roles (Manager / HR Officer / Tenant Admin) per
+    // the Leave.Approve.Team capability.
+    path: 'approvals',
+    canActivate: [roleGuard(['Manager', 'HR Officer', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/leave-approvals/leave-approvals.component').then(
+        (m) => m.LeaveApprovalsComponent
       ),
   },
   { path: '', redirectTo: 'my-requests', pathMatch: 'full' },

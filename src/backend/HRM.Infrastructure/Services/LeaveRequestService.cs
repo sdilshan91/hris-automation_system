@@ -277,6 +277,167 @@ public sealed class LeaveRequestService : ILeaveRequestService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Manager pending queue (US-LV-004 FR-1..FR-5, BR-1/BR-3)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<PendingLeaveQueueResult>> GetPendingForManagerAsync(
+        PendingLeaveQueueQueryParams queryParams,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PendingLeaveQueueResult>.Failure("Tenant context is not resolved.", 400);
+
+        // §10: cap page size at 50, default 20; page is 1-based.
+        int pageSize = Math.Clamp(queryParams.PageSize <= 0 ? 20 : queryParams.PageSize, 1, 50);
+        int page = queryParams.Page <= 0 ? 1 : queryParams.Page;
+
+        var manager = await GetCurrentEmployeeAsync(cancellationToken);
+        if (manager is null)
+        {
+            // No employee record linked to the current user -> empty queue (not an error).
+            return Result<PendingLeaveQueueResult>.Success(new PendingLeaveQueueResult
+            {
+                Items = [],
+                TotalCount = 0,
+                Page = page,
+                PageSize = pageSize,
+            });
+        }
+
+        // BR-1 / NFR-3: direct reports only. ReportsToEmployeeId is the manager FK on Employee.
+        // Both the employee and the leave request are tenant-scoped by the global query filter.
+        // TODO(multi-level): BR-2 multi-level approval routing is out of scope — only single-level
+        //   direct-report scope is implemented. Add level-based queues when approval levels exist.
+        var teamMemberIds = await _dbContext.Employees
+            .AsNoTracking()
+            .Where(e => e.ReportsToEmployeeId == manager.Id)
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken);
+
+        if (teamMemberIds.Count == 0)
+        {
+            return Result<PendingLeaveQueueResult>.Success(new PendingLeaveQueueResult
+            {
+                Items = [],
+                TotalCount = 0,
+                Page = page,
+                PageSize = pageSize,
+            });
+        }
+
+        var teamMemberIdSet = teamMemberIds.ToHashSet();
+
+        // Base query: pending requests from the manager's direct reports (uses ix_leave_pending).
+        var pendingQuery = _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Include(lr => lr.Employee)
+            .Include(lr => lr.LeaveType)
+            .Where(lr => lr.Status == LeaveRequestStatus.Pending
+                         && teamMemberIdSet.Contains(lr.EmployeeId));
+
+        // FR-3 filters.
+        if (queryParams.LeaveTypeId.HasValue)
+            pendingQuery = pendingQuery.Where(lr => lr.LeaveTypeId == queryParams.LeaveTypeId.Value);
+
+        if (queryParams.EmployeeId.HasValue)
+            pendingQuery = pendingQuery.Where(lr => lr.EmployeeId == queryParams.EmployeeId.Value);
+
+        // Date-range window: overlap with [StartDate, EndDate] when supplied.
+        if (queryParams.StartDate.HasValue)
+            pendingQuery = pendingQuery.Where(lr => lr.EndDate >= queryParams.StartDate.Value);
+        if (queryParams.EndDate.HasValue)
+            pendingQuery = pendingQuery.Where(lr => lr.StartDate <= queryParams.EndDate.Value);
+
+        int totalCount = await pendingQuery.CountAsync(cancellationToken);
+
+        // FR-3 sort: requestedAt (default, AC-1 oldest first) or startDate.
+        bool sortByStart = string.Equals(queryParams.SortBy, "startDate", StringComparison.OrdinalIgnoreCase);
+        pendingQuery = (sortByStart, queryParams.SortAscending) switch
+        {
+            (true, true) => pendingQuery.OrderBy(lr => lr.StartDate).ThenBy(lr => lr.RequestedAt),
+            (true, false) => pendingQuery.OrderByDescending(lr => lr.StartDate).ThenByDescending(lr => lr.RequestedAt),
+            (false, true) => pendingQuery.OrderBy(lr => lr.RequestedAt),
+            (false, false) => pendingQuery.OrderByDescending(lr => lr.RequestedAt),
+        };
+
+        // FR-4 pagination.
+        var pageRequests = await pendingQuery
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        // FR-5: approved leaves of the whole team in the relevant window, for conflict counting.
+        // Only load what is needed to overlap-check the requests on this page.
+        var approvedTeamLeaves = pageRequests.Count == 0
+            ? new List<(Guid EmployeeId, DateOnly Start, DateOnly End)>()
+            : (await _dbContext.LeaveRequests
+                .AsNoTracking()
+                .Where(lr => lr.Status == LeaveRequestStatus.Approved
+                             && teamMemberIdSet.Contains(lr.EmployeeId))
+                .Select(lr => new { lr.EmployeeId, lr.StartDate, lr.EndDate })
+                .ToListAsync(cancellationToken))
+                .Select(x => (EmployeeId: x.EmployeeId, Start: x.StartDate, End: x.EndDate))
+                .ToList();
+
+        var now = DateTime.UtcNow;
+        var items = new List<PendingLeaveRequestDto>(pageRequests.Count);
+
+        foreach (var lr in pageRequests)
+        {
+            // BR-4: real-time balance from the ledger running total (same source as US-LV-003).
+            // NFR-2: the story specifies a Redis-cached balance with DB fallback. Redis caching is
+            //   DEFERRED across the leave module (vault decision); the ledger total is the single
+            //   source of truth. TODO(redis-balance-cache): wrap GetLedgerBalanceAsync in an
+            //   IDistributedCache layer keyed tenant:{tenantId}:leave_balance:{empId}:{leaveTypeId}.
+            decimal balance = await GetLedgerBalanceAsync(
+                lr.EmployeeId, lr.LeaveTypeId, lr.StartDate.Year, cancellationToken);
+
+            // FR-5: count team-mates (excluding the requester) with an Approved leave overlapping
+            //   this request's [StartDate, EndDate].
+            int conflicts = approvedTeamLeaves.Count(a =>
+                a.EmployeeId != lr.EmployeeId &&
+                a.Start <= lr.EndDate &&
+                a.End >= lr.StartDate);
+
+            items.Add(new PendingLeaveRequestDto
+            {
+                RequestId = lr.Id,
+                EmployeeId = lr.EmployeeId,
+                EmployeeName = lr.Employee is null
+                    ? string.Empty
+                    : $"{lr.Employee.FirstName} {lr.Employee.LastName}".Trim(),
+                EmployeePhoto = lr.Employee?.ProfilePhotoUrl,
+                LeaveTypeId = lr.LeaveTypeId,
+                LeaveTypeName = lr.LeaveType?.Name ?? string.Empty,
+                LeaveTypeColor = lr.LeaveType?.Color,
+                StartDate = lr.StartDate,
+                EndDate = lr.EndDate,
+                TotalDays = lr.TotalDays,
+                Reason = lr.Reason,
+                HasAttachments = lr.AttachmentUrls.Count > 0,
+                CurrentBalance = balance,
+                RequestedAt = lr.RequestedAt,
+                IsOverdue = (now - lr.RequestedAt).TotalDays > 30,  // BR-3
+                TeamConflictCount = conflicts,
+            });
+        }
+
+        // FR-6 / AC-5: real-time SignalR push when a new request arrives is DEFERRED — no
+        //   notification hub exists yet (§10 references /hubs/notifications). The manager-notify
+        //   target is the log-only ILeaveNotificationService seam from US-LV-003. AC-5 is met at
+        //   the API level: this query returns fresh data on every reload.
+        //   TODO(notifications/SignalR): push queue updates to the manager via /hubs/notifications.
+
+        return Result<PendingLeaveQueueResult>.Success(new PendingLeaveQueueResult
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
 

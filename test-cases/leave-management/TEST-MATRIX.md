@@ -1,7 +1,7 @@
 ---
 module: Leave Management
-total_user_stories: 3
-total_test_cases: 77
+total_user_stories: 4
+total_test_cases: 104
 created: 2026-06-13
 updated: 2026-06-13
 status: draft
@@ -13,14 +13,14 @@ status: draft
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 3 (US-LV-001, US-LV-002, US-LV-003) |
-| Total Test Cases | 77 |
-| Critical Priority | 36 |
-| High Priority | 36 |
-| Medium Priority | 5 |
+| Total User Stories Covered | 4 (US-LV-001, US-LV-002, US-LV-003, US-LV-004) |
+| Total Test Cases | 104 |
+| Critical Priority | 46 |
+| High Priority | 50 |
+| Medium Priority | 8 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 (TC-LV-056 holiday-exclusion steps conditionally blocked on US-LV-007) |
-| Deferred Test Cases | 5 (TC-LV-021 onboarding seeding, TC-LV-ISO-004 cache -- partial, TC-LV-031 FTE, TC-LV-042 Redis cache, TC-LV-046 job-level dimension, TC-LV-ISO-008/TC-LV-ISO-012 cache keys -- partial) |
+| Deferred Test Cases | 5+ (TC-LV-021 onboarding seeding, TC-LV-ISO-004 cache -- partial, TC-LV-031 FTE, TC-LV-042 Redis cache, TC-LV-046 job-level dimension, TC-LV-ISO-008/TC-LV-ISO-012/TC-LV-ISO-016 balance cache keys -- partial; US-LV-004: TC-LV-077 history/team-calendar subsections, TC-LV-079 SignalR real-time push, TC-LV-088 multi-level approval -- conditional on downstream modules) |
 | Status | All Draft |
 
 ## User Story to Test Case Matrix
@@ -33,6 +33,8 @@ status: draft
 | Cross-cutting (LV-002) | Multi-tenant isolation (mandatory) | TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | 4 |
 | US-LV-003 | Employee Applies for Leave | TC-LV-048, TC-LV-049, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-055, TC-LV-056, TC-LV-057, TC-LV-058, TC-LV-059, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-063, TC-LV-064, TC-LV-065 | 18 |
 | Cross-cutting (LV-003) | Multi-tenant isolation (mandatory) | TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 4 |
+| US-LV-004 | Manager Views Pending Leave Queue with Balance Inline | TC-LV-066, TC-LV-067, TC-LV-068, TC-LV-069, TC-LV-070, TC-LV-071, TC-LV-072, TC-LV-073, TC-LV-074, TC-LV-075, TC-LV-076, TC-LV-077, TC-LV-078, TC-LV-079, TC-LV-080, TC-LV-081, TC-LV-082, TC-LV-083, TC-LV-084, TC-LV-085, TC-LV-086, TC-LV-087, TC-LV-088 | 23 |
+| Cross-cutting (LV-004) | Multi-tenant isolation (mandatory) | TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015, TC-LV-ISO-016 | 4 |
 
 ## Test Type Distribution
 
@@ -41,31 +43,36 @@ status: draft
 | Functional (LV-001) | TC-LV-001, TC-LV-002, TC-LV-003, TC-LV-004, TC-LV-005, TC-LV-006, TC-LV-007, TC-LV-008, TC-LV-009, TC-LV-010, TC-LV-011, TC-LV-017, TC-LV-018, TC-LV-021, TC-LV-022, TC-LV-024, TC-LV-025 | 17 |
 | Functional (LV-002) | TC-LV-026, TC-LV-027, TC-LV-028, TC-LV-029, TC-LV-030, TC-LV-031, TC-LV-032, TC-LV-033, TC-LV-034, TC-LV-035, TC-LV-036, TC-LV-037, TC-LV-038, TC-LV-043, TC-LV-045, TC-LV-046 | 16 |
 | Functional (LV-003) | TC-LV-048, TC-LV-049, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-055, TC-LV-056, TC-LV-057, TC-LV-059, TC-LV-063 | 12 |
+| Functional (LV-004) | TC-LV-066, TC-LV-067, TC-LV-068, TC-LV-069, TC-LV-070, TC-LV-071, TC-LV-072, TC-LV-073, TC-LV-074, TC-LV-075, TC-LV-076, TC-LV-077, TC-LV-078, TC-LV-079, TC-LV-080, TC-LV-087, TC-LV-088 | 17 |
 | Security (LV-001) | TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | 8 |
 | Security (LV-002) | TC-LV-039, TC-LV-040, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | 7 |
 | Security (LV-003) | TC-LV-058, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 8 |
+| Security (LV-004) | TC-LV-081, TC-LV-082, TC-LV-083, TC-LV-084, TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015, TC-LV-ISO-016 | 8 |
 | Performance (LV-001) | TC-LV-016, TC-LV-023 | 2 |
 | Performance (LV-002) | TC-LV-041, TC-LV-042 | 2 |
 | Performance (LV-003) | TC-LV-064 | 1 |
+| Performance (LV-004) | TC-LV-085 (TC-LV-069 page-size bound embedded) | 1 |
 | Accessibility (LV-001) | TC-LV-019 | 1 |
 | Accessibility (LV-002) | TC-LV-044 | 1 |
 | Accessibility (LV-003) | TC-LV-065 | 1 |
+| Accessibility (LV-004) | TC-LV-086 | 1 |
 | Cross-Browser (LV-001) | TC-LV-020 | 1 |
 | Cross-Browser (LV-002) | TC-LV-045 | 1 |
 | Cross-Browser (LV-003) | TC-LV-065 | 1 |
+| Cross-Browser (LV-004) | TC-LV-086, TC-LV-087 | 2 |
 
 ## Test Category Coverage
 
 | Category | Test Cases | Count |
 |----------|------------|-------|
-| Happy Path | TC-LV-001, TC-LV-002, TC-LV-004, TC-LV-005, TC-LV-009, TC-LV-010, TC-LV-012, TC-LV-017, TC-LV-021, TC-LV-024, TC-LV-025, TC-LV-026, TC-LV-027, TC-LV-028, TC-LV-029, TC-LV-030, TC-LV-031, TC-LV-032, TC-LV-034, TC-LV-035, TC-LV-036, TC-LV-037, TC-LV-046, TC-LV-048, TC-LV-049, TC-LV-055, TC-LV-056 | 27 |
-| Negative Test | TC-LV-003, TC-LV-006, TC-LV-007, TC-LV-011, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-022, TC-LV-025, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004, TC-LV-032, TC-LV-033, TC-LV-038, TC-LV-039, TC-LV-040, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-057, TC-LV-058, TC-LV-059, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-063, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 39 |
-| Boundary Test | TC-LV-006, TC-LV-008, TC-LV-009, TC-LV-029, TC-LV-031, TC-LV-033, TC-LV-038, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-055, TC-LV-056, TC-LV-057, TC-LV-063 | 16 |
-| Security Test | TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004, TC-LV-039, TC-LV-040, TC-LV-042, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008, TC-LV-058, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-063, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 25 |
-| Multi-Tenant Isolation | TC-LV-012, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004, TC-LV-042, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 14 |
-| Performance Test | TC-LV-016, TC-LV-023, TC-LV-041, TC-LV-042, TC-LV-064 | 5 |
-| Accessibility Test | TC-LV-019, TC-LV-044, TC-LV-065 | 3 |
-| Cross-Browser Test | TC-LV-018, TC-LV-020, TC-LV-043, TC-LV-045, TC-LV-065 | 5 |
+| Happy Path | TC-LV-001, TC-LV-002, TC-LV-004, TC-LV-005, TC-LV-009, TC-LV-010, TC-LV-012, TC-LV-017, TC-LV-021, TC-LV-024, TC-LV-025, TC-LV-026, TC-LV-027, TC-LV-028, TC-LV-029, TC-LV-030, TC-LV-031, TC-LV-032, TC-LV-034, TC-LV-035, TC-LV-036, TC-LV-037, TC-LV-046, TC-LV-048, TC-LV-049, TC-LV-055, TC-LV-056, TC-LV-066, TC-LV-071, TC-LV-072, TC-LV-073, TC-LV-075, TC-LV-077, TC-LV-078, TC-LV-079, TC-LV-080 | 36 |
+| Negative Test | TC-LV-003, TC-LV-006, TC-LV-007, TC-LV-011, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-022, TC-LV-025, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004, TC-LV-032, TC-LV-033, TC-LV-038, TC-LV-039, TC-LV-040, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-057, TC-LV-058, TC-LV-059, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-063, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012, TC-LV-067, TC-LV-070, TC-LV-074, TC-LV-081, TC-LV-082, TC-LV-083, TC-LV-084, TC-LV-088, TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015, TC-LV-ISO-016 | 51 |
+| Boundary Test | TC-LV-006, TC-LV-008, TC-LV-009, TC-LV-029, TC-LV-031, TC-LV-033, TC-LV-038, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-055, TC-LV-056, TC-LV-057, TC-LV-063, TC-LV-067, TC-LV-068, TC-LV-069, TC-LV-070, TC-LV-073, TC-LV-074, TC-LV-076, TC-LV-078, TC-LV-080, TC-LV-088 | 26 |
+| Security Test | TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004, TC-LV-039, TC-LV-040, TC-LV-042, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008, TC-LV-058, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-063, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012, TC-LV-081, TC-LV-082, TC-LV-083, TC-LV-084, TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015, TC-LV-ISO-016 | 33 |
+| Multi-Tenant Isolation | TC-LV-012, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004, TC-LV-042, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012, TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015, TC-LV-ISO-016 | 18 |
+| Performance Test | TC-LV-016, TC-LV-023, TC-LV-041, TC-LV-042, TC-LV-064, TC-LV-069, TC-LV-085 | 7 |
+| Accessibility Test | TC-LV-019, TC-LV-044, TC-LV-065, TC-LV-086 | 4 |
+| Cross-Browser Test | TC-LV-018, TC-LV-020, TC-LV-043, TC-LV-045, TC-LV-065, TC-LV-086, TC-LV-087 | 7 |
 
 ## Acceptance Criteria Coverage (US-LV-001)
 
@@ -97,6 +104,16 @@ status: draft
 | AC-4 | Half-day leave creates 0.5-day request and decrements balance accordingly | TC-LV-055 |
 | AC-5 | Overlapping dates with existing Pending/Approved request rejected | TC-LV-052 |
 | AC-6 | Public holidays excluded from leave day count; adjusted count shown | TC-LV-056 (holiday exclusion depends on US-LV-007) |
+
+## Acceptance Criteria Coverage (US-LV-004)
+
+| AC | Description | Covered By Test Cases |
+|----|-------------|-----------------------|
+| AC-1 | Pending queue lists direct reports' requests, oldest-first, with employee/type/dates/days/reason/inline balance | TC-LV-066, TC-LV-067, TC-LV-075, TC-LV-076, TC-LV-080 |
+| AC-2 | Server-side pagination (default 20), total count shown | TC-LV-068, TC-LV-069, TC-LV-070 |
+| AC-3 | Filter by leave type, employee, or date range | TC-LV-071, TC-LV-072, TC-LV-073, TC-LV-074, TC-LV-075 |
+| AC-4 | Detail panel: full details, attachments, balance, history summary, team-calendar snippet, conflict count | TC-LV-077, TC-LV-078 |
+| AC-5 | New request included on queue refresh (real-time push via SignalR) | TC-LV-079 (SignalR push DEFERRED on notifications module) |
 
 ## Functional Requirements Coverage (US-LV-001)
 
@@ -131,6 +148,17 @@ status: draft
 | FR-6 | Insert leave_request status=Pending and queue notification | TC-LV-048 | Direct |
 | FR-7 | Multi-level approval routing per tenant workflow config | -- | NOT COVERED (approval routing is downstream of submission; deferred to approval story) |
 
+## Functional Requirements Coverage (US-LV-004)
+
+| FR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| FR-1 | GET /api/v1/leaves/pending scoped to manager's direct reports within tenant | TC-LV-066, TC-LV-067, TC-LV-081, TC-LV-085 | Direct |
+| FR-2 | Result item fields (requestId, employeeName/photo, leaveType/color, dates, totalDays, reason, hasAttachments, currentBalance, requestedAt) | TC-LV-066, TC-LV-077, TC-LV-080 | Direct |
+| FR-3 | Server-side filtering (leave type, employee, date range) and sorting (requested/start date) | TC-LV-071, TC-LV-072, TC-LV-073, TC-LV-074, TC-LV-075, TC-LV-084 | Direct |
+| FR-4 | Server-side pagination with page, pageSize, totalCount | TC-LV-068, TC-LV-069, TC-LV-070, TC-LV-074 | Direct |
+| FR-5 | Team conflict count (approved overlapping leave) per request | TC-LV-077, TC-LV-078 | Direct |
+| FR-6 | Real-time SignalR notification of new requests to the manager's queue | TC-LV-079 | DEFERRED (SignalR/notifications module not implemented; API-reload path verified) |
+
 ## Non-Functional Requirements Coverage (US-LV-001)
 
 | NFR | Description | Covered By | Coverage |
@@ -157,6 +185,15 @@ status: draft
 | NFR-3 | Attachments stored in tenant-scoped blob path {tenantId}/leaves/{requestId}/ | TC-LV-063, TC-LV-ISO-012 | Direct |
 | NFR-4 | All operations tenant-isolated via EF Core filters + PostgreSQL RLS | TC-LV-062, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | Direct |
 | NFR-5 | Form usable on mobile 360px+ with touch-friendly date pickers | TC-LV-065 | Direct |
+
+## Non-Functional Requirements Coverage (US-LV-004)
+
+| NFR | Description | Covered By | Coverage |
+|-----|-------------|------------|----------|
+| NFR-1 | Pending queue API responds within 300ms P95 using ix_leave_pending | TC-LV-085 | Direct |
+| NFR-2 | Inline balances fetched from Redis cache; DB fallback on cache miss | TC-LV-080, TC-LV-ISO-016 | Direct (Redis cache DEFERRED; DB-fallback path and tenant-scoped key pattern verified) |
+| NFR-3 | Tenant-isolated via EF Core filters; manager scope limited to direct reports | TC-LV-081, TC-LV-082, TC-LV-084, TC-LV-ISO-013, TC-LV-ISO-014, TC-LV-ISO-015 | Direct |
+| NFR-4 | Page fully responsive and usable on mobile 360px+ | TC-LV-086, TC-LV-087 | Direct |
 
 ## Business Rules Coverage (US-LV-001)
 
@@ -188,6 +225,15 @@ status: draft
 | BR-4 | Gender-restricted leave types only shown to eligible employees | TC-LV-058 | Direct |
 | BR-5 | Probation employees only see/apply for probation_eligible leave types | TC-LV-059 | Direct |
 | BR-6 | Manager/approver determined by employee reporting line (manager_employee_id) | TC-LV-048 | Direct (notification target; full routing in approval story) |
+
+## Business Rules Coverage (US-LV-004)
+
+| BR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| BR-1 | Managers see only their direct reports (not skip-level unless multi-level approval configured) | TC-LV-066, TC-LV-067, TC-LV-071, TC-LV-072, TC-LV-081, TC-LV-088, TC-LV-ISO-013 | Direct |
+| BR-2 | Multi-level approval shows requests at the manager's approval level | TC-LV-088 | Direct (Scenario A now; multi-level workflow forward-looking on approval story) |
+| BR-3 | Requests older than 30 days without action highlighted as overdue | TC-LV-076 | Direct |
+| BR-4 | Balance shown is current real-time balance, not balance at request time | TC-LV-066, TC-LV-080 | Direct |
 
 ## Coverage Summary (US-LV-001)
 
@@ -237,6 +283,22 @@ status: draft
 | Blocked Test Cases | 0 (TC-LV-056 holiday-exclusion steps conditionally blocked on US-LV-007) | -- | NOTE |
 | Deferred Test Cases | TC-LV-ISO-012 partial (balance cache keys -- pending Redis); FR-7 approval routing out of scope | -- | NOTE |
 
+## Coverage Summary (US-LV-004)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 6/6 (100%) -- FR-6 real-time push DEFERRED (API-reload path verified) | >= 85% | PASS (FR-6 push depends on notifications module) |
+| Non-Functional Requirements Coverage | 4/4 (100%) -- NFR-2 Redis cache DEFERRED (DB-fallback verified) | >= 85% | PASS |
+| Business Rules Coverage | 4/4 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO-013..016 + embedded in TC-LV-081 intra-tenant scope) | >= 3 | PASS |
+| Security Test Cases | 8/27 (30%) including ISO | >= 30% | PASS |
+| Performance Test Cases | 2/27 (TC-LV-085, TC-LV-069 page-size bound) | >= 1 | PASS |
+| Accessibility Test Cases | 1/27 (TC-LV-086) | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/27 (TC-LV-086, TC-LV-087) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred Test Cases | TC-LV-079 (SignalR real-time push -- notifications module), TC-LV-077 (history/team-calendar subsections -- US-LV-009), TC-LV-088 (multi-level approval -- approval workflow story), TC-LV-ISO-016 partial (balance cache keys -- pending Redis) | -- | NOTE |
+
 ---
 
-*Note: This test matrix covers US-LV-001 (29 TCs), US-LV-002 (26 TCs), and US-LV-003 (22 TCs) for the Leave Management module. US-LV-003 adds 18 functional/security/performance/accessibility test cases (TC-LV-048..065) plus 4 dedicated multi-tenant isolation tests (TC-LV-ISO-009..012). All 6 acceptance criteria for US-LV-003 have direct coverage. Notes for US-LV-003: TC-LV-056 holiday-exclusion steps depend on the holiday calendar (US-LV-007) and are conditionally blocked on it if that story is not yet implemented (weekend exclusion still passes independently); FR-7 (multi-level approval routing) is downstream of submission and belongs to the leave-approval story; TC-LV-ISO-012 balance-cache-key isolation is partial pending Redis (DB-fallback and documented key pattern verified now). US-LV-001 and US-LV-002 deferred items remain unchanged.*
+*Note: This test matrix covers US-LV-001 (29 TCs), US-LV-002 (26 TCs), US-LV-003 (22 TCs), and US-LV-004 (27 TCs) for the Leave Management module. US-LV-004 adds 23 functional/security/performance/accessibility test cases (TC-LV-066..088) plus 4 dedicated multi-tenant isolation tests (TC-LV-ISO-013..016) for the manager pending-leave-queue flow. All 5 acceptance criteria for US-LV-004 have direct coverage. Notes for US-LV-004: TC-LV-079 verifies the queue includes new requests on API reload while the real-time SignalR push (AC-5/FR-6) is marked dependent/deferred on the notifications module; TC-LV-077 detail-panel history-summary and team-calendar subsections are deferred on leave-history/US-LV-009 (the FR-5 numeric conflict count in TC-LV-078 still renders); TC-LV-088 multi-level-approval Scenario B is forward-looking on the leave-approval workflow story (direct-reports default in Scenario A is verified now); TC-LV-ISO-016 balance-cache-key isolation is partial pending Redis (DB-fallback path and tenant-scoped key pattern verified now). US-LV-001, US-LV-002, and US-LV-003 deferred items remain unchanged.*

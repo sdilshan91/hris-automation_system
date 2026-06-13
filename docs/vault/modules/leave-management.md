@@ -380,3 +380,85 @@ the pre-existing `/leave` nav item now resolves.
 3. `leave-management/index.ts` — barrel exports for the new request models + service.
 
 No nav-menu, employee-profile, or backend/test-case files were touched.
+
+## Pending Leave Queue (US-LV-004)
+
+Manager-facing read/query story built directly on the US-LV-003 `LeaveRequest` entity.
+`GET /api/v1/leaves/pending` → `GetPendingLeaveRequestsQuery` → `ILeaveRequestService.GetPendingForManagerAsync`
+(implemented on the existing `LeaveRequestService`, not a new service).
+
+### Manager / reporting field name
+
+The story (BR-1 / §7) calls the manager field `manager_employee_id`. The **actual** Employee
+property is `ReportsToEmployeeId` (US-CHR-011 self-referencing FK, column `reports_to_employee_id`).
+Scope = `Employees.Where(e => e.ReportsToEmployeeId == manager.Id)`. The current manager's own
+employee row is resolved from `ICurrentUser.UserId` via `Employee.UserId` (same `GetCurrentEmployeeAsync`
+helper used by US-LV-003). **If the current user has no employee record, the query returns an empty
+page (does NOT throw)** — per the story's explicit instruction.
+
+### Employee photo field
+
+Story FR-2 lists `employeePhoto`. The real field is `Employee.ProfilePhotoUrl` (no separate photo
+entity). Mapped straight through; null when unset.
+
+### Pagination envelope reused
+
+`PendingLeaveQueueResult` mirrors the established `EmployeeListResult` shape
+(`Items` + `TotalCount` + `Page` + `PageSize`) rather than inventing a new envelope. Page size is
+clamped to **[1, 50]** (default 20) per §10; page defaults to 1. The whole result is wrapped in the
+standard `ApiResponse<T>` by the controller.
+
+### Balance source (NFR-2) — Redis DEFERRED
+
+Inline `currentBalance` (BR-4, real-time) is read from the **LeaveLedger running total**
+(`BalanceAfter` of the latest entry for employee+leaveType+year) via the same `GetLedgerBalanceAsync`
+helper as US-LV-003. The story's Redis-cached balance (key `tenant:{tenantId}:leave_balance:{empId}:{leaveTypeId}`)
+is **DEFERRED**, consistent with the module-wide caching decision above.
+`TODO(redis-balance-cache)` marker is in `LeaveRequestService.GetPendingForManagerAsync`.
+
+### Team-conflict count (FR-5) — definition
+
+For each pending request, `teamConflictCount` = number of **other team members** (same manager's
+direct reports, excluding the requester themselves) who have an **Approved** leave whose date range
+**overlaps** the request's `[StartDate, EndDate]` (`a.Start <= req.End && a.End >= req.Start`). Pending
+leaves of teammates do NOT count — only Approved ones (someone already confirmed off).
+
+### Overdue flag (BR-3)
+
+`isOverdue = (UtcNow - RequestedAt).TotalDays > 30`. Computed in-memory per row.
+
+### Filtering / sorting (FR-3)
+
+Filters: `leaveTypeId`, `employeeId`, and a date-range **overlap window** (`startDate` → `EndDate >= x`,
+`endDate` → `StartDate <= y`). Sort: `requestedAt` (default, **ascending = oldest first** per AC-1) or
+`startDate`; `sortAscending` toggles direction. Uses the partial index `ix_leave_pending`
+(`tenant_id, start_date WHERE status='Pending'`) for the base scan.
+
+### SignalR real-time push (FR-6 / AC-5) — DEFERRED
+
+No notification hub exists yet (§10 references `/hubs/notifications`). Real-time push is **NOT built**.
+AC-5 is satisfied at the API level: the query returns fresh data on every reload. The manager-notify
+target remains the log-only `ILeaveNotificationService` seam from US-LV-003.
+`TODO(notifications/SignalR)` marker is in the handler.
+
+### Multi-level approval (BR-2) — DEFERRED
+
+Only **single-level direct-report** scope is implemented. No approval-level entity exists.
+`TODO(multi-level)` marker in the service; add level-based queues when approval levels are modelled.
+
+### Permission — no catalog change needed
+
+`Leave.Approve.Team` (`PermissionCatalog.Leave.ApproveTeam`) **already existed** in the catalog and is
+already granted to the **Manager** role (and Tenant Admin/HR get `Leave.ApproveAll`). The endpoint is
+gated with `[RequirePermission("Leave.Approve.Team")]`. **No PermissionCatalog edit was required** for
+this story (contrast US-LV-003 which added `Leave.Apply`).
+
+### Shared files touched
+
+- `LeaveRequestsController.cs` — added the `GET pending` action (extends the US-LV-003 controller).
+- `ILeaveRequestService.cs` — added `GetPendingForManagerAsync` to the existing interface.
+- `LeaveRequestService.cs` — implemented the method on the existing service.
+- `LeaveRequestDtos.cs` — added `PendingLeaveRequestDto`, `PendingLeaveQueueResult`, `PendingLeaveQueueQueryParams`.
+
+No new EF migration was needed (reuses the US-LV-003 `leave_request` table + `ix_leave_pending` index).
+No DI change (service already registered). No PermissionCatalog change.
