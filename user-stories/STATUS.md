@@ -54,7 +54,7 @@
 
 ## 3. Leave Management (12 stories)
 - [x] US-LV-001 — Configure leave types per tenant *(PR #23)*
-- [ ] US-LV-002 — Set yearly leave entitlements
+- [~] US-LV-002 — Set yearly leave entitlements
 - [ ] US-LV-003 — Employee applies for leave
 - [ ] US-LV-004 — Manager views pending leave queue
 - [ ] US-LV-005 — Manager approves or rejects leave
