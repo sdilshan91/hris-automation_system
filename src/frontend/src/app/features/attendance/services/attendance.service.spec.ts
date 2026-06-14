@@ -9,6 +9,8 @@ import {
   IAttendanceLog,
   IClockInRequest,
   IClockStatus,
+  IClockOutRequest,
+  IClockOutResult,
 } from '../models/attendance.models';
 import { environment } from '../../../../environments/environment';
 
@@ -94,6 +96,43 @@ describe('AttendanceService', () => {
       expect(req.request.body.latitude).toBeNull();
       expect(req.request.body.longitude).toBeNull();
       req.flush(mockLog);
+    });
+  });
+
+  describe('clockOut (US-ATT-002)', () => {
+    const mockResult: IClockOutResult = {
+      attendanceLogId: 'att-1',
+      clockIn: '2026-06-14T03:00:00Z',
+      clockOut: '2026-06-14T11:45:00Z',
+      totalWorkMinutes: 465,
+      overtimeMinutes: null,
+      status: 'COMPLETE',
+    };
+
+    it('should POST a clock-out and return the work summary (AC-1)', () => {
+      const body: IClockOutRequest = { latitude: null, longitude: null };
+
+      service.clockOut(body).subscribe((result) => {
+        expect(result.totalWorkMinutes).toBe(465);
+        expect(result.status).toBe('COMPLETE');
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/clock-out`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockResult);
+    });
+
+    it('should POST a clock-out with coordinates when geo is required (AC-5)', () => {
+      const body: IClockOutRequest = { latitude: 6.9271, longitude: 79.8612 };
+
+      service.clockOut(body).subscribe();
+
+      const req = httpMock.expectOne(`${baseUrl}/clock-out`);
+      expect(req.request.body.latitude).toBe(6.9271);
+      expect(req.request.body.longitude).toBe(79.8612);
+      req.flush(mockResult);
     });
   });
 });

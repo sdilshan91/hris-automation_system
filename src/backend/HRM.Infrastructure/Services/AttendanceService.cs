@@ -149,6 +149,60 @@ public sealed class AttendanceService : IAttendanceService
         return Result<AttendanceLogDto>.Success(dto);
     }
 
+    public async Task<Result<ClockOutResultDto>> ClockOutAsync(
+        ClockOutData data, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ClockOutResultDto>.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await _dbContext.Employees
+            .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
+        if (employee is null)
+            return Result<ClockOutResultDto>.Failure(
+                "No employee record is linked to the current user.", 403);
+
+        // BR-1 / AC-2: clock-out requires an open (un-clocked-out) record.
+        var openLog = await _dbContext.AttendanceLogs
+            .Where(a => a.EmployeeId == employee.Id && a.ClockOut == null)
+            .OrderByDescending(a => a.ClockIn)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (openLog is null)
+            return Result<ClockOutResultDto>.Failure(
+                "No active clock-in found. Please clock in first or submit a regularization request.",
+                404, "no_active_clock_in");
+
+        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+
+        var hasCoordinates = data.Latitude.HasValue && data.Longitude.HasValue;
+
+        // AC-5 / FR-6: geolocation required by tenant policy but missing on clock-out.
+        if (settings.RequireGeolocation && !hasCoordinates)
+            return Result<ClockOutResultDto>.Failure(
+                "Location is required to clock out. Please enable location access and try again.", 400);
+
+        var clockOut = DateTime.UtcNow;                  // FR-1: server-side UTC, not client-reported.
+
+        // FR-2/FR-3/FR-4/FR-7, BR-2/BR-3/BR-4/BR-6: minute-accurate work-hours calculation.
+        var calc = AttendanceCalculator.Calculate(openLog.ClockIn, clockOut, settings);
+
+        openLog.ClockOut = clockOut;
+        openLog.ClockOutLatitude = hasCoordinates ? data.Latitude : null;
+        openLog.ClockOutLongitude = hasCoordinates ? data.Longitude : null;
+        openLog.ClockOutIp = data.IpAddress;
+        openLog.TotalWorkMinutes = calc.TotalWorkMinutes;
+        openLog.OvertimeMinutes = calc.OvertimeMinutes;
+        openLog.Status = calc.Status;
+
+        // NFR-3: single atomic SaveChanges; the AuditInterceptor stamps updated_at/updated_by.
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Employee {EmployeeId} clocked out (attendance_log {LogId}, {TotalMinutes} min, status {Status}) for tenant {TenantId}.",
+            employee.Id, openLog.Id, calc.TotalWorkMinutes, calc.Status, _tenantContext.TenantId);
+
+        return Result<ClockOutResultDto>.Success(MapToResult(openLog));
+    }
+
     public async Task<Result<ClockStatusDto>> GetClockStatusAsync(
         CancellationToken cancellationToken = default)
     {
@@ -176,6 +230,14 @@ public sealed class AttendanceService : IAttendanceService
             .Select(x => x.RequireGeolocation)
             .FirstOrDefaultAsync(cancellationToken);
 
+        // US-ATT-002: the most-recently-closed session, so the dashboard can re-render the summary
+        // card after a reload. Independent of the open record above.
+        var lastClosed = await _dbContext.AttendanceLogs
+            .AsNoTracking()
+            .Where(a => a.EmployeeId == employee.Id && a.ClockOut != null)
+            .OrderByDescending(a => a.ClockOut)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var dto = new ClockStatusDto
         {
             IsClockedIn = openLog is not null,
@@ -183,6 +245,7 @@ public sealed class AttendanceService : IAttendanceService
             RequireGeolocation = requireGeolocation,
             ShiftName = null,    // US-ATT-005 not built yet.
             ShiftStart = null,   // US-ATT-005 not built yet.
+            LastCompleted = lastClosed is null ? null : MapToResult(lastClosed),
         };
 
         return Result<ClockStatusDto>.Success(dto);
@@ -245,6 +308,21 @@ public sealed class AttendanceService : IAttendanceService
         ClockInLongitude = log.ClockInLongitude,
         Source = log.Source,
         CreatedAt = log.CreatedAt,
+    };
+
+    /// <summary>
+    /// Maps a CLOSED attendance log to the clock-out summary DTO (US-ATT-002). Assumes
+    /// <see cref="AttendanceLog.ClockOut"/> and the computed fields are set; coalesces defensively.
+    /// </summary>
+    private static ClockOutResultDto MapToResult(AttendanceLog log) => new()
+    {
+        Id = log.Id,
+        EmployeeId = log.EmployeeId,
+        ClockIn = log.ClockIn,
+        ClockOut = log.ClockOut!.Value,
+        TotalWorkMinutes = log.TotalWorkMinutes ?? 0,
+        OvertimeMinutes = log.OvertimeMinutes ?? 0,
+        Status = log.Status ?? "COMPLETE",
     };
 
     /// <summary>

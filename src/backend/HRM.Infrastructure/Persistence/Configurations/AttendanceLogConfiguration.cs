@@ -35,6 +35,22 @@ public sealed class AttendanceLogConfiguration : IEntityTypeConfiguration<Attend
         builder.Property(a => a.ClockInLongitude)
             .HasColumnType("numeric(10,7)");
 
+        builder.Property(a => a.ClockOutLatitude)
+            .HasColumnType("numeric(10,7)");
+
+        builder.Property(a => a.ClockOutLongitude)
+            .HasColumnType("numeric(10,7)");
+
+        builder.Property(a => a.ClockOutIp)
+            .HasMaxLength(50);
+
+        builder.Property(a => a.TotalWorkMinutes);
+
+        builder.Property(a => a.OvertimeMinutes);
+
+        builder.Property(a => a.Status)
+            .HasMaxLength(20);
+
         builder.Property(a => a.ClockInIp)
             .HasMaxLength(50);
 

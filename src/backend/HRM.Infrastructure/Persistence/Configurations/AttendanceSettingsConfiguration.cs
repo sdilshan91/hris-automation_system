@@ -52,6 +52,27 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .HasDefaultValue(0)
             .IsRequired();
 
+        // US-ATT-002 work-hours calculation policy (tenant-level fallback until US-ATT-005).
+        builder.Property(s => s.StandardWorkMinutes)
+            .HasDefaultValue(480)
+            .IsRequired();
+
+        builder.Property(s => s.MinimumWorkMinutes)
+            .HasDefaultValue(240)
+            .IsRequired();
+
+        builder.Property(s => s.AutoBreakMinutes)
+            .HasDefaultValue(60)
+            .IsRequired();
+
+        builder.Property(s => s.AutoBreakThresholdMinutes)
+            .HasDefaultValue(360)
+            .IsRequired();
+
+        builder.Property(s => s.OvertimeThresholdMinutes)
+            .HasDefaultValue(0)
+            .IsRequired();
+
         builder.Property(s => s.IsDeleted)
             .HasDefaultValue(false)
             .IsRequired();
