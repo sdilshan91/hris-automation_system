@@ -74,7 +74,7 @@
 - [x] US-ATT-005 — Shift management and assignment *(PR #43)*
 - [x] US-ATT-006 — Overtime tracking and approval *(PR #44)*
 - [x] US-ATT-007 — Monthly attendance summary *(PR #45)*
-- [ ] US-ATT-008 — Late arrival and early departure tracking
+- [~] US-ATT-008 — Late arrival and early departure tracking
 - [ ] US-ATT-009 — Attendance integration with payroll
 - [ ] US-ATT-010 — Attendance dashboard and reports
 
