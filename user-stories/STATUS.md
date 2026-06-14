@@ -70,7 +70,7 @@
 - [x] US-ATT-001 — Employee clock-in with optional geolocation *(PR #39)*
 - [x] US-ATT-002 — Employee clock-out with hours auto-calculation *(PR #40)*
 - [x] US-ATT-003 — Attendance regularization request *(PR #41)*
-- [ ] US-ATT-004 — Manager approves/rejects regularization
+- [~] US-ATT-004 — Manager approves/rejects regularization
 - [ ] US-ATT-005 — Shift management and assignment
 - [ ] US-ATT-006 — Overtime tracking and approval
 - [ ] US-ATT-007 — Monthly attendance summary
