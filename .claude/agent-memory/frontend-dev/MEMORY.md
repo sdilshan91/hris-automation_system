@@ -1,8 +1,0 @@
-- [Leave apply-form spec gotcha](leave-apply-form-spec-gotcha.md) — document-required block fires before any balance/LOP path in submit(); fixtures must avoid lt-2 for balance tests
-- [Geolocation test mocking](geolocation-test-mocking.md) — mock navigator.geolocation via Object.defineProperty (getter-only); never mix async+fakeAsync (Promise resolves on microtask flushed by tick())
-- [Signal async DOM detectChanges](signal-async-dom-detectchanges.md) — in fakeAsync, after tick() flushes an observable that sets a signal, call fixture.detectChanges() before asserting DOM textContent
-- [Right-drawer form pattern](right-drawer-form-pattern.md) — Notion right slide-in drawer (full-screen mobile): fixed wrap justify-end pointer-events-none + panel pointer-events-auto, @drawer translateX anim, separate backdrop
-- [Jasmine optional-arg spy](jasmine-optional-arg-spy.md) — toHaveBeenCalledWith matches exact arg count; don't assert trailing `undefined` for an omitted optional service arg
-- [Spec append wrong describe](spec-append-wrong-describe.md) — attendance.service.spec has 2 top-level describes (HTTP+httpMock vs pure-fn); append HTTP tests to the FIRST, not EOF
-- [Overtime weekly progress helper](overtime-weekly-progress-helper.md) — US-ATT-006 weekly bar is FE-derived (pure helper + hardcoded 20h cap, no policy endpoint); overtime detail is a dedicated list not on the clock-in card
-- [Blob export download pattern](blob-export-download-pattern.md) — server-generated exports return HttpResponse<Blob>+Content-Disposition filename; how to mock in service + component specs

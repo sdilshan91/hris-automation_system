@@ -35,3 +35,6 @@ obj/
 
 # Playwright MCP (browser debugging artifacts: traces, screenshots, sessions)
 .playwright-artifacts/
+
+# Private per-agent working memory (auto-loaded locally; not shared config — excluded from agnix lint)
+.claude/agent-memory/
