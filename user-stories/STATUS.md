@@ -73,7 +73,7 @@
 - [x] US-ATT-004 — Manager approves/rejects regularization *(PR #42)*
 - [x] US-ATT-005 — Shift management and assignment *(PR #43)*
 - [x] US-ATT-006 — Overtime tracking and approval *(PR #44)*
-- [ ] US-ATT-007 — Monthly attendance summary
+- [~] US-ATT-007 — Monthly attendance summary
 - [ ] US-ATT-008 — Late arrival and early departure tracking
 - [ ] US-ATT-009 — Attendance integration with payroll
 - [ ] US-ATT-010 — Attendance dashboard and reports
