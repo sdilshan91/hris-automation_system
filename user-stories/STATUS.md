@@ -63,7 +63,7 @@
 - [x] US-LV-008 — Leave carry-forward and expiry rules *(PR #34)*
 - [x] US-LV-009 — Team leave calendar view *(PR #35)*
 - [x] US-LV-010 — Leave cancellation by employee *(PR #36)*
-- [ ] US-LV-011 — Compulsory leave / LOP handling
+- [~] US-LV-011 — Compulsory leave / LOP handling
 - [ ] US-LV-012 — Leave reports and analytics
 
 ## 4. Attendance (10 stories)
