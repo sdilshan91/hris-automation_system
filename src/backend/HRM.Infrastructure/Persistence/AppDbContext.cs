@@ -49,6 +49,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<LeaveCarryForwardTracking> LeaveCarryForwardTrackings => Set<LeaveCarryForwardTracking>();
     public DbSet<CompulsoryLeave> CompulsoryLeaves => Set<CompulsoryLeave>();
+    public DbSet<AttendanceLog> AttendanceLogs => Set<AttendanceLog>();
+    public DbSet<AttendanceSettings> AttendanceSettings => Set<AttendanceSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -149,5 +151,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-LV-011: CompulsoryLeave tenant isolation + soft-delete filter
         modelBuilder.Entity<CompulsoryLeave>()
             .HasQueryFilter(c => !c.IsDeleted && (!_tenantContext.IsResolved || c.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-001: AttendanceLog tenant isolation + soft-delete filter
+        modelBuilder.Entity<AttendanceLog>()
+            .HasQueryFilter(a => !a.IsDeleted && (!_tenantContext.IsResolved || a.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-001: AttendanceSettings tenant isolation + soft-delete filter
+        modelBuilder.Entity<AttendanceSettings>()
+            .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
     }
 }

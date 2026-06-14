@@ -123,6 +123,9 @@ public static class DependencyInjection
         // Report-export storage seam (US-LV-012 FR-5) — local/log-only until a real blob store exists.
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
 
+        // Attendance clock-in service (US-ATT-001)
+        services.AddScoped<IAttendanceService, AttendanceService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

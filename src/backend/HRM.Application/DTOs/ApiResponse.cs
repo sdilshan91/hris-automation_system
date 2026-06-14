@@ -8,6 +8,13 @@ public sealed record ApiResponse<T>
     public bool Success { get; init; }
     public T? Data { get; init; }
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Optional machine-readable error code (e.g. "already_clocked_in") set on failures so clients
+    /// can branch on a stable identifier with an HTTP-status fallback. Null on success.
+    /// </summary>
+    public string? Code { get; init; }
+
     public IReadOnlyList<string>? Errors { get; init; }
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 
@@ -22,6 +29,14 @@ public sealed record ApiResponse<T>
     {
         Success = false,
         Message = error,
+        Errors = [error]
+    };
+
+    public static ApiResponse<T> Fail(string error, string? code) => new()
+    {
+        Success = false,
+        Message = error,
+        Code = code,
         Errors = [error]
     };
 
@@ -40,6 +55,13 @@ public sealed record ApiResponse
 {
     public bool Success { get; init; }
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Optional machine-readable error code (e.g. "already_clocked_in") set on failures so clients
+    /// can branch on a stable identifier with an HTTP-status fallback. Null on success.
+    /// </summary>
+    public string? Code { get; init; }
+
     public IReadOnlyList<string>? Errors { get; init; }
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 
@@ -53,6 +75,14 @@ public sealed record ApiResponse
     {
         Success = false,
         Message = error,
+        Errors = [error]
+    };
+
+    public static ApiResponse Fail(string error, string? code) => new()
+    {
+        Success = false,
+        Message = error,
+        Code = code,
         Errors = [error]
     };
 }
