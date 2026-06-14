@@ -92,7 +92,7 @@
 
 ## Platform / Cross-Cutting Tech Debt (2 stories)
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
-- [ ] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(surfaced in US-REC-001 / PR #49)*
+- [~] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(surfaced in US-REC-001 / PR #49)*
 - [ ] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(NFR asked for across many stories; never implemented)*
 
 ## 6. Payroll (12 stories)
