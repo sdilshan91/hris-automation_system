@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { roleGuard } from '../../core/auth/auth.guard';
 
 /**
  * US-ATT-001: Employee-facing attendance routes (self clock-in).
@@ -27,6 +28,20 @@ export const ATTENDANCE_ROUTES: Routes = [
       import('./components/regularization/regularization.component').then(
         (m) => m.RegularizationComponent
       ),
+  },
+  {
+    // US-ATT-004: Manager's regularization approval queue.
+    // The parent 'attendance' route already requires authentication + one of
+    // Employee/Manager/HR Officer/Tenant Admin; this child further restricts to
+    // approver roles (Manager / HR Officer / Tenant Admin) per the
+    // Attendance.Approve.Team capability — same technique the leave-approvals
+    // child uses, so NO app.routes.ts edit is needed.
+    path: 'regularization-approvals',
+    canActivate: [roleGuard(['Manager', 'HR Officer', 'Tenant Admin'])],
+    loadComponent: () =>
+      import(
+        './components/regularization-approvals/regularization-approvals.component'
+      ).then((m) => m.RegularizationApprovalsComponent),
   },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];

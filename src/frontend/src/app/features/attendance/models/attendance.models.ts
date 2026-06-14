@@ -252,6 +252,200 @@ export function regularizationStatusLabel(status: RegularizationStatus): string 
   }
 }
 
+// ─── US-ATT-004: Manager Approves/Rejects Regularization Requests ─────────────
+
+/**
+ * US-ATT-004 (§8): a pending regularization request as it appears in the manager's
+ * approval queue. Extends {@link IRegularization} with the denormalized fields the
+ * queue needs without extra lookups (FR-1, AC-3): the requester's display name and
+ * the submission timestamp.
+ *
+ * Backend endpoint (REAL contract):
+ *   GET /api/v1/attendance/regularizations/pending
+ *     optional query params: employeeId, fromDate, toDate
+ *     -> ApiResponse<PendingRegularizationQueueResult> where
+ *        data = { items: IPendingRegularization[], totalCount }
+ *        (the service reads `data.items`)
+ *
+ * The backend scopes the queue to the manager's direct reports (FR-7, BR-1) and the
+ * tenant (NFR-3) server-side; the FE never sends a manager/tenant id.
+ *
+ * NOTE: the queue item is a flat row shape (it does NOT carry tenantId/attendanceLogId
+ * like the full {@link IRegularization}); it is the projection the backend returns.
+ */
+export interface IPendingRegularization {
+  regularizationId: string;
+  employeeId: string;
+  /** Denormalized full name of the requesting employee (AC-3). */
+  employeeName: string;
+  /** Optional employee photo URL; null/empty -> initials avatar (§8). */
+  employeePhoto?: string | null;
+  /** The regularized calendar date `yyyy-MM-dd`. */
+  date: string;
+  regularizationType: RegularizationType;
+  /** Requested clock-in (UTC timestamptz); null when not applicable. */
+  requestedClockIn?: string | null;
+  /** Requested clock-out (UTC timestamptz); null when not applicable. */
+  requestedClockOut?: string | null;
+  reason: string;
+  /** When the request was submitted (AC-3 "submission date"). */
+  submittedOn: string;
+}
+
+/**
+ * US-ATT-004 (REAL contract): the `data` payload of the pending-queue endpoint.
+ *   GET /api/v1/attendance/regularizations/pending
+ *   -> ApiResponse<PendingRegularizationQueueResult>
+ */
+export interface IPendingRegularizationQueueResult {
+  items: IPendingRegularization[];
+  totalCount: number;
+}
+
+/** Optional filters for the pending-queue endpoint (query params). */
+export interface IPendingRegularizationQuery {
+  employeeId?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
+/** The action a manager takes on a regularization request (§7 `action`). */
+export type RegularizationAction = 'APPROVE' | 'REJECT';
+
+/**
+ * US-ATT-004 (REAL contract): body for a single APPROVE action.
+ *   POST /api/v1/attendance/regularizations/{id}/approve   (id in the PATH)
+ *   body { comment? }
+ *
+ * `comment` is optional for APPROVE (BR-2).
+ */
+export interface IApproveRegularizationRequest {
+  /** Optional approval note (BR-2). */
+  comment?: string;
+}
+
+/**
+ * US-ATT-004 (REAL contract): body for a single REJECT action.
+ *   POST /api/v1/attendance/regularizations/{id}/reject    (id in the PATH)
+ *   body { reason }   (the field is `reason`, NOT `comment`; min 10 chars, BR-1/FR-3)
+ *
+ * The component enforces the min-10-chars rule before calling.
+ */
+export interface IRejectRegularizationRequest {
+  /** Required rejection reason, min 10 chars (BR-1). NOTE: `reason`, not `comment`. */
+  reason: string;
+}
+
+/**
+ * US-ATT-004 (BR-7) REAL contract: body for the bulk-approve action.
+ *   POST /api/v1/attendance/regularizations/bulk-approve
+ *   body { regularizationIds, comment? }   (no `action` field)
+ */
+export interface IBulkApproveRequest {
+  regularizationIds: string[];
+  /** Optional shared comment applied to every approved request (BR-2). */
+  comment?: string;
+}
+
+/**
+ * US-ATT-004 (REAL contract): result of an approve/reject action — the backend's
+ * `RegularizationDecisionDto`. On REJECT the log/computation fields are null.
+ */
+export interface IRegularizationDecisionDto {
+  regularizationId: string;
+  status: 'APPROVED' | 'REJECTED';
+  action: string;
+  approvalLevel: number;
+  /** Created/linked attendance log on APPROVE; null on REJECT. */
+  attendanceLogId: string | null;
+  /** Computed net worked minutes on APPROVE; null on REJECT. */
+  totalWorkMinutes: number | null;
+  /** Computed overtime minutes on APPROVE; null on REJECT. */
+  overtimeMinutes: number | null;
+  /** Computed work-hours status on APPROVE; null on REJECT. */
+  attendanceStatus: string | null;
+  /** Optional comment echoed back. */
+  comment?: string | null;
+  /** When the decision was actioned (UTC timestamptz). */
+  actionedAt: string;
+}
+
+/**
+ * Per-item result of a bulk approve (BR-7) REAL contract. The backend processes each
+ * id independently so a partial failure (AC-5/BR-5) does not roll back the rest; the
+ * FE removes rows where `succeeded === true` and surfaces `error` verbatim otherwise.
+ */
+export interface IBulkApproveItemResult {
+  regularizationId: string;
+  /** Per-item success flag (NOTE: `succeeded`, not `success`). */
+  succeeded: boolean;
+  /** The decision when the item succeeded. */
+  decision?: IRegularizationDecisionDto;
+  /** Server message for a failed item, shown verbatim (AC-5 / BR-5). */
+  error?: string;
+  /** Optional machine error code (e.g. payroll_period_locked). */
+  errorCode?: string;
+}
+
+/** Result returned by the bulk-approve endpoint (BR-7) REAL contract. */
+export interface IBulkApproveResult {
+  totalRequested: number;
+  succeededCount: number;
+  failedCount: number;
+  /** Per-id results (NOTE: `items`, not `results`). */
+  items: IBulkApproveItemResult[];
+}
+
+/**
+ * Typed error body for an approve/reject/bulk action (AC-5 authorization denial,
+ * BR-5 payroll-locked period). `message` is shown verbatim; `code` is an optional
+ * machine discriminator the UI does not branch on.
+ *   - 403 `code: 'not_authorized'` -> "You are not authorized to approve requests
+ *     for this employee." (AC-5)
+ *   - 409/400 `code: 'payroll_locked'` -> locked-period block (BR-5)
+ */
+export interface IRegularizationActionErrorResponse {
+  message: string;
+  code?: 'not_authorized' | 'payroll_locked' | 'already_actioned' | string;
+}
+
+/** Minimal shape of the backend `ApiResponse<T>` envelope the service unwraps. */
+export interface IAttendanceApiEnvelope<T> {
+  data: T;
+  success?: boolean;
+  message?: string;
+}
+
+/** Format a requested-time range for the queue "Requested Times" column (§8). */
+export function formatRequestedTimes(
+  reg: { requestedClockIn?: string | null; requestedClockOut?: string | null },
+): string {
+  const fmt = (iso: string | null | undefined): string | null => {
+    if (!iso) {
+      return null;
+    }
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+      return null;
+    }
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+  const inT = fmt(reg.requestedClockIn);
+  const outT = fmt(reg.requestedClockOut);
+  if (inT && outT) {
+    return `${inT} – ${outT}`;
+  }
+  if (inT) {
+    return `In ${inT}`;
+  }
+  if (outT) {
+    return `Out ${outT}`;
+  }
+  return '—';
+}
+
 /** Whether the type requires a clock-in time (FR-1, §7). */
 export function typeRequiresClockIn(type: RegularizationType): boolean {
   return type === 'MISSED_CLOCK_IN' || type === 'MISSED_BOTH';
