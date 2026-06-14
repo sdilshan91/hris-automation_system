@@ -1,7 +1,9 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Features.Holidays.DTOs;
 using HRM.Application.Features.LeaveRequests;
 using HRM.Application.Features.LeaveRequests.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -21,6 +23,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IHolidayProvider _holidayProvider;
+    private readonly IHolidayService _holidayService;
     private readonly ILeaveNotificationService _notificationService;
     private readonly ILogger<LeaveRequestService> _logger;
 
@@ -35,12 +38,17 @@ public sealed class LeaveRequestService : ILeaveRequestService
         ICurrentUser currentUser,
         IHolidayProvider holidayProvider,
         ILeaveNotificationService notificationService,
-        ILogger<LeaveRequestService> logger)
+        ILogger<LeaveRequestService> logger,
+        IHolidayService? holidayService = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _holidayProvider = holidayProvider;
+        // US-LV-009: optional so the existing US-LV-003/004/005 unit tests (which construct this
+        // service with the original 6 args) keep compiling. The DI container always supplies it,
+        // so production always has holiday data for the team calendar (FR-7).
+        _holidayService = holidayService!;
         _notificationService = notificationService;
         _logger = logger;
     }
@@ -437,6 +445,187 @@ public sealed class LeaveRequestService : ILeaveRequestService
             Page = page,
             PageSize = pageSize,
         });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Team leave calendar (US-LV-009 FR-1..FR-4, FR-6/FR-7, BR-1..BR-5)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<TeamLeaveCalendarDto>> GetTeamLeaveCalendarAsync(
+        TeamLeaveCalendarQueryParams queryParams,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<TeamLeaveCalendarDto>.Failure("Tenant context is not resolved.", 400);
+
+        if (queryParams.To < queryParams.From)
+            return Result<TeamLeaveCalendarDto>.Failure("'to' must be on or after 'from'.", 400);
+
+        var employee = await GetCurrentEmployeeAsync(cancellationToken);
+        if (employee is null)
+        {
+            // No employee record linked to the current user -> empty calendar (not an error),
+            // mirroring the pending-queue behaviour (US-LV-004).
+            return Result<TeamLeaveCalendarDto>.Success(EmptyCalendar(queryParams, TeamCalendarScope.Employee));
+        }
+
+        // ── Resolve the caller's scope (AC-1/AC-2, BR-1/BR-2/BR-3) ──
+        // BR-3: HR Officers with Leave.View.All see the whole organisation.
+        bool canViewAll = _currentUser.Permissions.Contains(PermissionCatalog.Leave.ViewAll);
+
+        TeamCalendarScope scope;
+        IReadOnlyCollection<Guid>? employeeIdFilter; // null = no employee restriction (HR sees all)
+
+        if (canViewAll)
+        {
+            scope = TeamCalendarScope.All;
+            employeeIdFilter = null;
+        }
+        else
+        {
+            // Manager scope: this employee has direct reports (BR-2).
+            var directReportIds = await _dbContext.Employees
+                .AsNoTracking()
+                .Where(e => e.ReportsToEmployeeId == employee.Id)
+                .Select(e => e.Id)
+                .ToListAsync(cancellationToken);
+
+            if (directReportIds.Count > 0)
+            {
+                scope = TeamCalendarScope.Manager;
+                employeeIdFilter = directReportIds;
+            }
+            else
+            {
+                // Employee scope: own-department colleagues only (BR-1).
+                var deptColleagueIds = await _dbContext.Employees
+                    .AsNoTracking()
+                    .Where(e => e.DepartmentId == employee.DepartmentId)
+                    .Select(e => e.Id)
+                    .ToListAsync(cancellationToken);
+
+                scope = TeamCalendarScope.Employee;
+                employeeIdFilter = deptColleagueIds;
+            }
+        }
+
+        bool fullDetail = scope != TeamCalendarScope.Employee;
+
+        // ── Leave-request query (tenant-scoped by the global query filter) ──
+        // BR-4: Cancelled excluded. Rejected also excluded — only Approved (+ Pending where allowed).
+        // Employee scope (BR-1): Approved only, never Pending.
+        var leaveQuery = _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Include(lr => lr.Employee)
+            .Include(lr => lr.LeaveType)
+            .Where(lr => lr.StartDate <= queryParams.To && lr.EndDate >= queryParams.From);
+
+        leaveQuery = fullDetail
+            ? leaveQuery.Where(lr => lr.Status == LeaveRequestStatus.Approved
+                                     || lr.Status == LeaveRequestStatus.Pending)
+            : leaveQuery.Where(lr => lr.Status == LeaveRequestStatus.Approved);
+
+        // Scope restriction. HR scope (employeeIdFilter == null) has no restriction.
+        if (employeeIdFilter is not null)
+        {
+            var idSet = employeeIdFilter as ICollection<Guid> ?? employeeIdFilter.ToList();
+            if (idSet.Count == 0)
+            {
+                return Result<TeamLeaveCalendarDto>.Success(
+                    await BuildCalendarAsync(queryParams, scope, [], employee.LocationId, cancellationToken));
+            }
+            leaveQuery = leaveQuery.Where(lr => idSet.Contains(lr.EmployeeId));
+        }
+
+        // FR-6 filters (employee + leave type apply to all scopes; status is manager/HR only).
+        if (queryParams.EmployeeId.HasValue)
+            leaveQuery = leaveQuery.Where(lr => lr.EmployeeId == queryParams.EmployeeId.Value);
+
+        if (fullDetail && queryParams.LeaveTypeId.HasValue)
+            leaveQuery = leaveQuery.Where(lr => lr.LeaveTypeId == queryParams.LeaveTypeId.Value);
+
+        if (fullDetail && !string.IsNullOrWhiteSpace(queryParams.Status)
+            && Enum.TryParse<LeaveRequestStatus>(queryParams.Status, ignoreCase: true, out var statusFilter)
+            && (statusFilter == LeaveRequestStatus.Approved || statusFilter == LeaveRequestStatus.Pending))
+        {
+            leaveQuery = leaveQuery.Where(lr => lr.Status == statusFilter);
+        }
+
+        var leaves = await leaveQuery
+            .OrderBy(lr => lr.StartDate)
+            .ToListAsync(cancellationToken);
+
+        var entries = leaves.Select(lr => new TeamLeaveCalendarEntryDto
+        {
+            EmployeeId = lr.EmployeeId,
+            EmployeeName = lr.Employee is null
+                ? string.Empty
+                : $"{lr.Employee.FirstName} {lr.Employee.LastName}".Trim(),
+            // BR-1: employee scope must NOT leak leave type / colour / pending-vs-approved status.
+            LeaveTypeName = fullDetail ? (lr.LeaveType?.Name ?? string.Empty) : null,
+            Color = fullDetail ? lr.LeaveType?.Color : null,
+            Status = fullDetail ? lr.Status.ToString() : null,
+            StartDate = lr.StartDate,
+            EndDate = lr.EndDate,
+            TotalDays = lr.TotalDays,
+            IsHalfDay = lr.IsHalfDay,          // BR-5 half-day passthrough
+            HalfDaySession = lr.HalfDaySession,
+        }).ToList();
+
+        return Result<TeamLeaveCalendarDto>.Success(
+            await BuildCalendarAsync(queryParams, scope, entries, employee.LocationId, cancellationToken));
+    }
+
+    private enum TeamCalendarScope { All, Manager, Employee }
+
+    private TeamLeaveCalendarDto EmptyCalendar(TeamLeaveCalendarQueryParams p, TeamCalendarScope scope) => new()
+    {
+        From = p.From,
+        To = p.To,
+        Scope = scope.ToString(),
+        Entries = [],
+        Holidays = [],
+    };
+
+    /// <summary>
+    /// Assembles the calendar payload, fetching the public holidays in the range (FR-7) via the
+    /// US-LV-007 holiday service (reuse). Holidays are scoped to the caller's location so a
+    /// location-specific holiday does not appear for everyone (consistent with US-LV-007 BR-2).
+    /// </summary>
+    private async Task<TeamLeaveCalendarDto> BuildCalendarAsync(
+        TeamLeaveCalendarQueryParams p,
+        TeamCalendarScope scope,
+        IReadOnlyList<TeamLeaveCalendarEntryDto> entries,
+        Guid? locationId,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<HolidayDto> holidays = [];
+        if (_holidayService is not null)
+        {
+            // FR-7: public holidays in the range for background highlights. GetAllAsync returns
+            // active holidays in the inclusive [from, to] range; we keep Public ones (the type
+            // shown as background highlights, matching the holiday-exclusion rule in US-LV-007).
+            var holidayResult = await _holidayService.GetAllAsync(
+                from: p.From, to: p.To, year: null, locationId: locationId,
+                activeOnly: true, cancellationToken: cancellationToken);
+
+            if (holidayResult.IsSuccess && holidayResult.Value is not null)
+            {
+                holidays = holidayResult.Value
+                    .Where(h => h.LocationId == null || h.LocationId == locationId)
+                    .Where(h => string.Equals(h.Type, "Public", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+        }
+
+        return new TeamLeaveCalendarDto
+        {
+            From = p.From,
+            To = p.To,
+            Scope = scope.ToString(),
+            Entries = entries,
+            Holidays = holidays,
+        };
     }
 
     // ══════════════════════════════════════════════════════════════

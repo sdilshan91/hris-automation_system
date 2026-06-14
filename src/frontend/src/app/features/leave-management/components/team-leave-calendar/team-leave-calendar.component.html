@@ -1,0 +1,389 @@
+<div class="page-container">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">Team Leave Calendar</h1>
+      <p class="mt-1 text-sm text-neutral-500">
+        See who on your team is away so you can plan around coverage.
+      </p>
+    </div>
+    <button type="button" class="btn-secondary" (click)="goToToday()" data-test="today-btn">
+      Today
+    </button>
+  </div>
+
+  <!-- Toolbar: view toggle + period navigation -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+    <!-- Segmented view control (FR-5, §8) -->
+    <div class="segmented" role="tablist" aria-label="Calendar view mode">
+      <button
+        type="button"
+        role="tab"
+        class="segmented-btn"
+        [class.segmented-btn-active]="viewMode() === 'month'"
+        [attr.aria-selected]="viewMode() === 'month'"
+        (click)="setView('month')"
+        data-test="view-month"
+      >
+        Month
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="segmented-btn"
+        [class.segmented-btn-active]="viewMode() === 'week'"
+        [attr.aria-selected]="viewMode() === 'week'"
+        (click)="setView('week')"
+        data-test="view-week"
+      >
+        Week
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="segmented-btn"
+        [class.segmented-btn-active]="viewMode() === 'list'"
+        [attr.aria-selected]="viewMode() === 'list'"
+        (click)="setView('list')"
+        data-test="view-list"
+      >
+        List
+      </button>
+    </div>
+
+    <!-- Period navigation (month for month/list, week for week view) -->
+    @if (viewMode() === 'week') {
+      <div class="flex items-center gap-1" role="group" aria-label="Week navigation">
+        <button type="button" class="nav-arrow" (click)="changeWeek(-1)" aria-label="Previous week" data-test="week-prev">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+            <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.08 10l3.71 3.71a.75.75 0 1 1-1.06 1.06l-4.24-4.24a.75.75 0 0 1 0-1.06l4.24-4.24a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+        <span class="text-sm font-semibold text-neutral-900 min-w-[10rem] text-center">
+          {{ weekDays()[0].date }} → {{ weekDays()[6].date }}
+        </span>
+        <button type="button" class="nav-arrow" (click)="changeWeek(1)" aria-label="Next week" data-test="week-next">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.92 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.24 4.24a.75.75 0 0 1 0 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    } @else {
+      <div class="flex items-center gap-1" role="group" aria-label="Month navigation">
+        <button type="button" class="nav-arrow" (click)="changeMonth(-1)" aria-label="Previous month" data-test="month-prev">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+            <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.08 10l3.71 3.71a.75.75 0 1 1-1.06 1.06l-4.24-4.24a.75.75 0 0 1 0-1.06l4.24-4.24a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+        <span class="text-sm font-semibold text-neutral-900 min-w-[9rem] text-center" data-test="month-label">
+          {{ monthNames[activeMonth()] }} {{ year() }}
+        </span>
+        <button type="button" class="nav-arrow" (click)="changeMonth(1)" aria-label="Next month" data-test="month-next">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.92 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.24 4.24a.75.75 0 0 1 0 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Color legend for leave types (§8) -->
+  @if (legend().length > 0) {
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs text-neutral-500" data-test="legend">
+      @for (item of legend(); track item.label) {
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="item.color"></span>
+          {{ item.label }}
+        </span>
+      }
+      <span class="inline-flex items-center gap-1.5">
+        <span class="w-2.5 h-2.5 rounded-sm" [style.background-color]="holidayBg"></span>
+        Public holiday
+      </span>
+    </div>
+  }
+
+  <!-- Notion-style chip filter bar (FR-6, §8) -->
+  <div class="flex flex-wrap items-center gap-2 mb-5" data-test="filter-bar">
+    <!-- Employee filter (dropdown -> compact) -->
+    @if (employeeOptions().length > 0) {
+      <select
+        class="input-notion py-1 text-xs w-44"
+        [value]="employeeFilter()"
+        (change)="onEmployeeFilterChange($event)"
+        aria-label="Filter by employee"
+        data-test="employee-filter"
+      >
+        <option value="">All employees</option>
+        @for (emp of employeeOptions(); track emp.id) {
+          <option [value]="emp.id">{{ emp.name }}</option>
+        }
+      </select>
+    }
+
+    <!-- Leave-type filter chips (manager scope only — depends on detail) -->
+    @for (type of leaveTypeOptions(); track type) {
+      <button
+        type="button"
+        class="chip"
+        [class.chip-active]="leaveTypeFilter() === type"
+        (click)="setLeaveTypeFilter(type)"
+        [attr.aria-pressed]="leaveTypeFilter() === type"
+        data-test="leave-type-chip"
+      >
+        {{ type }}
+      </button>
+    }
+
+    <!-- Status filter chips (manager scope only, FR-6) -->
+    @if (hasStatus()) {
+      <span class="mx-1 h-4 w-px bg-neutral-200" aria-hidden="true"></span>
+      @for (status of statusOptions; track status) {
+        <button
+          type="button"
+          class="chip"
+          [class.chip-active]="statusFilter() === status"
+          (click)="setStatusFilter(status)"
+          [attr.aria-pressed]="statusFilter() === status"
+          data-test="status-chip"
+        >
+          {{ status }}
+        </button>
+      }
+    }
+
+    @if (hasActiveFilters()) {
+      <button
+        type="button"
+        class="text-xs text-neutral-400 hover:text-neutral-700 underline underline-offset-2 ml-1"
+        (click)="clearFilters()"
+        data-test="clear-filters"
+      >
+        Clear
+      </button>
+    }
+  </div>
+
+  <!-- Loading skeleton -->
+  @if (isLoading()) {
+    <div class="card-notion p-4" data-test="loading">
+      <div class="animate-pulse space-y-3">
+        @for (i of skeletonItems; track i) {
+          <div class="h-8 bg-neutral-50 rounded"></div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Error state -->
+  @if (loadError() && !isLoading()) {
+    <div class="card-notion text-center py-12" data-test="error-state">
+      <p class="text-sm text-neutral-600">{{ loadError() }}</p>
+      <button class="btn-secondary mt-4" (click)="load()">Try Again</button>
+    </div>
+  }
+
+  @if (!isLoading() && !loadError()) {
+    <!-- ============ MONTH VIEW (AC-1) ============ -->
+    @if (viewMode() === 'month') {
+      <div class="card-notion p-0 overflow-hidden" @fadeSlideIn data-test="month-grid">
+        <!-- Weekday header -->
+        <div class="grid grid-cols-7 border-b border-neutral-100">
+          @for (label of weekdayLabels; track label) {
+            <div class="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              {{ label }}
+            </div>
+          }
+        </div>
+
+        <!-- Day cells -->
+        <div class="grid grid-cols-7">
+          @for (cell of monthGrid(); track $index) {
+            <div
+              class="relative min-h-[6.5rem] border-b border-r border-neutral-50 p-1.5 last:border-r-0"
+              [class.bg-neutral-50]="!cell.inMonth"
+              [style.background-color]="cell.inMonth && cell.isHoliday ? holidayBg : null"
+              [class.ring-2]="cell.isToday"
+              [class.ring-brand-400]="cell.isToday"
+              [class.ring-inset]="cell.isToday"
+              [attr.data-test]="cell.isToday ? 'today-cell' : (cell.isHoliday && cell.inMonth ? 'holiday-cell' : null)"
+              [attr.title]="cell.isHoliday ? cell.holidayNames.join(', ') : null"
+            >
+              @if (cell.inMonth) {
+                <div class="flex items-center justify-between">
+                  <span
+                    class="text-xs font-medium"
+                    [class.text-brand-700]="cell.isToday"
+                    [class.font-bold]="cell.isToday"
+                    [class.text-neutral-500]="!cell.isToday"
+                  >{{ cell.day }}</span>
+                  @if (cell.isHoliday) {
+                    <span class="text-[9px] text-neutral-400 truncate max-w-[60%]" [attr.title]="cell.holidayNames.join(', ')">
+                      {{ cell.holidayNames[0] }}
+                    </span>
+                  }
+                </div>
+                <div class="mt-1 space-y-1">
+                  @for (e of cell.entries; track e.employeeId + e.startDate + e.endDate) {
+                    <div
+                      class="leave-block"
+                      [class.leave-block-half]="e.isHalfDay"
+                      [class.opacity-70]="e.status === 'Pending'"
+                      [style.background-color]="entryBg(e)"
+                      [style.color]="entryColor(e)"
+                      [attr.title]="tooltip(e)"
+                      data-test="leave-block"
+                    >
+                      <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background-color]="entryColor(e)"></span>
+                      <span class="truncate">{{ e.employeeName }}</span>
+                      @if (e.isHalfDay) {
+                        <span class="half-pill" [style.background-color]="entryColor(e)" [style.color]="'#fff'" data-test="half-day-indicator">
+                          {{ halfDayLabel(e) }}
+                        </span>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      @if (!hasEntries()) {
+        <p class="text-center text-xs text-neutral-400 mt-4" data-test="month-empty">
+          No team leave for {{ monthNames[activeMonth()] }} {{ year() }}.
+        </p>
+      }
+    }
+
+    <!-- ============ WEEK VIEW — Gantt (AC-3) ============ -->
+    @if (viewMode() === 'week') {
+      <div class="card-notion p-0 overflow-hidden" @fadeSlideIn data-test="week-grid">
+        <div class="overflow-x-auto">
+          <div class="min-w-[640px]">
+            <!-- Day header row -->
+            <div class="grid border-b border-neutral-100" style="grid-template-columns: 11rem repeat(7, 1fr);">
+              <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                Employee
+              </div>
+              @for (wd of weekDays(); track wd.date) {
+                <div
+                  class="px-1 py-2 text-center border-l border-neutral-50"
+                  [style.background-color]="wd.isHoliday ? holidayBg : null"
+                  [class.bg-brand-50]="wd.isToday"
+                  [attr.data-test]="wd.isToday ? 'week-today' : (wd.isHoliday ? 'week-holiday' : null)"
+                >
+                  <div class="text-[10px] uppercase text-neutral-400">{{ wd.label }}</div>
+                  <div class="text-xs font-semibold" [class.text-brand-700]="wd.isToday" [class.text-neutral-700]="!wd.isToday">
+                    {{ wd.day }}
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Employee Gantt rows -->
+            @if (weekRows().length > 0) {
+              @for (row of weekRows(); track row.employeeId) {
+                <div class="grid border-b border-neutral-50 last:border-b-0 items-center" style="grid-template-columns: 11rem repeat(7, 1fr);" data-test="week-row">
+                  <div class="px-3 py-2 text-sm font-medium text-neutral-800 truncate">
+                    {{ row.employeeName }}
+                  </div>
+                  @for (cell of row.cells; track $index) {
+                    <div class="px-1 py-2 border-l border-neutral-50 min-h-[2.5rem] flex items-center">
+                      @if (cell) {
+                        <div
+                          class="gantt-bar w-full"
+                          [class.gantt-bar-half]="cell.isHalfDay"
+                          [class.opacity-70]="cell.status === 'Pending'"
+                          [style.background-color]="entryColor(cell)"
+                          [style.color]="'#fff'"
+                          [attr.title]="tooltip(cell)"
+                          data-test="gantt-bar"
+                        >
+                          <span class="truncate">{{ label(cell) }}</span>
+                          @if (cell.isHalfDay) {
+                            <span class="ml-auto text-[9px] font-semibold pl-1" data-test="half-day-indicator">{{ halfDayLabel(cell) }}</span>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            } @else {
+              <div class="px-3 py-10 text-center text-sm text-neutral-400" data-test="week-empty">
+                No team leave during this week.
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- ============ LIST VIEW (AC-4, mobile default) ============ -->
+    @if (viewMode() === 'list') {
+      @if (!hasEntries()) {
+        <div class="card-notion text-center py-12" data-test="list-empty">
+          <div class="w-14 h-14 rounded-full bg-neutral-50 flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-7 h-7 text-neutral-400" aria-hidden="true">
+              <path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <p class="text-sm font-medium text-neutral-700 mb-1">No team leave to show</p>
+          <p class="text-xs text-neutral-400">Try a different month or clear your filters.</p>
+        </div>
+      } @else {
+        <div class="space-y-4" @fadeSlideIn data-test="list-view">
+          @for (group of listGroups(); track group.date) {
+            <div class="card-notion p-0 overflow-hidden" data-test="list-group">
+              <div
+                class="px-4 py-2.5 border-b border-neutral-100 flex items-center justify-between"
+                [style.background-color]="group.isHoliday ? holidayBg : null"
+                [class.bg-neutral-50]="!group.isHoliday"
+              >
+                <h3 class="text-sm font-semibold text-neutral-700">{{ group.date }}</h3>
+                @if (group.isHoliday) {
+                  <span class="text-xs text-neutral-500" data-test="list-holiday">
+                    {{ group.holidayNames.join(', ') }}
+                  </span>
+                }
+              </div>
+              <ul class="divide-y divide-neutral-50">
+                @for (e of group.entries; track e.employeeId + e.startDate + e.endDate) {
+                  <li class="flex items-center justify-between px-4 py-3" data-test="list-entry">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" [style.background-color]="entryColor(e)"></span>
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-neutral-900 truncate">{{ e.employeeName }}</p>
+                        <p class="text-xs text-neutral-400">
+                          {{ label(e) }}
+                          @if (e.isHalfDay) {
+                            · <span data-test="half-day-indicator">Half day{{ e.halfDaySession ? ' (' + e.halfDaySession + ')' : '' }}</span>
+                          } @else {
+                            · {{ e.totalDays }} day{{ e.totalDays === 1 ? '' : 's' }}
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    @if (e.status) {
+                      <span
+                        class="text-[11px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset"
+                        [ngClass]="e.status === 'Approved'
+                          ? 'bg-green-50 text-green-700 ring-green-600/20'
+                          : 'bg-amber-50 text-amber-700 ring-amber-600/20'"
+                        data-test="list-status"
+                      >
+                        {{ e.status }}
+                      </span>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      }
+    }
+  }
+</div>

@@ -1,0 +1,79 @@
+:host {
+  display: block;
+}
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- Segmented view control --- */
+.segmented {
+  @apply inline-flex items-center p-0.5 rounded-lg bg-neutral-100;
+}
+.segmented-btn {
+  @apply px-4 py-1.5 rounded-md text-sm font-medium text-neutral-500
+    transition-colors duration-200
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+}
+.segmented-btn-active {
+  @apply bg-white text-neutral-900 shadow-sm;
+}
+
+/* --- Nav arrow buttons --- */
+.nav-arrow {
+  @apply w-8 h-8 rounded-md flex items-center justify-center text-neutral-400
+    hover:text-neutral-700 hover:bg-neutral-100 transition-colors duration-150
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+}
+
+/* --- Notion-style filter chip --- */
+.chip {
+  @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
+    border border-neutral-200 text-neutral-600 bg-white cursor-pointer
+    transition-colors duration-150 hover:bg-neutral-50
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+}
+.chip-active {
+  @apply border-brand-400 bg-brand-50 text-brand-700;
+}
+
+/* --- Leave block (month + list) --- */
+.leave-block {
+  @apply flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium truncate
+    cursor-default;
+}
+
+/* Half-day block: diagonal split hint (BR-5). */
+.leave-block-half {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(255, 255, 255, 0.55) 4px,
+    rgba(255, 255, 255, 0.55) 8px
+  );
+}
+
+/* --- Half-day pill (AM/PM indicator) --- */
+.half-pill {
+  @apply ml-1 inline-flex items-center justify-center px-1 rounded
+    text-[9px] font-semibold uppercase leading-none;
+  min-width: 1.1rem;
+}
+
+/* --- Week (Gantt) bar --- */
+.gantt-bar {
+  @apply h-6 rounded flex items-center px-1.5 text-[11px] font-medium truncate;
+}
+.gantt-bar-half {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(255, 255, 255, 0.55) 4px,
+    rgba(255, 255, 255, 0.55) 8px
+  );
+}

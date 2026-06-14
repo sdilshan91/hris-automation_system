@@ -1,7 +1,7 @@
 ---
 module: Leave Management
-total_user_stories: 8
-total_test_cases: 200
+total_user_stories: 9
+total_test_cases: 224
 created: 2026-06-13
 updated: 2026-06-14
 status: draft
@@ -13,14 +13,14 @@ status: draft
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 8 (US-LV-001, US-LV-002, US-LV-003, US-LV-004, US-LV-005, US-LV-006, US-LV-007, US-LV-008) |
-| Total Test Cases | 200 |
-| Critical Priority | 89 |
-| High Priority | 96 |
+| Total User Stories Covered | 9 (US-LV-001, US-LV-002, US-LV-003, US-LV-004, US-LV-005, US-LV-006, US-LV-007, US-LV-008, US-LV-009) |
+| Total Test Cases | 224 |
+| Critical Priority | 100 |
+| High Priority | 109 |
 | Medium Priority | 14 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 (TC-LV-056 holiday-exclusion now realized by US-LV-007 TC-LV-131) |
-| Deferred Test Cases | 5+ (TC-LV-021 onboarding seeding, TC-LV-ISO-004 cache -- partial, TC-LV-031 FTE, TC-LV-042 Redis cache, TC-LV-046 job-level dimension, TC-LV-ISO-008/TC-LV-ISO-012/TC-LV-ISO-016 balance cache keys -- partial; US-LV-004: TC-LV-077 history/team-calendar subsections, TC-LV-079 SignalR real-time push, TC-LV-088 multi-level approval -- conditional on downstream modules; US-LV-005: TC-LV-097 multi-level approval -- conditional on US-ADM-007, TC-LV-098 payroll-lock -- conditional on payroll module, TC-LV-107 async notification -- DEFERRED on notifications module, TC-LV-ISO-020 balance cache keys -- partial pending Redis; US-LV-006: TC-LV-121/TC-LV-125 Redis balance cache -- DEFERRED (DB-fallback verified), TC-LV-ISO-024 balance cache keys -- partial pending Redis; US-LV-007: TC-LV-140 payroll-period delete-lock -- CONDITIONAL on payroll module, TC-LV-144 onboarding seeding -- DEFERRED (wizard UNWIRED), TC-LV-147 holiday-list 200ms cached read -- DEFERRED on Redis (DB-fallback measured), TC-LV-ISO-028 holiday cache keys -- partial pending Redis; US-LV-008: TC-LV-151 carry-forward-expiry Redis invalidation -- DEFERRED (DB/ledger verified), TC-LV-154 encashment-on-expiry -- CONDITIONAL on leave-type config, TC-LV-167 fiscal-year boundary -- CONDITIONAL on tenant fiscal-year config (calendar-year verified), TC-LV-ISO-032 balance cache keys -- partial pending Redis) |
+| Deferred Test Cases | 5+ (TC-LV-021 onboarding seeding, TC-LV-ISO-004 cache -- partial, TC-LV-031 FTE, TC-LV-042 Redis cache, TC-LV-046 job-level dimension, TC-LV-ISO-008/TC-LV-ISO-012/TC-LV-ISO-016 balance cache keys -- partial; US-LV-004: TC-LV-077 history/team-calendar subsections, TC-LV-079 SignalR real-time push, TC-LV-088 multi-level approval -- conditional on downstream modules; US-LV-005: TC-LV-097 multi-level approval -- conditional on US-ADM-007, TC-LV-098 payroll-lock -- conditional on payroll module, TC-LV-107 async notification -- DEFERRED on notifications module, TC-LV-ISO-020 balance cache keys -- partial pending Redis; US-LV-006: TC-LV-121/TC-LV-125 Redis balance cache -- DEFERRED (DB-fallback verified), TC-LV-ISO-024 balance cache keys -- partial pending Redis; US-LV-007: TC-LV-140 payroll-period delete-lock -- CONDITIONAL on payroll module, TC-LV-144 onboarding seeding -- DEFERRED (wizard UNWIRED), TC-LV-147 holiday-list 200ms cached read -- DEFERRED on Redis (DB-fallback measured), TC-LV-ISO-028 holiday cache keys -- partial pending Redis; US-LV-008: TC-LV-151 carry-forward-expiry Redis invalidation -- DEFERRED (DB/ledger verified), TC-LV-154 encashment-on-expiry -- CONDITIONAL on leave-type config, TC-LV-167 fiscal-year boundary -- CONDITIONAL on tenant fiscal-year config (calendar-year verified), TC-LV-ISO-032 balance cache keys -- partial pending Redis; US-LV-009: TC-LV-179 holiday-background highlight -- depends on US-LV-007 (implemented), TC-LV-186 month-range 300ms cached read -- DEFERRED on Redis (DB-fallback measured), TC-LV-ISO-036 calendar cache keys -- partial pending Redis) |
 | Status | All Draft |
 
 ## User Story to Test Case Matrix
@@ -43,6 +43,8 @@ status: draft
 | Cross-cutting (LV-007) | Multi-tenant isolation (mandatory) | TC-LV-ISO-025, TC-LV-ISO-026, TC-LV-ISO-027, TC-LV-ISO-028 | 4 |
 | US-LV-008 | Leave Carry-Forward and Expiry Rules | TC-LV-149, TC-LV-150, TC-LV-151, TC-LV-152, TC-LV-153, TC-LV-154, TC-LV-155, TC-LV-156, TC-LV-157, TC-LV-158, TC-LV-159, TC-LV-160, TC-LV-161, TC-LV-162, TC-LV-163, TC-LV-164, TC-LV-165, TC-LV-166, TC-LV-167, TC-LV-168 | 20 |
 | Cross-cutting (LV-008) | Multi-tenant isolation (mandatory) | TC-LV-ISO-029, TC-LV-ISO-030, TC-LV-ISO-031, TC-LV-ISO-032 | 4 |
+| US-LV-009 | Team Leave Calendar View | TC-LV-169, TC-LV-170, TC-LV-171, TC-LV-172, TC-LV-173, TC-LV-174, TC-LV-175, TC-LV-176, TC-LV-177, TC-LV-178, TC-LV-179, TC-LV-180, TC-LV-181, TC-LV-182, TC-LV-183, TC-LV-184, TC-LV-185, TC-LV-186, TC-LV-187, TC-LV-188 | 20 |
+| Cross-cutting (LV-009) | Multi-tenant isolation (mandatory) | TC-LV-ISO-033, TC-LV-ISO-034, TC-LV-ISO-035, TC-LV-ISO-036 | 4 |
 
 ## Test Type Distribution
 
@@ -56,6 +58,7 @@ status: draft
 | Functional (LV-006) | TC-LV-109, TC-LV-110, TC-LV-111, TC-LV-112, TC-LV-113, TC-LV-114, TC-LV-115, TC-LV-116, TC-LV-117, TC-LV-118, TC-LV-119, TC-LV-120, TC-LV-121, TC-LV-127 | 14 |
 | Functional (LV-007) | TC-LV-129, TC-LV-130, TC-LV-131, TC-LV-132, TC-LV-133, TC-LV-134, TC-LV-135, TC-LV-137, TC-LV-138, TC-LV-139, TC-LV-140, TC-LV-141, TC-LV-142, TC-LV-143, TC-LV-144 | 15 |
 | Functional/Integration (LV-008) | TC-LV-149, TC-LV-150, TC-LV-151, TC-LV-152, TC-LV-153, TC-LV-154, TC-LV-155, TC-LV-156, TC-LV-157, TC-LV-158, TC-LV-166, TC-LV-167, TC-LV-168 | 13 |
+| Functional/Integration (LV-009) | TC-LV-169, TC-LV-170, TC-LV-171, TC-LV-173, TC-LV-174, TC-LV-177, TC-LV-178, TC-LV-179, TC-LV-180, TC-LV-181, TC-LV-182 | 11 |
 | Security (LV-001) | TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | 8 |
 | Security (LV-002) | TC-LV-039, TC-LV-040, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | 7 |
 | Security (LV-003) | TC-LV-058, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 8 |
@@ -64,6 +67,7 @@ status: draft
 | Security (LV-006) | TC-LV-122, TC-LV-123, TC-LV-124, TC-LV-ISO-021, TC-LV-ISO-022, TC-LV-ISO-023, TC-LV-ISO-024 | 7 |
 | Security (LV-007) | TC-LV-145, TC-LV-146, TC-LV-ISO-025, TC-LV-ISO-026, TC-LV-ISO-027, TC-LV-ISO-028 | 6 |
 | Security (LV-008) | TC-LV-161, TC-LV-162, TC-LV-163, TC-LV-ISO-029, TC-LV-ISO-030, TC-LV-ISO-031, TC-LV-ISO-032 | 7 |
+| Security (LV-009) | TC-LV-172, TC-LV-175, TC-LV-176, TC-LV-183, TC-LV-184, TC-LV-185, TC-LV-ISO-033, TC-LV-ISO-034, TC-LV-ISO-035, TC-LV-ISO-036 | 10 |
 | Performance (LV-001) | TC-LV-016, TC-LV-023 | 2 |
 | Performance (LV-002) | TC-LV-041, TC-LV-042 | 2 |
 | Performance (LV-003) | TC-LV-064 | 1 |
@@ -72,6 +76,7 @@ status: draft
 | Performance (LV-006) | TC-LV-125, TC-LV-126 | 2 |
 | Performance (LV-007) | TC-LV-136, TC-LV-147 | 2 |
 | Performance (LV-008) | TC-LV-159 | 1 |
+| Performance (LV-009) | TC-LV-186, TC-LV-187 | 2 |
 | Accessibility (LV-001) | TC-LV-019 | 1 |
 | Accessibility (LV-002) | TC-LV-044 | 1 |
 | Accessibility (LV-003) | TC-LV-065 | 1 |
@@ -80,6 +85,7 @@ status: draft
 | Accessibility (LV-006) | TC-LV-128 | 1 |
 | Accessibility (LV-007) | TC-LV-148 | 1 |
 | Accessibility (LV-008) | TC-LV-164 | 1 |
+| Accessibility (LV-009) | TC-LV-188 | 1 |
 | Cross-Browser (LV-001) | TC-LV-020 | 1 |
 | Cross-Browser (LV-002) | TC-LV-045 | 1 |
 | Cross-Browser (LV-003) | TC-LV-065 | 1 |
@@ -87,6 +93,7 @@ status: draft
 | Cross-Browser (LV-005) | TC-LV-108 | 1 |
 | Cross-Browser (LV-006) | TC-LV-127, TC-LV-128 | 2 |
 | Cross-Browser (LV-007) | TC-LV-148 | 1 |
+| Cross-Browser (LV-009) | TC-LV-174, TC-LV-188 | 2 |
 
 ## Test Category Coverage
 
@@ -494,6 +501,78 @@ status: draft
 | Blocked Test Cases | 0 | -- | CLEAR |
 | Deferred / Conditional Test Cases | TC-LV-140 (payroll-period delete-lock -- CONDITIONAL on payroll module; deactivate-retention verified), TC-LV-144 (onboarding seeding -- DEFERRED, wizard UNWIRED; service verified), TC-LV-147 (200ms cached-read target -- DEFERRED on Redis; DB-fallback measured), TC-LV-ISO-028 partial (holiday cache keys -- pending Redis) | -- | NOTE |
 
+## Coverage Summary (US-LV-008)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 7/7 (100%) -- FR-7 Redis invalidation DEFERRED (DB/ledger verified) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | covered (Redis-cached latency DEFERRED; DB-fallback verified) | >= 85% | PASS |
+| Business Rules Coverage | 5/5 (100%) -- fiscal-year boundary CONDITIONAL on tenant fiscal-year config (calendar-year verified) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 5 (4 dedicated ISO-029..032 + embedded tenant scope in TC-LV-161) | >= 3 | PASS |
+| Security Test Cases | 7/24 (TC-LV-161..163, TC-LV-ISO-029..032) | >= 30% | NOTE (close; all critical vectors covered: authz, tenant isolation, injection) |
+| Performance Test Cases | 1/24 (TC-LV-159) | >= 1 | PASS |
+| Accessibility Test Cases | 1/24 (TC-LV-164) | >= 1 | PASS |
+| Cross-Browser Test Cases | embedded in TC-LV-164/preview UI | >= 1 | NOTE |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred / Conditional Test Cases | TC-LV-151 (carry-forward-expiry Redis invalidation -- DEFERRED; DB/ledger verified), TC-LV-154 (encashment-on-expiry -- CONDITIONAL on leave-type config), TC-LV-167 (fiscal-year boundary -- CONDITIONAL on tenant fiscal-year config; calendar-year verified), TC-LV-ISO-032 partial (balance cache keys -- pending Redis) | -- | NOTE |
+
+## Acceptance Criteria Coverage (US-LV-009)
+
+| AC | Description | Covered By Test Cases |
+|----|-------------|-----------------------|
+| AC-1 | Manager month view shows direct reports' approved + pending leaves as colored blocks | TC-LV-169, TC-LV-170, TC-LV-178, TC-LV-181 |
+| AC-2 | Employee view shows only approved department leaves, no pending, no leave-type ("on leave") | TC-LV-171, TC-LV-172, TC-LV-185 |
+| AC-3 | Manager week view -- Gantt-like, employees on Y-axis, days on X-axis | TC-LV-173 |
+| AC-4 | Mobile 360px -- compact list grouped by date (employee, leave type, status) | TC-LV-174, TC-LV-188 |
+
+## Functional Requirements Coverage (US-LV-009)
+
+| FR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| FR-1 | GET /api/v1/leaves/team-calendar?from&to scoped to user's team/department | TC-LV-169, TC-LV-181, TC-LV-182, TC-LV-ISO-034 | Direct |
+| FR-2 | Manager view shows both approved and pending leaves for direct reports | TC-LV-169, TC-LV-175, TC-LV-176 | Direct |
+| FR-3 | Employee view shows only approved department leaves (no pending) | TC-LV-171, TC-LV-172, TC-LV-185 | Direct |
+| FR-4 | Response fields: employeeId, employeeName, leaveTypeName, color, startDate, endDate, status, totalDays | TC-LV-170, TC-LV-181, TC-LV-178 | Direct (employee subset suppressed per BR-1) |
+| FR-5 | Views supported: month, week, list | TC-LV-169, TC-LV-173, TC-LV-174 | Direct |
+| FR-6 | Filter by employee, leave type, status (status manager-only) | TC-LV-180, TC-LV-175 | Direct |
+| FR-7 | Public holidays displayed as background highlights | TC-LV-179 | Direct (depends on US-LV-007, implemented) |
+
+## Non-Functional Requirements Coverage (US-LV-009)
+
+| NFR | Description | Covered By | Coverage |
+|-----|-------------|------------|----------|
+| NFR-1 | Calendar API for a month range within 300ms P95 | TC-LV-186 | Direct (Redis cache DEFERRED module-wide; DB-backed path measured against 300ms) |
+| NFR-2 | Tenant-isolated via EF Core filters (RLS-equivalent per vault) | TC-LV-ISO-033, TC-LV-ISO-034, TC-LV-ISO-035, TC-LV-ISO-036 | Direct |
+| NFR-3 | Employee/manager/HR access control (department-approved vs direct-report+pending vs org-wide) | TC-LV-171, TC-LV-172, TC-LV-175, TC-LV-176, TC-LV-183, TC-LV-185 | Direct |
+| NFR-4 | Renders smoothly with up to 50 employees and 200 entries | TC-LV-174, TC-LV-187, TC-LV-188 | Direct |
+
+## Business Rules Coverage (US-LV-009)
+
+| BR | Description | Covered By | Coverage |
+|----|-------------|------------|----------|
+| BR-1 | Employees see only approved department leaves; no pending, no leave types (just "on leave") | TC-LV-171, TC-LV-172, TC-LV-180, TC-LV-181, TC-LV-185 | Direct (KEY data-leak prevention) |
+| BR-2 | Managers see full details for their direct reports only | TC-LV-169, TC-LV-175, TC-LV-185 | Direct |
+| BR-3 | HR Officers with Leave.ViewAll see the entire organization's calendar | TC-LV-176 | Direct |
+| BR-4 | Cancelled leaves are not shown | TC-LV-177 | Direct |
+| BR-5 | Half-day leaves are visually differentiated | TC-LV-178, TC-LV-181 | Direct |
+
+## Coverage Summary (US-LV-009)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 4/4 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 7/7 (100%) -- FR-7 holiday-highlight depends on US-LV-007 (implemented) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 4/4 (100%) -- NFR-1 Redis-cached latency DEFERRED (DB-backed path measured against 300ms) | >= 85% | PASS |
+| Business Rules Coverage | 5/5 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 6 (4 dedicated ISO-033..036 + embedded tenant scope in TC-LV-176, TC-LV-183) | >= 3 | PASS |
+| Security Test Cases | 10/24 (42%) including ISO (TC-LV-172, TC-LV-175, TC-LV-176, TC-LV-183, TC-LV-184, TC-LV-185, TC-LV-ISO-033..036) | >= 30% | PASS |
+| Performance Test Cases | 2/24 (TC-LV-186, TC-LV-187) | >= 1 | PASS |
+| Accessibility Test Cases | 1/24 (TC-LV-188) | >= 1 | PASS |
+| Cross-Browser Test Cases | 2/24 (TC-LV-174, TC-LV-188) | >= 1 | PASS |
+| Blocked Test Cases | 0 | -- | CLEAR |
+| Deferred / Conditional Test Cases | TC-LV-179 (holiday-background highlight -- depends on US-LV-007, implemented), TC-LV-186 (300ms cached-read target -- DEFERRED on Redis; DB-fallback measured), TC-LV-ISO-036 partial (calendar cache keys -- pending Redis) | -- | NOTE |
+
 ---
 
-*Note: This test matrix covers US-LV-001 (29 TCs), US-LV-002 (26 TCs), US-LV-003 (22 TCs), US-LV-004 (27 TCs), US-LV-005 (24 TCs), US-LV-006 (24 TCs), and US-LV-007 (24 TCs) for the Leave Management module. US-LV-007 adds 20 functional/integration/security/performance/accessibility test cases (TC-LV-129..148) plus 4 dedicated multi-tenant isolation tests (TC-LV-ISO-025..028) for tenant holiday-calendar management. All 4 acceptance criteria for US-LV-007 have direct coverage. Notes for US-LV-007: TC-LV-131 is the KEY integration test realizing the holiday-exclusion seam US-LV-003 (TC-LV-056) left dependent -- Mon-Fri spanning a Wednesday public holiday yields totalDays=4; TC-LV-132 confirms only Public holidays are auto-excluded (restricted/optional are not), and TC-LV-133 confirms location scoping (a New-York-only holiday does not reduce a London employee's count); duplicate-date prevention (BR-1) is split across location-specific (TC-LV-138) and tenant-wide null-location (TC-LV-139) partial unique indexes, and is also enforced on CSV import (TC-LV-135); recurring generation (FR-3/BR-5, TC-LV-141) is idempotent via the Hangfire HolidayRecurrenceJob; FR-5 onboarding seeding (TC-LV-144) verifies the seeding service + idempotency but records the onboarding-wizard call site as UNWIRED/DEFERRED (TODO(onboarding)); BR-4 payroll-period delete-lock (TC-LV-140) verifies deactivate-retention now and marks the finalized-period delete-block CONDITIONAL on the payroll module; NFR-1 Redis caching (TC-LV-147) and TC-LV-ISO-028 holiday cache keys are DEFERRED module-wide (DB-fallback path measured against 200ms and tenant-scoped key pattern verified by design); tenant isolation (TC-LV-ISO-025..027) confirms holidays in Tenant A are invisible to Tenant B at the API, context, and EF-query-filter layers. US-LV-001..US-LV-006 deferred items remain unchanged.*
+*Note: This test matrix covers US-LV-001 (29 TCs), US-LV-002 (26 TCs), US-LV-003 (22 TCs), US-LV-004 (27 TCs), US-LV-005 (24 TCs), US-LV-006 (24 TCs), US-LV-007 (24 TCs), US-LV-008 (24 TCs), and US-LV-009 (24 TCs) for the Leave Management module. US-LV-009 adds 20 functional/integration/security/performance/accessibility test cases (TC-LV-169..188) plus 4 dedicated multi-tenant isolation tests (TC-LV-ISO-033..036) for the Team Leave Calendar view. All 4 acceptance criteria for US-LV-009 have direct coverage. Notes for US-LV-009: the KEY access-control rule (AC-2/BR-1) is verified at two layers -- TC-LV-171 (UI shows department-approved leaves as a neutral "on leave" block with no pending and no leave-type) and TC-LV-172 (the raw API payload to an employee omits pending entries and leaveTypeName/type-color server-side, so a curious employee cannot read sensitive leave reasons via the network response); TC-LV-185 confirms an employee cannot escalate scope via parameter tampering (departmentId/employeeId/status overrides are ignored). Manager scope (BR-2, TC-LV-175) is limited to direct reports (ReportsToEmployeeId) and excludes other managers' teams; HR with Leave.ViewAll (BR-3, TC-LV-176) sees the whole tenant org. Cancelled leaves are excluded (BR-4, TC-LV-177); half-day leaves are visually differentiated (BR-5, TC-LV-178). FR-7 public-holiday background highlights (TC-LV-179) integrate the implemented US-LV-007 holiday calendar (location-scoped). NFR-1 (TC-LV-186) measures the DB-backed month-range path against 300ms P95 and records the Redis-cached read path as DEFERRED module-wide per docs/vault/modules/leave-management.md; TC-LV-ISO-036 verifies the tenant- and scope-scoped calendar cache-key design by design with DB-fallback isolation verified live (partial pending Redis). Tenant isolation (TC-LV-ISO-033..035) confirms Tenant A's calendar is invisible to Tenant B at the API, tenant-context, and EF-query-filter layers. US-LV-008 (TC-LV-149..168, TC-LV-ISO-029..032) coverage summary added here for rollup consistency (its detailed per-TC traceability lives in each TC file); US-LV-008 deferred items: TC-LV-151 (carry-forward-expiry Redis invalidation -- DEFERRED; DB/ledger verified), TC-LV-154 (encashment-on-expiry -- CONDITIONAL on leave-type config), TC-LV-167 (fiscal-year boundary -- CONDITIONAL on tenant fiscal-year config; calendar-year verified), TC-LV-ISO-032 (balance cache keys -- partial pending Redis). US-LV-007 adds 20 functional/integration/security/performance/accessibility test cases (TC-LV-129..148) plus 4 dedicated multi-tenant isolation tests (TC-LV-ISO-025..028) for tenant holiday-calendar management. All 4 acceptance criteria for US-LV-007 have direct coverage. Notes for US-LV-007: TC-LV-131 is the KEY integration test realizing the holiday-exclusion seam US-LV-003 (TC-LV-056) left dependent -- Mon-Fri spanning a Wednesday public holiday yields totalDays=4; TC-LV-132 confirms only Public holidays are auto-excluded (restricted/optional are not), and TC-LV-133 confirms location scoping (a New-York-only holiday does not reduce a London employee's count); duplicate-date prevention (BR-1) is split across location-specific (TC-LV-138) and tenant-wide null-location (TC-LV-139) partial unique indexes, and is also enforced on CSV import (TC-LV-135); recurring generation (FR-3/BR-5, TC-LV-141) is idempotent via the Hangfire HolidayRecurrenceJob; FR-5 onboarding seeding (TC-LV-144) verifies the seeding service + idempotency but records the onboarding-wizard call site as UNWIRED/DEFERRED (TODO(onboarding)); BR-4 payroll-period delete-lock (TC-LV-140) verifies deactivate-retention now and marks the finalized-period delete-block CONDITIONAL on the payroll module; NFR-1 Redis caching (TC-LV-147) and TC-LV-ISO-028 holiday cache keys are DEFERRED module-wide (DB-fallback path measured against 200ms and tenant-scoped key pattern verified by design); tenant isolation (TC-LV-ISO-025..027) confirms holidays in Tenant A are invisible to Tenant B at the API, context, and EF-query-filter layers. US-LV-001..US-LV-006 deferred items remain unchanged.*

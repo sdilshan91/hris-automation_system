@@ -45,6 +45,21 @@ public interface ILeaveRequestService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the team leave calendar for the current caller (US-LV-009 FR-1..FR-4, FR-6/FR-7),
+    /// tenant-scoped. Row-level scope is resolved from the caller's permissions/reporting line:
+    ///   - Leave.View.All (HR): all employees' Approved + Pending leaves, full detail.
+    ///   - Manager (has direct reports): direct reports' Approved + Pending, full detail.
+    ///   - Employee: own-department colleagues' Approved leaves only, with leave-type/status
+    ///     detail suppressed (BR-1 — "just on leave").
+    /// Cancelled and Rejected leaves are excluded (BR-4). Public holidays in the range are
+    /// included for background highlights (FR-7). If the current user has no employee record,
+    /// returns an empty calendar (does not fail).
+    /// </summary>
+    Task<Result<TeamLeaveCalendarDto>> GetTeamLeaveCalendarAsync(
+        TeamLeaveCalendarQueryParams queryParams,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Approves a pending leave request from one of the current manager's direct reports
     /// (US-LV-005 FR-1/FR-3, AC-1/AC-3/AC-5, BR-1/BR-3/BR-5). Sets the status to Approved,
     /// appends a LeaveLedger "Used" deduction, and records a LeaveApprovalHistory row.

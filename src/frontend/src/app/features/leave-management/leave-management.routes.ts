@@ -75,6 +75,18 @@ export const LEAVE_REQUEST_ROUTES: Routes = [
       ),
   },
   {
+    // US-LV-009: Team Leave Calendar — month/week/list views of the team's
+    // approved (+ pending for managers) leaves. Open to any authenticated
+    // employee; the parent '/leave' route already requires one of
+    // Employee/Manager/HR Officer/Tenant Admin (same permissive guard as the
+    // dashboard), and the backend scopes the data + suppresses detail per role.
+    path: 'team-calendar',
+    loadComponent: () =>
+      import('./components/team-leave-calendar/team-leave-calendar.component').then(
+        (m) => m.TeamLeaveCalendarComponent
+      ),
+  },
+  {
     // US-LV-004: Manager's pending leave-approval queue.
     // The parent '/leave' route already requires authentication + one of
     // Employee/Manager/HR Officer/Tenant Admin; this child further restricts
