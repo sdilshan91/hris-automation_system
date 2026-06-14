@@ -115,6 +115,14 @@ public static class DependencyInjection
         // Compulsory-leave / Loss-of-Pay (LOP) service (US-LV-011)
         services.AddScoped<ILopService, LopService>();
 
+        // Leave reports & analytics read/aggregation service (US-LV-012). IBackgroundJobClient is
+        // optional (registered by Hangfire in Program.cs) — large exports route to a background job
+        // when it is present; without it the service reports that background routing is required.
+        services.AddScoped<ILeaveReportService, LeaveReportService>();
+
+        // Report-export storage seam (US-LV-012 FR-5) — local/log-only until a real blob store exists.
+        services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

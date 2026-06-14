@@ -111,6 +111,27 @@ export const LEAVE_REQUEST_ROUTES: Routes = [
         (m) => m.LopManagementComponent
       ),
   },
+  {
+    // US-LV-012: HR Leave Reports & Analytics landing page.
+    // Narrowed to HR Officer / Tenant Admin (the Leave.Reports capability) via a
+    // child-level guard, same technique the LOP child uses — so NO app.routes.ts
+    // edit is needed. The detail view ('reports/:reportType') sits under the same
+    // guarded parent and is reached by router link from the landing grid.
+    path: 'reports',
+    canActivate: [roleGuard(['HR Officer', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/leave-reports/leave-reports.component').then(
+        (m) => m.LeaveReportsComponent
+      ),
+  },
+  {
+    path: 'reports/:reportType',
+    canActivate: [roleGuard(['HR Officer', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/leave-report-detail/leave-report-detail.component').then(
+        (m) => m.LeaveReportDetailComponent
+      ),
+  },
   // US-LV-006: the dashboard is the Employee landing view for the Leave module (§10).
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 ];

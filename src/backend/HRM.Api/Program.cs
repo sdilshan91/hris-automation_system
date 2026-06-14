@@ -144,6 +144,11 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessAbsenteeismJob>();
 
+    // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
+    // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
+    builder.Services.AddScoped<HRM.Api.Jobs.LeaveReportExportJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.ILeaveReportExportJob, HRM.Api.Jobs.LeaveReportExportJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
