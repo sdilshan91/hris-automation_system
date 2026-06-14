@@ -5,3 +5,4 @@
 - [Jasmine optional-arg spy](jasmine-optional-arg-spy.md) — toHaveBeenCalledWith matches exact arg count; don't assert trailing `undefined` for an omitted optional service arg
 - [Spec append wrong describe](spec-append-wrong-describe.md) — attendance.service.spec has 2 top-level describes (HTTP+httpMock vs pure-fn); append HTTP tests to the FIRST, not EOF
 - [Overtime weekly progress helper](overtime-weekly-progress-helper.md) — US-ATT-006 weekly bar is FE-derived (pure helper + hardcoded 20h cap, no policy endpoint); overtime detail is a dedicated list not on the clock-in card
+- [Blob export download pattern](blob-export-download-pattern.md) — server-generated exports return HttpResponse<Blob>+Content-Disposition filename; how to mock in service + component specs

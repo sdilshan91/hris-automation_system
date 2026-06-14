@@ -85,5 +85,16 @@ export const ATTENDANCE_ROUTES: Routes = [
         (m) => m.OvertimeReportComponent
       ),
   },
+  {
+    // US-ATT-007: HR monthly attendance summary per employee. HR-only (HR Officer /
+    // HR Manager / Tenant Admin) per §2 (Attendance.Read.All) — same child-guard
+    // technique as the overtime-report route, so NO app.routes.ts edit is needed.
+    path: 'monthly-summary',
+    canActivate: [roleGuard(['HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/monthly-summary/monthly-summary.component').then(
+        (m) => m.MonthlySummaryComponent
+      ),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];

@@ -137,4 +137,13 @@ public sealed class AttendanceSettings : BaseEntity
     /// from payroll until HR reviews it. Default false (most tenants use auto-detection, §10).
     /// </summary>
     public bool RequireOvertimePreApproval { get; set; }
+
+    // ── Monthly-summary policy (US-ATT-007) ────────────────────────────
+
+    /// <summary>
+    /// US-ATT-007 BR-5: when true, a worked day below the shift standard but at or above 50% of it is
+    /// counted as 0.5 of a present day instead of a full present day. Default false — most tenants
+    /// count any qualifying worked day as a full present day; half-day is opt-in per tenant policy.
+    /// </summary>
+    public bool HalfDayEnabled { get; set; }
 }

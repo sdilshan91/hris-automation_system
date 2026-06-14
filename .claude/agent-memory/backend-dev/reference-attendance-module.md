@@ -51,6 +51,20 @@ comment claiming so) AND seeds an idempotent default shift ("General Shift", Mon
 the calculator's Standard/AutoBreakThreshold/Overtime fields — TODO in AttendanceCalculator). No Redis
 (NFR-4), no RLS (NFR-3). Migration `20260614164322_Attendance_Shifts`.
 
+US-ATT-007 (monthly summary) added: `AttendanceMonthlySummary` entity (materialized cache — Redis
+FR-8 DEFERRED, the table IS the cache), `IAttendanceSummaryService`/`AttendanceSummaryService` (aggregates
+AttendanceLog + APPROVED OvertimeRecord + approved AttendanceRegularization + resolved Shift/EmployeeShift
++ Holiday + approved LeaveRequest). Endpoints on `AttendanceController` under `/api/v1/attendance/summary/monthly*`
+gated by EXISTING `Attendance.View.All` (story said `Attendance.Read.All` — not a catalog entry; reused
+View.All like the ATT-006 overtime report). Half-day (BR-5): NEW `AttendanceSettings.HalfDayEnabled` (default
+OFF); half-day band = [50% standard, standard). Late/early (FR-3): computed HERE from shift start+grace /
+end (US-ATT-008 not built — self-contained, may be refined later). Jobs: `MonthlySummaryDailyJob` (01:00 UTC,
+refreshes prev-day's month) + `MonthlySummaryMonthlyJob` (01:30 1st, finalizes prev month) — both per-tenant
+via `ITenantContext.SetTenant` like AutoClockOutJob. Large export (>1000 emp) → `AttendanceSummaryExportJob`
+Hangfire + IReportExportStorage; FR-7 NOTIFICATION DEFERRED (US-NTF). **PDF: ADDED QuestPDF** (Community
+license) to HRM.Infrastructure.csproj — LeaveReports only did CSV/XLSX. Migration
+`20260614173721_Attendance_MonthlySummary`. MonthBounds caps the current incomplete month at today UTC (AC-3).
+
 Key scaffold facts from US-ATT-001:
 - Entities `AttendanceLog` + `AttendanceSettings` (both `BaseEntity`), one settings row per tenant
   created lazily with enforcement off.

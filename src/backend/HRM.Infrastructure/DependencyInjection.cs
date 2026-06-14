@@ -136,6 +136,11 @@ public static class DependencyInjection
         // (AttendanceService depends on it) — register BEFORE/alongside IAttendanceService.
         services.AddScoped<IOvertimeService, OvertimeService>();
 
+        // Monthly attendance summary aggregation + read/export (US-ATT-007). IBackgroundJobClient is
+        // optional (registered by Hangfire in Program.cs) — large exports (> 1,000 employees) route to a
+        // background job when present; reuses IReportExportStorage for the stored file.
+        services.AddScoped<IAttendanceSummaryService, AttendanceSummaryService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 
