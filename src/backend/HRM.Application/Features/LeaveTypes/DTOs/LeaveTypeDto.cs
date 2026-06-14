@@ -27,6 +27,11 @@ public sealed record LeaveTypeDto
     public decimal? NegativeBalanceLimit { get; init; }
     public int DisplayOrder { get; init; }
     public bool IsActive { get; init; }
+    /// <summary>
+    /// System category: "None" for ordinary types, "LossOfPay" for the system LOP type (US-LV-011 FR-1).
+    /// A non-None type cannot be deleted/deactivated but can be renamed.
+    /// </summary>
+    public string SystemCategory { get; init; } = "None";
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
 }

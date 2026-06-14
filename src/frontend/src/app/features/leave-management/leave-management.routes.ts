@@ -99,6 +99,18 @@ export const LEAVE_REQUEST_ROUTES: Routes = [
         (m) => m.LeaveApprovalsComponent
       ),
   },
+  {
+    // US-LV-011: HR Loss-of-Pay / Compulsory-Leave management screen.
+    // The parent '/leave' route already requires authentication; this child
+    // further restricts to HR Officer / Tenant Admin (matches the leave-config
+    // guard on 'leave-types'), since LOP/compulsory assignment is an HR action.
+    path: 'lop',
+    canActivate: [roleGuard(['HR Officer', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/lop-management/lop-management.component').then(
+        (m) => m.LopManagementComponent
+      ),
+  },
   // US-LV-006: the dashboard is the Employee landing view for the Leave module (§10).
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 ];

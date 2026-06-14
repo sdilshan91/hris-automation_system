@@ -27,6 +27,7 @@ public sealed class CreateLeaveRequestCommandHandler
             HalfDaySession = request.HalfDaySession,
             Reason = request.Reason,
             Attachments = request.Attachments,
+            ConfirmLop = request.ConfirmLop,
         }, cancellationToken);
     }
 }

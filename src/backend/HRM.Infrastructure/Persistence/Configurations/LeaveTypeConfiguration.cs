@@ -93,6 +93,14 @@ public sealed class LeaveTypeConfiguration : IEntityTypeConfiguration<LeaveType>
             .HasDefaultValue(true)
             .IsRequired();
 
+        // US-LV-011 FR-1: system-category discriminator (e.g. the LOP type). Stored as a string;
+        // defaults to None for ordinary user-managed types.
+        builder.Property(lt => lt.SystemCategory)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(LeaveTypeSystemCategory.None)
+            .IsRequired();
+
         builder.Property(lt => lt.IsDeleted)
             .HasDefaultValue(false)
             .IsRequired();

@@ -57,6 +57,15 @@ public sealed class LeaveRequestServiceTests
     private LeaveRequestService CreateService()
         => new(CreateDbContext(), _tenantContext, _currentUser, _holidayProvider, _notificationService, _logger);
 
+    // US-LV-011 AC-1: the confirm-LOP path needs the optional ILeaveTypeService to resolve the
+    // system LOP leave type. The other unit tests construct the service with the original 6 args.
+    private LeaveRequestService CreateServiceWithLop()
+        => new(CreateDbContext(), _tenantContext, _currentUser, _holidayProvider, _notificationService, _logger,
+            holidayService: null,
+            leaveTypeService: new LeaveTypeService(
+                CreateDbContext(), _tenantContext,
+                Substitute.For<ICurrentUser>(), Substitute.For<ILogger<LeaveTypeService>>()));
+
     private void SeedReferenceData()
     {
         using var db = CreateDbContext();
@@ -445,5 +454,56 @@ public sealed class LeaveRequestServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Contain("No employee record");
+    }
+
+    // ── US-LV-011 AC-1: confirm-LOP on insufficient balance ─────────
+
+    [Fact]
+    public async Task Create_InsufficientBalance_NoNegative_NoConfirmLop_StillBlocked()
+    {
+        var monday = NextMonday();
+        SeedBalance(_annualLeaveTypeId, monday.Year, 0m);
+
+        var svc = CreateServiceWithLop();
+        var req = Req(_annualLeaveTypeId, monday, monday.AddDays(4)); // 5 days, ConfirmLop defaults false
+        var result = await svc.CreateAsync(req);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Contain("Insufficient leave balance");
+        result.Error.Should().Contain("Loss of Pay (LOP)");
+    }
+
+    [Fact]
+    public async Task Create_InsufficientBalance_ConfirmLop_CreatesLopRequest_NoBalanceDeduction()
+    {
+        var monday = NextMonday();
+        SeedBalance(_annualLeaveTypeId, monday.Year, 0m);
+
+        var svc = CreateServiceWithLop();
+        var req = new CreateLeaveRequestRequest
+        {
+            LeaveTypeId = _annualLeaveTypeId,
+            StartDate = monday,
+            EndDate = monday.AddDays(4), // 5 working days
+            Reason = "Family matter",
+            ConfirmLop = true,
+        };
+
+        var result = await svc.CreateAsync(req);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.IsLop.Should().BeTrue();
+        result.Value.LopSource.Should().Be(LopSource.EmployeeRequest.ToString());
+
+        using var db = CreateDbContext();
+        var lop = db.LeaveRequests.Single(lr => lr.EmployeeId == _employeeId && lr.IsLop);
+        lop.IsLop.Should().BeTrue();
+        lop.LopSource.Should().Be(LopSource.EmployeeRequest);
+        // BR-1: no balance deduction — no Used ledger row was written for this request.
+        db.LeaveLedgerEntries.Any(l => l.LeaveRequestId == lop.Id).Should().BeFalse();
+        // The LOP request is recorded against the system LOP leave type, not the requested type.
+        lop.LeaveTypeId.Should().NotBe(_annualLeaveTypeId);
+        db.LeaveTypes.Single(lt => lt.Id == lop.LeaveTypeId)
+            .SystemCategory.Should().Be(LeaveTypeSystemCategory.LossOfPay);
     }
 }

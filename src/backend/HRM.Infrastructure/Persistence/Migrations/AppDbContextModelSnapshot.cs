@@ -165,6 +165,71 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.ToTable("bulk_import_jobs", (string)null);
                 });
 
+            modelBuilder.Entity("HRM.Domain.Entities.CompulsoryLeave", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AssignedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("assigned_count");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("LeaveTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("leave_type_id");
+
+                    b.Property<int>("LopCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("lop_count");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_compulsory_leave");
+
+                    b.HasIndex("LeaveTypeId")
+                        .HasDatabaseName("ix_compulsory_leave_leave_type_id");
+
+                    b.HasIndex("TenantId", "Date")
+                        .HasDatabaseName("ix_compulsory_leave_tenant_date");
+
+                    b.ToTable("compulsory_leave", (string)null);
+                });
+
             modelBuilder.Entity("HRM.Domain.Entities.CustomFieldDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1666,9 +1731,20 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_half_day");
 
+                    b.Property<bool>("IsLop")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_lop");
+
                     b.Property<Guid>("LeaveTypeId")
                         .HasColumnType("uuid")
                         .HasColumnName("leave_type_id");
+
+                    b.Property<string>("LopSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("lop_source");
 
                     b.Property<string>("Reason")
                         .HasColumnType("text")
@@ -1722,6 +1798,10 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "StartDate")
                         .HasDatabaseName("ix_leave_pending")
                         .HasFilter("status = 'Pending'");
+
+                    b.HasIndex("TenantId", "EmployeeId", "StartDate")
+                        .HasDatabaseName("ix_leave_request_lop")
+                        .HasFilter("is_lop = true");
 
                     b.HasIndex("TenantId", "EmployeeId", "Status", "StartDate")
                         .HasDatabaseName("ix_leave_request_tenant_emp_status_start");
@@ -1856,6 +1936,14 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false)
                         .HasColumnName("probation_eligible");
+
+                    b.Property<string>("SystemCategory")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("None")
+                        .HasColumnName("system_category");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -2471,6 +2559,18 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_user_tenant_roles_role_id_user_tenant_id");
 
                     b.ToTable("user_tenant_roles", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.CompulsoryLeave", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.LeaveType", "LeaveType")
+                        .WithMany()
+                        .HasForeignKey("LeaveTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_compulsory_leave_leave_types_leave_type_id");
+
+                    b.Navigation("LeaveType");
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.Department", b =>

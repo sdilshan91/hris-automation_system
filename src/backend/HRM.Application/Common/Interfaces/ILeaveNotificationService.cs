@@ -55,4 +55,17 @@ public interface ILeaveNotificationService
         Guid? managerEmployeeId,
         string? reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the employee that Loss-of-Pay (LOP) was assigned to them (US-LV-011 BR-6, "lop-assigned").
+    /// Fired for HR-assigned, auto-generated, and compulsory-fallback LOP. <paramref name="source"/> is the
+    /// LopSource string and <paramref name="dayCount"/> is the number of LOP days assigned in this batch.
+    /// Fire-and-forget; must never throw into the request/job path.
+    /// </summary>
+    Task NotifyLopAssignedAsync(
+        Guid employeeId,
+        string source,
+        decimal dayCount,
+        string? reason,
+        CancellationToken cancellationToken = default);
 }

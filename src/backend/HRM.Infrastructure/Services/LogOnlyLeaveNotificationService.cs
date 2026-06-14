@@ -73,4 +73,18 @@ public sealed class LogOnlyLeaveNotificationService : ILeaveNotificationService
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyLopAssignedAsync(
+        Guid employeeId,
+        string source,
+        decimal dayCount,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for employee {EmployeeId}: {DayCount} LOP day(s) assigned (source: {Source}, reason: {Reason})",
+            "lop-assigned", employeeId, dayCount, source, reason);
+
+        return Task.CompletedTask;
+    }
 }

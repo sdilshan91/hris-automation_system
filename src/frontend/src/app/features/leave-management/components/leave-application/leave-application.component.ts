@@ -28,6 +28,7 @@ import { ILeaveType, getContrastTextColor } from '../../models/leave-type.models
 import {
   ICreateLeaveRequest,
   ILeaveBalance,
+  ILeaveRequest,
   HALF_DAY_SESSION_OPTIONS,
   countWorkingDays,
   buildProjection,
@@ -95,6 +96,18 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
       transition(':enter', [
         style({ opacity: 0, transform: 'translateY(8px)' }),
         animate('250ms ease-out', style({ opacity: 1, transform: 'translateY(0)' })),
+      ]),
+    ]),
+    trigger('overlayFade', [
+      transition(':enter', [
+        style({ opacity: 0 }),
+        animate('150ms ease-out', style({ opacity: 1 })),
+      ]),
+    ]),
+    trigger('modalPop', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'scale(0.96) translateY(8px)' }),
+        animate('180ms ease-out', style({ opacity: 1, transform: 'scale(1) translateY(0)' })),
       ]),
     ]),
   ],
@@ -223,15 +236,17 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
                 </div>
               </div>
               @if (projection().insufficient) {
-                <div class="mt-3 bg-red-50 border border-red-100 rounded-lg p-3 flex items-start gap-2.5"
+                <!-- US-LV-011 (AC-1): no longer a hard block — submitting prompts an LOP confirmation. -->
+                <div class="mt-3 bg-amber-50 border border-amber-100 rounded-lg p-3 flex items-start gap-2.5"
                   role="alert">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-                    class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true">
+                    class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" aria-hidden="true">
                     <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1-9a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 10 5Z" clip-rule="evenodd"/>
                   </svg>
-                  <p class="text-sm text-red-700">
+                  <p class="text-sm text-amber-700">
                     Insufficient balance. You have {{ projection().remainingDays }} day(s) but
-                    requested {{ projection().requestedDays }}. Negative balance is not allowed for this leave type.
+                    requested {{ projection().requestedDays }}. Submitting will process this as
+                    <span class="font-semibold">Loss of Pay (LOP)</span>.
                   </p>
                 </div>
               }
@@ -306,7 +321,7 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
           <!-- Desktop submit -->
           <div class="hidden md:flex items-center justify-end gap-3">
             <button type="button" class="btn-secondary" (click)="cancel()">Cancel</button>
-            <button type="submit" class="btn-primary" [disabled]="isSubmitting() || projection().insufficient">
+            <button type="submit" class="btn-primary" [disabled]="isSubmitting()">
               @if (isSubmitting()) {
                 <span class="btn-spinner"></span> Submitting...
               } @else {
@@ -320,7 +335,7 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
         <div class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-neutral-200 p-3 z-40 flex gap-3">
           <button type="button" class="btn-secondary flex-1" (click)="cancel()">Cancel</button>
           <button type="button" class="btn-primary flex-1"
-            [disabled]="isSubmitting() || projection().insufficient" (click)="submit()">
+            [disabled]="isSubmitting()" (click)="submit()">
             @if (isSubmitting()) {
               <span class="btn-spinner"></span> Submitting...
             } @else {
@@ -328,6 +343,43 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
             }
           </button>
         </div>
+
+        <!-- US-LV-011 (AC-1): Loss-of-Pay confirmation modal -->
+        @if (lopPrompt(); as prompt) {
+          <div class="lop-overlay" role="dialog" aria-modal="true" aria-labelledby="lop-title"
+            @overlayFade>
+            <div class="lop-modal" @modalPop>
+              <div class="flex items-start gap-3">
+                <div class="lop-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                    class="w-6 h-6 text-amber-600" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <h2 id="lop-title" class="text-base font-semibold text-neutral-900">
+                    Process as Loss of Pay?
+                  </h2>
+                  <p class="text-sm text-neutral-600 mt-1.5">{{ prompt.message }}</p>
+                </div>
+              </div>
+              <div class="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5">
+                <button type="button" class="btn-secondary" (click)="cancelLop()"
+                  [disabled]="isSubmitting()">
+                  Cancel
+                </button>
+                <button type="button" class="btn-lop" (click)="confirmLop()"
+                  [disabled]="isSubmitting()">
+                  @if (isSubmitting()) {
+                    <span class="btn-spinner"></span> Submitting...
+                  } @else {
+                    Confirm as LOP
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        }
       }
     </div>
   `,
@@ -388,6 +440,22 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
       animation: spin 0.6s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* US-LV-011 LOP confirmation modal */
+    .lop-overlay {
+      @apply fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/40 backdrop-blur-sm;
+    }
+    .lop-modal {
+      @apply w-full max-w-md rounded-xl bg-white shadow-xl ring-1 ring-neutral-200 p-5;
+    }
+    .lop-icon {
+      @apply flex-shrink-0 w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center;
+    }
+    .btn-lop {
+      @apply inline-flex items-center justify-center rounded-lg bg-amber-600 px-5 py-2.5
+        text-sm font-medium text-white shadow-sm transition-all duration-200
+        hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed;
+    }
   `],
 })
 export class LeaveApplicationComponent implements OnInit, OnDestroy {
@@ -409,6 +477,15 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
   // Drag-and-drop UI state. Attachments hold file names (URL upload DEFERRED).
   readonly dragActive = signal(false);
   readonly attachments = signal<string[]>([]);
+
+  /**
+   * US-LV-011 (AC-1): the pending Loss-of-Pay confirmation. When non-null the LOP
+   * modal is shown; it holds the message + the exact request to resubmit with the
+   * `confirmLop` flag on confirm. Driven either by the client-side projection
+   * (insufficient + negative not allowed) or by the backend's
+   * `insufficient_balance` + `lopOption` error response.
+   */
+  readonly lopPrompt = signal<{ message: string; request: ICreateLeaveRequest } | null>(null);
 
   // Reactive form value mirror so computed signals recompute on every change.
   readonly formValue = signal<{
@@ -565,16 +642,12 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
     this.attachments.set(this.attachments().filter((_, i) => i !== index));
   }
 
-  // ─── Submit (AC-1) ────────────────────────────────────────
+  // ─── Submit (AC-1, US-LV-011 LOP) ─────────────────────────
 
   submit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.toastr.warning('Please fix the highlighted fields.');
-      return;
-    }
-    if (this.projection().insufficient) {
-      this.toastr.error('Insufficient leave balance for this request.');
       return;
     }
     // AC-3: client-side document-required hint becomes a hard block before submit.
@@ -591,8 +664,46 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const request = this.buildRequest();
+
+    // US-LV-011 (AC-1): instead of a hard block, an insufficient projected balance
+    // (with negative not allowed) raises the LOP confirmation prompt. The user must
+    // confirm before the request is sent; on confirm it is resubmitted with the flag.
+    if (this.projection().insufficient) {
+      this.openLopPrompt(request);
+      return;
+    }
+
+    this.sendRequest(request);
+  }
+
+  /** US-LV-011 (AC-1): confirm processing the pending request as Loss of Pay. */
+  confirmLop(): void {
+    const prompt = this.lopPrompt();
+    if (!prompt) {
+      return;
+    }
+    this.sendRequest({ ...prompt.request, confirmLop: true });
+  }
+
+  /** US-LV-011 (AC-1): dismiss the LOP prompt without submitting. */
+  cancelLop(): void {
+    if (this.isSubmitting()) {
+      return;
+    }
+    this.lopPrompt.set(null);
+  }
+
+  cancel(): void {
+    this.router.navigate(['/leave/my-requests']);
+  }
+
+  // ─── Submit helpers ───────────────────────────────────────
+
+  /** Build the create-request payload from the current form state. */
+  private buildRequest(): ICreateLeaveRequest {
     const raw = this.form.getRawValue();
-    const request: ICreateLeaveRequest = {
+    return {
       leaveTypeId: raw.leaveTypeId,
       startDate: raw.startDate,
       endDate: raw.endDate,
@@ -601,31 +712,65 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
       reason: raw.reason,
       attachments: this.attachments(),
     };
+  }
 
+  /** Open the LOP confirmation modal for a given request (AC-1). */
+  private openLopPrompt(request: ICreateLeaveRequest): void {
+    this.lopPrompt.set({
+      message: 'Insufficient balance. This will be processed as Loss of Pay (LOP).',
+      request,
+    });
+  }
+
+  /**
+   * Send the request to the backend. The backend is the source of truth: a
+   * `insufficient_balance` + `lopOption` response (when the FE did not pre-detect
+   * it) raises the same LOP confirmation prompt (AC-1). All other errors toast.
+   */
+  private sendRequest(request: ICreateLeaveRequest): void {
     this.isSubmitting.set(true);
     this.leaveRequestService
       .createLeaveRequest(request)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (created) => {
+        next: (created: ILeaveRequest) => {
           this.isSubmitting.set(false);
-          // §8: green toast with request ID, then navigate to My Leaves.
-          this.toastr.success(
-            `Leave request #${created.leaveRequestId} submitted for approval.`,
-            'Request submitted',
-          );
-          this.router.navigate(['/leave/my-requests']);
+          this.lopPrompt.set(null);
+          this.onCreated(created, request.confirmLop === true);
         },
         error: (err: HttpErrorResponse) => {
           this.isSubmitting.set(false);
-          // Backend is the source of truth: surface overlap (AC-5),
-          // insufficient balance (AC-2), document-required (AC-3) via toast.
-          this.toastr.error(LeaveRequestService.parseErrorMessage(err));
+          const parsed = LeaveRequestService.parseError(err);
+          // AC-1: backend-signalled LOP option → show the confirmation prompt
+          // (only if not already confirmed, to avoid a loop).
+          if (
+            parsed?.code === 'insufficient_balance' &&
+            parsed.lopOption === true &&
+            request.confirmLop !== true
+          ) {
+            this.openLopPrompt(request);
+            return;
+          }
+          // Otherwise surface the error verbatim; close any open LOP prompt.
+          this.lopPrompt.set(null);
+          this.toastr.error(parsed?.message ?? 'An unexpected error occurred.');
         },
       });
   }
 
-  cancel(): void {
+  /** Success handling: toast (LOP-aware §8) + navigate to My Leaves. */
+  private onCreated(created: ILeaveRequest, wasLop: boolean): void {
+    if (wasLop) {
+      this.toastr.success(
+        `Leave request #${created.leaveRequestId} submitted as Loss of Pay (LOP).`,
+        'Request submitted',
+      );
+    } else {
+      this.toastr.success(
+        `Leave request #${created.leaveRequestId} submitted for approval.`,
+        'Request submitted',
+      );
+    }
     this.router.navigate(['/leave/my-requests']);
   }
 }

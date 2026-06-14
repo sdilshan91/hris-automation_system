@@ -89,6 +89,19 @@ public sealed class LeaveRequest : BaseEntity
     /// </summary>
     public string? CancellationReason { get; set; }
 
+    /// <summary>
+    /// Whether this request is a Loss-of-Pay (LOP) entry (US-LV-011 §7, FR-4). When true, no balance
+    /// is deducted (BR-1); the record exists purely so payroll can compute the unpaid-day deduction.
+    /// Default false for ordinary leave.
+    /// </summary>
+    public bool IsLop { get; set; }
+
+    /// <summary>
+    /// Origin of the LOP entry (US-LV-011 §7, FR-4). Null on a normal (non-LOP) request. One of
+    /// EmployeeRequest / SystemGenerated / HrAssigned / Compulsory. Stored as a string.
+    /// </summary>
+    public LopSource? LopSource { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
 
     public Employee? Employee { get; set; }

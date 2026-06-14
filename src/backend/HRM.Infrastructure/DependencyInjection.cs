@@ -112,8 +112,16 @@ public static class DependencyInjection
         // Leave carry-forward / expiry service (US-LV-008)
         services.AddScoped<ILeaveCarryForwardService, LeaveCarryForwardService>();
 
+        // Compulsory-leave / Loss-of-Pay (LOP) service (US-LV-011)
+        services.AddScoped<ILopService, LopService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
+
+        // Attendance provider — NoOp seam (US-LV-011 FR-2). No attendance module yet (US-ATT-*), so
+        // the absenteeism auto-LOP job is wired/idempotent but generates nothing until a real provider
+        // lands (mirrors how IHolidayProvider was a NoOp until US-LV-007 swapped in the real impl).
+        services.AddScoped<IAttendanceProvider, NoOpAttendanceProvider>();
 
         // Leave notification seam — log-only until the notification service exists (FR-6).
         services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();

@@ -25,6 +25,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
     private readonly IHolidayProvider _holidayProvider;
     private readonly IHolidayService _holidayService;
     private readonly ILeaveNotificationService _notificationService;
+    private readonly ILeaveTypeService? _leaveTypeService;
     private readonly ILogger<LeaveRequestService> _logger;
 
     // BR-1 / BR-2 configurable defaults. No tenant-settings entity exists yet, so these
@@ -45,7 +46,8 @@ public sealed class LeaveRequestService : ILeaveRequestService
         IHolidayProvider holidayProvider,
         ILeaveNotificationService notificationService,
         ILogger<LeaveRequestService> logger,
-        IHolidayService? holidayService = null)
+        IHolidayService? holidayService = null,
+        ILeaveTypeService? leaveTypeService = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -55,6 +57,9 @@ public sealed class LeaveRequestService : ILeaveRequestService
         // service with the original 6 args) keep compiling. The DI container always supplies it,
         // so production always has holiday data for the team calendar (FR-7).
         _holidayService = holidayService!;
+        // US-LV-011: optional for the same back-compat reason. DI always supplies it; it is only
+        // needed for the AC-1 confirm-LOP path (resolving the system LOP leave type).
+        _leaveTypeService = leaveTypeService;
         _notificationService = notificationService;
         _logger = logger;
     }
@@ -167,16 +172,54 @@ public sealed class LeaveRequestService : ILeaveRequestService
         decimal currentBalance = await GetLedgerBalanceAsync(
             employee.Id, leaveType.Id, leaveYear, cancellationToken);
 
+        // US-LV-011 AC-1: when balance is insufficient and negative balance is NOT allowed, the request
+        // can be processed as Loss of Pay (LOP). If the employee confirmed LOP, create the request as an
+        // LOP entry (is_lop = true, lop_source = EmployeeRequest, no balance deduction — BR-1); otherwise
+        // keep the existing hard block, but surface a message that signals the LOP option to the FE.
+        bool createAsLop = false;
         decimal projected = currentBalance - totalDays;
         if (projected < 0m)
         {
             if (!leaveType.NegativeBalanceAllowed)
-                return Result<LeaveRequestDto>.Failure(
-                    $"Insufficient leave balance. Available: {currentBalance} day(s), requested: {totalDays} day(s).", 400);
-
-            if (leaveType.NegativeBalanceLimit.HasValue && -projected > leaveType.NegativeBalanceLimit.Value)
+            {
+                if (request.ConfirmLop)
+                {
+                    createAsLop = true;
+                }
+                else
+                {
+                    return Result<LeaveRequestDto>.Failure(
+                        $"Insufficient leave balance. Available: {currentBalance} day(s), requested: {totalDays} day(s). " +
+                        "This can be processed as Loss of Pay (LOP).", 400);
+                }
+            }
+            else if (leaveType.NegativeBalanceLimit.HasValue && -projected > leaveType.NegativeBalanceLimit.Value)
+            {
                 return Result<LeaveRequestDto>.Failure(
                     $"Request exceeds the allowed negative balance limit of {leaveType.NegativeBalanceLimit.Value} day(s).", 400);
+            }
+        }
+
+        // AC-1: when confirmed as LOP, the request is recorded against the system LOP leave type (FR-1)
+        // with is_lop = true and NO balance deduction. The original leave type is captured in the reason
+        // so HR/payroll keep the context.
+        Guid effectiveLeaveTypeId = leaveType.Id;
+        string effectiveLeaveTypeName = leaveType.Name;
+        LopSource? lopSource = null;
+        if (createAsLop)
+        {
+            if (_leaveTypeService is null)
+                return Result<LeaveRequestDto>.Failure(
+                    "Loss of Pay processing is not available.", 400);
+
+            var lopTypeResult = await _leaveTypeService.EnsureLopTypeForTenantAsync(
+                _tenantContext.TenantId, cancellationToken);
+            if (lopTypeResult.IsFailure)
+                return Result<LeaveRequestDto>.Failure(lopTypeResult.Error!, lopTypeResult.StatusCode ?? 400);
+
+            effectiveLeaveTypeId = lopTypeResult.Value;
+            effectiveLeaveTypeName = "Loss of Pay";
+            lopSource = LopSource.EmployeeRequest;
         }
 
         var leaveRequest = new LeaveRequest
@@ -184,16 +227,20 @@ public sealed class LeaveRequestService : ILeaveRequestService
             Id = BaseEntity.NewUuidV7(),
             TenantId = _tenantContext.TenantId,
             EmployeeId = employee.Id,
-            LeaveTypeId = leaveType.Id,
+            LeaveTypeId = effectiveLeaveTypeId,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             IsHalfDay = request.IsHalfDay,
             HalfDaySession = request.IsHalfDay ? request.HalfDaySession?.ToUpperInvariant() : null,
             TotalDays = totalDays,
-            Reason = request.Reason,
+            Reason = createAsLop && request.Reason is null
+                ? $"Loss of Pay (insufficient {leaveType.Name} balance)"
+                : request.Reason,
             Status = LeaveRequestStatus.Pending,
             RequestedAt = DateTime.UtcNow,
             AttachmentUrls = attachments,
+            IsLop = createAsLop,
+            LopSource = lopSource,
         };
 
         _dbContext.LeaveRequests.Add(leaveRequest);
@@ -209,7 +256,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
         await _notificationService.NotifyLeaveRequestedAsync(
             leaveRequest.Id, employee.Id, employee.ReportsToEmployeeId, cancellationToken);
 
-        return Result<LeaveRequestDto>.Success(MapToDto(leaveRequest, leaveType.Name));
+        return Result<LeaveRequestDto>.Success(MapToDto(leaveRequest, effectiveLeaveTypeName));
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1081,5 +1128,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
         RequestedAt = lr.RequestedAt,
         Attachments = lr.AttachmentUrls,
         CreatedAt = lr.CreatedAt,
+        IsLop = lr.IsLop,
+        LopSource = lr.LopSource?.ToString(),
     };
 }

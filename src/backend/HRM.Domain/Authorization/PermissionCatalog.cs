@@ -94,6 +94,14 @@ public static class PermissionCatalog
         public const string ApproveTeam = "Leave.Approve.Team";
         public const string ApproveAll = "Leave.Approve.All";
         public const string ConfigurePolicy = "Leave.ConfigurePolicy";
+
+        /// <summary>
+        /// HR management of Loss-of-Pay / compulsory leave (US-LV-011): assign-lop, compulsory bulk
+        /// assignment, LOP override, and the payroll LOP summary. Granted to Tenant Admin, HR Manager,
+        /// HR Officer. Chosen over reusing Leave.ConfigurePolicy because that is not granted to HR
+        /// Officer, whom the story explicitly authorises (HR.Officer).
+        /// </summary>
+        public const string ManageLop = "Leave.ManageLop";
     }
 
     // ── Leave Type Configuration (US-LV-001) ─────────────────────────
@@ -242,7 +250,7 @@ public static class PermissionCatalog
 
         // Leave
         Leave.ViewOwn, Leave.ViewTeam, Leave.ViewAll,
-        Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy,
+        Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop,
 
         // Leave Type
         LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,

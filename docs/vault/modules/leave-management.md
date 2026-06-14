@@ -1489,3 +1489,116 @@ pending notification, approved positive-Adjusted+restore+history, reason-mandato
 already-started/starting-today blocked AC-3, rejected/already-cancelled blocked BR-2, ownership BR-1,
 no-employee 403, 404, pending-starting-today-succeeds; integration: pending e2e, approved e2e restore,
 reject-then-cancel-blocked, stale-save concurrency, tenant A≠B). Full suite **872 green, 0 regressions**.
+
+## Frontend (US-LV-011) — Compulsory Leave / LOP Handling
+
+Two pieces: (1) a surgical extension of the US-LV-003 apply form for the AC-1 LOP
+confirmation, and (2) a new HR-facing LopManagementComponent (signals + OnPush,
+standalone, Angular Material + Tailwind, ngx-toastr — no NgModules, no Bootstrap). New
+lop.models.ts (pure helpers) + LopService. Mirrors US-LV-001..010 structure.
+
+### AC-1 — LOP confirmation in the apply form (surgical, no restructure)
+
+leave-application.component.ts previously HARD-BLOCKED submit when the client projection
+was insufficient (negative not allowed) and the submit buttons were disabled on
+projection().insufficient. US-LV-011 replaces the hard block with a confirmation modal
+("Insufficient balance. This will be processed as Loss of Pay (LOP).") with Cancel /
+"Confirm as LOP":
+- Submit buttons no longer disabled on insufficient (so the LOP path can run). The inline
+  insufficient banner recolored red->amber and reworded (submitting processes as LOP).
+- submit() now: validate form -> document-required hard block (AC-3, unchanged, still fires
+  BEFORE the LOP path) -> if projection().insufficient, OPEN the LOP prompt instead of
+  sending -> else send. confirmLop() resubmits the SAME request with confirmLop:true;
+  cancelLop() dismisses.
+- Dual trigger: prompt raised either by the client projection (instant) OR by the backend
+  returning code:'insufficient_balance' + lopOption:true (when the client did not pre-detect
+  it, e.g. holiday-adjusted day count). Backend branch guarded by request.confirmLop !== true
+  to avoid a resubmit loop. Any other error toasts verbatim. Success toast is LOP-aware.
+
+Model additions (additive, in leave-request.models.ts):
+- ICreateLeaveRequest.confirmLop?: boolean — omitted on first attempt; backend treats
+  absence as "not confirmed". On confirm the SAME POST /api/v1/leaves body is resent with
+  confirmLop:true (reuses US-LV-003's create endpoint — no new endpoint for AC-1).
+- ILeaveRequestErrorResponse.lopOption?: boolean — set by backend alongside
+  code:'insufficient_balance' to signal the LOP path is available (vs a hard block when
+  absent/false). RECONCILE: backend must emit lopOption:true on the insufficient-balance
+  error for types where LOP applies; if it returns a non-error signal instead, only
+  sendRequest's error branch changes.
+
+### HR LOP management screen (/leave/lop)
+
+LopManagementComponent: a filterable LOP list + three slide-over/modal actions.
+- List + filters: source filter chips (all / auto-generated / HR-assigned /
+  employee-requested / compulsory). Rows red for system_generated, orange for all other LOP
+  sources (§8). Color never the sole signal — source label badge always rendered (a11y).
+  Desktop table + mobile card list (stacks at 360px). Skeletons + empty state.
+- Bulk LOP assignment (FR-3): slide-over with a multi-select employee picker (search +
+  chips, built in-component over EmployeeService.getEmployees()), a date range, and a reason.
+  Range expanded client-side to dates[] via pure expandDateRange; assignLop called ONCE PER
+  selected employee (FR-3 endpoint takes a single employeeId). Partial-failure toasts.
+- Compulsory leave (FR-6): slide-over with date range + leave type + "Apply to all" checkbox
+  + reason. Per §10 the bulk UI is simplified to applyToAll (no per-employee picker on this
+  panel); employeeIds scoping is in the contract for later. Result toast shows deducted-vs-LOP
+  counts (BR-4).
+- Override (BR-3): modal on a system_generated row only (canOverrideLop gates it — also
+  blocked when payrollLocked, BR-5). Convert-to leave-type dropdown + reason -> overrideLop.
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+New methods on LopService over the existing /leaves resource (apiBaseUrl already includes
+/api/v1):
+- GET  /api/v1/leaves/lop-summary?employeeId&from&to (all optional) -> ILopEntry[] (FR-5)
+- POST /api/v1/leaves/assign-lop {employeeId,dates[],reason} -> IAssignLopResult (FR-3)
+- POST /api/v1/leaves/compulsory {dates[],leaveTypeId,reason,applyToAll,employeeIds?} ->
+       IAssignCompulsoryLeaveResult (FR-6)
+- POST /api/v1/leaves/lop/{id}/override {leaveTypeId,reason} -> ILeaveRequest (BR-3)
+
+- ILopEntry is denormalized (employeeName, employeeNo?, leaveTypeName?) so the list needs no
+  extra lookup; date is date-only YYYY-MM-DD (FE slices, never new Date()-parses — TZ-safe,
+  consistent with US-LV-007/009). source in employee_request|system_generated|hr_assigned|
+  compulsory (FR-4 lop_source). Optional payrollLocked gates the override (NFR-3/BR-5);
+  absent = not locked.
+- /compulsory path is an ASSUMPTION (story §3 names no explicit endpoint). If the backend
+  chooses a different path/shape, only LopService.assignCompulsoryLeave changes.
+- /lop/{id}/override path is an ASSUMPTION (BR-3 has no named endpoint). Same — only
+  LopService.overrideLop changes.
+- Errors: ILopErrorResponse {message, code?} (payroll_locked, not_overridable,
+  insufficient_balance) — surfaced verbatim via toast; payroll-lock only surfaced.
+
+### Route + guard
+
+leave/lop child added to LEAVE_REQUEST_ROUTES with a CHILD-LEVEL
+roleGuard(['HR Officer','Tenant Admin']) (the /leave parent guard is the permissive
+Employee/Manager/HR/Admin set; this child narrows it to HR — same technique as the approvals
+child narrows to approver roles). So NO app.routes.ts edit was needed.
+
+### Nav menu NOT modified (consistent with US-LV-001..010)
+
+Following the precedent of every prior leave screen, the flat top-level "Leave" nav item was
+NOT changed — /leave/lop is reachable by route and would be linked from an HR sub-nav when
+one exists. Keeps the blast radius minimal.
+
+### DEFERRED (seam + TODO only, per brief)
+
+- Attendance-driven auto-LOP (AC-2, FR-2): backend ProcessAbsenteeismJob + attendance module.
+  The FE just shows system_generated rows when the job creates them (no FE trigger).
+- Payroll deduction display (AC-4): no payroll module — payrollLocked flag only gates the
+  override; no deduction line item rendered.
+- Redis / real-time: module-wide deferred-Redis decision; list re-fetches on action.
+
+### Shared files touched (all within features/leave-management unless noted, flagged)
+
+1. models/leave-request.models.ts — added confirmLop? to ICreateLeaveRequest + lopOption? to
+   ILeaveRequestErrorResponse (both additive).
+2. components/leave-application/leave-application.component.ts — AC-1 LOP prompt (modal +
+   lopPrompt signal + refactored submit/confirmLop/cancelLop/sendRequest).
+3. components/leave-application/leave-application.component.spec.ts — the US-LV-003 "block
+   submit on insufficient (AC-2)" test was UPDATED (behavior genuinely changed: it now prompts
+   for LOP, not hard-blocks) + 3 new AC-1 tests. No assertion weakened.
+4. leave-management.routes.ts — added the guarded lop child to LEAVE_REQUEST_ROUTES.
+5. index.ts — barrel exports for lop.models + lop.service.
+
+Cross-feature READ-ONLY import: the component imports EmployeeService + IEmployee from
+core-hr/employees for the multi-select picker — no edit to that feature. No app.routes.ts,
+nav-menu, backend, or test-case files were touched. 46 new FE tests. Full suite 1161 green,
+0 regressions.

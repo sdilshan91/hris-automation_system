@@ -45,7 +45,8 @@ public sealed class LeaveRequestsController : ControllerBase
             request.IsHalfDay,
             request.HalfDaySession,
             request.Reason,
-            request.Attachments);
+            request.Attachments,
+            request.ConfirmLop);
 
         var result = await _mediator.Send(command, cancellationToken);
 

@@ -15,6 +15,13 @@ public sealed record CreateLeaveRequestRequest
     public string? Reason { get; init; }
     /// <summary>URLs of already-uploaded attachments (max 3, PDF/JPG/PNG per §10).</summary>
     public IReadOnlyList<string>? Attachments { get; init; }
+    /// <summary>
+    /// US-LV-011 AC-1: when the balance is insufficient and negative balance is not allowed, the API
+    /// returns a signal that the request can be processed as Loss of Pay (LOP). If the employee
+    /// re-submits with this flag set, the request is created as LOP (is_lop = true, no balance
+    /// deduction) instead of being hard-blocked.
+    /// </summary>
+    public bool ConfirmLop { get; init; }
 }
 
 /// <summary>
@@ -36,6 +43,10 @@ public sealed record LeaveRequestDto
     public DateTime RequestedAt { get; init; }
     public IReadOnlyList<string> Attachments { get; init; } = [];
     public DateTime CreatedAt { get; init; }
+    /// <summary>US-LV-011 FR-4: true when this request is a Loss-of-Pay (LOP) entry (no balance deducted).</summary>
+    public bool IsLop { get; init; }
+    /// <summary>US-LV-011 FR-4: origin of the LOP entry (EmployeeRequest/SystemGenerated/HrAssigned/Compulsory); null for normal leave.</summary>
+    public string? LopSource { get; init; }
 }
 
 /// <summary>

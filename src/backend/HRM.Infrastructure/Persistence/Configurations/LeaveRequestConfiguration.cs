@@ -61,6 +61,16 @@ public sealed class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRe
         builder.Property(lr => lr.CancellationReason)
             .HasColumnType("text");
 
+        // US-LV-011 §7 / FR-4: LOP flag + source. is_lop defaults false; lop_source is null for
+        // ordinary leave and stored as a string (varchar(20)) for LOP entries.
+        builder.Property(lr => lr.IsLop)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(lr => lr.LopSource)
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
         // PostgreSQL text[] for attachment URLs (§7).
         builder.Property(lr => lr.AttachmentUrls)
             .HasColumnType("text[]");
@@ -102,5 +112,11 @@ public sealed class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRe
         builder.HasIndex(lr => new { lr.TenantId, lr.StartDate })
             .HasFilter("status = 'Pending'")
             .HasDatabaseName("ix_leave_pending");
+
+        // US-LV-011 FR-5: partial index for the payroll LOP-summary scan
+        // (LOP entries for an employee in a date range).
+        builder.HasIndex(lr => new { lr.TenantId, lr.EmployeeId, lr.StartDate })
+            .HasFilter("is_lop = true")
+            .HasDatabaseName("ix_leave_request_lop");
     }
 }
