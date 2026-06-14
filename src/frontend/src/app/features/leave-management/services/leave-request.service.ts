@@ -7,6 +7,8 @@ import {
   ICreateLeaveRequest,
   ILeaveBalance,
   ILeaveRequestErrorResponse,
+  ICancelLeaveRequest,
+  ICancelLeaveErrorResponse,
 } from '../models/leave-request.models';
 
 /**
@@ -34,6 +36,29 @@ export class LeaveRequestService {
     return this.http.post<ILeaveRequest>(this.baseUrl, request, {
       withCredentials: true,
     });
+  }
+
+  /**
+   * US-LV-010: Cancel one of the employee's own leave requests (FR-1, AC-1/AC-2).
+   *
+   *   POST /api/v1/leaves/{id}/cancel  body { reason }  -> ILeaveRequest (status 'Cancelled')
+   *
+   * `reason` is required for approved requests (BR-5) and may be empty for pending.
+   * Errors the caller maps to §8 UX:
+   *   - 400 -> ineligible (already started AC-3, payroll-locked AC-4); show `message` verbatim.
+   *   - 409 -> concurrency conflict (manager actioned it first); toast `message` + refresh.
+   * The backend remains the source of truth for eligibility; the FE only pre-blocks on
+   * the status/date signals it can see (see `evaluateCancelEligibility`).
+   */
+  cancelLeaveRequest(
+    requestId: string,
+    body: ICancelLeaveRequest,
+  ): Observable<ILeaveRequest> {
+    return this.http.post<ILeaveRequest>(
+      `${this.baseUrl}/${requestId}/cancel`,
+      body,
+      { withCredentials: true },
+    );
   }
 
   // --- Read --------------------------------------------------
@@ -69,5 +94,14 @@ export class LeaveRequestService {
   /** Convenience: extract a human-readable message from an error. */
   static parseErrorMessage(err: HttpErrorResponse): string {
     return LeaveRequestService.parseError(err)?.message ?? 'An unexpected error occurred.';
+  }
+
+  /** US-LV-010: Parse a cancel error body into the typed shape (AC-3, AC-4, concurrency). */
+  static parseCancelError(err: HttpErrorResponse): ICancelLeaveErrorResponse | null {
+    const body = err.error;
+    if (body && typeof body === 'object' && 'message' in body) {
+      return body as ICancelLeaveErrorResponse;
+    }
+    return null;
   }
 }

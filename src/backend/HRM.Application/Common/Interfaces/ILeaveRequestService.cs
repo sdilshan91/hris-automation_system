@@ -82,4 +82,19 @@ public interface ILeaveRequestService
         Guid leaveRequestId,
         string reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancels the current employee's OWN leave request (US-LV-010 FR-1..FR-7, AC-1..AC-4,
+    /// BR-1..BR-5). Only the requesting employee may cancel their own leave; managers cannot
+    /// cancel on behalf (BR-1 → 403). For a pending request the status is set to Cancelled with
+    /// no ledger impact (AC-1). For an approved request the status is set to Cancelled, a
+    /// LeaveLedger "Adjusted" reversal entry (positive days) restores the balance (AC-2), and the
+    /// reason is mandatory (BR-5). An approved leave that has already started/passed is blocked
+    /// (AC-3, BR-3). Rejected/already-cancelled leaves cannot be cancelled (BR-2). Returns
+    /// 403/404/400 accordingly, and 409 on a concurrent-action conflict (xmin, NFR-3).
+    /// </summary>
+    Task<Result<LeaveCancellationResultDto>> CancelAsync(
+        Guid leaveRequestId,
+        string? reason,
+        CancellationToken cancellationToken = default);
 }

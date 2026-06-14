@@ -95,6 +95,88 @@ export interface ILeaveRequestErrorResponse {
   code?: 'overlap' | 'insufficient_balance' | 'document_required' | string;
 }
 
+/**
+ * US-LV-010: Cancellation request body.
+ *
+ *   POST /api/v1/leaves/{id}/cancel  body { reason }  -> ILeaveRequest (status 'Cancelled')
+ *
+ * `reason` is MANDATORY for approved requests (BR-5) — the confirm dialog disables
+ * submit until it is non-empty for an approved request — and OPTIONAL for pending.
+ * The backend remains the authority on eligibility (started/past, payroll-locked).
+ */
+export interface ICancelLeaveRequest {
+  /** Cancellation reason. Required for approved requests (BR-5), optional for pending. */
+  reason: string;
+}
+
+/**
+ * Typed error body for the cancel action (AC-3, AC-4 + concurrency AC).
+ * `message` is shown verbatim via toast; `code` is the machine-readable discriminator.
+ *   - 400 `code: 'already_started'`  -> "Cannot cancel leave that has already started..." (AC-3)
+ *   - 400 `code: 'payroll_locked'`   -> payroll-locked message (AC-4)
+ *   - 409 (any code)                 -> already actioned by a manager; refresh the list
+ */
+export interface ICancelLeaveErrorResponse {
+  message: string;
+  code?: 'already_started' | 'payroll_locked' | 'already_actioned' | string;
+}
+
+/**
+ * Result of evaluating whether a request can be cancelled by the employee (§8, BR-2, BR-3).
+ * Drives the Cancel button's enabled/disabled state + the explanatory tooltip.
+ */
+export interface ICancelEligibility {
+  /** True when the Cancel action should be enabled. */
+  eligible: boolean;
+  /** When `eligible` is false, the reason shown as a tooltip on the disabled button. */
+  reason: string;
+}
+
+/**
+ * Pure helper (§8, BR-2/BR-3, AC-1/AC-3): decide if a leave request is cancellable
+ * by the requesting employee, based ONLY on fields the API provides (status + dates).
+ *
+ * Eligible when:
+ *  - status is 'Pending' (always cancellable before action), OR
+ *  - status is 'Approved' AND the leave start date is strictly in the future
+ *    (has not started yet) — AC-1/AC-2/AC-3.
+ *
+ * Ineligible (with an explanatory tooltip) when:
+ *  - already started / in the past (Approved with startDate <= today) — AC-3,
+ *  - already Rejected or Cancelled (terminal) — BR-2.
+ *
+ * Payroll-lock (AC-4) is NOT detectable from these fields, so it is enforced by the
+ * backend and surfaced as a 400 error on submit; we do not pre-block for it here.
+ * `today` is injectable for deterministic tests; defaults to the current date.
+ */
+export function evaluateCancelEligibility(
+  req: Pick<ILeaveRequest, 'status' | 'startDate'>,
+  today: Date = new Date(),
+): ICancelEligibility {
+  if (req.status === 'Cancelled') {
+    return { eligible: false, reason: 'This request has already been cancelled.' };
+  }
+  if (req.status === 'Rejected') {
+    return { eligible: false, reason: 'Rejected requests cannot be cancelled.' };
+  }
+  if (req.status === 'Pending') {
+    return { eligible: true, reason: '' };
+  }
+  // Approved: only cancellable if the leave has not yet started.
+  const start = new Date(req.startDate + 'T00:00:00');
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (isNaN(start.getTime())) {
+    return { eligible: false, reason: 'This request cannot be cancelled.' };
+  }
+  if (start <= todayMidnight) {
+    return {
+      eligible: false,
+      reason: 'This leave has already started or passed. Please contact HR to cancel.',
+    };
+  }
+  return { eligible: true, reason: '' };
+}
+
 /** Half-day session display options for the form select (AC-4). */
 export const HALF_DAY_SESSION_OPTIONS: { value: HalfDaySession; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },

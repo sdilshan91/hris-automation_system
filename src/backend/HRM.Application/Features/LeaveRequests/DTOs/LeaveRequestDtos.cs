@@ -120,6 +120,40 @@ public sealed record RejectLeaveRequestRequest
 }
 
 /// <summary>
+/// Request body for POST /api/v1/leaves/{id}/cancel (US-LV-010 FR-1).
+/// The reason is mandatory for approved leaves (BR-5) and optional for pending ones; the
+/// conditional rule is enforced by the service, which knows the request's current status.
+/// </summary>
+public sealed record CancelLeaveRequestRequest
+{
+    /// <summary>Cancellation reason. Required when cancelling an approved leave (BR-5).</summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// Result of an employee self-cancellation (US-LV-010 AC-1, AC-2). Returns the new status and,
+/// for an approved cancellation, the reversal ledger entry that restored the balance.
+/// </summary>
+public sealed record LeaveCancellationResultDto
+{
+    public Guid RequestId { get; init; }
+    /// <summary>New request status: always "Cancelled".</summary>
+    public string Status { get; init; } = string.Empty;
+    /// <summary>
+    /// The id of the LeaveLedger "Adjusted" reversal entry written for an approved cancellation;
+    /// null for a pending cancellation (nothing had been deducted, AC-1).
+    /// </summary>
+    public Guid? LedgerEntryId { get; init; }
+    /// <summary>
+    /// The restored balance after the reversal entry for an approved cancellation; null for a
+    /// pending cancellation.
+    /// </summary>
+    public decimal? BalanceAfter { get; init; }
+    /// <summary>When the cancellation was recorded.</summary>
+    public DateTime CancelledAt { get; init; }
+}
+
+/// <summary>
 /// Result of an approve/reject decision on a leave request (US-LV-005 AC-1, AC-2).
 /// Returns the new status and, for an approval, the ledger entry that recorded the deduction.
 /// </summary>

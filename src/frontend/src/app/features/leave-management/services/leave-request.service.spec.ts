@@ -133,6 +133,27 @@ describe('LeaveRequestService', () => {
       req.flush([mockBalance]);
     });
   });
+
+  describe('cancelLeaveRequest (US-LV-010)', () => {
+    it('should POST to /{id}/cancel with the reason body and return the updated request', () => {
+      service.cancelLeaveRequest('lr-1', { reason: 'plans changed' }).subscribe((req) => {
+        expect(req.status).toBe('Cancelled');
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/lr-1/cancel`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ reason: 'plans changed' });
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ ...mockRequest, status: 'Cancelled' });
+    });
+
+    it('should allow an empty reason (pending requests, BR-5)', () => {
+      service.cancelLeaveRequest('lr-1', { reason: '' }).subscribe();
+      const req = httpMock.expectOne(`${baseUrl}/lr-1/cancel`);
+      expect(req.request.body).toEqual({ reason: '' });
+      req.flush({ ...mockRequest, status: 'Cancelled' });
+    });
+  });
 });
 
 // ─── Pure error helpers (no TestBed / httpMock.verify conflicts) ──────────
@@ -161,5 +182,28 @@ describe('LeaveRequestService.parseError (pure function)', () => {
   it('parseErrorMessage should fall back for unknown shape', () => {
     const err = { error: null } as HttpErrorResponse;
     expect(LeaveRequestService.parseErrorMessage(err)).toBe('An unexpected error occurred.');
+  });
+});
+
+describe('LeaveRequestService.parseCancelError (pure function, US-LV-010)', () => {
+  it('should parse an already-started 400 body', () => {
+    const err = {
+      error: { message: 'Cannot cancel leave that has already started.', code: 'already_started' },
+    } as HttpErrorResponse;
+    const parsed = LeaveRequestService.parseCancelError(err);
+    expect(parsed!.message).toContain('already started');
+    expect(parsed!.code).toBe('already_started');
+  });
+
+  it('should parse a payroll-locked 400 body', () => {
+    const err = {
+      error: { message: 'Cannot cancel leave for a payroll-locked period.', code: 'payroll_locked' },
+    } as HttpErrorResponse;
+    expect(LeaveRequestService.parseCancelError(err)!.code).toBe('payroll_locked');
+  });
+
+  it('should return null for a non-object error body', () => {
+    const err = { error: 'boom' } as HttpErrorResponse;
+    expect(LeaveRequestService.parseCancelError(err)).toBeNull();
   });
 });

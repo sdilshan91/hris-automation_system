@@ -32,6 +32,12 @@ public sealed class LeaveRequestService : ILeaveRequestService
     private const int DefaultPastLookbackDays = 7;   // BR-1
     private const int DefaultFutureWindowDays = 90;  // BR-2
 
+    // US-LV-010 FR-7: tenant-configurable "allow cancellation up to N days before start date".
+    // Default 0 = an approved leave can be cancelled any time BEFORE it starts, but is blocked once
+    // start_date <= today (BR-3, AC-3). No tenant-settings entity exists yet, so this is a constant.
+    // TODO(tenant-settings): read the cancellation window from tenant settings when available.
+    private const int DefaultCancellationWindowDays = 0;
+
     public LeaveRequestService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
@@ -778,6 +784,169 @@ public sealed class LeaveRequestService : ILeaveRequestService
             ActionedAt = history.ActionedAt,
         });
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Cancel (US-LV-010 FR-1..FR-7, AC-1..AC-4, BR-1..BR-5)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<LeaveCancellationResultDto>> CancelAsync(
+        Guid leaveRequestId,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<LeaveCancellationResultDto>.Failure("Tenant context is not resolved.", 400);
+
+        // BR-1: resolve the acting employee. Only the requester may cancel their OWN leave.
+        var employee = await GetCurrentEmployeeAsync(cancellationToken);
+        if (employee is null)
+            return Result<LeaveCancellationResultDto>.Failure(
+                "No employee record is linked to the current user.", 403);
+
+        // Tracked load (we mutate Status). Tenant-scoped by the global query filter.
+        var request = await _dbContext.LeaveRequests
+            .FirstOrDefaultAsync(lr => lr.Id == leaveRequestId, cancellationToken);
+        if (request is null)
+            return Result<LeaveCancellationResultDto>.Failure("Leave request not found.", 404);
+
+        // BR-1: ownership — only the requesting employee may cancel. A manager cancelling on
+        // behalf is forbidden (they can reject a pending request instead). 403, never 404, so we
+        // do not leak whether the (tenant-visible) request exists vs. is simply not theirs.
+        if (request.EmployeeId != employee.Id)
+            return Result<LeaveCancellationResultDto>.Failure(
+                "You can only cancel your own leave requests.", 403);
+
+        // BR-2: only Pending or Approved requests can be cancelled. Rejected/already-Cancelled
+        // cannot be cancelled again.
+        if (request.Status == LeaveRequestStatus.Cancelled)
+            return Result<LeaveCancellationResultDto>.Failure(
+                "This leave request has already been cancelled.", 409);
+        if (request.Status != LeaveRequestStatus.Pending && request.Status != LeaveRequestStatus.Approved)
+            return Result<LeaveCancellationResultDto>.Failure(
+                $"A {request.Status.ToString().ToLowerInvariant()} leave request cannot be cancelled.", 400);
+
+        bool wasApproved = request.Status == LeaveRequestStatus.Approved;
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+
+        // BR-5: reason is mandatory for an approved cancellation, optional for a pending one.
+        if (wasApproved && trimmedReason is null)
+            return Result<LeaveCancellationResultDto>.Failure(
+                "A cancellation reason is required when cancelling an approved leave.", 400);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // AC-3 / BR-3 / FR-7: an APPROVED leave that has already started (or whose start is within
+        // the tenant cancellation window) cannot be self-cancelled — HR must process it manually.
+        // The window default is 0, so the block trips once start_date <= today. Pending requests
+        // can be cancelled regardless of date (nothing was committed against the balance).
+        if (wasApproved)
+        {
+            var cutoff = today.AddDays(DefaultCancellationWindowDays);
+            if (request.StartDate <= cutoff)
+                return Result<LeaveCancellationResultDto>.Failure(
+                    "Cannot cancel leave that has already started. Please contact HR for assistance.", 400);
+
+            // AC-4 / BR-4 (payroll): block when the leave period falls in a payroll-locked period.
+            // No payroll module exists yet — this is a no-op stub that always reports "not locked".
+            // TODO(payroll): when the payroll module exists, block with
+            //   "Cannot cancel leave for a payroll-locked period. Please contact HR." (AC-4).
+            if (await IsPayrollLockedAsync(request, cancellationToken))
+                return Result<LeaveCancellationResultDto>.Failure(
+                    "Cannot cancel leave for a payroll-locked period. Please contact HR.", 400);
+        }
+
+        var cancelledAt = DateTime.UtcNow;
+        LeaveLedger? reversal = null;
+        decimal? balanceAfter = null;
+
+        if (wasApproved)
+        {
+            // AC-2 / FR-3: append a LeaveLedger "Adjusted" reversal entry with POSITIVE days to
+            // restore the balance, computing balance_after from the running total (same ledger-append
+            // logic as the US-LV-005 approval deduction, inverted).
+            // BR-4 (carry-forward): if the original deduction consumed carry-forward days, the
+            //   restoration should follow the original allocation (carry-forward days back to the
+            //   carry-forward pool). The current ledger model nets Adjusted entries into the running
+            //   balance, so a single positive Adjusted entry restores the FULL day count correctly.
+            //   True carry-forward-pool re-allocation is NOT modelled here (it would need per-pool
+            //   ledger tagging). TODO(BR-4 carry-forward-pool): when carry-forward pools are tracked
+            //   distinctly, split the reversal across the original allocation buckets.
+            int leaveYear = request.StartDate.Year;
+            decimal currentBalance = await GetLedgerBalanceAsync(
+                request.EmployeeId, request.LeaveTypeId, leaveYear, cancellationToken);
+
+            decimal restored = currentBalance + request.TotalDays;
+
+            reversal = new LeaveLedger
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                EntryType = LedgerEntryType.Adjusted,
+                EmployeeId = request.EmployeeId,
+                LeaveTypeId = request.LeaveTypeId,
+                LeaveYear = leaveYear,
+                LeaveRequestId = request.Id,
+                Amount = request.TotalDays,           // positive — restores the balance
+                BalanceAfter = restored,
+                Description = $"Cancellation of leave request {request.Id}",
+                OccurredAt = cancelledAt,
+            };
+            balanceAfter = restored;
+
+            _dbContext.LeaveLedgerEntries.Add(reversal);
+        }
+
+        request.Status = LeaveRequestStatus.Cancelled;
+        request.CancelledAt = cancelledAt;
+        request.CancellationReason = trimmedReason;
+
+        // FR-6: record the cancellation in approval history (action Cancelled, actor = self).
+        var history = NewHistory(request.Id, employee.Id, LeaveApprovalAction.Cancelled, trimmedReason);
+        _dbContext.LeaveApprovalHistories.Add(history);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // NFR-3 / the key race: a manager approving while the employee cancels (xmin token).
+            // Mirror the US-LV-005 approve/reject conflict handling exactly.
+            return Result<LeaveCancellationResultDto>.Failure(
+                "This request has already been actioned.", 409);
+        }
+
+        // NFR-4: structured before/after audit (consistent with US-LV-005 — no generic audit table).
+        _logger.LogInformation(
+            "Leave request {LeaveRequestId} cancelled by employee {EmployeeId} (was {PriorStatus}) in tenant {TenantId}: " +
+            "reversal {LedgerEntryId}, balance {BalanceAfter}. Action {AuditAction} resource {Resource}.",
+            request.Id, employee.Id, wasApproved ? "Approved" : "Pending", _tenantContext.TenantId,
+            reversal?.Id, balanceAfter, "Leave.Cancelled", "LeaveRequest");
+
+        // FR-4: invalidate the Redis balance cache. Redis caching is DEFERRED module-wide (vault
+        // decision); the ledger total is the single source of truth.
+        // TODO(redis-balance-cache): invalidate key tenant:{tenantId}:leave_balance:{empId}:{leaveTypeId}.
+
+        // FR-5 / AC-1/AC-2: queue a "leave-cancelled" notification to the manager (log-only seam).
+        await _notificationService.NotifyLeaveCancelledAsync(
+            request.Id, employee.Id, employee.ReportsToEmployeeId, trimmedReason, cancellationToken);
+
+        return Result<LeaveCancellationResultDto>.Success(new LeaveCancellationResultDto
+        {
+            RequestId = request.Id,
+            Status = request.Status.ToString(),
+            LedgerEntryId = reversal?.Id,
+            BalanceAfter = balanceAfter,
+            CancelledAt = cancelledAt,
+        });
+    }
+
+    /// <summary>
+    /// AC-4 / BR-4 payroll-lock seam (US-LV-010). No payroll module exists yet, so this always
+    /// reports "not locked". TODO(payroll): replace with a real payroll-period-lock lookup.
+    /// </summary>
+    private Task<bool> IsPayrollLockedAsync(LeaveRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(false);
 
     /// <summary>
     /// Shared load + authorization + state checks for approve/reject (BR-1, BR-3).

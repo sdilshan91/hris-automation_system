@@ -77,6 +77,18 @@ public sealed class LeaveRequest : BaseEntity
     /// </summary>
     public uint Version { get; set; }
 
+    /// <summary>
+    /// When the request was cancelled by the employee (US-LV-010 §7, FR-2/FR-3). Null until
+    /// the request is cancelled. Set on both pending and approved cancellations.
+    /// </summary>
+    public DateTime? CancelledAt { get; set; }
+
+    /// <summary>
+    /// Free-text reason supplied by the employee when cancelling (US-LV-010 §7, BR-5).
+    /// Mandatory for approved cancellations; optional for pending ones. Null until cancelled.
+    /// </summary>
+    public string? CancellationReason { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
 
     public Employee? Employee { get; set; }
