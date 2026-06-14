@@ -67,7 +67,7 @@
 - [x] US-LV-012 — Leave reports and analytics *(PR #38)*
 
 ## 4. Attendance (10 stories)
-- [ ] US-ATT-001 — Employee clock-in with optional geolocation
+- [~] US-ATT-001 — Employee clock-in with optional geolocation
 - [ ] US-ATT-002 — Employee clock-out with hours auto-calculation
 - [ ] US-ATT-003 — Attendance regularization request
 - [ ] US-ATT-004 — Manager approves/rejects regularization
