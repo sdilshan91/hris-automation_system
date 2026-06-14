@@ -122,4 +122,52 @@ public sealed class AttendanceController : ControllerBase
 
         return Ok(ApiResponse<ClockStatusDto>.Ok(result.Value!));
     }
+
+    /// <summary>
+    /// POST /api/v1/attendance/regularizations
+    /// Submits an attendance regularization request for the authenticated employee (US-ATT-003
+    /// FR-1/FR-2/FR-5..FR-7, AC-1..AC-5, BR-2..BR-7). Creates a PENDING record; the underlying
+    /// attendance_log is not mutated until manager approval (US-ATT-004). Returns 400 (future date,
+    /// inconsistent times, lookback exceeded), 403 (no employee linked / inactive), or 409
+    /// (duplicate pending / locked payroll period). Gated by Attendance.Regularize.Self.
+    /// </summary>
+    [HttpPost("regularizations")]
+    [RequirePermission("Attendance.Regularize.Self")]
+    [ProducesResponseType(typeof(ApiResponse<RegularizationDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SubmitRegularization(
+        [FromBody] SubmitRegularizationRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new SubmitRegularizationCommand(request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<RegularizationDto>.Ok(result.Value!, "Regularization request submitted."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/regularizations
+    /// Returns the authenticated employee's own regularization requests, most recent first (US-ATT-003
+    /// §8 — drives the attendance-history status pills). Gated by Attendance.Regularize.Self.
+    /// </summary>
+    [HttpGet("regularizations")]
+    [RequirePermission("Attendance.Regularize.Self")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<RegularizationDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMyRegularizations(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyRegularizationsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<RegularizationDto>>.Ok(result.Value!));
+    }
 }

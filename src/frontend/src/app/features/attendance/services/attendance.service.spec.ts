@@ -11,6 +11,8 @@ import {
   IClockStatus,
   IClockOutRequest,
   IClockOutResult,
+  ICreateRegularizationRequest,
+  IRegularization,
 } from '../models/attendance.models';
 import { environment } from '../../../../environments/environment';
 
@@ -135,6 +137,55 @@ describe('AttendanceService', () => {
       req.flush(mockResult);
     });
   });
+
+  describe('regularizations (US-ATT-003)', () => {
+    const mockReg: IRegularization = {
+      regularizationId: 'reg-1',
+      tenantId: 'tenant-1',
+      employeeId: 'emp-1',
+      attendanceLogId: null,
+      date: '2026-06-10',
+      regularizationType: 'MISSED_BOTH',
+      requestedClockIn: '2026-06-10T03:30:00Z',
+      requestedClockOut: '2026-06-10T11:30:00Z',
+      reason: 'Forgot to clock in and out due to an offsite client meeting.',
+      status: 'PENDING',
+      createdAt: '2026-06-11T02:00:00Z',
+    };
+
+    it('should POST a regularization and return the created PENDING record (AC-1)', () => {
+      const body: ICreateRegularizationRequest = {
+        date: '2026-06-10',
+        regularizationType: 'MISSED_BOTH',
+        requestedClockIn: '09:00',
+        requestedClockOut: '17:30',
+        reason: 'Forgot to clock in and out due to an offsite client meeting.',
+      };
+
+      service.submitRegularization(body).subscribe((reg) => {
+        expect(reg.regularizationId).toBe('reg-1');
+        expect(reg.status).toBe('PENDING');
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/regularizations`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockReg);
+    });
+
+    it('should GET the current employee regularizations (§8)', () => {
+      service.listRegularizations().subscribe((list) => {
+        expect(list.length).toBe(1);
+        expect(list[0].status).toBe('PENDING');
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/regularizations`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush([mockReg]);
+    });
+  });
 });
 
 // ─── Pure error helpers (no TestBed / httpMock.verify conflicts) ──────────
@@ -169,5 +220,19 @@ describe('AttendanceService.parseError (pure function)', () => {
   it('parseErrorMessage should fall back for an unknown shape', () => {
     const err = { error: null } as HttpErrorResponse;
     expect(AttendanceService.parseErrorMessage(err)).toBe('An unexpected error occurred.');
+  });
+
+  it('parseRegularizationError should parse a lookback rejection (AC-3)', () => {
+    const err = {
+      error: { message: 'Regularization requests can only be submitted for the last 7 days.', code: 'lookback_exceeded' },
+    } as HttpErrorResponse;
+    const parsed = AttendanceService.parseRegularizationError(err);
+    expect(parsed!.message).toContain('last 7 days');
+    expect(parsed!.code).toBe('lookback_exceeded');
+  });
+
+  it('parseRegularizationError should return null for a non-object body', () => {
+    const err = { error: 'boom' } as HttpErrorResponse;
+    expect(AttendanceService.parseRegularizationError(err)).toBeNull();
   });
 });
