@@ -52,6 +52,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<AttendanceLog> AttendanceLogs => Set<AttendanceLog>();
     public DbSet<AttendanceSettings> AttendanceSettings => Set<AttendanceSettings>();
     public DbSet<AttendanceRegularization> AttendanceRegularizations => Set<AttendanceRegularization>();
+    public DbSet<RegularizationApprovalHistory> RegularizationApprovalHistories => Set<RegularizationApprovalHistory>();
     public DbSet<PayrollLockPeriod> PayrollLockPeriods => Set<PayrollLockPeriod>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -169,5 +170,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-ATT-003: PayrollLockPeriod (placeholder) tenant isolation + soft-delete filter
         modelBuilder.Entity<PayrollLockPeriod>()
             .HasQueryFilter(p => !p.IsDeleted && (!_tenantContext.IsResolved || p.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-004: RegularizationApprovalHistory tenant isolation + soft-delete filter
+        modelBuilder.Entity<RegularizationApprovalHistory>()
+            .HasQueryFilter(h => !h.IsDeleted && (!_tenantContext.IsResolved || h.TenantId == _tenantContext.TenantId));
     }
 }

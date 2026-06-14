@@ -2,3 +2,4 @@
 - [Geolocation test mocking](geolocation-test-mocking.md) — mock navigator.geolocation via Object.defineProperty (getter-only); never mix async+fakeAsync (Promise resolves on microtask flushed by tick())
 - [Signal async DOM detectChanges](signal-async-dom-detectchanges.md) — in fakeAsync, after tick() flushes an observable that sets a signal, call fixture.detectChanges() before asserting DOM textContent
 - [Right-drawer form pattern](right-drawer-form-pattern.md) — Notion right slide-in drawer (full-screen mobile): fixed wrap justify-end pointer-events-none + panel pointer-events-auto, @drawer translateX anim, separate backdrop
+- [Jasmine optional-arg spy](jasmine-optional-arg-spy.md) — toHaveBeenCalledWith matches exact arg count; don't assert trailing `undefined` for an omitted optional service arg

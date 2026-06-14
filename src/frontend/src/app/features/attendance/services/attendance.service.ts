@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IAttendanceLog,
@@ -12,6 +13,17 @@ import {
   ICreateRegularizationRequest,
   IRegularization,
   IRegularizationErrorResponse,
+  IPendingRegularization,
+  IPendingRegularizationQueueResult,
+  IPendingRegularizationQuery,
+  IApproveRegularizationRequest,
+  IRejectRegularizationRequest,
+  IRegularizationDecisionDto,
+  IBulkApproveRequest,
+  IBulkApproveResult,
+  IRegularizationActionErrorResponse,
+  IAttendanceApiEnvelope,
+  RegularizationAction,
 } from '../models/attendance.models';
 
 /**
@@ -95,6 +107,126 @@ export class AttendanceService {
     return this.http.get<IRegularization[]>(`${this.baseUrl}/regularizations`, {
       withCredentials: true,
     });
+  }
+
+  // --- US-ATT-004: Manager approval queue -------------------
+
+  /**
+   * US-ATT-004 (FR-1, AC-3) REAL contract: list the pending regularization requests
+   * for the authenticated manager's direct reports.
+   *   GET /api/v1/attendance/regularizations/pending  (optional employeeId/fromDate/toDate)
+   *   -> ApiResponse<PendingRegularizationQueueResult> { items, totalCount }
+   * The backend scopes by manager + tenant server-side (FR-7, NFR-3). Reads `data.items`.
+   */
+  getPendingApprovals(
+    query?: IPendingRegularizationQuery,
+  ): Observable<IPendingRegularization[]> {
+    let params = new HttpParams();
+    if (query?.employeeId) {
+      params = params.set('employeeId', query.employeeId);
+    }
+    if (query?.fromDate) {
+      params = params.set('fromDate', query.fromDate);
+    }
+    if (query?.toDate) {
+      params = params.set('toDate', query.toDate);
+    }
+    return this.http
+      .get<IAttendanceApiEnvelope<IPendingRegularizationQueueResult>>(
+        `${this.baseUrl}/regularizations/pending`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res?.data?.items ?? []));
+  }
+
+  /**
+   * US-ATT-004 (AC-1, AC-2): approve or reject a single regularization request. Kept
+   * as the single signature the component calls; internally routes to the REAL
+   * PATH-based endpoints (approve vs reject). For REJECT the `comment` arg carries the
+   * mandatory reason (min 10 chars, enforced by the caller). Backend denials (AC-5
+   * authorization, BR-5 payroll lock) arrive as a `{ message, code }` body the caller
+   * displays verbatim. Unwraps the ApiResponse<T> envelope to the decision DTO.
+   */
+  processRegularization(
+    regularizationId: string,
+    action: RegularizationAction,
+    comment?: string,
+  ): Observable<IRegularizationDecisionDto> {
+    return action === 'REJECT'
+      ? this.rejectRegularization(regularizationId, comment ?? '')
+      : this.approveRegularization(regularizationId, comment);
+  }
+
+  /**
+   * US-ATT-004 REAL contract: approve a single request.
+   *   POST /api/v1/attendance/regularizations/{id}/approve  body { comment? }
+   */
+  approveRegularization(
+    regularizationId: string,
+    comment?: string,
+  ): Observable<IRegularizationDecisionDto> {
+    const body: IApproveRegularizationRequest = comment ? { comment } : {};
+    return this.http
+      .post<IAttendanceApiEnvelope<IRegularizationDecisionDto>>(
+        `${this.baseUrl}/regularizations/${regularizationId}/approve`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-004 REAL contract: reject a single request. The body field is `reason`
+   * (NOT `comment`), required min 10 chars (BR-1) — enforced by the caller.
+   *   POST /api/v1/attendance/regularizations/{id}/reject  body { reason }
+   */
+  rejectRegularization(
+    regularizationId: string,
+    reason: string,
+  ): Observable<IRegularizationDecisionDto> {
+    const body: IRejectRegularizationRequest = { reason };
+    return this.http
+      .post<IAttendanceApiEnvelope<IRegularizationDecisionDto>>(
+        `${this.baseUrl}/regularizations/${regularizationId}/reject`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-004 (BR-7) REAL contract: approve multiple regularization requests in one
+   * call. The backend processes each id independently and returns a per-item result
+   * (`items[].succeeded`) so a partial failure (one locked period, AC-5/BR-5) does not
+   * roll back the rest.
+   *   POST /api/v1/attendance/regularizations/bulk-approve  body { regularizationIds, comment? }
+   * Unwraps the ApiResponse<T> envelope.
+   */
+  bulkApprove(ids: string[], comment?: string): Observable<IBulkApproveResult> {
+    const body: IBulkApproveRequest = comment
+      ? { regularizationIds: ids, comment }
+      : { regularizationIds: ids };
+    return this.http
+      .post<IAttendanceApiEnvelope<IBulkApproveResult>>(
+        `${this.baseUrl}/regularizations/bulk-approve`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-004 (AC-5, BR-5): parse an approve/reject/bulk error body into the typed
+   * shape. The component shows `message` verbatim.
+   */
+  static parseActionError(
+    err: HttpErrorResponse,
+  ): IRegularizationActionErrorResponse | null {
+    const body = err.error;
+    if (body && typeof body === 'object' && 'message' in body) {
+      return body as IRegularizationActionErrorResponse;
+    }
+    return null;
   }
 
   /** Parse a regularization error body (AC-3/AC-4/AC-5); shape matches clock-in. */

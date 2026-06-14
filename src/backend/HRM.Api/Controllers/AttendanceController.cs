@@ -170,4 +170,130 @@ public sealed class AttendanceController : ControllerBase
 
         return Ok(ApiResponse<IReadOnlyList<RegularizationDto>>.Ok(result.Value!));
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-004: Manager approve/reject of regularization requests
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/regularizations/pending
+    /// Returns the current manager's pending regularization-approval queue: pending requests from
+    /// their direct reports with employee name, date, requested times, reason, and submitted-on
+    /// (US-ATT-004 FR-1/AC-3). Supports optional employeeId / fromDate / toDate filters.
+    /// Gated by Attendance.Approve.Team.
+    /// </summary>
+    [HttpGet("regularizations/pending")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<PendingRegularizationQueueResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetPendingRegularizations(
+        [FromQuery] Guid? employeeId,
+        [FromQuery] DateOnly? fromDate,
+        [FromQuery] DateOnly? toDate,
+        CancellationToken cancellationToken)
+    {
+        var queryParams = new PendingRegularizationQueryParams
+        {
+            EmployeeId = employeeId,
+            FromDate = fromDate,
+            ToDate = toDate,
+        };
+
+        var result = await _mediator.Send(
+            new GetPendingRegularizationsQuery(queryParams), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<PendingRegularizationQueueResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/regularizations/{id}/approve
+    /// Approves a pending regularization from one of the current manager's direct reports as the final
+    /// (single-level) approver (US-ATT-004 AC-1/FR-2). Sets status APPROVED, creates/updates the
+    /// attendance_log with the regularized times and recalculated work hours, and records an immutable
+    /// decision-history entry — all atomically (NFR-2). Comment is optional (BR-2). Returns 403 when
+    /// the manager is not the request owner's manager (AC-5) or it is the manager's own request (BR-6),
+    /// 404 when not found, 409 when already actioned (BR-3) or the date is now in a locked payroll
+    /// period (BR-5). Gated by Attendance.Approve.Team.
+    /// </summary>
+    [HttpPost("regularizations/{id:guid}/approve")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<RegularizationDecisionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ApproveRegularization(
+        [FromRoute] Guid id,
+        [FromBody] ApproveRegularizationRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ApproveRegularizationCommand(id, request?.Comment), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<RegularizationDecisionDto>.Ok(result.Value!, "Regularization approved."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/regularizations/{id}/reject
+    /// Rejects a pending regularization from one of the current manager's direct reports
+    /// (US-ATT-004 AC-2/FR-3). Sets status REJECTED and records the mandatory reason (min 10 chars,
+    /// BR-1) in an immutable decision-history entry; the attendance_log is not touched. Same
+    /// authorization/immutability/self-approval rules as approve. Gated by Attendance.Approve.Team.
+    /// </summary>
+    [HttpPost("regularizations/{id:guid}/reject")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<RegularizationDecisionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RejectRegularization(
+        [FromRoute] Guid id,
+        [FromBody] RejectRegularizationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new RejectRegularizationCommand(id, request.Reason), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<RegularizationDecisionDto>.Ok(result.Value!, "Regularization rejected."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/regularizations/bulk-approve
+    /// Bulk-approves multiple pending regularizations in one action (US-ATT-004 BR-7). Each id runs the
+    /// full per-item authorization + immutability + payroll-lock pipeline independently; per-item
+    /// results are returned so the FE can show a partial-success summary. Returns 400 when the id list
+    /// is empty. Gated by Attendance.Approve.Team.
+    /// </summary>
+    [HttpPost("regularizations/bulk-approve")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<BulkApproveRegularizationResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> BulkApproveRegularizations(
+        [FromBody] BulkApproveRegularizationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new BulkApproveRegularizationsCommand(request.RegularizationIds, request.Comment),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<BulkApproveRegularizationResult>.Ok(result.Value!, "Bulk approval processed."));
+    }
 }

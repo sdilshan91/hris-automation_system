@@ -126,6 +126,9 @@ public static class DependencyInjection
         // Attendance clock-in service (US-ATT-001)
         services.AddScoped<IAttendanceService, AttendanceService>();
 
+        // Manager approve/reject of attendance regularizations (US-ATT-004)
+        services.AddScoped<IRegularizationApprovalService, RegularizationApprovalService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

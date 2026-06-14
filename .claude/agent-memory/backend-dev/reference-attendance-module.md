@@ -21,6 +21,22 @@ literal `Attendance.Regularize.Self` to PermissionCatalog + Employee role seed (
 which reused `Attendance.CheckIn`). FR-3 workflow engine + FR-4 notifications DEFERRED (TODO
 US-ADM-007 / US-NTF). All exact AC reject messages + the API contract are in the vault note.
 
+US-ATT-004 (manager approve/reject) added: dedicated `IRegularizationApprovalService` /
+`RegularizationApprovalService` (NOT folded into `AttendanceService` — kept separate like
+LeaveReportService/LopService). Immutable decision record entity `RegularizationApprovalHistory`
+(mirrors `LeaveApprovalHistory`; table `attendance_regularization_history`; insert-only = NFR-4).
+APPROVE is single-level FINAL: creates/updates the `attendance_log` for employee+date via the SAME
+`AttendanceCalculator`, single atomic SaveChanges. Auth = DIRECT REPORTS ONLY
+(`ReportsToEmployeeId == manager.Id`), Phase-1 limit (full hierarchy deferred). EXACT denial msg:
+"You are not authorized to approve requests for this employee." BR-6 self-approval blocked
+(`self_approval`, 403, checked before team-check). BR-3 immutability → `already_actioned` 409. BR-5
+payroll lock RE-checked at approval. BR-7 bulk = per-item loop, each its own SaveChanges, partial
+results. Permission: ADDED literal `Attendance.Approve.Team` to catalog + Manager/HROfficer/HRManager/
+TenantAdmin role seeds. **AC-4 multi-level CANNOT be satisfied** (no workflow engine, US-ADM-007) —
+flagged, workflow_instance_id stays null. FR-5 notif / FR-8 Redis deferred. Migration
+`20260614161602_Attendance_RegularizationApproval`. Mirror the Leave approve pattern
+(`LeaveRequestService.ApproveAsync`/`LoadForDecisionAsync`) for any future approval story.
+
 Key scaffold facts from US-ATT-001:
 - Entities `AttendanceLog` + `AttendanceSettings` (both `BaseEntity`), one settings row per tenant
   created lazily with enforcement off.
