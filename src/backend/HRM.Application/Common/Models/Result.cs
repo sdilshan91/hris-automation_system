@@ -10,18 +10,27 @@ public sealed class Result
     public string? Error { get; }
     public int? StatusCode { get; }
 
-    private Result(bool isSuccess, string? error, int? statusCode)
+    /// <summary>
+    /// Optional machine-readable error code surfaced in the response envelope (e.g. "already_clocked_in")
+    /// so clients can branch on a stable identifier rather than the localized message or HTTP status.
+    /// </summary>
+    public string? ErrorCode { get; }
+
+    private Result(bool isSuccess, string? error, int? statusCode, string? errorCode)
     {
         IsSuccess = isSuccess;
         Error = error;
         StatusCode = statusCode;
+        ErrorCode = errorCode;
     }
 
-    public static Result Success() => new(true, null, null);
-    public static Result Failure(string error, int statusCode = 400) => new(false, error, statusCode);
+    public static Result Success() => new(true, null, null, null);
+    public static Result Failure(string error, int statusCode = 400, string? errorCode = null)
+        => new(false, error, statusCode, errorCode);
 
     public static Result<T> Success<T>(T value) => Result<T>.Success(value);
-    public static Result<T> Failure<T>(string error, int statusCode = 400) => Result<T>.Failure(error, statusCode);
+    public static Result<T> Failure<T>(string error, int statusCode = 400, string? errorCode = null)
+        => Result<T>.Failure(error, statusCode, errorCode);
 }
 
 /// <summary>
@@ -35,14 +44,22 @@ public sealed class Result<T>
     public string? Error { get; }
     public int? StatusCode { get; }
 
-    private Result(bool isSuccess, T? value, string? error, int? statusCode)
+    /// <summary>
+    /// Optional machine-readable error code surfaced in the response envelope (e.g. "already_clocked_in")
+    /// so clients can branch on a stable identifier rather than the localized message or HTTP status.
+    /// </summary>
+    public string? ErrorCode { get; }
+
+    private Result(bool isSuccess, T? value, string? error, int? statusCode, string? errorCode)
     {
         IsSuccess = isSuccess;
         Value = value;
         Error = error;
         StatusCode = statusCode;
+        ErrorCode = errorCode;
     }
 
-    public static Result<T> Success(T value) => new(true, value, null, null);
-    public static Result<T> Failure(string error, int statusCode = 400) => new(false, default, error, statusCode);
+    public static Result<T> Success(T value) => new(true, value, null, null, null);
+    public static Result<T> Failure(string error, int statusCode = 400, string? errorCode = null)
+        => new(false, default, error, statusCode, errorCode);
 }

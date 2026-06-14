@@ -228,6 +228,17 @@ export const appRoutes: Routes = [
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
         ],
       },
+      // ─── Attendance / Clock-In (US-ATT-001) ─────────────────
+      {
+        path: 'attendance',
+        loadChildren: () =>
+          import('./features/attendance/attendance.routes').then(
+            (m) => m.ATTENDANCE_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',
