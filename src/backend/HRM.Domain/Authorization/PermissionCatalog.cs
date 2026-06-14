@@ -166,6 +166,17 @@ public static class PermissionCatalog
         /// role permissions on startup so existing tenants pick it up.
         /// </summary>
         public const string ManageShift = "Attendance.Shift.Manage";
+
+        /// <summary>
+        /// US-ATT-009: lock/unlock an attendance period before/after a payroll run (AC-4/AC-5/FR-3).
+        /// An HR action. The story names the HR persona without a concrete permission string; following
+        /// the ATT-005 precedent a dedicated <c>Attendance.Lock.Manage</c> is added (rather than reusing
+        /// the cross-cutting Attendance.View.All read permission for a mutating lock action). Granted to
+        /// HR Officer / HR Manager / Tenant Admin / Tenant Owner — the HR roles that already hold
+        /// Attendance.Edit. The read endpoints (payroll-data, period-lock GET, reconciliation) reuse the
+        /// existing Attendance.View.All. DbInitializer reconciles built-in role permissions on startup.
+        /// </summary>
+        public const string ManageLock = "Attendance.Lock.Manage";
     }
 
     // ── Payroll Module ───────────────────────────────────────────────
@@ -294,7 +305,7 @@ public static class PermissionCatalog
 
         // Attendance
         Attendance.ViewOwn, Attendance.ViewTeam, Attendance.ViewAll,
-        Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf, Attendance.ApproveTeam, Attendance.ManageShift,
+        Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
 
         // Payroll
         Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
@@ -401,7 +412,7 @@ public static class PermissionCatalog
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
-            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift,
+            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
             Performance.ViewAll, Performance.Manage,
@@ -425,7 +436,7 @@ public static class PermissionCatalog
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
-            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift,
+            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Payroll.View, Payroll.Run,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.Manage,
@@ -444,7 +455,7 @@ public static class PermissionCatalog
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.Reports,
-            Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift,
+            Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Recruitment.View, Recruitment.Manage,
             Reports.View,
             Training.ViewAll,

@@ -129,5 +129,17 @@ export const ATTENDANCE_ROUTES: Routes = [
         (m) => m.LatePolicyComponent
       ),
   },
+  {
+    // US-ATT-009 (FR-3, FR-5, §8): payroll integration — attendance lock + reconciliation
+    // + payroll-process stepper. HR-only (HR Officer / HR Manager / Tenant Admin) per the
+    // HR Officer persona — same child-guard technique as the monthly-summary route, so NO
+    // app.routes.ts edit is needed.
+    path: 'payroll-integration',
+    canActivate: [roleGuard(['HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import(
+        './components/payroll-integration/payroll-integration.component'
+      ).then((m) => m.PayrollIntegrationComponent),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];

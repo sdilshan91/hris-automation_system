@@ -883,6 +883,152 @@ public sealed class AttendanceController : ControllerBase
         return Ok(ApiResponse<LatenessScoreDto>.Ok(result.Value!));
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-009: Attendance ⇄ Payroll integration (attendance side)
+    //  Reads reuse Attendance.View.All (HR read); lock/unlock use Attendance.Lock.Manage (HR action).
+    //  SCOPE: the Payroll module does not exist yet — these endpoints expose the attendance DATA and
+    //  the lock; salary math (AC-2 LOP deduction / AC-3 overtime pay) is the payroll module's job.
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/payroll-data?month=yyyy-MM&amp;employeeIds=&lt;csv optional&gt;
+    /// Per-employee attendance data the payroll module consumes (US-ATT-009 FR-1/FR-2/FR-7/FR-8):
+    /// working/present/absent/lop days, late-deduction days, approved overtime minutes + multiplier
+    /// breakdown, total work minutes. Reuses the US-ATT-007 monthly summary. Gated by Attendance.View.All.
+    /// </summary>
+    [HttpGet("payroll-data")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<AttendancePayrollResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetPayrollData(
+        [FromQuery] string? month,
+        [FromQuery] string? employeeIds,
+        CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        IReadOnlyList<Guid>? ids = ParseEmployeeIds(employeeIds);
+
+        var result = await _mediator.Send(new GetPayrollDataQuery(year, mon, ids), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AttendancePayrollResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/period-lock?month=yyyy-MM
+    /// The current ACTIVE attendance-period lock covering the month (null when not locked) — drives the
+    /// lock banner/status (US-ATT-009 §7). Gated by Attendance.View.All.
+    /// </summary>
+    [HttpGet("period-lock")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<PeriodLockDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetPeriodLock(
+        [FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var result = await _mediator.Send(new GetPeriodLockQuery(year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<PeriodLockDto?>.Ok(result.Value));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/period-lock
+    /// Locks an attendance period so no further clock-in/out, regularization, or approval is allowed
+    /// for dates in the range (US-ATT-009 AC-4/FR-3; audited FR-4). Returns 400 (invalid range), 409
+    /// (already_locked). Gated by Attendance.Lock.Manage (HR).
+    /// </summary>
+    [HttpPost("period-lock")]
+    [RequirePermission("Attendance.Lock.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<PeriodLockDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> LockPeriod(
+        [FromBody] LockPeriodRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new LockPeriodCommand(request.PeriodStart, request.PeriodEnd), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<PeriodLockDto>.Ok(result.Value!, "Attendance period locked."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/period-lock/{id}/unlock
+    /// Unlocks a previously-locked attendance period so HR can correct an error (US-ATT-009 AC-5;
+    /// audited FR-4). Returns 404 (not found), 409 (already_unlocked). Gated by Attendance.Lock.Manage.
+    /// </summary>
+    [HttpPost("period-lock/{id:guid}/unlock")]
+    [RequirePermission("Attendance.Lock.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<PeriodLockDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UnlockPeriod(
+        [FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UnlockPeriodCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<PeriodLockDto>.Ok(result.Value!, "Attendance period unlocked."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/reconciliation?month=yyyy-MM
+    /// Attendance-side reconciliation rows for a period (US-ATT-009 FR-5): present/lop/overtime/work per
+    /// employee. The payroll-input columns are deferred (no Payroll module). Gated by Attendance.View.All.
+    /// </summary>
+    [HttpGet("reconciliation")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<ReconciliationResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetReconciliation(
+        [FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var result = await _mediator.Send(
+            new GetAttendanceReconciliationQuery(year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ReconciliationResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// Parses the optional comma-separated employeeIds query param into a list of GUIDs (ignoring
+    /// blanks/invalid entries). Returns null when none are supplied (= all employees).
+    /// </summary>
+    private static IReadOnlyList<Guid>? ParseEmployeeIds(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return null;
+        var ids = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value)
+            .ToList();
+        return ids.Count > 0 ? ids : null;
+    }
+
     /// <summary>
     /// Parses the "yyyy-MM" month query param (default = current UTC month). On failure, sets
     /// <paramref name="error"/> to a 400 result and returns false.

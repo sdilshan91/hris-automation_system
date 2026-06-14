@@ -53,7 +53,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<AttendanceSettings> AttendanceSettings => Set<AttendanceSettings>();
     public DbSet<AttendanceRegularization> AttendanceRegularizations => Set<AttendanceRegularization>();
     public DbSet<RegularizationApprovalHistory> RegularizationApprovalHistories => Set<RegularizationApprovalHistory>();
-    public DbSet<PayrollLockPeriod> PayrollLockPeriods => Set<PayrollLockPeriod>();
+    public DbSet<AttendancePeriodLock> AttendancePeriodLocks => Set<AttendancePeriodLock>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftRotationStep> ShiftRotationSteps => Set<ShiftRotationStep>();
     public DbSet<EmployeeShift> EmployeeShifts => Set<EmployeeShift>();
@@ -174,8 +174,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         modelBuilder.Entity<AttendanceRegularization>()
             .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
 
-        // US-ATT-003: PayrollLockPeriod (placeholder) tenant isolation + soft-delete filter
-        modelBuilder.Entity<PayrollLockPeriod>()
+        // US-ATT-009: AttendancePeriodLock (canonical attendance lock, consolidated from the former
+        // US-ATT-003 PayrollLockPeriod) tenant isolation + soft-delete filter
+        modelBuilder.Entity<AttendancePeriodLock>()
             .HasQueryFilter(p => !p.IsDeleted && (!_tenantContext.IsResolved || p.TenantId == _tenantContext.TenantId));
 
         // US-ATT-004: RegularizationApprovalHistory tenant isolation + soft-delete filter
