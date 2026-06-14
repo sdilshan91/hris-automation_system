@@ -76,7 +76,7 @@
 - [x] US-ATT-007 — Monthly attendance summary *(PR #45)*
 - [x] US-ATT-008 — Late arrival and early departure tracking *(PR #46)*
 - [x] US-ATT-009 — Attendance integration with payroll *(PR #47)*
-- [ ] US-ATT-010 — Attendance dashboard and reports
+- [~] US-ATT-010 — Attendance dashboard and reports
 
 ## 5. Recruitment (10 stories)
 - [ ] US-REC-001 — Create and publish job vacancy
