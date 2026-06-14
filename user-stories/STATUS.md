@@ -62,7 +62,7 @@
 - [x] US-LV-007 — Holiday calendar management *(PR #33)*
 - [x] US-LV-008 — Leave carry-forward and expiry rules *(PR #34)*
 - [x] US-LV-009 — Team leave calendar view *(PR #35)*
-- [~] US-LV-010 — Leave cancellation by employee
+- [x] US-LV-010 — Leave cancellation by employee *(PR #36)*
 - [ ] US-LV-011 — Compulsory leave / LOP handling
 - [ ] US-LV-012 — Leave reports and analytics
 
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **24** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; Leave: LV-001 #23, LV-002 #24, LV-003 #29, LV-004 #30, LV-005 #31, LV-006 #32, LV-007 #33, LV-008 #34, LV-009 #35)
+- Done: **25** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; Leave: LV-001 #23, LV-002 #24, LV-003 #29, LV-004 #30, LV-005 #31, LV-006 #32, LV-007 #33, LV-008 #34, LV-009 #35, LV-010 #36)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **76**
+- Pending: **75**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
