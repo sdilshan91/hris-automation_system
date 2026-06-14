@@ -157,6 +157,9 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.AttendanceSummaryExportJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IAttendanceSummaryExportJob, HRM.Api.Jobs.AttendanceSummaryExportJob>();
 
+    // US-ATT-010 FR-8: scheduled attendance-report generation job (recurring). Email delivery deferred.
+    builder.Services.AddScoped<HRM.Api.Jobs.ScheduledReportJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -307,6 +310,14 @@ try
             "attendance-monthly-summary-finalize",
             job => job.RunAsync(),
             "30 1 1 * *"); // 01:30 UTC on the 1st of every month
+
+        // US-ATT-010 FR-8: scheduled attendance-report generation. Runs hourly so configs with various
+        // delivery times are picked up close to their scheduled hour; the job itself de-dupes per period
+        // (DAILY/WEEKLY/MONTHLY) via LastRunAt. Email delivery is DEFERRED (US-NTF) — generation only.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ScheduledReportJob>(
+            "attendance-scheduled-reports",
+            job => job.RunAsync(),
+            "0 * * * *"); // top of every hour, UTC
     }
 
     app.Run();

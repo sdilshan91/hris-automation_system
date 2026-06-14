@@ -18,6 +18,8 @@ import {
   IPeriodLock,
   IReconciliationResult,
   IAttendancePayrollResult,
+  ILiveBoardResult,
+  IScheduledReportConfig,
   formatPeriodLabel,
   periodDateRange,
 } from '../models/attendance.models';
@@ -498,6 +500,197 @@ describe('AttendanceService', () => {
       expect(req.request.method).toBe('GET');
       req.flush({ success: true, data: result });
       expect(data!.rows[0].employeeName).toBe('Ada Lovelace');
+    });
+  });
+
+  describe('US-ATT-010 dashboard & reports', () => {
+    it('getDashboardKpi GETs with date + scope and unwraps data (AC-1)', () => {
+      const kpi = {
+        date: '2026-06-15',
+        expectedHeadcount: 50,
+        clockedIn: 40,
+        pendingClockIn: 5,
+        onLeave: 3,
+        absent: 2,
+        attendancePercent: 80,
+      };
+      let data: typeof kpi | undefined;
+      service.getDashboardKpi('2026-06-15', 'team').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/dashboard` &&
+          r.params.get('date') === '2026-06-15' &&
+          r.params.get('scope') === 'team',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: kpi });
+      expect(data!.clockedIn).toBe(40);
+    });
+
+    it('getLiveBoard GETs the live board and unwraps rows (AC-2)', () => {
+      const result: ILiveBoardResult = {
+        date: '2026-06-15',
+        rows: [
+          {
+            employeeId: 'e1',
+            employeeName: 'Ada Lovelace',
+            status: 'CLOCKED_IN',
+            clockInAt: '2026-06-15T08:05:00Z',
+          },
+        ],
+      };
+      let data: ILiveBoardResult | undefined;
+      service.getLiveBoard('2026-06-15').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/dashboard/live-board` &&
+          r.params.get('scope') === 'all',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: result });
+      expect(data!.rows[0].status).toBe('CLOCKED_IN');
+    });
+
+    it('getDepartmentComparison GETs by month and unwraps rows (AC-3)', () => {
+      const result = {
+        month: '2026-06',
+        rows: [
+          { departmentId: 'd1', departmentName: 'Engineering', attendanceRatePct: 95, employeeCount: 12 },
+        ],
+      };
+      let data: typeof result | undefined;
+      service.getDepartmentComparison('2026-06').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/reports/department-comparison` &&
+          r.params.get('month') === '2026-06',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: result });
+      expect(data!.rows[0].attendanceRatePct).toBe(95);
+    });
+
+    it('getCustomReport GETs with from/to + filters and unwraps rows (AC-4)', () => {
+      const result = {
+        from: '2026-06-01',
+        to: '2026-06-15',
+        rows: [
+          {
+            employeeId: 'e1',
+            employeeName: 'Ada Lovelace',
+            presentDays: 10,
+            absentDays: 1,
+            lateCount: 2,
+            overtimeMinutes: 120,
+            workMinutes: 4800,
+          },
+        ],
+      };
+      let data: typeof result | undefined;
+      service
+        .getCustomReport({ from: '2026-06-01', to: '2026-06-15', departmentId: 'd1' })
+        .subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/reports/custom` &&
+          r.params.get('from') === '2026-06-01' &&
+          r.params.get('to') === '2026-06-15' &&
+          r.params.get('departmentId') === 'd1',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: result });
+      expect(data!.rows[0].presentDays).toBe(10);
+    });
+
+    it('exportCustomReport GETs a blob with format + filters (AC-4, FR-5)', () => {
+      let resp: import('@angular/common/http').HttpResponse<Blob> | undefined;
+      service
+        .exportCustomReport({ from: '2026-06-01', to: '2026-06-15' }, 'xlsx')
+        .subscribe((r) => (resp = r));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/reports/custom/export` &&
+          r.params.get('format') === 'xlsx',
+      );
+      expect(req.request.method).toBe('GET');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(new Blob(['data'], { type: 'application/octet-stream' }));
+      expect(resp!.body).toBeInstanceOf(Blob);
+    });
+
+    it('getTrends GETs with months and unwraps the four series (AC-5)', () => {
+      const result = {
+        attendanceRate: [{ period: '2026-06', value: 92 }],
+        lateArrivals: [{ period: '2026-06', value: 3 }],
+        overtimeHours: [{ period: '2026-06', value: 40 }],
+        absenteeismRate: [{ period: '2026-06', value: 4 }],
+      };
+      let data: typeof result | undefined;
+      service.getTrends(12).subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/reports/trends` && r.params.get('months') === '12',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: result });
+      expect(data!.attendanceRate[0].value).toBe(92);
+    });
+
+    it('getScheduledReports GETs and unwraps the config list (FR-8)', () => {
+      const list: IScheduledReportConfig[] = [
+        {
+          id: 's1',
+          reportType: 'daily-attendance',
+          frequency: 'DAILY',
+          filters: {},
+          recipients: ['hr@acme.com'],
+          deliveryTime: '08:00',
+          format: 'CSV',
+          isActive: true,
+        },
+      ];
+      let data: IScheduledReportConfig[] | undefined;
+      service.getScheduledReports().subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(`${baseUrl}/reports/scheduled`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: list });
+      expect(data!.length).toBe(1);
+    });
+
+    it('createScheduledReport POSTs the config and unwraps the created row (FR-8)', () => {
+      const config = {
+        reportType: 'daily-attendance',
+        frequency: 'DAILY' as const,
+        filters: {},
+        recipients: ['hr@acme.com'],
+        deliveryTime: '08:00',
+        format: 'CSV' as const,
+        isActive: true,
+      };
+      let data: { id?: string } | undefined;
+      service.createScheduledReport(config).subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(`${baseUrl}/reports/scheduled`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.reportType).toBe('daily-attendance');
+      req.flush({ success: true, data: { ...config, id: 's-new' } });
+      expect(data!.id).toBe('s-new');
+    });
+
+    it('deleteScheduledReport DELETEs by id (FR-8)', () => {
+      let done = false;
+      service.deleteScheduledReport('s1').subscribe(() => (done = true));
+
+      const req = httpMock.expectOne(`${baseUrl}/reports/scheduled/s1`);
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null);
+      expect(done).toBeTrue();
     });
   });
 });
