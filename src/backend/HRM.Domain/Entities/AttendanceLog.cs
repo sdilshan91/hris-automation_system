@@ -92,6 +92,32 @@ public sealed class AttendanceLog : BaseEntity
     /// </summary>
     public string Source { get; set; } = "WEB";
 
+    // ── Late / early-departure tracking (US-ATT-008 §7, FR-3) ──────────
+    // Computed INLINE on clock-in (late) / clock-out (early) against the resolved shift (NFR-1), and
+    // recomputed on regularization approval (BR-7). The monthly summary reads these persisted fields
+    // (US-ATT-007 single-source-of-truth). FLEXIBLE shifts leave all four at their default (BR-6/§10).
+
+    /// <summary>FR-3 / BR-1: true when clock-in is past shift start + grace. Default false.</summary>
+    public bool IsLate { get; set; }
+
+    /// <summary>
+    /// FR-3 / AC-1: whole minutes past the shift START (the contract field — "late_minutes = 20" for
+    /// 09:20 vs a 09:00 start). The grace gates <see cref="IsLate"/>, not this magnitude. 0 when on time.
+    /// </summary>
+    public int LateMinutes { get; set; }
+
+    /// <summary>
+    /// AC-1 "late_by": whole minutes past the GRACE threshold (5 for 09:20 vs 09:00 + 15 grace). Stored
+    /// cheaply alongside <see cref="LateMinutes"/>; the FE badge uses <see cref="LateMinutes"/>. 0 when not late.
+    /// </summary>
+    public int LateByMinutes { get; set; }
+
+    /// <summary>FR-3 / BR-2: true when clock-out is before shift end and minimum hours are unmet. Default false.</summary>
+    public bool IsEarlyDeparture { get; set; }
+
+    /// <summary>FR-3 / AC-3: whole minutes before the shift END ("early_departure_minutes = 30"). 0 when none.</summary>
+    public int EarlyDepartureMinutes { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
 
     public Employee? Employee { get; set; }

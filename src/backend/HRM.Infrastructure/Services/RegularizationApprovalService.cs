@@ -27,17 +27,20 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IShiftService _shiftService;
     private readonly ILogger<RegularizationApprovalService> _logger;
 
     public RegularizationApprovalService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IShiftService shiftService,
         ILogger<RegularizationApprovalService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _shiftService = shiftService;
         _logger = logger;
     }
 
@@ -368,6 +371,13 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         log.OvertimeMinutes = calc.OvertimeMinutes;
         log.Status = calc.Status;
 
+        // US-ATT-008 BR-7: regularized records inherit late/early status from the REGULARIZED times, not
+        // the original submission. Recompute against the shift effective on the regularized date so that
+        // (e.g.) regularizing a late clock-in to an on-time value CLEARS the late flag. FLEXIBLE / no
+        // shift → cleared (no tracking). Single source of truth: the same LateEarlyCalculator + the
+        // same shift resolution the clock-in/out path uses.
+        await RecomputeLateEarlyAsync(log, regularization.Date, settings, calc.TotalWorkMinutes, cancellationToken);
+
         return Result<AttendanceLog>.Success(log);
     }
 
@@ -444,6 +454,55 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         _dbContext.AttendanceSettings.Add(settings);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return settings;
+    }
+
+    /// <summary>
+    /// US-ATT-008 BR-7: recomputes and stamps the late/early fields on a (possibly newly created) log
+    /// from its current clock-in/out against the shift effective on <paramref name="date"/>. Always sets
+    /// all four fields (clears them when FLEXIBLE / no shift / on-time) so a regularization-to-on-time
+    /// correctly clears a prior late flag. Uses the shared <see cref="LateEarlyCalculator"/> and the same
+    /// US-ATT-005 resolution as the clock-in/out path (single source of truth). No SaveChanges here.
+    /// </summary>
+    private async Task RecomputeLateEarlyAsync(
+        AttendanceLog log, DateOnly date, AttendanceSettings settings, int? workedMinutes,
+        CancellationToken cancellationToken)
+    {
+        log.IsLate = false;
+        log.LateMinutes = 0;
+        log.LateByMinutes = 0;
+        log.IsEarlyDeparture = false;
+        log.EarlyDepartureMinutes = 0;
+
+        var resolved = await _shiftService.ResolveForEmployeeAsync(log.EmployeeId, date, cancellationToken);
+        if (resolved.IsFailure || resolved.Value is null)
+            return;
+
+        var shift = resolved.Value;
+        if (string.Equals(shift.Type, ShiftType.Flexible, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var start = TimeOnly.TryParse(shift.StartTime, out var st) ? st : (TimeOnly?)null;
+        var end = TimeOnly.TryParse(shift.EndTime, out var en) ? en : (TimeOnly?)null;
+        if (start is null && end is null)
+            return;
+
+        var grace = shift.GracePeriodMinutes > 0 ? shift.GracePeriodMinutes : settings.GracePeriodMinutes;
+        var minimumMinutes = shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0;
+
+        var result = LateEarlyCalculator.Evaluate(
+            clockInTime: TimeOnly.FromDateTime(log.ClockIn),
+            clockOutTime: log.ClockOut is { } co ? TimeOnly.FromDateTime(co) : null,
+            shiftStart: start,
+            shiftEnd: end,
+            gracePeriodMinutes: Math.Max(0, grace),
+            workedMinutes: workedMinutes,
+            minimumMinutes: minimumMinutes);
+
+        log.IsLate = result.IsLate;
+        log.LateMinutes = result.LateMinutes;
+        log.LateByMinutes = result.LateByMinutes;
+        log.IsEarlyDeparture = result.IsEarlyDeparture;
+        log.EarlyDepartureMinutes = result.EarlyDepartureMinutes;
     }
 
     private RegularizationApprovalHistory NewHistory(

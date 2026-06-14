@@ -169,7 +169,9 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
                 WorkMinutes = day.WorkMinutes,
                 IsRegularized = day.IsRegularized,
                 IsLate = day.IsLate,
+                LateMinutes = day.LateMinutes,
                 IsEarlyDeparture = day.IsEarlyDeparture,
+                EarlyDepartureMinutes = day.EarlyDepartureMinutes,
             });
         }
 
@@ -332,6 +334,12 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         public required bool HalfDayEnabled { get; init; }
         public required HashSet<DateOnly> ApprovedOvertimeDates { get; init; }
         public required Dictionary<DateOnly, int> ApprovedOvertimeByDate { get; init; }
+
+        // US-ATT-008 AC-4/BR-4: tenant late-deduction policy + (for QUARTERLY) the late count from the
+        // EARLIER months in the same quarter, so the deduction is credited incrementally and never
+        // double-counted across the quarter's months. Null policy / inactive → no deduction.
+        public LatePolicy? LatePolicy { get; init; }
+        public required int PriorQuarterLateCount { get; init; }
     }
 
     private async Task<MonthContext> LoadEmployeeMonthContextAsync(
@@ -418,6 +426,24 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             .GroupBy(o => o.Date)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.Minutes));
 
+        // US-ATT-008 AC-4/BR-4: tenant late-deduction policy. For QUARTERLY, count the persisted late
+        // arrivals in the EARLIER months of the same quarter so the deduction is credited incrementally.
+        var latePolicy = await _dbContext.LatePolicies.AsNoTracking().FirstOrDefaultAsync(ct);
+        int priorQuarterLateCount = 0;
+        if (latePolicy is { IsActive: true } && latePolicy.Period == LatePolicyPeriod.Quarterly)
+        {
+            var quarterStart = QuarterStart(monthStart);
+            if (quarterStart < monthStart)
+            {
+                var qStartUtc = quarterStart.ToDateTime(TimeOnly.MinValue);
+                var qPriorEndUtc = monthStart.ToDateTime(TimeOnly.MinValue);   // exclusive of this month
+                priorQuarterLateCount = await _dbContext.AttendanceLogs.AsNoTracking()
+                    .Where(a => a.EmployeeId == employee.Id && a.IsLate
+                        && a.ClockIn >= qStartUtc && a.ClockIn < qPriorEndUtc)
+                    .CountAsync(ct);
+            }
+        }
+
         return new MonthContext
         {
             LogsByDate = logsByDate,
@@ -434,6 +460,8 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             HalfDayEnabled = halfDayEnabled,
             ApprovedOvertimeDates = otByDate.Keys.ToHashSet(),
             ApprovedOvertimeByDate = otByDate,
+            LatePolicy = latePolicy,
+            PriorQuarterLateCount = priorQuarterLateCount,
         };
     }
 
@@ -488,13 +516,51 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             overtime += ctx.ApprovedOvertimeByDate.GetValueOrDefault(date, 0);
         }
 
+        // US-ATT-008 AC-4/BR-4: late-arrival deduction feeds LOP. Tiered — every <threshold> lates adds
+        // <deductionDays> (matches the story's "3 lates = 0.5 day, 6 lates = 1 day"). MONTHLY uses this
+        // month's late count; QUARTERLY uses the cumulative quarter-to-date count and credits only the
+        // INCREMENTAL deduction crossed this month (prior months already booked theirs). Notification
+        // half (FR-5/AC-4) is DEFERRED (US-NTF); the deduction FLAG (this LOP) is implemented.
+        lop += LateDeductionDays(ctx, late);
+
         return new MonthAggregate(
             present, absent, late, early, workMinutes, overtime, leave, holidays, weeklyOffs, lop);
     }
 
+    /// <summary>
+    /// US-ATT-008 AC-4/BR-4: the LOP days contributed by the late-deduction rule for the month. Returns 0
+    /// when there is no active policy. MONTHLY: tiered deduction on the month's late count. QUARTERLY:
+    /// the delta between the quarter-to-date tiered deduction and the deduction already booked by the
+    /// earlier months in the quarter (never negative) — so the quarter total is credited incrementally.
+    /// </summary>
+    private static decimal LateDeductionDays(MonthContext ctx, int monthLateCount)
+    {
+        var policy = ctx.LatePolicy;
+        if (policy is not { IsActive: true } || policy.ThresholdCount < 1 || policy.DeductionDays <= 0m)
+            return 0m;
+
+        if (policy.Period == LatePolicyPeriod.Quarterly)
+        {
+            int quarterToDate = ctx.PriorQuarterLateCount + monthLateCount;
+            decimal totalQuarter = (quarterToDate / policy.ThresholdCount) * policy.DeductionDays;
+            decimal priorBooked = (ctx.PriorQuarterLateCount / policy.ThresholdCount) * policy.DeductionDays;
+            return Math.Max(0m, totalQuarter - priorBooked);
+        }
+
+        // MONTHLY (default).
+        return (monthLateCount / policy.ThresholdCount) * policy.DeductionDays;
+    }
+
+    private static DateOnly QuarterStart(DateOnly date)
+    {
+        int firstMonthOfQuarter = ((date.Month - 1) / 3) * 3 + 1;
+        return new DateOnly(date.Year, firstMonthOfQuarter, 1);
+    }
+
     private readonly record struct DayResult(
         string Status, DateTime? ClockIn, DateTime? ClockOut, int? WorkMinutes,
-        bool IsRegularized, bool IsLate, bool IsEarlyDeparture, bool IsLeaveHalf);
+        bool IsRegularized, bool IsLate, int LateMinutes, bool IsEarlyDeparture, int EarlyDepartureMinutes,
+        bool IsLeaveHalf);
 
     /// <summary>
     /// Classifies a single day per BR-1..BR-7. Precedence: HOLIDAY (BR-4) → full LEAVE (BR-6) →
@@ -513,24 +579,26 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         DateTime? clockOut = hasLog ? log!.ClockOut : null;
         int? workMinutes = hasLog ? log!.TotalWorkMinutes : null;
 
-        bool isLate = false, isEarly = false;
-        if (hasLog)
-        {
-            (isLate, isEarly) = EvaluateLateEarly(log!, ctx);
-        }
+        // US-ATT-008: read the PERSISTED late/early flags + minutes from attendance_log (single source
+        // of truth — detection happens inline on clock-in/out and on regularization approval). The
+        // summary no longer recomputes them from the shift (DRY).
+        bool isLate = hasLog && log!.IsLate;
+        bool isEarly = hasLog && log!.IsEarlyDeparture;
+        int lateMinutes = hasLog ? log!.LateMinutes : 0;
+        int earlyMinutes = hasLog ? log!.EarlyDepartureMinutes : 0;
 
         // BR-4: public holidays are excluded from present/absent.
         if (isHoliday)
-            return new DayResult("HOLIDAY", clockIn, clockOut, workMinutes, regularized, isLate, isEarly, false);
+            return new DayResult("HOLIDAY", clockIn, clockOut, workMinutes, regularized, isLate, lateMinutes, isEarly, earlyMinutes, false);
 
         // BR-6: full approved leave is never absent.
         if (fullLeave)
-            return new DayResult("LEAVE", clockIn, clockOut, workMinutes, regularized, isLate, isEarly, false);
+            return new DayResult("LEAVE", clockIn, clockOut, workMinutes, regularized, isLate, lateMinutes, isEarly, earlyMinutes, false);
 
         // BR-4: weekly off (not a scheduled working day) is excluded — but a worked weekly-off still
         // counts work minutes (only when there is a log).
         if (!isWorkingDay && !hasLog)
-            return new DayResult("WEEKLY_OFF", null, null, null, false, false, false, false);
+            return new DayResult("WEEKLY_OFF", null, null, null, false, false, 0, false, 0, false);
 
         if (hasLog && workMinutes is { } wm)
         {
@@ -539,46 +607,20 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             // counted as a full present day — LOP/absence is reserved for NO record on a working day
             // (BR-2), so a short-but-real attendance day is not penalized here.
             if (ctx.HalfDayEnabled && wm < ctx.StandardMinutes && wm >= ctx.StandardMinutes / 2)
-                return new DayResult("HALF_DAY", clockIn, clockOut, workMinutes, regularized, isLate, isEarly, false);
+                return new DayResult("HALF_DAY", clockIn, clockOut, workMinutes, regularized, isLate, lateMinutes, isEarly, earlyMinutes, false);
 
-            return new DayResult("PRESENT", clockIn, clockOut, workMinutes, regularized, isLate, isEarly, false);
+            return new DayResult("PRESENT", clockIn, clockOut, workMinutes, regularized, isLate, lateMinutes, isEarly, earlyMinutes, false);
         }
 
         // BR-6 half-day leave with no work record: half leave, the other half is absence.
         if (halfLeave)
-            return new DayResult("HALF_DAY", clockIn, clockOut, workMinutes, regularized, isLate, isEarly, true);
+            return new DayResult("HALF_DAY", clockIn, clockOut, workMinutes, regularized, isLate, lateMinutes, isEarly, earlyMinutes, true);
 
         if (!isWorkingDay)
-            return new DayResult("WEEKLY_OFF", null, null, null, false, false, false, false);
+            return new DayResult("WEEKLY_OFF", null, null, null, false, false, 0, false, 0, false);
 
         // BR-2: scheduled working day, no record, no leave → ABSENT (→ LOP, BR-3).
-        return new DayResult("ABSENT", null, null, null, false, false, false, false);
-    }
-
-    /// <summary>
-    /// US-ATT-008-pending late / early-departure detection from the resolved shift. Late = clock-in
-    /// (wall-clock, treated as UTC — tenant-timezone deferred) after shift start + grace. Early
-    /// departure = clock-out before shift end. Returns (false,false) when the shift has no start/end.
-    /// </summary>
-    private static (bool IsLate, bool IsEarly) EvaluateLateEarly(AttendanceLog log, MonthContext ctx)
-    {
-        bool late = false, early = false;
-
-        if (ctx.ShiftStart is { } start)
-        {
-            var threshold = start.Add(TimeSpan.FromMinutes(ctx.GracePeriodMinutes));
-            var clockInTime = TimeOnly.FromDateTime(log.ClockIn);
-            // Only compare same-day wall-clock; ignore overnight wrap (night-shift late detection deferred).
-            late = clockInTime > threshold;
-        }
-
-        if (ctx.ShiftEnd is { } end && log.ClockOut is { } co)
-        {
-            var clockOutTime = TimeOnly.FromDateTime(co);
-            early = clockOutTime < end;
-        }
-
-        return (late, early);
+        return new DayResult("ABSENT", null, null, null, false, false, 0, false, 0, false);
     }
 
     /// <summary>

@@ -51,6 +51,13 @@ public sealed record AttendanceLogDto
     public decimal? ClockInLatitude { get; init; }
     public decimal? ClockInLongitude { get; init; }
     public string Source { get; init; } = "WEB";
+
+    /// <summary>US-ATT-008 FR-3/AC-1: true when clocked in past shift start + grace; drives the FE "Late" badge.</summary>
+    public bool IsLate { get; init; }
+
+    /// <summary>US-ATT-008 AC-1: whole minutes past the shift start (the badge value, e.g. 20). 0 when on time.</summary>
+    public int LateMinutes { get; init; }
+
     public DateTime CreatedAt { get; init; }
 }
 
@@ -104,6 +111,12 @@ public sealed record ClockOutResultDto
 
     /// <summary>"COMPLETE" | "SHORT_DAY" | "OVERTIME" | "ANOMALY" (§7).</summary>
     public string Status { get; init; } = "COMPLETE";
+
+    /// <summary>US-ATT-008 FR-3/AC-3: true when clocked out before shift end with minimum hours unmet; drives the FE "Early" badge.</summary>
+    public bool IsEarlyDeparture { get; init; }
+
+    /// <summary>US-ATT-008 AC-3: whole minutes before the shift end (the badge value, e.g. 30). 0 when none.</summary>
+    public int EarlyDepartureMinutes { get; init; }
 }
 
 /// <summary>

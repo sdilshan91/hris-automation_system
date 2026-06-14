@@ -77,6 +77,8 @@ public sealed class RegularizationApprovalIntegrationTests
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton(currentUser);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        // US-ATT-008: RegularizationApprovalService now depends on IShiftService for BR-7 late/early recompute.
+        services.AddScoped<IShiftService, ShiftService>();
         services.AddScoped<IRegularizationApprovalService, RegularizationApprovalService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(ApproveRegularizationCommand).Assembly));

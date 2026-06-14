@@ -91,7 +91,14 @@ public sealed record DailyBreakdownDto
 
     public bool IsRegularized { get; init; }
     public bool IsLate { get; init; }
+
+    /// <summary>US-ATT-008: whole minutes past the shift start; 0 when on time (drives the day-row badge).</summary>
+    public int LateMinutes { get; init; }
+
     public bool IsEarlyDeparture { get; init; }
+
+    /// <summary>US-ATT-008: whole minutes before the shift end; 0 when none.</summary>
+    public int EarlyDepartureMinutes { get; init; }
 }
 
 /// <summary>

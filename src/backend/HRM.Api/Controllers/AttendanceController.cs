@@ -778,6 +778,111 @@ public sealed class AttendanceController : ControllerBase
         return File(export.FileContent!, export.ContentType!, export.FileName!);
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-008: Late arrival & early-departure tracking
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/late-policy
+    /// Returns the tenant late-arrival policy (US-ATT-008 FR-4), defaulting when none is configured.
+    /// Gated by Attendance.View.All — the HR attendance-read permission.
+    /// </summary>
+    [HttpGet("late-policy")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<LatePolicyDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetLatePolicy(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetLatePolicyQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<LatePolicyDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// PUT /api/v1/attendance/late-policy
+    /// Upserts the tenant late-arrival policy (US-ATT-008 FR-4): deduction threshold/days, period,
+    /// chronic threshold, notification flag, active flag. Gated by Attendance.View.All (HR).
+    /// </summary>
+    [HttpPut("late-policy")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<LatePolicyDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpsertLatePolicy(
+        [FromBody] LatePolicyDto request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpsertLatePolicyCommand(request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<LatePolicyDto>.Ok(result.Value!, "Late policy saved."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/late-early/report?from=yyyy-MM-dd&amp;to=yyyy-MM-dd&amp;departmentId=&amp;employeeId=&amp;scope=team|all
+    /// Late/early-departure report for a date range (US-ATT-008 AC-5/FR-6). scope=team → the acting
+    /// manager's direct reports; scope=all → every employee (HR — requires Attendance.View.All, enforced
+    /// in the service). Gated by Attendance.Approve.Team (held by managers AND HR roles).
+    /// </summary>
+    [HttpGet("late-early/report")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<LateEarlyReportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetLateEarlyReport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] Guid? departmentId,
+        [FromQuery] Guid? employeeId,
+        [FromQuery] string? scope,
+        CancellationToken cancellationToken)
+    {
+        // Default the range to the current UTC month when omitted.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var fromDate = from ?? new DateOnly(today.Year, today.Month, 1);
+        var toDate = to ?? today;
+
+        var result = await _mediator.Send(
+            new GetLateEarlyReportQuery(fromDate, toDate, departmentId, employeeId, scope ?? "team"),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<LateEarlyReportResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/late-early/my-score?month=yyyy-MM
+    /// The acting employee's monthly lateness score ("X of N allowed lates", US-ATT-008 §8).
+    /// Gated by Attendance.CheckIn — the same self permission as clock-in.
+    /// </summary>
+    [HttpGet("late-early/my-score")]
+    [RequirePermission("Attendance.CheckIn")]
+    [ProducesResponseType(typeof(ApiResponse<LatenessScoreDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMyLatenessScore(
+        [FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var result = await _mediator.Send(new GetMyLatenessScoreQuery(year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<LatenessScoreDto>.Ok(result.Value!));
+    }
+
     /// <summary>
     /// Parses the "yyyy-MM" month query param (default = current UTC month). On failure, sets
     /// <paramref name="error"/> to a 400 result and returns false.

@@ -55,8 +55,8 @@
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/secret-guard.py", "timeout": 5 },
-          { "type": "command", "command": "python .claude/hooks/scripts/test-integrity-guard.py", "timeout": 5 }
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/secret-guard.py\"", "timeout": 5 },
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/test-integrity-guard.py\"", "timeout": 5 }
         ]
       }
     ],

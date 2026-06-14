@@ -49,7 +49,9 @@ public sealed class GetClockStatusTests
     {
         var overtime = new OvertimeService(
             db, tenantContext, currentUser, Substitute.For<ILogger<OvertimeService>>());
-        return new AttendanceService(db, tenantContext, currentUser, overtime, _logger);
+        var shiftService = new ShiftService(
+            db, tenantContext, currentUser, Substitute.For<ILogger<ShiftService>>());
+        return new AttendanceService(db, tenantContext, currentUser, overtime, shiftService, _logger);
     }
 
     private void SeedEmployee()

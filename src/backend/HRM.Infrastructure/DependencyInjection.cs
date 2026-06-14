@@ -141,6 +141,10 @@ public static class DependencyInjection
         // background job when present; reuses IReportExportStorage for the stored file.
         services.AddScoped<IAttendanceSummaryService, AttendanceSummaryService>();
 
+        // Late-arrival / early-departure policy + reporting (US-ATT-008). Detection itself is inline in
+        // AttendanceService (clock-in/out) and RegularizationApprovalService (approval recompute).
+        services.AddScoped<ILateEarlyService, LateEarlyService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

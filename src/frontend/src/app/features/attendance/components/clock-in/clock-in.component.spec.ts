@@ -338,4 +338,80 @@ describe('ClockInComponent', () => {
 
     component.ngOnDestroy();
   }));
+
+  // ════════════════ US-ATT-008: Late / Early badges ════════════════
+
+  // ─── AC-1: late clock-in surfaces the amber "Late by {n} min" badge ──
+  it('renders the late badge when the clock-in is flagged late (AC-1)', fakeAsync(() => {
+    setup({ ...baseStatus, requireGeolocation: false });
+    mockGeolocationDenied();
+    serviceSpy.clockIn.and.returnValue(
+      of({ ...createdLog, clockInLatitude: null, clockInLongitude: null, isLate: true, lateMinutes: 20 }),
+    );
+
+    component.onClockIn();
+    tick();
+
+    expect(component.isLate()).toBeTrue();
+    expect(component.lateBadgeLabel()).toBe('20 min');
+
+    fixture.detectChanges();
+    const badge = (fixture.nativeElement as HTMLElement).querySelector('[data-test="late-badge"]');
+    expect(badge).toBeTruthy();
+    expect((badge!.textContent ?? '')).toContain('Late by 20 min');
+
+    component.ngOnDestroy();
+  }));
+
+  // ─── AC-2: on-time clock-in shows no late badge ──
+  it('shows no late badge for an on-time clock-in (AC-2)', fakeAsync(() => {
+    setup({ ...baseStatus, requireGeolocation: false });
+    mockGeolocationDenied();
+    serviceSpy.clockIn.and.returnValue(
+      of({ ...createdLog, clockInLatitude: null, clockInLongitude: null, isLate: false, lateMinutes: 0 }),
+    );
+
+    component.onClockIn();
+    tick();
+
+    expect(component.isLate()).toBeFalse();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-test="late-badge"]')).toBeNull();
+
+    component.ngOnDestroy();
+  }));
+
+  // ─── AC-3: early clock-out surfaces the red "Early by {n} min" badge ──
+  it('renders the early-departure badge when the clock-out is flagged early (AC-3)', fakeAsync(() => {
+    setup(clockedInStatus);
+    serviceSpy.clockOut.and.returnValue(
+      of({ ...completeResult, status: 'SHORT_DAY', isEarlyDeparture: true, earlyDepartureMinutes: 30 }),
+    );
+
+    component.onClockOut();
+    tick();
+
+    expect(component.isEarlyDeparture()).toBeTrue();
+    expect(component.earlyBadgeLabel()).toBe('30 min');
+
+    fixture.detectChanges();
+    const badge = (fixture.nativeElement as HTMLElement).querySelector('[data-test="early-badge"]');
+    expect(badge).toBeTruthy();
+    expect((badge!.textContent ?? '')).toContain('Early by 30 min');
+  }));
+
+  // ─── A non-early clock-out shows no early badge ──
+  it('shows no early-departure badge for an on-time clock-out', fakeAsync(() => {
+    setup(clockedInStatus);
+    serviceSpy.clockOut.and.returnValue(
+      of({ ...completeResult, isEarlyDeparture: false, earlyDepartureMinutes: 0 }),
+    );
+
+    component.onClockOut();
+    tick();
+
+    expect(component.isEarlyDeparture()).toBeFalse();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-test="early-badge"]')).toBeNull();
+  }));
 });

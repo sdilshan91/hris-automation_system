@@ -156,23 +156,48 @@ public sealed class MonthlySummaryIntegrationTests
         db.SaveChanges();
     }
 
-    /// <summary>Adds a completed attendance log on the given date (UTC) with the given span/minutes.</summary>
+    /// <summary>
+    /// Adds a completed attendance log on the given date (UTC) with the given span/minutes. US-ATT-008:
+    /// the monthly summary now reads the PERSISTED is_late/is_early_departure fields (single source of
+    /// truth -- detection is inline on clock-in/out), so this helper stamps those same flags via the
+    /// production <see cref="LateEarlyCalculator"/> against the seeded default shift -- exactly what the
+    /// real clock-in/clock-out path would have persisted for these punch times.
+    /// </summary>
     private void SeedLog(Guid tenantId, Guid employeeId, DateOnly date,
         int startHour, int startMinute, int workMinutes)
     {
         using var db = Db(tenantId);
         var clockIn = new DateTime(date.Year, date.Month, date.Day, startHour, startMinute, 0, DateTimeKind.Utc);
+        var clockOut = clockIn.AddMinutes(workMinutes);
+
+        var shift = db.Shifts.FirstOrDefault(s => s.IsDefault);
+        var lateEarly = shift is null
+            ? default
+            : LateEarlyCalculator.Evaluate(
+                clockInTime: TimeOnly.FromDateTime(clockIn),
+                clockOutTime: TimeOnly.FromDateTime(clockOut),
+                shiftStart: shift.StartTime,
+                shiftEnd: shift.EndTime,
+                gracePeriodMinutes: shift.GracePeriodMinutes,
+                workedMinutes: workMinutes,
+                minimumMinutes: shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0);
+
         db.AttendanceLogs.Add(new AttendanceLog
         {
             Id = BaseEntity.NewUuidV7(),
             TenantId = tenantId,
             EmployeeId = employeeId,
             ClockIn = clockIn,
-            ClockOut = clockIn.AddMinutes(workMinutes),
+            ClockOut = clockOut,
             TotalWorkMinutes = workMinutes,
             OvertimeMinutes = 0,
             Status = "COMPLETE",
             Source = "WEB",
+            IsLate = lateEarly.IsLate,
+            LateMinutes = lateEarly.LateMinutes,
+            LateByMinutes = lateEarly.LateByMinutes,
+            IsEarlyDeparture = lateEarly.IsEarlyDeparture,
+            EarlyDepartureMinutes = lateEarly.EarlyDepartureMinutes,
         });
         db.SaveChanges();
     }
