@@ -66,7 +66,7 @@
 - [x] US-LV-011 — Compulsory leave / LOP handling *(PR #37)*
 - [x] US-LV-012 — Leave reports and analytics *(PR #38)*
 
-## 4. Attendance (10 stories)
+## 4. Attendance (10 stories) — COMPLETE ✅
 - [x] US-ATT-001 — Employee clock-in with optional geolocation *(PR #39)*
 - [x] US-ATT-002 — Employee clock-out with hours auto-calculation *(PR #40)*
 - [x] US-ATT-003 — Attendance regularization request *(PR #41)*
@@ -76,7 +76,7 @@
 - [x] US-ATT-007 — Monthly attendance summary *(PR #45)*
 - [x] US-ATT-008 — Late arrival and early departure tracking *(PR #46)*
 - [x] US-ATT-009 — Attendance integration with payroll *(PR #47)*
-- [~] US-ATT-010 — Attendance dashboard and reports
+- [x] US-ATT-010 — Attendance dashboard and reports *(PR #48)*
 
 ## 5. Recruitment (10 stories)
 - [ ] US-REC-001 — Create and publish job vacancy
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **36** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; Attendance US-ATT-001 PR #39, US-ATT-002 PR #40, US-ATT-003 PR #41, US-ATT-004 PR #42, US-ATT-005 PR #43, US-ATT-006 PR #44, US-ATT-007 PR #45, US-ATT-008 PR #46, US-ATT-009 PR #47)
+- Done: **37** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **64**
+- Pending: **63**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
