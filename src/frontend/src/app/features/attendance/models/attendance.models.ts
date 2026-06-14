@@ -91,6 +91,72 @@ export interface IGeolocationResult {
 }
 
 /**
+ * US-ATT-002: Clock-out work-hours status (§7 `status`).
+ *  - COMPLETE   : total hours within the shift's standard band (BR-2).
+ *  - SHORT_DAY  : below the shift's minimum required hours (BR-4, AC-4) — HR review.
+ *  - OVERTIME   : exceeded the shift's standard hours by the overtime threshold (BR-3, AC-3).
+ *  - ANOMALY    : span > 16h (BR-6, FR-7) — flagged for review.
+ */
+export type ClockOutStatus = 'COMPLETE' | 'SHORT_DAY' | 'OVERTIME' | 'ANOMALY';
+
+/**
+ * Request payload for clocking out (US-ATT-002 FR-1, AC-5).
+ * Coordinates are conditional (§7): sent only when the tenant geo policy requires
+ * geolocation on clock-out and the browser granted permission; otherwise omitted/null.
+ * The backend stamps clock_out (server UTC), IP and audit fields server-side (§10).
+ */
+export interface IClockOutRequest {
+  /** Latitude, when captured (AC-5). Null when geo is not required or not granted. */
+  latitude: number | null;
+  /** Longitude, when captured (AC-5). Null when geo is not required or not granted. */
+  longitude: number | null;
+}
+
+/**
+ * Result of a successful clock-out (US-ATT-002 AC-1, AC-3, AC-4, FR-2/4/7).
+ * Drives the summary card: clock-in/out times (UTC -> local), total hours, overtime,
+ * and the status pill. The backend computes all durations and the status — the FE
+ * only formats and labels them.
+ */
+export interface IClockOutResult {
+  attendanceLogId: string;
+  /** Clock-in timestamp in UTC; UI converts to the employee's local time (NFR-5). */
+  clockIn: string;
+  /** Clock-out timestamp in UTC (FR-1); UI converts to local time (NFR-5). */
+  clockOut: string;
+  /** Net worked minutes after break deduction (FR-2, FR-3, NFR-2). */
+  totalWorkMinutes: number;
+  /** Overtime minutes beyond the shift standard (FR-4, AC-3). 0/null when none. */
+  overtimeMinutes: number | null;
+  /** Computed work-hours status (§7) driving the summary pill. */
+  status: ClockOutStatus;
+}
+
+/**
+ * Typed error body from the backend for clock-out (US-ATT-002 AC-2).
+ * `message` is shown verbatim inline; `code` is the machine-readable discriminator:
+ *   - 404 `code: 'no_active_clock_in'` -> "No active clock-in found..." (AC-2) -> reset to clock-in state.
+ */
+export interface IClockOutErrorResponse {
+  message: string;
+  code?: 'no_active_clock_in' | string;
+}
+
+/**
+ * Pure helper: format a whole-minute duration as "Hh Mm" (e.g. 465 -> "7h 45m") (§8, AC-1).
+ * Sub-hour durations render as "Mm" (e.g. 45 -> "45m"); zero -> "0m". Clamps negatives.
+ */
+export function formatWorkMinutes(totalMinutes: number): string {
+  const safe = Math.max(0, Math.floor(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+  return `${hours}h ${minutes}m`;
+}
+
+/**
  * Pure helper: format elapsed milliseconds as a live work timer "HH:MM:SS" (§8).
  * Clamps negatives to zero so a clock-skewed start never renders a negative timer.
  */

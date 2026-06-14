@@ -9,6 +9,11 @@ Attendance module domain rules, the enforcement/error-code contract, and deviati
 story's aspirational tech (no RLS, no Redis) are documented in the shared vault at
 `docs/vault/modules/attendance.md`. Read it before working any `US-ATT-*` story.
 
+US-ATT-002 (clock-out) added: pure `AttendanceCalculator.Calculate(...)` in
+`HRM.Domain/Entities/AttendanceCalculator.cs` (work-hours/overtime/status, shared by the clock-out
+service path AND the `AutoClockOutJob` BR-5 recurring job); calc policy fields on `AttendanceSettings`
+(tenant-level fallback, move to shift entity at US-ATT-005); `ClockStatusDto.LastCompleted` summary.
+
 Key scaffold facts from US-ATT-001:
 - Entities `AttendanceLog` + `AttendanceSettings` (both `BaseEntity`), one settings row per tenant
   created lazily with enforcement off.

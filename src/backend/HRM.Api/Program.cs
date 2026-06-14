@@ -143,6 +143,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessLeaveYearEndJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessAbsenteeismJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.AutoClockOutJob>();
 
     // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
     // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
@@ -278,6 +279,14 @@ try
             "leave-absenteeism-lop",
             job => job.RunAsync(),
             "0 4 * * *"); // 04:00 UTC daily
+
+        // US-ATT-002 BR-5: auto-close attendance records left open past end-of-day (UTC). Safety net
+        // for missed manual clock-outs; closes the prior day's open punches and flags them ANOMALY for
+        // regularization. Idempotent, so a daily cadence shortly after midnight UTC is safe.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.AutoClockOutJob>(
+            "attendance-auto-clock-out",
+            job => job.RunAsync(),
+            "5 0 * * *"); // 00:05 UTC daily
     }
 
     app.Run();

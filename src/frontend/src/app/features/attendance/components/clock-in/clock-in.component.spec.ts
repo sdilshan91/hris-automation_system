@@ -7,7 +7,7 @@ import { of, throwError } from 'rxjs';
 
 import { ClockInComponent } from './clock-in.component';
 import { AttendanceService } from '../../services/attendance.service';
-import { IAttendanceLog, IClockStatus } from '../../models/attendance.models';
+import { IAttendanceLog, IClockStatus, IClockOutResult } from '../../models/attendance.models';
 
 describe('ClockInComponent', () => {
   let component: ClockInComponent;
@@ -77,7 +77,7 @@ describe('ClockInComponent', () => {
   beforeEach(() => {
     originalGeolocationDescriptor = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
 
-    serviceSpy = jasmine.createSpyObj('AttendanceService', ['getStatus', 'clockIn']);
+    serviceSpy = jasmine.createSpyObj('AttendanceService', ['getStatus', 'clockIn', 'clockOut']);
     toastrSpy = jasmine.createSpyObj('ToastrService', ['success', 'error', 'warning', 'info']);
 
     TestBed.configureTestingModule({
@@ -211,6 +211,130 @@ describe('ClockInComponent', () => {
     expect(component.clockedInAtLocal()).not.toBeNull();
     tick(1000);
     expect(component.elapsed()).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+
+    component.ngOnDestroy();
+  }));
+
+  // ════════════════ US-ATT-002: Clock-out ════════════════
+
+  const clockedInStatus: IClockStatus = {
+    ...baseStatus,
+    isClockedIn: true,
+    clockedInAt: '2026-06-14T03:00:00Z',
+  };
+
+  const completeResult: IClockOutResult = {
+    attendanceLogId: 'att-99',
+    clockIn: '2026-06-14T03:00:00Z',
+    clockOut: '2026-06-14T11:45:00Z',
+    totalWorkMinutes: 465, // 7h 45m
+    overtimeMinutes: null,
+    status: 'COMPLETE',
+  };
+
+  // ─── AC-1: clock-out success renders the summary card ──
+  it('clocks out successfully and renders the work summary (AC-1)', fakeAsync(() => {
+    setup(clockedInStatus);
+    serviceSpy.clockOut.and.returnValue(of(completeResult));
+
+    component.onClockOut();
+    tick(); // flush the clockOut observable (no geo required)
+
+    expect(serviceSpy.clockOut).toHaveBeenCalledWith({ latitude: null, longitude: null });
+    expect(component.isClockedIn()).toBeFalse();
+    expect(component.errorMessage()).toBeNull();
+    expect(component.summary()).toEqual(completeResult);
+    expect(component.totalHoursLabel()).toBe('7h 45m');
+    expect(component.statusLabel()).toBe('Complete');
+    expect(component.pillClass()).toBe('pill-complete');
+    expect(component.overtimeLabel()).toBe('');
+    expect(toastrSpy.success).toHaveBeenCalled();
+
+    // Summary content rendered in the DOM (flush change detection after the async result).
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('7h 45m');
+    expect(text).toContain('Complete');
+  }));
+
+  // ─── AC-3: overtime status shows the blue Overtime pill + overtime label ──
+  it('renders the Overtime pill and overtime hours (AC-3)', fakeAsync(() => {
+    setup(clockedInStatus);
+    serviceSpy.clockOut.and.returnValue(
+      of({
+        ...completeResult,
+        clockOut: '2026-06-14T13:00:00Z',
+        totalWorkMinutes: 600, // 10h
+        overtimeMinutes: 120, // 2h
+        status: 'OVERTIME',
+      }),
+    );
+
+    component.onClockOut();
+    tick();
+
+    expect(component.statusLabel()).toBe('Overtime');
+    expect(component.pillClass()).toBe('pill-overtime');
+    expect(component.totalHoursLabel()).toBe('10h 0m');
+    expect(component.overtimeLabel()).toBe('2h 0m');
+
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Overtime');
+    expect(text).toContain('2h 0m overtime');
+  }));
+
+  // ─── AC-2: no open record -> inline error + reset to clock-in state ──
+  it('shows the no-open-record error and resets to clock-in state (AC-2)', fakeAsync(() => {
+    setup(clockedInStatus);
+    const errorResponse = new HttpErrorResponse({
+      status: 404,
+      error: {
+        message: 'No active clock-in found. Please clock in first or submit a regularization request.',
+        code: 'no_active_clock_in',
+      },
+    });
+    serviceSpy.clockOut.and.returnValue(throwError(() => errorResponse));
+
+    component.onClockOut();
+    tick();
+
+    expect(component.errorMessage()).toContain('No active clock-in found');
+    expect(component.summary()).toBeNull();
+    expect(component.isClockedIn()).toBeFalse(); // reset to clock-in state
+
+    // The green Clock In button is shown again (clocked-out state).
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Clock In');
+  }));
+
+  // ─── AC-5: tenant requires geolocation on clock-out -> coords captured + sent ──
+  it('captures and sends geolocation when the tenant requires it on clock-out (AC-5)', fakeAsync(() => {
+    setup({ ...clockedInStatus, requireGeolocation: true });
+    mockGeolocationGranted(6.9271, 79.8612);
+    serviceSpy.clockOut.and.returnValue(of(completeResult));
+
+    component.onClockOut();
+    tick(); // flush the geolocation promise + clockOut observable
+
+    expect(serviceSpy.clockOut).toHaveBeenCalledWith({ latitude: 6.9271, longitude: 79.8612 });
+    expect(component.summary()).not.toBeNull();
+    expect(component.errorMessage()).toBeNull();
+  }));
+
+  // ─── AC-5: tenant requires geolocation but permission denied -> blocked, no POST ──
+  it('blocks clock-out when geolocation is required and permission denied (AC-5)', fakeAsync(() => {
+    setup({ ...clockedInStatus, requireGeolocation: true });
+    mockGeolocationDenied();
+
+    component.onClockOut();
+    tick();
+
+    expect(serviceSpy.clockOut).not.toHaveBeenCalled();
+    expect(component.errorMessage()).toContain('Location access is required to clock out');
+    expect(component.isClockedIn()).toBeTrue(); // remains clocked in
+    expect(component.isSubmitting()).toBeFalse();
 
     component.ngOnDestroy();
   }));

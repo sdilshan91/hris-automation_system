@@ -20,9 +20,45 @@ public sealed class AttendanceLog : BaseEntity
 
     /// <summary>
     /// Clock-out instant in UTC. Null while the record is still open (BR-1).
-    /// Set by a later clock-out story.
+    /// Set on clock-out (US-ATT-002 FR-1) or by the auto-clock-out safety-net job (BR-5).
     /// </summary>
     public DateTime? ClockOut { get; set; }
+
+    /// <summary>
+    /// Captured latitude at clock-out (US-ATT-002 FR-6 / AC-5). Null when geolocation was
+    /// not provided or not required by tenant policy.
+    /// </summary>
+    public decimal? ClockOutLatitude { get; set; }
+
+    /// <summary>
+    /// Captured longitude at clock-out (US-ATT-002 FR-6 / AC-5). Null when geolocation was
+    /// not provided or not required by tenant policy.
+    /// </summary>
+    public decimal? ClockOutLongitude { get; set; }
+
+    /// <summary>
+    /// Source IP address recorded at clock-out for audit (US-ATT-002 §7).
+    /// </summary>
+    public string? ClockOutIp { get; set; }
+
+    /// <summary>
+    /// Net worked minutes for the session: (clock_out - clock_in) less the auto-break
+    /// deduction (US-ATT-002 FR-2/FR-3, BR-2). Null until the record is closed.
+    /// </summary>
+    public int? TotalWorkMinutes { get; set; }
+
+    /// <summary>
+    /// Minutes worked beyond the standard shift length (plus overtime threshold) — flagged
+    /// as pending-approval overtime (US-ATT-002 FR-4, BR-3). Null until closed; 0 when none.
+    /// </summary>
+    public int? OvertimeMinutes { get; set; }
+
+    /// <summary>
+    /// Outcome classification of a closed session (US-ATT-002 §7):
+    /// "COMPLETE", "SHORT_DAY" (below minimum), "OVERTIME" (above standard+threshold), or
+    /// "ANOMALY" (&gt; 16 h span, BR-6, or a system auto-clock-out, BR-5). Null while open.
+    /// </summary>
+    public string? Status { get; set; }
 
     /// <summary>
     /// Captured latitude at clock-in (FR-1, AC-3/AC-4). Null when geolocation was not provided.

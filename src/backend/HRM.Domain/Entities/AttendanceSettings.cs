@@ -56,4 +56,40 @@ public sealed class AttendanceSettings : BaseEntity
     /// Stored for use by later lateness stories; not enforced in US-ATT-001.
     /// </summary>
     public int GracePeriodMinutes { get; set; }
+
+    // ── Work-hours calculation policy (US-ATT-002) ─────────────────────
+    // TODO(US-ATT-005): these are tenant-level fallbacks. Once shifts exist, standard/minimum
+    // hours, break rules and overtime thresholds should be sourced from the assigned shift and
+    // these become defaults for employees without an assigned shift.
+
+    /// <summary>
+    /// Standard scheduled work minutes for a full day (US-ATT-002 FR-4, BR-3). Net worked
+    /// minutes beyond this (plus <see cref="OvertimeThresholdMinutes"/>) count as overtime.
+    /// Default 480 (8 h).
+    /// </summary>
+    public int StandardWorkMinutes { get; set; } = 480;
+
+    /// <summary>
+    /// Minimum net worked minutes for a full day (US-ATT-002 FR-4, BR-4). Below this the
+    /// session is flagged "SHORT_DAY" for HR review. Default 240 (4 h).
+    /// </summary>
+    public int MinimumWorkMinutes { get; set; } = 240;
+
+    /// <summary>
+    /// Break minutes auto-deducted from gross worked time when the gross session length exceeds
+    /// <see cref="AutoBreakThresholdMinutes"/> (US-ATT-002 FR-3, BR-2). Default 60.
+    /// </summary>
+    public int AutoBreakMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// Gross session length (minutes) above which <see cref="AutoBreakMinutes"/> is deducted
+    /// (US-ATT-002 FR-3). Default 360 (6 h).
+    /// </summary>
+    public int AutoBreakThresholdMinutes { get; set; } = 360;
+
+    /// <summary>
+    /// Extra minutes beyond <see cref="StandardWorkMinutes"/> that are tolerated before any
+    /// excess is classified as overtime (US-ATT-002 BR-3). Default 0 (any excess is overtime).
+    /// </summary>
+    public int OvertimeThresholdMinutes { get; set; }
 }

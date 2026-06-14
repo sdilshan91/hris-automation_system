@@ -7,6 +7,8 @@ import {
   IClockInRequest,
   IClockStatus,
   IClockInErrorResponse,
+  IClockOutRequest,
+  IClockOutResult,
 } from '../models/attendance.models';
 
 /**
@@ -18,8 +20,9 @@ import {
  * FE never sends them.
  *
  * Backend endpoints (assumed contract -- backend agent building in parallel):
- *   GET  /api/v1/attendance/status    - current employee's clock-in status today (IClockStatus)
- *   POST /api/v1/attendance/clock-in  - create a clock-in; returns IAttendanceLog
+ *   GET  /api/v1/attendance/status     - current employee's clock-in status today (IClockStatus)
+ *   POST /api/v1/attendance/clock-in   - create a clock-in; returns IAttendanceLog
+ *   POST /api/v1/attendance/clock-out  - close the open record; returns IClockOutResult (US-ATT-002)
  *
  * NOTE: `apiBaseUrl` already includes `/api/v1`, so the resource is `${apiBaseUrl}/attendance`.
  */
@@ -46,6 +49,18 @@ export class AttendanceService {
   /** Submit a clock-in (FR-1, AC-1). Returns the created attendance log. */
   clockIn(request: IClockInRequest): Observable<IAttendanceLog> {
     return this.http.post<IAttendanceLog>(`${this.baseUrl}/clock-in`, request, {
+      withCredentials: true,
+    });
+  }
+
+  /**
+   * US-ATT-002: Close the open attendance record (FR-1, AC-1). The backend sets
+   * clock_out to the server UTC time (§10 — never client-reported), computes total
+   * work minutes / overtime / status, and returns them in IClockOutResult.
+   * AC-5: coordinates are included only when the tenant geo policy requires them.
+   */
+  clockOut(request: IClockOutRequest): Observable<IClockOutResult> {
+    return this.http.post<IClockOutResult>(`${this.baseUrl}/clock-out`, request, {
       withCredentials: true,
     });
   }

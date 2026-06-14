@@ -26,9 +26,26 @@ public interface IAttendanceService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Clocks the current employee out and auto-calculates work hours
+    /// (US-ATT-002 FR-1..FR-4/FR-6/FR-7, AC-1..AC-5, BR-1..BR-4/BR-6). Closes the employee's open
+    /// AttendanceLog in a single atomic SaveChanges (NFR-3): sets clock_out (UTC, server-side, FR-1),
+    /// total_work_minutes after the auto-break deduction (FR-2/FR-3, BR-2), overtime_minutes
+    /// (FR-4, BR-3), and the outcome status (COMPLETE/SHORT_DAY/OVERTIME/ANOMALY, BR-4/BR-6).
+    /// Returns (failures carry a stable ErrorCode with an HTTP-status fallback):
+    ///   400 when the tenant is unresolved, or geolocation is required by policy but missing (AC-5);
+    ///   403 when no employee record is linked to the user;
+    ///   404 (code "no_active_clock_in") when the employee has no open record (AC-2/BR-1).
+    /// FR-5 (Redis cache update) is deferred — this codebase has no Redis (consistent with US-ATT-001).
+    /// </summary>
+    Task<Result<ClockOutResultDto>> ClockOutAsync(
+        ClockOutData data,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the current clock-in status for the acting employee (open AttendanceLog + the tenant's
-    /// RequireGeolocation flag, BR-2). Shift fields are null until US-ATT-005. Tenant-scoped via the
-    /// EF global query filter; the acting employee is resolved from the current user.
+    /// RequireGeolocation flag, BR-2, plus the most-recently-closed session summary, US-ATT-002).
+    /// Shift fields are null until US-ATT-005. Tenant-scoped via the EF global query filter; the
+    /// acting employee is resolved from the current user.
     /// Fails with 400 when the tenant context is unresolved, 403 when no employee is linked to the user.
     /// </summary>
     Task<Result<ClockStatusDto>> GetClockStatusAsync(

@@ -57,8 +57,49 @@ the agent sandbox; a Testcontainers test would red the gate. PG-specific schema 
 index, text[], numeric) is validated by the separate `migrations` CI job. (Same rationale already
 documented for leave-management integration tests.)
 
+## US-ATT-002 — Clock-out + work-hours auto-calculation
+- **Closes the open record (BR-1/AC-2).** Clock-out requires an open (`clock_out IS NULL`) record.
+  No open record → **404** with code `no_active_clock_in` and message
+  `"No active clock-in found. Please clock in first or submit a regularization request."`
+  NOTE: the implementer's task brief quoted "...Please clock out first..." for AC-2, which is
+  semantically wrong (you have nothing to clock out). The story file AC-2 says "clock in first";
+  used the story wording. Reconcile FE copy against the story, not the brief.
+- **Work-hours calc is a pure domain helper** `AttendanceCalculator.Calculate(...)` in
+  `HRM.Domain/Entities/AttendanceCalculator.cs` — used by both the service and the auto-clock-out
+  job so the rules are identical. Minute-accurate (truncates partial minutes, never negative).
+- **Calculation policy lives on `attendance_settings` at the TENANT level** (US-ATT-005 shift entity
+  doesn't exist yet): `StandardWorkMinutes`=480, `MinimumWorkMinutes`=240, `AutoBreakMinutes`=60,
+  `AutoBreakThresholdMinutes`=360, `OvertimeThresholdMinutes`=0. **TODO(US-ATT-005):** move these to
+  the shift entity; tenant settings become the fallback for employees with no assigned shift.
+- **Status precedence** (stored in `attendance_log.status`, varchar(20)): ANOMALY (system-close OR
+  gross span > 16h, FR-7/BR-6/BR-5) > SHORT_DAY (net < minimum, BR-4) > OVERTIME (net beyond
+  standard+threshold, BR-3) > COMPLETE. Overtime minutes stored separately in `overtime_minutes`.
+- **Auto-break (FR-3/BR-2):** deduct `AutoBreakMinutes` from gross only when gross >
+  `AutoBreakThresholdMinutes`. Overtime is computed on the NET (post-break) total.
+- **Clock-out is server-side UTC (FR-1), single atomic SaveChanges (NFR-3).** Geo on clock-out is
+  optional unless `RequireGeolocation` (reuses the same tenant flag as clock-in; AC-5/FR-6).
+- **FR-5 (Redis cache) skipped** — no Redis in this codebase (same as US-ATT-001). **NFR-4 RLS not
+  used** — EF global filters + TenantInterceptor.
+- **BR-5 auto-clock-out job:** `AutoClockOutJob` (HRM.Api/Jobs), recurring `5 0 * * *` (00:05 UTC).
+  Per active/trial tenant, sets tenant context, closes every record left open from a prior UTC day
+  by stamping `clock_out` at that clock-in day's 23:59:59 UTC, computes hours with
+  `isSystemClosed: true` → always `Status=ANOMALY` for regularization. **Tenant-timezone deferred:**
+  uses UTC end-of-day since no tenant-timezone infra exists yet (same deferral as the day-boundary
+  note below).
+- **Status endpoint extended:** `ClockStatusDto.LastCompleted` (a `ClockOutResultDto`) carries the
+  most-recently-CLOSED session summary so the FE can re-render the post-clock-out summary card after
+  a reload. Independent of `IsClockedIn`.
+
+## Clock-out API contract (for FE reconciliation)
+- `POST /api/v1/attendance/clock-out`, perm `Attendance.CheckIn`, body `{ latitude?, longitude? }`.
+  IP/user-agent captured server-side. Success **200** `ApiResponse<ClockOutResultDto>`:
+  `{ id, employeeId, clockIn, clockOut, totalWorkMinutes, overtimeMinutes, status }`.
+  Failures: 400 (tenant unresolved / geo required-but-missing), 403 (no employee linked),
+  404 `no_active_clock_in`.
+
 ## Related stories
 - `US-ATT-001` — Employee clock-in from browser with optional geolocation (this scaffold)
+- `US-ATT-002` — Employee clock-out + work-hours auto-calculation (this story)
 
 ## Open questions
 - Tenant timezone for "today"/day-boundary semantics (deferred; "one open record" sidesteps it for now).
