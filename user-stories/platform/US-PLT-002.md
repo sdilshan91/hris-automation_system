@@ -56,3 +56,43 @@ Tenant isolation today is **single-layer**: EF Core global query filters (reads)
 
 ## 8. Notes
 - Cross-cutting platform work — schedule deliberately, not inside a feature-loop story. Confidence that this is the right end-state for a PII/payroll SaaS: high; main execution risk is pooling + the system-bypass path.
+
+## 9. Implementation Plan (codebase-grounded, 2026-06-15)
+
+Mechanism is fixed (FR-3/FR-4): **`SET LOCAL` + ambient per-request transaction + non-`BYPASSRLS` app role + separate privileged connection**. Below maps it onto the actual code.
+
+### 9.1 Table set (what gets RLS)
+- **Include:** every tenant-scoped entity — i.e. every entity with a `TenantId` query filter in `AppDbContext.OnModelCreating` (~40 tables: `user_tenants`, `roles`, `refresh_tokens`, all CHR/LV/ATT/REC tables, `audit_logs`, etc.). Maintain ONE authoritative list (derive from the model: tables whose CLR type has a `TenantId` property) so it can't drift.
+- **Exclude:** `tenants` (the tenant registry — has no `tenant_id`; `TenantResolutionMiddleware.ResolveTenantAsync` reads it BEFORE any tenant is set, so it must stay readable by the app role) and `users` (global identity — no `TenantId`; membership is via `user_tenants`).
+- **Nullable-tenant tables** (`roles`, possibly others with global rows where `tenant_id IS NULL`): policy must be `USING (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant', true)::uuid)` and the matching `WITH CHECK`. Generate per-table SQL accordingly.
+
+### 9.2 The system-context inversion (the #1 design decision)
+Current EF filters use `!_tenantContext.IsResolved || TenantId == current` → **unresolved tenant sees ALL rows** (admin subdomain via `SetSystemContext()`, plus seeding and the tenant lookup). RLS inverts this: an unset GUC makes `current_setting('app.current_tenant', true)` NULL → `tenant_id = NULL` is never true → **sees NOTHING**. Therefore every path that today relies on "unresolved = see all" MUST run on the **privileged (BYPASSRLS) connection**:
+- `DbInitializer.RunAsync` (migrations + seeding) — already runs with no tenant.
+- System-context requests (`admin.*` subdomain, `ITenantContext.SetSystemContext()`).
+- System-level Hangfire recurring jobs (`TokenCleanupJob`, leave/attendance rollups that span tenants) — confirm each job's tenant scope; per-tenant jobs should SET LOCAL to their tenant, cross-tenant jobs use bypass.
+- **Forward warning for US-ADM-\*:** the Admin Console's cross-tenant reads will require the privileged connection/DbContext. Note this in those stories.
+
+### 9.3 Roles & connections
+- Add a restricted login role (`hrm_app`) — `LOGIN`, **no `BYPASSRLS`**, `GRANT SELECT/INSERT/UPDATE/DELETE` on app tables + `SELECT` on `tenants`/`users`. This backs `ConnectionStrings:DefaultConnection` (the request-scoped `AppDbContext`).
+- Keep a privileged role (owner/migrator, with DDL + `BYPASSRLS`) behind a NEW `ConnectionStrings:PrivilegedConnection`. Used by `DbInitializer`, system-context, and cross-tenant jobs. Provision roles in an ops/bootstrap script (documented), not via app migrations (migrations run AS the privileged role).
+
+### 9.4 Setting the GUC (ambient transaction)
+- Add a MediatR `IPipelineBehavior` `TenantTransactionBehavior` (registered in DI alongside `ValidationBehavior`/`LoggingBehavior`): for tenant-resolved requests, `await db.Database.BeginTransactionAsync()` → `await db.Database.ExecuteSqlRawAsync("SET LOCAL app.current_tenant = {0}", tenantId)` → run handler → commit (rollback on exception). For system-context requests, no GUC (they're on the bypass connection). Quote/parameterize the id (it's a `Guid` → safe).
+- Why a behavior, not a `DbConnectionInterceptor`: `SET LOCAL` only persists within a transaction and EF's default read path is autocommit, so the behavior must own the transaction boundary. A connection interceptor doing session `SET` is the rejected, leak-prone path.
+- Keep EF global query filters in place (first layer; RLS is the backstop).
+
+### 9.5 Migration (CLI-generated, raw SQL inside)
+- `dotnet ef migrations add Platform_RowLevelSecurity --project HRM.Infrastructure --startup-project HRM.Api`, then add `migrationBuilder.Sql(...)` for each table: `ALTER TABLE x ENABLE ROW LEVEL SECURITY; ALTER TABLE x FORCE ROW LEVEL SECURITY; CREATE POLICY tenant_isolation ON x USING (...) WITH CHECK (...);`. `Down` drops policies + disables RLS. Snapshot is NOT hand-edited (this migration has no model delta — only SQL).
+
+### 9.6 Testing (NEW infra required — current suite is InMemory-only)
+- The test project references only `Microsoft.EntityFrameworkCore.InMemory`; **RLS cannot be exercised there**. Add `Testcontainers.PostgreSql` + `Npgsql` to `HRM.Tests` and a `PostgresRlsFixture` (real container, migrations applied, two seeded tenants, both the app and privileged roles created).
+- Tests (per Section 7): raw-SQL isolation per GUC; `IgnoreQueryFilters()` STILL constrained; `WITH CHECK` rejects mismatched-tenant insert; concurrent pooled connections across two tenants show no bleed; `DbInitializer`/migrations succeed on the bypass path; system-context cross-tenant read works ONLY on the privileged connection.
+- Existing InMemory integration tests stay as-is (they validate handler logic, not RLS). Do not convert them.
+
+### 9.7 Suggested phasing (each independently shippable/reviewable)
+1. **Infra + roles + privileged connection** (no policies yet): add `PrivilegedConnection`, route `DbInitializer`/system-context to it. No behavior change. Ships safely.
+2. **Testcontainers fixture** + a failing/empty RLS test scaffold. Proves the harness before policies exist.
+3. **Ambient `TenantTransactionBehavior`** (SET LOCAL) — still no policies, so still a no-op functionally; verify full suite green + no latency regression.
+4. **The RLS migration** (enable + policies) + the full RLS test suite. This is the "switch on" step; review carefully and stage to a non-prod env first.
+5. **Hardening**: audit Hangfire jobs + any raw-SQL/Dapper call sites for correct connection/tenant; document the ops role-provisioning script.
