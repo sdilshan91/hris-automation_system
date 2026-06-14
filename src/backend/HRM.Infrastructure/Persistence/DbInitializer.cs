@@ -159,6 +159,113 @@ public static class DbInitializer
             await db.SaveChangesAsync(ct);
             logger.LogInformation("Assigned {Role} to admin user", SystemAdminRoleName);
         }
+
+        // Reconcile across ALL tenants (existing + newly-seeded) so new catalog permissions and the
+        // US-ATT-005 default shift land on tenants provisioned before this release (idempotent).
+        await ReconcileAllTenantsAsync(db, logger, ct);
+    }
+
+    /// <summary>
+    /// Idempotent per-tenant reconcile run on every startup:
+    ///  - Adds any missing default permissions to built-in roles (so new catalog entries such as
+    ///    US-ATT-005 Attendance.Shift.Manage reach tenants provisioned before the permission existed).
+    ///  - Ensures every tenant has exactly one default shift (US-ATT-005 BR-1/FR-5 "created during
+    ///    tenant provisioning").
+    /// </summary>
+    private static async Task ReconcileAllTenantsAsync(AppDbContext db, ILogger logger, CancellationToken ct)
+    {
+        var tenants = await db.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => !t.IsDeleted)
+            .Select(t => t.Id)
+            .ToListAsync(ct);
+
+        foreach (var tenantId in tenants)
+        {
+            await ReconcileBuiltInRolePermissionsAsync(db, tenantId, logger, ct);
+            await EnsureDefaultShiftAsync(db, tenantId, logger, ct);
+        }
+    }
+
+    /// <summary>
+    /// Adds missing default permissions to a tenant's built-in roles. Only ADDS — never removes (so a
+    /// tenant's bespoke grants on a built-in role are preserved).
+    /// </summary>
+    private static async Task ReconcileBuiltInRolePermissionsAsync(
+        AppDbContext db, Guid tenantId, ILogger logger, CancellationToken ct)
+    {
+        var builtInNames = PermissionCatalog.BuiltInRoles.All.ToHashSet();
+
+        var roles = await db.Roles
+            .IgnoreQueryFilters()
+            .Include(r => r.RolePermissions)
+            .Where(r => r.TenantId == tenantId && r.IsBuiltIn && builtInNames.Contains(r.Name))
+            .ToListAsync(ct);
+
+        var added = 0;
+        foreach (var role in roles)
+        {
+            var current = role.RolePermissions.Select(rp => rp.Permission).ToHashSet();
+            var defaults = PermissionCatalog.DefaultPermissionsFor(role.Name);
+            foreach (var perm in defaults)
+            {
+                if (current.Add(perm))
+                {
+                    role.RolePermissions.Add(new RolePermission { RoleId = role.Id, Permission = perm });
+                    added++;
+                }
+            }
+        }
+
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "Reconciled {Count} missing built-in role permission(s) for tenant {TenantId}",
+                added, tenantId);
+        }
+    }
+
+    /// <summary>
+    /// Ensures the tenant has a default shift (US-ATT-005 BR-1/FR-5). Seeds a standard Mon–Fri 09:00–17:00
+    /// SINGLE shift named "General Shift" with a 60-minute break when none exists. Idempotent: skipped
+    /// if any default shift is already present for the tenant.
+    /// </summary>
+    private static async Task EnsureDefaultShiftAsync(
+        AppDbContext db, Guid tenantId, ILogger logger, CancellationToken ct)
+    {
+        var hasDefault = await db.Shifts
+            .IgnoreQueryFilters()
+            .AnyAsync(s => s.TenantId == tenantId && s.IsDefault && !s.IsDeleted, ct);
+        if (hasDefault)
+            return;
+
+        // Avoid colliding with an existing non-default shift that happens to use the name.
+        var nameTaken = await db.Shifts
+            .IgnoreQueryFilters()
+            .AnyAsync(s => s.TenantId == tenantId && s.Name == "General Shift" && !s.IsDeleted, ct);
+
+        var shift = new Shift
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            Name = nameTaken ? "Default Shift" : "General Shift",
+            Type = ShiftType.Single,
+            StartTime = new TimeOnly(9, 0),
+            EndTime = new TimeOnly(17, 0),
+            BreakDurationMinutes = 60,
+            GracePeriodMinutes = 15,
+            MinimumHours = null,
+            WorkingDays = new List<int> { 1, 2, 3, 4, 5 },
+            IsDefault = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = "system-seed",
+        };
+
+        db.Shifts.Add(shift);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Seeded default shift for tenant {TenantId}", tenantId);
     }
 
     /// <summary>

@@ -1,7 +1,7 @@
 ---
 module: Attendance
-total_user_stories: 4
-total_test_cases: 57
+total_user_stories: 5
+total_test_cases: 74
 created: 2026-06-14
 updated: 2026-06-14
 status: draft
@@ -13,14 +13,14 @@ status: draft
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 4 (US-ATT-001, US-ATT-002, US-ATT-003, US-ATT-004) |
-| Total Test Cases | 57 (50 functional/security/perf/a11y/integration + 7 dedicated multi-tenant isolation) |
-| Critical Priority | 25 |
-| High Priority | 32 |
+| Total User Stories Covered | 5 (US-ATT-001, US-ATT-002, US-ATT-003, US-ATT-004, US-ATT-005) |
+| Total Test Cases | 74 (66 functional/security/perf/a11y/integration + 8 dedicated multi-tenant isolation) |
+| Critical Priority | 33 |
+| High Priority | 41 |
 | Medium Priority | 0 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 |
-| Conditional/Deferred Test Cases | Redis cache (FR-5/US-ATT-002, FR-6/US-ATT-001): TC-ATT-001 Step 6, TC-ATT-010 Step 5, TC-ATT-013 Step 7, TC-ATT-022 Step 3, TC-ATT-023 Step 5, TC-ATT-ISO-004 -- CONDITIONAL on the Redis cache layer being wired (DB-fallback path verified meanwhile). EF-query-filter-vs-PostgreSQL-RLS (US-ATT-001 NFR-2, US-ATT-002 NFR-4, US-ATT-003 NFR-2, US-ATT-004 NFR-3): TC-ATT-ISO-001/003/005/006/007 describe the EF Core global query filter mechanism and note the RLS session-level assertion as an extension point if RLS policies are added on attendance_log / attendance_regularization. Notification dispatch (FR-4/US-ATT-003; FR-5/US-ATT-004): TC-ATT-032 (submit) and TC-ATT-037/038 (approve/reject employee notification incl. rejection reason) verify the notification SEAM now and DEFER in-app delivery/badge assertions until the Notification System (US-NTF) is built. Payroll-period lock (FR-7/US-ATT-003 submit; BR-5/US-ATT-004 approval): TC-ATT-029 (submit) and TC-ATT-045 (approval) surface the locked-period error-contract and verify the unlocked path now; the locked-period assertion is CONDITIONAL on the Payroll module. Approval workflow engine: US-ATT-003 TCs assert a workflow_instance is initiated; US-ATT-004 multi-level routing (AC-4/FR-4/BR-4, TC-ATT-044) is CONDITIONAL/DEFERRED on the Approval Workflow Engine (US-ADM-007) -- the single-level final-approval path (TC-ATT-037) and the deny-self-approval invariant (TC-ATT-042) are verified live. |
+| Conditional/Deferred Test Cases | Redis cache (FR-5/US-ATT-002, FR-6/US-ATT-001): TC-ATT-001 Step 6, TC-ATT-010 Step 5, TC-ATT-013 Step 7, TC-ATT-022 Step 3, TC-ATT-023 Step 5, TC-ATT-ISO-004 -- CONDITIONAL on the Redis cache layer being wired (DB-fallback path verified meanwhile). EF-query-filter-vs-PostgreSQL-RLS (US-ATT-001 NFR-2, US-ATT-002 NFR-4, US-ATT-003 NFR-2, US-ATT-004 NFR-3): TC-ATT-ISO-001/003/005/006/007 describe the EF Core global query filter mechanism and note the RLS session-level assertion as an extension point if RLS policies are added on attendance_log / attendance_regularization. Notification dispatch (FR-4/US-ATT-003; FR-5/US-ATT-004): TC-ATT-032 (submit) and TC-ATT-037/038 (approve/reject employee notification incl. rejection reason) verify the notification SEAM now and DEFER in-app delivery/badge assertions until the Notification System (US-NTF) is built. Payroll-period lock (FR-7/US-ATT-003 submit; BR-5/US-ATT-004 approval): TC-ATT-029 (submit) and TC-ATT-045 (approval) surface the locked-period error-contract and verify the unlocked path now; the locked-period assertion is CONDITIONAL on the Payroll module. Approval workflow engine: US-ATT-003 TCs assert a workflow_instance is initiated; US-ATT-004 multi-level routing (AC-4/FR-4/BR-4, TC-ATT-044) is CONDITIONAL/DEFERRED on the Approval Workflow Engine (US-ADM-007) -- the single-level final-approval path (TC-ATT-037) and the deny-self-approval invariant (TC-ATT-042) are verified live. US-ATT-005 deferrals: Redis shift-definition cache (NFR-4, 1h TTL) -- TC-ATT-064 measures the DB-backed read path now, cache-key isolation reuses TC-ATT-ISO-004 (CONDITIONAL on Redis); EF-query-filter-vs-RLS (NFR-3) -- TC-ATT-ISO-008 describes the EF mechanism on `shift`/`employee_shift` and notes RLS as an extension point; tenant default-shift provisioning (BR-1) verified against a manually-flagged default with the Tenant-Admin auto-seed call site DEFERRED (TC-ATT-058); late-arrival flagging from grace_period (BR-4) DEFERRED on US-ATT-008 -- TC-ATT-062 verifies the shift-definition side (threshold exposed); night-shift end-to-end clock calculations integrate with US-ATT-001/002 (TC-ATT-055 verifies the definition-side cross-midnight resolution). |
 | Status | All Draft |
 
 ## User Story to Test Case Matrix
@@ -35,6 +35,8 @@ status: draft
 | Cross-cutting (ATT-003) | Multi-tenant isolation (regularization read + submit path) | TC-ATT-ISO-006 (+ reuses TC-ATT-ISO-001..004 for table-level read/context/cache isolation) | 1 |
 | US-ATT-004 | Manager Approves/Rejects Regularization Requests | TC-ATT-037, TC-ATT-038, TC-ATT-039, TC-ATT-040, TC-ATT-041, TC-ATT-042, TC-ATT-043, TC-ATT-044, TC-ATT-045, TC-ATT-046, TC-ATT-047, TC-ATT-048, TC-ATT-049, TC-ATT-050 | 14 |
 | Cross-cutting (ATT-004) | Multi-tenant isolation (approve/reject mutation path) | TC-ATT-ISO-007 (+ reuses TC-ATT-ISO-001..004, TC-ATT-ISO-006 for table-level read/context/cache isolation) | 1 |
+| US-ATT-005 | Shift Management and Assignment per Employee | TC-ATT-051, TC-ATT-052, TC-ATT-053, TC-ATT-054, TC-ATT-055, TC-ATT-056, TC-ATT-057, TC-ATT-058, TC-ATT-059, TC-ATT-060, TC-ATT-061, TC-ATT-062, TC-ATT-063, TC-ATT-064, TC-ATT-065, TC-ATT-066 | 16 |
+| Cross-cutting (ATT-005) | Multi-tenant isolation (shift + employee_shift tables) | TC-ATT-ISO-008 (+ reuses TC-ATT-ISO-001..004 for context/cache isolation) | 1 |
 
 ## Test Type Distribution
 
@@ -44,16 +46,18 @@ status: draft
 | Functional (ATT-002) | TC-ATT-013, TC-ATT-014, TC-ATT-015, TC-ATT-016, TC-ATT-017, TC-ATT-018, TC-ATT-019, TC-ATT-020 | 8 |
 | Functional (ATT-003) | TC-ATT-025, TC-ATT-026, TC-ATT-027, TC-ATT-028, TC-ATT-029, TC-ATT-030, TC-ATT-031, TC-ATT-033 | 8 |
 | Functional (ATT-004) | TC-ATT-037, TC-ATT-038, TC-ATT-039, TC-ATT-040, TC-ATT-042, TC-ATT-043, TC-ATT-044, TC-ATT-045, TC-ATT-046 | 9 |
+| Functional (ATT-005) | TC-ATT-051, TC-ATT-052, TC-ATT-053, TC-ATT-054, TC-ATT-055, TC-ATT-056, TC-ATT-057, TC-ATT-058, TC-ATT-059, TC-ATT-060, TC-ATT-061, TC-ATT-062 | 12 |
 | Security (ATT-001) | TC-ATT-005 (IP allowlist), TC-ATT-008 (authz), TC-ATT-009 (authn), TC-ATT-ISO-001, TC-ATT-ISO-002, TC-ATT-ISO-003, TC-ATT-ISO-004 | 7 |
 | Security (ATT-002) | TC-ATT-ISO-005 | 1 |
 | Security (ATT-003) | TC-ATT-033 (audit), TC-ATT-036 (authn/authz/self-scope), TC-ATT-ISO-006 | 3 |
 | Security (ATT-004) | TC-ATT-041 (authz denial), TC-ATT-042 (self-approval), TC-ATT-043 (immutability), TC-ATT-048 (audit), TC-ATT-ISO-007 | 5 |
+| Security (ATT-005) | TC-ATT-052 (tenant-scoped uniqueness), TC-ATT-063 (authn/authz, HR-only), TC-ATT-ISO-008 | 3 |
 | Integration / Concurrency (ATT-001) | TC-ATT-012 | 1 |
 | Integration (ATT-002) | TC-ATT-021 (auto-clock-out Hangfire job), TC-ATT-022 (atomicity) | 2 |
 | Integration (ATT-003) | TC-ATT-032 (manager notification seam -- DEFERRED on US-NTF) | 1 |
 | Integration (ATT-004) | TC-ATT-047 (approval atomicity) | 1 |
-| Performance (ATT-001 / ATT-002 / ATT-003 / ATT-004) | TC-ATT-010, TC-ATT-023, TC-ATT-034, TC-ATT-049 | 4 |
-| Accessibility (ATT-001 / ATT-002 / ATT-003 / ATT-004) | TC-ATT-011, TC-ATT-024, TC-ATT-035, TC-ATT-050 | 4 |
+| Performance (ATT-001 / ATT-002 / ATT-003 / ATT-004 / ATT-005) | TC-ATT-010, TC-ATT-023, TC-ATT-034, TC-ATT-049, TC-ATT-064 (pages <2s), TC-ATT-065 (bulk assign 500 <5s) | 6 |
+| Accessibility (ATT-001 / ATT-002 / ATT-003 / ATT-004 / ATT-005) | TC-ATT-011, TC-ATT-024, TC-ATT-035, TC-ATT-050, TC-ATT-066 | 5 |
 
 (Note: TC-ATT-005 is counted under Functional in the AC mapping and under Security in the type distribution because it validates both a functional flow and a network-restriction control; TC-ATT-011/024/035 also cover cross-browser/responsive. TC-ATT-016/017/018/019/020 and TC-ATT-031 carry the boundary tag while being functionally typed. TC-ATT-033 is typed security/audit but verifies a functional submit side effect.)
 
@@ -194,6 +198,74 @@ status: draft
 | Performance Test Cases (ATT-004) | 1 (TC-ATT-049) | >= 1 | PASS |
 | Accessibility Test Cases (ATT-004) | 1 (TC-ATT-050) | >= 1 | PASS |
 | API Endpoint Coverage (ATT-004) | approve + reject + bulk-approve + approval-queue (100%) | >= 90% | PASS |
+
+## Acceptance Criteria Coverage (US-ATT-005)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | Create shift (name, start/end, break, working days) saved with tenant_id, available for assignment; duplicate name per tenant rejected | TC-ATT-051, TC-ATT-052 |
+| AC-2 | Assign shift to one or more employees with an effective date -> employee_shift records created | TC-ATT-056 |
+| AC-3 | Future-dated reassignment -- current shift active until new effective date; no overlapping active assignments | TC-ATT-057 |
+| AC-4 | Delete a shift assigned to employees prevented with exact "This shift is assigned to {N} employees. Please reassign them before deleting." | TC-ATT-060 |
+| AC-5 | Rotating shift -- define rotation pattern; system determines applicable shift per day across the cycle | TC-ATT-059 |
+
+## Functional Requirement Coverage (US-ATT-005)
+
+| FR | Covered By |
+|----|------------|
+| FR-1 (three types: SINGLE, ROTATING, FLEXIBLE) | TC-ATT-051 (SINGLE), TC-ATT-059 (ROTATING), TC-ATT-054 (FLEXIBLE), TC-ATT-055 (night SINGLE) |
+| FR-2 (shift parameters: name, type, times, break, grace, minimum_hours, working_days) | TC-ATT-051, TC-ATT-053, TC-ATT-054, TC-ATT-062 |
+| FR-3 (bulk assignment to multiple employees) | TC-ATT-056, TC-ATT-065 |
+| FR-4 (effective_from/effective_to assignment history) | TC-ATT-056, TC-ATT-057 |
+| FR-5 (tenant default shift for unassigned employees) | TC-ATT-058 |
+| FR-6 (prevent deletion of shifts with active assignments) | TC-ATT-060 |
+| FR-7 (store rotation pattern; calculate applicable shift for any date) | TC-ATT-059 |
+| FR-8 (clone an existing shift to create a variant) | TC-ATT-061 |
+
+## Non-Functional Requirement Coverage (US-ATT-005)
+
+| NFR | Covered By |
+|-----|------------|
+| NFR-1 (shift management pages load < 2s P95) | TC-ATT-064 |
+| NFR-2 (bulk assignment up to 500 employees < 5s) | TC-ATT-065 |
+| NFR-3 (PostgreSQL RLS / tenant isolation on shift + employee_shift) | TC-ATT-ISO-008 (+ reuses TC-ATT-ISO-001..004); EF query filters today, RLS noted as extension point |
+| NFR-4 (shift definitions cached in Redis, 1h TTL, invalidated on update) | TC-ATT-064 (DB-fallback), TC-ATT-ISO-004 (cache-key isolation) -- CONDITIONAL/DEFERRED on Redis |
+
+## Business Rule Coverage (US-ATT-005)
+
+| BR | Covered By |
+|----|------------|
+| BR-1 (every tenant has >= 1 default shift, created at provisioning) | TC-ATT-058 (provisioning auto-seed call site DEFERRED on Tenant Admin) |
+| BR-2 (one active shift per employee at any time) | TC-ATT-057, TC-ATT-065 |
+| BR-3 (assignments effective-dated; apply from effective_from) | TC-ATT-056, TC-ATT-057 |
+| BR-4 (grace period defines late threshold) | TC-ATT-062 -- shift-definition side; late-flagging DEFERRED on US-ATT-008 |
+| BR-6 (working_days define applicable days; non-working days not counted) | TC-ATT-062 |
+| BR-7 (no zero-duration shift, start_time == end_time) | TC-ATT-053 (+ TC-ATT-055 confirms night shift end<start is valid, not zero-duration) |
+| BR-8 (FLEXIBLE: only minimum_hours enforced; start/end not validated) | TC-ATT-054 |
+
+(BR-5 break-duration auto-deduction at clock-out is owned by US-ATT-002 / TC-ATT-018; noted here as the consuming story.)
+
+## Coverage Gaps / Notes (US-ATT-005)
+
+- **Redis shift-definition cache (NFR-4):** not assumed wired. TC-ATT-064 verifies the DB-backed read path now; tenant-scoped cache-key isolation reuses TC-ATT-ISO-004 (CONDITIONAL on Redis). When the cache lands, assert the 1h TTL, invalidation-on-update, and cache-hit SLA. Consistent with module-wide deferred-Redis handling. **Reported to caller.**
+- **PostgreSQL RLS vs EF query filters (NFR-3):** US-ATT-005 NFR-3/S10 name PostgreSQL RLS on `shift`/`employee_shift`; the platform enforces isolation via EF Core global query filters + TenantInterceptor. TC-ATT-ISO-008 (and reused TC-ATT-ISO-001/003) describe the EF mechanism and mark the RLS session-level assertion as an extension point. Consistent with US-ATT-001..004. **Reported to caller.**
+- **Tenant default-shift provisioning (BR-1):** the default shift is meant to be created during tenant provisioning (Tenant Admin module). TC-ATT-058 verifies fallback resolution against a manually-flagged default; the auto-seed call site is DEFERRED on Tenant Admin. **Reported to caller.**
+- **Late-arrival flagging from grace_period (BR-4):** TC-ATT-062 verifies the shift-definition side (the start_time + grace late threshold is exposed and working-day applicability is correct). The end-to-end "clock-in flagged late" assertion belongs to US-ATT-008 (grace boundary against clock-in already exercised in TC-ATT-006). **Reported to caller.**
+- **Night-shift clock calculations (S10):** TC-ATT-055 verifies the definition-side cross-midnight resolution (end<start stored valid, correct work window). End-to-end clock-in/out span-midnight totals are owned by US-ATT-001/002 (TC-ATT-001/013) and integrate against seeded shift data. **Reported to caller.**
+
+## Coverage Summary (US-ATT-005)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage (ATT-005) | 5/5 (100%) | >= 100% | PASS |
+| FR Coverage (ATT-005) | 8/8 (100%) | >= 85% | PASS |
+| NFR Coverage (ATT-005) | 4/4 (100%) -- NFR-3 RLS extension point; NFR-4 cache CONDITIONAL on Redis | >= 85% | PASS |
+| BR Coverage (ATT-005) | 7/7 covered (BR-1..BR-4, BR-6..BR-8; BR-5 owned by US-ATT-002) -- BR-1 seed + BR-4 late-flag CONDITIONAL/DEFERRED | >= 85% | PASS |
+| Multi-Tenant Isolation Tests (ATT-005) | 1 dedicated (ISO-008) + reuses ISO-001..004 + isolation aspects in TC-ATT-052/063 | >= 1 (shift + assignment) | PASS |
+| Security Test Cases (ATT-005) | TC-ATT-052, TC-ATT-063, TC-ATT-ISO-008 dedicated | >= 1 | PASS |
+| Performance Test Cases (ATT-005) | 2 (TC-ATT-064 pages, TC-ATT-065 bulk assign) | >= 1 | PASS |
+| Accessibility Test Cases (ATT-005) | 1 (TC-ATT-066) | >= 1 | PASS |
+| API Endpoint Coverage (ATT-005) | shifts CRUD + clone + assign + resolve (100%) | >= 90% | PASS |
 
 ## Coverage Summary
 

@@ -416,6 +416,208 @@ export interface IAttendanceApiEnvelope<T> {
   message?: string;
 }
 
+// ─── US-ATT-005: Shift Management and Assignment ──────────────────────────────
+
+/**
+ * US-ATT-005 (FR-1, §7): the three supported shift types.
+ *  - SINGLE   : fixed start/end times (start != end, BR-7).
+ *  - ROTATING : cyclic pattern across several sub-shifts (FR-7, AC-5); start/end on
+ *               the parent are optional, the rotation steps carry the schedule.
+ *  - FLEXIBLE : no fixed start/end; only `minimumHours` is enforced (BR-8).
+ */
+export type ShiftType = 'SINGLE' | 'ROTATING' | 'FLEXIBLE';
+
+export const SHIFT_TYPE_OPTIONS: ShiftType[] = ['SINGLE', 'ROTATING', 'FLEXIBLE'];
+
+/**
+ * One step of a rotating-shift cycle (FR-7, AC-5). The cycle repeats indefinitely
+ * from `referenceStartDate`; each step points at an existing shift definition that
+ * applies for `durationDays` consecutive days, in `order` sequence.
+ */
+export interface IRotationStep {
+  /** 1-based position of this step within the cycle. */
+  order: number;
+  /** The shift definition applied during this step (an existing SINGLE/FLEXIBLE shift id). */
+  shiftId: string;
+  /** How many consecutive days this step lasts. */
+  durationDays: number;
+}
+
+/**
+ * US-ATT-005 (FR-7): the rotation pattern attached to a ROTATING shift. The backend
+ * uses `cycleLengthDays` + `referenceStartDate` + ordered `steps` to compute the
+ * applicable shift for any given date (AC-5).
+ */
+export interface IRotation {
+  /** Total length of the repeating cycle in days (usually sum of step durations). */
+  cycleLengthDays: number;
+  /** Anchor date the cycle counts from, `yyyy-MM-dd`. */
+  referenceStartDate: string;
+  steps: IRotationStep[];
+}
+
+/**
+ * US-ATT-005 shift definition returned by the API (§7 `shift` table).
+ *
+ * Backend contract (pinned — backend agent building the SAME contract):
+ *   GET    /api/v1/attendance/shifts                 -> ShiftDto[]
+ *   POST   /api/v1/attendance/shifts                 -> ShiftDto
+ *   PUT    /api/v1/attendance/shifts/{id}            -> ShiftDto
+ *   DELETE /api/v1/attendance/shifts/{id}            -> 204 (409 shift_in_use when assigned)
+ *   POST   /api/v1/attendance/shifts/{id}/clone      -> ShiftDto
+ *   POST   /api/v1/attendance/shifts/{id}/assign     -> { assignedCount, employeeShiftIds }
+ *   GET    /api/v1/attendance/employees/{id}/shift?date=  -> ResolvedShiftDto
+ *
+ * Times are `HH:mm` 24h strings (null for FLEXIBLE). `workingDays` is an array of
+ * ISO day numbers (1=Mon .. 7=Sun, BR-6).
+ */
+export interface IShift {
+  id: string;
+  name: string;
+  type: ShiftType;
+  /** `HH:mm`; null for FLEXIBLE (BR-8). */
+  startTime: string | null;
+  /** `HH:mm`; null for FLEXIBLE (BR-8). Night shifts allow end < start (§10). */
+  endTime: string | null;
+  breakDurationMinutes: number;
+  gracePeriodMinutes: number;
+  /** Required total hours; set for FLEXIBLE (BR-8), else null. */
+  minimumHours: number | null;
+  /** ISO day numbers 1=Mon..7=Sun (BR-6). */
+  workingDays: number[];
+  /** The tenant's default shift (BR-1, FR-5). */
+  isDefault: boolean;
+  isActive: boolean;
+  /** Count of employees currently assigned (drives the AC-4 delete guard). */
+  assignedEmployeeCount: number;
+  /** Present for ROTATING shifts (FR-7). */
+  rotation?: IRotation;
+}
+
+/**
+ * US-ATT-005 create/update payload (FR-2). Mirrors {@link IShift} minus the
+ * server-owned fields (id, isDefault, isActive, assignedEmployeeCount). The backend
+ * stamps tenant_id + audit fields server-side (NFR-3). Times are omitted for FLEXIBLE.
+ */
+export interface IShiftRequest {
+  name: string;
+  type: ShiftType;
+  /** Omitted/undefined for FLEXIBLE (BR-8). */
+  startTime?: string;
+  endTime?: string;
+  breakDurationMinutes: number;
+  gracePeriodMinutes: number;
+  /** Required for FLEXIBLE (BR-8); omitted otherwise. */
+  minimumHours?: number;
+  workingDays: number[];
+  /** Present only for ROTATING (FR-7). */
+  rotation?: IRotation;
+}
+
+/**
+ * US-ATT-005 (AC-2): payload to bulk-assign a shift to employees with an effective
+ * date. `effectiveFrom` is `yyyy-MM-dd`; the backend closes any current assignment
+ * and opens a new effective-dated one without overlap (AC-3, BR-2/BR-3).
+ *   POST /api/v1/attendance/shifts/{id}/assign  body { employeeIds, effectiveFrom }
+ */
+export interface IShiftAssignmentRequest {
+  employeeIds: string[];
+  /** `yyyy-MM-dd` effective date for the new assignment(s) (BR-3). */
+  effectiveFrom: string;
+}
+
+/**
+ * US-ATT-005 (AC-2) result of a bulk assignment. The FE shows `assignedCount`
+ * verbatim in the success toast.
+ */
+export interface IAssignmentResult {
+  assignedCount: number;
+  employeeShiftIds: string[];
+}
+
+/**
+ * US-ATT-005 (FR-7, AC-5): the shift resolved as applicable to a specific employee on
+ * a specific date — a {@link IShift} plus the effective-dating window it falls in.
+ *   GET /api/v1/attendance/employees/{employeeId}/shift?date=yyyy-MM-dd
+ */
+export interface IResolvedShift extends IShift {
+  /** Start of the assignment window covering `resolvedForDate`, `yyyy-MM-dd`. */
+  effectiveFrom: string;
+  /** End of the window, `yyyy-MM-dd`; null when this is the current assignment. */
+  effectiveTo: string | null;
+  /** The date the resolution was requested for, `yyyy-MM-dd`. */
+  resolvedForDate: string;
+}
+
+/**
+ * US-ATT-005 (AC-4): typed 409 body when deleting a shift that has active
+ * assignments. `message` is shown verbatim; `code` is the discriminator.
+ *   409 { message: "This shift is assigned to {N} employees...", code: "shift_in_use" }
+ */
+export interface IShiftInUseErrorResponse {
+  message: string;
+  code?: 'shift_in_use' | string;
+}
+
+/** ISO day-of-week labels indexed 1=Mon .. 7=Sun (BR-6, §8). */
+export const WEEKDAY_LABELS: Record<number, string> = {
+  1: 'Mon',
+  2: 'Tue',
+  3: 'Wed',
+  4: 'Thu',
+  5: 'Fri',
+  6: 'Sat',
+  7: 'Sun',
+};
+
+/** Ordered ISO weekday list (Mon..Sun) for rendering working-day pickers (§8). */
+export const ISO_WEEKDAYS: number[] = [1, 2, 3, 4, 5, 6, 7];
+
+/** Human-readable label for a shift type (§8). */
+export function shiftTypeLabel(type: ShiftType): string {
+  switch (type) {
+    case 'SINGLE':
+      return 'Single';
+    case 'ROTATING':
+      return 'Rotating';
+    case 'FLEXIBLE':
+      return 'Flexible';
+  }
+}
+
+/** Whether the shift type uses fixed start/end times (SINGLE or ROTATING parent). */
+export function shiftTypeUsesTimes(type: ShiftType): boolean {
+  return type === 'SINGLE' || type === 'ROTATING';
+}
+
+/**
+ * Format a shift's working-days array as a compact label, e.g. [1,2,3,4,5] -> "Mon–Fri",
+ * arbitrary sets -> "Mon, Wed, Fri", empty -> "—" (§8).
+ */
+export function formatWorkingDays(days: number[]): string {
+  if (!days || days.length === 0) {
+    return '—';
+  }
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  // Contiguous run detection for a tidy range label.
+  const isContiguous = sorted.every((d, i) => i === 0 || d === sorted[i - 1] + 1);
+  if (isContiguous && sorted.length >= 3) {
+    return `${WEEKDAY_LABELS[sorted[0]]}–${WEEKDAY_LABELS[sorted[sorted.length - 1]]}`;
+  }
+  return sorted.map((d) => WEEKDAY_LABELS[d]).join(', ');
+}
+
+/** Format a shift's time band, e.g. "09:00 – 17:00"; FLEXIBLE -> "Flexible" (§8). */
+export function formatShiftTimes(shift: Pick<IShift, 'type' | 'startTime' | 'endTime'>): string {
+  if (shift.type === 'FLEXIBLE') {
+    return 'Flexible';
+  }
+  if (!shift.startTime || !shift.endTime) {
+    return '—';
+  }
+  return `${shift.startTime} – ${shift.endTime}`;
+}
+
 /** Format a requested-time range for the queue "Requested Times" column (§8). */
 export function formatRequestedTimes(
   reg: { requestedClockIn?: string | null; requestedClockOut?: string | null },

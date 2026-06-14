@@ -24,6 +24,12 @@ import {
   IRegularizationActionErrorResponse,
   IAttendanceApiEnvelope,
   RegularizationAction,
+  IShift,
+  IShiftRequest,
+  IShiftAssignmentRequest,
+  IAssignmentResult,
+  IResolvedShift,
+  IShiftInUseErrorResponse,
 } from '../models/attendance.models';
 
 /**
@@ -236,6 +242,122 @@ export class AttendanceService {
     const body = err.error;
     if (body && typeof body === 'object' && 'message' in body) {
       return body as IRegularizationErrorResponse;
+    }
+    return null;
+  }
+
+  // --- US-ATT-005: Shift management & assignment -------------
+
+  /**
+   * US-ATT-005 (AC-1, §8): list all shift definitions for the tenant. Unwraps the
+   * ApiResponse<T> envelope to ShiftDto[]. Tenant-scoped via the tenantInterceptor.
+   *   GET /api/v1/attendance/shifts -> ApiResponse<ShiftDto[]>
+   */
+  getShifts(): Observable<IShift[]> {
+    return this.http
+      .get<IAttendanceApiEnvelope<IShift[]>>(`${this.baseUrl}/shifts`, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data ?? []));
+  }
+
+  /**
+   * US-ATT-005 (AC-1, FR-2): create a new shift definition. The backend stamps
+   * tenant_id + audit fields server-side (NFR-3) and returns the created ShiftDto.
+   *   POST /api/v1/attendance/shifts  body ShiftRequest -> ApiResponse<ShiftDto>
+   */
+  createShift(request: IShiftRequest): Observable<IShift> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IShift>>(`${this.baseUrl}/shifts`, request, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-005 (FR-2): update an existing shift definition.
+   *   PUT /api/v1/attendance/shifts/{id}  body ShiftRequest -> ApiResponse<ShiftDto>
+   */
+  updateShift(id: string, request: IShiftRequest): Observable<IShift> {
+    return this.http
+      .put<IAttendanceApiEnvelope<IShift>>(`${this.baseUrl}/shifts/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-005 (AC-4, FR-6): delete a shift. Returns 204 on success. When the shift
+   * has active assignments the backend returns 409 `{ message, code: 'shift_in_use' }`
+   * — the caller shows `message` verbatim (see {@link parseShiftInUseError}).
+   *   DELETE /api/v1/attendance/shifts/{id} -> 204 | 409
+   */
+  deleteShift(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/shifts/${id}`, {
+      withCredentials: true,
+    });
+  }
+
+  /**
+   * US-ATT-005 (FR-8): clone an existing shift into a new variant. The backend copies
+   * the definition (un-defaulted, with a derived name) and returns the new ShiftDto.
+   *   POST /api/v1/attendance/shifts/{id}/clone -> ApiResponse<ShiftDto>
+   */
+  cloneShift(id: string): Observable<IShift> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IShift>>(`${this.baseUrl}/shifts/${id}/clone`, {}, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-005 (AC-2, FR-3): bulk-assign a shift to employees with an effective date.
+   * The backend handles effective-dating + non-overlap (AC-3, BR-2/BR-3) and returns
+   * the assigned count. The FE shows `assignedCount` in the success toast.
+   *   POST /api/v1/attendance/shifts/{id}/assign
+   *     body { employeeIds, effectiveFrom } -> ApiResponse<{ assignedCount, employeeShiftIds }>
+   */
+  assignShift(
+    id: string,
+    request: IShiftAssignmentRequest,
+  ): Observable<IAssignmentResult> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IAssignmentResult>>(
+        `${this.baseUrl}/shifts/${id}/assign`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-005 (FR-7, AC-5): resolve the shift applicable to an employee on a date —
+   * for ROTATING shifts the backend computes the right step. Used by the optional
+   * employee-profile current-shift card.
+   *   GET /api/v1/attendance/employees/{employeeId}/shift?date=yyyy-MM-dd
+   *     -> ApiResponse<ResolvedShiftDto>
+   */
+  getResolvedShift(employeeId: string, date: string): Observable<IResolvedShift> {
+    const params = new HttpParams().set('date', date);
+    return this.http
+      .get<IAttendanceApiEnvelope<IResolvedShift>>(
+        `${this.baseUrl}/employees/${employeeId}/shift`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-005 (AC-4): parse the 409 shift-in-use error body. The component shows
+   * `message` verbatim ("This shift is assigned to {N} employees...").
+   */
+  static parseShiftInUseError(
+    err: HttpErrorResponse,
+  ): IShiftInUseErrorResponse | null {
+    const body = err.error;
+    if (body && typeof body === 'object' && 'message' in body) {
+      return body as IShiftInUseErrorResponse;
     }
     return null;
   }
