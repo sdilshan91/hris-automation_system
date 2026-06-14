@@ -1335,3 +1335,169 @@ export function latenessUsedPercent(
   const pct = Math.round((score.lateCount / score.allowedLates) * 100);
   return Math.max(0, Math.min(100, pct));
 }
+
+// ─── US-ATT-009: Attendance Integration with Payroll ─────────────────────────
+
+/**
+ * US-ATT-009 (FR-1, FR-2, §7): one employee's attendance summary as the payroll module
+ * consumes it for a period. The attendance-to-payroll feed — present/absent/LOP day
+ * counts (decimals for half-days), late-deduction days, and approved overtime minutes.
+ *
+ * Backend contract (pinned — backend agent building the SAME contract):
+ *   GET /api/v1/attendance/payroll-data?month=yyyy-MM&employeeIds=<csv optional>
+ *     -> ApiResponse<{ period, rows: AttendancePayrollRowDto[] }>
+ *
+ * Envelope is ApiResponse<T> = { success, data, message }; the service unwraps `.data`.
+ */
+export interface IAttendancePayrollRow {
+  employeeId: string;
+  /** The payroll period, `yyyy-MM`. */
+  period: string;
+  /** Scheduled working days in the period (BR-2). */
+  totalWorkingDays: number;
+  /** Days present including half-days (decimal). */
+  totalPresentDays: number;
+  /** Days absent (decimal). */
+  totalAbsentDays: number;
+  /** Loss-of-Pay days — unexcused absences feeding the LOP deduction (FR-7, BR-2). */
+  lopDays: number;
+  /** Late-arrival days converted to LOP per the late policy (BR-4). */
+  lateDeductionDays: number;
+  /** Approved overtime minutes only (FR-8, BR-5). */
+  approvedOvertimeMinutes: number;
+  /** Total net worked minutes across the period. */
+  totalWorkMinutes: number;
+  /** Breakdown by multiplier rate (jsonb passthrough, BR-3); shape owned by payroll. */
+  overtimeMultiplierDetails: unknown;
+}
+
+/**
+ * US-ATT-009 (FR-1): the payroll-data payload (the `data` of the envelope).
+ *   GET /api/v1/attendance/payroll-data -> ApiResponse<PayrollDataResult>
+ */
+export interface IAttendancePayrollResult {
+  /** The payroll period, `yyyy-MM`. */
+  period: string;
+  rows: IAttendancePayrollRow[];
+}
+
+/**
+ * US-ATT-009 (FR-3, AC-4, §7 `attendance_period_lock`): the lock state of an attendance
+ * period. While `isLocked` is true no clock-in/out, regularization, or modification is
+ * allowed for the range (enforced server-side); payroll may proceed (BR-1).
+ *
+ * Backend contract (pinned — backend agent building the SAME contract):
+ *   GET  /api/v1/attendance/period-lock?month=yyyy-MM        -> ApiResponse<PeriodLockDto | null>
+ *   POST /api/v1/attendance/period-lock  body { periodStart, periodEnd } -> ApiResponse<PeriodLockDto>
+ *   POST /api/v1/attendance/period-lock/{id}/unlock          -> ApiResponse<PeriodLockDto>
+ *
+ * `null` from the GET means the period has never been locked (no lock row exists yet).
+ */
+export interface IPeriodLock {
+  id: string;
+  /** Locked range start, `yyyy-MM-dd`. */
+  periodStart: string;
+  /** Locked range end, `yyyy-MM-dd`. */
+  periodEnd: string;
+  isLocked: boolean;
+  /** HR officer who locked it (FR-4); null before any lock. */
+  lockedBy?: string | null;
+  /** When it was locked (UTC timestamptz, FR-4); null before any lock. */
+  lockedAt?: string | null;
+  /** HR officer who last unlocked it (FR-4, AC-5); null when never unlocked. */
+  unlockedBy?: string | null;
+  /** When it was last unlocked (UTC timestamptz); null when never unlocked. */
+  unlockedAt?: string | null;
+}
+
+/**
+ * US-ATT-009 (FR-5, AC-1): one employee row of the reconciliation view — the attendance
+ * side of the attendance-vs-payroll comparison. The payroll-input columns are rendered
+ * as a "pending payroll module" placeholder until that module exists (see §8 notes).
+ *
+ *   GET /api/v1/attendance/reconciliation?month=yyyy-MM
+ *     -> ApiResponse<{ period, rows: ReconciliationRowDto[] }>
+ */
+export interface IReconciliationRow {
+  employeeId: string;
+  employeeName: string;
+  /** Days present including half-days (decimal). */
+  presentDays: number;
+  /** Loss-of-Pay days feeding the LOP deduction (FR-7). */
+  lopDays: number;
+  /** Approved overtime minutes only (FR-8). */
+  approvedOvertimeMinutes: number;
+  /** Total net worked minutes across the period. */
+  totalWorkMinutes: number;
+}
+
+/**
+ * US-ATT-009 (FR-5): the reconciliation payload (the `data` of the envelope).
+ *   GET /api/v1/attendance/reconciliation -> ApiResponse<ReconciliationResult>
+ */
+export interface IReconciliationResult {
+  /** The reconciled period, `yyyy-MM`. */
+  period: string;
+  rows: IReconciliationRow[];
+}
+
+/**
+ * US-ATT-009 (§8): a single step of the payroll-process stepper. Only the first step
+ * ("Lock Attendance") is actionable in the attendance module; the rest are visual
+ * placeholders until the payroll module is built (FR markers in the story §8).
+ */
+export interface IPayrollStep {
+  /** Stable key for the step. */
+  key: 'lock' | 'generate' | 'review' | 'finalize' | 'publish';
+  /** Display label (§8 ordering: Lock → Generate → Review → Finalize → Publish). */
+  label: string;
+  /** Whether this step lives in the attendance module (only 'lock' today). */
+  actionable: boolean;
+}
+
+/**
+ * US-ATT-009 (§8): the ordered payroll-process steps for the visual stepper. Only the
+ * "Lock Attendance" step is actionable here; the remainder are disabled placeholders
+ * pending the payroll module.
+ */
+export const PAYROLL_PROCESS_STEPS: readonly IPayrollStep[] = [
+  { key: 'lock', label: 'Lock Attendance', actionable: true },
+  { key: 'generate', label: 'Generate Payroll', actionable: false },
+  { key: 'review', label: 'Review', actionable: false },
+  { key: 'finalize', label: 'Finalize', actionable: false },
+  { key: 'publish', label: 'Publish', actionable: false },
+];
+
+/**
+ * US-ATT-009 (§8): format a `yyyy-MM` period as a human month label, e.g.
+ * "2026-05" -> "May 2026". Used in the lock banner and confirmation copy. Falls back
+ * to the raw input when it can't be parsed.
+ */
+export function formatPeriodLabel(period: string): string {
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    return period;
+  }
+  const [y, m] = period.split('-').map(Number);
+  const d = new Date(y, m - 1, 1);
+  if (Number.isNaN(d.getTime())) {
+    return period;
+  }
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+/**
+ * US-ATT-009 (§8): derive the inclusive calendar date range (`yyyy-MM-dd`) for a
+ * `yyyy-MM` period — first and last day of that month. Used to build the lock POST body
+ * (BR-8: a tenant-configurable cutoff may refine this; the default is the full month).
+ */
+export function periodDateRange(period: string): { start: string; end: string } {
+  const [y, m] = period.split('-').map(Number);
+  const start = new Date(y, m - 1, 1);
+  const end = new Date(y, m, 0); // day 0 of next month = last day of this month
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d
+      .getDate()
+      .toString()
+      .padStart(2, '0')}`;
+  return { start: iso(start), end: iso(end) };
+}

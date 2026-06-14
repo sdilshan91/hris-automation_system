@@ -87,6 +87,14 @@ public sealed class AttendanceService : IAttendanceService
             return Result<AttendanceLogDto>.Failure(
                 "You have already clocked in. Please clock out first.", 409, "already_clocked_in");
 
+        // US-ATT-009 AC-4: once HR locks the attendance period, no further clock-in is allowed for a
+        // date in the locked range. "Today" is UTC (same deferral as the rest of the module).
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (await IsDateLockedAsync(today, cancellationToken))
+            return Result<AttendanceLogDto>.Failure(
+                "This date falls within a locked payroll period. Please contact HR.",
+                409, "payroll_period_locked");
+
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
 
         // AC-5 / FR-4: IP allowlist enforcement.
@@ -201,6 +209,13 @@ public sealed class AttendanceService : IAttendanceService
             return Result<ClockOutResultDto>.Failure(
                 "No active clock-in found. Please clock in first or submit a regularization request.",
                 404, "no_active_clock_in");
+
+        // US-ATT-009 AC-4: a locked period freezes the day's record — no clock-out modification is
+        // allowed once the open record's clock-in date is in a locked range.
+        if (await IsDateLockedAsync(DateOnly.FromDateTime(openLog.ClockIn), cancellationToken))
+            return Result<ClockOutResultDto>.Failure(
+                "This date falls within a locked payroll period. Please contact HR.",
+                409, "payroll_period_locked");
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
 
@@ -353,9 +368,12 @@ public sealed class AttendanceService : IAttendanceService
                 $"Regularization requests can only be submitted for the last {lookbackDays} days.",
                 400, "lookback_exceeded");
 
-        // AC-5 / FR-7 / BR-6: locked payroll period (placeholder until the Payroll module owns this).
-        var lockedPeriod = await _dbContext.PayrollLockPeriods
-            .AnyAsync(p => p.StartDate <= request.Date && p.EndDate >= request.Date, cancellationToken);
+        // US-ATT-009 AC-4 / US-ATT-003 AC-5 / FR-7 / BR-6: the date falls within an ACTIVE locked
+        // attendance period (the canonical AttendancePeriodLock, formerly the PayrollLockPeriod
+        // placeholder). Only IsLocked rows freeze their dates.
+        var lockedPeriod = await _dbContext.AttendancePeriodLocks
+            .AnyAsync(p => p.IsLocked && p.PeriodStart <= request.Date && p.PeriodEnd >= request.Date,
+                cancellationToken);
         if (lockedPeriod)
             return Result<RegularizationDto>.Failure(
                 "This date falls within a locked payroll period. Please contact HR.",
@@ -454,6 +472,14 @@ public sealed class AttendanceService : IAttendanceService
         Status = r.Status,
         CreatedAt = r.CreatedAt,
     };
+
+    /// <summary>
+    /// US-ATT-009 AC-4: true when <paramref name="date"/> falls within an ACTIVE locked attendance
+    /// period for the tenant (the canonical AttendancePeriodLock). Tenant-scoped via the global filter.
+    /// </summary>
+    private Task<bool> IsDateLockedAsync(DateOnly date, CancellationToken cancellationToken)
+        => _dbContext.AttendancePeriodLocks
+            .AnyAsync(p => p.IsLocked && p.PeriodStart <= date && p.PeriodEnd >= date, cancellationToken);
 
     /// <summary>
     /// Returns the tenant's attendance settings, creating a default (all enforcement off) row if none

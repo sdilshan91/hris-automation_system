@@ -53,6 +53,9 @@ import {
   ILateEarlyReportQuery,
   ILateEarlyReportResult,
   ILatenessScore,
+  IAttendancePayrollResult,
+  IPeriodLock,
+  IReconciliationResult,
 } from '../models/attendance.models';
 
 /**
@@ -676,6 +679,96 @@ export class AttendanceService {
     return this.http
       .get<IAttendanceApiEnvelope<ILatenessScore>>(
         `${this.baseUrl}/late-early/my-score`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  // --- US-ATT-009: Attendance integration with payroll -------
+
+  /**
+   * US-ATT-009 (FR-1, FR-2): the attendance-to-payroll feed — one summary row per
+   * employee for the period (present/absent/LOP days, approved overtime minutes, work
+   * minutes). Primarily consumed by the payroll module; exposed here for the HR preview.
+   * Optional `employeeIds` scopes the pull to a subset (sent as a CSV query param).
+   *   GET /api/v1/attendance/payroll-data?month=yyyy-MM&employeeIds=<csv>
+   *     -> ApiResponse<{ period, rows: AttendancePayrollRowDto[] }>
+   */
+  getPayrollData(
+    month: string,
+    employeeIds?: string[],
+  ): Observable<IAttendancePayrollResult> {
+    let params = new HttpParams().set('month', month);
+    if (employeeIds && employeeIds.length > 0) {
+      params = params.set('employeeIds', employeeIds.join(','));
+    }
+    return this.http
+      .get<IAttendanceApiEnvelope<IAttendancePayrollResult>>(
+        `${this.baseUrl}/payroll-data`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-009 (FR-3, AC-4): read the lock state of the attendance period covering the
+   * given month. Returns `null` when the period has never been locked (no lock row).
+   *   GET /api/v1/attendance/period-lock?month=yyyy-MM -> ApiResponse<PeriodLockDto | null>
+   */
+  getPeriodLock(month: string): Observable<IPeriodLock | null> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .get<IAttendanceApiEnvelope<IPeriodLock | null>>(
+        `${this.baseUrl}/period-lock`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data ?? null));
+  }
+
+  /**
+   * US-ATT-009 (FR-3, AC-4, FR-4): lock the attendance period for a date range. The
+   * backend records the locking HR officer + timestamp (FR-4) and freezes the range.
+   *   POST /api/v1/attendance/period-lock  body { periodStart, periodEnd }
+   *     -> ApiResponse<PeriodLockDto>
+   */
+  lockPeriod(periodStart: string, periodEnd: string): Observable<IPeriodLock> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IPeriodLock>>(
+        `${this.baseUrl}/period-lock`,
+        { periodStart, periodEnd },
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-009 (AC-5, FR-4): unlock a previously-locked period to allow corrections.
+   * The backend records the unlocking HR officer + timestamp (FR-4) and re-opens the
+   * range; payroll must re-pull (BR-6) once corrected and re-locked.
+   *   POST /api/v1/attendance/period-lock/{id}/unlock -> ApiResponse<PeriodLockDto>
+   */
+  unlockPeriod(id: string): Observable<IPeriodLock> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IPeriodLock>>(
+        `${this.baseUrl}/period-lock/${id}/unlock`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-009 (FR-5, AC-1): the reconciliation view — per-employee attendance summary
+   * (present days, LOP, approved overtime, work minutes) for the period, to be compared
+   * side-by-side with payroll inputs.
+   *   GET /api/v1/attendance/reconciliation?month=yyyy-MM
+   *     -> ApiResponse<{ period, rows: ReconciliationRowDto[] }>
+   */
+  getReconciliation(month: string): Observable<IReconciliationResult> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .get<IAttendanceApiEnvelope<IReconciliationResult>>(
+        `${this.baseUrl}/reconciliation`,
         { withCredentials: true, params },
       )
       .pipe(map((res) => res.data));

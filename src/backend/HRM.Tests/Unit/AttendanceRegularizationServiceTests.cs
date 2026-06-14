@@ -229,12 +229,13 @@ public sealed class AttendanceRegularizationServiceTests
 
         using (var db = CreateDbContext())
         {
-            db.PayrollLockPeriods.Add(new PayrollLockPeriod
+            db.AttendancePeriodLocks.Add(new AttendancePeriodLock
             {
                 Id = BaseEntity.NewUuidV7(),
                 TenantId = _tenantId,
-                StartDate = date.AddDays(-2),
-                EndDate = date.AddDays(2),
+                PeriodStart = date.AddDays(-2),
+                PeriodEnd = date.AddDays(2),
+                IsLocked = true,
             });
             db.SaveChanges();
         }

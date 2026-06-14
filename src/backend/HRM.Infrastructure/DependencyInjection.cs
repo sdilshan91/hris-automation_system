@@ -141,6 +141,11 @@ public static class DependencyInjection
         // background job when present; reuses IReportExportStorage for the stored file.
         services.AddScoped<IAttendanceSummaryService, AttendanceSummaryService>();
 
+        // Attendance ⇄ Payroll integration — attendance side (US-ATT-009): payroll-data pull, the
+        // canonical attendance-period lock lifecycle, and the attendance-side reconciliation. Reuses
+        // IAttendanceSummaryService for the core rollup.
+        services.AddScoped<IAttendancePayrollService, AttendancePayrollService>();
+
         // Late-arrival / early-departure policy + reporting (US-ATT-008). Detection itself is inline in
         // AttendanceService (clock-in/out) and RegularizationApprovalService (approval recompute).
         services.AddScoped<ILateEarlyService, LateEarlyService>();

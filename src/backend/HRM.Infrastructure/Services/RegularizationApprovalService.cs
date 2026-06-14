@@ -253,9 +253,10 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         string? comment,
         CancellationToken cancellationToken)
     {
-        // BR-5: re-check the payroll lock AT APPROVAL TIME (a period may have locked since submission).
-        var locked = await _dbContext.PayrollLockPeriods
-            .AnyAsync(p => p.StartDate <= regularization.Date && p.EndDate >= regularization.Date,
+        // BR-5: re-check the period lock AT APPROVAL TIME (a period may have locked since submission).
+        // US-ATT-009: the canonical AttendancePeriodLock — only ACTIVE (IsLocked) rows freeze dates.
+        var locked = await _dbContext.AttendancePeriodLocks
+            .AnyAsync(p => p.IsLocked && p.PeriodStart <= regularization.Date && p.PeriodEnd >= regularization.Date,
                 cancellationToken);
         if (locked)
             return Result<RegularizationDecisionDto>.Failure(

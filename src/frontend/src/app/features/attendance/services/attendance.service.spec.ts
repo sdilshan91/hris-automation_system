@@ -15,6 +15,11 @@ import {
   IRegularization,
   IShift,
   IShiftRequest,
+  IPeriodLock,
+  IReconciliationResult,
+  IAttendancePayrollResult,
+  formatPeriodLabel,
+  periodDateRange,
 } from '../models/attendance.models';
 import { environment } from '../../../../environments/environment';
 
@@ -366,6 +371,135 @@ describe('AttendanceService', () => {
       expect(resp!.body).toBeTruthy();
     });
   });
+
+  // ─── US-ATT-009: payroll integration ──────────────────────────
+  describe('US-ATT-009 payroll integration', () => {
+    const mockLock: IPeriodLock = {
+      id: 'lock-1',
+      periodStart: '2026-05-01',
+      periodEnd: '2026-05-31',
+      isLocked: true,
+      lockedBy: 'hr-1',
+      lockedAt: '2026-06-01T09:00:00Z',
+      unlockedBy: null,
+      unlockedAt: null,
+    };
+
+    it('getPayrollData GETs the feed with month + optional employeeIds csv (FR-1)', () => {
+      const result: IAttendancePayrollResult = {
+        period: '2026-05',
+        rows: [
+          {
+            employeeId: 'e1',
+            period: '2026-05',
+            totalWorkingDays: 22,
+            totalPresentDays: 20,
+            totalAbsentDays: 2,
+            lopDays: 2,
+            lateDeductionDays: 0.5,
+            approvedOvertimeMinutes: 600,
+            totalWorkMinutes: 9600,
+            overtimeMultiplierDetails: { '1.5': 600 },
+          },
+        ],
+      };
+      let data: IAttendancePayrollResult | undefined;
+      service.getPayrollData('2026-05', ['e1', 'e2']).subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/payroll-data` &&
+          r.params.get('month') === '2026-05' &&
+          r.params.get('employeeIds') === 'e1,e2',
+      );
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ success: true, data: result });
+      expect(data!.rows.length).toBe(1);
+      expect(data!.rows[0].lopDays).toBe(2);
+    });
+
+    it('getPayrollData omits employeeIds when not provided', () => {
+      service.getPayrollData('2026-05').subscribe();
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/payroll-data` && r.params.get('month') === '2026-05',
+      );
+      expect(req.request.params.has('employeeIds')).toBeFalse();
+      req.flush({ success: true, data: { period: '2026-05', rows: [] } });
+    });
+
+    it('getPeriodLock GETs the lock for the month and unwraps the envelope (FR-3)', () => {
+      let data: IPeriodLock | null | undefined;
+      service.getPeriodLock('2026-05').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/period-lock` && r.params.get('month') === '2026-05',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: mockLock });
+      expect(data!.isLocked).toBeTrue();
+    });
+
+    it('getPeriodLock returns null when no lock row exists', () => {
+      let data: IPeriodLock | null | undefined = mockLock;
+      service.getPeriodLock('2026-05').subscribe((d) => (data = d));
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/period-lock` && r.params.get('month') === '2026-05',
+      );
+      req.flush({ success: true, data: null });
+      expect(data).toBeNull();
+    });
+
+    it('lockPeriod POSTs the date range and unwraps the lock (AC-4)', () => {
+      let data: IPeriodLock | undefined;
+      service.lockPeriod('2026-05-01', '2026-05-31').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(`${baseUrl}/period-lock`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({
+        periodStart: '2026-05-01',
+        periodEnd: '2026-05-31',
+      });
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ success: true, data: mockLock });
+      expect(data!.id).toBe('lock-1');
+    });
+
+    it('unlockPeriod POSTs to the unlock path (AC-5)', () => {
+      let data: IPeriodLock | undefined;
+      service.unlockPeriod('lock-1').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(`${baseUrl}/period-lock/lock-1/unlock`);
+      expect(req.request.method).toBe('POST');
+      req.flush({ success: true, data: { ...mockLock, isLocked: false } });
+      expect(data!.isLocked).toBeFalse();
+    });
+
+    it('getReconciliation GETs the reconciliation for the month (FR-5)', () => {
+      const result: IReconciliationResult = {
+        period: '2026-05',
+        rows: [
+          {
+            employeeId: 'e1',
+            employeeName: 'Ada Lovelace',
+            presentDays: 20,
+            lopDays: 2,
+            approvedOvertimeMinutes: 600,
+            totalWorkMinutes: 9600,
+          },
+        ],
+      };
+      let data: IReconciliationResult | undefined;
+      service.getReconciliation('2026-05').subscribe((d) => (data = d));
+
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/reconciliation` && r.params.get('month') === '2026-05',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: result });
+      expect(data!.rows[0].employeeName).toBe('Ada Lovelace');
+    });
+  });
 });
 
 // ─── Pure error helpers (no TestBed / httpMock.verify conflicts) ──────────
@@ -428,5 +562,23 @@ describe('AttendanceService.parseError (pure function)', () => {
   it('parseShiftInUseError returns null for a non-object body', () => {
     const err = { error: null } as HttpErrorResponse;
     expect(AttendanceService.parseShiftInUseError(err)).toBeNull();
+  });
+});
+
+// ─── US-ATT-009 pure helpers ──────────────────────────────────────────────
+
+describe('US-ATT-009 period helpers (pure function)', () => {
+  it('formatPeriodLabel formats a yyyy-MM as a month-year label', () => {
+    expect(formatPeriodLabel('2026-05')).toContain('2026');
+    expect(formatPeriodLabel('2026-05')).toContain('May');
+  });
+
+  it('formatPeriodLabel falls back to the raw input for a bad shape', () => {
+    expect(formatPeriodLabel('nope')).toBe('nope');
+  });
+
+  it('periodDateRange returns the first and last day of the month', () => {
+    expect(periodDateRange('2026-02')).toEqual({ start: '2026-02-01', end: '2026-02-28' });
+    expect(periodDateRange('2026-05')).toEqual({ start: '2026-05-01', end: '2026-05-31' });
   });
 });
