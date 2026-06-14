@@ -886,6 +886,111 @@ leave-config screens' guard exactly, same as US-LV-007 holidays).
 
 No `app.routes.ts`, nav-menu, employee-profile, backend, or test-case files were touched.
 
+## Frontend (US-LV-009) — Team Leave Calendar View
+
+New standalone `TeamLeaveCalendarComponent` (signals + OnPush) + sibling
+`TeamCalendarService` + `team-calendar.models.ts`. Mirrors US-LV-001..008 structure
+(Angular Material + Tailwind, no NgModules, no Bootstrap). **No new dependency** — the
+month grid is a hand-rolled CSS grid reusing the US-LV-007 holiday-calendar approach
+(`buildMonthGrid` pure fn, 42-cell Sunday-first). No `angular-calendar`/charting lib
+added (checked `package.json` first, none present — §10).
+
+### Three views via a segmented control (FR-5, §8)
+
+- **Month (AC-1):** CSS-grid month calendar; each leave is a color-coded block per
+  employee on every covered date; today's cell ring-highlighted; public-holiday cells get
+  a light-gray (`#f1f5f9`/slate-100) background (FR-7); hover `title` tooltip with detail.
+- **Week (AC-3):** Gantt-style horizontal bars — 11rem employee-name Y-axis column +
+  7 day columns (X-axis). One row per employee with coverage in the visible week
+  (`buildWeekRows` pure fn, sorted by name). Horizontally scrollable on narrow screens.
+- **List (AC-4, mobile default):** chronological groups by **start date** (`buildListGroups`),
+  each an employee card (name, leave type/"On leave", half-day or N-days, status badge).
+- **Mobile (§8):** `defaultView()` reads `window.innerWidth < 768` → defaults to **list**;
+  guarded for non-browser (`typeof window`).
+
+### Scope-aware rendering (BR-1, BR-2, AC-1, AC-2) — the load-bearing decision
+
+The component renders **whatever the API returns** and never assumes manager-only fields:
+- `ITeamCalendarEntry` makes `leaveTypeName`, `color`, `status` **optional**.
+- **Employee scope:** the API suppresses pending + leave-type detail; entries arrive with
+  none of those fields → rendered generically as **"On leave"** (`entryLabel` fallback),
+  neutral slate color (`#64748b`), **no** status badge, **no** leave-type filter chips, and
+  the **status filter chip group is hidden** (`hasStatusScope` = any entry has a status).
+- **Manager scope:** entries carry detail → per-type color legend, status badges
+  (Approved=green, Pending=amber + 70% opacity blocks), leave-type + status filter chips.
+- The FE does **not** request or infer hidden data. The `status` query param is only sent
+  when a status filter is active (which only the manager-scope UI exposes).
+
+### Color resolution + legend (§8)
+
+`buildLegend` builds a name→color index: prefers the API-provided `color` (manager scope),
+else assigns a stable Notion-muted palette color per distinct leave-type name (first-seen
+order). Employee scope (no type detail) → a single generic "On leave" legend item. The
+legend always appends a "Public holiday" gray swatch. `resolveEntryColor` = API color →
+palette index → neutral.
+
+### Half-day differentiation (BR-5)
+
+Half-day entries get: a diagonal stripe overlay on the block/bar (`leave-block-half`/
+`gantt-bar-half` CSS), plus an **AM/PM pill** in the month block (falls back to "½" when
+session is unknown), and a "Half day (AM/PM)" line in the list view.
+
+### Data loading / range
+
+Loads on init + on month/week/employee/status change. `activeRange()` fetches the active
+month **±7 days** so multi-day leaves spilling across month boundaries and the week view
+have data. Leave-**type** filter is **client-side** (by denormalized name); employee +
+status filters are passed **server-side** (re-fetch) AND applied client-side. `goToToday()`,
+`changeMonth`, `changeWeek` (week nav re-fetches if it crosses into another month).
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+New employee/manager-facing endpoint on the existing **`/leaves`** resource. `apiBaseUrl`
+already includes `/api/v1`, so the base is `${apiBaseUrl}/leaves/team-calendar`.
+
+| Method | Path | Params | Response |
+|--------|------|--------|----------|
+| GET | `/api/v1/leaves/team-calendar` | `?from={date}&to={date}` `[&employeeId][&leaveTypeId][&status]` | `ITeamCalendarResponse` |
+
+- **Combined payload** `{ entries: ITeamCalendarEntry[]; holidays: ITeamCalendarHoliday[] }`.
+  `TeamCalendarService.normalize` **also tolerates a bare `entries[]` body** (→ holidays:[])
+  and a null body, so the backend may return either shape without breaking the FE.
+- **`ITeamCalendarEntry`** = `{ employeeId, employeeName, leaveTypeName?, color?, startDate,
+  endDate, status?('Approved'|'Pending'), totalDays, isHalfDay?, halfDaySession?('AM'|'PM') }`.
+  Manager-only fields (`leaveTypeName`/`color`/`status`) are **optional** — the backend MUST
+  omit them for employee scope (BR-1) and MUST omit Pending entries entirely for employee
+  scope (AC-2).
+- **`ITeamCalendarHoliday`** = `{ date('YYYY-MM-DD' date-only), name }`. Dates are **date-only
+  strings** — the FE slices strings (never `new Date()`-parses) to avoid TZ off-by-one,
+  consistent with US-LV-007. Backend must serialize holiday/leave dates as plain ISO dates.
+- **Error contract** `ITeamCalendarErrorResponse { message, code? }` — surfaced verbatim in the
+  error state with a Try-Again button.
+- The backend is the source of truth for **scope/access control** (which employees, which
+  statuses, detail suppression) — the FE only renders. The backend should reuse the US-LV-004
+  `ReportsToEmployeeId` direct-report scope for managers + department scope for employees, and
+  the US-LV-007 `HolidayProvider` for the `holidays` payload (location-aware per the caller).
+
+### DEFERRED (seam + TODO only, per story §10)
+
+- **Redis caching (NFR-1)** — backend; consistent with the module-wide deferred-Redis decision.
+- **Real-time updates** — calendar re-fetches on nav/filter change only.
+- **Drag-and-drop leave creation** — §10 explicitly excludes it; the calendar is read-only
+  (leave is applied via US-LV-003's form). No create/edit affordance on cells.
+
+### Shared files touched (all within `features/leave-management`, flagged)
+
+1. `leave-management.routes.ts` — added the `team-calendar` child to `LEAVE_REQUEST_ROUTES`
+   (the `/leave` parent already guards `roleGuard(['Employee','Manager','HR Officer','Tenant
+   Admin'])` — the most permissive leave route, same as the dashboard). **No `app.routes.ts`
+   edit and no nav-menu edit** were needed.
+2. `index.ts` — barrel exports for `team-calendar.models` + `team-calendar.service`.
+
+No `app.routes.ts`, nav-menu, employee-profile, backend, or test-case files were touched.
+**76 new FE tests** (models pure fns, service HTTP + normalize + parseError, component view
+toggle / month blocks+color / today+holiday bg / half-day / week Gantt / list grouping /
+filter bar / status-scope hide / employee-scope graceful render / mobile-default-list /
+error+nav). Full suite **1086 green, 0 regressions**.
+
 ## Holiday Calendar (US-LV-007) — Backend
 
 New `Holiday` entity + the calendar CRUD/CSV/recurrence service, and — the load-bearing part —
@@ -1076,3 +1181,92 @@ BR-6/BR-3/FIFO; service year-end 5-carry/3-expire, zero-limit, skip-types, encas
 idempotency, expiry+FIFO, double-expiry guard, preview-matches-job, preview-commits-nothing;
 integration year-end ledger+tracking, idempotent re-run, tenant isolation A≠B, preview query +
 tenant scope). Full suite **838 green, 0 regressions**.
+
+## Team Leave Calendar (US-LV-009) — Backend
+
+Pure **read/query** story over the existing US-LV-003 `LeaveRequest`, `Employee`, `LeaveType`,
+and US-LV-007 `Holiday` data. **No new entity, no migration.** One MediatR query
+`GetTeamLeaveCalendarQuery(Params)` + handler delegating to a **new method on the existing
+`ILeaveRequestService`** (`GetTeamLeaveCalendarAsync`) — reuses the same `GetCurrentEmployeeAsync`
++ `ReportsToEmployeeId` direct-report resolution as US-LV-004, so scoping logic stays in one place.
+
+### Scope-role resolution (AC-1/AC-2, BR-1/BR-2/BR-3) — three-way
+
+Resolved per request from the caller (no extra config entity):
+1. **HR / "All" scope** — caller has `Leave.View.All` (`ICurrentUser.Permissions.Contains(...)`). Returns
+   ALL employees' Approved + Pending leaves in the tenant, full detail. Already granted to Tenant
+   Admin/HR Manager/HR Officer/Auditor in the catalog — **no PermissionCatalog change needed**
+   (`Leave.View.All` pre-existed; contrast US-LV-007 which added `Holiday.*`).
+2. **Manager scope** — caller has ≥1 direct report (`Employees.Where(e => e.ReportsToEmployeeId ==
+   me.Id)`). Returns those direct reports' Approved + Pending, full detail (leave type, colour, status).
+3. **Employee scope** — otherwise. Returns own-**department** colleagues' (`e.DepartmentId ==
+   me.DepartmentId`) **Approved-only** leaves, with detail SUPPRESSED.
+
+Resolution is HR → Manager → Employee (a manager who also has `Leave.View.All` gets All). The resolved
+scope ("All"/"Manager"/"Employee") is echoed in the response so the FE can adapt.
+
+### BR-1 employee-view suppression — enforced server-side (the data-leak guard)
+
+The single most important rule: employee scope must **not** leak pending requests or leave types.
+Implemented so the API itself never returns the hidden fields (NOT reliant on the FE hiding them):
+- Employee-scope query filters to `Status == Approved` only (Pending/Rejected/Cancelled never selected).
+- In the DTO projection, when `fullDetail == false` the handler sets `LeaveTypeName = null`,
+  `Color = null`, `Status = null`. The employee row carries only `employeeId/name`, dates, totalDays,
+  and half-day flags — enough to render "on leave", nothing more.
+- The FR-6 `status` and `leaveTypeId` filters are **ignored** for employee scope (a `status=Pending`
+  filter still returns nothing). Tested explicitly (`Employee_NeverSeesAnyAwaitingEntries_EvenWithStatusFilter`).
+
+### BR-4 / status set
+
+Cancelled AND Rejected are both excluded everywhere. Only Approved (+ Pending for manager/HR) are
+returned. The leave query uses the `[StartDate, EndDate]` overlap window vs. the requested `[from, to]`
+(`lr.StartDate <= to && lr.EndDate >= from`), same overlap predicate as the US-LV-004 pending queue.
+
+### Holidays (FR-7) — reuse US-LV-007 `IHolidayService.GetAllAsync`, separate collection
+
+Rather than the `IHolidayProvider` seam (which returns only a `Set<DateOnly>`), FR-7 reuses
+**`IHolidayService.GetAllAsync(from, to, …)`** which returns full `HolidayDto`s (name/date/type) — the
+richer shape the FE needs for background highlights. Returned as a **separate `Holidays` collection**
+in `TeamLeaveCalendarDto` (not merged into the leave entries — cleaner for the FE to render as a
+background layer vs. leave bars). Filtered to **Public** holidays scoped to the caller's `LocationId`
+(tenant-wide + own-location), consistent with US-LV-007 BR-2. `IHolidayService` was added as an
+**optional** (nullable, default-null) constructor param on `LeaveRequestService` so the existing
+US-LV-003/004/005 unit tests (which `new` the service with the original 6 args) keep compiling without
+edits; DI always supplies it in production.
+
+### Half-day passthrough (BR-5)
+
+`IsHalfDay` + `HalfDaySession` are passed straight through on every entry (all scopes) so the FE can
+render a half-block/AM-PM indicator. Not suppressed for employee scope (it's not type/status detail).
+
+### Endpoint + authorization
+
+`GET /api/v1/leaves/team-calendar?from&to&employeeId&leaveTypeId&status` on the existing
+`LeaveRequestsController`. **No per-action `[RequirePermission]`** — only the class-level `[Authorize]`
+applies, because the three roles that may call it (Employee `Leave.View.Own`, Manager
+`Leave.View.Team`, HR `Leave.View.All`) hold *different* permissions and the handler does the row-level
+scoping. Gating on any single permission would wrongly exclude one of the three. The status filter
+(FR-6) is honoured for manager/HR scope only.
+
+### Deferrals (seam + TODO only — NOT built)
+
+- **Redis caching (NFR-1, P95 < 300ms):** query the DB directly, consistent with the module-wide
+  deferred-Redis decision. The `(tenant_id, employee_id, status, start_date)` index (§7) and the
+  `(tenant_id, date)` holiday index serve the range scans.
+- **PostgreSQL RLS literal (NFR-2):** tenant isolation is via EF global query filters + `TenantInterceptor`
+  (same mechanism as all prior leave stories) — no per-entity RLS policy. See the module-wide note above.
+
+### Shared files touched (flagged)
+
+- `LeaveRequestsController.cs` — added the `GET team-calendar` action (extends the US-LV-003 controller).
+- `ILeaveRequestService.cs` — added `GetTeamLeaveCalendarAsync` to the existing interface.
+- `LeaveRequestService.cs` — implemented the method; added optional `IHolidayService` ctor param.
+
+New files: `TeamLeaveCalendarDtos.cs`, `GetTeamLeaveCalendarQuery` + handler, and Unit/Integration test
+classes. No new entity/migration/permission/DI changes (`IHolidayService`/`ILeaveRequestService` already
+registered; the optional ctor param resolves from the existing registration). **15 new tests**
+(manager Approved+Pending+detail, manager≠other-manager, employee dept-Approved-only + suppression +
+no-pending-even-with-filter, HR ViewAll all-teams, Cancelled/Rejected excluded, holidays-in-range,
+half-day passthrough, leave-type filter, range overlap, no-employee empty, invalid range; integration
+manager happy-path+holidays, tenant A≠B, employee-scope suppression e2e). Full suite **853 green, 0
+regressions**.

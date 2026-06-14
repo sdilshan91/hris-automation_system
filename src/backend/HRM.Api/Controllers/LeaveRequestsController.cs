@@ -200,6 +200,48 @@ public sealed class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/leaves/team-calendar?from={date}&amp;to={date}
+    /// Returns the team leave calendar for the current caller (US-LV-009 FR-1..FR-4, FR-6/FR-7).
+    /// Row-level access is resolved by the handler from the caller's permissions/reporting line:
+    /// HR (Leave.View.All) sees the whole org; a manager sees their direct reports' Approved +
+    /// Pending leaves with full detail; a regular employee sees only their department colleagues'
+    /// Approved leaves with leave-type/status detail suppressed (BR-1). Cancelled/Rejected are
+    /// excluded (BR-4). Public holidays in the range are returned for background highlights (FR-7).
+    ///
+    /// Authorized for any authenticated employee — only the class-level [Authorize] applies; the
+    /// handler performs the row-level scoping. The status filter (FR-6) is honoured for manager/HR
+    /// scope only and ignored for employee scope.
+    /// </summary>
+    [HttpGet("team-calendar")]
+    [ProducesResponseType(typeof(ApiResponse<TeamLeaveCalendarDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetTeamCalendar(
+        [FromQuery] DateOnly from,
+        [FromQuery] DateOnly to,
+        [FromQuery] Guid? employeeId,
+        [FromQuery] Guid? leaveTypeId,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken)
+    {
+        var queryParams = new TeamLeaveCalendarQueryParams
+        {
+            From = from,
+            To = to,
+            EmployeeId = employeeId,
+            LeaveTypeId = leaveTypeId,
+            Status = status,
+        };
+
+        var result = await _mediator.Send(
+            new GetTeamLeaveCalendarQuery(queryParams), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<TeamLeaveCalendarDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// POST /api/v1/leaves/{id}/approve
     /// Approves a pending leave request from one of the current manager's direct reports
     /// (US-LV-005 FR-1, AC-1/AC-3/AC-5). Sets the status to Approved, deducts the balance via a
