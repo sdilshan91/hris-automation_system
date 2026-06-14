@@ -68,7 +68,7 @@
 
 ## 4. Attendance (10 stories)
 - [x] US-ATT-001 — Employee clock-in with optional geolocation *(PR #39)*
-- [~] US-ATT-002 — Employee clock-out with hours auto-calculation
+- [x] US-ATT-002 — Employee clock-out with hours auto-calculation *(PR #40)*
 - [ ] US-ATT-003 — Attendance regularization request
 - [ ] US-ATT-004 — Manager approves/rejects regularization
 - [ ] US-ATT-005 — Shift management and assignment
@@ -154,9 +154,9 @@
 
 ## Tally
 - Total stories: **102**
-- Done: **28** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; Attendance US-ATT-001 PR #39)
+- Done: **29** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; Attendance US-ATT-001 PR #39, US-ATT-002 PR #40)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **72**
+- Pending: **71**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
