@@ -101,4 +101,40 @@ public sealed class AttendanceSettings : BaseEntity
     /// a date older than this is rejected.
     /// </summary>
     public int RegularizationLookbackDays { get; set; } = 7;
+
+    // ── Overtime rules (US-ATT-006 FR-3) ───────────────────────────────
+    // Tenant-configurable. Reuses the existing OvertimeThresholdMinutes above for BR-1/BR-2; the rest
+    // are new. The story's default threshold is 30 minutes (BR-2) — the US-ATT-002 default of 0 (any
+    // excess is overtime) is retained for backward compatibility, and overtime detection adds an
+    // explicit minimum-threshold gate (see AttendanceCalculator.CalculateOvertime).
+
+    /// <summary>
+    /// BR-2 default overtime threshold (minutes) when no shift-specific value applies (US-ATT-006).
+    /// Work exceeding standard hours by less than this is not counted as overtime. Default 30.
+    /// Distinct from <see cref="OvertimeThresholdMinutes"/> (US-ATT-002 tolerance, default 0) so the
+    /// existing clock-out status precedence is unchanged; overtime-record detection uses this value.
+    /// </summary>
+    public int OvertimeMinimumThresholdMinutes { get; set; } = 30;
+
+    /// <summary>BR-3: weekday overtime pay multiplier. Default 1.50.</summary>
+    public decimal WeekdayOvertimeMultiplier { get; set; } = 1.5m;
+
+    /// <summary>BR-3/BR-7: weekend (rest-day) overtime pay multiplier. Default 2.00.</summary>
+    public decimal WeekendOvertimeMultiplier { get; set; } = 2.0m;
+
+    /// <summary>BR-3/BR-7: public-holiday overtime pay multiplier. Default 2.50.</summary>
+    public decimal HolidayOvertimeMultiplier { get; set; } = 2.5m;
+
+    /// <summary>BR-4: maximum daily overtime (minutes). Overtime beyond this is capped and flagged. Default 240 (4 h).</summary>
+    public int MaxDailyOvertimeMinutes { get; set; } = 240;
+
+    /// <summary>BR-5: maximum weekly overtime (minutes); an HR alert is raised on approach. Default 1200 (20 h).</summary>
+    public int MaxWeeklyOvertimeMinutes { get; set; } = 1200;
+
+    /// <summary>
+    /// FR-4/AC-2/BR-6: when true, employees must submit an overtime pre-approval request before working;
+    /// auto-detected overtime without a matching pre-approval is recorded as UNAPPROVED and excluded
+    /// from payroll until HR reviews it. Default false (most tenants use auto-detection, §10).
+    /// </summary>
+    public bool RequireOvertimePreApproval { get; set; }
 }

@@ -69,4 +69,61 @@ public static class AttendanceCalculator
 
         return new AttendanceCalculation(totalWorkMinutes, overtimeMinutes, status);
     }
+
+    /// <summary>
+    /// US-ATT-006 overtime detection (FR-1/BR-1/BR-2/BR-4). Computes the overtime block for a closed
+    /// session from net worked minutes, a shift standard, the tenant minimum threshold and the daily
+    /// cap. Pure and deterministic so both the clock-out path and tests apply identical rules; the
+    /// returned <see cref="OvertimeComputation.Basis"/> string is the NFR-3 audit of the inputs.
+    /// </summary>
+    /// <param name="netWorkMinutes">Net worked minutes (post auto-break) — the calculator's TotalWorkMinutes.</param>
+    /// <param name="standardMinutes">The shift standard work minutes (US-ATT-005 resolved shift, else tenant setting).</param>
+    /// <param name="minimumThresholdMinutes">BR-2 minimum excess before any overtime is recognized.</param>
+    /// <param name="maxDailyMinutes">BR-4 daily cap; excess above this is dropped and flagged.</param>
+    /// <param name="multiplier">The applicable pay multiplier (BR-3/BR-7), recorded only.</param>
+    /// <param name="multiplierBasis">Why that multiplier applies (e.g. "WEEKEND"), for the audit string.</param>
+    public static OvertimeComputation CalculateOvertime(
+        int netWorkMinutes,
+        int standardMinutes,
+        int minimumThresholdMinutes,
+        int maxDailyMinutes,
+        decimal multiplier,
+        string multiplierBasis)
+    {
+        // BR-1: overtime is net work beyond the standard.
+        var rawExcess = Math.Max(0, netWorkMinutes - standardMinutes);
+
+        // BR-2: excess below the threshold is not overtime.
+        if (rawExcess < minimumThresholdMinutes)
+        {
+            return new OvertimeComputation(
+                OvertimeMinutes: 0,
+                CapApplied: false,
+                Multiplier: multiplier,
+                Basis: $"net={netWorkMinutes};standard={standardMinutes};rawExcess={rawExcess};" +
+                       $"threshold={minimumThresholdMinutes};belowThreshold=true;overtime=0");
+        }
+
+        // BR-4: cap the recognized overtime at the daily maximum; flag when the cap bites.
+        var capped = Math.Min(rawExcess, maxDailyMinutes);
+        var capApplied = rawExcess > maxDailyMinutes;
+
+        return new OvertimeComputation(
+            OvertimeMinutes: capped,
+            CapApplied: capApplied,
+            Multiplier: multiplier,
+            Basis: $"net={netWorkMinutes};standard={standardMinutes};rawExcess={rawExcess};" +
+                   $"threshold={minimumThresholdMinutes};dailyCap={maxDailyMinutes};capApplied={capApplied};" +
+                   $"multiplier={multiplier};multiplierBasis={multiplierBasis};overtime={capped}");
+    }
 }
+
+/// <summary>
+/// Outcome of <see cref="AttendanceCalculator.CalculateOvertime"/> (US-ATT-006). NFR-3: the
+/// <see cref="Basis"/> string records the exact deterministic inputs that produced the result.
+/// </summary>
+public readonly record struct OvertimeComputation(
+    int OvertimeMinutes,
+    bool CapApplied,
+    decimal Multiplier,
+    string Basis);

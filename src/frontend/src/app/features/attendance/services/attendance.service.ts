@@ -30,6 +30,15 @@ import {
   IAssignmentResult,
   IResolvedShift,
   IShiftInUseErrorResponse,
+  IOvertime,
+  IOvertimePreApprovalRequest,
+  IOvertimeQueueItem,
+  IOvertimeQueueResult,
+  IOvertimeApproveRequest,
+  IOvertimeRejectRequest,
+  IOvertimeDecision,
+  IOvertimeReportResult,
+  IOvertimeActionErrorResponse,
 } from '../models/attendance.models';
 
 /**
@@ -358,6 +367,129 @@ export class AttendanceService {
     const body = err.error;
     if (body && typeof body === 'object' && 'message' in body) {
       return body as IShiftInUseErrorResponse;
+    }
+    return null;
+  }
+
+  // --- US-ATT-006: Overtime tracking & approval --------------
+
+  /**
+   * US-ATT-006 (AC-2, FR-4): submit an overtime pre-approval request. Returns the
+   * created record with type PRE_APPROVED. Tenant + employee resolved server-side.
+   *   POST /api/v1/attendance/overtime/pre-approval  body { date, expectedHours, reason }
+   *     -> ApiResponse<OvertimeDto>
+   */
+  submitOvertimePreApproval(
+    request: IOvertimePreApprovalRequest,
+  ): Observable<IOvertime> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IOvertime>>(
+        `${this.baseUrl}/overtime/pre-approval`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-006 (§8): list the current employee's overtime records (auto-detected +
+   * pre-approved), most-recent first (ordering owned by the backend). Feeds the daily
+   * card overtime detail and the weekly-progress bar.
+   *   GET /api/v1/attendance/overtime/my -> ApiResponse<OvertimeDto[]>
+   */
+  getMyOvertime(): Observable<IOvertime[]> {
+    return this.http
+      .get<IAttendanceApiEnvelope<IOvertime[]>>(`${this.baseUrl}/overtime/my`, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data ?? []));
+  }
+
+  /**
+   * US-ATT-006 (AC-3): list the pending overtime records for the authenticated
+   * manager's team. Backend scopes by manager + tenant server-side (BR-8, NFR-2).
+   *   GET /api/v1/attendance/overtime/pending
+   *     -> ApiResponse<{ items: OvertimeQueueItemDto[], totalCount }>  (reads data.items)
+   */
+  getPendingOvertime(): Observable<IOvertimeQueueItem[]> {
+    return this.http
+      .get<IAttendanceApiEnvelope<IOvertimeQueueResult>>(
+        `${this.baseUrl}/overtime/pending`,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res?.data?.items ?? []));
+  }
+
+  /**
+   * US-ATT-006 (FR-6, AC-4): approve an overtime record, optionally adjusting the
+   * awarded minutes (FR-6) and adding a comment. Self-approval (BR-8) / not-team-member
+   * arrive as 403 `{ message, code }`; already-decided as 409 — shown verbatim.
+   *   POST /api/v1/attendance/overtime/{id}/approve  body { approvedMinutes?, comment? }
+   *     -> ApiResponse<OvertimeDecisionDto>
+   */
+  approveOvertime(
+    id: string,
+    approvedMinutes?: number,
+    comment?: string,
+  ): Observable<IOvertimeDecision> {
+    const body: IOvertimeApproveRequest = {};
+    if (approvedMinutes != null) {
+      body.approvedMinutes = approvedMinutes;
+    }
+    if (comment) {
+      body.comment = comment;
+    }
+    return this.http
+      .post<IAttendanceApiEnvelope<IOvertimeDecision>>(
+        `${this.baseUrl}/overtime/${id}/approve`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-006: reject an overtime record. `reason` is required, min 10 chars
+   * (enforced by the caller).
+   *   POST /api/v1/attendance/overtime/{id}/reject  body { reason } -> ApiResponse<OvertimeDecisionDto>
+   */
+  rejectOvertime(id: string, reason: string): Observable<IOvertimeDecision> {
+    const body: IOvertimeRejectRequest = { reason };
+    return this.http
+      .post<IAttendanceApiEnvelope<IOvertimeDecision>>(
+        `${this.baseUrl}/overtime/${id}/reject`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-006 (AC-5): the monthly overtime report for HR — approved/pending/rejected
+   * minutes and record count per employee for the selected month.
+   *   GET /api/v1/attendance/overtime/report?month=yyyy-MM
+   *     -> ApiResponse<OvertimeReportResult>
+   */
+  getOvertimeReport(month: string): Observable<IOvertimeReportResult> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .get<IAttendanceApiEnvelope<IOvertimeReportResult>>(
+        `${this.baseUrl}/overtime/report`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-006 (AC-4, BR-8): parse an overtime approve/reject error body into the typed
+   * shape (self_approval / not_team_member / already_actioned). Shows `message` verbatim.
+   */
+  static parseOvertimeActionError(
+    err: HttpErrorResponse,
+  ): IOvertimeActionErrorResponse | null {
+    const body = err.error;
+    if (body && typeof body === 'object' && 'message' in body) {
+      return body as IOvertimeActionErrorResponse;
     }
     return null;
   }

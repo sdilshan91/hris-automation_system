@@ -78,6 +78,38 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .HasDefaultValue(7)
             .IsRequired();
 
+        // US-ATT-006 overtime rules (FR-3). Tenant-configurable thresholds, multipliers, caps.
+        builder.Property(s => s.OvertimeMinimumThresholdMinutes)
+            .HasDefaultValue(30)
+            .IsRequired();
+
+        builder.Property(s => s.WeekdayOvertimeMultiplier)
+            .HasColumnType("numeric(3,2)")
+            .HasDefaultValue(1.5m)
+            .IsRequired();
+
+        builder.Property(s => s.WeekendOvertimeMultiplier)
+            .HasColumnType("numeric(3,2)")
+            .HasDefaultValue(2.0m)
+            .IsRequired();
+
+        builder.Property(s => s.HolidayOvertimeMultiplier)
+            .HasColumnType("numeric(3,2)")
+            .HasDefaultValue(2.5m)
+            .IsRequired();
+
+        builder.Property(s => s.MaxDailyOvertimeMinutes)
+            .HasDefaultValue(240)
+            .IsRequired();
+
+        builder.Property(s => s.MaxWeeklyOvertimeMinutes)
+            .HasDefaultValue(1200)
+            .IsRequired();
+
+        builder.Property(s => s.RequireOvertimePreApproval)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.Property(s => s.IsDeleted)
             .HasDefaultValue(false)
             .IsRequired();

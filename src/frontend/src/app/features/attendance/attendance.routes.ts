@@ -54,5 +54,36 @@ export const ATTENDANCE_ROUTES: Routes = [
         (m) => m.ShiftManagementComponent
       ),
   },
+  {
+    // US-ATT-006: employee's "My Overtime" list + pre-approval form + weekly-progress
+    // bar. A self view — inherits the parent attendance guard (any authenticated
+    // employee with Attendance.Clock.Self), so NO extra child guard is needed.
+    path: 'overtime',
+    loadComponent: () =>
+      import('./components/my-overtime/my-overtime.component').then(
+        (m) => m.MyOvertimeComponent
+      ),
+  },
+  {
+    // US-ATT-006 (AC-3/AC-4): manager's overtime approval queue — the overtime side of
+    // the unified approval hub (sibling to regularization-approvals, mirrors its model).
+    // Same approver child-guard technique; NO app.routes.ts edit needed.
+    path: 'overtime-approvals',
+    canActivate: [roleGuard(['Manager', 'HR Officer', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/overtime-approvals/overtime-approvals.component').then(
+        (m) => m.OvertimeApprovalsComponent
+      ),
+  },
+  {
+    // US-ATT-006 (AC-5): HR monthly overtime report. HR-only (HR Officer / HR Manager /
+    // Tenant Admin) per §2 — same child-guard technique as the shifts route.
+    path: 'overtime-report',
+    canActivate: [roleGuard(['HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/overtime-report/overtime-report.component').then(
+        (m) => m.OvertimeReportComponent
+      ),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];
