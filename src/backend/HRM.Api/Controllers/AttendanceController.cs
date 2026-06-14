@@ -296,4 +296,168 @@ public sealed class AttendanceController : ControllerBase
 
         return Ok(ApiResponse<BulkApproveRegularizationResult>.Ok(result.Value!, "Bulk approval processed."));
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-005: Shift management and assignment per employee
+    //  All gated by Attendance.Shift.Manage (HR-level).
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/shifts
+    /// Lists every shift defined for the current tenant, including the active assigned-employee count
+    /// per shift (US-ATT-005 AC-1). Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpGet("shifts")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ShiftDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetShifts(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetShiftsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<ShiftDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/shifts
+    /// Creates a new shift definition (US-ATT-005 AC-1/FR-1/FR-2). Rejects a duplicate name (409
+    /// "duplicate_name"). Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpPost("shifts")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ShiftDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateShift(
+        [FromBody] ShiftRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CreateShiftCommand(request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<ShiftDto>.Ok(result.Value!, "Shift created."));
+    }
+
+    /// <summary>
+    /// PUT /api/v1/attendance/shifts/{id}
+    /// Updates a shift definition (US-ATT-005 FR-2). Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpPut("shifts/{id:guid}")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ShiftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateShift(
+        [FromRoute] Guid id, [FromBody] ShiftRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdateShiftCommand(id, request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ShiftDto>.Ok(result.Value!, "Shift updated."));
+    }
+
+    /// <summary>
+    /// DELETE /api/v1/attendance/shifts/{id}
+    /// Deletes a shift (US-ATT-005 AC-4/FR-6). Returns 204 on success; 409 "shift_in_use" when the
+    /// shift has active assignments. Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpDelete("shifts/{id:guid}")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DeleteShift(
+        [FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeleteShiftCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/shifts/{id}/clone
+    /// Clones a shift to create a variant named "Copy of {original}" (US-ATT-005 FR-8).
+    /// Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpPost("shifts/{id:guid}/clone")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ShiftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CloneShift(
+        [FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CloneShiftCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ShiftDto>.Ok(result.Value!, "Shift cloned."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/shifts/{id}/assign
+    /// Bulk-assigns a shift to employees with an effective date (US-ATT-005 AC-2/AC-3/FR-3). Closes any
+    /// overlapping current assignment so an employee has exactly one active shift (BR-2).
+    /// Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpPost("shifts/{id:guid}/assign")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<AssignmentResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AssignShift(
+        [FromRoute] Guid id, [FromBody] AssignShiftRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new AssignShiftCommand(id, request.EmployeeIds, request.EffectiveFrom), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AssignmentResultDto>.Ok(result.Value!, "Shift assigned."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/employees/{employeeId}/shift?date=yyyy-MM-dd
+    /// Resolves the shift effective for an employee on the given date (defaults to today), resolving
+    /// rotation and falling back to the tenant default when no assignment exists (US-ATT-005 FR-5/FR-7).
+    /// Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpGet("employees/{employeeId:guid}/shift")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ResolvedShiftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetEmployeeShift(
+        [FromRoute] Guid employeeId,
+        [FromQuery] DateOnly? date,
+        CancellationToken cancellationToken)
+    {
+        var resolveDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var result = await _mediator.Send(
+            new GetEmployeeShiftQuery(employeeId, resolveDate), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ResolvedShiftDto>.Ok(result.Value!));
+    }
 }

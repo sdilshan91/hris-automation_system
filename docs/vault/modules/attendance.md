@@ -167,11 +167,59 @@ documented for leave-management integration tests.)
   treats them as opaque display strings (it converts/formats for the §8 history pills). Asymmetric by
   design: request is HH:mm, response is ISO.
 
+## US-ATT-005 — Shift management and assignment per employee
+- **Entities:** `Shift` (BaseEntity, table `shift`), `ShiftRotationStep` (table `shift_rotation_step`,
+  child of a ROTATING shift), `EmployeeShift` (BaseEntity, table `employee_shift`, effective-dated).
+  Three shift types in `ShiftType` (`SINGLE`/`ROTATING`/`FLEXIBLE`). `WorkingDays` is a PostgreSQL
+  `integer[]` (1=Mon..7=Sun). Rotation is stored as a real child table (NOT jsonb) so FR-7 resolution
+  is queryable; each step points at a concrete non-rotating shift for N days within the cycle.
+- **Permission decision:** ADDED concrete `Attendance.Shift.Manage` (constant `Attendance.ManageShift`)
+  to `PermissionCatalog`. The story names the HR wildcard `Attendance.*.All`, which is not a catalog
+  entry — followed the prior ATT-003/004 precedent of adding a concrete string rather than a wildcard.
+  Granted to Tenant Admin / HR Manager / HR Officer (the roles already holding `Attendance.Edit`);
+  Tenant Owner gets it via `AllPermissions`. All shift endpoints are gated by it.
+- **Default shift (BR-1/FR-5):** `DbInitializer` now seeds a per-tenant default ("General Shift",
+  Mon–Fri 09:00–17:00, 60-min break, 15-min grace, `IsDefault=true`) and runs an **idempotent
+  reconcile across ALL tenants on every startup** (`ReconcileAllTenantsAsync`) so tenants provisioned
+  before this release also get one. The same reconcile pass adds **missing built-in role permissions**
+  (`ReconcileBuiltInRolePermissionsAsync`) — note: before this story `DbInitializer` did NOT reconcile
+  role permissions (it only seeded roles that didn't yet exist), so the ATT-004 catalog comment
+  claiming a reconcile was aspirational. It is now real (add-only; never strips bespoke grants).
+- **Effective-dating (AC-3/BR-2):** on assign, if the new `effectiveFrom` is after an open
+  assignment's start, the open one is closed at `effectiveFrom - 1 day`; if an open assignment starts
+  on/after the new date it is soft-deleted (superseded) so there is never an overlapping active pair.
+  Future-dated assignment keeps the current shift active until the future date. Bulk path loads all
+  open assignments once and one `SaveChanges` (NFR-2, up to 500).
+- **Delete (AC-4/FR-6):** blocked when active assignments exist on today; EXACT message
+  `"This shift is assigned to {N} employees. Please reassign them before deleting."` code
+  `shift_in_use`, 409. {N} counts distinct employees with an active assignment today.
+- **Rotation resolution (FR-7/AC-5):** day-index = (date − referenceStartDate) mod cycleLength
+  (positive modulo); steps consumed in order by duration; resolves to the concrete step shift.
+  SINGLE/FLEXIBLE return themselves. Validator requires step durations to sum to the cycle length.
+- **Night shift (§10):** end < start is allowed; only start == end (zero-duration, BR-7) is rejected.
+- **Clock-out wiring (OPTIONAL, NOT done):** left the US-ATT-002 `AttendanceSettings` tenant-level
+  fallback as the source for clock-out work-hours math. The shift entity carries break/grace/minimum
+  but NOT the calculator's StandardWorkMinutes / AutoBreakThresholdMinutes / OvertimeThresholdMinutes,
+  so a clean mapping needs extra fields on `Shift`. Deferred with a `TODO(US-ATT-005 follow-up)` in
+  `AttendanceCalculator`. Existing ATT-002 tests untouched.
+- **Deferred tech:** **No Redis** (NFR-4 shift cache) and **no PostgreSQL RLS** (NFR-3) — tenant
+  isolation is EF global query filters + `TenantInterceptor`, same as the rest of the module.
+- **Migration:** `20260614164322_Attendance_Shifts` (`dotnet ef`, `[Migration]` attr in Designer).
+  Creates `shift` / `shift_rotation_step` / `employee_shift` with partial unique indexes
+  `ix_shift_tenant_name_unique` (BR-1) and `ix_shift_tenant_default_unique` (one default/tenant).
+- **API contract** (FE + QA built against the same paths): base `/api/v1/attendance`, perm
+  `Attendance.Shift.Manage`, `ApiResponse<T>` envelope. `GET shifts`, `POST shifts`,
+  `PUT shifts/{id}`, `DELETE shifts/{id}` (204 / 409 shift_in_use), `POST shifts/{id}/clone`
+  ("Copy of {orig}"), `POST shifts/{id}/assign` ({ employeeIds, effectiveFrom }), `GET
+  employees/{employeeId}/shift?date=`. Times are "HH:mm" strings (null for FLEXIBLE); duplicate name
+  → 409 `duplicate_name`. RotationDto kept the pinned shape; step `order` is 0-based.
+
 ## Related stories
 - `US-ATT-001` — Employee clock-in from browser with optional geolocation (this scaffold)
 - `US-ATT-002` — Employee clock-out + work-hours auto-calculation (this story)
 - `US-ATT-003` — Regularization request (forgot clock-in/out) — PENDING record + placeholders
 - `US-ATT-004` — Manager approve/reject of regularization (will mutate the linked/new log, BR-5)
+- `US-ATT-005` — Shift management + assignment (Shift/EmployeeShift entities, rotation resolution)
 
 ## Open questions
 - Tenant timezone for "today"/day-boundary semantics (deferred; "one open record" sidesteps it for now).

@@ -3,3 +3,4 @@
 - [Signal async DOM detectChanges](signal-async-dom-detectchanges.md) — in fakeAsync, after tick() flushes an observable that sets a signal, call fixture.detectChanges() before asserting DOM textContent
 - [Right-drawer form pattern](right-drawer-form-pattern.md) — Notion right slide-in drawer (full-screen mobile): fixed wrap justify-end pointer-events-none + panel pointer-events-auto, @drawer translateX anim, separate backdrop
 - [Jasmine optional-arg spy](jasmine-optional-arg-spy.md) — toHaveBeenCalledWith matches exact arg count; don't assert trailing `undefined` for an omitted optional service arg
+- [Spec append wrong describe](spec-append-wrong-describe.md) — attendance.service.spec has 2 top-level describes (HTTP+httpMock vs pure-fn); append HTTP tests to the FIRST, not EOF

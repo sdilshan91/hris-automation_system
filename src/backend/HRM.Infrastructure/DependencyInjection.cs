@@ -129,6 +129,9 @@ public static class DependencyInjection
         // Manager approve/reject of attendance regularizations (US-ATT-004)
         services.AddScoped<IRegularizationApprovalService, RegularizationApprovalService>();
 
+        // Shift management and assignment (US-ATT-005)
+        services.AddScoped<IShiftService, ShiftService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

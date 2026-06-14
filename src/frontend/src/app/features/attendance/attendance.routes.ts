@@ -43,5 +43,16 @@ export const ATTENDANCE_ROUTES: Routes = [
         './components/regularization-approvals/regularization-approvals.component'
       ).then((m) => m.RegularizationApprovalsComponent),
   },
+  {
+    // US-ATT-005: Shift management & assignment. HR-only (HR Officer / HR Manager /
+    // Tenant Admin) per §2 (Attendance.*.All) — same child-guard technique as the
+    // regularization-approvals route, so NO app.routes.ts edit is needed.
+    path: 'shifts',
+    canActivate: [roleGuard(['HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/shift-management/shift-management.component').then(
+        (m) => m.ShiftManagementComponent
+      ),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];

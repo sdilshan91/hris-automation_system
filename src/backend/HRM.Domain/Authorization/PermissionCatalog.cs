@@ -155,6 +155,17 @@ public static class PermissionCatalog
         /// role permissions on startup so existing tenants pick this up.
         /// </summary>
         public const string ApproveTeam = "Attendance.Approve.Team";
+
+        /// <summary>
+        /// US-ATT-005: create/update/delete/clone shift definitions and assign shifts to employees.
+        /// The story names the HR-level <c>Attendance.*.All</c>; that is not a concrete catalog entry,
+        /// so a dedicated <c>Attendance.Shift.Manage</c> permission is added (mirroring how the prior
+        /// attendance permissions Attendance.Regularize.Self / Attendance.Approve.Team named concrete
+        /// strings instead of wildcards). Granted to HR Officer / HR Manager / Tenant Admin / Tenant
+        /// Owner — the HR roles that already hold Attendance.Edit. DbInitializer reconciles built-in
+        /// role permissions on startup so existing tenants pick it up.
+        /// </summary>
+        public const string ManageShift = "Attendance.Shift.Manage";
     }
 
     // ── Payroll Module ───────────────────────────────────────────────
@@ -283,7 +294,7 @@ public static class PermissionCatalog
 
         // Attendance
         Attendance.ViewOwn, Attendance.ViewTeam, Attendance.ViewAll,
-        Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf, Attendance.ApproveTeam,
+        Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf, Attendance.ApproveTeam, Attendance.ManageShift,
 
         // Payroll
         Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
@@ -390,7 +401,7 @@ public static class PermissionCatalog
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
-            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam,
+            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift,
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
             Performance.ViewAll, Performance.Manage,
@@ -414,7 +425,7 @@ public static class PermissionCatalog
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
-            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam,
+            Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift,
             Payroll.View, Payroll.Run,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.Manage,
@@ -433,7 +444,7 @@ public static class PermissionCatalog
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.Reports,
-            Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam,
+            Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift,
             Recruitment.View, Recruitment.Manage,
             Reports.View,
             Training.ViewAll,

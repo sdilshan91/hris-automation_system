@@ -37,6 +37,20 @@ flagged, workflow_instance_id stays null. FR-5 notif / FR-8 Redis deferred. Migr
 `20260614161602_Attendance_RegularizationApproval`. Mirror the Leave approve pattern
 (`LeaveRequestService.ApproveAsync`/`LoadForDecisionAsync`) for any future approval story.
 
+US-ATT-005 (shift mgmt + assignment) added: `Shift`/`ShiftRotationStep`/`EmployeeShift` entities,
+`IShiftService`/`ShiftService`, all endpoints on `AttendanceController` under `/api/v1/attendance/shifts`
+gated by NEW concrete perm `Attendance.Shift.Manage` (constant `Attendance.ManageShift`; story's
+`Attendance.*.All` wildcard isn't a catalog entry). Granted TenantAdmin/HRManager/HROfficer.
+**DbInitializer gained a real per-tenant reconcile pass** (`ReconcileAllTenantsAsync`): adds missing
+built-in role perms (add-only — the pre-ATT-005 initializer did NOT reconcile perms despite the ATT-004
+comment claiming so) AND seeds an idempotent default shift ("General Shift", Mon–Fri 09:00–17:00,
+`IsDefault=true`) for every tenant (BR-1/FR-5). Effective-dating closes the prior open assignment at
+`effectiveFrom-1` (BR-2, no overlap). Delete blocked when assigned with EXACT msg + code `shift_in_use`
+409. Rotation = real child table (queryable, not jsonb); resolve via day-index mod cycle. Night shift
+(end<start) allowed; start==end rejected (BR-7). Clock-out wiring to shift policy DEFERRED (shift lacks
+the calculator's Standard/AutoBreakThreshold/Overtime fields — TODO in AttendanceCalculator). No Redis
+(NFR-4), no RLS (NFR-3). Migration `20260614164322_Attendance_Shifts`.
+
 Key scaffold facts from US-ATT-001:
 - Entities `AttendanceLog` + `AttendanceSettings` (both `BaseEntity`), one settings row per tenant
   created lazily with enforcement off.

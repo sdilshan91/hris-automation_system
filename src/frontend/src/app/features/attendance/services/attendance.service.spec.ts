@@ -13,6 +13,8 @@ import {
   IClockOutResult,
   ICreateRegularizationRequest,
   IRegularization,
+  IShift,
+  IShiftRequest,
 } from '../models/attendance.models';
 import { environment } from '../../../../environments/environment';
 
@@ -186,6 +188,109 @@ describe('AttendanceService', () => {
       req.flush([mockReg]);
     });
   });
+
+  // ─── US-ATT-005: Shift management & assignment ──────────────────────────────
+  describe('US-ATT-005 shift endpoints', () => {
+    const mockShift: IShift = {
+      id: 'shift-1',
+      name: 'Morning Shift',
+      type: 'SINGLE',
+      startTime: '09:00',
+      endTime: '17:00',
+      breakDurationMinutes: 60,
+      gracePeriodMinutes: 10,
+      minimumHours: null,
+      workingDays: [1, 2, 3, 4, 5],
+      isDefault: true,
+      isActive: true,
+      assignedEmployeeCount: 3,
+    };
+
+    it('getShifts unwraps the ApiResponse envelope to ShiftDto[]', () => {
+      let result: IShift[] | undefined;
+      service.getShifts().subscribe((s) => (result = s));
+
+      const req = httpMock.expectOne(`${baseUrl}/shifts`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ success: true, data: [mockShift], message: null });
+
+      expect(result!.length).toBe(1);
+      expect(result![0].name).toBe('Morning Shift');
+    });
+
+    it('createShift POSTs the request and unwraps data', () => {
+      const body: IShiftRequest = {
+        name: 'Night Shift',
+        type: 'SINGLE',
+        startTime: '22:00',
+        endTime: '06:00',
+        breakDurationMinutes: 30,
+        gracePeriodMinutes: 15,
+        workingDays: [1, 2, 3, 4, 5],
+      };
+      let result: IShift | undefined;
+      service.createShift(body).subscribe((s) => (result = s));
+
+      const req = httpMock.expectOne(`${baseUrl}/shifts`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      req.flush({ success: true, data: { ...mockShift, name: 'Night Shift' } });
+      expect(result!.name).toBe('Night Shift');
+    });
+
+    it('updateShift PUTs to the id path', () => {
+      const body: IShiftRequest = {
+        name: 'Updated',
+        type: 'FLEXIBLE',
+        breakDurationMinutes: 0,
+        gracePeriodMinutes: 0,
+        minimumHours: 8,
+        workingDays: [],
+      };
+      service.updateShift('shift-1', body).subscribe();
+      const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1`);
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual(body);
+      req.flush({ success: true, data: mockShift });
+    });
+
+    it('deleteShift DELETEs the id path (204)', () => {
+      service.deleteShift('shift-1').subscribe();
+      const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1`);
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('cloneShift POSTs to the clone path', () => {
+      service.cloneShift('shift-1').subscribe();
+      const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1/clone`);
+      expect(req.request.method).toBe('POST');
+      req.flush({ success: true, data: { ...mockShift, id: 'shift-2', name: 'Morning Shift (copy)' } });
+    });
+
+    it('assignShift POSTs employeeIds + effectiveFrom and unwraps the result', () => {
+      let result: { assignedCount: number } | undefined;
+      service
+        .assignShift('shift-1', { employeeIds: ['e1', 'e2'], effectiveFrom: '2026-07-01' })
+        .subscribe((r) => (result = r));
+
+      const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1/assign`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ employeeIds: ['e1', 'e2'], effectiveFrom: '2026-07-01' });
+      req.flush({ success: true, data: { assignedCount: 2, employeeShiftIds: ['es1', 'es2'] } });
+      expect(result!.assignedCount).toBe(2);
+    });
+
+    it('getResolvedShift GETs with the date query param', () => {
+      service.getResolvedShift('emp-9', '2026-07-01').subscribe();
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/employees/emp-9/shift` && r.params.get('date') === '2026-07-01',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ success: true, data: { ...mockShift, effectiveFrom: '2026-06-01', effectiveTo: null, resolvedForDate: '2026-07-01' } });
+    });
+  });
 });
 
 // ─── Pure error helpers (no TestBed / httpMock.verify conflicts) ──────────
@@ -234,5 +339,19 @@ describe('AttendanceService.parseError (pure function)', () => {
   it('parseRegularizationError should return null for a non-object body', () => {
     const err = { error: 'boom' } as HttpErrorResponse;
     expect(AttendanceService.parseRegularizationError(err)).toBeNull();
+  });
+
+  it('parseShiftInUseError parses the 409 in-use body (AC-4)', () => {
+    const err = {
+      error: { message: 'This shift is assigned to 3 employees. Please reassign them before deleting.', code: 'shift_in_use' },
+    } as HttpErrorResponse;
+    const parsed = AttendanceService.parseShiftInUseError(err);
+    expect(parsed!.message).toContain('assigned to 3 employees');
+    expect(parsed!.code).toBe('shift_in_use');
+  });
+
+  it('parseShiftInUseError returns null for a non-object body', () => {
+    const err = { error: null } as HttpErrorResponse;
+    expect(AttendanceService.parseShiftInUseError(err)).toBeNull();
   });
 });

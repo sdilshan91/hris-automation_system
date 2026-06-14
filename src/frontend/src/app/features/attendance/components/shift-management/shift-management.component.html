@@ -1,0 +1,414 @@
+<div class="page-container" @fadeIn>
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">Shift Management</h1>
+      <p class="text-sm text-neutral-500 mt-1">
+        Define work shifts and assign them to employees. Shifts drive expected hours, late
+        arrivals, and overtime.
+      </p>
+    </div>
+    <button type="button" class="btn-primary text-sm" (click)="openCreate()">+ New Shift</button>
+  </div>
+
+  @if (isLoading()) {
+    <div class="card-notion" aria-live="polite" aria-busy="true">
+      <div class="space-y-3">
+        @for (_ of [1, 2, 3, 4]; track $index) {
+          <div class="skeleton-line w-full h-12"></div>
+        }
+      </div>
+    </div>
+  } @else if (shifts().length === 0) {
+    <div @fadeIn class="card-notion text-center py-16">
+      <h3 class="text-lg font-semibold text-neutral-900 mb-1">No shifts defined yet</h3>
+      <p class="text-sm text-neutral-500 mb-4">Create your first shift to start assigning it to employees.</p>
+      <button type="button" class="btn-primary" (click)="openCreate()">+ New Shift</button>
+    </div>
+  } @else {
+    <!-- Desktop table (Notion-style database view, §8) -->
+    <div class="hidden md:block card-notion overflow-x-auto" @fadeIn>
+      <table class="w-full text-sm" aria-label="Shift definitions">
+        <thead>
+          <tr class="border-b border-neutral-100">
+            <th class="th-cell">Name</th>
+            <th class="th-cell">Type</th>
+            <th class="th-cell">Times</th>
+            <th class="th-cell text-center">Break</th>
+            <th class="th-cell text-center">Grace</th>
+            <th class="th-cell">Working days</th>
+            <th class="th-cell text-center">Assigned</th>
+            <th class="th-cell text-center">Status</th>
+            <th class="th-cell text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (shift of shifts(); track shift.id) {
+            <tr class="border-b border-neutral-50 hover:bg-neutral-50/50 transition-colors">
+              <td class="py-3 px-3 font-medium text-neutral-900">
+                {{ shift.name }}
+                @if (shift.isDefault) {
+                  <span class="default-badge" title="Tenant default shift">Default</span>
+                }
+              </td>
+              <td class="py-3 px-3 text-neutral-600">{{ typeLabel(shift.type) }}</td>
+              <td class="py-3 px-3 text-neutral-600">{{ timesLabel(shift) }}</td>
+              <td class="py-3 px-3 text-center text-neutral-600">{{ shift.breakDurationMinutes }}m</td>
+              <td class="py-3 px-3 text-center text-neutral-600">{{ shift.gracePeriodMinutes }}m</td>
+              <td class="py-3 px-3 text-neutral-600">{{ workingDaysLabel(shift) }}</td>
+              <td class="py-3 px-3 text-center text-neutral-600">{{ shift.assignedEmployeeCount }}</td>
+              <td class="py-3 px-3 text-center">
+                <span
+                  class="status-badge"
+                  [class]="shift.isActive ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-neutral-100 text-neutral-500 ring-neutral-200'"
+                  >{{ shift.isActive ? 'Active' : 'Inactive' }}</span
+                >
+              </td>
+              <td class="py-3 px-3">
+                <div class="flex items-center justify-end gap-1.5">
+                  <button type="button" class="link-btn" (click)="openAssign(shift)">Assign</button>
+                  <button type="button" class="link-btn" (click)="openEdit(shift)">Edit</button>
+                  <button type="button" class="link-btn" (click)="clone(shift)">Clone</button>
+                  <button type="button" class="link-btn-danger" (click)="confirmDelete(shift)">Delete</button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mobile cards (§8) -->
+    <div class="md:hidden space-y-3" @fadeIn>
+      @for (shift of shifts(); track shift.id) {
+        <div class="card-notion">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-neutral-900">{{ shift.name }}</span>
+              @if (shift.isDefault) {
+                <span class="default-badge">Default</span>
+              }
+            </div>
+            <span
+              class="status-badge"
+              [class]="shift.isActive ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-neutral-100 text-neutral-500 ring-neutral-200'"
+              >{{ shift.isActive ? 'Active' : 'Inactive' }}</span
+            >
+          </div>
+          <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-neutral-500">
+            <div><dt class="inline font-medium">Type:</dt> {{ typeLabel(shift.type) }}</div>
+            <div><dt class="inline font-medium">Times:</dt> {{ timesLabel(shift) }}</div>
+            <div><dt class="inline font-medium">Break:</dt> {{ shift.breakDurationMinutes }}m</div>
+            <div><dt class="inline font-medium">Grace:</dt> {{ shift.gracePeriodMinutes }}m</div>
+            <div class="col-span-2"><dt class="inline font-medium">Days:</dt> {{ workingDaysLabel(shift) }}</div>
+            <div class="col-span-2"><dt class="inline font-medium">Assigned:</dt> {{ shift.assignedEmployeeCount }}</div>
+          </dl>
+          <div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-neutral-100">
+            <button type="button" class="link-btn" (click)="openAssign(shift)">Assign</button>
+            <button type="button" class="link-btn" (click)="openEdit(shift)">Edit</button>
+            <button type="button" class="link-btn" (click)="clone(shift)">Clone</button>
+            <button type="button" class="link-btn-danger" (click)="confirmDelete(shift)">Delete</button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<!-- ─── Shift form drawer (right slide-in; full-screen on mobile, §8) ────────── -->
+@if (formOpen()) {
+  <div class="drawer-backdrop" @backdrop (click)="closeForm()" aria-hidden="true"></div>
+  <div class="drawer-wrap" role="dialog" aria-modal="true" aria-labelledby="shift-drawer-title">
+    <div class="drawer-panel" @drawer>
+      <div class="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-100">
+        <div>
+          <h2 id="shift-drawer-title" class="text-lg font-semibold text-neutral-900">
+            {{ editingId() ? 'Edit Shift' : 'New Shift' }}
+          </h2>
+          <p class="text-sm text-neutral-500 mt-0.5">Define the shift schedule and rules.</p>
+        </div>
+        <button type="button" class="icon-btn" (click)="closeForm()" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+          </svg>
+        </button>
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="submit()" class="drawer-body">
+        <!-- Name -->
+        <div>
+          <label class="label-sm" for="shift-name">Name</label>
+          <input id="shift-name" type="text" class="input-field" formControlName="name" placeholder="e.g. Morning Shift" />
+          @if (showError('name')) {
+            <p class="error-text">Shift name is required.</p>
+          }
+        </div>
+
+        <!-- Type -->
+        <div>
+          <label class="label-sm" for="shift-type">Type</label>
+          <select id="shift-type" class="input-field select-input" formControlName="type">
+            @for (t of shiftTypes; track t) {
+              <option [value]="t">{{ typeLabel(t) }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Times (SINGLE / ROTATING parent) -->
+        @if (usesTimes()) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="label-sm" for="shift-start">Start time</label>
+              <input id="shift-start" type="time" class="input-field" formControlName="startTime" />
+              @if (form.errors?.['startRequired'] && form.get('startTime')?.touched) {
+                <p class="error-text">Start time is required.</p>
+              }
+            </div>
+            <div>
+              <label class="label-sm" for="shift-end">End time</label>
+              <input id="shift-end" type="time" class="input-field" formControlName="endTime" />
+              @if (form.errors?.['endRequired'] && form.get('endTime')?.touched) {
+                <p class="error-text">End time is required.</p>
+              }
+            </div>
+          </div>
+          @if (form.errors?.['sameTimes']) {
+            <p class="error-text">Start time and end time cannot be the same (zero-duration shift).</p>
+          }
+        }
+
+        <!-- Minimum hours (FLEXIBLE, BR-8) -->
+        @if (isFlexible()) {
+          <div>
+            <label class="label-sm" for="shift-min-hours">Minimum hours</label>
+            <input id="shift-min-hours" type="number" min="0" step="0.25" class="input-field" formControlName="minimumHours" placeholder="e.g. 8" />
+            @if (form.errors?.['minHoursRequired'] && (form.get('minimumHours')?.touched || form.get('minimumHours')?.dirty)) {
+              <p class="error-text">Flexible shifts require a minimum number of hours.</p>
+            }
+          </div>
+        }
+
+        <!-- Break + Grace -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="label-sm" for="shift-break">Break duration (min)</label>
+            <input id="shift-break" type="number" min="0" class="input-field" formControlName="breakDurationMinutes" />
+          </div>
+          <div>
+            <label class="label-sm" for="shift-grace">Grace period (min)</label>
+            <input id="shift-grace" type="number" min="0" class="input-field" formControlName="gracePeriodMinutes" />
+          </div>
+        </div>
+
+        <!-- Working days (non-flexible, BR-6) -->
+        @if (!isFlexible()) {
+          <div>
+            <label class="label-sm">Working days</label>
+            <div class="flex flex-wrap gap-2" role="group" aria-label="Working days">
+              @for (day of weekdays; track day) {
+                <button
+                  type="button"
+                  class="day-chip"
+                  [class.day-chip-on]="isDaySelected(day)"
+                  [attr.aria-pressed]="isDaySelected(day)"
+                  (click)="toggleDay(day)"
+                >
+                  {{ weekdayLabels[day] }}
+                </button>
+              }
+            </div>
+            @if (form.errors?.['workingDaysRequired'] && form.get('workingDays')?.dirty) {
+              <p class="error-text">Select at least one working day.</p>
+            }
+          </div>
+        }
+
+        <!-- Rotation builder (ROTATING, FR-7, §8) -->
+        @if (isRotating()) {
+          <div class="rotation-box" formGroupName="rotation">
+            <p class="text-xs font-medium text-neutral-400 uppercase tracking-wide mb-3">Rotation pattern</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="label-sm" for="rot-cycle">Cycle length (days)</label>
+                <input id="rot-cycle" type="number" min="1" class="input-field" formControlName="cycleLengthDays" />
+              </div>
+              <div>
+                <label class="label-sm" for="rot-start">Reference start date</label>
+                <input id="rot-start" type="date" class="input-field" formControlName="referenceStartDate" />
+              </div>
+            </div>
+
+            <div formArrayName="steps" class="space-y-2">
+              @for (step of rotationSteps.controls; track step; let i = $index) {
+                <div class="rotation-step" [formGroupName]="i">
+                  <span class="step-order">{{ i + 1 }}</span>
+                  <select class="input-field select-input flex-1" formControlName="shiftId" [attr.aria-label]="'Step ' + (i + 1) + ' shift'">
+                    <option value="">Select shift...</option>
+                    @for (opt of stepShiftOptions(); track opt.id) {
+                      <option [value]="opt.id">{{ opt.name }}</option>
+                    }
+                  </select>
+                  <input type="number" min="1" class="input-field w-20" formControlName="durationDays" [attr.aria-label]="'Step ' + (i + 1) + ' duration days'" />
+                  <span class="text-xs text-neutral-400">days</span>
+                  <button type="button" class="icon-btn" (click)="moveStep(i, -1)" [disabled]="i === 0" aria-label="Move step up">↑</button>
+                  <button type="button" class="icon-btn" (click)="moveStep(i, 1)" [disabled]="i === rotationSteps.length - 1" aria-label="Move step down">↓</button>
+                  <button type="button" class="icon-btn-danger" (click)="removeRotationStep(i)" aria-label="Remove step">✕</button>
+                </div>
+              }
+            </div>
+
+            <button type="button" class="add-step-btn" (click)="addRotationStep()">+ Add rotation step</button>
+
+            @if (form.errors?.['rotationStepsRequired'] && form.dirty) {
+              <p class="error-text">Add at least one rotation step.</p>
+            }
+            @if (form.errors?.['rotationStartRequired'] && form.dirty) {
+              <p class="error-text">A reference start date is required.</p>
+            }
+          </div>
+        }
+
+        @if (serverError(); as msg) {
+          <div class="error-banner" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1-9a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 10 5Z" clip-rule="evenodd" />
+            </svg>
+            <p class="text-sm text-red-700 flex-1">{{ msg }}</p>
+          </div>
+        }
+      </form>
+
+      <div class="drawer-footer">
+        <button type="button" class="btn-secondary" (click)="closeForm()" [disabled]="isSubmitting()">Cancel</button>
+        <button type="button" class="btn-primary" (click)="submit()" [disabled]="isSubmitting()">
+          @if (isSubmitting()) {
+            <span class="btn-spinner"></span> Saving...
+          } @else {
+            {{ editingId() ? 'Save changes' : 'Create shift' }}
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ─── Delete confirm dialog (AC-4) ────────────────────────────────────────── -->
+@if (deleteTarget(); as target) {
+  <div class="drawer-backdrop" @backdrop (click)="cancelDelete()" aria-hidden="true"></div>
+  <div class="modal-wrap" role="dialog" aria-modal="true" aria-labelledby="del-title">
+    <div class="modal-panel" @fadeIn>
+      <h2 id="del-title" class="text-lg font-semibold text-neutral-900">Delete shift</h2>
+      <p class="text-sm text-neutral-600 mt-2">
+        Are you sure you want to delete <span class="font-medium">"{{ target.name }}"</span>? This cannot be undone.
+      </p>
+      @if (deleteError(); as msg) {
+        <div class="error-banner mt-3" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1-9a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 10 5Z" clip-rule="evenodd" />
+          </svg>
+          <p class="text-sm text-red-700 flex-1">{{ msg }}</p>
+        </div>
+      }
+      <div class="flex items-center justify-end gap-3 mt-5">
+        <button type="button" class="btn-secondary" (click)="cancelDelete()" [disabled]="isDeleting()">Cancel</button>
+        <button type="button" class="btn-danger" (click)="executeDelete()" [disabled]="isDeleting()">
+          @if (isDeleting()) {
+            <span class="btn-spinner"></span> Deleting...
+          } @else {
+            Delete
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ─── Assign drawer (multi-select employee picker, AC-2, §8) ──────────────── -->
+@if (assignTarget(); as target) {
+  <div class="drawer-backdrop" @backdrop (click)="closeAssign()" aria-hidden="true"></div>
+  <div class="drawer-wrap" role="dialog" aria-modal="true" aria-labelledby="assign-title">
+    <div class="drawer-panel" @drawer>
+      <div class="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-100">
+        <div>
+          <h2 id="assign-title" class="text-lg font-semibold text-neutral-900">Assign "{{ target.name }}"</h2>
+          <p class="text-sm text-neutral-500 mt-0.5">Pick employees and an effective date.</p>
+        </div>
+        <button type="button" class="icon-btn" (click)="closeAssign()" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <!-- Effective date -->
+        <div>
+          <label class="label-sm" for="assign-date">Effective from</label>
+          <input
+            id="assign-date"
+            type="date"
+            class="input-field"
+            [value]="assignEffectiveFrom()"
+            (change)="onEffectiveFromChange($any($event.target).value)"
+          />
+        </div>
+
+        <!-- Selected chips -->
+        @if (assignSelected().length > 0) {
+          <div>
+            <label class="label-sm">Selected ({{ assignSelected().length }})</label>
+            <div class="flex flex-wrap gap-2">
+              @for (emp of assignSelected(); track emp.employeeId) {
+                <span class="selected-chip">
+                  {{ employeeFullName(emp) }}
+                  <button type="button" class="ml-1.5 text-neutral-400 hover:text-neutral-700" (click)="deselectEmployee(emp)" [attr.aria-label]="'Remove ' + employeeFullName(emp)">✕</button>
+                </span>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Employee search -->
+        <div>
+          <label class="label-sm" for="assign-search">Search employees</label>
+          <input
+            id="assign-search"
+            type="text"
+            class="input-field"
+            placeholder="Search by name..."
+            [value]="assignSearch()"
+            (input)="onAssignSearch($any($event.target).value)"
+          />
+          @if (assignSearching()) {
+            <p class="text-xs text-neutral-400 mt-2">Searching...</p>
+          } @else if (assignSearch().trim().length > 0 && assignAvailable().length === 0) {
+            <p class="text-xs text-neutral-400 mt-2">No matching employees.</p>
+          }
+          <div class="mt-2 space-y-1">
+            @for (emp of assignAvailable(); track emp.employeeId) {
+              <button type="button" class="emp-row" (click)="selectEmployee(emp)">
+                <span class="emp-avatar">{{ employeeInitials(emp) }}</span>
+                <span class="flex-1 text-left">
+                  <span class="block text-sm font-medium text-neutral-900">{{ employeeFullName(emp) }}</span>
+                  <span class="block text-xs text-neutral-400">{{ emp.employeeNo }}</span>
+                </span>
+                <span class="text-xs text-brand-600 font-medium">Add</span>
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="drawer-footer">
+        <button type="button" class="btn-secondary" (click)="closeAssign()" [disabled]="isAssigning()">Cancel</button>
+        <button type="button" class="btn-primary" (click)="executeAssign()" [disabled]="isAssigning() || assignSelected().length === 0">
+          @if (isAssigning()) {
+            <span class="btn-spinner"></span> Assigning...
+          } @else {
+            Assign {{ assignSelected().length }} employee{{ assignSelected().length === 1 ? '' : 's' }}
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}

@@ -54,6 +54,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<AttendanceRegularization> AttendanceRegularizations => Set<AttendanceRegularization>();
     public DbSet<RegularizationApprovalHistory> RegularizationApprovalHistories => Set<RegularizationApprovalHistory>();
     public DbSet<PayrollLockPeriod> PayrollLockPeriods => Set<PayrollLockPeriod>();
+    public DbSet<Shift> Shifts => Set<Shift>();
+    public DbSet<ShiftRotationStep> ShiftRotationSteps => Set<ShiftRotationStep>();
+    public DbSet<EmployeeShift> EmployeeShifts => Set<EmployeeShift>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -174,5 +177,17 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-ATT-004: RegularizationApprovalHistory tenant isolation + soft-delete filter
         modelBuilder.Entity<RegularizationApprovalHistory>()
             .HasQueryFilter(h => !h.IsDeleted && (!_tenantContext.IsResolved || h.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-005: Shift tenant isolation + soft-delete filter
+        modelBuilder.Entity<Shift>()
+            .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-005: ShiftRotationStep tenant isolation + soft-delete filter
+        modelBuilder.Entity<ShiftRotationStep>()
+            .HasQueryFilter(rs => !rs.IsDeleted && (!_tenantContext.IsResolved || rs.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-005: EmployeeShift tenant isolation + soft-delete filter
+        modelBuilder.Entity<EmployeeShift>()
+            .HasQueryFilter(es => !es.IsDeleted && (!_tenantContext.IsResolved || es.TenantId == _tenantContext.TenantId));
     }
 }
