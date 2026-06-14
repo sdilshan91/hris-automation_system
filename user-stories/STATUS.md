@@ -60,7 +60,7 @@
 - [x] US-LV-005 — Manager approves or rejects leave *(PR #31)*
 - [x] US-LV-006 — Leave balance dashboard *(PR #32)*
 - [x] US-LV-007 — Holiday calendar management *(PR #33)*
-- [ ] US-LV-008 — Leave carry-forward and expiry rules
+- [~] US-LV-008 — Leave carry-forward and expiry rules
 - [ ] US-LV-009 — Team leave calendar view
 - [ ] US-LV-010 — Leave cancellation by employee
 - [ ] US-LV-011 — Compulsory leave / LOP handling

@@ -804,6 +804,88 @@ New files: `ILeaveDashboardService`, `LeaveDashboardService`, the three queries 
 `LeaveDashboardDtos.cs`, and Unit/Integration test classes. No entity/migration/permission
 changes. Existing 743 tests unaffected; 16 new tests (759 total green).
 
+## Frontend (US-LV-008) — Carry-Forward & Expiry surfacing
+
+Light FE story — the heavy logic is two backend Hangfire jobs
+(`ProcessLeaveYearEndJob`, `ProcessCarryForwardExpiryJob`) + Redis invalidation, all
+DEFERRED to backend. FE scope: an HR-facing preview report + a surgical surfacing of
+carry-forward/expiry on the US-LV-006 dashboard.
+
+### New: Carry-Forward Preview report (AC-5)
+
+New standalone `CarryForwardPreviewComponent` (signals + OnPush) + sibling
+`CarryForwardPreviewService` + `carry-forward-preview.models.ts`. Read-only Notion-like
+table (§10 — does NOT lock/commit). Year selector at top (closing year), filters by
+department / employee (text) / leave type, color coding **carry-forward = blue
+(`text-blue-600`)**, **forfeited = gray strikethrough (`text-neutral-400 line-through`)**
+per §8. Loading skeletons + dual empty state (nothing-to-process vs no-filter-match).
+Desktop table + mobile card list (360px+). Summary strip (rows / Σcarry-forward /
+Σforfeited).
+
+**Filter options are derived client-side from the loaded rows** (the rows are denormalized
+with `departmentName` + `leaveTypeName`), so the component does NOT import the
+department/employee/leave-type lookup services — keeps it self-contained, mirrors how the
+holiday list derives its filters. Pure helpers (`distinctDepartments`, `distinctLeaveTypes`,
+`matchesEmployeeTerm`, `sumTotals`, `buildPreviewYearOptions`) live in the models file and
+are separately unit-tested.
+
+### API contract assumption (backend building in parallel — RECONCILE)
+
+`GET /api/v1/leaves/carry-forward-preview?year={year}` → `ICarryForwardPreviewRow[]`
+(`apiBaseUrl` already includes `/api/v1`; resource base `${apiBaseUrl}/leaves`).
+Row shape (FR-5):
+`{ employeeId, employeeName, departmentName?, leaveTypeId, leaveTypeName,
+projectedCarryForward, projectedForfeiture }`. `departmentName` optional/denormalized; if the
+backend can't denormalize it, that row just won't appear in the department-filter options.
+
+### "Run carry-forward now" button — OMITTED (no trigger endpoint)
+
+§10 mentions a manual re-trigger with a confirmation dialog, but the contract exposes **no
+manual-trigger endpoint** and the jobs run on a Hangfire schedule. Per the brief, the button
+is **omitted** rather than inventing backend behavior. A seam-note in
+`CarryForwardPreviewService` says: if a trigger endpoint is added, add `runNow(year)` gated
+behind a confirmation dialog.
+
+### Dashboard surfacing (§8) — surgical extension of US-LV-006 card
+
+Extended the existing `LeaveDashboardComponent` balance card only (no restructure):
+- Replaced the single combined `+X carried forward · Y expired` footnote with **two separate
+  line items** — carry-forward (blue) and expired (gray strikethrough), rendered as a small
+  `<dl>` below a top border. Test ids `carry-forward-value` / `expired-value`.
+- Added an **amber expiring-soon indicator** ("N carry-forward day(s) expiring on <date>"),
+  shown **only when** `carryForward > 0` AND the new optional
+  `ILeaveBalanceSummary.carryForwardExpiry` (date-only `'YYYY-MM-DD'`) is present.
+
+**Expiry date is a TODO seam.** The US-LV-006 `my-balance` endpoint does **not** yet return a
+carry-forward expiry date. Added the optional `carryForwardExpiry?: string | null` field
+(additive, harmless) so the amber indicator lights up once the backend supplies it; until
+then the field is undefined and only the blue/gray line items render.
+`TODO(carry-forward-expiry-date)` marker on the field — the backend year-end job records the
+`carry_forward` ledger entry with a `carry_forward_expiry_months` window (FR-1/BR-3); the
+projection should surface the resulting date.
+
+### Route + guard
+
+`leave-types/carry-forward-preview` child added to `LEAVE_MANAGEMENT_ROUTES`. Inherits the
+existing `roleGuard(['Tenant Admin','HR Officer'])` from the `leave-types` parent in
+`app.routes.ts` — so **no `app.routes.ts` edit and no nav-menu edit** were needed (matches the
+leave-config screens' guard exactly, same as US-LV-007 holidays).
+
+### Shared files touched (all within `features/leave-management`, flagged)
+
+1. `leave-management.routes.ts` — added the `carry-forward-preview` child to
+   `LEAVE_MANAGEMENT_ROUTES`.
+2. `index.ts` — barrel exports for `carry-forward-preview.models` + `carry-forward-preview.service`.
+3. `models/leave-dashboard.models.ts` — added optional `carryForwardExpiry?` to
+   `ILeaveBalanceSummary` (additive).
+4. `components/leave-dashboard/leave-dashboard.component.ts` — extended the balance card
+   markup (separate CF/expired line items + amber expiring-soon indicator).
+5. `components/leave-dashboard/leave-dashboard.component.spec.ts` — updated the US-LV-006 spec
+   with 4 new tests for the line items + expiring-soon indicator (no existing assertion
+   weakened; the old combined-footnote had no test that needed changing).
+
+No `app.routes.ts`, nav-menu, employee-profile, backend, or test-case files were touched.
+
 ## Holiday Calendar (US-LV-007) — Backend
 
 New `Holiday` entity + the calendar CRUD/CSV/recurrence service, and — the load-bearing part —
@@ -899,3 +981,98 @@ New code: `Holiday`, `HolidayType`, `HolidayConfiguration`, the migration, `IHol
 **49 new tests** (CRUD, BR-1 dup, CSV valid/dup/limit, provider range+location, the **AC-2 Mon–Fri
 with-Wed-holiday = 4 days** test, recurring idempotency, validators, tenant isolation, end-to-end
 leave-excludes-holiday). Full suite **806 green, 0 regressions**.
+
+## Carry-Forward & Expiry (US-LV-008) — Backend
+
+Two Hangfire jobs over the existing LeaveLedger + LeaveType infrastructure. **Reused** the existing
+`LedgerEntryType` values `CarryForward`/`Expired`/`Encashed` (no new ledger types) and the existing
+`LeaveType.CarryForwardLimit` / `CarryForwardExpiryMonths` / `Encashable` / `MaxEncashDays` /
+`NegativeBalanceAllowed` fields (no duplicate fields added).
+
+### New tracking entity + migration
+
+`LeaveCarryForwardTracking : BaseEntity` → table **`leave_carry_forward_tracking`**. Columns:
+employee_id (FK CASCADE), leave_type_id (FK RESTRICT), from_year, to_year, carried_days(numeric 7,2),
+expiry_date(date, nullable), expired_days(numeric 7,2), status(varchar 20) + BaseEntity. **Status** is
+a string constant set (`CarryForwardTrackingStatus.Active/Expired/Consumed`) stored as text (mirrors
+the leave-enum-as-string convention), not a DB enum. Migration `20260614065457_AddLeaveCarryForwardTracking`
+(CLI-generated, has `[Migration]` attr, **no erroneous `xmin` AddColumn**). One row per
+(tenant, employee, leave_type, from_year, to_year), enforced by partial unique index
+`ix_leave_carry_forward_tracking_unique` (`is_deleted = false`) — this is the **idempotency anchor**
+(NFR-3). A `(tenant_id, status, expiry_date)` index supports the monthly expiry scan. Global query
+filter + DbSet added to AppDbContext mirroring LeaveLedger.
+
+**Why a tracking row even when nothing is carried:** a Consumed-status zero-carry row is still written
+so the year-end job's idempotency check is stable (a pair is "done" once tracked) and the preview/job
+have a consistent anchor.
+
+### Shared pure calculation — preview cannot diverge from the job
+
+`LeaveCarryForwardCalculator` (internal static, pure — mirrors `LeaveEntitlementEngine`) is the
+**single source of truth** the year-end job AND the preview API both call:
+- `AppliesTo(leaveType)` — BR-6: false when `CarryForwardLimit is null`, `NegativeBalanceAllowed`, or
+  `AnnualEntitlement <= 0`. A configured limit of **0 IS applicable** (forfeit-all path, AC-4) — not skipped.
+- `Compute(unused, limit)` — BR-1 carried = MIN(unused, limit); BR-2 forfeited = unused − carried;
+  negative/zero unused carries & forfeits nothing.
+- `ComputeExpiryDate(toYear, months)` — BR-3: first day of new year + months; null when months null.
+- `RemainingCarriedDays(carried, usedInNewYear, alreadyExpired)` — BR-4 FIFO: carried days consumed
+  first, then less anything already expired (idempotent). **Derived, not a stored counter.**
+
+The story's "preview must match the job" Test Hint is structurally guaranteed because both paths flow
+through `Compute`. Tests assert the preview row numbers equal the ledger entries the job writes.
+
+### unused_balance reuses the US-LV-006 ledger formula
+
+`unused_balance = Entitlement + CarryForward − Used − Expired + Adjustments`, summed component-wise
+from `LeaveLedger` grouped by `EntryType` (Used folds in Encashed; Accrual NOT re-added because the
+engine value already represents the grant — same rationale as US-LV-006 `LeaveDashboardService`).
+Entitlement comes from the **US-LV-002 engine** via `ILeaveEntitlementService.ComputeEffectiveEntitlementAsync`
+(`ProratedEntitlementDays`).
+
+### Year-end job (`ProcessLeaveYearEndJob`, Cron `0 2 1 1 *` — 1 Jan)
+
+Closing year = `UtcNow.Year − 1` (runs on 1 Jan). Per active/trial tenant → set tenant context →
+batch-page active employees (500/page, NFR-1) × applicable leave types. Writes a **CarryForward**
+ledger entry (positive, `transaction_date` = 1 Jan of new year) and an **Expired** ledger entry
+(negative, year-end date) per FR-6, plus a tracking row. **BR-5 encashable branch:** when the leave
+type is `Encashable`, the forfeitable balance is written as an **Encashed** entry instead of Expired,
+capped at `MaxEncashDays` when set — any residue beyond the cap still Expires. Idempotent skip when a
+tracking row already exists for the pair/year.
+
+### Monthly expiry job (`ProcessCarryForwardExpiryJob`, Cron `0 3 1 * *` — 1st of month)
+
+Per tenant → for each **Active** tracking row whose `expiry_date <= asOf`: compute FIFO-remaining
+carried days (`RemainingCarriedDays`) from new-year Used/Encashed ledger vs. `carried_days` less
+`expired_days`; if > 0 write an **Expired** entry (in the new leave year) for the remainder and bump
+`expired_days`; set status to **Expired** (days expired) or **Consumed** (FIFO already used them all).
+Terminal status ⇒ never re-processed (idempotent double-expiry guard).
+
+### Preview API + permission
+
+`GET /api/v1/leaves/carry-forward-preview?year={year}` → `GetCarryForwardPreviewQuery` →
+`LeaveCarryForwardService.PreviewYearEndAsync`. Read-only, commits nothing. Returns per-employee×type
+projected carry/forfeit (rows with zero carry+forfeit are omitted). **New dedicated
+`LeaveCarryForwardController`** (not the self-service `LeaveRequestsController`), gated
+`[RequirePermission("Leave.ConfigurePolicy")]` — the same leave-config permission US-LV-002
+entitlement endpoints use (chose it over the per-resource `LeaveType.*`/`Holiday.*` style because this
+is policy/config, not a CRUD resource). **No PermissionCatalog change needed.**
+
+### Deferrals (seam + TODO only — NOT built)
+
+- **Redis cache invalidation after processing (FR-7/AC-3):** `TODO(redis-balance-cache)` in the
+  service — consistent with the module-wide deferred-Redis decision.
+- **Tenant fiscal-year boundary (§10):** calendar year reused (`year ?? UtcNow.Year`, closing =
+  `Year−1` in the job). `TODO(tenant-settings)` — same convention as US-LV-006/007.
+- **Manual HR re-trigger confirmation (UI):** frontend concern, not built backend-side.
+
+### Shared files touched (flagged)
+
+- `AppDbContext.cs` — `DbSet<LeaveCarryForwardTracking>` + global query filter.
+- `DependencyInjection.cs` (Infrastructure) — registered `ILeaveCarryForwardService`.
+- `Program.cs` (Api) — registered both jobs (scoped) + the two recurring schedules.
+
+No PermissionCatalog, no LeaveLedger/LeaveType changes. **32 new tests** (calculator BR-1/BR-2/AC-4/
+BR-6/BR-3/FIFO; service year-end 5-carry/3-expire, zero-limit, skip-types, encashable+cap,
+idempotency, expiry+FIFO, double-expiry guard, preview-matches-job, preview-commits-nothing;
+integration year-end ledger+tracking, idempotent re-run, tenant isolation A≠B, preview query +
+tenant scope). Full suite **838 green, 0 regressions**.

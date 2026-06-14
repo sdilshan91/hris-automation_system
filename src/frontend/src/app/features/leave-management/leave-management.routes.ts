@@ -32,6 +32,16 @@ export const LEAVE_MANAGEMENT_ROUTES: Routes = [
         (m) => m.HolidayCalendarComponent
       ),
   },
+  {
+    // US-LV-008: HR-facing carry-forward / expiry preview report (AC-5).
+    // Registered under 'leave-types' so it inherits the same role guard
+    // (Tenant Admin / HR Officer) as the other leave-config screens.
+    path: 'carry-forward-preview',
+    loadComponent: () =>
+      import('./components/carry-forward-preview/carry-forward-preview.component').then(
+        (m) => m.CarryForwardPreviewComponent
+      ),
+  },
 ];
 
 /**

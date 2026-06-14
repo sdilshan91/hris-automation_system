@@ -34,6 +34,21 @@ export interface ILeaveBalanceSummary {
   expired: number;
   /** BR-3: deactivated leave types with a remaining balance are shown collapsed/archived. */
   isArchived?: boolean;
+  /**
+   * US-LV-008 (§8): the expiry date of the currently carried-forward days,
+   * date-only ('YYYY-MM-DD'). OPTIONAL — the dashboard shows the amber
+   * "expiring on <date>" indicator only when the backend supplies this AND
+   * `carryForward > 0`. If absent, the carry-forward line still renders without
+   * a date.
+   *
+   * TODO(carry-forward-expiry-date): the US-LV-006 my-balance endpoint does not
+   * yet return this. The backend `ProcessLeaveYearEndJob` records a
+   * `carry_forward` ledger entry with `transaction_date = first day of new
+   * leave year` and a `carry_forward_expiry_months` window (US-LV-008 FR-1/BR-3);
+   * the my-balance projection should surface the resulting expiry date here so
+   * the amber indicator can light up. Until then this field is undefined.
+   */
+  carryForwardExpiry?: string | null;
 }
 
 /** Ledger transaction kind (FR-3). Mirrors the backend LeaveLedger entry_type enum. */

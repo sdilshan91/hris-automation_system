@@ -140,6 +140,8 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.BulkEmployeeImportJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.LeaveAccrualJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.HolidayRecurrenceJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ProcessLeaveYearEndJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
@@ -249,6 +251,19 @@ try
             "holiday-recurrence-generation",
             job => job.RunAsync(),
             "0 1 1 12 *"); // 01:00 UTC on 1 December
+
+        // US-LV-008 FR-2 / AC-1: Year-end leave carry-forward + forfeiture (1 January, processes
+        // the just-closed year). Idempotent, so a daily-or-later cadence in early January is safe.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ProcessLeaveYearEndJob>(
+            "leave-year-end-carry-forward",
+            job => job.RunAsync(),
+            "0 2 1 1 *"); // 02:00 UTC on 1 January
+
+        // US-LV-008 FR-3 / AC-3: Monthly carry-forward expiry sweep (1st of each month).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>(
+            "leave-carry-forward-expiry",
+            job => job.RunAsync(),
+            "0 3 1 * *"); // 03:00 UTC on the 1st of every month
     }
 
     app.Run();
