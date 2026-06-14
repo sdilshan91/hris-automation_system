@@ -284,6 +284,12 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("grace_period_minutes");
 
+                    b.Property<decimal>("HolidayOvertimeMultiplier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(3,2)")
+                        .HasDefaultValue(2.5m)
+                        .HasColumnName("holiday_overtime_multiplier");
+
                     b.PrimitiveCollection<List<string>>("IpAllowlist")
                         .IsRequired()
                         .HasColumnType("text[]")
@@ -301,11 +307,29 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_deleted");
 
+                    b.Property<int>("MaxDailyOvertimeMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(240)
+                        .HasColumnName("max_daily_overtime_minutes");
+
+                    b.Property<int>("MaxWeeklyOvertimeMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1200)
+                        .HasColumnName("max_weekly_overtime_minutes");
+
                     b.Property<int>("MinimumWorkMinutes")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(240)
                         .HasColumnName("minimum_work_minutes");
+
+                    b.Property<int>("OvertimeMinimumThresholdMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(30)
+                        .HasColumnName("overtime_minimum_threshold_minutes");
 
                     b.Property<int>("OvertimeThresholdMinutes")
                         .ValueGeneratedOnAdd()
@@ -324,6 +348,12 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false)
                         .HasColumnName("require_geolocation");
+
+                    b.Property<bool>("RequireOvertimePreApproval")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("require_overtime_pre_approval");
 
                     b.Property<bool>("RequirePhoto")
                         .ValueGeneratedOnAdd()
@@ -348,6 +378,18 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("text")
                         .HasColumnName("updated_by");
+
+                    b.Property<decimal>("WeekdayOvertimeMultiplier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(3,2)")
+                        .HasDefaultValue(1.5m)
+                        .HasColumnName("weekday_overtime_multiplier");
+
+                    b.Property<decimal>("WeekendOvertimeMultiplier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(3,2)")
+                        .HasDefaultValue(2.0m)
+                        .HasColumnName("weekend_overtime_multiplier");
 
                     b.HasKey("Id")
                         .HasName("pk_attendance_settings");
@@ -2503,6 +2545,212 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.ToTable("mfa_recovery_codes", (string)null);
                 });
 
+            modelBuilder.Entity("HRM.Domain.Entities.OvertimeApprovalHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTime>("ActionedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actioned_at");
+
+                    b.Property<int>("ApprovalLevel")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("approval_level");
+
+                    b.Property<int?>("ApprovedMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("approved_minutes");
+
+                    b.Property<Guid>("ApproverEmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approver_employee_id");
+
+                    b.Property<string>("CalculationBasis")
+                        .HasColumnType("text")
+                        .HasColumnName("calculation_basis");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text")
+                        .HasColumnName("comment");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("OvertimeRecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("overtime_record_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_overtime_approval_history");
+
+                    b.HasIndex("ApproverEmployeeId")
+                        .HasDatabaseName("ix_overtime_approval_history_approver_employee_id");
+
+                    b.HasIndex("OvertimeRecordId")
+                        .HasDatabaseName("ix_overtime_approval_history_overtime_record_id");
+
+                    b.HasIndex("TenantId", "OvertimeRecordId")
+                        .HasDatabaseName("ix_overtime_approval_history_tenant_record");
+
+                    b.ToTable("overtime_approval_history", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.OvertimeRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("ApprovedMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("approved_minutes");
+
+                    b.Property<Guid?>("AttendanceLogId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attendance_log_id");
+
+                    b.Property<string>("CalculationBasis")
+                        .HasColumnType("text")
+                        .HasColumnName("calculation_basis");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("DailyCapApplied")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("daily_cap_applied");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("employee_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
+                    b.Property<bool>("IsPayrollReady")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_payroll_ready");
+
+                    b.Property<string>("ManagerComment")
+                        .HasColumnType("text")
+                        .HasColumnName("manager_comment");
+
+                    b.Property<decimal>("Multiplier")
+                        .HasColumnType("numeric(3,2)")
+                        .HasColumnName("multiplier");
+
+                    b.Property<int>("OvertimeMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("overtime_minutes");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<bool>("WeeklyCapExceeded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("weekly_cap_exceeded");
+
+                    b.Property<Guid?>("WorkflowInstanceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workflow_instance_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_overtime_record");
+
+                    b.HasIndex("AttendanceLogId")
+                        .HasDatabaseName("ix_overtime_record_attendance_log_id");
+
+                    b.HasIndex("EmployeeId")
+                        .HasDatabaseName("ix_overtime_record_employee_id");
+
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("ix_overtime_record_tenant_status");
+
+                    b.HasIndex("TenantId", "EmployeeId", "Date")
+                        .HasDatabaseName("ix_overtime_record_tenant_emp_date");
+
+                    b.ToTable("overtime_record", (string)null);
+                });
+
             modelBuilder.Entity("HRM.Domain.Entities.PayrollLockPeriod", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3592,6 +3840,47 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_mfa_recovery_codes_users_user_id");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.OvertimeApprovalHistory", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.Employee", "Approver")
+                        .WithMany()
+                        .HasForeignKey("ApproverEmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_overtime_approval_history_employees_approver_employee_id");
+
+                    b.HasOne("HRM.Domain.Entities.OvertimeRecord", "OvertimeRecord")
+                        .WithMany()
+                        .HasForeignKey("OvertimeRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_overtime_approval_history_overtime_records_overtime_record_");
+
+                    b.Navigation("Approver");
+
+                    b.Navigation("OvertimeRecord");
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.OvertimeRecord", b =>
+                {
+                    b.HasOne("HRM.Domain.Entities.AttendanceLog", "AttendanceLog")
+                        .WithMany()
+                        .HasForeignKey("AttendanceLogId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_overtime_record_attendance_log_attendance_log_id");
+
+                    b.HasOne("HRM.Domain.Entities.Employee", "Employee")
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_overtime_record_employees_employee_id");
+
+                    b.Navigation("AttendanceLog");
+
+                    b.Navigation("Employee");
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.RefreshToken", b =>

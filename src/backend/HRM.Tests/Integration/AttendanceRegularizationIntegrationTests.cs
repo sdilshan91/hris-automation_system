@@ -77,6 +77,8 @@ public sealed class AttendanceRegularizationIntegrationTests
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton(currentUser);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        // AttendanceService now depends on IOvertimeService for clock-out auto-detection (US-ATT-006).
+        services.AddScoped<IOvertimeService, OvertimeService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(SubmitRegularizationCommand).Assembly));

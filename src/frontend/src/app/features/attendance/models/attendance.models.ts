@@ -559,6 +559,259 @@ export interface IShiftInUseErrorResponse {
   code?: 'shift_in_use' | string;
 }
 
+// ─── US-ATT-006: Overtime Tracking and Approval ──────────────────────────────
+
+/**
+ * US-ATT-006 (§7 `status`): the lifecycle status of an overtime record.
+ *  - PENDING    : awaiting manager approval (amber pill, §8).
+ *  - APPROVED   : approved (possibly with adjusted minutes) — payroll-ready (green).
+ *  - REJECTED   : rejected by the manager (red).
+ *  - UNAPPROVED : auto-detected overtime worked without the required pre-approval
+ *                 (BR-6) — excluded from payroll until HR reviews it (gray).
+ */
+export type OvertimeStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'UNAPPROVED';
+
+/**
+ * US-ATT-006 (§7 `type`, FR-2): how the overtime record originated.
+ *  - AUTO_DETECTED : created automatically on clock-out (AC-1).
+ *  - PRE_APPROVED  : raised ahead of time via the pre-approval form (AC-2, FR-4).
+ */
+export type OvertimeType = 'AUTO_DETECTED' | 'PRE_APPROVED';
+
+/**
+ * US-ATT-006 overtime record returned by the API (§7 `overtime_record`).
+ *
+ * Backend contract (pinned — backend agent building the SAME contract):
+ *   POST /api/v1/attendance/overtime/pre-approval  body { date, expectedHours, reason } -> OvertimeDto
+ *   GET  /api/v1/attendance/overtime/my            -> OvertimeDto[]
+ *   GET  /api/v1/attendance/overtime/pending       -> { items: OvertimeQueueItemDto[], totalCount }
+ *   POST /api/v1/attendance/overtime/{id}/approve  body { approvedMinutes?, comment? } -> OvertimeDecisionDto
+ *   POST /api/v1/attendance/overtime/{id}/reject   body { reason } (>=10) -> OvertimeDecisionDto
+ *   GET  /api/v1/attendance/overtime/report?month=yyyy-MM -> { month, items: OvertimeReportRowDto[], totals }
+ *
+ * All envelopes are ApiResponse<T> = { success, data, message }; the service unwraps `.data`.
+ * `multiplier` is the applied rate (1.50/2.00/2.50, BR-3). `approvedMinutes` is set on
+ * approval and may differ from `overtimeMinutes` after a manager adjustment (FR-6).
+ */
+export interface IOvertime {
+  id: string;
+  employeeId: string;
+  /** Linked attendance log when auto-detected (AC-1); null for a pre-approval. */
+  attendanceLogId?: string | null;
+  /** The overtime calendar date `yyyy-MM-dd`. */
+  date: string;
+  /** Actual overtime duration in minutes (FR-2). For PRE_APPROVED, the expected amount. */
+  overtimeMinutes: number;
+  /** Set on approval (FR-6); null while PENDING/REJECTED/UNAPPROVED. */
+  approvedMinutes: number | null;
+  /** Applied multiplier rate, e.g. 1.50, 2.00 (BR-3). */
+  multiplier: number;
+  type: OvertimeType;
+  status: OvertimeStatus;
+  /** Employee or system reason (§7). */
+  reason: string;
+  /** Manager note set on approve/reject; null otherwise. */
+  managerComment: string | null;
+  /** Record creation timestamp (UTC); the UI formats to local. */
+  createdAt: string;
+}
+
+/**
+ * US-ATT-006 (AC-2, FR-4): payload to submit an overtime pre-approval request.
+ *   POST /api/v1/attendance/overtime/pre-approval  body { date, expectedHours, reason }
+ *
+ *  - `date` is `yyyy-MM-dd` (the planned overtime day).
+ *  - `expectedHours` is the expected overtime in hours (decimal allowed).
+ *  - `reason` is mandatory (min 10 chars, enforced by the form).
+ * The backend stamps tenant_id, employee_id, type=PRE_APPROVED and audit fields server-side.
+ */
+export interface IOvertimePreApprovalRequest {
+  date: string;
+  expectedHours: number;
+  reason: string;
+}
+
+/**
+ * US-ATT-006 (§8, AC-3): an overtime record as it appears in the manager's approval
+ * queue — {@link IOvertime} plus the denormalized requester fields the queue needs.
+ *   GET /api/v1/attendance/overtime/pending
+ *     -> ApiResponse<{ items: IOvertimeQueueItem[], totalCount }>  (service reads data.items)
+ * The backend scopes to the manager's team + tenant server-side (BR-8, NFR-2).
+ */
+export interface IOvertimeQueueItem extends IOvertime {
+  /** Denormalized full name of the requesting employee (AC-3). */
+  employeeName: string;
+  /** Optional employee photo URL; null/empty -> initials avatar (§8). */
+  employeePhoto?: string | null;
+  /** When the overtime was submitted/detected (AC-3). */
+  submittedOn: string;
+}
+
+/** US-ATT-006: the `data` payload of the pending-overtime-queue endpoint. */
+export interface IOvertimeQueueResult {
+  items: IOvertimeQueueItem[];
+  totalCount: number;
+}
+
+/**
+ * US-ATT-006 (FR-6, AC-4): body for an APPROVE action.
+ *   POST /api/v1/attendance/overtime/{id}/approve  body { approvedMinutes?, comment? }
+ * `approvedMinutes` lets the manager adjust the awarded minutes down/up (FR-6); omitted
+ * approves the full requested amount. `comment` is optional.
+ */
+export interface IOvertimeApproveRequest {
+  approvedMinutes?: number;
+  comment?: string;
+}
+
+/**
+ * US-ATT-006: body for a REJECT action.
+ *   POST /api/v1/attendance/overtime/{id}/reject  body { reason }  (min 10 chars)
+ */
+export interface IOvertimeRejectRequest {
+  reason: string;
+}
+
+/**
+ * US-ATT-006 (AC-4): result of an approve/reject action — the backend's
+ * `OvertimeDecisionDto`. On REJECT `approvedMinutes` is null.
+ */
+export interface IOvertimeDecision {
+  id: string;
+  status: OvertimeStatus;
+  /** Awarded minutes on APPROVE (may differ from requested, FR-6); null on REJECT. */
+  approvedMinutes: number | null;
+  multiplier: number;
+  /** Optional manager comment echoed back. */
+  managerComment?: string | null;
+  /** When the decision was actioned (UTC timestamptz). */
+  actionedAt: string;
+}
+
+/**
+ * US-ATT-006 (AC-5): one row of the monthly overtime report — aggregated minutes by
+ * employee for the selected month.
+ *   GET /api/v1/attendance/overtime/report?month=yyyy-MM
+ *     -> ApiResponse<{ month, items: IOvertimeReportRow[], totals }>
+ */
+export interface IOvertimeReportRow {
+  employeeId: string;
+  employeeName: string;
+  approvedMinutes: number;
+  pendingMinutes: number;
+  rejectedMinutes: number;
+  recordCount: number;
+}
+
+/** US-ATT-006 (AC-5): the full monthly overtime report payload. */
+export interface IOvertimeReportResult {
+  /** The reported month, `yyyy-MM`. */
+  month: string;
+  items: IOvertimeReportRow[];
+  /** Aggregate totals across all employees for the month. */
+  totals: {
+    approvedMinutes: number;
+    pendingMinutes: number;
+    rejectedMinutes: number;
+    recordCount: number;
+  };
+}
+
+/**
+ * Typed error body for an overtime action (AC-4, BR-8). `message` is shown verbatim;
+ * `code` is an optional machine discriminator the UI does not branch on.
+ *   - 403 `code: 'self_approval'`   -> manager cannot approve their own overtime (BR-8)
+ *   - 403 `code: 'not_team_member'` -> not the employee's approver
+ *   - 409 `code: 'already_actioned'`-> the record was already decided
+ */
+export interface IOvertimeActionErrorResponse {
+  message: string;
+  code?: 'self_approval' | 'not_team_member' | 'already_actioned' | string;
+}
+
+/** Notion-style status-pill classes per overtime status (§8). */
+export const OVERTIME_STATUS_CLASSES: Record<OvertimeStatus, string> = {
+  PENDING: 'bg-amber-50 text-amber-700 ring-amber-200',
+  APPROVED: 'bg-green-50 text-green-700 ring-green-200',
+  REJECTED: 'bg-red-50 text-red-700 ring-red-200',
+  UNAPPROVED: 'bg-neutral-100 text-neutral-500 ring-neutral-200',
+};
+
+/** Human-readable label for an overtime status (§8). */
+export function overtimeStatusLabel(status: OvertimeStatus): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Pending';
+    case 'APPROVED':
+      return 'Approved';
+    case 'REJECTED':
+      return 'Rejected';
+    case 'UNAPPROVED':
+      return 'Unapproved';
+  }
+}
+
+/** Human-readable label for an overtime type (§8). */
+export function overtimeTypeLabel(type: OvertimeType): string {
+  switch (type) {
+    case 'AUTO_DETECTED':
+      return 'Auto-detected';
+    case 'PRE_APPROVED':
+      return 'Pre-approved';
+  }
+}
+
+/** Format a multiplier rate for display, e.g. 1.5 -> "1.5x" (BR-3, §8). */
+export function formatMultiplier(multiplier: number): string {
+  if (multiplier == null || Number.isNaN(multiplier)) {
+    return '—';
+  }
+  // Trim a trailing ".0" so 2.0 -> "2x" but 1.5 -> "1.5x".
+  const trimmed = Number.isInteger(multiplier)
+    ? multiplier.toString()
+    : multiplier.toString().replace(/0+$/, '').replace(/\.$/, '');
+  return `${trimmed}x`;
+}
+
+/**
+ * Default tenant weekly overtime cap in minutes (BR-5 default 20h) used to derive the
+ * weekly-progress bar (§8). The exact cap is tenant-configurable server-side; the FE
+ * uses this as a sensible display default until a policy endpoint exposes it.
+ */
+export const WEEKLY_OVERTIME_CAP_MINUTES = 20 * 60;
+
+/**
+ * Pure helper: total a list of overtime records' minutes for the current ISO week
+ * (Mon–Sun) containing `reference`, used to feed the weekly-progress bar (§8). Only
+ * APPROVED + PENDING minutes count toward the cap; REJECTED/UNAPPROVED are excluded.
+ * Uses `approvedMinutes` when set (post-adjustment), else `overtimeMinutes`.
+ */
+export function weeklyOvertimeMinutes(
+  records: readonly IOvertime[],
+  reference: Date = new Date(),
+): number {
+  const ref = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
+  // ISO week: Monday is the first day. getDay() -> 0=Sun..6=Sat.
+  const day = ref.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 7); // exclusive upper bound
+
+  return records.reduce((sum, r) => {
+    if (r.status === 'REJECTED' || r.status === 'UNAPPROVED') {
+      return sum;
+    }
+    const d = new Date(`${r.date}T00:00:00`);
+    if (Number.isNaN(d.getTime()) || d < monday || d >= sunday) {
+      return sum;
+    }
+    const minutes = r.approvedMinutes != null ? r.approvedMinutes : r.overtimeMinutes;
+    return sum + (minutes ?? 0);
+  }, 0);
+}
+
 /** ISO day-of-week labels indexed 1=Mon .. 7=Sun (BR-6, §8). */
 export const WEEKDAY_LABELS: Record<number, string> = {
   1: 'Mon',

@@ -48,7 +48,14 @@ public sealed class AttendanceServiceTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private AttendanceService CreateService()
-        => new(CreateDbContext(), _tenantContext, _currentUser, _logger);
+        => CreateServiceOn(CreateDbContext(), _tenantContext);
+
+    private AttendanceService CreateServiceOn(AppDbContext db, ITenantContext tenantContext)
+    {
+        var overtime = new OvertimeService(
+            db, tenantContext, _currentUser, Substitute.For<ILogger<OvertimeService>>());
+        return new AttendanceService(db, tenantContext, _currentUser, overtime, _logger);
+    }
 
     private void SeedEmployee(EmployeeStatus status)
     {
@@ -314,9 +321,8 @@ public sealed class AttendanceServiceTests
     public async Task ClockIn_TerminatedEmployee_IsRejected()
     {
         // Re-seed as terminated (fresh DB name to avoid the Active row).
-        var svc = new AttendanceService(
-            BuildContextWithEmployee(EmployeeStatus.Terminated, out _),
-            _tenantContext, _currentUser, _logger);
+        var svc = CreateServiceOn(
+            BuildContextWithEmployee(EmployeeStatus.Terminated, out _), _tenantContext);
 
         var result = await svc.ClockInAsync(Data());
 
@@ -372,8 +378,8 @@ public sealed class AttendanceServiceTests
     {
         var tenantContext = Substitute.For<ITenantContext>();
         tenantContext.IsResolved.Returns(false);
-        var svc = new AttendanceService(
-            TestDbContextFactory.Create(tenantContext, _dbName), tenantContext, _currentUser, _logger);
+        var svc = CreateServiceOn(
+            TestDbContextFactory.Create(tenantContext, _dbName), tenantContext);
 
         var result = await svc.ClockInAsync(Data());
 

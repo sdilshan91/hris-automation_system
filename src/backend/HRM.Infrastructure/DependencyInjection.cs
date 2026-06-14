@@ -132,6 +132,10 @@ public static class DependencyInjection
         // Shift management and assignment (US-ATT-005)
         services.AddScoped<IShiftService, ShiftService>();
 
+        // Overtime tracking and approval (US-ATT-006). Also drives clock-out auto-detection
+        // (AttendanceService depends on it) — register BEFORE/alongside IAttendanceService.
+        services.AddScoped<IOvertimeService, OvertimeService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

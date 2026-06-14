@@ -49,7 +49,14 @@ public sealed class AttendanceRegularizationServiceTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private AttendanceService CreateService()
-        => new(CreateDbContext(), _tenantContext, _currentUser, _logger);
+        => CreateServiceOn(CreateDbContext(), _tenantContext);
+
+    private AttendanceService CreateServiceOn(AppDbContext db, ITenantContext tenantContext)
+    {
+        var overtime = new OvertimeService(
+            db, tenantContext, _currentUser, Substitute.For<ILogger<OvertimeService>>());
+        return new AttendanceService(db, tenantContext, _currentUser, overtime, _logger);
+    }
 
     private void SeedEmployee(EmployeeStatus status)
     {
@@ -275,8 +282,8 @@ public sealed class AttendanceRegularizationServiceTests
             db.SaveChanges();
         }
 
-        var svc = new AttendanceService(
-            TestDbContextFactory.Create(_tenantContext, name), _tenantContext, _currentUser, _logger);
+        var svc = CreateServiceOn(
+            TestDbContextFactory.Create(_tenantContext, name), _tenantContext);
 
         var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
         var result = await svc.SubmitRegularizationAsync(
@@ -314,8 +321,8 @@ public sealed class AttendanceRegularizationServiceTests
     {
         var tenantContext = Substitute.For<ITenantContext>();
         tenantContext.IsResolved.Returns(false);
-        var svc = new AttendanceService(
-            TestDbContextFactory.Create(tenantContext, _dbName), tenantContext, _currentUser, _logger);
+        var svc = CreateServiceOn(
+            TestDbContextFactory.Create(tenantContext, _dbName), tenantContext);
 
         var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
         var result = await svc.SubmitRegularizationAsync(

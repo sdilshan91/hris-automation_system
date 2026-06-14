@@ -26,17 +26,20 @@ public sealed class AttendanceService : IAttendanceService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IOvertimeService _overtimeService;
     private readonly ILogger<AttendanceService> _logger;
 
     public AttendanceService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IOvertimeService overtimeService,
         ILogger<AttendanceService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _overtimeService = overtimeService;
         _logger = logger;
     }
 
@@ -193,7 +196,17 @@ public sealed class AttendanceService : IAttendanceService
         openLog.OvertimeMinutes = calc.OvertimeMinutes;
         openLog.Status = calc.Status;
 
-        // NFR-3: single atomic SaveChanges; the AuditInterceptor stamps updated_at/updated_by.
+        // US-ATT-006 (AC-1/FR-1/NFR-1): create the persistent overtime record as part of the SAME
+        // clock-out transaction (no extra API call). The shift-standard baseline (US-ATT-005), the
+        // weekday/weekend/holiday multiplier (BR-3/BR-7), the daily cap (BR-4) and the weekly-cap alert
+        // (BR-5) are resolved in OvertimeService; returns null when no overtime is recognized.
+        var overtimeRecord = await _overtimeService.BuildAutoDetectedAsync(
+            openLog, employee, settings, calc.TotalWorkMinutes, cancellationToken);
+        if (overtimeRecord is not null)
+            _dbContext.OvertimeRecords.Add(overtimeRecord);
+
+        // NFR-3 / NFR-1: single atomic SaveChanges (closed log + overtime record together);
+        // the AuditInterceptor stamps updated_at/updated_by.
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(

@@ -460,4 +460,178 @@ public sealed class AttendanceController : ControllerBase
 
         return Ok(ApiResponse<ResolvedShiftDto>.Ok(result.Value!));
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-006: Overtime tracking and approval
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// POST /api/v1/attendance/overtime/pre-approval
+    /// Submits an overtime pre-approval request for the acting employee (US-ATT-006 AC-2/FR-4): a
+    /// PRE_APPROVED, PENDING record. Returns 400 (past/invalid date or hours), 403 (no employee /
+    /// inactive). Gated by Attendance.CheckIn — the same self permission as clock-in.
+    /// </summary>
+    [HttpPost("overtime/pre-approval")]
+    [RequirePermission("Attendance.CheckIn")]
+    [ProducesResponseType(typeof(ApiResponse<OvertimeDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SubmitOvertimePreApproval(
+        [FromBody] OvertimePreApprovalRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new SubmitOvertimePreApprovalCommand(request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<OvertimeDto>.Ok(result.Value!, "Overtime pre-approval submitted."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/overtime/my
+    /// Returns the acting employee's own overtime records, newest first (US-ATT-006). Gated by
+    /// Attendance.CheckIn.
+    /// </summary>
+    [HttpGet("overtime/my")]
+    [RequirePermission("Attendance.CheckIn")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<OvertimeDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMyOvertime(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyOvertimeQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<OvertimeDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/overtime/pending
+    /// Returns the acting manager's pending overtime-approval queue — PENDING records from their direct
+    /// reports with employee name/photo and submitted-on (US-ATT-006 AC-3/FR-5). Gated by
+    /// Attendance.Approve.Team.
+    /// </summary>
+    [HttpGet("overtime/pending")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<OvertimeQueueResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetPendingOvertime(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPendingOvertimeQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<OvertimeQueueResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/overtime/{id}/approve
+    /// Approves an overtime record from one of the acting manager's direct reports (US-ATT-006
+    /// AC-4/FR-6/FR-7). Sets status APPROVED, approved_minutes (defaults to overtime_minutes or the
+    /// adjusted value), flags payroll-ready, and records an immutable history entry — atomically. Blocks
+    /// self-approval (BR-8, 403 "self_approval"). Returns 400 (approvedMinutes out of range), 403
+    /// ("self_approval"/"not_team_member"), 404 (not found), 409 ("already_actioned"). Gated by
+    /// Attendance.Approve.Team.
+    /// </summary>
+    [HttpPost("overtime/{id:guid}/approve")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<OvertimeDecisionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ApproveOvertime(
+        [FromRoute] Guid id,
+        [FromBody] ApproveOvertimeRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ApproveOvertimeCommand(id, request?.ApprovedMinutes, request?.Comment), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<OvertimeDecisionDto>.Ok(result.Value!, "Overtime approved."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/overtime/{id}/reject
+    /// Rejects an overtime record from one of the acting manager's direct reports (US-ATT-006). Sets
+    /// status REJECTED and records the mandatory reason (min 10 chars) in an immutable history entry.
+    /// Same authorization/immutability/self-approval rules as approve. Gated by Attendance.Approve.Team.
+    /// </summary>
+    [HttpPost("overtime/{id:guid}/reject")]
+    [RequirePermission("Attendance.Approve.Team")]
+    [ProducesResponseType(typeof(ApiResponse<OvertimeDecisionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RejectOvertime(
+        [FromRoute] Guid id,
+        [FromBody] RejectOvertimeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new RejectOvertimeCommand(id, request.Reason), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<OvertimeDecisionDto>.Ok(result.Value!, "Overtime rejected."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/overtime/report?month=yyyy-MM
+    /// Returns the monthly HR overtime report: per-employee approved/pending/rejected minutes plus
+    /// tenant-wide totals for the selected month (US-ATT-006 AC-5). Gated by Attendance.View.All — the
+    /// HR attendance read permission.
+    /// </summary>
+    [HttpGet("overtime/report")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<OvertimeReportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetOvertimeReport(
+        [FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        // month is "yyyy-MM"; default to the current UTC month when omitted.
+        int year, mon;
+        if (string.IsNullOrWhiteSpace(month))
+        {
+            var now = DateTime.UtcNow;
+            year = now.Year; mon = now.Month;
+        }
+        else if (!TryParseMonth(month, out year, out mon))
+        {
+            return StatusCode(400, ApiResponse.Fail(
+                "Month must be in the format yyyy-MM.", "invalid_month"));
+        }
+
+        var result = await _mediator.Send(new GetOvertimeReportQuery(year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<OvertimeReportResult>.Ok(result.Value!));
+    }
+
+    private static bool TryParseMonth(string value, out int year, out int month)
+    {
+        year = 0; month = 0;
+        var parts = value.Split('-');
+        if (parts.Length != 2) return false;
+        if (!int.TryParse(parts[0], out year) || !int.TryParse(parts[1], out month)) return false;
+        return year is >= 1 and <= 9999 && month is >= 1 and <= 12;
+    }
 }

@@ -42,7 +42,15 @@ public sealed class GetClockStatusTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private AttendanceService CreateService()
-        => new(CreateDbContext(), _tenantContext, _currentUser, _logger);
+        => CreateServiceOn(CreateDbContext(), _tenantContext, _currentUser);
+
+    private AttendanceService CreateServiceOn(
+        AppDbContext db, ITenantContext tenantContext, ICurrentUser currentUser)
+    {
+        var overtime = new OvertimeService(
+            db, tenantContext, currentUser, Substitute.For<ILogger<OvertimeService>>());
+        return new AttendanceService(db, tenantContext, currentUser, overtime, _logger);
+    }
 
     private void SeedEmployee()
     {
@@ -192,7 +200,7 @@ public sealed class GetClockStatusTests
     {
         var otherUser = Substitute.For<ICurrentUser>();
         otherUser.UserId.Returns(Guid.NewGuid());
-        var svc = new AttendanceService(CreateDbContext(), _tenantContext, otherUser, _logger);
+        var svc = CreateServiceOn(CreateDbContext(), _tenantContext, otherUser);
 
         var result = await svc.GetClockStatusAsync();
 
@@ -205,8 +213,8 @@ public sealed class GetClockStatusTests
     {
         var tenantContext = Substitute.For<ITenantContext>();
         tenantContext.IsResolved.Returns(false);
-        var svc = new AttendanceService(
-            TestDbContextFactory.Create(tenantContext, _dbName), tenantContext, _currentUser, _logger);
+        var svc = CreateServiceOn(
+            TestDbContextFactory.Create(tenantContext, _dbName), tenantContext, _currentUser);
 
         var result = await svc.GetClockStatusAsync();
 
