@@ -679,10 +679,11 @@ public sealed class LeaveTypeServiceTests : IDisposable
 
         var listResult = await serviceNew.GetAllAsync();
         listResult.IsSuccess.Should().BeTrue();
-        listResult.Value!.Count.Should().Be(7); // 7 default leave types
+        listResult.Value!.Count.Should().Be(8); // 7 standard defaults + system LOP type (US-LV-011 FR-1)
         listResult.Value!.Select(lt => lt.Name).Should().Contain("Annual Leave");
         listResult.Value!.Select(lt => lt.Name).Should().Contain("Sick Leave");
         listResult.Value!.Select(lt => lt.Name).Should().Contain("Unpaid Leave");
+        listResult.Value!.Select(lt => lt.Name).Should().Contain("Loss of Pay");
     }
 
     [Fact]

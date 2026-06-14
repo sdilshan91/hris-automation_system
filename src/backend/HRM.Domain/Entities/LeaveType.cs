@@ -122,4 +122,11 @@ public sealed class LeaveType : BaseEntity
     /// Inactive leave types are hidden from application forms but retained for historical reporting.
     /// </summary>
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Special system category for this leave type (US-LV-011 FR-1). <see cref="LeaveTypeSystemCategory.None"/>
+    /// for ordinary types. A non-None category (e.g. the LOP type) cannot be deleted/deactivated but can be
+    /// renamed. Stored as a string.
+    /// </summary>
+    public LeaveTypeSystemCategory SystemCategory { get; set; } = LeaveTypeSystemCategory.None;
 }

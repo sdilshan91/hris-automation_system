@@ -56,6 +56,18 @@ export interface ICreateLeaveRequest {
    * the frontend submits already-hosted URLs / metadata the backend accepts.
    */
   attachments: string[];
+  /**
+   * US-LV-011 (AC-1): Loss-of-Pay confirmation flag. When the employee has
+   * insufficient balance and negative balance is not allowed, the FE prompts
+   * "Insufficient balance. This will be processed as Loss of Pay (LOP)." and,
+   * on confirm, resubmits the SAME request with `confirmLop = true` so the
+   * backend creates it with `leave_type = LOP` / `is_lop = true`.
+   *
+   * Omitted (undefined) on the first attempt; the backend should treat absence
+   * as "not confirmed" and either accept (sufficient balance) or signal the LOP
+   * option via `code: 'insufficient_balance'` + `lopOption: true`.
+   */
+  confirmLop?: boolean;
 }
 
 /**
@@ -93,6 +105,13 @@ export interface ILeaveRequestErrorResponse {
   message: string;
   /** Distinguishes overlap (AC-5), insufficient balance (AC-2), document-required (AC-3). */
   code?: 'overlap' | 'insufficient_balance' | 'document_required' | string;
+  /**
+   * US-LV-011 (AC-1): When `code === 'insufficient_balance'`, the backend sets
+   * `lopOption: true` to indicate the request can be re-submitted as Loss of Pay
+   * (i.e. resubmit with `confirmLop: true`) rather than being a hard block. When
+   * absent/false, the insufficient-balance error is a hard block (no LOP path).
+   */
+  lopOption?: boolean;
 }
 
 /**

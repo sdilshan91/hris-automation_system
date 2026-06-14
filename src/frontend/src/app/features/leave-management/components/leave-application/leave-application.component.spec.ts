@@ -196,10 +196,13 @@ describe('LeaveApplicationComponent', () => {
     expect(component.form.errors?.['dateRange']).toBeTrue();
   });
 
-  it('should flag insufficient balance and block submit (AC-2)', () => {
+  it('should flag insufficient balance and prompt for LOP instead of submitting (AC-2 / US-LV-011 AC-1)', () => {
     fixture.detectChanges();
+    // Use lt-1 (Annual, no document requirement) with a low balance so the
+    // LOP path — not the document-required block — is exercised.
+    component.balances.set([{ leaveTypeId: 'lt-1', entitlementDays: 14, usedDays: 13, remainingDays: 1 }]);
     component.form.patchValue({
-      leaveTypeId: 'lt-2', // Sick Leave, remaining 1
+      leaveTypeId: 'lt-1',
       startDate: '2026-07-06', // Mon
       endDate: '2026-07-10', // Fri = 5 days
       reason: 'x',
@@ -210,8 +213,76 @@ describe('LeaveApplicationComponent', () => {
     expect(projection.insufficient).toBeTrue();
 
     component.submit();
+    // US-LV-011 (AC-1): no hard block — the LOP confirmation prompt is shown,
+    // the request is NOT yet sent.
     expect(leaveRequestServiceSpy.createLeaveRequest).not.toHaveBeenCalled();
-    expect(toastrSpy.error).toHaveBeenCalled();
+    expect(component.lopPrompt()).not.toBeNull();
+    expect(component.lopPrompt()!.message).toContain('Loss of Pay (LOP)');
+  });
+
+  it('should resubmit with confirmLop=true when the LOP prompt is confirmed (AC-1)', () => {
+    fixture.detectChanges();
+    component.balances.set([{ leaveTypeId: 'lt-1', entitlementDays: 14, usedDays: 13, remainingDays: 1 }]);
+    component.form.patchValue({
+      leaveTypeId: 'lt-1', // remaining 1, requesting 5 → insufficient
+      startDate: '2026-07-06',
+      endDate: '2026-07-10',
+      reason: 'family emergency',
+    });
+    component.submit(); // opens the prompt
+    expect(component.lopPrompt()).not.toBeNull();
+
+    component.confirmLop();
+    expect(leaveRequestServiceSpy.createLeaveRequest).toHaveBeenCalledTimes(1);
+    const arg = leaveRequestServiceSpy.createLeaveRequest.calls.mostRecent().args[0];
+    expect(arg.confirmLop).toBeTrue();
+    expect(component.lopPrompt()).toBeNull();
+    expect(toastrSpy.success).toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(['/leave/my-requests']);
+  });
+
+  it('should dismiss the LOP prompt without submitting when cancelled (AC-1)', () => {
+    fixture.detectChanges();
+    component.balances.set([{ leaveTypeId: 'lt-1', entitlementDays: 14, usedDays: 13, remainingDays: 1 }]);
+    component.form.patchValue({
+      leaveTypeId: 'lt-1',
+      startDate: '2026-07-06',
+      endDate: '2026-07-10',
+      reason: 'x',
+    });
+    component.submit();
+    expect(component.lopPrompt()).not.toBeNull();
+
+    component.cancelLop();
+    expect(component.lopPrompt()).toBeNull();
+    expect(leaveRequestServiceSpy.createLeaveRequest).not.toHaveBeenCalled();
+  });
+
+  it('should open the LOP prompt when the backend signals insufficient_balance + lopOption (AC-1)', () => {
+    fixture.detectChanges();
+    const err = new HttpErrorResponse({
+      status: 400,
+      error: {
+        message: 'Insufficient balance.',
+        code: 'insufficient_balance',
+        lopOption: true,
+      },
+    });
+    leaveRequestServiceSpy.createLeaveRequest.and.returnValue(throwError(() => err));
+
+    // Sufficient client-side projection (lt-1 remaining 10, request 3) so the
+    // FE sends the request and the LOP branch is driven by the backend response.
+    component.form.patchValue({
+      leaveTypeId: 'lt-1',
+      startDate: '2026-07-06',
+      endDate: '2026-07-08',
+      reason: 'x',
+    });
+    component.submit();
+
+    expect(leaveRequestServiceSpy.createLeaveRequest).toHaveBeenCalledTimes(1);
+    expect(component.lopPrompt()).not.toBeNull();
+    expect(toastrSpy.error).not.toHaveBeenCalled();
   });
 
   it('should surface a document-required hint for sick leave over threshold (AC-3)', () => {

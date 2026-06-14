@@ -180,6 +180,11 @@ public sealed class LeaveTypeService : ILeaveTypeService
         if (leaveType is null)
             return Result.Failure("Leave type not found.", 404);
 
+        // US-LV-011 FR-1: a system leave type (e.g. LOP) cannot be deleted/deactivated (it can be
+        // renamed via UpdateAsync). Blocking deactivation here is the deletion-block the story asks for.
+        if (leaveType.SystemCategory != LeaveTypeSystemCategory.None)
+            return Result.Failure("This is a system leave type and cannot be deactivated.", 400);
+
         if (!leaveType.IsActive)
             return Result.Failure("Leave type is already deactivated.", 400);
 
@@ -330,6 +335,40 @@ public sealed class LeaveTypeService : ILeaveTypeService
         return Result.Success();
     }
 
+    /// <summary>
+    /// Ensures the system LOP leave type exists for the tenant (US-LV-011 FR-1, BR-1). Idempotent.
+    /// </summary>
+    public async Task<Result<Guid>> EnsureLopTypeForTenantAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        // Look up an existing LOP type (ignore tenant filter so the method works in system context too).
+        var existing = await _dbContext.LeaveTypes
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                lt => lt.TenantId == tenantId && !lt.IsDeleted
+                      && lt.SystemCategory == LeaveTypeSystemCategory.LossOfPay,
+                cancellationToken);
+
+        if (existing is not null)
+            return Result<Guid>.Success(existing.Id);
+
+        // Place it after the current max display order so it appends to the list.
+        var maxOrder = await _dbContext.LeaveTypes
+            .IgnoreQueryFilters()
+            .Where(lt => lt.TenantId == tenantId && !lt.IsDeleted)
+            .MaxAsync(lt => (int?)lt.DisplayOrder, cancellationToken) ?? 0;
+
+        var lop = NewLopLeaveType(tenantId, displayOrder: maxOrder + 1, DateTime.UtcNow);
+        _dbContext.LeaveTypes.Add(lop);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Ensured system LOP leave type {LeaveTypeId} for tenant {TenantId}.", lop.Id, tenantId);
+
+        return Result<Guid>.Success(lop.Id);
+    }
+
     // -- Private helpers --
 
     private static LeaveTypeDto ToDto(LeaveType lt) => new()
@@ -356,6 +395,7 @@ public sealed class LeaveTypeService : ILeaveTypeService
         NegativeBalanceLimit = lt.NegativeBalanceLimit,
         DisplayOrder = lt.DisplayOrder,
         IsActive = lt.IsActive,
+        SystemCategory = lt.SystemCategory.ToString(),
         CreatedAt = lt.CreatedAt,
         UpdatedAt = lt.UpdatedAt,
     };
@@ -505,6 +545,34 @@ public sealed class LeaveTypeService : ILeaveTypeService
                 CreatedAt = now,
                 CreatedBy = "system-seed",
             },
+            NewLopLeaveType(tenantId, displayOrder: 8, now),
         };
     }
+
+    /// <summary>
+    /// Builds the system "Loss of Pay" (LOP) leave type (US-LV-011 FR-1, BR-1). Distinct from
+    /// "Unpaid Leave": Unpaid Leave is a user-managed type for pre-arranged unpaid absence (with a
+    /// negative-balance cap), whereas LOP is a system-managed deduction marker with zero entitlement,
+    /// NO negative balance (BR-1: it has no balance at all), and SystemCategory = LossOfPay so it
+    /// cannot be deleted but can be renamed.
+    /// </summary>
+    internal static LeaveType NewLopLeaveType(Guid tenantId, int displayOrder, DateTime now) => new()
+    {
+        Id = BaseEntity.NewUuidV7(),
+        TenantId = tenantId,
+        Name = "Loss of Pay",
+        Code = "LOP",
+        Color = "#B71C1C",
+        Description = "System leave type for unpaid absence (Loss of Pay). No balance — used purely for payroll deduction.",
+        AnnualEntitlement = 0,
+        AccrualFrequency = AccrualFrequency.Upfront,
+        ProbationEligible = true,
+        NegativeBalanceAllowed = false,
+        Gender = LeaveTypeGender.All,
+        DisplayOrder = displayOrder,
+        IsActive = true,
+        SystemCategory = LeaveTypeSystemCategory.LossOfPay,
+        CreatedAt = now,
+        CreatedBy = "system-seed",
+    };
 }

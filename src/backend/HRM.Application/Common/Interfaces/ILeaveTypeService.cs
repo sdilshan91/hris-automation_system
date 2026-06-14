@@ -45,4 +45,14 @@ public interface ILeaveTypeService
     Task<Result> SeedDefaultsForTenantAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures the system "Loss of Pay" (LOP) leave type exists for the tenant (US-LV-011 FR-1, BR-1):
+    /// zero entitlement, no balance, flagged with SystemCategory = LossOfPay so it cannot be deleted
+    /// but can be renamed. Idempotent — returns the existing LOP type if one already exists. Returns the
+    /// LOP type id. Used by the LOP flows (assign-lop, compulsory, absenteeism job) to resolve the type.
+    /// </summary>
+    Task<Result<Guid>> EnsureLopTypeForTenantAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken = default);
 }

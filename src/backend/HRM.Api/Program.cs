@@ -142,6 +142,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.HolidayRecurrenceJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessLeaveYearEndJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ProcessAbsenteeismJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
@@ -264,6 +265,14 @@ try
             "leave-carry-forward-expiry",
             job => job.RunAsync(),
             "0 3 1 * *"); // 03:00 UTC on the 1st of every month
+
+        // US-LV-011 FR-2 / AC-2: Daily absenteeism auto-LOP reconciliation. Generates LOP entries for
+        // unaccounted absences in the previous month. NoOp until the attendance module lands (the
+        // IAttendanceProvider seam returns no absences), but wired/idempotent/tenant-safe.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ProcessAbsenteeismJob>(
+            "leave-absenteeism-lop",
+            job => job.RunAsync(),
+            "0 4 * * *"); // 04:00 UTC daily
     }
 
     app.Run();
