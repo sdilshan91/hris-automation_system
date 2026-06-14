@@ -139,6 +139,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProbationReminderJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.BulkEmployeeImportJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.LeaveAccrualJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.HolidayRecurrenceJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
@@ -241,6 +242,13 @@ try
             "leave-entitlement-accruals",
             job => job.RunAsync(),
             "30 0 * * *"); // 00:30 UTC daily
+
+        // US-LV-007 FR-3 / BR-5: Recurring-holiday next-year generation (1 Dec, ~30 days before
+        // year-end). Idempotent, so a daily-or-later cadence in December is safe.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.HolidayRecurrenceJob>(
+            "holiday-recurrence-generation",
+            job => job.RunAsync(),
+            "0 1 1 12 *"); // 01:00 UTC on 1 December
     }
 
     app.Run();

@@ -1,0 +1,583 @@
+<div class="page-container">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">Holiday Calendar</h1>
+      <p class="mt-1 text-sm text-neutral-500">
+        Manage public, restricted, and optional holidays for your organization.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn-secondary" (click)="openImport()" data-test="import-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1.5" aria-hidden="true">
+          <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.66l1.95 2.1a.75.75 0 1 0 1.1-1.02l-3.25-3.5a.75.75 0 0 0-1.1 0L6.2 5.74a.75.75 0 1 0 1.1 1.02l1.95-2.1v8.59Z" />
+          <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+        </svg>
+        Import CSV
+      </button>
+      <button type="button" class="btn-primary" (click)="openCreate()" data-test="add-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1.5" aria-hidden="true">
+          <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+        </svg>
+        Add Holiday
+      </button>
+    </div>
+  </div>
+
+  <!-- Toolbar: view toggle, year nav, location filter -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+    <!-- Segmented view control (AC-4) -->
+    <div class="segmented" role="tablist" aria-label="Calendar view mode">
+      <button
+        type="button"
+        role="tab"
+        class="segmented-btn"
+        [class.segmented-btn-active]="viewMode() === 'calendar'"
+        [attr.aria-selected]="viewMode() === 'calendar'"
+        (click)="setView('calendar')"
+        data-test="view-calendar"
+      >
+        Calendar
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="segmented-btn"
+        [class.segmented-btn-active]="viewMode() === 'list'"
+        [attr.aria-selected]="viewMode() === 'list'"
+        (click)="setView('list')"
+        data-test="view-list"
+      >
+        List
+      </button>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Location filter -->
+      @if (locations().length > 0) {
+        <select
+          class="input-notion py-1.5 text-sm w-44"
+          [value]="locationFilter()"
+          (change)="onLocationFilterChange($event)"
+          aria-label="Filter by location"
+          data-test="location-filter"
+        >
+          <option value="">All locations</option>
+          @for (loc of locations(); track loc.locationId) {
+            <option [value]="loc.locationId">{{ loc.name }}</option>
+          }
+        </select>
+      }
+
+      <!-- Year navigation (AC-4) -->
+      <div class="flex items-center gap-1" role="group" aria-label="Year navigation">
+        <button
+          type="button"
+          class="nav-arrow"
+          (click)="changeYear(-1)"
+          aria-label="Previous year"
+          data-test="year-prev"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+            <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.08 10l3.71 3.71a.75.75 0 1 1-1.06 1.06l-4.24-4.24a.75.75 0 0 1 0-1.06l4.24-4.24a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+        <input
+          type="number"
+          class="input-notion w-20 text-center py-1.5 text-sm font-semibold"
+          [value]="year()"
+          (change)="onYearInput($event)"
+          aria-label="Year"
+          data-test="year-input"
+        />
+        <button
+          type="button"
+          class="nav-arrow"
+          (click)="changeYear(1)"
+          aria-label="Next year"
+          data-test="year-next"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.92 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.24 4.24a.75.75 0 0 1 0 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Type legend -->
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5 text-xs text-neutral-500">
+    @for (opt of typeOptions; track opt.value) {
+      <span class="inline-flex items-center gap-1.5">
+        <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="opt.hex"></span>
+        {{ opt.label }}
+      </span>
+    }
+  </div>
+
+  <!-- Loading skeleton -->
+  @if (isLoading()) {
+    <div class="card-notion p-4">
+      <div class="animate-pulse space-y-3">
+        @for (i of skeletonItems; track i) {
+          <div class="h-8 bg-neutral-50 rounded"></div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Error state -->
+  @if (loadError() && !isLoading()) {
+    <div class="card-notion text-center py-12">
+      <p class="text-sm text-neutral-600">{{ loadError() }}</p>
+      <button class="btn-secondary mt-4" (click)="loadAll()">Try Again</button>
+    </div>
+  }
+
+  @if (!isLoading() && !loadError()) {
+    <!-- ============ CALENDAR VIEW (AC-4) ============ -->
+    @if (viewMode() === 'calendar') {
+      <!-- Desktop month grid -->
+      <div class="hidden md:block card-notion p-0 overflow-hidden" @fadeSlideIn data-test="calendar-grid">
+        <!-- Month nav -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+          <button type="button" class="nav-arrow" (click)="changeMonth(-1)" aria-label="Previous month">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+              <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.08 10l3.71 3.71a.75.75 0 1 1-1.06 1.06l-4.24-4.24a.75.75 0 0 1 0-1.06l4.24-4.24a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+            </svg>
+          </button>
+          <h2 class="text-base font-semibold text-neutral-900">
+            {{ monthNames[activeMonth()] }} {{ year() }}
+          </h2>
+          <button type="button" class="nav-arrow" (click)="changeMonth(1)" aria-label="Next month">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+              <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.92 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.24 4.24a.75.75 0 0 1 0 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Weekday header -->
+        <div class="grid grid-cols-7 border-b border-neutral-100">
+          @for (label of weekdayLabels; track label) {
+            <div class="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              {{ label }}
+            </div>
+          }
+        </div>
+
+        <!-- Day cells -->
+        <div class="grid grid-cols-7">
+          @for (cell of monthGrid(); track $index) {
+            <div
+              class="min-h-[6rem] border-b border-r border-neutral-50 p-1.5 last:border-r-0"
+              [class.bg-neutral-50]="!cell.inMonth"
+              [class.cursor-pointer]="cell.inMonth"
+              [class.hover:bg-brand-50]="cell.inMonth"
+              (click)="openCreateForCell(cell)"
+              [attr.role]="cell.inMonth ? 'button' : null"
+              [attr.tabindex]="cell.inMonth ? 0 : null"
+              (keydown.enter)="openCreateForCell(cell)"
+              [attr.aria-label]="cell.inMonth ? ('Add holiday on ' + cell.date) : null"
+            >
+              @if (cell.inMonth) {
+                <span class="text-xs font-medium text-neutral-500">{{ cell.day }}</span>
+                <div class="mt-1 space-y-1">
+                  @for (h of cell.holidays; track h.id) {
+                    <div
+                      class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium truncate"
+                      [style.background-color]="typeColor(h.type) + '1a'"
+                      [style.color]="typeColor(h.type)"
+                      (click)="openEdit(h); $event.stopPropagation()"
+                      [attr.title]="h.name"
+                    >
+                      <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [style.background-color]="typeColor(h.type)"></span>
+                      <span class="truncate">{{ h.name }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Mobile: compact list-by-month (NFR-4) -->
+      <div class="md:hidden space-y-4" @fadeSlideIn data-test="calendar-mobile">
+        @if (!hasHolidays()) {
+          <div class="card-notion text-center py-10">
+            <p class="text-sm font-medium text-neutral-700 mb-1">No holidays for {{ year() }}</p>
+            <p class="text-xs text-neutral-400">Add a holiday to get started.</p>
+          </div>
+        }
+        @for (bucket of holidaysByMonth(); track $index) {
+          @if (bucket.length > 0) {
+            <div class="card-notion p-0 overflow-hidden">
+              <div class="px-4 py-2.5 bg-neutral-50 border-b border-neutral-100">
+                <h3 class="text-sm font-semibold text-neutral-700">{{ monthNames[$index] }}</h3>
+              </div>
+              <ul class="divide-y divide-neutral-50">
+                @for (h of bucket; track h.id) {
+                  <li
+                    class="flex items-center justify-between px-4 py-3"
+                    [class.opacity-60]="!h.isActive"
+                    (click)="openEdit(h)"
+                  >
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-2 h-2 rounded-full flex-shrink-0" [style.background-color]="typeColor(h.type)"></span>
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium text-neutral-900 truncate">{{ h.name }}</p>
+                        <p class="text-xs text-neutral-400">{{ h.date }} · {{ typeLabel(h.type) }}</p>
+                      </div>
+                    </div>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        }
+      </div>
+    }
+
+    <!-- ============ LIST VIEW (AC-4) ============ -->
+    @if (viewMode() === 'list') {
+      @if (!hasHolidays()) {
+        <div class="card-notion text-center py-12" data-test="empty-state">
+          <div class="w-14 h-14 rounded-full bg-neutral-50 flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-7 h-7 text-neutral-400" aria-hidden="true">
+              <path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <p class="text-sm font-medium text-neutral-700 mb-1">No holidays for {{ year() }}</p>
+          <p class="text-xs text-neutral-400 mb-4">Add holidays or import them from a CSV file.</p>
+          <button type="button" class="btn-primary" (click)="openCreate()">Add Holiday</button>
+        </div>
+      } @else {
+        <div class="card-notion overflow-hidden p-0" @fadeSlideIn data-test="list-table">
+          <div class="overflow-x-auto">
+            <table class="w-full" role="table">
+              <thead>
+                <tr class="border-b border-neutral-100">
+                  <th class="th-notion text-left">Date</th>
+                  <th class="th-notion text-left">Holiday</th>
+                  <th class="th-notion text-left">Type</th>
+                  <th class="th-notion text-left">Location</th>
+                  <th class="th-notion text-center">Recurring</th>
+                  <th class="th-notion text-center">Status</th>
+                  <th class="th-notion text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (h of sortedHolidays(); track h.id) {
+                  <tr class="table-row-notion group" [class.opacity-60]="!h.isActive">
+                    <td class="td-notion text-neutral-700 whitespace-nowrap font-medium">{{ h.date }}</td>
+                    <td class="td-notion cursor-pointer" (click)="openEdit(h)">
+                      <span class="font-medium text-neutral-900">{{ h.name }}</span>
+                      @if (h.description) {
+                        <p class="text-xs text-neutral-400 mt-0.5 line-clamp-1">{{ h.description }}</p>
+                      }
+                    </td>
+                    <td class="td-notion">
+                      <span
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset"
+                        [class]="typeBadge(h.type)"
+                      >
+                        {{ typeLabel(h.type) }}
+                      </span>
+                    </td>
+                    <td class="td-notion text-neutral-500">
+                      {{ h.locationName || 'All locations' }}
+                    </td>
+                    <td class="td-notion text-center">
+                      @if (h.isRecurring) {
+                        <span class="text-xs text-brand-600 font-medium">Annual</span>
+                      } @else {
+                        <span class="text-xs text-neutral-300">—</span>
+                      }
+                    </td>
+                    <td class="td-notion text-center">
+                      <button
+                        type="button"
+                        role="switch"
+                        [attr.aria-checked]="h.isActive"
+                        [attr.aria-label]="h.isActive ? 'Deactivate ' + h.name : 'Activate ' + h.name"
+                        class="toggle-switch"
+                        [class.toggle-switch-on]="h.isActive"
+                        (click)="toggleActive(h, $event)"
+                        [disabled]="togglingId() === h.id"
+                      >
+                        <span class="toggle-knob" [class.toggle-knob-on]="h.isActive"></span>
+                      </button>
+                    </td>
+                    <td class="td-notion text-right">
+                      <button
+                        type="button"
+                        class="action-btn opacity-0 group-hover:opacity-100 transition-opacity"
+                        (click)="openEdit(h); $event.stopPropagation()"
+                        [attr.aria-label]="'Edit holiday: ' + h.name"
+                        title="Edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+                          <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
+                          <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z" />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    }
+  }
+
+  <!-- ============ SLIDE-OVER: Add/Edit holiday (AC-1) ============ -->
+  @if (formOpen()) {
+    <div class="fixed inset-0 z-50" (keydown.escape)="closeForm()">
+      <div class="fixed inset-0 bg-black/20 backdrop-blur-sm" @overlayFade (click)="closeForm()" aria-hidden="true"></div>
+      <div
+        class="fixed inset-y-0 right-0 w-full sm:w-[28rem] bg-white shadow-notion-lg overflow-y-auto"
+        @slideOver
+        role="dialog"
+        aria-modal="true"
+        [attr.aria-label]="editingHoliday() ? 'Edit holiday' : 'Add holiday'"
+        data-test="holiday-form"
+      >
+        <form [formGroup]="form" (ngSubmit)="submitForm()" class="flex flex-col h-full">
+          <div class="px-6 py-5 border-b border-neutral-100 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-neutral-900">
+              {{ editingHoliday() ? 'Edit Holiday' : 'Add Holiday' }}
+            </h2>
+            <button type="button" class="action-btn" (click)="closeForm()" aria-label="Close">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="flex-1 px-6 py-5 space-y-5">
+            <!-- Name -->
+            <div>
+              <label for="h-name" class="label-notion">Name <span class="text-red-500">*</span></label>
+              <input id="h-name" type="text" class="input-notion" formControlName="name" maxlength="100" placeholder="e.g. New Year's Day" />
+              @if (form.controls['name'].touched && form.controls['name'].invalid) {
+                <p class="text-xs text-red-600 mt-1">Name is required (max 100 characters).</p>
+              }
+            </div>
+
+            <!-- Date -->
+            <div>
+              <label for="h-date" class="label-notion">Date <span class="text-red-500">*</span></label>
+              <input id="h-date" type="date" class="input-notion" formControlName="date" />
+              @if (form.controls['date'].touched && form.controls['date'].invalid) {
+                <p class="text-xs text-red-600 mt-1">A valid date is required.</p>
+              }
+            </div>
+
+            <!-- Type -->
+            <div>
+              <label class="label-notion">Type <span class="text-red-500">*</span></label>
+              <div class="grid grid-cols-3 gap-2">
+                @for (opt of typeOptions; track opt.value) {
+                  <label
+                    class="type-radio"
+                    [class.type-radio-active]="form.controls['type'].value === opt.value"
+                  >
+                    <input type="radio" class="sr-only" formControlName="type" [value]="opt.value" />
+                    <span class="w-2 h-2 rounded-full" [style.background-color]="opt.hex"></span>
+                    {{ opt.label }}
+                  </label>
+                }
+              </div>
+            </div>
+
+            <!-- Location -->
+            <div>
+              <label for="h-loc" class="label-notion">Applicable Location</label>
+              <select id="h-loc" class="input-notion" formControlName="locationId">
+                <option value="">All locations (tenant-wide)</option>
+                @for (loc of locations(); track loc.locationId) {
+                  <option [value]="loc.locationId">{{ loc.name }}</option>
+                }
+              </select>
+              <p class="text-xs text-neutral-400 mt-1">Leave blank to apply to the entire tenant.</p>
+            </div>
+
+            <!-- Description -->
+            <div>
+              <label for="h-desc" class="label-notion">Description</label>
+              <textarea id="h-desc" rows="2" class="input-notion resize-none" formControlName="description" placeholder="Optional notes"></textarea>
+            </div>
+
+            <!-- Recurring -->
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <span class="label-notion mb-0">Recurring annually</span>
+                <p class="text-xs text-neutral-400">Auto-generate this holiday for next year.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                [attr.aria-checked]="form.controls['isRecurring'].value"
+                aria-label="Toggle recurring"
+                class="toggle-switch mt-1"
+                [class.toggle-switch-on]="form.controls['isRecurring'].value"
+                (click)="form.controls['isRecurring'].setValue(!form.controls['isRecurring'].value)"
+              >
+                <span class="toggle-knob" [class.toggle-knob-on]="form.controls['isRecurring'].value"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="px-6 py-4 border-t border-neutral-100 flex items-center justify-end gap-2">
+            <button type="button" class="btn-secondary" (click)="closeForm()" [disabled]="isSaving()">Cancel</button>
+            <button type="submit" class="btn-primary" [disabled]="isSaving()">
+              {{ isSaving() ? 'Saving…' : (editingHoliday() ? 'Save Changes' : 'Add Holiday') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- ============ SLIDE-OVER: CSV import (AC-3) ============ -->
+  @if (importOpen()) {
+    <div class="fixed inset-0 z-50" (keydown.escape)="closeImport()">
+      <div class="fixed inset-0 bg-black/20 backdrop-blur-sm" @overlayFade (click)="closeImport()" aria-hidden="true"></div>
+      <div
+        class="fixed inset-y-0 right-0 w-full sm:w-[40rem] bg-white shadow-notion-lg overflow-y-auto"
+        @slideOver
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import holidays from CSV"
+        data-test="import-panel"
+      >
+        <div class="px-6 py-5 border-b border-neutral-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-neutral-900">Import Holidays</h2>
+            <p class="text-xs text-neutral-400 mt-0.5">CSV columns: name, date (YYYY-MM-DD), type.</p>
+          </div>
+          <button type="button" class="action-btn" (click)="closeImport()" aria-label="Close" [disabled]="isImporting()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5" aria-hidden="true">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-5">
+          <!-- Drop zone -->
+          @if (!importFile()) {
+            <div
+              class="relative border-2 border-dashed rounded-xl p-8 text-center transition-colors duration-200 cursor-pointer"
+              [class.border-neutral-200]="!isDragOver()"
+              [class.bg-neutral-50]="!isDragOver()"
+              [class.border-brand-400]="isDragOver()"
+              [class.bg-brand-50]="isDragOver()"
+              (dragover)="onDragOver($event)"
+              (dragleave)="onDragLeave($event)"
+              (drop)="onDrop($event)"
+              (click)="importInput.click()"
+              (keydown.enter)="importInput.click()"
+              role="button"
+              tabindex="0"
+              aria-label="Choose a CSV file to upload"
+            >
+              <input #importInput type="file" class="sr-only" accept=".csv" (change)="onImportFileSelected($event)" aria-hidden="true" tabindex="-1" />
+              <svg class="mx-auto w-10 h-10 text-neutral-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p class="text-sm text-neutral-600 mb-1">
+                <span class="hidden sm:inline">Drag and drop your CSV here, or </span>
+                <span class="font-medium text-neutral-900">browse</span>
+              </p>
+              <p class="text-xs text-neutral-400">Accepts .csv files</p>
+            </div>
+          } @else {
+            <div class="flex items-center justify-between gap-3 p-3 rounded-lg border border-neutral-100 bg-neutral-50">
+              <div class="flex items-center gap-2 min-w-0">
+                <svg class="w-6 h-6 text-neutral-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span class="text-sm font-medium text-neutral-800 truncate">{{ importFile()!.name }}</span>
+              </div>
+              <button type="button" class="action-btn" (click)="clearImportFile($event)" aria-label="Remove file" [disabled]="isImporting()">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          }
+
+          <!-- File error -->
+          @if (importError()) {
+            <p class="text-sm text-red-600" role="alert" data-test="import-error">{{ importError() }}</p>
+          }
+
+          <!-- Preview table (AC-3) -->
+          @if (importPreview(); as preview) {
+            <div class="flex flex-wrap gap-3 text-sm" data-test="import-summary">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium">
+                {{ preview.validCount }} ready
+              </span>
+              @if (preview.duplicateCount > 0) {
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
+                  {{ preview.duplicateCount }} duplicate{{ preview.duplicateCount === 1 ? '' : 's' }}
+                </span>
+              }
+              @if (preview.invalidCount > 0) {
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">
+                  {{ preview.invalidCount }} invalid
+                </span>
+              }
+            </div>
+
+            <div class="overflow-x-auto rounded-lg border border-neutral-100 max-h-80 overflow-y-auto">
+              <table class="w-full text-sm" role="table">
+                <thead class="sticky top-0 bg-neutral-50">
+                  <tr class="border-b border-neutral-100">
+                    <th class="text-left py-2 px-3 font-medium text-neutral-500 whitespace-nowrap">Row</th>
+                    <th class="text-left py-2 px-3 font-medium text-neutral-500">Name</th>
+                    <th class="text-left py-2 px-3 font-medium text-neutral-500 whitespace-nowrap">Date</th>
+                    <th class="text-left py-2 px-3 font-medium text-neutral-500">Type</th>
+                    <th class="text-left py-2 px-3 font-medium text-neutral-500">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of preview.rows; track row.rowNumber) {
+                    <tr
+                      class="border-b border-neutral-50"
+                      [class.bg-red-50]="row.errors.length > 0"
+                      [class.bg-amber-50]="row.errors.length === 0 && row.isDuplicate"
+                    >
+                      <td class="py-2 px-3 font-mono text-xs text-neutral-700">{{ row.rowNumber }}</td>
+                      <td class="py-2 px-3 text-neutral-800">{{ row.name }}</td>
+                      <td class="py-2 px-3 text-neutral-700 font-mono text-xs whitespace-nowrap">{{ row.date }}</td>
+                      <td class="py-2 px-3 text-neutral-700 capitalize">{{ row.type }}</td>
+                      <td class="py-2 px-3 text-xs">
+                        @if (row.errors.length > 0) {
+                          <span class="text-red-700">{{ row.errors.join(' ') }}</span>
+                        } @else if (row.isDuplicate) {
+                          <span class="text-amber-700 font-medium">Duplicate (will be skipped)</span>
+                        } @else {
+                          <span class="text-green-700 font-medium">Ready</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+
+        <div class="px-6 py-4 border-t border-neutral-100 flex items-center justify-end gap-2">
+          <button type="button" class="btn-secondary" (click)="closeImport()" [disabled]="isImporting()">Cancel</button>
+          <button type="button" class="btn-primary" (click)="confirmImport()" [disabled]="!canConfirmImport()" data-test="import-confirm">
+            {{ isImporting() ? 'Importing…' : 'Import ' + (importPreview()?.validCount || 0) + ' holidays' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

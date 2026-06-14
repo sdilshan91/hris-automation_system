@@ -111,8 +111,9 @@ public sealed class LeaveRequestService : ILeaveRequestService
         }
         else
         {
+            // US-LV-007 AC-2/BR-2: exclude public holidays, scoped to the employee's location.
             var holidays = await _holidayProvider.GetHolidaysAsync(
-                request.StartDate, request.EndDate, cancellationToken);
+                request.StartDate, request.EndDate, employee.LocationId, cancellationToken);
             totalDays = WorkingDaysCalculator.CountWorkingDays(
                 request.StartDate, request.EndDate, holidays: holidays);
         }
@@ -257,8 +258,9 @@ public sealed class LeaveRequestService : ILeaveRequestService
             }
             else
             {
+                // US-LV-007 AC-2/BR-2: exclude public holidays, scoped to the employee's location.
                 var holidays = await _holidayProvider.GetHolidaysAsync(
-                    startDate.Value, endDate.Value, cancellationToken);
+                    startDate.Value, endDate.Value, employee.LocationId, cancellationToken);
                 requestedDays = WorkingDaysCalculator.CountWorkingDays(
                     startDate.Value, endDate.Value, holidays: holidays);
             }

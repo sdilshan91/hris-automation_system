@@ -35,6 +35,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- US-LV-007 FR-5: static holiday seeding templates (embedded, not a third-party API). -->
+    <EmbeddedResource Include="Services\HolidayTemplates\*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\HRM.Application\HRM.Application.csproj" />
   </ItemGroup>
 

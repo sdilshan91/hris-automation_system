@@ -22,6 +22,16 @@ export const LEAVE_MANAGEMENT_ROUTES: Routes = [
         (m) => m.EntitlementRulesComponent
       ),
   },
+  {
+    // US-LV-007: Holiday Calendar management (Calendar + List dual view).
+    // Registered under 'leave-types' so it shares the same role guard
+    // (Tenant Admin / HR Officer) as the other leave-config screens.
+    path: 'holidays',
+    loadComponent: () =>
+      import('./components/holiday-calendar/holiday-calendar.component').then(
+        (m) => m.HolidayCalendarComponent
+      ),
+  },
 ];
 
 /**

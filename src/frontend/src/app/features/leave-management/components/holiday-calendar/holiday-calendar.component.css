@@ -1,0 +1,79 @@
+:host {
+  display: block;
+}
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- Table (Notion-inspired) --- */
+.th-notion {
+  @apply px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-400 whitespace-nowrap;
+}
+.td-notion {
+  @apply px-4 py-3.5 text-sm;
+}
+.table-row-notion {
+  @apply border-b border-neutral-50 hover:bg-neutral-50/50 transition-colors duration-150;
+}
+.table-row-notion:last-child {
+  @apply border-b-0;
+}
+
+/* --- Segmented view control --- */
+.segmented {
+  @apply inline-flex items-center p-0.5 rounded-lg bg-neutral-100;
+}
+.segmented-btn {
+  @apply px-4 py-1.5 rounded-md text-sm font-medium text-neutral-500
+    transition-colors duration-200
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+}
+.segmented-btn-active {
+  @apply bg-white text-neutral-900 shadow-sm;
+}
+
+/* --- Nav arrow buttons --- */
+.nav-arrow {
+  @apply w-8 h-8 rounded-md flex items-center justify-center text-neutral-400
+    hover:text-neutral-700 hover:bg-neutral-100 transition-colors duration-150
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+}
+
+/* --- Type radio (form) --- */
+.type-radio {
+  @apply flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border
+    border-neutral-200 text-xs font-medium text-neutral-600 cursor-pointer
+    transition-colors duration-150 hover:bg-neutral-50;
+}
+.type-radio-active {
+  @apply border-brand-400 bg-brand-50 text-brand-700;
+}
+
+/* --- Toggle switch --- */
+.toggle-switch {
+  @apply relative inline-flex h-5 w-9 items-center rounded-full flex-shrink-0
+    transition-colors duration-200 bg-neutral-200 cursor-pointer
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600
+    disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.toggle-switch-on {
+  @apply bg-brand-600;
+}
+.toggle-knob {
+  @apply inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm
+    transition-transform duration-200 translate-x-1;
+}
+.toggle-knob-on {
+  @apply translate-x-[18px];
+}
+
+/* --- Action buttons --- */
+.action-btn {
+  @apply w-7 h-7 rounded-md flex items-center justify-center text-neutral-400
+    transition-colors duration-150 hover:text-neutral-600 hover:bg-neutral-100
+    disabled:opacity-40 disabled:cursor-not-allowed;
+}

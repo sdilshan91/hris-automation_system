@@ -764,7 +764,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (LV-005) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-017, TC-LV-ISO-018, TC-LV-ISO-019, TC-LV-ISO-020 | 4 | -- |
 | US-LV-006 | Leave Balance Dashboard for Employee | Must Have | TC-LV-109, TC-LV-110, TC-LV-111, TC-LV-112, TC-LV-113, TC-LV-114, TC-LV-115, TC-LV-116, TC-LV-117, TC-LV-118, TC-LV-119, TC-LV-120, TC-LV-121, TC-LV-122, TC-LV-123, TC-LV-124, TC-LV-125, TC-LV-126, TC-LV-127, TC-LV-128 | 20 | 5/5 AC covered |
 | Cross-cutting (LV-006) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-021, TC-LV-ISO-022, TC-LV-ISO-023, TC-LV-ISO-024 | 4 | -- |
-| **TOTAL** | | | **152 test cases** | **152** | **31/31 AC** |
+| US-LV-007 | Holiday Calendar Management Per Tenant | Must Have | TC-LV-129, TC-LV-130, TC-LV-131, TC-LV-132, TC-LV-133, TC-LV-134, TC-LV-135, TC-LV-136, TC-LV-137, TC-LV-138, TC-LV-139, TC-LV-140, TC-LV-141, TC-LV-142, TC-LV-143, TC-LV-144, TC-LV-145, TC-LV-146, TC-LV-147, TC-LV-148 | 20 | 4/4 AC covered |
+| Cross-cutting (LV-007) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-025, TC-LV-ISO-026, TC-LV-ISO-027, TC-LV-ISO-028 | 4 | -- |
+| **TOTAL** | | | **176 test cases** | **176** | **35/35 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
