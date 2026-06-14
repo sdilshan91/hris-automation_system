@@ -27,6 +27,7 @@ public sealed class AttendanceService : IAttendanceService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IOvertimeService _overtimeService;
+    private readonly IShiftService _shiftService;
     private readonly ILogger<AttendanceService> _logger;
 
     public AttendanceService(
@@ -34,12 +35,14 @@ public sealed class AttendanceService : IAttendanceService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IOvertimeService overtimeService,
+        IShiftService shiftService,
         ILogger<AttendanceService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _overtimeService = overtimeService;
+        _shiftService = shiftService;
         _logger = logger;
     }
 
@@ -136,8 +139,33 @@ public sealed class AttendanceService : IAttendanceService
             Source = source,
         };
 
+        // US-ATT-008 (FR-1/FR-3/NFR-1): inline late detection against the resolved shift. FLEXIBLE
+        // shifts are exempt (BR-6/§10). Grace resolves shift → tenant default → 0 (BR-3). Early
+        // departure is NOT evaluated here (no clock-out yet) — it is computed on clock-out.
+        var shiftSignals = await ResolveShiftSignalsAsync(
+            employee.Id, DateOnly.FromDateTime(log.ClockIn), settings, cancellationToken);
+        if (shiftSignals is { } ss)
+        {
+            var lateEarly = LateEarlyCalculator.Evaluate(
+                clockInTime: TimeOnly.FromDateTime(log.ClockIn),
+                clockOutTime: null,
+                shiftStart: ss.Start,
+                shiftEnd: ss.End,
+                gracePeriodMinutes: ss.Grace,
+                workedMinutes: null,
+                minimumMinutes: ss.MinimumMinutes);
+
+            log.IsLate = lateEarly.IsLate;
+            log.LateMinutes = lateEarly.LateMinutes;
+            log.LateByMinutes = lateEarly.LateByMinutes;
+        }
+
         _dbContext.AttendanceLogs.Add(log);
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // FR-5 (late notification) DEFERRED — no notification infra (TODO US-NTF). The AC-4 deduction
+        // FLAG is implemented via the persisted is_late field feeding the monthly summary; only the
+        // notify half is deferred. log.IsLate carries the in-app "you were late" signal for later.
 
         var dto = MapToDto(log);
 
@@ -195,6 +223,30 @@ public sealed class AttendanceService : IAttendanceService
         openLog.TotalWorkMinutes = calc.TotalWorkMinutes;
         openLog.OvertimeMinutes = calc.OvertimeMinutes;
         openLog.Status = calc.Status;
+
+        // US-ATT-008 (FR-2/FR-3/NFR-1): inline early-departure detection against the resolved shift.
+        // Early departure = clock-out before shift end AND minimum hours unmet (BR-2). FLEXIBLE shifts
+        // are exempt (BR-6/§10); grace does NOT apply to early departure (§10). Re-evaluate the late
+        // flag too (idempotent — the clock-in value is preserved) against the same resolved shift.
+        var shiftSignals = await ResolveShiftSignalsAsync(
+            openLog.EmployeeId, DateOnly.FromDateTime(openLog.ClockIn), settings, cancellationToken);
+        if (shiftSignals is { } ss)
+        {
+            var lateEarly = LateEarlyCalculator.Evaluate(
+                clockInTime: TimeOnly.FromDateTime(openLog.ClockIn),
+                clockOutTime: TimeOnly.FromDateTime(clockOut),
+                shiftStart: ss.Start,
+                shiftEnd: ss.End,
+                gracePeriodMinutes: ss.Grace,
+                workedMinutes: calc.TotalWorkMinutes,
+                minimumMinutes: ss.MinimumMinutes);
+
+            openLog.IsLate = lateEarly.IsLate;
+            openLog.LateMinutes = lateEarly.LateMinutes;
+            openLog.LateByMinutes = lateEarly.LateByMinutes;
+            openLog.IsEarlyDeparture = lateEarly.IsEarlyDeparture;
+            openLog.EarlyDepartureMinutes = lateEarly.EarlyDepartureMinutes;
+        }
 
         // US-ATT-006 (AC-1/FR-1/NFR-1): create the persistent overtime record as part of the SAME
         // clock-out transaction (no extra API call). The shift-standard baseline (US-ATT-005), the
@@ -424,6 +476,46 @@ public sealed class AttendanceService : IAttendanceService
         return settings;
     }
 
+    /// <summary>
+    /// US-ATT-008 BR-3/BR-6: resolves the shift signals used for inline late/early detection for an
+    /// employee on a date. Reuses <see cref="IShiftService.ResolveForEmployeeAsync"/> (US-ATT-005) for
+    /// assignment → rotation → tenant-default fallback. Returns null (→ NO late/early tracking) when:
+    ///   - the shift is FLEXIBLE (no fixed start/end — BR-6/§10), or
+    ///   - no shift resolves at all (no assignment and no tenant default).
+    /// Grace falls back to the tenant <see cref="AttendanceSettings.GracePeriodMinutes"/> when the shift
+    /// carries none (BR-3). Minimum minutes come from the shift's minimum hours (BR-2; 0 = no minimum gate).
+    /// </summary>
+    private async Task<ShiftLateEarlySignals?> ResolveShiftSignalsAsync(
+        Guid employeeId, DateOnly date, AttendanceSettings settings, CancellationToken cancellationToken)
+    {
+        var resolved = await _shiftService.ResolveForEmployeeAsync(employeeId, date, cancellationToken);
+        if (resolved.IsFailure || resolved.Value is null)
+            return null;
+
+        var shift = resolved.Value;
+
+        // BR-6 / §10: FLEXIBLE shifts (no fixed start/end) are exempt from late/early tracking.
+        if (string.Equals(shift.Type, ShiftType.Flexible, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var start = ParseTime(shift.StartTime);
+        var end = ParseTime(shift.EndTime);
+        if (start is null && end is null)
+            return null;   // nothing to evaluate against.
+
+        // BR-3: shift grace, else tenant default, else 0.
+        var grace = shift.GracePeriodMinutes > 0 ? shift.GracePeriodMinutes : settings.GracePeriodMinutes;
+        var minimumMinutes = shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0;
+
+        return new ShiftLateEarlySignals(start, end, Math.Max(0, grace), minimumMinutes);
+    }
+
+    private readonly record struct ShiftLateEarlySignals(
+        TimeOnly? Start, TimeOnly? End, int Grace, int MinimumMinutes);
+
+    private static TimeOnly? ParseTime(string? hhmm)
+        => TimeOnly.TryParse(hhmm, out var t) ? t : null;
+
     private async Task TryRecordIdempotencyAsync(
         string key, AttendanceLogDto dto, CancellationToken cancellationToken)
     {
@@ -459,6 +551,8 @@ public sealed class AttendanceService : IAttendanceService
         ClockInLatitude = log.ClockInLatitude,
         ClockInLongitude = log.ClockInLongitude,
         Source = log.Source,
+        IsLate = log.IsLate,                 // US-ATT-008: FE "Late" badge.
+        LateMinutes = log.LateMinutes,
         CreatedAt = log.CreatedAt,
     };
 
@@ -475,6 +569,8 @@ public sealed class AttendanceService : IAttendanceService
         TotalWorkMinutes = log.TotalWorkMinutes ?? 0,
         OvertimeMinutes = log.OvertimeMinutes ?? 0,
         Status = log.Status ?? "COMPLETE",
+        IsEarlyDeparture = log.IsEarlyDeparture,   // US-ATT-008: FE "Early" badge.
+        EarlyDepartureMinutes = log.EarlyDepartureMinutes,
     };
 
     /// <summary>

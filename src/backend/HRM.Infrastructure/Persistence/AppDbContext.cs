@@ -60,6 +60,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<OvertimeRecord> OvertimeRecords => Set<OvertimeRecord>();
     public DbSet<OvertimeApprovalHistory> OvertimeApprovalHistories => Set<OvertimeApprovalHistory>();
     public DbSet<AttendanceMonthlySummary> AttendanceMonthlySummaries => Set<AttendanceMonthlySummary>();
+    public DbSet<LatePolicy> LatePolicies => Set<LatePolicy>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -204,5 +205,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-ATT-007: AttendanceMonthlySummary tenant isolation + soft-delete filter
         modelBuilder.Entity<AttendanceMonthlySummary>()
             .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-008: LatePolicy tenant isolation + soft-delete filter
+        modelBuilder.Entity<LatePolicy>()
+            .HasQueryFilter(p => !p.IsDeleted && (!_tenantContext.IsResolved || p.TenantId == _tenantContext.TenantId));
     }
 }

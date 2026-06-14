@@ -49,6 +49,10 @@ import {
   IEmployeeDailyBreakdownResult,
   ISummaryGenerationStatus,
   SummaryExportFormat,
+  ILatePolicy,
+  ILateEarlyReportQuery,
+  ILateEarlyReportResult,
+  ILatenessScore,
 } from '../models/attendance.models';
 
 /**
@@ -603,6 +607,78 @@ export class AttendanceService {
       responseType: 'blob',
       observe: 'response',
     });
+  }
+
+  // --- US-ATT-008: Late arrival & early departure ------------
+
+  /**
+   * US-ATT-008 (AC-4, FR-4): read the tenant's late-arrival policy. Unwraps the
+   * ApiResponse<T> envelope to LatePolicyDto. Tenant-scoped via the tenantInterceptor.
+   *   GET /api/v1/attendance/late-policy -> ApiResponse<LatePolicyDto>
+   */
+  getLatePolicy(): Observable<ILatePolicy> {
+    return this.http
+      .get<IAttendanceApiEnvelope<ILatePolicy>>(`${this.baseUrl}/late-policy`, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-008 (AC-4, FR-4): update the tenant's late-arrival policy. The backend
+   * stamps tenant_id + audit fields server-side and returns the saved policy.
+   *   PUT /api/v1/attendance/late-policy  body LatePolicyDto -> ApiResponse<LatePolicyDto>
+   */
+  updateLatePolicy(policy: ILatePolicy): Observable<ILatePolicy> {
+    return this.http
+      .put<IAttendanceApiEnvelope<ILatePolicy>>(`${this.baseUrl}/late-policy`, policy, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-008 (AC-5, FR-6): the late/early-departure report — per-employee late and
+   * early-departure counts/minutes for the date range, scoped to the manager's team or
+   * (HR) all employees. The backend enforces the scope authorization server-side.
+   *   GET /api/v1/attendance/late-early/report?from=&to=&departmentId=&employeeId=&scope=
+   *     -> ApiResponse<LateEarlyReportResult>
+   */
+  getLateEarlyReport(
+    query: ILateEarlyReportQuery,
+  ): Observable<ILateEarlyReportResult> {
+    let params = new HttpParams().set('from', query.from).set('to', query.to);
+    if (query.departmentId) {
+      params = params.set('departmentId', query.departmentId);
+    }
+    if (query.employeeId) {
+      params = params.set('employeeId', query.employeeId);
+    }
+    if (query.scope) {
+      params = params.set('scope', query.scope);
+    }
+    return this.http
+      .get<IAttendanceApiEnvelope<ILateEarlyReportResult>>(
+        `${this.baseUrl}/late-early/report`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-008 (§8, AC-4): the employee's monthly lateness score for the self-service
+   * progress indicator. `allowedLates` mirrors the policy threshold.
+   *   GET /api/v1/attendance/late-early/my-score?month=yyyy-MM
+   *     -> ApiResponse<LatenessScoreDto>
+   */
+  getMyLatenessScore(month: string): Observable<ILatenessScore> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .get<IAttendanceApiEnvelope<ILatenessScore>>(
+        `${this.baseUrl}/late-early/my-score`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
   }
 
   // --- Error helper ------------------------------------------

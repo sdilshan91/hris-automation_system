@@ -96,5 +96,38 @@ export const ATTENDANCE_ROUTES: Routes = [
         (m) => m.MonthlySummaryComponent
       ),
   },
+  {
+    // US-ATT-008 (§8, AC-4): employee self-service monthly "lateness score" view.
+    // A self view — inherits the parent attendance guard (any authenticated employee),
+    // so NO extra child guard is needed.
+    path: 'lateness-score',
+    loadComponent: () =>
+      import('./components/lateness-score/lateness-score.component').then(
+        (m) => m.LatenessScoreComponent
+      ),
+  },
+  {
+    // US-ATT-008 (AC-5, FR-6): late arrival & early-departure report. Manager (team
+    // scope) + HR (all scope) per FR-6 — same approver child-guard technique as the
+    // regularization-approvals route; the component shows the All-scope tab only to HR.
+    // NO app.routes.ts edit needed.
+    path: 'late-early-report',
+    canActivate: [roleGuard(['Manager', 'HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/late-early-report/late-early-report.component').then(
+        (m) => m.LateEarlyReportComponent
+      ),
+  },
+  {
+    // US-ATT-008 (AC-4, FR-4): HR late-arrival policy configuration. HR-only (HR Officer /
+    // HR Manager / Tenant Admin) per §7 — same child-guard technique as the shifts route.
+    // NO app.routes.ts edit needed.
+    path: 'late-policy',
+    canActivate: [roleGuard(['HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import('./components/late-policy/late-policy.component').then(
+        (m) => m.LatePolicyComponent
+      ),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];

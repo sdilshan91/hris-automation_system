@@ -31,6 +31,13 @@ export interface IAttendanceLog {
   clockInLatitude: number | null;
   clockInLongitude: number | null;
   source: AttendanceSource;
+  /**
+   * US-ATT-008 (FR-3, AC-1): true when this clock-in was beyond shift start + grace.
+   * Drives the amber/red "Late by {n} min" badge on the daily card (§8).
+   */
+  isLate?: boolean;
+  /** US-ATT-008 (AC-1): minutes late past the shift start time; 0/absent when on time. */
+  lateMinutes?: number;
 }
 
 /**
@@ -130,6 +137,13 @@ export interface IClockOutResult {
   overtimeMinutes: number | null;
   /** Computed work-hours status (§7) driving the summary pill. */
   status: ClockOutStatus;
+  /**
+   * US-ATT-008 (FR-3, AC-3): true when this clock-out was before the shift end time
+   * (and the shift's minimum hours were not met). Drives the "Early by {n} min" badge.
+   */
+  isEarlyDeparture?: boolean;
+  /** US-ATT-008 (AC-3): minutes departed early before shift end; 0/absent when not early. */
+  earlyDepartureMinutes?: number;
 }
 
 /**
@@ -1169,4 +1183,155 @@ export function buildStaticMapUrl(latitude: number, longitude: number): string {
     'https://www.openstreetmap.org/export/embed.html' +
     `?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(marker)}`
   );
+}
+
+// ─── US-ATT-008: Late Arrival & Early Departure Tracking ─────────────────────
+
+/**
+ * US-ATT-008 (§7 `late_policy`, FR-4): the tenant-level late-arrival policy. HR edits
+ * this via the policy-config form (AC-4); the backend applies it to deductions (BR-4)
+ * and the chronic-lateness HR escalation (FR-7).
+ *
+ * Backend contract (pinned — backend agent building the SAME contract):
+ *   GET /api/v1/attendance/late-policy            -> ApiResponse<LatePolicyDto>
+ *   PUT /api/v1/attendance/late-policy  body Dto  -> ApiResponse<LatePolicyDto>
+ *
+ * Envelope is ApiResponse<T> = { success, data, message }; the service unwraps `.data`.
+ */
+export interface ILatePolicy {
+  /** Number of lates in the period that triggers the deduction (FR-4, BR-4). */
+  thresholdCount: number;
+  /** Day(s) deducted once the threshold is hit, e.g. 0.5 (BR-4). */
+  deductionDays: number;
+  /** The accumulation window the threshold/deduction applies over (§7). */
+  period: 'MONTHLY' | 'QUARTERLY';
+  /** FR-5: send the employee an in-app notification on each late arrival. */
+  notificationOnLate: boolean;
+  /** FR-7: lates/month above this escalate to HR (chronic lateness). */
+  chronicThreshold: number;
+  /** Whether the policy is currently enforced. */
+  isActive: boolean;
+}
+
+/** US-ATT-008 (FR-4): the accumulation periods the policy supports. */
+export const LATE_POLICY_PERIODS: ILatePolicy['period'][] = ['MONTHLY', 'QUARTERLY'];
+
+/** Human-readable label for a late-policy period (§8). */
+export function latePolicyPeriodLabel(period: ILatePolicy['period']): string {
+  return period === 'QUARTERLY' ? 'Quarterly' : 'Monthly';
+}
+
+/**
+ * US-ATT-008 (AC-5, FR-6): one employee row of the late/early-departure report —
+ * aggregated late and early-departure counts/minutes for the selected date range.
+ *
+ *   GET /api/v1/attendance/late-early/report?from=&to=&departmentId=&employeeId=&scope=team|all
+ *     -> ApiResponse<{ from, to, rows: LateEarlyRowDto[] }>
+ */
+export interface ILateEarlyRow {
+  employeeId: string;
+  employeeName: string;
+  /** Denormalized department name for the row (FR-6 department filter context). */
+  departmentName?: string | null;
+  /** Count of late arrivals in the range (AC-5). */
+  lateCount: number;
+  /** Total minutes late across the range (§8). */
+  totalLateMinutes: number;
+  /** Count of early departures in the range (AC-5). */
+  earlyDepartureCount: number;
+  /** Total early-departure minutes across the range (§8). */
+  totalEarlyMinutes: number;
+  /** FR-7: true when this employee crossed the chronic-lateness threshold -> amber row. */
+  isChronic: boolean;
+}
+
+/**
+ * US-ATT-008 (AC-5, FR-6): the full late/early report payload (envelope `data`).
+ *   GET /api/v1/attendance/late-early/report -> ApiResponse<LateEarlyReportResult>
+ */
+export interface ILateEarlyReportResult {
+  /** Report range start, `yyyy-MM-dd`. */
+  from: string;
+  /** Report range end, `yyyy-MM-dd`. */
+  to: string;
+  rows: ILateEarlyRow[];
+}
+
+/**
+ * US-ATT-008 (FR-6): the report scope. Managers see their team; HR can switch to all.
+ *  - 'team' : the authenticated manager's direct reports (default for managers).
+ *  - 'all'  : every employee in the tenant (HR-only, backend-enforced).
+ */
+export type LateEarlyScope = 'team' | 'all';
+
+/** US-ATT-008 (FR-6): query params for the late/early report. */
+export interface ILateEarlyReportQuery {
+  /** `yyyy-MM-dd` inclusive range start. */
+  from: string;
+  /** `yyyy-MM-dd` inclusive range end. */
+  to: string;
+  departmentId?: string;
+  employeeId?: string;
+  scope?: LateEarlyScope;
+}
+
+/**
+ * US-ATT-008 (§8, AC-4): the employee's monthly lateness score for the self-service
+ * dashboard progress indicator ("X of N allowed lates used this month"). `allowedLates`
+ * mirrors the policy `thresholdCount`.
+ *   GET /api/v1/attendance/late-early/my-score?month=yyyy-MM
+ *     -> ApiResponse<LatenessScoreDto>
+ */
+export interface ILatenessScore {
+  /** The reported month, `yyyy-MM`. */
+  yearMonth: string;
+  /** Lates accumulated so far this month. */
+  lateCount: number;
+  /** The policy threshold = lates allowed before a deduction (= policy thresholdCount). */
+  allowedLates: number;
+  /** Early departures accumulated so far this month (shown alongside, §8). */
+  earlyDepartureCount: number;
+}
+
+/**
+ * US-ATT-008 (§8): format a minutes-late/early count into a compact badge label,
+ * e.g. 20 -> "20 min", 90 -> "1h 30m". Falls back to "—" for non-positive values.
+ */
+export function formatLateBadgeMinutes(minutes: number | null | undefined): string {
+  if (minutes == null || minutes <= 0) {
+    return '—';
+  }
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  return formatWorkMinutes(minutes);
+}
+
+/**
+ * US-ATT-008 (§8): the lateness-score severity used to colour the progress bar —
+ * green while under the allowance, amber on/over it. With no allowance configured
+ * (allowedLates <= 0) any late renders amber.
+ */
+export function latenessScoreTone(score: Pick<ILatenessScore, 'lateCount' | 'allowedLates'>):
+  | 'ok'
+  | 'warn' {
+  if (score.allowedLates <= 0) {
+    return score.lateCount > 0 ? 'warn' : 'ok';
+  }
+  return score.lateCount >= score.allowedLates ? 'warn' : 'ok';
+}
+
+/**
+ * US-ATT-008 (§8): clamped 0–100 percentage of the monthly late allowance used, for the
+ * progress bar width. With no allowance (allowedLates <= 0) returns 100 when any late
+ * exists (full bar = over budget), else 0.
+ */
+export function latenessUsedPercent(
+  score: Pick<ILatenessScore, 'lateCount' | 'allowedLates'>,
+): number {
+  if (score.allowedLates <= 0) {
+    return score.lateCount > 0 ? 100 : 0;
+  }
+  const pct = Math.round((score.lateCount / score.allowedLates) * 100);
+  return Math.max(0, Math.min(100, pct));
 }

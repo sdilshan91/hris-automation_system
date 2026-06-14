@@ -53,7 +53,9 @@ public sealed class AttendanceClockOutServiceTests
         var db = CreateDbContext();
         var overtime = new OvertimeService(
             db, _tenantContext, _currentUser, Substitute.For<ILogger<OvertimeService>>());
-        return new AttendanceService(db, _tenantContext, _currentUser, overtime, _logger);
+        var shiftService = new ShiftService(
+            db, _tenantContext, _currentUser, Substitute.For<ILogger<ShiftService>>());
+        return new AttendanceService(db, _tenantContext, _currentUser, overtime, shiftService, _logger);
     }
 
     private void SeedEmployee()
@@ -299,7 +301,9 @@ public sealed class AttendanceClockOutServiceTests
         var db = TestDbContextFactory.Create(tenantContext, _dbName);
         var overtime = new OvertimeService(
             db, tenantContext, _currentUser, Substitute.For<ILogger<OvertimeService>>());
-        var svc = new AttendanceService(db, tenantContext, _currentUser, overtime, _logger);
+        var shiftService = new ShiftService(
+            db, tenantContext, _currentUser, Substitute.For<ILogger<ShiftService>>());
+        var svc = new AttendanceService(db, tenantContext, _currentUser, overtime, shiftService, _logger);
 
         var result = await svc.ClockOutAsync(Data());
 

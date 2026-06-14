@@ -54,7 +54,9 @@ public sealed class AttendanceServiceTests
     {
         var overtime = new OvertimeService(
             db, tenantContext, _currentUser, Substitute.For<ILogger<OvertimeService>>());
-        return new AttendanceService(db, tenantContext, _currentUser, overtime, _logger);
+        var shiftService = new ShiftService(
+            db, tenantContext, _currentUser, Substitute.For<ILogger<ShiftService>>());
+        return new AttendanceService(db, tenantContext, _currentUser, overtime, shiftService, _logger);
     }
 
     private void SeedEmployee(EmployeeStatus status)

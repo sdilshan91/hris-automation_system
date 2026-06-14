@@ -83,6 +83,8 @@ public sealed class OvertimeIntegrationTests
         services.AddSingleton(currentUser);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IOvertimeService, OvertimeService>();
+        // US-ATT-008: AttendanceService now also depends on IShiftService for inline late/early detection.
+        services.AddScoped<IShiftService, ShiftService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(ApproveOvertimeCommand).Assembly));

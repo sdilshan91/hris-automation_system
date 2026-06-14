@@ -25,6 +25,7 @@ import {
   ClockOutStatus,
   formatElapsed,
   formatWorkMinutes,
+  formatLateBadgeMinutes,
   buildStaticMapUrl,
 } from '../../models/attendance.models';
 
@@ -125,10 +126,22 @@ import {
             <div class="time-cell">
               <dt class="time-label">Clock in</dt>
               <dd class="time-value">{{ summaryClockIn() | date: 'shortTime' }}</dd>
+              <!-- US-ATT-008 (§8, AC-1): late badge beside the clock-in time. -->
+              @if (isLate()) {
+                <span class="late-badge mt-1.5" role="status" data-test="summary-late-badge">
+                  Late by {{ lateBadgeLabel() }}
+                </span>
+              }
             </div>
             <div class="time-cell">
               <dt class="time-label">Clock out</dt>
               <dd class="time-value">{{ summaryClockOut() | date: 'shortTime' }}</dd>
+              <!-- US-ATT-008 (§8, AC-3): early-departure badge beside the clock-out time. -->
+              @if (isEarlyDeparture()) {
+                <span class="early-badge mt-1.5" role="status" data-test="early-badge">
+                  Early by {{ earlyBadgeLabel() }}
+                </span>
+              }
             </div>
           </dl>
         </div>
@@ -141,6 +154,16 @@ import {
             <p class="mt-1 text-sm text-neutral-500">
               Clocked in at {{ clockedInAtLocal() | date: 'shortTime' }}
             </p>
+          }
+          <!-- US-ATT-008 (§8, AC-1): late badge visible without expansion, even on mobile. -->
+          @if (isLate()) {
+            <span class="late-badge" role="status" data-test="late-badge">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                class="w-3.5 h-3.5" aria-hidden="true">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-13a.75.75 0 0 0-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 0 0 0-1.5h-3.25V5Z" clip-rule="evenodd"/>
+              </svg>
+              Late by {{ lateBadgeLabel() }}
+            </span>
           }
         </div>
 
@@ -273,6 +296,16 @@ import {
     .pill-overtime { @apply bg-blue-50 text-blue-700; }
     .pill-anomaly  { @apply bg-red-50 text-red-700; }
 
+    /* US-ATT-008 §8: subtle amber/red lateness + early-departure pills. */
+    .late-badge {
+      @apply inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1
+        text-xs font-medium text-amber-700 ring-1 ring-amber-200;
+    }
+    .early-badge {
+      @apply inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1
+        text-xs font-medium text-red-700 ring-1 ring-red-200;
+    }
+
     .map-preview { @apply rounded-lg overflow-hidden border border-neutral-100; }
     .map-frame { @apply w-full h-40 border-0 block; }
     .map-caption { @apply text-xs text-neutral-400 px-3 py-2 bg-neutral-50; }
@@ -329,7 +362,29 @@ export class ClockInComponent implements OnInit, OnDestroy {
   /** US-ATT-002 AC-1: clock-out result; non-null swaps the card to the summary view. */
   readonly summary = signal<IClockOutResult | null>(null);
 
+  /**
+   * US-ATT-008 (AC-1, §8): lateness flag + minutes for the open clock-in, read from the
+   * clock-in/status response. Drives the amber "Late by {n}" badge on the daily card.
+   */
+  readonly isLate = signal(false);
+  private readonly lateMinutes = signal(0);
+
+  /**
+   * US-ATT-008 (AC-3, §8): early-departure flag + minutes for the clock-out, read from
+   * the clock-out response. Drives the red "Early by {n}" badge on the summary card.
+   */
+  readonly isEarlyDeparture = signal(false);
+  private readonly earlyDepartureMinutes = signal(0);
+
   // ─── Computed ─────────────────────────────────────────────
+
+  /** US-ATT-008 (§8): formatted lateness for the badge, e.g. "20 min" / "1h 30m". */
+  readonly lateBadgeLabel = computed(() => formatLateBadgeMinutes(this.lateMinutes()));
+
+  /** US-ATT-008 (§8): formatted early-departure for the badge. */
+  readonly earlyBadgeLabel = computed(() =>
+    formatLateBadgeMinutes(this.earlyDepartureMinutes()),
+  );
 
   /** Card heading reflects the three states: summary, clocked-in, ready (§8). */
   readonly cardTitle = computed(() => {
@@ -496,6 +551,10 @@ export class ClockInComponent implements OnInit, OnDestroy {
       `Clocked in at ${new Date(log.clockIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
       'Clock-in recorded',
     );
+    // US-ATT-008 (AC-1, §8): surface the lateness flag/minutes from the clock-in response.
+    this.isLate.set(log.isLate ?? false);
+    this.lateMinutes.set(log.lateMinutes ?? 0);
+
     this.enterClockedInState(log.clockIn);
 
     // §8: show a small map preview when coordinates were captured.
@@ -582,6 +641,9 @@ export class ClockInComponent implements OnInit, OnDestroy {
     this.isClockedIn.set(false);
     this.mapUrl.set(null);
     this.summary.set(result);
+    // US-ATT-008 (AC-3, §8): surface the early-departure flag/minutes from clock-out.
+    this.isEarlyDeparture.set(result.isEarlyDeparture ?? false);
+    this.earlyDepartureMinutes.set(result.earlyDepartureMinutes ?? 0);
     this.toastr.success(
       `${formatWorkMinutes(result.totalWorkMinutes)} recorded · ${this.labelForStatus(result.status)}.`,
       'Clock-out recorded',
@@ -603,6 +665,10 @@ export class ClockInComponent implements OnInit, OnDestroy {
       this.isClockedIn.set(false);
       this.clockedInAt.set(null);
       this.mapUrl.set(null);
+      this.isLate.set(false);
+      this.lateMinutes.set(0);
+      this.isEarlyDeparture.set(false);
+      this.earlyDepartureMinutes.set(0);
     }
   }
 

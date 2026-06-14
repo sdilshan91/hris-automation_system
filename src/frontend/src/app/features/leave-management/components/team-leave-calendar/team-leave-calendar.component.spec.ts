@@ -24,6 +24,10 @@ describe('TeamLeaveCalendarComponent (US-LV-009)', () => {
   const m = today.getMonth();
   const iso = (day: number) =>
     `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // Seed the holiday on a mid-month day that is never "today": when today and the
+  // holiday coincide the cell renders as 'today-cell' (template precedence), not
+  // 'holiday-cell', which would make the FR-7 assertion date-dependent.
+  const holidayDay = today.getDate() === 15 ? 14 : 15;
 
   const managerEntries: ITeamCalendarEntry[] = [
     {
@@ -63,7 +67,7 @@ describe('TeamLeaveCalendarComponent (US-LV-009)', () => {
     },
   ];
 
-  const holidays = [{ date: iso(15), name: 'Founders Day' }];
+  const holidays = [{ date: iso(holidayDay), name: 'Founders Day' }];
 
   function setup(
     entries: ITeamCalendarEntry[] = managerEntries,
@@ -136,7 +140,7 @@ describe('TeamLeaveCalendarComponent (US-LV-009)', () => {
     it('highlights today and renders holiday-background cells (FR-7)', () => {
       const grid = component.monthGrid();
       expect(grid.some((c) => c.isToday)).toBeTrue();
-      const holidayCell = grid.find((c) => c.date === iso(15));
+      const holidayCell = grid.find((c) => c.date === iso(holidayDay));
       expect(holidayCell?.isHoliday).toBeTrue();
       // The holiday cell carries the light-gray background in the DOM.
       const domHoliday = fixture.nativeElement.querySelector('[data-test="holiday-cell"]');

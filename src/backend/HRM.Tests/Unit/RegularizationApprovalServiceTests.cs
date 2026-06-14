@@ -53,7 +53,13 @@ public sealed class RegularizationApprovalServiceTests
     private AppDbContext Db() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private RegularizationApprovalService Service()
-        => new(Db(), _tenantContext, _currentUser, _logger);
+    {
+        var db = Db();
+        return new(db, _tenantContext, _currentUser, ShiftSvc(db), _logger);
+    }
+
+    private ShiftService ShiftSvc(AppDbContext db)
+        => new(db, _tenantContext, _currentUser, Substitute.For<ILogger<ShiftService>>());
 
     private void SeedOrg()
     {
@@ -383,8 +389,11 @@ public sealed class RegularizationApprovalServiceTests
 
         var ctx = Substitute.For<ITenantContext>();
         ctx.IsResolved.Returns(false);
+        var noCtxDb = TestDbContextFactory.Create(ctx, _dbName);
         var svc = new RegularizationApprovalService(
-            TestDbContextFactory.Create(ctx, _dbName), ctx, _currentUser, _logger);
+            noCtxDb, ctx, _currentUser,
+            new ShiftService(noCtxDb, ctx, _currentUser, Substitute.For<ILogger<ShiftService>>()),
+            _logger);
 
         var result = await svc.ApproveAsync(regId, null);
 

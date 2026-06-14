@@ -64,6 +64,27 @@ public sealed class AttendanceLogConfiguration : IEntityTypeConfiguration<Attend
             .HasMaxLength(20)
             .IsRequired();
 
+        // US-ATT-008 §7 / FR-3: late & early-departure tracking (computed inline on clock-in/out).
+        builder.Property(a => a.IsLate)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(a => a.LateMinutes)
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder.Property(a => a.LateByMinutes)
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder.Property(a => a.IsEarlyDeparture)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(a => a.EarlyDepartureMinutes)
+            .HasDefaultValue(0)
+            .IsRequired();
+
         builder.Property(a => a.IsDeleted)
             .HasDefaultValue(false)
             .IsRequired();
