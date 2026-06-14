@@ -294,4 +294,37 @@ public sealed class LeaveRequestsController : ControllerBase
 
         return Ok(ApiResponse<LeaveApprovalResultDto>.Ok(result.Value!, "Leave request rejected."));
     }
+
+    /// <summary>
+    /// POST /api/v1/leaves/{id}/cancel
+    /// Cancels the current employee's OWN leave request (US-LV-010 FR-1, AC-1..AC-4). For a pending
+    /// request the status becomes Cancelled with no balance impact (AC-1); for an approved future
+    /// request a reversal ledger entry restores the balance (AC-2). The reason is mandatory when
+    /// cancelling an approved leave (BR-5). An approved leave that has already started/passed is
+    /// blocked (AC-3). Only the requesting employee may cancel — the ownership check is enforced in
+    /// the handler regardless of the gating permission (BR-1).
+    ///
+    /// Gated by Leave.View.Own — cancellation is a self-service action over the employee's own
+    /// request, consistent with the other /leaves self endpoints (/mine, /balance-preview, my-*).
+    /// </summary>
+    [HttpPost("{id:guid}/cancel")]
+    [RequirePermission("Leave.View.Own")]
+    [ProducesResponseType(typeof(ApiResponse<LeaveCancellationResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Cancel(
+        [FromRoute] Guid id,
+        [FromBody] CancelLeaveRequestRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new CancelLeaveRequestCommand(id, request?.Reason), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<LeaveCancellationResultDto>.Ok(result.Value!, "Leave request cancelled."));
+    }
 }

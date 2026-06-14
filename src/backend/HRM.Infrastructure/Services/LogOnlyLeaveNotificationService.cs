@@ -59,4 +59,18 @@ public sealed class LogOnlyLeaveNotificationService : ILeaveNotificationService
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyLeaveCancelledAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid? managerEmployeeId,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for leave request {LeaveRequestId}: employee {EmployeeId} -> manager {ManagerEmployeeId} (reason: {Reason})",
+            "leave-cancelled", leaveRequestId, employeeId, managerEmployeeId, reason);
+
+        return Task.CompletedTask;
+    }
 }

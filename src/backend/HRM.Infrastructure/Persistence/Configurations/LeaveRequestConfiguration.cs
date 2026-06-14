@@ -55,6 +55,12 @@ public sealed class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRe
         builder.Property(lr => lr.RequestedAt)
             .IsRequired();
 
+        // US-LV-010 §7: cancellation audit fields (nullable; set only when the employee cancels).
+        builder.Property(lr => lr.CancelledAt);
+
+        builder.Property(lr => lr.CancellationReason)
+            .HasColumnType("text");
+
         // PostgreSQL text[] for attachment URLs (§7).
         builder.Property(lr => lr.AttachmentUrls)
             .HasColumnType("text[]");

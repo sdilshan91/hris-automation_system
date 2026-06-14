@@ -42,4 +42,17 @@ public interface ILeaveNotificationService
         Guid approverEmployeeId,
         string reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the employee's reporting manager (and next-level approver if multi-level) that the
+    /// employee cancelled their own leave request (US-LV-010 AC-1/AC-2, FR-5, "leave-cancelled").
+    /// Fired for both pending and approved cancellations. Fire-and-forget; must never throw into the
+    /// request path — the cancellation is committed even if notification queuing fails.
+    /// </summary>
+    Task NotifyLeaveCancelledAsync(
+        Guid leaveRequestId,
+        Guid employeeId,
+        Guid? managerEmployeeId,
+        string? reason,
+        CancellationToken cancellationToken = default);
 }

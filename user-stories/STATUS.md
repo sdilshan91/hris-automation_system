@@ -62,7 +62,7 @@
 - [x] US-LV-007 — Holiday calendar management *(PR #33)*
 - [x] US-LV-008 — Leave carry-forward and expiry rules *(PR #34)*
 - [x] US-LV-009 — Team leave calendar view *(PR #35)*
-- [ ] US-LV-010 — Leave cancellation by employee
+- [~] US-LV-010 — Leave cancellation by employee
 - [ ] US-LV-011 — Compulsory leave / LOP handling
 - [ ] US-LV-012 — Leave reports and analytics
 
