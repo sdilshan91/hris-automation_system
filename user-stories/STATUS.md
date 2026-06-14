@@ -90,6 +90,11 @@
 - [ ] US-REC-009 — Recruitment dashboard and analytics
 - [ ] US-REC-010 — Convert applicant to employee record
 
+## Platform / Cross-Cutting Tech Debt (2 stories)
+> Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
+- [ ] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(surfaced in US-REC-001 / PR #49)*
+- [ ] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(NFR asked for across many stories; never implemented)*
+
 ## 6. Payroll (12 stories)
 - [ ] US-PAY-001 — Configure salary structure and components
 - [ ] US-PAY-002 — Assign salary structure to employee
@@ -153,10 +158,10 @@
 ---
 
 ## Tally
-- Total stories: **102**
+- Total stories: **104** (incl. 2 Platform/tech-debt)
 - Done: **38** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **62**
+- Pending: **64** (incl. US-PLT-001, US-PLT-002)
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
@@ -172,3 +177,4 @@
 | `onboarding` | `user-stories/onboarding/` | US-ONB |
 | `notifications` | `user-stories/notifications/` | US-NTF |
 | `reports` | `user-stories/reports/` | US-RPT |
+| `platform` | `user-stories/platform/` | US-PLT |
