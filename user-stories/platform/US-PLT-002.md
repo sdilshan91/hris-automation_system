@@ -32,18 +32,19 @@ Tenant isolation today is **single-layer**: EF Core global query filters (reads)
 ## 4. Functional Requirements
 - FR-1: Enable RLS (`ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`) on every table carrying `tenant_id` (i.e. every `BaseEntity` table). Maintain a single source of truth for that table list.
 - FR-2: Create a `USING (tenant_id = current_setting('app.current_tenant', true)::uuid)` policy and a matching `WITH CHECK` policy on each.
-- FR-3: Add an Npgsql `DbConnectionInterceptor` (or transaction interceptor) that issues `SET app.current_tenant = '<id>'` from `ITenantContext` per request, correctly handling Npgsql connection pooling (reset on return, or use `SET LOCAL` within the ambient transaction).
-- FR-4: Provide a system/bypass path for migrations, `DbInitializer` seeding, the tenant-resolution lookup, and system Hangfire jobs (dedicated role with `BYPASSRLS`, or a sentinel/escape that does not apply to normal request flow).
+- FR-3 (**MANDATED MECHANISM** — test-friendly + pooling-safe): Set the tenant GUC with **`SET LOCAL app.current_tenant = '<id>'` inside an ambient per-request transaction**, NOT a session-level `SET`. Implement an ambient unit-of-work (middleware or a MediatR `TransactionBehavior`) that, for every tenant-scoped request, opens a transaction → issues `SET LOCAL` from `ITenantContext` → runs the handler → commits/rolls back. Rationale: `SET LOCAL` is transaction-scoped and auto-resets on commit/rollback, so the tenant variable **cannot leak across pooled connections** — eliminating the #1 RLS-with-pooling hazard. (Note: `SET LOCAL` is a no-op outside a transaction and does not carry between EF autocommit statements, which is exactly why the explicit per-request transaction is required.) Do NOT use session-level `SET` on pooled connections.
+- FR-4: The application SHALL connect as a **dedicated login role WITHOUT `BYPASSRLS`** (so RLS always applies, even to raw SQL). Provide a **separate privileged connection/role** (with `BYPASSRLS` or table ownership) used ONLY by migrations, `DbInitializer` seeding, the tenant-resolution lookup, and system-level Hangfire jobs — never by normal request flow. Keep this bypass surface narrow and auditable.
 - FR-5: Keep EF Core global query filters in place (defense-in-depth, not replacement).
 
 ## 5. Non-Functional Requirements
-- NFR-1: Per-request overhead limited to one `SET` statement; no measurable regression to P95 latency targets.
+- NFR-1: Per-request overhead limited to one `SET LOCAL` statement + the ambient transaction wrapper; no measurable regression to P95 latency targets (reads now run inside a transaction — verify this is acceptable under load).
 - NFR-2: Connection pooling correctness — no session-variable bleed between requests sharing a pooled connection.
 - NFR-3: Rollback path — the migration is reversible (`Down` drops policies and disables RLS).
 
 ## 6. Risks & Constraints
-- Pooling: `SET` (session) persists on a pooled connection; must reset or prefer `SET LOCAL` inside a transaction. Highest-risk area — cover with concurrency tests.
-- Background jobs / seeding run without a tenant → must use the bypass role or set context explicitly.
+- **Mechanism is decided** (FR-3): `SET LOCAL` + ambient per-request transaction + non-`BYPASSRLS` app role. This is the test-friendly AND production-suitable choice because it is leak-proof under pooling by construction. The rejected alternative — session-level `SET` on pooled connections — is a prod data-leak hazard and a source of order-dependent flaky tests; do not use it.
+- Ambient transaction cost: reads now run inside an explicit transaction. Confirm acceptable under load; ensure long-running/streaming endpoints aren't harmed.
+- Background jobs / seeding run without a tenant → must use the privileged (bypass) connection explicitly.
 - Scope decision: implement across ALL tenant-scoped tables (recommended) vs. high-sensitivity tables first (payroll, PII) — confirm before build.
 
 ## 7. Test Hints
