@@ -239,6 +239,17 @@ export const appRoutes: Routes = [
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
         ],
       },
+      // ─── Recruitment / Vacancies (US-REC-001) ──────────────
+      {
+        path: 'recruitment',
+        loadChildren: () =>
+          import('./features/recruitment/recruitment.routes').then(
+            (m) => m.RECRUITMENT_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Recruiter', 'HR Officer', 'HR Manager', 'Tenant Admin']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',

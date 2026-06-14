@@ -166,6 +166,12 @@ public static class DependencyInjection
         // Leave notification seam — log-only until the notification service exists (FR-6).
         services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();
 
+        // US-REC-001: Recruitment — vacancy lifecycle + anonymous public careers page.
+        services.AddScoped<IVacancyService, VacancyService>();
+        services.AddScoped<IPublicCareersService, PublicCareersService>();
+        // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
+        services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
+
         // File storage (US-CHR-001 FR-6)
         // Dev: local filesystem; Prod: swap to Azure Blob / S3 / MinIO implementation.
         services.AddSingleton<IFileStorage>(sp =>
