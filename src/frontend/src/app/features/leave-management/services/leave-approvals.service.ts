@@ -1,12 +1,10 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IPendingLeaveQuery,
   IPendingLeaveResponse,
-  IApiEnvelope,
   IApproveLeaveRequest,
   IRejectLeaveRequest,
   ILeaveActionResult,
@@ -50,15 +48,12 @@ export class LeaveApprovalsService {
    * All filtering/sorting/paging is round-tripped to the server (AC-2, AC-3).
    */
   getPendingQueue(query: IPendingLeaveQuery): Observable<IPendingLeaveResponse> {
-    return this.http
-      .get<IApiEnvelope<IPendingLeaveResponse>>(`${this.baseUrl}/pending`, {
-        params: this.buildParams(query),
-        withCredentials: true,
-      })
-      .pipe(
-        // Unwrap the standard ApiResponse<T> envelope; tolerate a bare body too.
-        map((res) => res?.data ?? (res as unknown as IPendingLeaveResponse))
-      );
+    // The global apiEnvelopeInterceptor (US-PLT-001) unwraps the ApiResponse<T>
+    // envelope, so the subscriber receives the bare PendingLeaveQueueResult.
+    return this.http.get<IPendingLeaveResponse>(`${this.baseUrl}/pending`, {
+      params: this.buildParams(query),
+      withCredentials: true,
+    });
   }
 
   /** Build HttpParams from the query; omits null/empty optional filters. */
@@ -97,13 +92,12 @@ export class LeaveApprovalsService {
    * balance confirmation modal (AC-3). Returns the updated request status.
    */
   approve(requestId: string, body: IApproveLeaveRequest = {}): Observable<ILeaveActionResult> {
-    return this.http
-      .post<IApiEnvelope<ILeaveActionResult>>(
-        `${this.baseUrl}/${requestId}/approve`,
-        body,
-        { withCredentials: true }
-      )
-      .pipe(map((res) => res?.data ?? (res as unknown as ILeaveActionResult)));
+    // The global apiEnvelopeInterceptor (US-PLT-001) unwraps ApiResponse<T>.
+    return this.http.post<ILeaveActionResult>(
+      `${this.baseUrl}/${requestId}/approve`,
+      body,
+      { withCredentials: true }
+    );
   }
 
   /**
@@ -111,13 +105,11 @@ export class LeaveApprovalsService {
    * component disables submit until it is non-empty, so this is the API guard.
    */
   reject(requestId: string, body: IRejectLeaveRequest): Observable<ILeaveActionResult> {
-    return this.http
-      .post<IApiEnvelope<ILeaveActionResult>>(
-        `${this.baseUrl}/${requestId}/reject`,
-        body,
-        { withCredentials: true }
-      )
-      .pipe(map((res) => res?.data ?? (res as unknown as ILeaveActionResult)));
+    return this.http.post<ILeaveActionResult>(
+      `${this.baseUrl}/${requestId}/reject`,
+      body,
+      { withCredentials: true }
+    );
   }
 
   /** Parse an approve/reject error body into the typed shape (AC-3, AC-5, BR-4). */

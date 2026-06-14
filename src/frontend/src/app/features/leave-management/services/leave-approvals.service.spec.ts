@@ -17,7 +17,6 @@ describe('LeaveApprovalsService', () => {
   let httpMock: HttpTestingController;
   const pendingUrl = `${environment.apiBaseUrl}/leaves/pending`;
   const actionResult: ILeaveActionResult = { requestId: 'lr-1', status: 'Approved' };
-  const actionEnvelope = { success: true, data: actionResult, message: null };
 
   const mockItem: IPendingLeaveRequest = {
     requestId: 'lr-1',
@@ -43,9 +42,6 @@ describe('LeaveApprovalsService', () => {
     page: 1,
     pageSize: 20,
   };
-
-  // Backend wraps the result in the standard ApiResponse<T> envelope.
-  const mockEnvelope = { success: true, data: mockResult, message: null };
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -87,7 +83,7 @@ describe('LeaveApprovalsService', () => {
     // Optional filters must NOT be present when not supplied.
     expect(req.request.params.has('leaveTypeId')).toBeFalse();
     expect(req.request.params.has('employeeId')).toBeFalse();
-    req.flush(mockEnvelope);
+    req.flush(mockResult);
   });
 
   it('should include all optional filter + sort params when supplied', () => {
@@ -112,7 +108,7 @@ describe('LeaveApprovalsService', () => {
     expect(p.get('endDate')).toBe('2026-07-31');
     expect(p.get('sortBy')).toBe('startDate');
     expect(p.get('sortAscending')).toBe('false');
-    req.flush(mockEnvelope);
+    req.flush(mockResult);
   });
 
   it('should omit null/empty optional filters from params', () => {
@@ -142,7 +138,7 @@ describe('LeaveApprovalsService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ comment: 'ok' });
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(actionEnvelope);
+      req.flush(actionResult);
       expect(result?.status).toBe('Approved');
     });
 
@@ -150,12 +146,12 @@ describe('LeaveApprovalsService', () => {
       service.approve('lr-1').subscribe();
       const empty = httpMock.expectOne(`${environment.apiBaseUrl}/leaves/lr-1/approve`);
       expect(empty.request.body).toEqual({});
-      empty.flush(actionEnvelope);
+      empty.flush(actionResult);
 
       service.approve('lr-1', { confirmNegativeBalance: true }).subscribe();
       const neg = httpMock.expectOne(`${environment.apiBaseUrl}/leaves/lr-1/approve`);
       expect(neg.request.body).toEqual({ confirmNegativeBalance: true });
-      neg.flush(actionEnvelope);
+      neg.flush(actionResult);
     });
   });
 
@@ -168,7 +164,7 @@ describe('LeaveApprovalsService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ reason: 'No cover' });
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ success: true, data: { requestId: 'lr-1', status: 'Rejected' }, message: null });
+      req.flush({ requestId: 'lr-1', status: 'Rejected' });
       expect(result?.status).toBe('Rejected');
     });
   });

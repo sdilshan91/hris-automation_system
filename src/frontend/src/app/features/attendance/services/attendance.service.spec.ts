@@ -220,7 +220,7 @@ describe('AttendanceService', () => {
       const req = httpMock.expectOne(`${baseUrl}/shifts`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ success: true, data: [mockShift], message: null });
+      req.flush([mockShift]);
 
       expect(result!.length).toBe(1);
       expect(result![0].name).toBe('Morning Shift');
@@ -242,7 +242,7 @@ describe('AttendanceService', () => {
       const req = httpMock.expectOne(`${baseUrl}/shifts`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(body);
-      req.flush({ success: true, data: { ...mockShift, name: 'Night Shift' } });
+      req.flush({ ...mockShift, name: 'Night Shift' });
       expect(result!.name).toBe('Night Shift');
     });
 
@@ -259,7 +259,7 @@ describe('AttendanceService', () => {
       const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1`);
       expect(req.request.method).toBe('PUT');
       expect(req.request.body).toEqual(body);
-      req.flush({ success: true, data: mockShift });
+      req.flush(mockShift);
     });
 
     it('deleteShift DELETEs the id path (204)', () => {
@@ -273,7 +273,7 @@ describe('AttendanceService', () => {
       service.cloneShift('shift-1').subscribe();
       const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1/clone`);
       expect(req.request.method).toBe('POST');
-      req.flush({ success: true, data: { ...mockShift, id: 'shift-2', name: 'Morning Shift (copy)' } });
+      req.flush({ ...mockShift, id: 'shift-2', name: 'Morning Shift (copy)' });
     });
 
     it('assignShift POSTs employeeIds + effectiveFrom and unwraps the result', () => {
@@ -285,7 +285,7 @@ describe('AttendanceService', () => {
       const req = httpMock.expectOne(`${baseUrl}/shifts/shift-1/assign`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ employeeIds: ['e1', 'e2'], effectiveFrom: '2026-07-01' });
-      req.flush({ success: true, data: { assignedCount: 2, employeeShiftIds: ['es1', 'es2'] } });
+      req.flush({ assignedCount: 2, employeeShiftIds: ['es1', 'es2'] });
       expect(result!.assignedCount).toBe(2);
     });
 
@@ -295,7 +295,7 @@ describe('AttendanceService', () => {
         (r) => r.url === `${baseUrl}/employees/emp-9/shift` && r.params.get('date') === '2026-07-01',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: { ...mockShift, effectiveFrom: '2026-06-01', effectiveTo: null, resolvedForDate: '2026-07-01' } });
+      req.flush({ ...mockShift, effectiveFrom: '2026-06-01', effectiveTo: null, resolvedForDate: '2026-07-01' });
     });
   });
 
@@ -316,13 +316,10 @@ describe('AttendanceService', () => {
       );
       expect(req.request.method).toBe('GET');
       req.flush({
-        success: true,
-        data: {
-          yearMonth: '2026-06',
-          rows: [],
-          banner: { totalEmployees: 0, averageAttendancePercent: 0, totalLopDays: 0 },
-          generatedAt: '2026-06-01T01:00:00Z',
-        },
+        yearMonth: '2026-06',
+        rows: [],
+        banner: { totalEmployees: 0, averageAttendancePercent: 0, totalLopDays: 0 },
+        generatedAt: '2026-06-01T01:00:00Z',
       });
       expect(res!.yearMonth).toBe('2026-06');
     });
@@ -335,10 +332,7 @@ describe('AttendanceService', () => {
           r.params.get('month') === '2026-06',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({
-        success: true,
-        data: { employeeId: 'emp-7', employeeName: 'X', yearMonth: '2026-06', days: [] },
-      });
+      req.flush({ employeeId: 'emp-7', employeeName: 'X', yearMonth: '2026-06', days: [] });
     });
 
     it('generateMonthlySummary POSTs to the generate path with the month param', () => {
@@ -350,7 +344,7 @@ describe('AttendanceService', () => {
           r.params.get('month') === '2026-06',
       );
       expect(req.request.method).toBe('POST');
-      req.flush({ success: true, data: { yearMonth: '2026-06', status: 'RUNNING', generatedAt: null } });
+      req.flush({ yearMonth: '2026-06', status: 'RUNNING', generatedAt: null });
       expect(status!.status).toBe('RUNNING');
     });
 
@@ -416,7 +410,7 @@ describe('AttendanceService', () => {
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ success: true, data: result });
+      req.flush(result);
       expect(data!.rows.length).toBe(1);
       expect(data!.rows[0].lopDays).toBe(2);
     });
@@ -427,7 +421,7 @@ describe('AttendanceService', () => {
         (r) => r.url === `${baseUrl}/payroll-data` && r.params.get('month') === '2026-05',
       );
       expect(req.request.params.has('employeeIds')).toBeFalse();
-      req.flush({ success: true, data: { period: '2026-05', rows: [] } });
+      req.flush({ period: '2026-05', rows: [] });
     });
 
     it('getPeriodLock GETs the lock for the month and unwraps the envelope (FR-3)', () => {
@@ -438,7 +432,7 @@ describe('AttendanceService', () => {
         (r) => r.url === `${baseUrl}/period-lock` && r.params.get('month') === '2026-05',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: mockLock });
+      req.flush(mockLock);
       expect(data!.isLocked).toBeTrue();
     });
 
@@ -448,7 +442,7 @@ describe('AttendanceService', () => {
       const req = httpMock.expectOne(
         (r) => r.url === `${baseUrl}/period-lock` && r.params.get('month') === '2026-05',
       );
-      req.flush({ success: true, data: null });
+      req.flush(null);
       expect(data).toBeNull();
     });
 
@@ -463,7 +457,7 @@ describe('AttendanceService', () => {
         periodEnd: '2026-05-31',
       });
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ success: true, data: mockLock });
+      req.flush(mockLock);
       expect(data!.id).toBe('lock-1');
     });
 
@@ -473,7 +467,7 @@ describe('AttendanceService', () => {
 
       const req = httpMock.expectOne(`${baseUrl}/period-lock/lock-1/unlock`);
       expect(req.request.method).toBe('POST');
-      req.flush({ success: true, data: { ...mockLock, isLocked: false } });
+      req.flush({ ...mockLock, isLocked: false });
       expect(data!.isLocked).toBeFalse();
     });
 
@@ -498,7 +492,7 @@ describe('AttendanceService', () => {
         (r) => r.url === `${baseUrl}/reconciliation` && r.params.get('month') === '2026-05',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: result });
+      req.flush(result);
       expect(data!.rows[0].employeeName).toBe('Ada Lovelace');
     });
   });
@@ -524,7 +518,7 @@ describe('AttendanceService', () => {
           r.params.get('scope') === 'team',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: kpi });
+      req.flush(kpi);
       expect(data!.clockedIn).toBe(40);
     });
 
@@ -549,7 +543,7 @@ describe('AttendanceService', () => {
           r.params.get('scope') === 'all',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: result });
+      req.flush(result);
       expect(data!.rows[0].status).toBe('CLOCKED_IN');
     });
 
@@ -569,7 +563,7 @@ describe('AttendanceService', () => {
           r.params.get('month') === '2026-06',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: result });
+      req.flush(result);
       expect(data!.rows[0].attendanceRatePct).toBe(95);
     });
 
@@ -602,7 +596,7 @@ describe('AttendanceService', () => {
           r.params.get('departmentId') === 'd1',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: result });
+      req.flush(result);
       expect(data!.rows[0].presentDays).toBe(10);
     });
 
@@ -637,7 +631,7 @@ describe('AttendanceService', () => {
         (r) => r.url === `${baseUrl}/reports/trends` && r.params.get('months') === '12',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: result });
+      req.flush(result);
       expect(data!.attendanceRate[0].value).toBe(92);
     });
 
@@ -659,7 +653,7 @@ describe('AttendanceService', () => {
 
       const req = httpMock.expectOne(`${baseUrl}/reports/scheduled`);
       expect(req.request.method).toBe('GET');
-      req.flush({ success: true, data: list });
+      req.flush(list);
       expect(data!.length).toBe(1);
     });
 
@@ -679,7 +673,7 @@ describe('AttendanceService', () => {
       const req = httpMock.expectOne(`${baseUrl}/reports/scheduled`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body.reportType).toBe('daily-attendance');
-      req.flush({ success: true, data: { ...config, id: 's-new' } });
+      req.flush({ ...config, id: 's-new' });
       expect(data!.id).toBe('s-new');
     });
 

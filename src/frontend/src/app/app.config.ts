@@ -15,6 +15,7 @@ import { appRoutes } from './app.routes';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { errorInterceptor } from './core/interceptors/error.interceptor';
 import { tenantInterceptor } from './core/interceptors/tenant.interceptor';
+import { apiEnvelopeInterceptor } from './core/interceptors/api-envelope.interceptor';
 import { TenantService } from './core/tenant/tenant.service';
 
 /**
@@ -32,10 +33,22 @@ export const appConfig: ApplicationConfig = {
     // Router with lazy-loaded components and input binding
     provideRouter(appRoutes, withComponentInputBinding()),
 
-    // HTTP client with interceptors (order matters: tenant -> auth -> error)
+    // HTTP client with interceptors. Order matters.
+    // Request order is left-to-right; response order is right-to-left:
+    //   request : tenant -> auth -> apiEnvelope -> error -> backend
+    //   response: backend -> error -> apiEnvelope -> auth -> tenant
+    // apiEnvelope sits just inside error so it only ever sees SUCCESSFUL
+    // responses (error bodies, incl. `success:false`, stay on the error channel
+    // for errorInterceptor) and unwraps the `ApiResponse<T>` envelope before any
+    // downstream consumer receives the body. See apiEnvelopeInterceptor docs.
     provideHttpClient(
       withFetch(),
-      withInterceptors([tenantInterceptor, authInterceptor, errorInterceptor])
+      withInterceptors([
+        tenantInterceptor,
+        authInterceptor,
+        apiEnvelopeInterceptor,
+        errorInterceptor,
+      ])
     ),
 
     // Animations (async to reduce bundle size)
