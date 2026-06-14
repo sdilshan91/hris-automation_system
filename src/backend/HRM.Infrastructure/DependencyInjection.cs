@@ -106,8 +106,11 @@ public static class DependencyInjection
         // Leave balance dashboard read/aggregation service (US-LV-006)
         services.AddScoped<ILeaveDashboardService, LeaveDashboardService>();
 
-        // Holiday provider seam — no-op until US-LV-007 builds the holiday calendar.
-        services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
+        // Holiday calendar service (US-LV-007)
+        services.AddScoped<IHolidayService, HolidayService>();
+
+        // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
+        services.AddScoped<IHolidayProvider, HolidayProvider>();
 
         // Leave notification seam — log-only until the notification service exists (FR-6).
         services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();

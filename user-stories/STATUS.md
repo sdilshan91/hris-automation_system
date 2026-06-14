@@ -59,7 +59,7 @@
 - [x] US-LV-004 — Manager views pending leave queue *(PR #30)*
 - [x] US-LV-005 — Manager approves or rejects leave *(PR #31)*
 - [x] US-LV-006 — Leave balance dashboard *(PR #32)*
-- [ ] US-LV-007 — Holiday calendar management
+- [~] US-LV-007 — Holiday calendar management
 - [ ] US-LV-008 — Leave carry-forward and expiry rules
 - [ ] US-LV-009 — Team leave calendar view
 - [ ] US-LV-010 — Leave cancellation by employee

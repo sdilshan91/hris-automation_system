@@ -1,0 +1,9 @@
+{
+  "countryCode": "LK",
+  "holidays": [
+    { "name": "New Year's Day", "month": 1, "day": 1, "type": "Public", "isRecurring": true },
+    { "name": "Independence Day", "month": 2, "day": 4, "type": "Public", "isRecurring": true },
+    { "name": "May Day", "month": 5, "day": 1, "type": "Public", "isRecurring": true },
+    { "name": "Christmas Day", "month": 12, "day": 25, "type": "Public", "isRecurring": true }
+  ]
+}

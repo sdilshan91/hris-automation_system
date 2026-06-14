@@ -3,12 +3,10 @@ using HRM.Application.Common.Interfaces;
 namespace HRM.Infrastructure.Services;
 
 /// <summary>
-/// Default <see cref="IHolidayProvider"/> that returns no holidays (US-LV-003 seam).
+/// Default <see cref="IHolidayProvider"/> that returns no holidays.
 ///
-/// There is no holiday-calendar entity yet (US-LV-007 is unbuilt), so the working-day
-/// calculation excludes weekends only. When US-LV-007 ships, register a DB-backed provider
-/// in its place — the day-count logic already consumes whatever this returns.
-/// TODO(US-LV-007): Replace with a holiday-calendar-backed implementation.
+/// Retained for tests and as a fallback. Production registers the DB-backed
+/// <see cref="HolidayProvider"/> (US-LV-007) instead.
 /// </summary>
 public sealed class NoOpHolidayProvider : IHolidayProvider
 {
@@ -17,6 +15,7 @@ public sealed class NoOpHolidayProvider : IHolidayProvider
     public Task<IReadOnlySet<DateOnly>> GetHolidaysAsync(
         DateOnly startInclusive,
         DateOnly endInclusive,
+        Guid? locationId = null,
         CancellationToken cancellationToken = default)
         => Task.FromResult(Empty);
 }

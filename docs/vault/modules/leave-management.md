@@ -351,6 +351,12 @@ Public holidays (AC-6) and the 5- vs 6-day work week (FR-3) are **not** modelled
 backend returns the authoritative `totalDays`. The "N days" chip is a fast-feedback estimate; the
 holiday-calendar visual blocks (US-LV-007) and team calendar (US-LV-009) are deferred (field/seam only).
 
+> **Backend update (US-LV-007):** the `IHolidayProvider` seam that US-LV-003's day-count consumed
+> is **no longer a NoOp**. `LeaveRequestService` (both `CreateAsync` and `GetBalancePreviewAsync`)
+> now calls the DB-backed `HolidayProvider`, which returns active **public** holidays for the tenant
+> (scoped to the employee's `LocationId`) in the requested range. AC-6 (holidays excluded from
+> `totalDays`) is now actually enforced — see the **Holiday Calendar (US-LV-007)** section below.
+
 ### Validation split
 
 Client-side (fast feedback, mirrors ACs): required fields, start ≤ end, half-day must be single-day
@@ -690,6 +696,206 @@ upcoming. Integration tests assert both (Tenant A ≠ Tenant B; caller ≠ teamm
   controller; no change to existing actions).
 - `DependencyInjection.cs` (Infrastructure) — registered `ILeaveDashboardService`.
 
+## Frontend (US-LV-007) — Holiday Calendar Management Per Tenant
+
+New standalone `HolidayCalendarComponent` (signals + OnPush) + `HolidayService` +
+`holiday.models.ts`. Dual view (Calendar month-grid + List) with slide-over add/edit form
+and a CSV-import slide-over with client-side preview. Angular Material + Tailwind, ngx-toastr,
+no NgModules, no Bootstrap — mirrors US-LV-001..006 structure.
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+New tenant-config **`/holidays`** resource. `environment.apiBaseUrl` already includes `/api/v1`,
+so the base is `${apiBaseUrl}/holidays`.
+
+| Method | Path | Params / Body | Response |
+|--------|------|---------------|----------|
+| GET | `/api/v1/holidays` | `?year={year}` (and optional `&locationId={id}`) | `IHoliday[]` |
+| GET | `/api/v1/holidays` | `?from={date}&to={date}` (FR-6, leave-day calc) | `IHoliday[]` |
+| POST | `/api/v1/holidays` | `ICreateHolidayRequest` | `IHoliday` |
+| PUT | `/api/v1/holidays/{id}` | `IUpdateHolidayRequest` | `IHoliday` |
+| POST | `/api/v1/holidays/{id}/deactivate` | — | `IHoliday` (isActive:false) |
+| POST | `/api/v1/holidays/{id}/reactivate` | — | `IHoliday` (isActive:true) |
+| POST | `/api/v1/holidays/import` | multipart `file` (CSV) | `IHolidayImportResult` |
+
+- **`IHoliday` shape:** `{ id, name, date('YYYY-MM-DD' date-only), type('public'|'restricted'|
+  'optional'), locationId?, locationName?(denormalized for the List view), description?,
+  isRecurring, isActive }`. The denormalized `locationName` lets the List view show the location
+  without a second lookup; if the backend can't denormalize, the FE must join client-side.
+- **`date` is date-only** (`YYYY-MM-DD`, no time / no timezone). The FE never `new Date()`-parses
+  it for display — it slices the string — to avoid TZ off-by-one. Backend must serialize the
+  holiday date as a plain ISO date string, NOT a full timestamp.
+- **`IHolidayImportResult`** = `{ total, imported, skipped, errors:[{row,message}] }`. The FE shows
+  "Imported X of Y. Z skipped." Duplicates are expected to be **skipped server-side** (BR-1), which
+  the FE surfaces via `skipped`.
+- **Error contract** `IHolidayErrorResponse { message, code? }`, code ∈ `{ 'duplicate_date' (BR-1),
+  'payroll_locked' (BR-4) }`. FE shows `message` verbatim via toast; **payroll-lock is only surfaced,
+  not modelled** (deferred per story).
+
+### Calendar UI — custom CSS-grid month view (no new dependency, §10)
+
+`package.json` has **no** calendar/charting lib. Per §10 (only free/OSS calendar components, no
+heavy dependency) the month grid is a hand-rolled **42-cell CSS grid** (`buildMonthGrid` pure fn,
+Sunday-first, 6 rows). Holiday markers are color-coded dots/chips: **public=blue (#2563eb),
+restricted=orange (#ea580c), optional=green (#16a34a)** per §8. No `@angular/material` datepicker or
+3rd-party calendar was added.
+
+### Type colors
+
+`ea580c` (orange-600) is used for "restricted" rather than amber, to keep clear separation from the
+green "optional". Centralised in `HOLIDAY_TYPE_OPTIONS` + `getHolidayTypeColor/Badge/Label` pure
+helpers (unit-tested) so calendar markers, list badges, and the legend stay consistent.
+
+### Location filter semantics
+
+Filtering by a location shows that location's holidays **plus** tenant-wide holidays
+(`locationId === null`), since a null-location holiday applies to everyone (BR-2). Selecting a
+location the FE has no rows for still shows tenant-wide holidays. The filter is **client-side** over
+the already-loaded year (the service also supports a server-side `locationId` param if preferred).
+
+### Active-only calendar markers
+
+The calendar grid + mobile list-by-month show **active** holidays only (`activeFilteredHolidays`),
+while the **List view shows all** (active + deactivated, dimmed) so admins can reactivate. Deactivate/
+reactivate is an inline toggle (matching the leave-type list), not a confirm dialog.
+
+### CSV import — client-side preview before confirm (AC-3)
+
+Reuses the US-CHR-010 drag-drop + preview-table UX, but adds **client-side parse + validation**
+(`parseHolidayCsv` pure fn) so the preview/duplicate-flagging happens **before** the multipart POST
+(the employee bulk-import validated server-side only). Columns: `name,date,type` (header auto-detected
++ skipped). Rows are flagged invalid (missing/!date/!type) or duplicate (`(date,type)` colliding with
+another row OR an existing loaded holiday — BR-1). Confirm is disabled unless `validCount > 0`. The
+actual create is delegated to `POST /holidays/import` (the backend remains source of truth for
+persistence + payroll-lock). The file-read is behind an overridable `readFileText()` seam (returns
+`file.text()`) so unit tests resolve deterministically instead of fighting the async `FileReader`.
+
+### Mobile (NFR-4)
+
+Desktop renders the interactive month grid; below `md:` the calendar collapses to a **compact
+list-by-month** view (`groupByMonth` pure fn → 12 buckets). The List view's table is horizontally
+scrollable on narrow screens.
+
+### Route + guard
+
+`leave-types/holidays` child added to `LEAVE_MANAGEMENT_ROUTES`. It inherits the existing
+`roleGuard(['Tenant Admin','HR Officer'])` from the `leave-types` parent in `app.routes.ts` — so
+**no `app.routes.ts` edit and no nav-menu edit** were needed (matches the leave-config screens'
+guard exactly).
+
+### DEFERRED (seam + TODO only, per story)
+
+- **Recurring auto-generation (FR-3/BR-5)** — backend Hangfire job; FE only sends `isRecurring`.
+- **Tenant-onboarding holiday seeding (FR-5)** — separate onboarding module.
+- **Redis caching (NFR-1)** — backend; consistent with the module-wide caching decision.
+- **Payroll-lock (BR-4)** — only the API error is surfaced via toast, not modelled FE-side.
+
+### Shared files touched (all within `features/leave-management`, flagged)
+
+1. `leave-management.routes.ts` — added the `holidays` child to `LEAVE_MANAGEMENT_ROUTES`.
+2. `index.ts` — barrel exports for `holiday.models` + `holiday.service`.
+
+Cross-feature **read-only import**: the component imports `LocationService` + `ILocation` from
+`core-hr/locations` to populate the location dropdown/filter — no edit to that feature. No
+`app.routes.ts`, nav-menu, backend, or test-case files were touched. 64 new FE tests; full suite
+1010 green.
+
 New files: `ILeaveDashboardService`, `LeaveDashboardService`, the three queries + handlers,
 `LeaveDashboardDtos.cs`, and Unit/Integration test classes. No entity/migration/permission
 changes. Existing 743 tests unaffected; 16 new tests (759 total green).
+
+## Holiday Calendar (US-LV-007) — Backend
+
+New `Holiday` entity + the calendar CRUD/CSV/recurrence service, and — the load-bearing part —
+the **real `IHolidayProvider`** that finally wires US-LV-003's holiday-exclusion seam.
+
+### Entity / migration
+
+`Holiday : BaseEntity` → table **`holiday`** (`HolidayConfiguration`). Columns: name(100), date(date),
+type(varchar 20, `HolidayType` enum {Public,Restricted,Optional} stored **as string** like other leave
+enums), location_id(uuid, nullable FK → `locations`), description(text), is_recurring, is_active,
++ BaseEntity audit/is_deleted. Migration `20260614045054_AddHolidayEntity` (CLI-generated, has the
+`[Migration]` attribute, **no erroneous `xmin` AddColumn** — Holiday carries no concurrency token).
+FK onDelete = **SetNull** (deleting a location makes its holidays tenant-wide rather than cascading).
+
+### BR-1 unique-date — two partial indexes (NULL-aware)
+
+A single unique `(tenant_id, date, location_id)` index does **not** stop two tenant-wide holidays on
+the same date, because PostgreSQL treats NULLs as distinct. BR-1 is therefore split into **two partial
+unique indexes** (mirroring how LeaveType used a partial index for soft-delete-aware uniqueness):
+1. `ix_holiday_tenant_date_location_unique` on `(tenant_id, date, location_id)` where
+   `location_id IS NOT NULL AND is_deleted = false` — location-scoped rows.
+2. `ix_holiday_tenant_date_nolocation_unique` on `(tenant_id, date)` where
+   `location_id IS NULL AND is_deleted = false` — tenant-wide rows.
+Plus the §7 range index `(tenant_id, date)`. The service also enforces BR-1 at write time
+(`DuplicateExistsAsync`) for a clean error before the DB index trips, same as LeaveType name-uniqueness.
+
+### Real IHolidayProvider (AC-2 / FR-6) — the seam swap
+
+`HolidayProvider` (Infrastructure/Services) replaces `NoOpHolidayProvider` in DI. It returns active
+**PUBLIC** holiday dates in a range for the current tenant (restricted/optional are NOT auto-excluded).
+**Location filtering (BR-2):** when a `locationId` is passed, tenant-wide (`location_id IS NULL`) **plus**
+that-location holidays are returned; when null, only tenant-wide — so a New-York-only holiday does not
+shorten a London employee's leave. `LeaveRequestService` already passed `employee.LocationId` into the
+seam, so location-aware exclusion works end-to-end. `NoOpHolidayProvider` is **retained** (used by the
+existing US-LV-003/004/005 unit/integration tests, which construct the service with their own no-op —
+the DI default swap does **not** touch them; confirmed 0 regressions).
+
+### CSV import (FR-4, AC-3, NFR-3)
+
+`POST /api/v1/holidays/import` multipart → `ImportCsvAsync`. **Reuses CsvHelper** (the same library as
+US-CHR-010 bulk employee import) with the same skip-`#`-comment-lines + tolerant header parsing.
+Columns: name, date(YYYY-MM-DD), type. Per-row validation; **duplicates (same date, both DB-existing and
+within-file) are flagged in the result** rather than silently skipped (AC-3). Cap = 100 rows (NFR-3).
+Imported rows are tenant-wide (`location_id = null`); location-scoped CSV import is out of scope.
+
+### Recurring job (FR-3, BR-5)
+
+`HolidayRecurrenceJob` (Hangfire recurring, registered `holiday-recurrence-generation`, **Cron 1 Dec**
+≈30 days before year-end — mirrors `LeaveAccrualJob` registration). Iterates Active/Trial tenants, sets
+tenant context per scope, calls `GenerateRecurringForYearAsync(tenantId, nextYear)`. **Idempotent:**
+skips a holiday when next-year's `(date, location)` entry already exists, so re-runs are safe.
+Feb-29 recurring holidays clamp to Feb-28 on non-leap target years (`AddYearSafe`).
+
+### Permission choice
+
+Story §2 allows `Leave.Configure` **or** `Tenant.Admin`. No `Leave.Configure` constant existed (only
+the broader `Leave.ConfigurePolicy` for entitlement rules). To match the per-resource pattern used by
+`LeaveType.*`, `Location.*`, `Department.*`, I added a **`Holiday.*`** permission group
+(`View/Create/Edit/Deactivate/Import`) to `PermissionCatalog`, granted to Tenant Admin / HR Manager /
+HR Officer; `Holiday.View` is also granted to Manager + Employee so the calendar/leave-apply flows read
+it. (Chose new per-resource constants over reusing the broad `Leave.ConfigurePolicy`, for consistency.)
+
+### Deferrals (seam + TODO only — NOT built)
+
+- **Redis cache (NFR-1):** query DB directly, consistent with the module-wide deferred-Redis decision.
+  `TODO(redis-holiday-cache)` in `HolidayService`.
+- **Tenant-onboarding seeding (FR-5):** `SeedHolidaysForTenantAsync(tenantId, countryCode)` is provided
+  + idempotent + reads embedded country JSON templates (`HolidayTemplates/holidays.{US,LK}.json`,
+  embedded resources in the Infrastructure csproj), but is **UNWIRED** — no onboarding wizard exists.
+  `TODO(onboarding)`, mirrors how `LeaveTypeService.SeedDefaultsForTenantAsync` was left unwired.
+- **Payroll-period lock on delete (BR-4):** soft-deactivate only; no payroll module. `TODO(payroll)`.
+- **Optional-holiday-as-leave-type accounting (BR-3):** out of scope. `TODO(optional-holiday)`.
+
+### Endpoints
+
+`GET /api/v1/holidays?from&to&year&locationId&activeOnly` (from/to range FR-6 takes precedence over
+year AC-4), `GET /{id}`, `POST`, `PUT /{id}`, `POST /{id}/deactivate`, `POST /import`.
+
+### Shared files touched (flagged)
+
+- `AppDbContext.cs` — `DbSet<Holiday>` + the Holiday global query filter.
+- `DependencyInjection.cs` (Infrastructure) — registered `IHolidayService`; **swapped the
+  `IHolidayProvider` default from `NoOpHolidayProvider` → `HolidayProvider`** (the seam wiring).
+- `PermissionCatalog.cs` — new `Holiday.*` group + role grants.
+- `Program.cs` (Api) — registered `HolidayRecurrenceJob` + the recurring-job schedule.
+- `HRM.Infrastructure.csproj` — embedded `HolidayTemplates/*.json`.
+- `IHolidayProvider.cs` / `NoOpHolidayProvider.cs` — XML-doc updates only (point at the real impl);
+  `LeaveRequestService.cs` already consumed the seam (no logic change needed).
+
+New code: `Holiday`, `HolidayType`, `HolidayConfiguration`, the migration, `IHolidayService` +
+`HolidayService` + `HolidayProvider`, Holidays feature (commands/queries/validators/DTOs/handlers),
+`HolidaysController`, `HolidayRecurrenceJob`, country templates, and Unit/Integration tests.
+**49 new tests** (CRUD, BR-1 dup, CSV valid/dup/limit, provider range+location, the **AC-2 Mon–Fri
+with-Wed-holiday = 4 days** test, recurring idempotency, validators, tenant isolation, end-to-end
+leave-excludes-holiday). Full suite **806 green, 0 regressions**.

@@ -105,6 +105,16 @@ public static class PermissionCatalog
         public const string Deactivate = "LeaveType.Deactivate";
     }
 
+    // ── Holiday Calendar (US-LV-007) ─────────────────────────────────
+    public static class Holiday
+    {
+        public const string View = "Holiday.View";
+        public const string Create = "Holiday.Create";
+        public const string Edit = "Holiday.Edit";
+        public const string Deactivate = "Holiday.Deactivate";
+        public const string Import = "Holiday.Import";
+    }
+
     // ── Attendance Module ────────────────────────────────────────────
     public static class Attendance
     {
@@ -237,6 +247,9 @@ public static class PermissionCatalog
         // Leave Type
         LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
 
+        // Holiday Calendar
+        Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
+
         // Attendance
         Attendance.ViewOwn, Attendance.ViewTeam, Attendance.ViewAll,
         Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -343,6 +356,7 @@ public static class PermissionCatalog
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
+            Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -366,6 +380,7 @@ public static class PermissionCatalog
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             CustomField.View, CustomField.Create, CustomField.Edit, CustomField.Deactivate,
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
+            Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
@@ -384,6 +399,7 @@ public static class PermissionCatalog
             Location.View, Location.Create, Location.Edit, Location.Deactivate,
             EmployeeDocument.View, EmployeeDocument.Upload, EmployeeDocument.Delete,
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
+            Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll,
             Attendance.ViewAll, Attendance.Edit,
@@ -399,6 +415,7 @@ public static class PermissionCatalog
             Location.View,
             Employee.ViewTeam,
             Leave.ViewTeam, Leave.ApproveTeam,
+            Holiday.View,
             Attendance.ViewTeam,
             Performance.ViewTeam,
             Reports.View,
@@ -409,6 +426,7 @@ public static class PermissionCatalog
             Employee.ViewOwn, Employee.EditOwn,
             EmployeeDocument.ViewOwn,
             Leave.ViewOwn, Leave.Apply,
+            Holiday.View,
             Attendance.ViewOwn, Attendance.CheckIn,
             Payroll.ViewOwn,
             Performance.ViewOwn,
