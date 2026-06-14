@@ -283,4 +283,82 @@ describe('LeaveDashboardComponent (US-LV-006)', () => {
     expect(component.isLoadingBalances()).toBeFalse();
     expect(toastrSpy.error).toHaveBeenCalled();
   });
+
+  // ─── US-LV-008: carry-forward / expiry surfacing on the balance card ─────
+
+  it('renders carry-forward (blue) and expired (gray strikethrough) as separate line items (§8)', () => {
+    setup([
+      {
+        leaveTypeId: 'lt-9',
+        leaveTypeName: 'Annual Leave',
+        color: '#2563eb',
+        entitlement: 14,
+        used: 4,
+        pending: 0,
+        balance: 12,
+        carryForward: 5,
+        expired: 3,
+      },
+    ]);
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    const cf = el.querySelector('[data-testid="carry-forward-value"]');
+    const ex = el.querySelector('[data-testid="expired-value"]');
+    expect(cf?.textContent?.trim()).toBe('+5');
+    expect(cf?.classList.contains('text-blue-600')).toBeTrue();
+    expect(ex?.textContent?.trim()).toBe('3');
+    expect(ex?.classList.contains('line-through')).toBeTrue();
+    expect(ex?.classList.contains('text-neutral-400')).toBeTrue();
+  });
+
+  it('does not render carry-forward / expired line items when both are zero', () => {
+    setup(); // default active balances have carryForward 0 / expired 0
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="carry-forward-value"]')).toBeNull();
+    expect(el.querySelector('[data-testid="expired-value"]')).toBeNull();
+  });
+
+  it('shows the amber expiring-soon indicator only when an expiry date is supplied (§8)', () => {
+    setup([
+      {
+        leaveTypeId: 'lt-10',
+        leaveTypeName: 'Annual Leave',
+        color: '#2563eb',
+        entitlement: 14,
+        used: 0,
+        pending: 0,
+        balance: 19,
+        carryForward: 5,
+        expired: 0,
+        carryForwardExpiry: '2026-03-31',
+      },
+    ]);
+    fixture.detectChanges();
+    const indicator = fixture.nativeElement.querySelector('[data-testid="expiring-soon"]');
+    expect(indicator).toBeTruthy();
+    expect(indicator.textContent).toContain('5 carry-forward day(s) expiring on');
+    expect(indicator.textContent).toContain('Mar 31, 2026');
+  });
+
+  it('omits the expiring-soon indicator when no expiry date is supplied (TODO seam)', () => {
+    setup([
+      {
+        leaveTypeId: 'lt-11',
+        leaveTypeName: 'Annual Leave',
+        color: '#2563eb',
+        entitlement: 14,
+        used: 0,
+        pending: 0,
+        balance: 19,
+        carryForward: 5,
+        expired: 0,
+        // no carryForwardExpiry
+      },
+    ]);
+    fixture.detectChanges();
+    // carry-forward line still renders, but the amber indicator does not
+    expect(fixture.nativeElement.querySelector('[data-testid="carry-forward-value"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="expiring-soon"]')).toBeNull();
+  });
 });

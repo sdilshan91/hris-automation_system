@@ -182,12 +182,32 @@ type HistoryFilter = 'All' | 'Approved' | 'Rejected' | 'Cancelled';
                 <dt class="text-neutral-500">Remaining</dt>
                 <dd class="text-right font-semibold text-neutral-900">{{ b.balance }}</dd>
               </dl>
+              <!-- US-LV-008 (§8): carry-forward + expired as separate line items.
+                   Color coding: carry-forward = blue, expired = gray strikethrough. -->
               @if (b.carryForward > 0 || b.expired > 0) {
-                <p class="text-xs text-neutral-400 mt-3">
-                  @if (b.carryForward > 0) { <span>+{{ b.carryForward }} carried forward</span> }
-                  @if (b.carryForward > 0 && b.expired > 0) { <span> · </span> }
-                  @if (b.expired > 0) { <span>{{ b.expired }} expired</span> }
-                </p>
+                <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mt-3 pt-3 border-t border-neutral-100">
+                  @if (b.carryForward > 0) {
+                    <dt class="text-neutral-500">Carry-forward</dt>
+                    <dd class="text-right font-medium text-blue-600" data-testid="carry-forward-value">
+                      +{{ b.carryForward }}
+                    </dd>
+                  }
+                  @if (b.expired > 0) {
+                    <dt class="text-neutral-500">Expired</dt>
+                    <dd class="text-right font-medium text-neutral-400 line-through" data-testid="expired-value">
+                      {{ b.expired }}
+                    </dd>
+                  }
+                </dl>
+                <!-- Expiring-soon amber indicator (§8) — only when an expiry date is supplied. -->
+                @if (b.carryForward > 0 && b.carryForwardExpiry) {
+                  <p class="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1
+                      text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
+                    data-testid="expiring-soon">
+                    <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>
+                    {{ b.carryForward }} carry-forward day(s) expiring on {{ b.carryForwardExpiry | date:'mediumDate' }}
+                  </p>
+                }
               }
             </button>
           }

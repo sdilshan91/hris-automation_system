@@ -109,6 +109,9 @@ public static class DependencyInjection
         // Holiday calendar service (US-LV-007)
         services.AddScoped<IHolidayService, HolidayService>();
 
+        // Leave carry-forward / expiry service (US-LV-008)
+        services.AddScoped<ILeaveCarryForwardService, LeaveCarryForwardService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

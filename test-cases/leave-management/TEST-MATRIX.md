@@ -1,7 +1,7 @@
 ---
 module: Leave Management
-total_user_stories: 7
-total_test_cases: 176
+total_user_stories: 8
+total_test_cases: 200
 created: 2026-06-13
 updated: 2026-06-14
 status: draft
@@ -13,14 +13,14 @@ status: draft
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 7 (US-LV-001, US-LV-002, US-LV-003, US-LV-004, US-LV-005, US-LV-006, US-LV-007) |
-| Total Test Cases | 176 |
-| Critical Priority | 78 |
-| High Priority | 84 |
-| Medium Priority | 12 |
+| Total User Stories Covered | 8 (US-LV-001, US-LV-002, US-LV-003, US-LV-004, US-LV-005, US-LV-006, US-LV-007, US-LV-008) |
+| Total Test Cases | 200 |
+| Critical Priority | 89 |
+| High Priority | 96 |
+| Medium Priority | 14 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 (TC-LV-056 holiday-exclusion now realized by US-LV-007 TC-LV-131) |
-| Deferred Test Cases | 5+ (TC-LV-021 onboarding seeding, TC-LV-ISO-004 cache -- partial, TC-LV-031 FTE, TC-LV-042 Redis cache, TC-LV-046 job-level dimension, TC-LV-ISO-008/TC-LV-ISO-012/TC-LV-ISO-016 balance cache keys -- partial; US-LV-004: TC-LV-077 history/team-calendar subsections, TC-LV-079 SignalR real-time push, TC-LV-088 multi-level approval -- conditional on downstream modules; US-LV-005: TC-LV-097 multi-level approval -- conditional on US-ADM-007, TC-LV-098 payroll-lock -- conditional on payroll module, TC-LV-107 async notification -- DEFERRED on notifications module, TC-LV-ISO-020 balance cache keys -- partial pending Redis; US-LV-006: TC-LV-121/TC-LV-125 Redis balance cache -- DEFERRED (DB-fallback verified), TC-LV-ISO-024 balance cache keys -- partial pending Redis; US-LV-007: TC-LV-140 payroll-period delete-lock -- CONDITIONAL on payroll module, TC-LV-144 onboarding seeding -- DEFERRED (wizard UNWIRED), TC-LV-147 holiday-list 200ms cached read -- DEFERRED on Redis (DB-fallback measured), TC-LV-ISO-028 holiday cache keys -- partial pending Redis) |
+| Deferred Test Cases | 5+ (TC-LV-021 onboarding seeding, TC-LV-ISO-004 cache -- partial, TC-LV-031 FTE, TC-LV-042 Redis cache, TC-LV-046 job-level dimension, TC-LV-ISO-008/TC-LV-ISO-012/TC-LV-ISO-016 balance cache keys -- partial; US-LV-004: TC-LV-077 history/team-calendar subsections, TC-LV-079 SignalR real-time push, TC-LV-088 multi-level approval -- conditional on downstream modules; US-LV-005: TC-LV-097 multi-level approval -- conditional on US-ADM-007, TC-LV-098 payroll-lock -- conditional on payroll module, TC-LV-107 async notification -- DEFERRED on notifications module, TC-LV-ISO-020 balance cache keys -- partial pending Redis; US-LV-006: TC-LV-121/TC-LV-125 Redis balance cache -- DEFERRED (DB-fallback verified), TC-LV-ISO-024 balance cache keys -- partial pending Redis; US-LV-007: TC-LV-140 payroll-period delete-lock -- CONDITIONAL on payroll module, TC-LV-144 onboarding seeding -- DEFERRED (wizard UNWIRED), TC-LV-147 holiday-list 200ms cached read -- DEFERRED on Redis (DB-fallback measured), TC-LV-ISO-028 holiday cache keys -- partial pending Redis; US-LV-008: TC-LV-151 carry-forward-expiry Redis invalidation -- DEFERRED (DB/ledger verified), TC-LV-154 encashment-on-expiry -- CONDITIONAL on leave-type config, TC-LV-167 fiscal-year boundary -- CONDITIONAL on tenant fiscal-year config (calendar-year verified), TC-LV-ISO-032 balance cache keys -- partial pending Redis) |
 | Status | All Draft |
 
 ## User Story to Test Case Matrix
@@ -41,6 +41,8 @@ status: draft
 | Cross-cutting (LV-006) | Multi-tenant isolation (mandatory) | TC-LV-ISO-021, TC-LV-ISO-022, TC-LV-ISO-023, TC-LV-ISO-024 | 4 |
 | US-LV-007 | Holiday Calendar Management Per Tenant | TC-LV-129, TC-LV-130, TC-LV-131, TC-LV-132, TC-LV-133, TC-LV-134, TC-LV-135, TC-LV-136, TC-LV-137, TC-LV-138, TC-LV-139, TC-LV-140, TC-LV-141, TC-LV-142, TC-LV-143, TC-LV-144, TC-LV-145, TC-LV-146, TC-LV-147, TC-LV-148 | 20 |
 | Cross-cutting (LV-007) | Multi-tenant isolation (mandatory) | TC-LV-ISO-025, TC-LV-ISO-026, TC-LV-ISO-027, TC-LV-ISO-028 | 4 |
+| US-LV-008 | Leave Carry-Forward and Expiry Rules | TC-LV-149, TC-LV-150, TC-LV-151, TC-LV-152, TC-LV-153, TC-LV-154, TC-LV-155, TC-LV-156, TC-LV-157, TC-LV-158, TC-LV-159, TC-LV-160, TC-LV-161, TC-LV-162, TC-LV-163, TC-LV-164, TC-LV-165, TC-LV-166, TC-LV-167, TC-LV-168 | 20 |
+| Cross-cutting (LV-008) | Multi-tenant isolation (mandatory) | TC-LV-ISO-029, TC-LV-ISO-030, TC-LV-ISO-031, TC-LV-ISO-032 | 4 |
 
 ## Test Type Distribution
 
@@ -53,6 +55,7 @@ status: draft
 | Functional (LV-005) | TC-LV-089, TC-LV-090, TC-LV-091, TC-LV-092, TC-LV-093, TC-LV-094, TC-LV-095, TC-LV-096, TC-LV-097, TC-LV-098, TC-LV-105, TC-LV-106, TC-LV-107, TC-LV-108 | 14 |
 | Functional (LV-006) | TC-LV-109, TC-LV-110, TC-LV-111, TC-LV-112, TC-LV-113, TC-LV-114, TC-LV-115, TC-LV-116, TC-LV-117, TC-LV-118, TC-LV-119, TC-LV-120, TC-LV-121, TC-LV-127 | 14 |
 | Functional (LV-007) | TC-LV-129, TC-LV-130, TC-LV-131, TC-LV-132, TC-LV-133, TC-LV-134, TC-LV-135, TC-LV-137, TC-LV-138, TC-LV-139, TC-LV-140, TC-LV-141, TC-LV-142, TC-LV-143, TC-LV-144 | 15 |
+| Functional/Integration (LV-008) | TC-LV-149, TC-LV-150, TC-LV-151, TC-LV-152, TC-LV-153, TC-LV-154, TC-LV-155, TC-LV-156, TC-LV-157, TC-LV-158, TC-LV-166, TC-LV-167, TC-LV-168 | 13 |
 | Security (LV-001) | TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | 8 |
 | Security (LV-002) | TC-LV-039, TC-LV-040, TC-LV-047, TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | 7 |
 | Security (LV-003) | TC-LV-058, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 8 |
@@ -60,6 +63,7 @@ status: draft
 | Security (LV-005) | TC-LV-099, TC-LV-100, TC-LV-101, TC-LV-102, TC-LV-ISO-017, TC-LV-ISO-018, TC-LV-ISO-019, TC-LV-ISO-020 | 8 |
 | Security (LV-006) | TC-LV-122, TC-LV-123, TC-LV-124, TC-LV-ISO-021, TC-LV-ISO-022, TC-LV-ISO-023, TC-LV-ISO-024 | 7 |
 | Security (LV-007) | TC-LV-145, TC-LV-146, TC-LV-ISO-025, TC-LV-ISO-026, TC-LV-ISO-027, TC-LV-ISO-028 | 6 |
+| Security (LV-008) | TC-LV-161, TC-LV-162, TC-LV-163, TC-LV-ISO-029, TC-LV-ISO-030, TC-LV-ISO-031, TC-LV-ISO-032 | 7 |
 | Performance (LV-001) | TC-LV-016, TC-LV-023 | 2 |
 | Performance (LV-002) | TC-LV-041, TC-LV-042 | 2 |
 | Performance (LV-003) | TC-LV-064 | 1 |
@@ -67,6 +71,7 @@ status: draft
 | Performance (LV-005) | TC-LV-103 (TC-LV-107 non-blocking-notification embedded) | 1 |
 | Performance (LV-006) | TC-LV-125, TC-LV-126 | 2 |
 | Performance (LV-007) | TC-LV-136, TC-LV-147 | 2 |
+| Performance (LV-008) | TC-LV-159 | 1 |
 | Accessibility (LV-001) | TC-LV-019 | 1 |
 | Accessibility (LV-002) | TC-LV-044 | 1 |
 | Accessibility (LV-003) | TC-LV-065 | 1 |
@@ -74,6 +79,7 @@ status: draft
 | Accessibility (LV-005) | TC-LV-104 | 1 |
 | Accessibility (LV-006) | TC-LV-128 | 1 |
 | Accessibility (LV-007) | TC-LV-148 | 1 |
+| Accessibility (LV-008) | TC-LV-164 | 1 |
 | Cross-Browser (LV-001) | TC-LV-020 | 1 |
 | Cross-Browser (LV-002) | TC-LV-045 | 1 |
 | Cross-Browser (LV-003) | TC-LV-065 | 1 |
