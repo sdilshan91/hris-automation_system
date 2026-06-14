@@ -64,7 +64,7 @@
 - [x] US-LV-009 — Team leave calendar view *(PR #35)*
 - [x] US-LV-010 — Leave cancellation by employee *(PR #36)*
 - [x] US-LV-011 — Compulsory leave / LOP handling *(PR #37)*
-- [ ] US-LV-012 — Leave reports and analytics
+- [~] US-LV-012 — Leave reports and analytics
 
 ## 4. Attendance (10 stories)
 - [ ] US-ATT-001 — Employee clock-in with optional geolocation

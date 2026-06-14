@@ -1602,3 +1602,133 @@ Cross-feature READ-ONLY import: the component imports EmployeeService + IEmploye
 core-hr/employees for the multi-select picker — no edit to that feature. No app.routes.ts,
 nav-menu, backend, or test-case files were touched. 46 new FE tests. Full suite 1161 green,
 0 regressions.
+
+## Backend (US-LV-012) — export paging bug found during test backfill
+
+When backfilling the missing `LeaveReportService` tests, a real bug surfaced in the export path:
+`ExportReportAsync` generated the "full" report by passing `PageSize = int.MaxValue`, but
+`GenerateReportCoreAsync` unconditionally clamped page size to `MaxPageSize = 500`. Result: every
+export — sync CSV/XLSX *and* the sync-vs-background routing decision — was silently capped at 500
+rows. The Hangfire background path (FR-5 / AC-5, > 5,000 rows) was therefore unreachable, and any
+report over 500 rows exported truncated.
+
+Fix (minimal): `GenerateReportCoreAsync` now treats `PageSize == int.MaxValue` as an "all rows,
+unpaged" sentinel that bypasses the clamp; the normal paged API stays clamped to `[1, 500]`. The
+export path already passed that sentinel, so only the clamp needed to honor it. Covered by
+`Export_LargeDataset_RoutesToBackgroundJob` (asserts `Queued` + `RowCount > 5000`).
+
+## Frontend (US-LV-012) — Leave Reports & Analytics (HR)
+
+Two-component feature: a landing page (`LeaveReportsComponent`) and a parameterized
+detail view (`LeaveReportDetailComponent`, route param `:reportType`) + `LeaveReportsService`
++ `leave-reports.models.ts`. Signals + OnPush, standalone, Angular Material + Tailwind,
+ngx-toastr — mirrors US-LV-001..011 structure. NO new dependency.
+
+### Charting — custom SVG (NFR-4), NO chart library added
+
+`package.json` has no charting lib (checked — none of ngx-charts/Chart.js/ng2-charts).
+Per the brief's "default to custom SVG" instruction (consistent with the US-LV-006 SVG arc),
+ALL charts are hand-rolled SVG built by pure, unit-tested geometry helpers in the models file:
+- `buildBarGeometry(data,w,h)` — utilization-by-department bars (AC-2); tallest scales to full
+  height, zero-value → zero height.
+- `buildPieSlices(data,cx,cy,r)` — utilization-by-type share (AC-2); cumulative-angle arc paths,
+  special-cased 100% full circle.
+- `buildLinePoints(values,w,h,globalMax)` + `seriesMax` + `pointsToString` — absenteeism trend
+  (AC-3) and 12-month trend-by-type with YoY (AC-4); y is inverted (higher value = smaller y),
+  series share one y-scale. **No ngx-charts was installed** — bundle-budget + dependency risk
+  avoided. Muted `CHART_PALETTE` (indigo/sky/teal/amber/…) for the Notion/Linear aesthetic.
+
+### Single generic table driven by column metadata
+
+One sortable/paginated table serves every tabular report. `REPORT_COLUMNS[reportType]` is a
+per-report `IReportColumn[]` (key/label/align/sortable/kind). Rows are an open
+`Record<string, string|number|boolean|null>` (`IReportRow`) — the backend returns different
+columns per report and the FE renders from the metadata. `kind:'flag'` renders the AC-3
+threshold indicator (⚑ Flagged + rose row tint) for truthy `flagged` values. The chart reports
+(utilization/absenteeism/trend) ALSO ship a table beneath the chart, so they have columns too.
+
+### Server-side sort + pagination (FR-3) wired to the API
+
+`page`/`pageSize`/`sortBy`/`sortDir` are sent to the backend on every load; the component never
+sorts/pages client-side. Sort toggles asc↔desc on the same column and resets to page 1. Page
+size selector [10/25/50/100], default 25. `totalPages` pure helper clamps to ≥1.
+
+### Reports surfaced (FR-1) — 6 of 7
+
+REPORT_CATALOG = Balance Summary, Utilization, Absenteeism, Trend Analysis, Carry-Forward
+Summary, LOP Summary. The 7th story item **"Department Leave Calendar Coverage" is OMITTED** —
+it overlaps the US-LV-009 team-calendar and has no analytics contract here. If product wants it,
+add a catalog entry + columns + (optionally) a coverage chart.
+
+### Export (FR-4 / AC-5) — one call handles sync file + background job
+
+`LeaveReportsService.export()` requests the export endpoint with `responseType:'blob'` +
+`observe:'response'`, then sniffs `Content-Type`: a real file → triggers a browser download
+(filename from `Content-Disposition`); an `application/json` body → parsed by static
+`readJobEnvelope()` into `{status:'processing', jobId}` (AC-5 large-dataset path). On
+'processing' the detail view shows an amber "your export is being generated — you'll be
+notified" banner + info toast and **does NOT poll**. `TODO(export-polling)` in the service.
+Real blob storage + background-export polling are DEFERRED (backend concern).
+
+### "Last generated" timestamp — client-side localStorage stamp
+
+The backend report endpoints are on-demand queries (no stored report artifacts), so there is no
+server "last generated" field. The landing card shows a per-browser "Last viewed {date}" stamp
+written to `localStorage` (key `leave-report:lastViewed:{type}`) on detail-view open.
+`TODO(report-history)` — read a real field if the backend later persists generated-report metadata.
+
+### API contract assumptions (backend building in parallel — RECONCILE)
+
+`apiBaseUrl` already includes `/api/v1`; resource base `${apiBaseUrl}/leaves`.
+
+| Method | Path | Params | Response |
+|--------|------|--------|----------|
+| GET | `/leaves/reports/{reportType}` | `from,to,departmentId,jobLevel,employmentType,leaveTypeId,search,page,pageSize,sortBy,sortDir` | `IReportPage { items: IReportRow[], totalCount }` (FR-6) |
+| GET | `/leaves/analytics/{chartType}` | filter subset | `IAnalyticsResponse { data?:{label,value}[]; categories?:string[]; series?:{name,values[]}[] }` (FR-7) |
+| GET | `/leaves/reports/summary` | filter subset | `ILeaveSummaryMetrics { totalUtilizationPct, topLeaveType, absenteeismRatePct }` (AC cards) |
+| GET | `/leaves/reports/{reportType}/export` | `format=csv\|xlsx` + filters | file blob OR `{status:'processing',jobId}` for >5,000 rows (FR-4/AC-5) |
+
+- `reportType` ∈ `balance-summary | utilization | absenteeism | trend-analysis |
+  carry-forward-summary | lop-summary`. `chartType` ∈ `utilization-by-department |
+  utilization-by-type | absenteeism-trend | monthly-trend`.
+- Row property names MUST match `REPORT_COLUMNS` keys (camelCase). Absenteeism rows carry a
+  boolean `flagged` (BR-4 tenant threshold, enforced server-side). The FE renders whatever
+  columns the metadata names; missing properties render as "—".
+- Backend is the source of truth for tenant isolation (BR-1) + role scoping (BR-2: HR all,
+  manager team, employee own) — the FE only renders. The export sync/background threshold
+  (>5,000 rows, AC-5) is a backend decision; the FE reacts to the response shape.
+
+### Filter sidebar (FR-2)
+
+Collapsible (`Filters` toggle on mobile; always visible ≥lg). Date range + department
+(from `DepartmentService.getDepartments`) + job level (free text — no JobLevel entity exists,
+same omission as US-LV-002) + employment type + leave type (from `LeaveTypeService.getLeaveTypes`)
++ employee search. Filters apply on the "Apply filters" button (not on every keystroke), reset
+to page 1, and re-fetch both table + charts. Cross-feature READ-ONLY imports: `DepartmentService`/
+`IDepartment` from core-hr/departments and `LeaveTypeService`/`ILeaveType` — no edit to those.
+
+### Print (NFR-5)
+
+`window.print()` + a `@media print` block: `.no-print` hides the filter sidebar / action buttons
+/ pager / sort controls; tables + charts stay (`.print-block`); shadows flattened. Sort headers
+swap their interactive button for a plain `.print-only` label so printed headers read cleanly.
+
+### Route + guard
+
+`leave/reports` (landing) + `leave/reports/:reportType` (detail) children added to
+`LEAVE_REQUEST_ROUTES`, BOTH with a child-level `roleGuard(['HR Officer','Tenant Admin'])`
+(the Leave.Reports capability) — same narrowing technique as the LOP child. So **NO app.routes.ts
+edit and NO nav-menu edit** were needed; the `/leave` parent's permissive guard is tightened per-child.
+
+### Shared files touched (all within features/leave-management, flagged)
+
+1. `leave-management.routes.ts` — added the two guarded `reports` children to `LEAVE_REQUEST_ROUTES`.
+2. `index.ts` — barrel exports for `leave-reports.models` + `leave-reports.service`.
+
+No app.routes.ts, nav-menu, employee-profile, backend, or test-case files were touched. **64 new
+FE tests** (models pure-fn scaling/pagination/filters; service HTTP params + export blob/job
+envelope + error parsing; landing card grid + summary widgets + error state + card links; detail
+load/lookups/table render/filter-apply-resets-page/sort-toggle/pagination-guard/page-size/error/
+empty/bar+pie+line chart rendering+scaling/absenteeism flagging/no-analytics-for-non-chart/export
+csv+xlsx+large-job-processing+error/menu+sidebar toggles/route-param switch). Full suite **1225
+green, 0 regressions**.

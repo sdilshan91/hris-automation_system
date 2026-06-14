@@ -102,6 +102,16 @@ public static class PermissionCatalog
         /// Officer, whom the story explicitly authorises (HR.Officer).
         /// </summary>
         public const string ManageLop = "Leave.ManageLop";
+
+        /// <summary>
+        /// Access to leave reports and analytics (US-LV-012 BR-1, §2). Gates the report/analytics/export
+        /// endpoints; the handler then applies the BR-2 row-level role scope (HR sees all, manager sees
+        /// team, employee sees self). Granted to Tenant Admin, HR Manager, HR Officer, and Auditor —
+        /// the roles that already hold Reports.View. Chosen as a dedicated per-feature permission
+        /// (the story names "Leave.Reports") rather than reusing the cross-module Reports.View, mirroring
+        /// the per-resource pattern used by LeaveType.* / Holiday.* / Leave.ManageLop.
+        /// </summary>
+        public const string Reports = "Leave.Reports";
     }
 
     // ── Leave Type Configuration (US-LV-001) ─────────────────────────
@@ -250,7 +260,7 @@ public static class PermissionCatalog
 
         // Leave
         Leave.ViewOwn, Leave.ViewTeam, Leave.ViewAll,
-        Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop,
+        Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop, Leave.Reports,
 
         // Leave Type
         LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
@@ -366,7 +376,7 @@ public static class PermissionCatalog
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
-            Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
+            Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
@@ -390,7 +400,7 @@ public static class PermissionCatalog
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
-            Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy,
+            Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy,
             Payroll.View, Payroll.Run,
             Recruitment.View, Recruitment.Manage,
@@ -409,7 +419,7 @@ public static class PermissionCatalog
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
-            Leave.ViewAll, Leave.ApproveAll,
+            Leave.ViewAll, Leave.ApproveAll, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit,
             Recruitment.View, Recruitment.Manage,
             Reports.View,
@@ -451,7 +461,7 @@ public static class PermissionCatalog
         {
             Audit.View,
             Employee.ViewAll,
-            Leave.ViewAll,
+            Leave.ViewAll, Leave.Reports,
             Attendance.ViewAll,
             Payroll.View,
             Reports.View, Reports.Export,
