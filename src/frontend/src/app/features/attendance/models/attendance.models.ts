@@ -142,6 +142,137 @@ export interface IClockOutErrorResponse {
   code?: 'no_active_clock_in' | string;
 }
 
+// ─── US-ATT-003: Attendance Regularization (Forgot Clock-In/Out) ──────────────
+
+/**
+ * US-ATT-003 (§7): the kind of correction requested.
+ *  - MISSED_CLOCK_IN  : forgot to clock in (requires requestedClockIn).
+ *  - MISSED_CLOCK_OUT : clocked in but forgot to clock out (requires requestedClockOut).
+ *  - MISSED_BOTH      : no record at all for the day (requires both times).
+ */
+export type RegularizationType = 'MISSED_CLOCK_IN' | 'MISSED_CLOCK_OUT' | 'MISSED_BOTH';
+
+/** Lifecycle status of a regularization request (§7). Drives the status pill. */
+export type RegularizationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+/**
+ * Request payload to submit a regularization (FR-1, FR-2).
+ *
+ * Contract (designed against — backend agent building in parallel):
+ *   POST /api/v1/attendance/regularizations
+ *   body: { date, regularizationType, requestedClockIn?, requestedClockOut?, reason }
+ *
+ *  - `date` is a calendar date `yyyy-MM-dd` (the day being regularized).
+ *  - `requestedClockIn` / `requestedClockOut` are `HH:mm` wall-clock times for that
+ *    date (employee-local); the backend combines them with `date` and stores
+ *    `timestamptz` (§7). They are conditional on the type — omitted/null when the
+ *    type does not require them.
+ *  - `reason` is mandatory, min 10 chars (BR-7).
+ *
+ * The backend stamps tenant_id, employee_id, attendance_log_id, audit fields and
+ * the workflow instance server-side (FR-2, FR-3) — the FE never sends them.
+ */
+export interface ICreateRegularizationRequest {
+  /** The calendar date to regularize, `yyyy-MM-dd` (§7). */
+  date: string;
+  regularizationType: RegularizationType;
+  /** `HH:mm` local time; required for MISSED_CLOCK_IN / MISSED_BOTH (§7), else null. */
+  requestedClockIn: string | null;
+  /** `HH:mm` local time; required for MISSED_CLOCK_OUT / MISSED_BOTH (§7), else null. */
+  requestedClockOut: string | null;
+  /** Mandatory, min 10 chars (BR-7). */
+  reason: string;
+}
+
+/**
+ * A regularization record returned by the API (§7 attendance_regularization).
+ * Returned by both the create endpoint (status 'PENDING') and the list endpoint.
+ * Timestamps are UTC `timestamptz` strings (nullable); the UI formats to local.
+ */
+export interface IRegularization {
+  regularizationId: string;
+  tenantId: string;
+  employeeId: string;
+  /** Linked attendance_log when one already existed (e.g. MISSED_CLOCK_OUT); else null. */
+  attendanceLogId: string | null;
+  /** The regularized calendar date `yyyy-MM-dd`. */
+  date: string;
+  regularizationType: RegularizationType;
+  /** Requested clock-in (UTC timestamptz); null when not applicable. */
+  requestedClockIn: string | null;
+  /** Requested clock-out (UTC timestamptz); null when not applicable. */
+  requestedClockOut: string | null;
+  reason: string;
+  status: RegularizationStatus;
+  createdAt: string;
+}
+
+/**
+ * Typed error body for regularization submission (AC-3, AC-4, AC-5).
+ * `message` is shown verbatim inline; `code` is an optional machine discriminator
+ * (lookback_exceeded / duplicate_pending / payroll_locked) — the UI only displays
+ * the message, it does not branch on the code.
+ */
+export interface IRegularizationErrorResponse {
+  message: string;
+  code?: string;
+}
+
+/** Notion-style status-pill classes per regularization status (§8). */
+export const REGULARIZATION_STATUS_CLASSES: Record<RegularizationStatus, string> = {
+  PENDING: 'bg-amber-50 text-amber-700 ring-amber-200',
+  APPROVED: 'bg-green-50 text-green-700 ring-green-200',
+  REJECTED: 'bg-red-50 text-red-700 ring-red-200',
+  CANCELLED: 'bg-neutral-100 text-neutral-500 ring-neutral-200',
+};
+
+/** Human-readable label for a regularization type (§8). */
+export function regularizationTypeLabel(type: RegularizationType): string {
+  switch (type) {
+    case 'MISSED_CLOCK_IN':
+      return 'Missed clock-in';
+    case 'MISSED_CLOCK_OUT':
+      return 'Missed clock-out';
+    case 'MISSED_BOTH':
+      return 'Missed both';
+  }
+}
+
+/** Human-readable label for a regularization status (§8). */
+export function regularizationStatusLabel(status: RegularizationStatus): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Pending';
+    case 'APPROVED':
+      return 'Approved';
+    case 'REJECTED':
+      return 'Rejected';
+    case 'CANCELLED':
+      return 'Cancelled';
+  }
+}
+
+/** Whether the type requires a clock-in time (FR-1, §7). */
+export function typeRequiresClockIn(type: RegularizationType): boolean {
+  return type === 'MISSED_CLOCK_IN' || type === 'MISSED_BOTH';
+}
+
+/** Whether the type requires a clock-out time (FR-1, §7). */
+export function typeRequiresClockOut(type: RegularizationType): boolean {
+  return type === 'MISSED_CLOCK_OUT' || type === 'MISSED_BOTH';
+}
+
+/**
+ * Today's date as a `yyyy-MM-dd` string in the browser's local timezone (BR-4).
+ * Used as the max for the date picker and to default/pre-populate the form.
+ */
+export function todayLocalIso(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = (now.getMonth() + 1).toString().padStart(2, '0');
+  const d = now.getDate().toString().padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /**
  * Pure helper: format a whole-minute duration as "Hh Mm" (e.g. 465 -> "7h 45m") (§8, AC-1).
  * Sub-hour durations render as "Mm" (e.g. 45 -> "45m"); zero -> "0m". Clamps negatives.

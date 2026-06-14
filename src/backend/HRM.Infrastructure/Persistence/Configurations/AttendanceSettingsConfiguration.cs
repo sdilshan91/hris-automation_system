@@ -73,6 +73,11 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .HasDefaultValue(0)
             .IsRequired();
 
+        // US-ATT-003 regularization lookback window (FR-6/BR-2).
+        builder.Property(s => s.RegularizationLookbackDays)
+            .HasDefaultValue(7)
+            .IsRequired();
+
         builder.Property(s => s.IsDeleted)
             .HasDefaultValue(false)
             .IsRequired();

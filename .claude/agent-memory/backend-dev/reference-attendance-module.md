@@ -14,6 +14,13 @@ US-ATT-002 (clock-out) added: pure `AttendanceCalculator.Calculate(...)` in
 service path AND the `AutoClockOutJob` BR-5 recurring job); calc policy fields on `AttendanceSettings`
 (tenant-level fallback, move to shift entity at US-ATT-005); `ClockStatusDto.LastCompleted` summary.
 
+US-ATT-003 (regularization) added: `AttendanceRegularization` entity (PENDING on submit, never
+mutates the log — that's US-ATT-004), placeholder `PayrollLockPeriod` for AC-5 (Payroll module will
+own it later), `AttendanceSettings.RegularizationLookbackDays` (default 7). Permission: ADDED the
+literal `Attendance.Regularize.Self` to PermissionCatalog + Employee role seed (contrast ATT-001/002
+which reused `Attendance.CheckIn`). FR-3 workflow engine + FR-4 notifications DEFERRED (TODO
+US-ADM-007 / US-NTF). All exact AC reject messages + the API contract are in the vault note.
+
 Key scaffold facts from US-ATT-001:
 - Entities `AttendanceLog` + `AttendanceSettings` (both `BaseEntity`), one settings row per tenant
   created lazily with enforcement off.

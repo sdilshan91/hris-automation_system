@@ -20,5 +20,13 @@ export const ATTENDANCE_ROUTES: Routes = [
         (m) => m.ClockInComponent
       ),
   },
+  {
+    // US-ATT-003: attendance regularization (forgot clock-in/out) — list + drawer form.
+    path: 'regularization',
+    loadComponent: () =>
+      import('./components/regularization/regularization.component').then(
+        (m) => m.RegularizationComponent
+      ),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];

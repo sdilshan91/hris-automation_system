@@ -92,4 +92,13 @@ public sealed class AttendanceSettings : BaseEntity
     /// excess is classified as overtime (US-ATT-002 BR-3). Default 0 (any excess is overtime).
     /// </summary>
     public int OvertimeThresholdMinutes { get; set; }
+
+    // ── Regularization policy (US-ATT-003) ─────────────────────────────
+
+    /// <summary>
+    /// Tenant-configurable lookback window (in calendar days) within which an attendance
+    /// regularization request may be submitted (US-ATT-003 FR-6/BR-2/AC-3). Default 7. A request for
+    /// a date older than this is rejected.
+    /// </summary>
+    public int RegularizationLookbackDays { get; set; } = 7;
 }

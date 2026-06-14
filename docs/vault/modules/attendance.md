@@ -97,9 +97,81 @@ documented for leave-management integration tests.)
   Failures: 400 (tenant unresolved / geo required-but-missing), 403 (no employee linked),
   404 `no_active_clock_in`.
 
+## US-ATT-003 — Attendance regularization request (forgot clock-in/out)
+- **New entity `AttendanceRegularization` (`BaseEntity`).** Employee submits a request to correct a
+  missed punch for a past day. Created with `Status=PENDING`; the manager approve/reject and the
+  actual `attendance_log` mutation are **US-ATT-004** — submission does NOT touch the log (BR-5).
+  Fields per story §7: employee_id, nullable attendance_log_id, date (`DateOnly`/`date`),
+  regularization_type, requested_clock_in/out (`timestamptz`, UTC), reason (`text`), status,
+  workflow_instance_id (nullable, left null). Type/status constants live in
+  `HRM.Domain/Entities/RegularizationType.cs` (`MISSED_CLOCK_IN`/`MISSED_CLOCK_OUT`/`MISSED_BOTH`;
+  `PENDING`/`APPROVED`/`REJECTED`/`CANCELLED`).
+- **AC-2/BR-5 log linking.** On submit, if an `attendance_log` exists for the date (matched on the
+  UTC calendar day of `clock_in`), its id is stored in `attendance_log_id`. The log is **not**
+  mutated — proven by a test asserting `clock_out`/`status` stay null after submit.
+- **Lookback (AC-3/FR-6/BR-2)** is tenant-configurable: new `AttendanceSettings.RegularizationLookbackDays`
+  (default 7). Earliest allowed date = `today - (N-1)` (today inclusive → exactly N eligible days).
+  Reject message is the **exact** story string `"Regularization requests can only be submitted for
+  the last {N} days."` (code `lookback_exceeded`, 400). "Today" is **UTC** (same deferral as the
+  rest of the module — no tenant-timezone infra yet).
+- **Duplicate-pending (AC-4/BR-3):** one PENDING request per employee per date. Service `AnyAsync`
+  check + PG partial unique index `ix_attendance_regularization_pending_unique` on
+  `(tenant_id, employee_id, date) WHERE status = 'PENDING' AND is_deleted = false`. Exact message
+  `"A pending regularization request already exists for this date."` (code `duplicate_pending`, 409).
+- **Future date (BR-4):** rejected 400 (code `future_date`). **Reason (BR-7):** >= 10 chars after
+  trim — validator. **FR-5 time consistency** (clock-in < clock-out, both on the regularized UTC
+  day, conditional presence by type) — validator (throws `ValidationException` → 400).
+- **Permission decision: ADDED `Attendance.Regularize.Self` to `PermissionCatalog`** (constant
+  `Attendance.RegularizeSelf`), the flat `AllPermissions` list, and the **Employee** built-in role
+  seed. Unlike ATT-001/002 (which reused the pre-seeded `Attendance.CheckIn` because the story's
+  invented name wasn't in the catalog), here I added the literal name the story specifies — it is the
+  self-service regularize perm and belongs to the catalog. `DbInitializer` reconciles role
+  permissions on startup so the Employee role picks it up; `TenantOwner` gets it via `AllPermissions`.
+  Endpoints `POST`/`GET /api/v1/attendance/regularizations` are gated by it.
+- **Deferred / placeholder dependencies (do NOT block; flagged for owning stories):**
+  - **Approval Workflow Engine (FR-3/AC-1, US-ADM-007):** none exists. `workflow_instance_id` is a
+    nullable column, left null; `TODO(US-ADM-007)` in the entity + service. Wires up when the engine
+    lands. The "PENDING on submit" record IS the AC-1 deliverable for now.
+  - **Notifications (FR-4, US-NTF):** no infra — DEFERRED, not stubbed. `TODO(US-NTF)` in the service
+    where the approver notification would fire. FR-4 is **not** in the AC table, so no AC is failed.
+  - **Payroll lock (AC-5/FR-7/BR-6, US-PAY):** no Payroll module. Added a minimal **placeholder**
+    `PayrollLockPeriod` entity (`tenant_id, start_date, end_date`, inclusive `Covers(date)`). The
+    regularization check rejects with the exact story message `"This date falls within a locked
+    payroll period. Please contact HR."` (code `payroll_period_locked`, 409). When Payroll lands it
+    OWNS this concept (close/lock lifecycle); this entity is the seam. Tests seed a locked period.
+  - **RLS (NFR-2) / Redis:** not used — EF global query filters + `TenantInterceptor` (same as the
+    rest of the module). NFR-1 (P95) and NFR-4 (mobile) are FE/runtime concerns, untouched here.
+- **Migration:** `20260614154902_Attendance_Regularization` (`dotnet ef`, has `[Migration]`). Adds
+  `attendance_regularization` + `payroll_lock_period` tables and the `regularization_lookback_days`
+  column. EF folded the non-unique `(tenant,emp,date)` lookup index into the partial unique one
+  (same columns) — the query still hits an index.
+
+## API contract — regularization (for FE reconciliation)
+- `POST /api/v1/attendance/regularizations`, perm `Attendance.Regularize.Self`. Body:
+  `{ date: "yyyy-MM-dd", regularizationType: "MISSED_CLOCK_IN"|"MISSED_CLOCK_OUT"|"MISSED_BOTH",
+  requestedClockIn?: "HH:mm", requestedClockOut?: "HH:mm", reason: string(>=10) }`. **Contract
+  reconciliation (2026-06-14):** the corrected times are nullable **wall-clock "HH:mm" (24h)**
+  strings paired with the separate `date`, NOT ISO-UTC instants (the original ISO contract did not
+  match what the FE sends). The **backend** combines `date + HH:mm` into the stored UTC
+  `timestamptz`. **TODO(tenant-timezone):** the wall-clock is treated as UTC for now — no
+  tenant-timezone infra (same deferral as ATT-001/002). Validator checks: HH:mm format, conditional
+  presence by type, combined clock-in < clock-out, combined date+time not in the future vs now (UTC).
+  Success **201** `ApiResponse<RegularizationDto>`. Failures: 400 (`future_date` /
+  `lookback_exceeded` / validation), 403 (no employee / inactive), 409 (`duplicate_pending` /
+  `payroll_period_locked`).
+- `GET /api/v1/attendance/regularizations`, same perm. **200** `ApiResponse<RegularizationDto[]>`,
+  the acting employee's own requests, newest date first (drives the §8 history status pills).
+- `RegularizationDto` (response): `{ id, employeeId, attendanceLogId?, date, regularizationType,
+  requestedClockIn?, requestedClockOut?, reason, status, createdAt }`. The response
+  `requestedClockIn/Out` are the **stored UTC `DateTime?` (full ISO timestamps)**, NOT HH:mm — the FE
+  treats them as opaque display strings (it converts/formats for the §8 history pills). Asymmetric by
+  design: request is HH:mm, response is ISO.
+
 ## Related stories
 - `US-ATT-001` — Employee clock-in from browser with optional geolocation (this scaffold)
 - `US-ATT-002` — Employee clock-out + work-hours auto-calculation (this story)
+- `US-ATT-003` — Regularization request (forgot clock-in/out) — PENDING record + placeholders
+- `US-ATT-004` — Manager approve/reject of regularization (will mutate the linked/new log, BR-5)
 
 ## Open questions
 - Tenant timezone for "today"/day-boundary semantics (deferred; "one open record" sidesteps it for now).

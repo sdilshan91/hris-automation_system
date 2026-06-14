@@ -142,6 +142,9 @@ public static class PermissionCatalog
         public const string CheckIn = "Attendance.CheckIn";
         public const string Edit = "Attendance.Edit";
         public const string ConfigurePolicy = "Attendance.ConfigurePolicy";
+
+        /// <summary>US-ATT-003: submit a regularization request for one's own attendance.</summary>
+        public const string RegularizeSelf = "Attendance.Regularize.Self";
     }
 
     // ── Payroll Module ───────────────────────────────────────────────
@@ -270,7 +273,7 @@ public static class PermissionCatalog
 
         // Attendance
         Attendance.ViewOwn, Attendance.ViewTeam, Attendance.ViewAll,
-        Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy,
+        Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf,
 
         // Payroll
         Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
@@ -445,7 +448,7 @@ public static class PermissionCatalog
             EmployeeDocument.ViewOwn,
             Leave.ViewOwn, Leave.Apply,
             Holiday.View,
-            Attendance.ViewOwn, Attendance.CheckIn,
+            Attendance.ViewOwn, Attendance.CheckIn, Attendance.RegularizeSelf,
             Payroll.ViewOwn,
             Performance.ViewOwn,
             Notifications.ViewOwn,

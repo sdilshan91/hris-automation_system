@@ -9,6 +9,9 @@ import {
   IClockInErrorResponse,
   IClockOutRequest,
   IClockOutResult,
+  ICreateRegularizationRequest,
+  IRegularization,
+  IRegularizationErrorResponse,
 } from '../models/attendance.models';
 
 /**
@@ -63,6 +66,46 @@ export class AttendanceService {
     return this.http.post<IClockOutResult>(`${this.baseUrl}/clock-out`, request, {
       withCredentials: true,
     });
+  }
+
+  // --- US-ATT-003: Regularization ----------------------------
+
+  /**
+   * US-ATT-003 (FR-1, FR-2, AC-1/AC-2): submit an attendance regularization
+   * request. Returns the created record with status 'PENDING'. Backend rejections
+   * (AC-3 lookback, AC-4 duplicate pending, AC-5 locked payroll period) arrive as a
+   * `{ message, code }` body — the caller displays the message verbatim.
+   */
+  submitRegularization(
+    request: ICreateRegularizationRequest,
+  ): Observable<IRegularization> {
+    return this.http.post<IRegularization>(
+      `${this.baseUrl}/regularizations`,
+      request,
+      { withCredentials: true },
+    );
+  }
+
+  /**
+   * US-ATT-003 (§8): list the current employee's regularization requests with
+   * their status, most-recent first (ordering owned by the backend). Tenant-scoped
+   * via the tenantInterceptor; the employee is resolved from the JWT server-side.
+   */
+  listRegularizations(): Observable<IRegularization[]> {
+    return this.http.get<IRegularization[]>(`${this.baseUrl}/regularizations`, {
+      withCredentials: true,
+    });
+  }
+
+  /** Parse a regularization error body (AC-3/AC-4/AC-5); shape matches clock-in. */
+  static parseRegularizationError(
+    err: HttpErrorResponse,
+  ): IRegularizationErrorResponse | null {
+    const body = err.error;
+    if (body && typeof body === 'object' && 'message' in body) {
+      return body as IRegularizationErrorResponse;
+    }
+    return null;
   }
 
   // --- Error helper ------------------------------------------

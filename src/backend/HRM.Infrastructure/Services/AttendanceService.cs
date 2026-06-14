@@ -251,6 +251,145 @@ public sealed class AttendanceService : IAttendanceService
         return Result<ClockStatusDto>.Success(dto);
     }
 
+    public async Task<Result<RegularizationDto>> SubmitRegularizationAsync(
+        SubmitRegularizationRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<RegularizationDto>.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await _dbContext.Employees
+            .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
+        if (employee is null)
+            return Result<RegularizationDto>.Failure(
+                "No employee record is linked to the current user.", 403);
+
+        // Active-employee only (consistent with clock-in BR-5).
+        if (employee.Status is EmployeeStatus.Terminated or EmployeeStatus.Inactive)
+            return Result<RegularizationDto>.Failure(
+                "Regularization is not allowed for your current employment status.", 403);
+
+        var type = request.RegularizationType;
+
+        // BR-4: no future dates. "Today" is evaluated in UTC (consistent with the rest of the module;
+        // tenant-timezone day-boundary semantics are deferred — see the vault note).
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (request.Date > today)
+            return Result<RegularizationDto>.Failure(
+                "Regularization requests cannot be submitted for future dates.", 400, "future_date");
+
+        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+
+        // AC-3 / FR-6 / BR-2: lookback window. The earliest allowed date is (today - (N-1)) so that
+        // exactly N calendar days (including today) are eligible.
+        var lookbackDays = settings.RegularizationLookbackDays;
+        var earliestAllowed = today.AddDays(-(lookbackDays - 1));
+        if (request.Date < earliestAllowed)
+            return Result<RegularizationDto>.Failure(
+                $"Regularization requests can only be submitted for the last {lookbackDays} days.",
+                400, "lookback_exceeded");
+
+        // AC-5 / FR-7 / BR-6: locked payroll period (placeholder until the Payroll module owns this).
+        var lockedPeriod = await _dbContext.PayrollLockPeriods
+            .AnyAsync(p => p.StartDate <= request.Date && p.EndDate >= request.Date, cancellationToken);
+        if (lockedPeriod)
+            return Result<RegularizationDto>.Failure(
+                "This date falls within a locked payroll period. Please contact HR.",
+                409, "payroll_period_locked");
+
+        // AC-4 / BR-3: at most one PENDING request per employee per date.
+        var hasPending = await _dbContext.AttendanceRegularizations
+            .AnyAsync(r => r.EmployeeId == employee.Id
+                        && r.Date == request.Date
+                        && r.Status == RegularizationStatus.Pending,
+                      cancellationToken);
+        if (hasPending)
+            return Result<RegularizationDto>.Failure(
+                "A pending regularization request already exists for this date.",
+                409, "duplicate_pending");
+
+        // AC-2 / BR-5: link to an existing attendance_log for the date if one exists. We do NOT
+        // mutate the log here — that happens on approval (US-ATT-004). Match on the UTC calendar day
+        // of clock_in (same UTC-day basis as the future/lookback checks above).
+        var dayStart = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var dayEnd = dayStart.AddDays(1);
+        var existingLog = await _dbContext.AttendanceLogs
+            .Where(a => a.EmployeeId == employee.Id && a.ClockIn >= dayStart && a.ClockIn < dayEnd)
+            .OrderByDescending(a => a.ClockIn)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var regularization = new AttendanceRegularization
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            EmployeeId = employee.Id,
+            AttendanceLogId = existingLog?.Id,
+            Date = request.Date,
+            RegularizationType = type,
+            // Combine the regularized date + wall-clock "HH:mm" into the stored UTC timestamptz.
+            // TODO(tenant-timezone): treated as UTC for now (no tenant-tz infra; same deferral as the
+            // rest of the module). Conditional on type, mirroring the validator's required-time rules.
+            RequestedClockIn = RegularizationType.RequiresClockIn(type)
+                ? request.CombineToUtc(request.RequestedClockIn) : null,
+            RequestedClockOut = RegularizationType.RequiresClockOut(type)
+                ? request.CombineToUtc(request.RequestedClockOut) : null,
+            Reason = request.Reason.Trim(),
+            Status = RegularizationStatus.Pending,
+            WorkflowInstanceId = null,   // TODO(US-ADM-007): set when the Approval Workflow Engine lands.
+        };
+
+        _dbContext.AttendanceRegularizations.Add(regularization);
+
+        // NFR-3: single SaveChanges; the AuditInterceptor stamps created_at/created_by.
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // FR-4 (notify approver): DEFERRED — no notification infrastructure exists yet.
+        // TODO(US-NTF): emit an in-app (and optional email) notification to the line manager here.
+
+        _logger.LogInformation(
+            "Employee {EmployeeId} submitted regularization {RegId} ({Type}) for {Date} (tenant {TenantId}).",
+            employee.Id, regularization.Id, type, regularization.Date, _tenantContext.TenantId);
+
+        return Result<RegularizationDto>.Success(MapToDto(regularization));
+    }
+
+    public async Task<Result<IReadOnlyList<RegularizationDto>>> GetMyRegularizationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<RegularizationDto>>.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
+        if (employee is null)
+            return Result<IReadOnlyList<RegularizationDto>>.Failure(
+                "No employee record is linked to the current user.", 403);
+
+        var rows = await _dbContext.AttendanceRegularizations
+            .AsNoTracking()
+            .Where(r => r.EmployeeId == employee.Id)
+            .OrderByDescending(r => r.Date)
+            .ThenByDescending(r => r.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        IReadOnlyList<RegularizationDto> dtos = rows.Select(MapToDto).ToList();
+        return Result<IReadOnlyList<RegularizationDto>>.Success(dtos);
+    }
+
+    private static RegularizationDto MapToDto(AttendanceRegularization r) => new()
+    {
+        Id = r.Id,
+        EmployeeId = r.EmployeeId,
+        AttendanceLogId = r.AttendanceLogId,
+        Date = r.Date,
+        RegularizationType = r.RegularizationType,
+        RequestedClockIn = r.RequestedClockIn,
+        RequestedClockOut = r.RequestedClockOut,
+        Reason = r.Reason,
+        Status = r.Status,
+        CreatedAt = r.CreatedAt,
+    };
+
     /// <summary>
     /// Returns the tenant's attendance settings, creating a default (all enforcement off) row if none
     /// exists. The TenantInterceptor stamps TenantId on the new row; we set it explicitly for clarity.

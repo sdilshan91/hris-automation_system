@@ -50,4 +50,32 @@ public interface IAttendanceService
     /// </summary>
     Task<Result<ClockStatusDto>> GetClockStatusAsync(
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Submits an attendance regularization request for the acting employee (US-ATT-003
+    /// FR-1/FR-2/FR-5/FR-6/FR-7, AC-1..AC-5, BR-2..BR-7). Creates a PENDING
+    /// <c>attendance_regularization</c> row; it does NOT mutate any attendance_log (that happens on
+    /// approval, US-ATT-004). When a log already exists for the date it is linked via
+    /// attendance_log_id (AC-2/BR-5). The workflow instance is left null until an Approval Workflow
+    /// Engine exists (US-ADM-007); the in-app/email notification (FR-4) is deferred — no
+    /// notification infra exists yet (TODO US-NTF). Returns (failures carry a stable ErrorCode):
+    ///   400 when the tenant is unresolved, the date is in the future (BR-4), the requested times are
+    ///       inconsistent (FR-5), or the date is older than the tenant lookback window (AC-3/FR-6/BR-2,
+    ///       code "lookback_exceeded");
+    ///   403 when no employee record is linked to the user, or the employee is not active;
+    ///   409 when a PENDING regularization already exists for the date (AC-4/BR-3, code
+    ///       "duplicate_pending") or the date falls in a locked payroll period (AC-5/FR-7/BR-6, code
+    ///       "payroll_period_locked").
+    /// </summary>
+    Task<Result<RegularizationDto>> SubmitRegularizationAsync(
+        SubmitRegularizationRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the acting employee's own regularization requests, most recent first (US-ATT-003 §8 —
+    /// drives the attendance-history status pills). Tenant-scoped via the EF global query filter.
+    /// Fails with 400 when the tenant is unresolved, 403 when no employee is linked to the user.
+    /// </summary>
+    Task<Result<IReadOnlyList<RegularizationDto>>> GetMyRegularizationsAsync(
+        CancellationToken cancellationToken = default);
 }
