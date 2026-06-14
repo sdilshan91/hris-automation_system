@@ -5,6 +5,12 @@ import {
   attendancePercent,
   dailyStatusLabel,
   IEmployeeMonthlySummary,
+  buildDonutSegments,
+  attendanceRateColor,
+  buildTrendPoints,
+  trendPointsToString,
+  trendMax,
+  initialsOf,
 } from './attendance.models';
 
 describe('attendance.models pure helpers', () => {
@@ -81,6 +87,89 @@ describe('attendance.models pure helpers', () => {
       expect(dailyStatusLabel('PRESENT')).toBe('Present');
       expect(dailyStatusLabel('WEEKLY_OFF')).toBe('Weekly off');
       expect(dailyStatusLabel('HALF_DAY')).toBe('Half day');
+    });
+  });
+
+  // ─── US-ATT-010 helpers ───────────────────────────────────────
+  describe('buildDonutSegments (US-ATT-010 §8)', () => {
+    it('returns [] when the total is zero', () => {
+      expect(
+        buildDonutSegments([{ label: 'A', value: 0, color: '#000' }], 60, 60, 46),
+      ).toEqual([]);
+    });
+
+    it('emits one arc per non-zero datum with correct percentages', () => {
+      const segs = buildDonutSegments(
+        [
+          { label: 'Clocked In', value: 30, color: '#10b981' },
+          { label: 'Absent', value: 10, color: '#f43f5e' },
+          { label: 'Pending', value: 0, color: '#f59e0b' },
+        ],
+        60,
+        60,
+        46,
+      );
+      expect(segs.length).toBe(2); // zero-valued slice dropped
+      expect(segs[0].percent).toBeCloseTo(75, 5);
+      expect(segs[1].percent).toBeCloseTo(25, 5);
+      expect(segs[0].path).toContain('A 46 46');
+    });
+
+    it('renders a full ring for a single non-zero value', () => {
+      const segs = buildDonutSegments([{ label: 'All', value: 5, color: '#10b981' }], 60, 60, 46);
+      expect(segs.length).toBe(1);
+      expect(segs[0].percent).toBeCloseTo(100, 5);
+    });
+  });
+
+  describe('attendanceRateColor (US-ATT-010 AC-3)', () => {
+    it('is green above 90%', () => {
+      expect(attendanceRateColor(95)).toBe('#16a34a');
+    });
+    it('is amber between 80 and 90% inclusive', () => {
+      expect(attendanceRateColor(80)).toBe('#d97706');
+      expect(attendanceRateColor(90)).toBe('#d97706');
+    });
+    it('is red below 80%', () => {
+      expect(attendanceRateColor(79.9)).toBe('#dc2626');
+    });
+  });
+
+  describe('buildTrendPoints (US-ATT-010 AC-5)', () => {
+    it('returns [] for an empty series', () => {
+      expect(buildTrendPoints([], 300, 120, 100)).toEqual([]);
+    });
+
+    it('inverts the y-axis (higher value -> smaller y)', () => {
+      const pts = buildTrendPoints([0, 100], 300, 120, 100);
+      expect(pts[0]).toEqual({ x: 0, y: 120 }); // value 0 -> bottom
+      expect(pts[1]).toEqual({ x: 300, y: 0 }); // value max -> top
+    });
+
+    it('centres a single point', () => {
+      const pts = buildTrendPoints([50], 300, 120, 100);
+      expect(pts[0].x).toBe(150);
+    });
+  });
+
+  describe('trendPointsToString / trendMax', () => {
+    it('stringifies points for an SVG polyline', () => {
+      expect(trendPointsToString([{ x: 0, y: 10 }, { x: 5, y: 2 }])).toBe('0,10 5,2');
+    });
+    it('finds the max across trend points', () => {
+      expect(trendMax([{ period: 'a', value: 3 }, { period: 'b', value: 9 }])).toBe(9);
+    });
+  });
+
+  describe('initialsOf (US-ATT-010 §8)', () => {
+    it('takes first+last initials of a multi-word name', () => {
+      expect(initialsOf('Ada Lovelace')).toBe('AL');
+    });
+    it('takes the first two letters of a single word', () => {
+      expect(initialsOf('Plato')).toBe('PL');
+    });
+    it('handles empty input', () => {
+      expect(initialsOf('')).toBe('–');
     });
   });
 });

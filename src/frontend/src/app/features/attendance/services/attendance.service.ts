@@ -56,6 +56,15 @@ import {
   IAttendancePayrollResult,
   IPeriodLock,
   IReconciliationResult,
+  AttendanceScope,
+  IDashboardKpi,
+  ILiveBoardResult,
+  IDeptComparisonResult,
+  ICustomReportFilters,
+  ICustomReportResult,
+  CustomReportExportFormat,
+  ITrendsResult,
+  IScheduledReportConfig,
 } from '../models/attendance.models';
 
 /**
@@ -772,6 +781,192 @@ export class AttendanceService {
         { withCredentials: true, params },
       )
       .pipe(map((res) => res.data));
+  }
+
+  // --- US-ATT-010: HR Dashboard & Reports --------------------
+
+  /**
+   * US-ATT-010 (AC-1, FR-1): today's attendance KPIs for the dashboard widget cards.
+   * `scope=team` (BR-4) scopes a manager to their team; HR uses `all`. Polled every
+   * ~30s (§10 SignalR fallback). Unwraps the ApiResponse<T> envelope.
+   *   GET /attendance/dashboard?date=yyyy-MM-dd&scope=all|team -> ApiResponse<DashboardKpiDto>
+   */
+  getDashboardKpi(
+    date: string,
+    scope: AttendanceScope = 'all',
+  ): Observable<IDashboardKpi> {
+    const params = new HttpParams().set('date', date).set('scope', scope);
+    return this.http
+      .get<IAttendanceApiEnvelope<IDashboardKpi>>(`${this.baseUrl}/dashboard`, {
+        withCredentials: true,
+        params,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (AC-2, FR-2): the live attendance board — every (in-scope) employee's
+   * current status for the date. SignalR is unavailable (§10), so the component polls
+   * this ~every 30s. Unwraps to the live-board result.
+   *   GET /attendance/dashboard/live-board?date=yyyy-MM-dd&scope=all|team
+   *     -> ApiResponse<{ date, rows: LiveBoardRowDto[] }>
+   */
+  getLiveBoard(
+    date: string,
+    scope: AttendanceScope = 'all',
+  ): Observable<ILiveBoardResult> {
+    const params = new HttpParams().set('date', date).set('scope', scope);
+    return this.http
+      .get<IAttendanceApiEnvelope<ILiveBoardResult>>(
+        `${this.baseUrl}/dashboard/live-board`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (AC-3, FR-3): department attendance-rate comparison for the month.
+   *   GET /attendance/reports/department-comparison?month=yyyy-MM
+   *     -> ApiResponse<{ month, rows: DeptComparisonRowDto[] }>
+   */
+  getDepartmentComparison(month: string): Observable<IDeptComparisonResult> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .get<IAttendanceApiEnvelope<IDeptComparisonResult>>(
+        `${this.baseUrl}/reports/department-comparison`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (AC-4, FR-4): a custom date-range attendance report with optional
+   * department/location/shift/status filters.
+   *   GET /attendance/reports/custom?from&to&departmentId&locationId&shiftId&status
+   *     -> ApiResponse<{ from, to, rows: CustomReportRowDto[] }>
+   */
+  getCustomReport(filters: ICustomReportFilters): Observable<ICustomReportResult> {
+    return this.http
+      .get<IAttendanceApiEnvelope<ICustomReportResult>>(
+        `${this.baseUrl}/reports/custom`,
+        {
+          withCredentials: true,
+          params: this.customReportParams(filters),
+        },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (AC-4, FR-5): export the custom report in CSV / Excel / PDF, honouring
+   * the active filters. The backend generates the file (xlsx/pdf can't be built
+   * client-side); returns the raw blob + headers so the caller derives the filename
+   * from Content-Disposition.
+   *   GET /attendance/reports/custom/export?from&to&format=csv|xlsx|pdf&... -> blob
+   */
+  exportCustomReport(
+    filters: ICustomReportFilters,
+    format: CustomReportExportFormat,
+  ): Observable<HttpResponse<Blob>> {
+    const params = this.customReportParams(filters).set('format', format);
+    return this.http.get(`${this.baseUrl}/reports/custom/export`, {
+      withCredentials: true,
+      params,
+      responseType: 'blob',
+      observe: 'response',
+    });
+  }
+
+  /** Build the shared custom-report HttpParams (filters only). */
+  private customReportParams(filters: ICustomReportFilters): HttpParams {
+    let params = new HttpParams().set('from', filters.from).set('to', filters.to);
+    if (filters.departmentId) {
+      params = params.set('departmentId', filters.departmentId);
+    }
+    if (filters.locationId) {
+      params = params.set('locationId', filters.locationId);
+    }
+    if (filters.shiftId) {
+      params = params.set('shiftId', filters.shiftId);
+    }
+    if (filters.status) {
+      params = params.set('status', filters.status);
+    }
+    return params;
+  }
+
+  /**
+   * US-ATT-010 (AC-5, FR-6): the four 12-month trend series (attendance rate, late
+   * arrivals, overtime hours, absenteeism rate). `months` defaults to 12 (BR-5: from
+   * the monthly-summary table).
+   *   GET /attendance/reports/trends?months=12 -> ApiResponse<TrendsResult>
+   */
+  getTrends(months = 12): Observable<ITrendsResult> {
+    const params = new HttpParams().set('months', months.toString());
+    return this.http
+      .get<IAttendanceApiEnvelope<ITrendsResult>>(
+        `${this.baseUrl}/reports/trends`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (FR-8): list the tenant's scheduled-report configurations.
+   *   GET /attendance/reports/scheduled -> ApiResponse<ScheduledReportConfigDto[]>
+   */
+  getScheduledReports(): Observable<IScheduledReportConfig[]> {
+    return this.http
+      .get<IAttendanceApiEnvelope<IScheduledReportConfig[]>>(
+        `${this.baseUrl}/reports/scheduled`,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data ?? []));
+  }
+
+  /**
+   * US-ATT-010 (FR-8): create a scheduled-report configuration.
+   *   POST /attendance/reports/scheduled body ScheduledReportConfigDto
+   *     -> ApiResponse<ScheduledReportConfigDto>
+   */
+  createScheduledReport(
+    config: IScheduledReportConfig,
+  ): Observable<IScheduledReportConfig> {
+    return this.http
+      .post<IAttendanceApiEnvelope<IScheduledReportConfig>>(
+        `${this.baseUrl}/reports/scheduled`,
+        config,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (FR-8): update an existing scheduled-report configuration.
+   *   PUT /attendance/reports/scheduled/{id} body ScheduledReportConfigDto
+   *     -> ApiResponse<ScheduledReportConfigDto>
+   */
+  updateScheduledReport(
+    id: string,
+    config: IScheduledReportConfig,
+  ): Observable<IScheduledReportConfig> {
+    return this.http
+      .put<IAttendanceApiEnvelope<IScheduledReportConfig>>(
+        `${this.baseUrl}/reports/scheduled/${id}`,
+        config,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-010 (FR-8): delete a scheduled-report configuration. Returns 204.
+   *   DELETE /attendance/reports/scheduled/{id} -> 204
+   */
+  deleteScheduledReport(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/reports/scheduled/${id}`, {
+      withCredentials: true,
+    });
   }
 
   // --- Error helper ------------------------------------------

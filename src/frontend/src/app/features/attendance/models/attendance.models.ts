@@ -1501,3 +1501,285 @@ export function periodDateRange(period: string): { start: string; end: string } 
       .padStart(2, '0')}`;
   return { start: iso(start), end: iso(end) };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// US-ATT-010: Attendance Dashboard & Reports for HR
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Backend endpoints (pinned contract — backend agent building the SAME):
+//   GET /attendance/dashboard?date=yyyy-MM-dd&scope=all|team
+//        -> ApiResponse<DashboardKpiDto>
+//   GET /attendance/dashboard/live-board?date=yyyy-MM-dd&scope=all|team
+//        -> ApiResponse<{ date, rows: LiveBoardRowDto[] }>
+//   GET /attendance/reports/department-comparison?month=yyyy-MM
+//        -> ApiResponse<{ month, rows: DeptComparisonRowDto[] }>
+//   GET /attendance/reports/custom?from&to&departmentId&locationId&shiftId&status
+//        -> ApiResponse<{ from, to, rows: CustomReportRowDto[] }>
+//   GET /attendance/reports/custom/export?from&to&format=csv|xlsx|pdf&...  -> blob
+//   GET /attendance/reports/trends?months=12
+//        -> ApiResponse<{ attendanceRate, lateArrivals, overtimeHours, absenteeismRate }>
+//   GET/POST /attendance/reports/scheduled ; PUT/DELETE /attendance/reports/scheduled/{id}
+//        -> ApiResponse<ScheduledReportConfigDto[]> | ApiResponse<ScheduledReportConfigDto>
+//
+// All envelopes are ApiResponse<T> = { success, data, message }; the service
+// unwraps `.data`. SignalR is NOT available (§10) — the dashboard + live board
+// fall back to ~30s polling.
+
+/** Scope toggle: HR sees all employees; a Manager scopes to their team (BR-3/BR-4). */
+export type AttendanceScope = 'all' | 'team';
+
+/**
+ * US-ATT-010 (AC-1, FR-1): today's attendance KPIs for the dashboard widget cards.
+ * Backend computes these (Redis-cached, FR-7); the FE only renders.
+ */
+export interface IDashboardKpi {
+  /** The KPI date, `yyyy-MM-dd`. */
+  date: string;
+  /** Active employees expected today (BR-1: active − full-day leave − holiday). */
+  expectedHeadcount: number;
+  /** Employees currently clocked in. */
+  clockedIn: number;
+  /** Expected but not yet clocked in. */
+  pendingClockIn: number;
+  /** Employees on full-day approved leave today. */
+  onLeave: number;
+  /** Not clocked in and not on leave. */
+  absent: number;
+  /** Live attendance percentage (BR-2: clockedIn / expected * 100). */
+  attendancePercent: number;
+}
+
+/** A single row in the live attendance board (AC-2). */
+export type LiveBoardStatus =
+  | 'CLOCKED_IN'
+  | 'NOT_CLOCKED_IN'
+  | 'ON_LEAVE'
+  | 'HOLIDAY';
+
+export interface ILiveBoardRow {
+  employeeId: string;
+  employeeName: string;
+  employeeNumber?: string;
+  departmentName?: string;
+  status: LiveBoardStatus;
+  /** Clock-in timestamp (UTC) when status is CLOCKED_IN; the UI shows local time. */
+  clockInAt?: string;
+}
+
+/** US-ATT-010 (AC-2): the live-board response envelope payload. */
+export interface ILiveBoardResult {
+  date: string;
+  rows: ILiveBoardRow[];
+}
+
+/** US-ATT-010 (AC-3): a department's attendance rate for the comparison report. */
+export interface IDeptComparisonRow {
+  departmentId: string;
+  departmentName: string;
+  /** Attendance rate for the month, 0–100. */
+  attendanceRatePct: number;
+  employeeCount: number;
+}
+
+export interface IDeptComparisonResult {
+  month: string;
+  rows: IDeptComparisonRow[];
+}
+
+/** US-ATT-010 (AC-4, FR-4): custom report filters. */
+export interface ICustomReportFilters {
+  from: string; // yyyy-MM-dd
+  to: string; // yyyy-MM-dd
+  departmentId?: string | null;
+  locationId?: string | null;
+  shiftId?: string | null;
+  status?: string | null;
+}
+
+/** US-ATT-010 (AC-4): a per-employee row in the custom date-range report. */
+export interface ICustomReportRow {
+  employeeId: string;
+  employeeName: string;
+  presentDays: number;
+  absentDays: number;
+  lateCount: number;
+  overtimeMinutes: number;
+  workMinutes: number;
+}
+
+export interface ICustomReportResult {
+  from: string;
+  to: string;
+  rows: ICustomReportRow[];
+}
+
+/** Export format for the server-generated custom report (FR-5). */
+export type CustomReportExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/** US-ATT-010 (AC-5, FR-6): a single point in a 12-month trend series. */
+export interface ITrendPoint {
+  /** Period, `yyyy-MM`. */
+  period: string;
+  value: number;
+}
+
+/** US-ATT-010 (AC-5): the four trend series over the trailing N months. */
+export interface ITrendsResult {
+  attendanceRate: ITrendPoint[];
+  lateArrivals: ITrendPoint[];
+  overtimeHours: ITrendPoint[];
+  absenteeismRate: ITrendPoint[];
+}
+
+/** US-ATT-010 (FR-8): scheduled-report config. */
+export type ScheduledReportFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+export type ScheduledReportFormat = 'CSV' | 'XLSX' | 'PDF';
+
+export interface IScheduledReportConfig {
+  id?: string;
+  /** Pre-built report type, e.g. 'daily-attendance', 'department-comparison'. */
+  reportType: string;
+  frequency: ScheduledReportFrequency;
+  /** Saved filter configuration (free-form jsonb on the backend). */
+  filters: ICustomReportFilters | Record<string, unknown>;
+  /** Recipient identifiers (user IDs or emails — the backend resolves). */
+  recipients: string[];
+  /** Delivery time of day, `HH:mm`. */
+  deliveryTime: string;
+  format: ScheduledReportFormat;
+  isActive: boolean;
+}
+
+// ─── Donut chart geometry (today's breakdown, §8) ────────────────────────────
+
+/**
+ * A donut segment for the dashboard "today's breakdown" chart. Built by
+ * {@link buildDonutSegments} — a pure, unit-tested helper that emits SVG arc
+ * paths over a ring (no charting library; mirrors the US-LV-012 SVG approach).
+ */
+export interface IDonutSegment {
+  /** SVG `d` for the arc stroke segment. */
+  path: string;
+  color: string;
+  label: string;
+  value: number;
+  /** 0–100 share of the whole. */
+  percent: number;
+}
+
+/**
+ * US-ATT-010 (§8): build donut-ring arc segments for a set of labelled values,
+ * centred at (cx,cy) with the given radius and stroke width. Pure + unit-tested.
+ * Each segment is a stroked arc (so the centre stays hollow). Returns [] when the
+ * total is zero. A single non-zero value yields a full ring.
+ */
+export function buildDonutSegments(
+  data: { label: string; value: number; color: string }[],
+  cx: number,
+  cy: number,
+  radius: number,
+): IDonutSegment[] {
+  const total = data.reduce((s, d) => s + Math.max(0, d.value), 0);
+  if (total <= 0) {
+    return [];
+  }
+  let angle = -Math.PI / 2; // start at 12 o'clock
+  return data
+    .filter((d) => d.value > 0)
+    .map((d) => {
+      const frac = Math.max(0, d.value) / total;
+      const sweep = frac * Math.PI * 2;
+      const end = angle + sweep;
+      const x1 = cx + radius * Math.cos(angle);
+      const y1 = cy + radius * Math.sin(angle);
+      const x2 = cx + radius * Math.cos(end);
+      const y2 = cy + radius * Math.sin(end);
+      const largeArc = sweep > Math.PI ? 1 : 0;
+      const path =
+        frac >= 0.999
+          ? // full ring: draw as two half arcs so the stroke closes cleanly
+            `M ${cx} ${cy - radius} A ${radius} ${radius} 0 1 1 ${cx - 0.01} ${
+              cy - radius
+            }`
+          : `M ${round2(x1)} ${round2(y1)} A ${radius} ${radius} 0 ${largeArc} 1 ${round2(
+              x2,
+            )} ${round2(y2)}`;
+      angle = end;
+      return { path, color: d.color, label: d.label, value: d.value, percent: frac * 100 };
+    });
+}
+
+/**
+ * US-ATT-010 (AC-3, §8): color-code a department attendance rate — green > 90%,
+ * amber 80–90%, red < 80%. Returns a hex usable directly as an SVG fill / inline
+ * style. Pure + unit-tested.
+ */
+export function attendanceRateColor(pct: number): string {
+  if (pct > 90) {
+    return '#16a34a'; // green-600
+  }
+  if (pct >= 80) {
+    return '#d97706'; // amber-600
+  }
+  return '#dc2626'; // red-600
+}
+
+/**
+ * US-ATT-010 (AC-5): build SVG polyline points for a trend series scaled into a
+ * width×height box. Mirrors the US-LV-012 line helper; higher value = smaller y.
+ * Pure + unit-tested.
+ */
+export function buildTrendPoints(
+  values: number[],
+  width: number,
+  height: number,
+  globalMax: number,
+): { x: number; y: number }[] {
+  if (values.length === 0) {
+    return [];
+  }
+  const max = globalMax > 0 ? globalMax : 1;
+  const stepX = values.length > 1 ? width / (values.length - 1) : 0;
+  return values.map((v, i) => ({
+    x: values.length > 1 ? round2(i * stepX) : round2(width / 2),
+    y: round2(height - (v / max) * height),
+  }));
+}
+
+/** Stringify points for an SVG `points`/`d` attribute. */
+export function trendPointsToString(points: { x: number; y: number }[]): string {
+  return points.map((p) => `${p.x},${p.y}`).join(' ');
+}
+
+/** Max across a series of trend points (shared y-scale). */
+export function trendMax(points: ITrendPoint[]): number {
+  return points.reduce((m, p) => Math.max(m, p.value), 0);
+}
+
+/** Round to 2 dp (local to the US-ATT-010 helpers). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Current date as `yyyy-MM-dd` in the browser's local timezone. */
+export function todayIso(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = (now.getMonth() + 1).toString().padStart(2, '0');
+  const d = now.getDate().toString().padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * US-ATT-010 (§8): up-to-two-letter initials for a live-board avatar, derived from
+ * the employee name. "Ada Lovelace" -> "AL"; single word -> first two letters.
+ */
+export function initialsOf(name: string): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return '–';
+  }
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}

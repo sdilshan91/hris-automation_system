@@ -150,6 +150,11 @@ public static class DependencyInjection
         // AttendanceService (clock-in/out) and RegularizationApprovalService (approval recompute).
         services.AddScoped<ILateEarlyService, LateEarlyService>();
 
+        // HR attendance dashboard + reports (US-ATT-010): KPIs, live board (polled — SignalR deferred),
+        // department comparison, custom report + export, 12-month trends (from the monthly summary), and
+        // scheduled-report config CRUD. Reuses IAttendanceSummaryService for the monthly rollup.
+        services.AddScoped<IAttendanceDashboardService, AttendanceDashboardService>();
+
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 

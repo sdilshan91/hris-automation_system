@@ -1014,6 +1014,264 @@ public sealed class AttendanceController : ControllerBase
         return Ok(ApiResponse<ReconciliationResult>.Ok(result.Value!));
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-010: Attendance dashboard + reports for HR.
+    //  Reads use Attendance.View.All (HR read). scope=team narrows to the acting manager's direct
+    //  reports (BR-4) and is admitted by Attendance.Approve.Team — but since these endpoints are gated
+    //  by Attendance.View.All (HR), team scope is for HR users who are also managers; the service
+    //  enforces that scope=all requires Attendance.View.All (BR-3).
+    //  DEFERRALS: SignalR live push (live board is polled, §10), Redis KPI cache, scheduled-report
+    //  email delivery — all documented in the service. RLS not used (EF global filters).
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/dashboard?date=yyyy-MM-dd&amp;scope=all|team
+    /// Today's attendance KPIs: expected headcount, clocked-in, pending, on-leave, absent, attendance %
+    /// (US-ATT-010 AC-1/FR-1, BR-1/BR-2/BR-3/BR-4). Defaults to today (UTC) and scope=all.
+    /// </summary>
+    [HttpGet("dashboard")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<DashboardKpiDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetDashboard(
+        [FromQuery] DateOnly? date,
+        [FromQuery] string? scope,
+        CancellationToken cancellationToken)
+    {
+        var d = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var result = await _mediator.Send(new GetDashboardKpisQuery(d, scope ?? "all"), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<DashboardKpiDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/dashboard/live-board?date=yyyy-MM-dd&amp;scope=all|team
+    /// Per-employee current status for the date (CLOCKED_IN / NOT_CLOCKED_IN / ON_LEAVE / HOLIDAY)
+    /// (US-ATT-010 AC-2/FR-2). SignalR push is DEFERRED (US-NTF) — the FE polls this endpoint (§10).
+    /// </summary>
+    [HttpGet("dashboard/live-board")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<LiveBoardResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetLiveBoard(
+        [FromQuery] DateOnly? date,
+        [FromQuery] string? scope,
+        CancellationToken cancellationToken)
+    {
+        var d = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var result = await _mediator.Send(new GetLiveBoardQuery(d, scope ?? "all"), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<LiveBoardResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/reports/department-comparison?month=yyyy-MM
+    /// Attendance rate per department for the month (US-ATT-010 AC-3/FR-3).
+    /// </summary>
+    [HttpGet("reports/department-comparison")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<DeptComparisonResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetDepartmentComparison(
+        [FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var result = await _mediator.Send(new GetDepartmentComparisonQuery(year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<DeptComparisonResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/reports/custom?from=yyyy-MM-dd&amp;to=yyyy-MM-dd&amp;departmentId=&amp;locationId=&amp;shiftId=&amp;status=
+    /// Per-employee rollup over a custom date range with optional filters (US-ATT-010 AC-4/FR-4).
+    /// </summary>
+    [HttpGet("reports/custom")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<CustomReportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetCustomReport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] Guid? departmentId,
+        [FromQuery] Guid? locationId,
+        [FromQuery] Guid? shiftId,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var fromDate = from ?? new DateOnly(today.Year, today.Month, 1);
+        var toDate = to ?? today;
+
+        var filter = new CustomReportFilter
+        {
+            DepartmentId = departmentId,
+            LocationId = locationId,
+            ShiftId = shiftId,
+            Status = status,
+        };
+
+        var result = await _mediator.Send(
+            new GetCustomReportQuery(fromDate, toDate, filter), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<CustomReportResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/reports/custom/export?from=&amp;to=&amp;format=csv|xlsx|pdf&amp;departmentId=&amp;locationId=&amp;shiftId=
+    /// Custom report export as a file download (US-ATT-010 FR-5). Reuses the ATT-007 export approach.
+    /// </summary>
+    [HttpGet("reports/custom/export")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExportCustomReport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] string? format,
+        [FromQuery] Guid? departmentId,
+        [FromQuery] Guid? locationId,
+        [FromQuery] Guid? shiftId,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var fromDate = from ?? new DateOnly(today.Year, today.Month, 1);
+        var toDate = to ?? today;
+
+        var filter = new CustomReportFilter
+        {
+            DepartmentId = departmentId,
+            LocationId = locationId,
+            ShiftId = shiftId,
+            Status = status,
+        };
+
+        var result = await _mediator.Send(
+            new ExportCustomReportQuery(fromDate, toDate, format ?? "csv", filter), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var export = result.Value!;
+        return File(export.FileContent, export.ContentType, export.FileName);
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/reports/trends?months=12
+    /// 12-month trend analytics from the monthly summary table (US-ATT-010 AC-5/FR-6/BR-5).
+    /// </summary>
+    [HttpGet("reports/trends")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<TrendsResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetTrends(
+        [FromQuery] int? months, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetTrendsQuery(months ?? 12), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<TrendsResult>.Ok(result.Value!));
+    }
+
+    // ── Scheduled report config CRUD (FR-8; email delivery deferred — US-NTF) ──
+
+    /// <summary>
+    /// GET /api/v1/attendance/reports/scheduled
+    /// Lists the tenant's scheduled report configurations (US-ATT-010 FR-8).
+    /// </summary>
+    [HttpGet("reports/scheduled")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ScheduledReportConfigDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetScheduledReports(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetScheduledReportsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<ScheduledReportConfigDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/reports/scheduled
+    /// Creates a scheduled report configuration (US-ATT-010 FR-8).
+    /// </summary>
+    [HttpPost("reports/scheduled")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<ScheduledReportConfigDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateScheduledReport(
+        [FromBody] ScheduledReportConfigDto request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CreateScheduledReportCommand(request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<ScheduledReportConfigDto>.Ok(result.Value!, "Scheduled report created."));
+    }
+
+    /// <summary>
+    /// PUT /api/v1/attendance/reports/scheduled/{id}
+    /// Updates a scheduled report configuration (US-ATT-010 FR-8).
+    /// </summary>
+    [HttpPut("reports/scheduled/{id:guid}")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<ScheduledReportConfigDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateScheduledReport(
+        [FromRoute] Guid id,
+        [FromBody] ScheduledReportConfigDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdateScheduledReportCommand(id, request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ScheduledReportConfigDto>.Ok(result.Value!, "Scheduled report updated."));
+    }
+
+    /// <summary>
+    /// DELETE /api/v1/attendance/reports/scheduled/{id}
+    /// Deletes a scheduled report configuration (US-ATT-010 FR-8). Returns 204 on success.
+    /// </summary>
+    [HttpDelete("reports/scheduled/{id:guid}")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteScheduledReport(
+        [FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DeleteScheduledReportCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return NoContent();
+    }
+
     /// <summary>
     /// Parses the optional comma-separated employeeIds query param into a list of GUIDs (ignoring
     /// blanks/invalid entries). Returns null when none are supplied (= all employees).

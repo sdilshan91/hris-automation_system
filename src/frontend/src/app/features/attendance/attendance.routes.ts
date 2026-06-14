@@ -141,5 +141,28 @@ export const ATTENDANCE_ROUTES: Routes = [
         './components/payroll-integration/payroll-integration.component'
       ).then((m) => m.PayrollIntegrationComponent),
   },
+  {
+    // US-ATT-010 (AC-1/AC-2, §8): HR attendance dashboard + live board. HR-only (HR
+    // Officer / HR Manager / Tenant Admin) per §2 (Attendance.Read.All); a Manager is
+    // also allowed so they can use the scope=team toggle (BR-4) for their own team.
+    // Same child-guard technique as the monthly-summary route — NO app.routes.ts edit.
+    path: 'dashboard',
+    canActivate: [roleGuard(['Manager', 'HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import(
+        './components/attendance-dashboard/attendance-dashboard.component'
+      ).then((m) => m.AttendanceDashboardComponent),
+  },
+  {
+    // US-ATT-010 (AC-3/AC-4/AC-5, FR-8): HR reports hub — department comparison, custom
+    // date-range report + export, 12-month trends, scheduled-report config. HR-only per
+    // §2 (Reports.View.All) — same child-guard technique as the monthly-summary route.
+    path: 'reports',
+    canActivate: [roleGuard(['HR Officer', 'HR Manager', 'Tenant Admin'])],
+    loadComponent: () =>
+      import(
+        './components/attendance-reports/attendance-reports.component'
+      ).then((m) => m.AttendanceReportsComponent),
+  },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];
