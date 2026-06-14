@@ -59,6 +59,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<EmployeeShift> EmployeeShifts => Set<EmployeeShift>();
     public DbSet<OvertimeRecord> OvertimeRecords => Set<OvertimeRecord>();
     public DbSet<OvertimeApprovalHistory> OvertimeApprovalHistories => Set<OvertimeApprovalHistory>();
+    public DbSet<AttendanceMonthlySummary> AttendanceMonthlySummaries => Set<AttendanceMonthlySummary>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -199,5 +200,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-ATT-006: OvertimeApprovalHistory tenant isolation + soft-delete filter
         modelBuilder.Entity<OvertimeApprovalHistory>()
             .HasQueryFilter(h => !h.IsDeleted && (!_tenantContext.IsResolved || h.TenantId == _tenantContext.TenantId));
+
+        // US-ATT-007: AttendanceMonthlySummary tenant isolation + soft-delete filter
+        modelBuilder.Entity<AttendanceMonthlySummary>()
+            .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
     }
 }

@@ -1,5 +1,10 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpParams,
+  HttpResponse,
+} from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
@@ -39,6 +44,11 @@ import {
   IOvertimeDecision,
   IOvertimeReportResult,
   IOvertimeActionErrorResponse,
+  IMonthlySummaryQuery,
+  IMonthlySummaryResult,
+  IEmployeeDailyBreakdownResult,
+  ISummaryGenerationStatus,
+  SummaryExportFormat,
 } from '../models/attendance.models';
 
 /**
@@ -492,6 +502,107 @@ export class AttendanceService {
       return body as IOvertimeActionErrorResponse;
     }
     return null;
+  }
+
+  // --- US-ATT-007: Monthly attendance summary ----------------
+
+  /**
+   * US-ATT-007 (AC-1, AC-5, FR-5): the monthly attendance summary for the tenant — one
+   * row per employee for the selected month, with optional department/location/shift/
+   * status filters. Unwraps the ApiResponse<T> envelope to MonthlySummaryResult.
+   *   GET /api/v1/attendance/summary/monthly?month=yyyy-MM&departmentId=&locationId=&shiftId=&status=
+   *     -> ApiResponse<MonthlySummaryResult>
+   */
+  getMonthlySummary(
+    query: IMonthlySummaryQuery,
+  ): Observable<IMonthlySummaryResult> {
+    let params = new HttpParams().set('month', query.month);
+    if (query.departmentId) {
+      params = params.set('departmentId', query.departmentId);
+    }
+    if (query.locationId) {
+      params = params.set('locationId', query.locationId);
+    }
+    if (query.shiftId) {
+      params = params.set('shiftId', query.shiftId);
+    }
+    if (query.status) {
+      params = params.set('status', query.status);
+    }
+    return this.http
+      .get<IAttendanceApiEnvelope<IMonthlySummaryResult>>(
+        `${this.baseUrl}/summary/monthly`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-007 (AC-2): the day-by-day attendance breakdown for one employee in the
+   * selected month — the drill-down behind a summary row.
+   *   GET /api/v1/attendance/summary/monthly/{employeeId}?month=yyyy-MM
+   *     -> ApiResponse<EmployeeDailyBreakdownResult>
+   */
+  getEmployeeDailyBreakdown(
+    employeeId: string,
+    month: string,
+  ): Observable<IEmployeeDailyBreakdownResult> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .get<IAttendanceApiEnvelope<IEmployeeDailyBreakdownResult>>(
+        `${this.baseUrl}/summary/monthly/${employeeId}`,
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-007 (AC-3): trigger on-demand generation of the month's summary via the
+   * backend Hangfire job. Returns the current generation status; the caller polls
+   * (re-invokes) until status === 'COMPLETED'.
+   *   POST /api/v1/attendance/summary/monthly/generate?month=yyyy-MM
+   *     -> ApiResponse<SummaryGenerationStatusDto>
+   */
+  generateMonthlySummary(month: string): Observable<ISummaryGenerationStatus> {
+    const params = new HttpParams().set('month', month);
+    return this.http
+      .post<IAttendanceApiEnvelope<ISummaryGenerationStatus>>(
+        `${this.baseUrl}/summary/monthly/generate`,
+        {},
+        { withCredentials: true, params },
+      )
+      .pipe(map((res) => res.data));
+  }
+
+  /**
+   * US-ATT-007 (AC-4, FR-6): export the monthly summary in CSV / Excel / PDF, honouring
+   * the active department/location/shift filters. Returns the raw file blob; the caller
+   * derives the filename from Content-Disposition or constructs one.
+   *   GET /api/v1/attendance/summary/monthly/export?month=yyyy-MM&format=csv|xlsx|pdf&...
+   *     -> file download (blob)
+   */
+  exportMonthlySummary(
+    query: IMonthlySummaryQuery,
+    format: SummaryExportFormat,
+  ): Observable<HttpResponse<Blob>> {
+    let params = new HttpParams()
+      .set('month', query.month)
+      .set('format', format);
+    if (query.departmentId) {
+      params = params.set('departmentId', query.departmentId);
+    }
+    if (query.locationId) {
+      params = params.set('locationId', query.locationId);
+    }
+    if (query.shiftId) {
+      params = params.set('shiftId', query.shiftId);
+    }
+    return this.http.get(`${this.baseUrl}/summary/monthly/export`, {
+      withCredentials: true,
+      params,
+      responseType: 'blob',
+      observe: 'response',
+    });
   }
 
   // --- Error helper ------------------------------------------

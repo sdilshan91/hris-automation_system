@@ -150,6 +150,13 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.LeaveReportExportJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.ILeaveReportExportJob, HRM.Api.Jobs.LeaveReportExportJob>();
 
+    // US-ATT-007: monthly attendance summary jobs (daily refresh + monthly finalize) and the large-export
+    // background job (bound to the interface so the Infrastructure service can enqueue it by interface).
+    builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryDailyJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryMonthlyJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.AttendanceSummaryExportJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IAttendanceSummaryExportJob, HRM.Api.Jobs.AttendanceSummaryExportJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -287,6 +294,19 @@ try
             "attendance-auto-clock-out",
             job => job.RunAsync(),
             "5 0 * * *"); // 00:05 UTC daily
+
+        // US-ATT-007 FR-1: daily refresh of the monthly attendance summary for the previous day's month
+        // (recomputes the still-incomplete current month so the HR view stays fresh). 01:00 UTC daily.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.MonthlySummaryDailyJob>(
+            "attendance-monthly-summary-daily",
+            job => job.RunAsync(),
+            "0 1 * * *"); // 01:00 UTC daily
+
+        // US-ATT-007 FR-2: monthly finalize of the previous month's attendance summary, on the 1st.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.MonthlySummaryMonthlyJob>(
+            "attendance-monthly-summary-finalize",
+            job => job.RunAsync(),
+            "30 1 1 * *"); // 01:30 UTC on the 1st of every month
     }
 
     app.Run();

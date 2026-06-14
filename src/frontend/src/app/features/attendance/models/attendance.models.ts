@@ -812,6 +812,209 @@ export function weeklyOvertimeMinutes(
   }, 0);
 }
 
+// ─── US-ATT-007: Monthly Attendance Summary per Employee ─────────────────────
+
+/**
+ * US-ATT-007 (§7 `attendance_monthly_summary`): one employee's aggregated attendance
+ * for a month. Durations are in minutes (work/overtime); day counts are decimals to
+ * support half-days (BR-5). Returned in {@link IMonthlySummaryResult.rows}.
+ *
+ * Backend contract (pinned — backend agent building the SAME contract):
+ *   GET /api/v1/attendance/summary/monthly?month=yyyy-MM&departmentId=&locationId=&shiftId=&status=
+ *     -> ApiResponse<MonthlySummaryResult>
+ */
+export interface IEmployeeMonthlySummary {
+  employeeId: string;
+  employeeName: string;
+  /** Optional payroll/display employee number (§8). */
+  employeeNumber?: string | null;
+  /** Optional denormalized department name for the row (AC-5, §8). */
+  departmentName?: string | null;
+  /** Days present (BR-1); decimal to allow 0.5 half-days (BR-5). */
+  presentDays: number;
+  /** Scheduled working days with no record + no leave (BR-2). */
+  absentDays: number;
+  /** Count of late arrivals in the month (US-ATT-008). */
+  lateCount: number;
+  /** Count of early departures in the month (US-ATT-008). */
+  earlyDepartureCount: number;
+  /** Total net worked minutes across the month (FR-3, NFR-5). */
+  workMinutes: number;
+  /** Total approved overtime minutes (US-ATT-006). */
+  overtimeMinutes: number;
+  /** Approved leave days, reconciled from the Leave module (BR-6). */
+  leaveDays: number;
+  /** Public holidays in the month (BR-4). */
+  holidays: number;
+  /** Weekly-off days in the month (BR-4). */
+  weeklyOffs: number;
+  /** Loss-of-Pay days — absent days not covered by leave (BR-3); feeds payroll. */
+  lopDays: number;
+  /** When this employee's summary row was last computed (UTC timestamptz). */
+  generatedAt: string;
+}
+
+/**
+ * US-ATT-007 (§8): the summary banner aggregates shown above the table.
+ */
+export interface IMonthlySummaryBanner {
+  totalEmployees: number;
+  /** Average attendance percentage across the listed employees (0–100). */
+  averageAttendancePercent: number;
+  /** Total Loss-of-Pay days across the listed employees (BR-3). */
+  totalLopDays: number;
+}
+
+/**
+ * US-ATT-007 (AC-1): the full monthly-summary payload (the `data` of the envelope).
+ *   GET /api/v1/attendance/summary/monthly -> ApiResponse<MonthlySummaryResult>
+ * `generatedAt` is null when the summary has not yet been computed for the month
+ * (AC-3) — the FE then offers on-demand generation.
+ */
+export interface IMonthlySummaryResult {
+  /** The reported month, `yyyy-MM`. */
+  yearMonth: string;
+  rows: IEmployeeMonthlySummary[];
+  banner: IMonthlySummaryBanner;
+  /** When the month's summary was generated; null when not yet generated (AC-3). */
+  generatedAt: string | null;
+}
+
+/** Optional filters for the monthly-summary endpoint (query params, AC-5, FR-5). */
+export interface IMonthlySummaryQuery {
+  /** `yyyy-MM`. */
+  month: string;
+  departmentId?: string;
+  locationId?: string;
+  shiftId?: string;
+  /** Employee status filter (e.g. ACTIVE), passed through to the backend (FR-5). */
+  status?: string;
+}
+
+/**
+ * US-ATT-007 (AC-2, §8): the status of a single day in an employee's monthly breakdown.
+ */
+export type DailyBreakdownStatus =
+  | 'PRESENT'
+  | 'ABSENT'
+  | 'LEAVE'
+  | 'HOLIDAY'
+  | 'WEEKLY_OFF'
+  | 'HALF_DAY';
+
+/**
+ * US-ATT-007 (AC-2): one day of an employee's monthly attendance breakdown — the
+ * drill-down row behind a summary row.
+ *   GET /api/v1/attendance/summary/monthly/{employeeId}?month=yyyy-MM
+ *     -> ApiResponse<EmployeeDailyBreakdownResult>
+ */
+export interface IDailyBreakdown {
+  /** The calendar date, `yyyy-MM-dd`. */
+  date: string;
+  status: DailyBreakdownStatus;
+  /** Clock-in (UTC timestamptz); null on a non-present day. */
+  clockIn?: string | null;
+  /** Clock-out (UTC timestamptz); null while open or on a non-present day. */
+  clockOut?: string | null;
+  /** Net worked minutes for the day; null on a non-present day. */
+  workMinutes?: number | null;
+  /** True when the day's attendance was created via an approved regularization (BR-7). */
+  isRegularized: boolean;
+  /** True when the clock-in was flagged late (US-ATT-008). */
+  isLate: boolean;
+  /** True when the clock-out was flagged an early departure (US-ATT-008). */
+  isEarlyDeparture: boolean;
+}
+
+/**
+ * US-ATT-007 (AC-2): the daily-breakdown payload for one employee/month (envelope `data`).
+ */
+export interface IEmployeeDailyBreakdownResult {
+  employeeId: string;
+  employeeName: string;
+  /** `yyyy-MM`. */
+  yearMonth: string;
+  days: IDailyBreakdown[];
+}
+
+/**
+ * US-ATT-007 (AC-3): on-demand summary-generation status returned by the generate
+ * endpoint (and re-fetched while polling until COMPLETED).
+ *   POST /api/v1/attendance/summary/monthly/generate?month=yyyy-MM
+ *     -> ApiResponse<SummaryGenerationStatusDto>
+ */
+export interface ISummaryGenerationStatus {
+  /** `yyyy-MM`. */
+  yearMonth: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED';
+  /** Set once the generation has finished (UTC timestamptz); null while in progress. */
+  generatedAt: string | null;
+}
+
+/** US-ATT-007 (AC-4): export formats supported by the summary export endpoint (FR-6). */
+export type SummaryExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/** Notion-style cell classes per daily-breakdown status (AC-2, §8). */
+export const DAILY_STATUS_CLASSES: Record<DailyBreakdownStatus, string> = {
+  PRESENT: 'bg-green-50 text-green-700 ring-green-200',
+  ABSENT: 'bg-red-50 text-red-700 ring-red-200',
+  LEAVE: 'bg-blue-50 text-blue-700 ring-blue-200',
+  HOLIDAY: 'bg-purple-50 text-purple-700 ring-purple-200',
+  WEEKLY_OFF: 'bg-neutral-100 text-neutral-500 ring-neutral-200',
+  HALF_DAY: 'bg-amber-50 text-amber-700 ring-amber-200',
+};
+
+/** Human-readable label for a daily-breakdown status (AC-2, §8). */
+export function dailyStatusLabel(status: DailyBreakdownStatus): string {
+  switch (status) {
+    case 'PRESENT':
+      return 'Present';
+    case 'ABSENT':
+      return 'Absent';
+    case 'LEAVE':
+      return 'Leave';
+    case 'HOLIDAY':
+      return 'Holiday';
+    case 'WEEKLY_OFF':
+      return 'Weekly off';
+    case 'HALF_DAY':
+      return 'Half day';
+  }
+}
+
+/**
+ * US-ATT-007 (§8): derive the Notion-style cell color class for a summary count cell,
+ * given a value and a "high" threshold. Absent cells go red above the threshold; late
+ * cells amber; a zero-absent / zero-late cell renders neutral (no alarm color).
+ */
+export function summaryCellClass(
+  value: number,
+  threshold: number,
+  tone: 'absent' | 'late',
+): string {
+  if (value <= 0) {
+    return 'text-neutral-400';
+  }
+  if (value >= threshold) {
+    return tone === 'absent'
+      ? 'text-red-700 font-semibold'
+      : 'text-amber-700 font-semibold';
+  }
+  return 'text-neutral-700';
+}
+
+/**
+ * US-ATT-007 (§8): the per-employee attendance percentage used for the "full attendance"
+ * green highlight and the mini bar. present / (present + absent) * 100; 0 when neither.
+ */
+export function attendancePercent(row: IEmployeeMonthlySummary): number {
+  const scheduled = row.presentDays + row.absentDays;
+  if (scheduled <= 0) {
+    return 0;
+  }
+  return Math.round((row.presentDays / scheduled) * 100);
+}
+
 /** ISO day-of-week labels indexed 1=Mon .. 7=Sun (BR-6, §8). */
 export const WEEKDAY_LABELS: Record<number, string> = {
   1: 'Mon',

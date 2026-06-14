@@ -634,4 +634,169 @@ public sealed class AttendanceController : ControllerBase
         if (!int.TryParse(parts[0], out year) || !int.TryParse(parts[1], out month)) return false;
         return year is >= 1 and <= 9999 && month is >= 1 and <= 12;
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  US-ATT-007: Monthly attendance summary per employee
+    //  All gated by Attendance.View.All — the HR attendance-read permission (the story names
+    //  Attendance.Read.All, which is not a catalog entry; reusing the established View.All that the
+    //  US-ATT-006 overtime report already uses for the same HR persona).
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/summary/monthly?month=yyyy-MM&amp;departmentId=&amp;locationId=&amp;shiftId=&amp;status=
+    /// HR monthly attendance summary: one row per employee for the month with present/absent/late/early/
+    /// overtime/leave/holiday/weekly-off/LOP, plus a banner (total employees, average attendance %, total
+    /// LOP). Generates on-demand if not yet materialized (US-ATT-007 AC-1/AC-3/AC-5/FR-5).
+    /// </summary>
+    [HttpGet("summary/monthly")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<MonthlySummaryResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetMonthlySummary(
+        [FromQuery] string? month,
+        [FromQuery] Guid? departmentId,
+        [FromQuery] Guid? locationId,
+        [FromQuery] Guid? shiftId,
+        [FromQuery] string? status,
+        CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var filter = new MonthlySummaryFilter
+        {
+            DepartmentId = departmentId,
+            LocationId = locationId,
+            ShiftId = shiftId,
+            Status = status,
+        };
+
+        var result = await _mediator.Send(
+            new GetMonthlySummaryQuery(year, mon, filter), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<MonthlySummaryResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/summary/monthly/{employeeId}?month=yyyy-MM
+    /// Day-by-day attendance breakdown for one employee for the month (US-ATT-007 AC-2 drill-down).
+    /// </summary>
+    [HttpGet("summary/monthly/{employeeId:guid}")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeDailyBreakdownResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetEmployeeMonthlyBreakdown(
+        [FromRoute] Guid employeeId,
+        [FromQuery] string? month,
+        CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var result = await _mediator.Send(
+            new GetEmployeeMonthlyBreakdownQuery(employeeId, year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<EmployeeDailyBreakdownResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/attendance/summary/monthly/generate?month=yyyy-MM
+    /// Triggers on-demand (re)generation of the monthly summary for the month (US-ATT-007 AC-3/FR-4).
+    /// Returns the resulting generation status (COMPLETED with a generatedAt timestamp).
+    /// </summary>
+    [HttpPost("summary/monthly/generate")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<SummaryGenerationStatusDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GenerateMonthlySummary(
+        [FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var result = await _mediator.Send(
+            new GenerateMonthlySummaryCommand(year, mon), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<SummaryGenerationStatusDto>.Ok(result.Value!, "Summary generated."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/summary/monthly/export?month=yyyy-MM&amp;format=csv|xlsx|pdf&amp;departmentId=&amp;locationId=&amp;shiftId=
+    /// Exports the monthly summary as a file download (US-ATT-007 AC-4/FR-6). Datasets &gt; 1,000
+    /// employees route to a Hangfire background job (FR-7) and return 202 Accepted with the job id
+    /// (notification deferred — US-NTF).
+    /// </summary>
+    [HttpGet("summary/monthly/export")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<MonthlySummaryExportResult>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExportMonthlySummary(
+        [FromQuery] string? month,
+        [FromQuery] string? format,
+        [FromQuery] Guid? departmentId,
+        [FromQuery] Guid? locationId,
+        [FromQuery] Guid? shiftId,
+        CancellationToken cancellationToken)
+    {
+        if (!ResolveMonth(month, out var year, out var mon, out var error))
+            return error!;
+
+        var filter = new MonthlySummaryFilter
+        {
+            DepartmentId = departmentId,
+            LocationId = locationId,
+            ShiftId = shiftId,
+        };
+
+        var result = await _mediator.Send(
+            new ExportMonthlySummaryQuery(year, mon, format ?? "csv", filter), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var export = result.Value!;
+        if (export.Queued)
+            return StatusCode(StatusCodes.Status202Accepted,
+                ApiResponse<MonthlySummaryExportResult>.Ok(export,
+                    "Export is large and is being generated in the background."));
+
+        return File(export.FileContent!, export.ContentType!, export.FileName!);
+    }
+
+    /// <summary>
+    /// Parses the "yyyy-MM" month query param (default = current UTC month). On failure, sets
+    /// <paramref name="error"/> to a 400 result and returns false.
+    /// </summary>
+    private bool ResolveMonth(string? month, out int year, out int monthNum, out IActionResult? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(month))
+        {
+            var now = DateTime.UtcNow;
+            year = now.Year; monthNum = now.Month;
+            return true;
+        }
+
+        if (!TryParseMonth(month, out year, out monthNum))
+        {
+            error = StatusCode(400, ApiResponse.Fail("Month must be in the format yyyy-MM.", "invalid_month"));
+            return false;
+        }
+        return true;
+    }
 }

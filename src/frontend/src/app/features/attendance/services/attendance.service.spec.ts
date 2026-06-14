@@ -291,6 +291,81 @@ describe('AttendanceService', () => {
       req.flush({ success: true, data: { ...mockShift, effectiveFrom: '2026-06-01', effectiveTo: null, resolvedForDate: '2026-07-01' } });
     });
   });
+
+  // ─── US-ATT-007: Monthly attendance summary ────────────────
+  describe('US-ATT-007 monthly summary', () => {
+    it('getMonthlySummary GETs with the month + filter params and unwraps data', () => {
+      let res: { yearMonth: string } | undefined;
+      service
+        .getMonthlySummary({ month: '2026-06', departmentId: 'd1', shiftId: 's1' })
+        .subscribe((r) => (res = r));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/summary/monthly` &&
+          r.params.get('month') === '2026-06' &&
+          r.params.get('departmentId') === 'd1' &&
+          r.params.get('shiftId') === 's1',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({
+        success: true,
+        data: {
+          yearMonth: '2026-06',
+          rows: [],
+          banner: { totalEmployees: 0, averageAttendancePercent: 0, totalLopDays: 0 },
+          generatedAt: '2026-06-01T01:00:00Z',
+        },
+      });
+      expect(res!.yearMonth).toBe('2026-06');
+    });
+
+    it('getEmployeeDailyBreakdown GETs the employee path with the month param', () => {
+      service.getEmployeeDailyBreakdown('emp-7', '2026-06').subscribe();
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/summary/monthly/emp-7` &&
+          r.params.get('month') === '2026-06',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({
+        success: true,
+        data: { employeeId: 'emp-7', employeeName: 'X', yearMonth: '2026-06', days: [] },
+      });
+    });
+
+    it('generateMonthlySummary POSTs to the generate path with the month param', () => {
+      let status: { status: string } | undefined;
+      service.generateMonthlySummary('2026-06').subscribe((s) => (status = s));
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/summary/monthly/generate` &&
+          r.params.get('month') === '2026-06',
+      );
+      expect(req.request.method).toBe('POST');
+      req.flush({ success: true, data: { yearMonth: '2026-06', status: 'RUNNING', generatedAt: null } });
+      expect(status!.status).toBe('RUNNING');
+    });
+
+    it('exportMonthlySummary GETs the export path as a blob with format + filters', () => {
+      let resp: { body: Blob | null } | undefined;
+      service
+        .exportMonthlySummary({ month: '2026-06', departmentId: 'd1' }, 'xlsx')
+        .subscribe((r) => (resp = r));
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/summary/monthly/export` &&
+          r.params.get('month') === '2026-06' &&
+          r.params.get('format') === 'xlsx' &&
+          r.params.get('departmentId') === 'd1',
+      );
+      expect(req.request.method).toBe('GET');
+      expect(req.request.responseType).toBe('blob');
+      req.flush(new Blob(['data'], { type: 'application/octet-stream' }));
+      expect(resp!.body).toBeTruthy();
+    });
+  });
 });
 
 // ─── Pure error helpers (no TestBed / httpMock.verify conflicts) ──────────
