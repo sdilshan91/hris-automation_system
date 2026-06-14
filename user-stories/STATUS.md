@@ -75,7 +75,7 @@
 - [x] US-ATT-006 — Overtime tracking and approval *(PR #44)*
 - [x] US-ATT-007 — Monthly attendance summary *(PR #45)*
 - [x] US-ATT-008 — Late arrival and early departure tracking *(PR #46)*
-- [ ] US-ATT-009 — Attendance integration with payroll
+- [~] US-ATT-009 — Attendance integration with payroll
 - [ ] US-ATT-010 — Attendance dashboard and reports
 
 ## 5. Recruitment (10 stories)
