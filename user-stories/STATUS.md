@@ -79,7 +79,7 @@
 - [x] US-ATT-010 — Attendance dashboard and reports *(PR #48)*
 
 ## 5. Recruitment (10 stories)
-- [ ] US-REC-001 — Create and publish job vacancy
+- [~] US-REC-001 — Create and publish job vacancy
 - [ ] US-REC-002 — Applicant submits application with resume
 - [ ] US-REC-003 — Recruiter views applicant pipeline
 - [ ] US-REC-004 — Move applicant through pipeline stages
