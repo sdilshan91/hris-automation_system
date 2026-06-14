@@ -71,7 +71,7 @@
 - [x] US-ATT-002 — Employee clock-out with hours auto-calculation *(PR #40)*
 - [x] US-ATT-003 — Attendance regularization request *(PR #41)*
 - [x] US-ATT-004 — Manager approves/rejects regularization *(PR #42)*
-- [ ] US-ATT-005 — Shift management and assignment
+- [~] US-ATT-005 — Shift management and assignment
 - [ ] US-ATT-006 — Overtime tracking and approval
 - [ ] US-ATT-007 — Monthly attendance summary
 - [ ] US-ATT-008 — Late arrival and early departure tracking
