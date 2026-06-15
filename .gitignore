@@ -38,3 +38,7 @@ obj/
 
 # Private per-agent working memory (auto-loaded locally; not shared config — excluded from agnix lint)
 .claude/agent-memory/
+
+# test result artifacts
+TestResults/
+*.trx
