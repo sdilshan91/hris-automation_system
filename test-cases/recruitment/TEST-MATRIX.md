@@ -1,7 +1,7 @@
 ---
 module: Recruitment
-total_user_stories: 7
-total_test_cases: 111
+total_user_stories: 8
+total_test_cases: 125
 created: 2026-06-15
 updated: 2026-06-15
 status: in-progress
@@ -9,14 +9,17 @@ status: in-progress
 
 # Recruitment -- Test Matrix
 
-> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-006 (Interviewer Submits Structured Interview Scorecard) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-006-01..13 + 1 new multi-tenant isolation on the new `interview_scorecard`/`scorecard_criterion_rating` tables: TC-REC-ISO-015; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-007 (Generate and Send Offer Letter) adds 15 test cases (14 functional/integration/security/perf/a11y: TC-REC-007-01..14 + 1 new multi-tenant isolation on the new `offer` table + tenant-scoped offer PDFs: TC-REC-ISO-016; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). Module total: 111 test cases, 34/34 acceptance criteria covered (US-REC-007 has 5 ACs).
+> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-006 (Interviewer Submits Structured Interview Scorecard) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-006-01..13 + 1 new multi-tenant isolation on the new `interview_scorecard`/`scorecard_criterion_rating` tables: TC-REC-ISO-015; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-007 (Generate and Send Offer Letter) adds 15 test cases (14 functional/integration/security/perf/a11y: TC-REC-007-01..14 + 1 new multi-tenant isolation on the new `offer` table + tenant-scoped offer PDFs: TC-REC-ISO-016; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-008 (Applicant Tracks Application Status / Candidate Portal via magic link) adds 14 test cases (13 functional/security/perf/a11y: TC-REC-008-01..13 + 1 new multi-tenant isolation on the new public portal surface + `applicant_portal_token`: TC-REC-ISO-017; the generic no/invalid/mismatched tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). Module total: 125 test cases, 38/38 acceptance criteria covered (US-REC-008 has 4 ACs).
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 7 (US-REC-001, US-REC-002, US-REC-003, US-REC-004, US-REC-005, US-REC-006, US-REC-007) |
-| Total Test Cases | 111 (95 functional/integration/security/perf/a11y + 16 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 8 (US-REC-001, US-REC-002, US-REC-003, US-REC-004, US-REC-005, US-REC-006, US-REC-007, US-REC-008) |
+| Total Test Cases | 125 (108 functional/integration/security/perf/a11y + 17 dedicated multi-tenant isolation) |
+| US-REC-008 Test Cases | 14 (TC-REC-008-01..13 + TC-REC-ISO-017; reuses TC-REC-ISO-010/011) |
+| Critical Priority (REC-008) | 4 (TC-REC-008-01, TC-REC-008-03, TC-REC-008-07, TC-REC-008-08, TC-REC-ISO-017) |
+| High Priority (REC-008) | 9 (TC-REC-008-02, -04, -05, -06, -09, -10, -11, -12, -13) |
 | US-REC-007 Test Cases | 15 (TC-REC-007-01..14 + TC-REC-ISO-016; reuses TC-REC-ISO-010/011) |
 | Critical Priority (REC-007) | 4 (TC-REC-007-01, TC-REC-007-02, TC-REC-007-03, TC-REC-007-10, TC-REC-ISO-016) |
 | High Priority (REC-007) | 10 (TC-REC-007-04, -05, -06, -07, -08, -09, -11, -12, -13, -14) |
@@ -58,6 +61,8 @@ status: in-progress
 | Cross-cutting (REC-006) | Multi-tenant isolation (interview scorecard / criterion rating) | TC-REC-ISO-015 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 | US-REC-007 | Generate and Send Offer Letter | TC-REC-007-01, TC-REC-007-02, TC-REC-007-03, TC-REC-007-04, TC-REC-007-05, TC-REC-007-06, TC-REC-007-07, TC-REC-007-08, TC-REC-007-09, TC-REC-007-10, TC-REC-007-11, TC-REC-007-12, TC-REC-007-13, TC-REC-007-14 | 14 |
 | Cross-cutting (REC-007) | Multi-tenant isolation (offer / offer PDF) | TC-REC-ISO-016 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
+| US-REC-008 | Applicant Tracks Application Status (Candidate Portal) | TC-REC-008-01, TC-REC-008-02, TC-REC-008-03, TC-REC-008-04, TC-REC-008-05, TC-REC-008-06, TC-REC-008-07, TC-REC-008-08, TC-REC-008-09, TC-REC-008-10, TC-REC-008-11, TC-REC-008-12, TC-REC-008-13 | 13 |
+| Cross-cutting (REC-008) | Multi-tenant isolation (candidate portal / `applicant_portal_token`) | TC-REC-ISO-017 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 
 ## Test Type Distribution (US-REC-002)
 

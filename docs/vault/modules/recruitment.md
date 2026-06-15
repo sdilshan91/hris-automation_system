@@ -344,6 +344,57 @@ pdf.js is still NOT a project dep, so the preview step shows the parsed offer
 fields + a "Download" button that streams the server PDF (same pattern as the
 US-REC-003 resume tab). Revisit an inline viewer only if pdf.js is added.
 
+## Candidate portal — magic link (US-REC-008)
+
+ANONYMOUS, magic-link candidate portal (NO auth/role guard — like the public
+careers pages). Built under `features/recruitment/components/portal/`. New top-level
+lazy UNGUARDED route `portal` in app.routes.ts (only `tenantAvailabilityGuard`),
+mirroring the `/careers` wiring. The magic-link token comes from the URL
+`?token=...`; the FE forwards it to the backend as a `token` QUERY PARAM on every
+call (anonymous — NO withCredentials). `PortalService` + `portal.models.ts` keep
+the contract + DTO mapping in ONE place.
+
+### Frontend contract (`PortalService`, camelCase, base `/api/v1/careers/portal`)
+PROPOSED — no backend portal endpoints existed when this FE was built; the backend
+agent should MATCH these. All anonymous, token in the query string:
+- `GET  /careers/portal/dashboard?token=...` → `IPortalDashboard
+  { applicantName, applicantEmail, applications: IPortalApplication[] }` (AC-1/FR-2).
+  Each application carries `vacancyTitle, departmentName, appliedAt, stage`, an
+  optional `interview`, an optional `offer`, and a sanitized `timeline[]`.
+- `GET  /careers/portal/offers/:offerId/document?token=...` → **Blob** (responseType
+  blob, observe response; filename from Content-Disposition, FR-4).
+- `POST /careers/portal/offers/:offerId/respond?token=...` body `{ response:
+  'Accepted'|'Declined' }` → `IPortalOffer` (AC-3/FR-5). **Accept advances the
+  applicant to Hired server-side (BR-3)** — the FE reflects it by RELOADING the
+  dashboard after a successful respond. One-time (BR-2): the FE hides the buttons
+  once `response` is set or status ≠ `Sent`; backend re-checks.
+- `POST /careers/portal/request-link` body `{ email }` → 2xx (FR-8/BR-5). To avoid
+  user enumeration (NFR-6) the backend should respond 2xx regardless and the FE
+  shows the SAME generic confirmation even on error.
+
+### Expired/invalid token (FR-8/BR-5)
+`PortalService.isTokenError(err)` = HTTP **401 OR 410**. A missing token OR a
+token error flips the component to the "request a new link" prompt (enter email →
+`requestLink`). The backend MUST treat 401=invalid signature/applicant,
+410=expired.
+
+### Sanitized view (BR-3/NFR-5)
+The backend MUST NOT expose rejection reasons, interviewer comments, or scorecard
+details. The timeline labels are rendered as PLAIN TEXT (never innerHTML). The step
+indicator funnel is Applied→Screening→Interview→Offer→Hired (`PORTAL_STEPS`);
+**Rejected is NOT a step** — a rejected application renders a distinct "no longer
+active" banner instead of the bar. `buildSteps(stage)` (pure) decides
+completed(green)/current(blue)/future(gray).
+
+### Components
+`candidate-portal` (smart container: token from URL, load, error/expired/empty
+states, respond+download orchestration), `portal-step-indicator`,
+`portal-interview-card` (date/time, type badge, Join Meeting link or location,
+interviewer names — AC-2/FR-3), `portal-offer-card` (terms + PDF download +
+Accept/Decline with a one-time confirmation modal — AC-3/BR-2), `portal-timeline`
+(vertical Notion-like activity log — FR-6). Reuses `careers-branding` for the
+tenant logo/primary color header.
+
 ## Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

@@ -187,6 +187,13 @@ public static class DependencyInjection
         // IOfferExpiryScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without it the
         // service skips expiry scheduling so the flow never requires real Hangfire storage.
         services.AddScoped<IOfferService, OfferService>();
+
+        // US-REC-008: Recruitment — candidate portal (magic-link token issue/validate + sanitized dashboard,
+        // offer respond, resume/offer downloads). The HMAC signing secret is read from configuration
+        // (Recruitment:PortalTokenSecret, falling back to Jwt:PrivateKey) — never hardcoded.
+        services.AddScoped<IApplicantPortalTokenService, ApplicantPortalTokenService>();
+        services.AddScoped<IApplicantPortalService, ApplicantPortalService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

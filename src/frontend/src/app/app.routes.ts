@@ -33,6 +33,19 @@ export const appRoutes: Routes = [
       ),
   },
 
+  // ─── Candidate portal (US-REC-008) — anonymous magic link, NO guard ──
+  // Access is controlled by the `?token=` magic-link query param (resolved by the
+  // backend), not a session. Tenant is resolved from the subdomain + carried by
+  // the tenantInterceptor, mirroring the public careers wiring above.
+  {
+    path: 'portal',
+    canActivate: [tenantAvailabilityGuard],
+    loadChildren: () =>
+      import('./features/recruitment/portal.routes').then(
+        (m) => m.PORTAL_ROUTES
+      ),
+  },
+
   // ─── Auth routes (no auth required) ──────────────────────
   {
     path: 'auth',

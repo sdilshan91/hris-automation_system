@@ -70,6 +70,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<InterviewScorecard> InterviewScorecards => Set<InterviewScorecard>();
     public DbSet<ScorecardCriterionRating> ScorecardCriterionRatings => Set<ScorecardCriterionRating>();
     public DbSet<Offer> Offers => Set<Offer>();
+    public DbSet<ApplicantPortalToken> ApplicantPortalTokens => Set<ApplicantPortalToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -255,5 +256,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-REC-007: Offer tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
         modelBuilder.Entity<Offer>()
             .HasQueryFilter(o => !o.IsDeleted && (!_tenantContext.IsResolved || o.TenantId == _tenantContext.TenantId));
+
+        // US-REC-008: ApplicantPortalToken tenant isolation + soft-delete filter (AC-4 cross-tenant
+        // isolation — a token row is only ever readable within its own tenant).
+        modelBuilder.Entity<ApplicantPortalToken>()
+            .HasQueryFilter(t => !t.IsDeleted && (!_tenantContext.IsResolved || t.TenantId == _tenantContext.TenantId));
     }
 }
