@@ -86,7 +86,7 @@
 - [x] US-REC-005 — Schedule interviews and notify participants *(PR #56)*
 - [x] US-REC-006 — Interviewer submits scorecard *(PR #58)*
 - [x] US-REC-007 — Generate and send offer letter *(PR #59)*
-- [ ] US-REC-008 — Applicant tracks application status
+- [~] US-REC-008 — Applicant tracks application status
 - [ ] US-REC-009 — Recruitment dashboard and analytics
 - [ ] US-REC-010 — Convert applicant to employee record
 
