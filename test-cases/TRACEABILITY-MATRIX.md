@@ -2189,7 +2189,13 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | Critical | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
 | US-REC-006 | Interviewer Submits Structured Interview Scorecard | Must Have | TC-REC-006-01, TC-REC-006-02, TC-REC-006-03, TC-REC-006-04, TC-REC-006-05, TC-REC-006-06, TC-REC-006-07, TC-REC-006-08, TC-REC-006-09, TC-REC-006-10, TC-REC-006-11, TC-REC-006-12, TC-REC-006-13 | 13 | 4/4 AC covered |
 | Cross-cutting (REC-006) | Multi-tenant isolation (interview scorecard / criterion rating) | Critical | TC-REC-ISO-015 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
-| **TOTAL** | | | **96 test cases** | **96** | **29/29 AC** |
+| US-REC-007 | Generate and Send Offer Letter | Must Have | TC-REC-007-01, TC-REC-007-02, TC-REC-007-03, TC-REC-007-04, TC-REC-007-05, TC-REC-007-06, TC-REC-007-07, TC-REC-007-08, TC-REC-007-09, TC-REC-007-10, TC-REC-007-11, TC-REC-007-12, TC-REC-007-13, TC-REC-007-14 | 14 | 5/5 AC covered |
+| Cross-cutting (REC-007) | Multi-tenant isolation (offer / offer PDF) | Critical | TC-REC-ISO-016 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
+| US-REC-008 | Applicant Tracks Application Status (Candidate Portal) | Should Have | TC-REC-008-01, TC-REC-008-02, TC-REC-008-03, TC-REC-008-04, TC-REC-008-05, TC-REC-008-06, TC-REC-008-07, TC-REC-008-08, TC-REC-008-09, TC-REC-008-10, TC-REC-008-11, TC-REC-008-12, TC-REC-008-13 | 13 | 4/4 AC covered |
+| Cross-cutting (REC-008) | Multi-tenant isolation (candidate portal / `applicant_portal_token`) | Critical | TC-REC-ISO-017 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
+| US-REC-009 | Recruitment Dashboard and Analytics | Should Have | TC-REC-009-01, TC-REC-009-02, TC-REC-009-03, TC-REC-009-04, TC-REC-009-05, TC-REC-009-06, TC-REC-009-07, TC-REC-009-08, TC-REC-009-09, TC-REC-009-10, TC-REC-009-11, TC-REC-009-12, TC-REC-009-13 | 13 | 5/5 AC covered |
+| Cross-cutting (REC-009) | Multi-tenant isolation (analytics aggregation / analytics cache + MV) | Critical | TC-REC-ISO-018 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
+| **TOTAL** | | | **139 test cases** | **139** | **43/43 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2287,6 +2293,49 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-006-12 | Submission <=800ms P95 incl. average/audit/enqueue; notification async (non-blocking) | Performance | High | US-REC-006 | NFR-1, NFR-3, NFR-4 |
 | TC-REC-006-13 | Scorecard form + recruiter view WCAG 2.1 AA; feedback XSS-sanitized; responsive 360px | Accessibility | High | US-REC-006 | NFR-3, AC-1, AC-2 |
 | TC-REC-ISO-015 | Tenant B cannot read/write Tenant A's scorecards/criterion ratings; rows session-stamped; aggregate tenant-scoped | Security | Critical | US-REC-006 | AC-4, NFR-2, NFR-4, FR-1, FR-3, FR-7 |
+| TC-REC-007-01 | Generate offer letter from template -> PDF + variable substitution, tenant-scoped path, preview (happy path) | E2E | Critical | US-REC-007 | AC-1, FR-1, FR-2, FR-3, NFR-3 |
+| TC-REC-007-02 | Send to applicant -> emailed w/ PDF, status Sent, expiry job scheduled (happy path) | E2E | Critical | US-REC-007 | AC-2, FR-4, FR-6, NFR-4 |
+| TC-REC-007-03 | Applicant accepts -> Accepted; applicant advances to Hired (happy path) | E2E | Critical | US-REC-007 | AC-3, FR-7, BR-3 |
+| TC-REC-007-04 | Applicant declines -> Declined; applicant remains in Offer (alternative) | Functional | High | US-REC-007 | AC-3, FR-7, BR-3 |
+| TC-REC-007-05 | Offer expiry -> reminder then Expired after grace (no response) | Integration | High | US-REC-007 | AC-4, FR-6, BR-6 |
+| TC-REC-007-06 | Withdraw before acceptance -> Withdrawn, applicant notified, not re-sent | Functional | High | US-REC-007 | FR-8, BR-7 |
+| TC-REC-007-07 | One active offer per applicant per vacancy at a time | Functional | High | US-REC-007 | BR-2, FR-1 |
+| TC-REC-007-08 | Multiple offer versions -> new supersedes previous (renegotiation) | Functional | High | US-REC-007 | FR-9 |
+| TC-REC-007-09 | Expiry date mandatory (default +7d); required-field/form validation | Functional | High | US-REC-007 | BR-6, FR-1 |
+| TC-REC-007-10 | Authz: only Recruitment.Offer.All generate/send/respond/withdraw | Security | Critical | US-REC-007 | BR-1, NFR-2 |
+| TC-REC-007-11 | Approval workflow (if configured) blocks send until approved | Functional | High | US-REC-007 | BR-5, FR-10 |
+| TC-REC-007-12 | PDF gen <=3s for 2-page template; email delivery async | Performance | High | US-REC-007 | NFR-1, NFR-4 |
+| TC-REC-007-13 | Offer form + PDF preview WCAG 2.1 AA, responsive 360px; clause/benefits XSS-sanitized | Accessibility | High | US-REC-007 | NFR-5, FR-1 |
+| TC-REC-007-14 | Offer PDF encrypted at rest; signed/tenant-scoped key; no unresolved placeholders | Security | High | US-REC-007 | NFR-3, FR-2, FR-3 |
+| TC-REC-ISO-016 | Tenant B cannot read/write Tenant A's offers / offer PDFs; rows + PDF paths session-stamped | Security | Critical | US-REC-007 | AC-5, NFR-2, NFR-3 |
+| TC-REC-008-01 | Magic link grants correct applicant in correct tenant; dashboard + step indicator + status (happy path) | E2E | Critical | US-REC-008 | AC-1, FR-1, FR-2, NFR-3, NFR-4, BR-1, BR-4, BR-6 |
+| TC-REC-008-02 | Upcoming interview details on portal (date/time/type/location/link/interviewers) | Functional | High | US-REC-008 | AC-1, FR-2 |
+| TC-REC-008-03 | Applicant accepts offer on portal -> Accepted + advances to Hired (happy path) | E2E | Critical | US-REC-008 | AC-2, FR-3, BR-1 |
+| TC-REC-008-04 | Applicant declines offer on portal -> Declined; remains in Offer (alternative) | Functional | High | US-REC-008 | AC-2, FR-3, BR-1 |
+| TC-REC-008-05 | Application timeline = sanitized chronological status-change log | Functional | High | US-REC-008 | AC-1, FR-2 |
+| TC-REC-008-06 | Expired link denies + "request new link"; regeneration verifies email->application | Functional | High | US-REC-008 | AC-3, FR-1, BR-5 |
+| TC-REC-008-07 | Tampered/forged/replayed token rejected; HMAC-SHA256 over tenant_id+email+expiry | Security | Critical | US-REC-008 | FR-1, NFR-4, BR-4 |
+| TC-REC-008-08 | Rejection reasons / scorecards / interviewer comments / internal notes NEVER exposed (API-side) | Security | Critical | US-REC-008 | AC-1, FR-2, BR-1, NFR-1 |
+| TC-REC-008-09 | Resume + offer PDF via signed, short-lived, tenant-scoped blob URLs | Security | High | US-REC-008 | FR-2, NFR-3 |
+| TC-REC-008-10 | Portal read-only for application data; offer accept/decline single irreversible action | Functional | High | US-REC-008 | AC-2, BR-1, FR-3 |
+| TC-REC-008-11 | Rate limiting on regeneration endpoint prevents abuse/enumeration | Security | High | US-REC-008 | NFR-1, BR-5 |
+| TC-REC-008-12 | Candidate portal loads <=2.5s P95 on 4G | Performance | High | US-REC-008 | NFR-2 |
+| TC-REC-008-13 | Candidate portal WCAG 2.1 AA + responsive 360px (step indicator/interview/offer/timeline) | Accessibility | High | US-REC-008 | NFR-1, FR-2 |
+| TC-REC-ISO-017 | Tenant A magic link denied on Tenant B subdomain; portal tenant-bound by subdomain | Security | Critical | US-REC-008 | AC-4, BR-4, BR-5, NFR-3, NFR-4 |
+| TC-REC-009-01 | Dashboard KPI cards correct (open vacancies/applicants/hires/avg time-to-hire/acceptance rate/offers pending) (happy path) | E2E | Critical | US-REC-009 | AC-1, FR-1, BR-1, BR-2, NFR-2 |
+| TC-REC-009-02 | Date range filter (preset+custom) updates ALL metrics/charts; inverted range rejected | Functional | Critical | US-REC-009 | AC-2, FR-6, BR-1, BR-2, BR-4 |
+| TC-REC-009-03 | Funnel stage counts + adjacent conversion rates (100->60->30 => 60%,50%) | Functional | Critical | US-REC-009 | AC-3, FR-2, BR-3 |
+| TC-REC-009-04 | Source effectiveness: applicants per source + hire conversion per source (incl. custom) | Functional | High | US-REC-009 | AC-4, FR-3, BR-6 |
+| TC-REC-009-05 | Time-to-hire trend line chart weekly/monthly buckets correct | Functional | High | US-REC-009 | FR-4, BR-1, AC-2 |
+| TC-REC-009-06 | Vacancy status summary counts by Draft/Open/On Hold/Closed | Functional | High | US-REC-009 | FR-5, AC-1 |
+| TC-REC-009-07 | Recent activity feed: latest events + relative timestamps + deep links | Functional | High | US-REC-009 | FR-9, AC-1, AC-2, BR-4 |
+| TC-REC-009-08 | Department + vacancy drill-down filters scope all widgets (AND-combine) | Functional | High | US-REC-009 | FR-7, FR-6, AC-1, AC-2 |
+| TC-REC-009-09 | Role scope: Reports.View.All full vs Reports.View.Department own-dept; unauth denied; no param escalation | Security | Critical | US-REC-009 | BR-5, AC-1, AC-5, NFR-2 |
+| TC-REC-009-10 | Export CSV/Excel match filtered view; PDF + async deferrals seam-asserted | Functional | High | US-REC-009 | FR-8, NFR-5, AC-2 |
+| TC-REC-009-11 | Empty-state + boundary: no data, single record, divide-by-zero rate guards | Functional | Medium | US-REC-009 | FR-1, FR-2, FR-3, FR-4, FR-5, FR-9, BR-1, BR-2, BR-3 |
+| TC-REC-009-12 | Dashboard <=2.5s P95 @ 10k applicants; tenant-scoped cache/MV | Performance | High | US-REC-009 | NFR-1, NFR-3, AC-1 |
+| TC-REC-009-13 | Dashboard WCAG 2.1 AA + responsive 360px-4K chart reflow | Accessibility | High | US-REC-009 | NFR-4, AC-1, AC-2, AC-3, AC-4 |
+| TC-REC-ISO-018 | Tenant B dashboard aggregates zero of Tenant A across every metric/cache/MV; cross-table isolation | Security | Critical | US-REC-009 | AC-5, NFR-2, NFR-3 |
 
 ### US-REC-001 Detailed Requirements Traceability
 
@@ -2545,6 +2594,50 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Performance Test Cases | 1 (TC-REC-006-12 -- submission <=800ms P95 incl. average/audit/enqueue; async delivery) | >= 1 | PASS |
 | Accessibility Test Cases | 1 (TC-REC-006-13 -- scorecard form + recruiter view WCAG 2.1 AA + responsive 360px) | >= 1 | PASS |
 | Blocked Test Cases | 0 (TC-REC-006-01/12 FR-5 CONDITIONAL on Hangfire/S25; TC-REC-006-08 version-history CONDITIONAL; TC-REC-006-11 CONDITIONAL on REC-004 gate evaluator) | -- | CLEAR |
+
+### US-REC-009 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Dashboard with KPI cards (open vacancies, total applicants, avg time-to-hire, offer acceptance rate) + funnel | AC | TC-REC-009-01, TC-REC-009-06, TC-REC-009-07, TC-REC-009-09, TC-REC-009-11, TC-REC-009-13 | Direct |
+| AC-2: Date range filter (preset/custom) updates ALL metrics and charts | AC | TC-REC-009-02, TC-REC-009-05, TC-REC-009-07, TC-REC-009-08, TC-REC-009-10, TC-REC-009-13 | Direct |
+| AC-3: Funnel shows stage counts + conversion % between adjacent stages | AC | TC-REC-009-03, TC-REC-009-11, TC-REC-009-13 | Direct |
+| AC-4: Source effectiveness chart: applicants by source + hire conversion per source | AC | TC-REC-009-04, TC-REC-009-13 | Direct |
+| AC-5: Only Tenant A's data aggregated; no cross-tenant leakage | AC | TC-REC-ISO-018 (+ reused TC-REC-ISO-010, TC-REC-ISO-011) | Direct (EF query filters; RLS noted as extension point) |
+| FR-1: KPI cards (Open Vacancies, Total Applicants, Hires, Avg Time-to-Hire, Offer Acceptance Rate, Offers Pending) | FR | TC-REC-009-01, TC-REC-009-11 | Direct |
+| FR-2: Recruitment funnel chart with conversion % | FR | TC-REC-009-03, TC-REC-009-11 | Direct |
+| FR-3: Source effectiveness chart + hire conversion per source | FR | TC-REC-009-04 | Direct |
+| FR-4: Time-to-hire trend line chart (weekly/monthly points) | FR | TC-REC-009-05 | Direct |
+| FR-5: Vacancy status summary by Draft/Open/On Hold/Closed | FR | TC-REC-009-06 | Direct |
+| FR-6: Global date range filter (presets + custom) | FR | TC-REC-009-02, TC-REC-009-05, TC-REC-009-08 | Direct |
+| FR-7: Department + vacancy drill-down filter | FR | TC-REC-009-08, TC-REC-009-09, TC-REC-009-06 | Direct |
+| FR-8: Export CSV/Excel (ClosedXML) + PDF (QuestPDF) | FR | TC-REC-009-10 | Direct (PDF/async CONDITIONAL on Reports & Analytics S33 + Hangfire) |
+| FR-9: Recent activity feed with timestamps + deep links | FR | TC-REC-009-07 | Direct |
+| NFR-1: Dashboard <= 2.5s P95 @ 10k applicants | NFR | TC-REC-009-12 | Direct |
+| NFR-2: Analytics queries tenant-scoped; RLS | NFR | TC-REC-ISO-018 | Direct (EF query filters today; RLS extension point) |
+| NFR-3: Pre-aggregation MV / Redis cache, tenant-scoped keys | NFR | TC-REC-009-12, TC-REC-ISO-018 | Direct (CONDITIONAL on caching/MV wired; key shape asserted) |
+| NFR-4: Responsive 360px-4K; charts reflow for mobile | NFR | TC-REC-009-13 | Direct |
+| NFR-5: Large exports async via Hangfire + download notification | NFR | TC-REC-009-10 | Direct (CONDITIONAL on Hangfire/S33 wiring; enqueue seam asserted) |
+| BR-1: Time-to-hire = calendar days applied_at -> Hired | BR | TC-REC-009-01, TC-REC-009-05, TC-REC-009-11 | Direct |
+| BR-2: Offer acceptance rate = accepted / sent * 100 | BR | TC-REC-009-01, TC-REC-009-11 | Direct |
+| BR-3: Funnel conversion = count[N+1] / count[N] * 100 | BR | TC-REC-009-03, TC-REC-009-11 | Direct |
+| BR-4: Refresh on page load; no real-time streaming (Phase 1) | BR | TC-REC-009-02, TC-REC-009-07 | Direct |
+| BR-5: Reports.View.All -> full; Reports.View.Department -> own department | BR | TC-REC-009-09 | Direct |
+| BR-6: Source categories (Public/Internal/Referral/Manual + custom) | BR | TC-REC-009-04 | Direct |
+
+### Coverage Summary (Recruitment -- US-REC-009)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 9/9 (100%) -- FR-8 PDF/async CONDITIONAL on S33/Hangfire | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 5/5 (100%) -- NFR-2 RLS extension point; NFR-3 cache/MV CONDITIONAL; NFR-5 CONDITIONAL on Hangfire/S33 | >= 85% | PASS |
+| Business Rules Coverage | 6/6 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 1 new dedicated (TC-REC-ISO-018, cross-table aggregation + cache/MV) + 2 reused (TC-REC-ISO-010/011) | >= 1 | PASS |
+| Security Test Cases | TC-REC-009-09 (role-based scope + authz), TC-REC-ISO-018 (+ reused TC-REC-ISO-010/011) | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-REC-009-12 -- dashboard <=2.5s P95 @ 10k applicants; tenant-scoped cache/MV) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-REC-009-13 -- dashboard WCAG 2.1 AA + responsive 360px-4K reflow) | >= 1 | PASS |
+| Blocked Test Cases | 0 (TC-REC-009-10 PDF/async CONDITIONAL on S33/Hangfire; TC-REC-009-12 cache/MV CONDITIONAL on Redis/MV wiring) | -- | CLEAR |
 
 ---
 

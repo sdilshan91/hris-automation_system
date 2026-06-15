@@ -395,6 +395,47 @@ Accept/Decline with a one-time confirmation modal — AC-3/BR-2), `portal-timeli
 (vertical Notion-like activity log — FR-6). Reuses `careers-branding` for the
 tenant logo/primary color header.
 
+## Recruitment dashboard & analytics (US-REC-009)
+
+Recruiter/HR analytics page under the recruiter-guarded `recruitment` route →
+child route `recruitment/dashboard` (`RecruitmentDashboardComponent`).
+`RecruitmentDashboardService` + `models/dashboard.models.ts` keep the contract +
+DTO↔FE mapping in ONE place. ALL charts are pure SVG/CSS (no chart lib is a project
+dep — same call as US-REC-006/US-ATT-010).
+
+### Frontend contract (`RecruitmentDashboardService`, camelCase, base `/api/v1/recruitment/dashboard`)
+Reconcile with the backend agent:
+- `GET /recruitment/dashboard?from=&to=&departmentId=&vacancyId=` → `IRecruitmentDashboard`
+  (tolerates a `{ data }` envelope). `from`/`to` are `yyyy-MM-dd` (FR-6); department/
+  vacancy are the optional FR-7 drill-down. Backend RLS scopes to tenant (AC-5).
+  The DTO = `{ range, kpis, funnel[], sources[], timeToHireTrend[], vacancyStatus[],
+  recentActivity[] }`:
+  - `kpis`: openVacancies, totalApplicants, hires, avgTimeToHireDays (BR-1),
+    offerAcceptanceRate (0–100, BR-2), offersPending. Optional `previous*` companions
+    drive the up/down trend arrows; FE treats them as optional.
+  - `funnel[]`: `{ stage, count, conversionRate? }` — FE DERIVES conversionRate from
+    adjacent counts when the backend omits it (BR-3, `funnelConversion`).
+  - `sources[]`: `{ source, applicants, hires, conversionRate? }` — FE derives the
+    per-source hire rate when absent. `source` is the ApplicantSource union (+ custom, BR-6).
+  - `timeToHireTrend[]`: `{ label, avgDays }` (weekly/monthly buckets, FR-4).
+  - `vacancyStatus[]`: `{ status, count }` — `status` is the **VacancyStatus** union
+    (PascalCase, `OnHold` not "On Hold"). Donut + legend.
+  - `recentActivity[]`: `{ id, type, description, occurredAt, applicantId?, vacancyId? }`.
+    `type` is PascalCase ActivityType (`ApplicantApplied|StageChanged|InterviewScheduled|
+    OfferSent|OfferAccepted|Hired`). FE renders `occurredAt` as a relative label.
+- `GET /recruitment/dashboard/filters` → `{ departments: {id,label}[], vacancies: {id,label}[] }`
+  (FR-7 drill-down options; non-blocking — empty list just hides options).
+- `GET /recruitment/dashboard/export?from=&to=&format=csv|xlsx|pdf&departmentId=&vacancyId=`
+  → file **blob** + Content-Disposition (FR-8). xlsx (ClosedXML) + pdf (QuestPDF) are
+  server-generated; CSV is the Phase-1 button. FE streams + downloads (no client chart-to-PDF).
+
+### Notes
+- Default range = last 30 days (preset pills 7d/30d/90d/1y + custom; `presetRange`).
+- Reloads on load + every filter change (BR-4: no real-time streaming). Custom range
+  only reloads when `from <= to`.
+- All pure helpers (donut/trend geometry, conversions, relativeTime, presetRange) are
+  unit-tested in `dashboard.models.spec.ts`; the service spec flushes BARE DTOs.
+
 ## Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

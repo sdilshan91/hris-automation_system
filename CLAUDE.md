@@ -28,6 +28,16 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    (build passes, tests green, AC met) before starting; for multi-step work keep a
    short checkpointed plan. Strong criteria are what let the agent loop unattended;
    "make it work" is not a success criterion.
+5. **Delegate multi-file reading to sub-agents.** When answering a question or
+   scoping a task requires reading across several files (search, "how does X work",
+   tracing a flow, surveying naming conventions), dispatch an `Explore` /
+   `general-purpose` sub-agent and keep the *conclusion*, not the raw file dumps —
+   don't pull every file into the main context. For a single-fact lookup where you
+   already know the file/symbol, read it directly; don't over-delegate trivia.
+   *Parallelism:* run independent sub-agents concurrently (multiple `Agent` calls in
+   one message) to speed things up — but **never parallelize dependent steps**
+   (where one's output feeds the next) **or concurrent writes to the same file**
+   (use `isolation: worktree` if parallel edits are unavoidable).
 
 ## Advisor Stance (how to talk to the user)
 
