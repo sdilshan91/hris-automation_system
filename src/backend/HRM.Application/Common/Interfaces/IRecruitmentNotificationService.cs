@@ -92,4 +92,21 @@ public interface IRecruitmentNotificationService
         Guid vacancyId,
         Guid interviewerEmployeeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the applicant (and, for expiry, the recruiter) about an offer lifecycle event
+    /// (US-REC-007 FR-5/FR-7/FR-8) — sent, withdrawn, expiry-reminder, or expired. Fire-and-forget; must
+    /// never throw into the request/job path — the offer write is committed even if dispatch fails. Real
+    /// email (with PDF attachment, FR-5) delivery is DEFERRED: this is the log-only seam (mirrors the
+    /// other recruitment events).
+    /// </summary>
+    /// <param name="eventType">A short event label, e.g. "offer-sent" / "offer-withdrawn" / "offer-expiry-reminder" / "offer-expired".</param>
+    /// <param name="applicantEmail">The applicant's email (from their application).</param>
+    Task NotifyOfferAsync(
+        string eventType,
+        Guid offerId,
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        CancellationToken cancellationToken = default);
 }

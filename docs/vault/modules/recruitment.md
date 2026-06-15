@@ -286,6 +286,64 @@ is a clean **comparison table** (criteria × interviewers, per-card average +
 highlighted aggregate), an acceptable Phase-1 form per the story note. Revisit
 (radar/bar) only if a chart lib is added.
 
+## Offer letters (US-REC-007)
+
+Recruiter generates → previews → sends an offer, then records the applicant's
+Accept/Decline or Withdraws it before acceptance. Reached from a new
+applicant-detail **Offer** tab (offer history list with §8 status badges + a
+"Generate offer" CTA). New files under `features/recruitment/`:
+`models/offer.models.ts`, `services/offer.service.ts`,
+`components/offer-form/` (a single slide-over that does both create AND
+preview/actions). `OfferService.mapOffer` keeps the DTO↔FE mapping in ONE place.
+
+### Frontend contract (`OfferService`, camelCase, base `/api/v1/recruitment`)
+PROPOSED — no backend offer endpoints existed when this FE was built; the backend
+agent should MATCH these (mirrors how US-REC-006 scorecards were done):
+- `POST /recruitment/applicants/:applicantId/offers` body `IOfferRequest`
+  → `IOffer` (status `Draft`; backend generates the PDF + ref no., AC-1/FR-1/FR-2).
+- `GET  /recruitment/applicants/:applicantId/offers` → `IOffer[]` (history +
+  versions, FR-9; tolerates a `{ data }` envelope).
+- `GET  /recruitment/offers/:id` → `IOffer`.
+- `GET  /recruitment/offers/:id/pdf` → **Blob** (responseType blob, observe
+  response; filename from `Content-Disposition`, FR-4). Streamed through the API,
+  not a direct blob-storage URL (NFR-3).
+- `POST /recruitment/offers/:id/send` → `IOffer` (`Draft`→`Sent`, AC-2/FR-5).
+- `POST /recruitment/offers/:id/respond` body `{ response: 'Accepted'|'Declined',
+  notes? }` → `IOffer` (AC-3). **Accept advances the applicant to `Hired`
+  server-side (BR-3)** — the FE reflects it by reloading the applicant detail and
+  emitting `moved('Hired')` from the detail drawer.
+- `POST /recruitment/offers/:id/withdraw` body `{ reason? }` → `IOffer`
+  (`Withdrawn`, FR-8 — allowed only before acceptance).
+
+`IOffer` ≈ `{ id, offerReferenceNumber, applicantId, vacancyId, status,
+offeredPosition, departmentId/Name, reportingManagerId/Name, salaryAmount,
+currency, salaryFrequency, benefitsSummary, startDate, expiryDate, probationMonths,
+customClauses, version, sentAt, respondedAt, response, createdAt }`. All
+withCredentials + RLS.
+
+### Enum casing (US-PLT-003 — critical)
+- `OfferStatus` = `'Draft'|'Sent'|'Accepted'|'Declined'|'Expired'|'Withdrawn'`.
+- `SalaryFrequency` = `'Annual'|'Monthly'|'Weekly'|'Hourly'` (PascalCase — reconcile
+  the member set with the backend `SalaryFrequency` enum; FE source of truth is
+  `SALARY_FREQUENCY_OPTIONS` in offer.models.ts).
+- §8 status badges (single source `OFFER_STATUS_BADGE`): Draft=gray, Sent=blue,
+  Accepted=green, Declined=red, Expired=orange, **Withdrawn=gray + `line-through`**.
+
+### Business rules surfaced in the UI
+- Lifecycle gates are pure helpers (`canSendOffer`/`canRespondToOffer`/
+  `canWithdrawOffer`): Send only for `Draft`; respond only for `Sent`; withdraw for
+  `Draft`|`Sent` (before acceptance). The backend re-checks authoritatively.
+- BR-6 expiry mandatory, **defaults to start+7 days** (`defaultExpiryDate`); a
+  cross-field validator blocks expiry < start.
+- The offer-form's `currentOffer()` = locally-updated signal `??` input offer, so
+  a send/respond/withdraw reflects in the badge + footer **without a reload** (the
+  input offer is immutable). Lesson learned the hard way in the spec.
+
+### No inline PDF preview (FR-4)
+pdf.js is still NOT a project dep, so the preview step shows the parsed offer
+fields + a "Download" button that streams the server PDF (same pattern as the
+US-REC-003 resume tab). Revisit an inline viewer only if pdf.js is added.
+
 ## Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

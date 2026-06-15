@@ -69,6 +69,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<InterviewInterviewer> InterviewInterviewers => Set<InterviewInterviewer>();
     public DbSet<InterviewScorecard> InterviewScorecards => Set<InterviewScorecard>();
     public DbSet<ScorecardCriterionRating> ScorecardCriterionRatings => Set<ScorecardCriterionRating>();
+    public DbSet<Offer> Offers => Set<Offer>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -250,5 +251,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-REC-006: ScorecardCriterionRating tenant isolation + soft-delete filter (AC-4).
         modelBuilder.Entity<ScorecardCriterionRating>()
             .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
+
+        // US-REC-007: Offer tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
+        modelBuilder.Entity<Offer>()
+            .HasQueryFilter(o => !o.IsDeleted && (!_tenantContext.IsResolved || o.TenantId == _tenantContext.TenantId));
     }
 }

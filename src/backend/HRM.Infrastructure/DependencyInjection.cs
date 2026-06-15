@@ -182,6 +182,11 @@ public static class DependencyInjection
 
         // US-REC-006: Recruitment — structured interview scorecard submission + reads (anti-bias, FR-6).
         services.AddScoped<IScorecardService, ScorecardService>();
+
+        // US-REC-007: Recruitment — offer-letter generation/send/response/withdrawal + reads.
+        // IOfferExpiryScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without it the
+        // service skips expiry scheduling so the flow never requires real Hangfire storage.
+        services.AddScoped<IOfferService, OfferService>();
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

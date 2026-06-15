@@ -11,6 +11,7 @@ import {
 import { ApplicantDetailComponent } from './applicant-detail.component';
 import { PipelineService } from '../../services/pipeline.service';
 import { InterviewService } from '../../services/interview.service';
+import { OfferService } from '../../services/offer.service';
 import { IApplicantDetail } from '../../models/pipeline.models';
 import { IInterview } from '../../models/interview.models';
 
@@ -19,6 +20,7 @@ describe('ApplicantDetailComponent', () => {
   let fixture: ComponentFixture<ApplicantDetailComponent>;
   let serviceSpy: jasmine.SpyObj<PipelineService>;
   let interviewSpy: jasmine.SpyObj<InterviewService>;
+  let offerSpy: jasmine.SpyObj<OfferService>;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const interview = (over: Partial<IInterview> = {}): IInterview => ({
@@ -86,6 +88,17 @@ describe('ApplicantDetailComponent', () => {
     interviewSpy.listForApplicant.and.returnValue(of([interview()]));
     interviewSpy.cancel.and.returnValue(of(interview({ status: 'Cancelled' })));
 
+    offerSpy = jasmine.createSpyObj('OfferService', [
+      'listForApplicant',
+      'generate',
+      'send',
+      'respond',
+      'withdraw',
+      'downloadPdf',
+      'getOffer',
+    ]);
+    offerSpy.listForApplicant.and.returnValue(of([]));
+
     toastrSpy = jasmine.createSpyObj('ToastrService', [
       'success',
       'error',
@@ -98,6 +111,7 @@ describe('ApplicantDetailComponent', () => {
         provideAnimationsAsync(),
         { provide: PipelineService, useValue: serviceSpy },
         { provide: InterviewService, useValue: interviewSpy },
+        { provide: OfferService, useValue: offerSpy },
         { provide: ToastrService, useValue: toastrSpy },
       ],
     }).compileComponents();

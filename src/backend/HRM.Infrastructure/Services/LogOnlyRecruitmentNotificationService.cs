@@ -109,4 +109,19 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyOfferAsync(
+        string eventType,
+        Guid offerId,
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for offer {OfferId} (applicant {ApplicantId}, vacancy {VacancyId}): notify applicant {Email}",
+            eventType, offerId, applicantId, vacancyId, applicantEmail);
+
+        return Task.CompletedTask;
+    }
 }
