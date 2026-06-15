@@ -194,6 +194,14 @@ public static class DependencyInjection
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
         services.AddScoped<IPayrollNotificationService, LogOnlyPayrollNotificationService>();
 
+        // US-PAY-004: Payroll — payslip-PDF generation. The generation service (enqueue + status + downloads)
+        // takes an OPTIONAL IPayslipGenerationJobScheduler (Hangfire-backed impl registered in Program.cs) so
+        // it never requires real Hangfire storage in tests/dev. The batch renderer does the heavy QuestPDF
+        // render + tenant-isolated blob store (invoked by the Hangfire job, or directly in tests). Reuses the
+        // existing IFileStorage abstraction for blob storage.
+        services.AddScoped<IPayslipGenerationService, PayslipGenerationService>();
+        services.AddScoped<IPayslipBatchRenderer, PayslipBatchRenderer>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.

@@ -18,3 +18,8 @@ export * from './services/payroll-run.service';
 export { PayrollRunsComponent } from './components/payroll-runs/payroll-runs.component';
 export { NewPayrollRunComponent } from './components/new-payroll-run/new-payroll-run.component';
 export { PayrollRunDetailComponent } from './components/payroll-run-detail/payroll-run-detail.component';
+
+/** US-PAY-004: Generate individual payslips. */
+export * from './models/payslip.models';
+export * from './services/payslip.service';
+export { PayslipListComponent } from './components/payslip-list/payslip-list.component';

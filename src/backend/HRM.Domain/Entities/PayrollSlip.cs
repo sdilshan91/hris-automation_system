@@ -43,4 +43,28 @@ public sealed class PayrollSlip : BaseEntity
 
     /// <summary>The per-component breakdown lines (FR-5f). Owned collection; loaded explicitly where needed.</summary>
     public List<PayrollSlipDetail> Details { get; set; } = [];
+
+    // ── US-PAY-004: PDF payslip generation (FR-7) ──────────────────────────────
+
+    /// <summary>
+    /// When this slip's PDF was last successfully rendered + stored (US-PAY-004 FR-7). Null until generated;
+    /// updated (overwritten) on regenerate (AC-5). timestamptz?.
+    /// </summary>
+    public DateTime? PdfGeneratedAt { get; set; }
+
+    /// <summary>
+    /// Tenant-scoped relative storage path of the rendered PDF (US-PAY-004 FR-5/FR-7):
+    /// <c>{tenantId}/payroll/{runId}/{employeeId}.pdf</c> (the path WITHIN the tenant scope is
+    /// <c>payroll/{runId}/{employeeId}.pdf</c>). Null until generated. varchar(500)?.
+    /// </summary>
+    public string? PdfStoragePath { get; set; }
+
+    /// <summary>
+    /// PDF generation status (US-PAY-004 FR-7): Pending (queued, not yet rendered) / Generated (rendered +
+    /// stored) / Failed (render or store error, individually retryable per FR-8). varchar(20)?.
+    /// </summary>
+    public string? PdfStatus { get; set; }
+
+    /// <summary>Size of the rendered PDF in bytes (US-PAY-004 FR-7/NFR-2 &lt;=200KB target). Null until generated. int?.</summary>
+    public int? PdfFileSizeBytes { get; set; }
 }

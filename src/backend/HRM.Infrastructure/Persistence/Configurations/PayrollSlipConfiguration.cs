@@ -33,6 +33,12 @@ public sealed class PayrollSlipConfiguration : IEntityTypeConfiguration<PayrollS
         builder.Property(x => x.PayMonth).IsRequired();
         builder.Property(x => x.PayYear).IsRequired();
 
+        // US-PAY-004 (§7): PDF generation tracking columns. All nullable — a slip exists before its PDF.
+        builder.Property(x => x.PdfGeneratedAt);
+        builder.Property(x => x.PdfStoragePath).HasMaxLength(500);
+        builder.Property(x => x.PdfStatus).HasMaxLength(20);
+        builder.Property(x => x.PdfFileSizeBytes);
+
         builder.Property(x => x.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // Owned details are managed via the dedicated DbSet, not as a mapped nav.
