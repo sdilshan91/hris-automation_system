@@ -6,6 +6,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
@@ -31,7 +32,7 @@ import {
 @Component({
   selector: 'app-vacancy-list',
   standalone: true,
-  imports: [CommonModule, VacancyFormComponent],
+  imports: [CommonModule, RouterLink, VacancyFormComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -189,6 +190,12 @@ import {
                           <option [value]="s">{{ s }}</option>
                         }
                       </select>
+                      <a
+                        class="rounded-md px-2 py-1 text-sm text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-800"
+                        [routerLink]="['/recruitment/vacancies', v.id, 'pipeline']"
+                      >
+                        Pipeline
+                      </a>
                       <button
                         type="button"
                         class="rounded-md px-2 py-1 text-sm text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-800"

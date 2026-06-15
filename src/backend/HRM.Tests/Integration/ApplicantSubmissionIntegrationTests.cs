@@ -249,6 +249,9 @@ public sealed class ApplicantSubmissionIntegrationTests
         public Task<string> UploadAsync(Guid tenantId, string relativePath, Stream content, string contentType, CancellationToken cancellationToken = default)
             => Task.FromResult($"/{tenantId}/{relativePath}");
 
+        public Task<Stream?> OpenReadAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
+            => Task.FromResult<Stream?>(new MemoryStream([1, 2, 3]));
+
         public string GetSignedUrl(Guid tenantId, string relativePath, TimeSpan? expiresIn = null)
             => $"/files/{tenantId}/{relativePath}";
 

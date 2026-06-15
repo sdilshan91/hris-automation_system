@@ -92,6 +92,53 @@ reactive forms + signals + upload progress), `resume-upload` (CVA drag-and-drop,
 keyboard-operable), `careers-branding` (logo + name + `--brand-primary`),
 `internal-apply` (slide-over), `internal-vacancy` (authenticated container).
 
+## Applicant Pipeline / Kanban (US-REC-003)
+
+Recruiter-facing Kanban board for one vacancy's applicants. Reached from the
+vacancy list "Pipeline" link → route `recruitment/vacancies/:vacancyId/pipeline`
+(same recruiter `roleGuard` as US-REC-001). `PipelineService` + `pipeline.models.ts`
+keep the contract in ONE place.
+
+### Frontend contract (`PipelineService`, camelCase, base `/api/v1/recruitment`)
+- `GET  /recruitment/vacancies/:vacancyId/pipeline?stage=&source=&from=&to=&search=`
+  → `IPipelineBoard { vacancyId, vacancyTitle?, stages: IPipelineStage[], total }`.
+  Each `IPipelineStage { stage, count, applicants: IApplicantCard[] }`. The FE
+  **normalizes** the board: it fills in every canonical stage column even if the
+  backend omits empty ones, and appends any non-canonical custom stages (§10)
+  after the canonical set — so the backend may return only non-empty stages.
+- `GET  /recruitment/applicants/:id` → `IApplicantDetail` (full applicant +
+  `stageHistory: IStageTransition[]`). FE defaults `stageHistory` to `[]` if absent.
+- `POST /recruitment/applicants/:id/stage` body `IStageChangeRequest { toStage,
+  reason?, notes? }` → `IApplicantCard` (the updated card). Backend records the
+  audit/history (BR-5) and is the authority on BR-3/BR-4 reason rules.
+- `GET  /recruitment/applicants/:id/resume` → resume **blob** (responseType blob,
+  observe response). FE reads the filename from `Content-Disposition`. We stream
+  through the API rather than expose a blob-storage URL (NFR-5).
+
+All recruiter requests use `withCredentials`; tenant scoping via tenantInterceptor
++ backend RLS (AC-5/NFR-3).
+
+`IApplicantCard { id, firstName, lastName, email, source, isInternal, appliedAt,
+stage }`. `ApplicantStage`/`ApplicantSource` reuse the US-REC-002 enums.
+
+### Business rules surfaced in the UI
+- Drag-and-drop (CDK `cdkDropListGroup`) moves cards between stages: **optimistic**
+  UI (transferArrayItem + recount) then `POST .../stage`; on error roll back to a
+  pre-move snapshot (AC-2/FR-3). Same-column reorder is local only, no server call.
+- BR-3: moving to **Rejected** opens a reason dialog (canned dropdown
+  `REJECTION_REASONS` + optional notes); persist is **deferred** until confirm,
+  cancel rolls back. BR-4: a **backward** move (incl. moving OUT of Rejected) opens
+  a free-text reason dialog. `moveRequiresReason()` in pipeline.models decides.
+- Detail slide-over (AC-3/FR-7): right drawer, 65% desktop / full mobile, tabs
+  Profile/Resume/Timeline/Interviews/Notes. **Interviews + Notes are placeholders**
+  (no interview module yet). Resume tab = filename + Download; **no inline PDF
+  preview** (pdf.js is not a dep — noted in the UI).
+- FR-4 table view: flattened, client-sorted grid (name/email/stage/source/applied).
+- FR-6 filters: sticky bar (search debounced 300ms, stage, source, applied
+  from/to) → re-queries the board; counts come from the server response.
+- NFR-4 mobile (<768px): columns horizontally scrollable + a stage-tab strip that
+  shows one column at a time.
+
 ### Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

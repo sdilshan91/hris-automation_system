@@ -64,6 +64,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<ScheduledReportConfig> ScheduledReportConfigs => Set<ScheduledReportConfig>();
     public DbSet<Vacancy> Vacancies => Set<Vacancy>();
     public DbSet<Applicant> Applicants => Set<Applicant>();
+    public DbSet<ApplicantStageHistory> ApplicantStageHistories => Set<ApplicantStageHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -225,5 +226,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-REC-002: Applicant tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
         modelBuilder.Entity<Applicant>()
             .HasQueryFilter(a => !a.IsDeleted && (!_tenantContext.IsResolved || a.TenantId == _tenantContext.TenantId));
+
+        // US-REC-003: ApplicantStageHistory tenant isolation + soft-delete filter (AC-5).
+        modelBuilder.Entity<ApplicantStageHistory>()
+            .HasQueryFilter(h => !h.IsDeleted && (!_tenantContext.IsResolved || h.TenantId == _tenantContext.TenantId));
     }
 }

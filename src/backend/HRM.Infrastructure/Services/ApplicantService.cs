@@ -262,6 +262,308 @@ public sealed class ApplicantService : IApplicantService
         });
     }
 
+    // ── US-REC-003: pipeline board, applicant detail, stage moves ────
+
+    public async Task<Result<ApplicantPipelineBoardDto>> GetPipelineBoardAsync(
+        Guid vacancyId, PipelineFilter filter, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ApplicantPipelineBoardDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Confirm the vacancy is in this tenant (global filter ⇒ a found row is in-tenant). 404 otherwise
+        // so a guessed cross-tenant vacancy id never surfaces another tenant's board (AC-5).
+        var vacancy = await _dbContext.Vacancies
+            .AsNoTracking()
+            .Where(v => v.Id == vacancyId)
+            .Select(v => new { v.Id, v.Title })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (vacancy is null)
+            return Result<ApplicantPipelineBoardDto>.Failure("Vacancy not found.", 404, "vacancy_not_found");
+
+        var query = _dbContext.Applicants.AsNoTracking().Where(a => a.VacancyId == vacancyId);
+
+        // FR-6/AC-4 filters. The board returns ALL matching applicants (no paging — NFR-1 targets ≤200
+        // per vacancy, which is the Kanban use case).
+        if (filter.Stage is { } stage)
+            query = query.Where(a => a.Stage == stage);
+
+        if (filter.Source is { } source)
+            query = query.Where(a => a.Source == source);
+
+        if (filter.AppliedFrom is { } from)
+            query = query.Where(a => a.AppliedAt >= from);
+
+        if (filter.AppliedTo is { } to)
+            query = query.Where(a => a.AppliedAt <= to);
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var term = filter.Search.Trim().ToLower();
+            query = query.Where(a =>
+                a.FirstName.ToLower().Contains(term) ||
+                a.LastName.ToLower().Contains(term) ||
+                a.Email.ToLower().Contains(term));
+        }
+
+        var applicants = await query
+            .OrderByDescending(a => a.AppliedAt)
+            .ToListAsync(cancellationToken);
+
+        // FR-1: one column per stage, in pipeline (enum) order, even when empty (so the Kanban renders
+        // every column). FR-5: per-stage count + overall total.
+        var stages = Enum.GetValues<ApplicantStage>()
+            .OrderBy(s => (int)s)
+            .Select((s, order) =>
+            {
+                var cards = applicants
+                    .Where(a => a.Stage == s)
+                    .Select(ToCard)
+                    .ToList();
+
+                return new PipelineStageColumnDto
+                {
+                    Stage = s,
+                    StageName = s.ToString(),
+                    Order = order,
+                    Count = cards.Count,
+                    Applicants = cards,
+                };
+            })
+            .ToList();
+
+        return Result<ApplicantPipelineBoardDto>.Success(new ApplicantPipelineBoardDto
+        {
+            VacancyId = vacancy.Id,
+            VacancyTitle = vacancy.Title,
+            Stages = stages,
+            Total = applicants.Count,
+        });
+    }
+
+    public async Task<Result<ApplicantDetailDto>> GetDetailAsync(
+        Guid applicantId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ApplicantDetailDto>.Failure("Tenant context is not resolved.", 400);
+
+        var applicant = await _dbContext.Applicants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == applicantId, cancellationToken);
+
+        if (applicant is null)
+            return Result<ApplicantDetailDto>.Failure("Applicant not found.", 404);
+
+        var vacancyTitle = await _dbContext.Vacancies
+            .AsNoTracking()
+            .Where(v => v.Id == applicant.VacancyId)
+            .Select(v => v.Title)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // BR-5/AC-3: stage-transition timeline, newest first. Tenant-scoped by the global filter.
+        var history = await _dbContext.ApplicantStageHistories
+            .AsNoTracking()
+            .Where(h => h.ApplicantId == applicantId)
+            .OrderByDescending(h => h.ChangedAt)
+            .ToListAsync(cancellationToken);
+
+        var timeline = history.Select(h => new ApplicantStageHistoryDto
+        {
+            Id = h.Id,
+            FromStage = h.FromStage,
+            FromStageName = h.FromStage.ToString(),
+            ToStage = h.ToStage,
+            ToStageName = h.ToStage.ToString(),
+            ChangedByUserId = h.ChangedByUserId,
+            Reason = h.Reason,
+            Notes = h.Notes,
+            ChangedAt = h.ChangedAt,
+        }).ToList();
+
+        return Result<ApplicantDetailDto>.Success(new ApplicantDetailDto
+        {
+            Profile = ToDto(applicant, vacancyTitle),
+            StageHistory = timeline,
+            ResumeFileName = applicant.ResumeFileName,
+            // NFR-5: do NOT expose the raw blob path. A short-lived signed URL is deferred (local-dev
+            // file-storage stub); the FE downloads via this authenticated route instead.
+            ResumeDownloadUrl =
+                $"/api/v1/recruitment/applicants/{applicant.Id}/resume",
+            Interviews = [], // DEFERRED: no interview module yet (US-REC-005/006).
+        });
+    }
+
+    public async Task<Result<MoveApplicantStageResultDto>> MoveStageAsync(
+        Guid applicantId, ApplicantStage toStage, string? reason, string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<MoveApplicantStageResultDto>.Failure("Tenant context is not resolved.", 400);
+
+        var applicant = await _dbContext.Applicants
+            .FirstOrDefaultAsync(a => a.Id == applicantId, cancellationToken);
+
+        if (applicant is null)
+            return Result<MoveApplicantStageResultDto>.Failure("Applicant not found.", 404, "applicant_not_found");
+
+        var ruleCheck = ApplyStageMove(applicant, toStage, reason, notes, out var historyRow);
+        if (ruleCheck.IsFailure)
+            return Result<MoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
+
+        WriteStageChangeAuditLog(historyRow!);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<MoveApplicantStageResultDto>.Success(ToMoveResult(historyRow!));
+    }
+
+    public async Task<Result<BulkMoveApplicantStageResultDto>> BulkMoveStageAsync(
+        IReadOnlyList<Guid> applicantIds, ApplicantStage toStage, string? reason, string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<BulkMoveApplicantStageResultDto>.Failure("Tenant context is not resolved.", 400);
+
+        if (applicantIds is null || applicantIds.Count == 0)
+            return Result<BulkMoveApplicantStageResultDto>.Failure("At least one applicant must be selected.", 400, "no_applicants");
+
+        var distinctIds = applicantIds.Distinct().ToList();
+
+        // Tenant-scoped fetch of all targets (global filter ⇒ only this tenant's rows; cross-tenant ids
+        // simply don't load — AC-5).
+        var applicants = await _dbContext.Applicants
+            .Where(a => distinctIds.Contains(a.Id))
+            .ToListAsync(cancellationToken);
+
+        if (applicants.Count != distinctIds.Count)
+            return Result<BulkMoveApplicantStageResultDto>.Failure(
+                "One or more applicants were not found.", 404, "applicant_not_found");
+
+        // All-or-nothing: validate every move first, collect history rows, then persist together so the
+        // caller never gets a partial move.
+        var historyRows = new List<ApplicantStageHistory>(applicants.Count);
+        foreach (var applicant in applicants)
+        {
+            var ruleCheck = ApplyStageMove(applicant, toStage, reason, notes, out var historyRow);
+            if (ruleCheck.IsFailure)
+                return Result<BulkMoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
+
+            historyRows.Add(historyRow!);
+        }
+
+        foreach (var row in historyRows)
+            WriteStageChangeAuditLog(row);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<BulkMoveApplicantStageResultDto>.Success(new BulkMoveApplicantStageResultDto
+        {
+            MovedCount = historyRows.Count,
+            Results = historyRows.Select(ToMoveResult).ToList(),
+        });
+    }
+
+    /// <summary>
+    /// Applies the stage-move business rules to a tracked applicant, mutates its stage, and stages an
+    /// <see cref="ApplicantStageHistory"/> row in the change tracker (BR-5). Does NOT call SaveChanges —
+    /// the caller batches the save (so bulk moves are atomic). Rules:
+    /// BR-3 Rejected requires a reason; BR-4 a backward move (lower stage index) requires a reason;
+    /// BR-6 Hired is allowed (terminal — convert-to-employee is US-REC-010, out of scope). A no-op move
+    /// (same stage) is rejected. Backward/forward permission (BR-1/BR-2/BR-4) is enforced at the API
+    /// layer (the move endpoint requires Recruitment.Manage), so any caller here already holds Manage.
+    /// </summary>
+    private Result ApplyStageMove(
+        Applicant applicant, ApplicantStage toStage, string? reason, string? notes,
+        out ApplicantStageHistory? historyRow)
+    {
+        historyRow = null;
+
+        var fromStage = applicant.Stage;
+
+        if (fromStage == toStage)
+            return Result.Failure("The applicant is already in this stage.", 409, "stage_unchanged");
+
+        var isBackward = (int)toStage < (int)fromStage;
+
+        // BR-3: moving to Rejected requires a reason.
+        if (toStage == ApplicantStage.Rejected && string.IsNullOrWhiteSpace(reason))
+            return Result.Failure("A reason is required when rejecting an applicant.", 400, "reason_required");
+
+        // BR-4: a backward move requires a reason (the Recruitment.Manage permission is enforced at the
+        // API layer — every mover here already holds it).
+        if (isBackward && string.IsNullOrWhiteSpace(reason))
+            return Result.Failure("A reason is required to move an applicant to an earlier stage.", 400, "reason_required");
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        var trimmedNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+
+        applicant.Stage = toStage;
+
+        historyRow = new ApplicantStageHistory
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            ApplicantId = applicant.Id,
+            FromStage = fromStage,
+            ToStage = toStage,
+            ChangedByUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            Reason = trimmedReason,
+            Notes = trimmedNotes,
+            ChangedAt = DateTime.UtcNow,
+            IsDeleted = false,
+        };
+
+        _dbContext.ApplicantStageHistories.Add(historyRow);
+
+        _logger.LogInformation(
+            "Applicant stage moved. ApplicantId={ApplicantId}, From={From}, To={To}, " +
+            "ChangedByUserId={UserId}, TenantId={TenantId}",
+            applicant.Id, fromStage, toStage, historyRow.ChangedByUserId, _tenantContext.TenantId);
+
+        return Result.Success();
+    }
+
+    /// <summary>AC-2: record a tenant-scoped audit-log entry for the stage transition.</summary>
+    private void WriteStageChangeAuditLog(ApplicantStageHistory row)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "recruitment.applicant.stage_changed",
+            Detail =
+                $"Applicant {row.ApplicantId} moved {row.FromStage} -> {row.ToStage}" +
+                (row.Reason is null ? string.Empty : $". Reason: {row.Reason}"),
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    private static MoveApplicantStageResultDto ToMoveResult(ApplicantStageHistory row) => new()
+    {
+        ApplicantId = row.ApplicantId,
+        FromStage = row.FromStage,
+        FromStageName = row.FromStage.ToString(),
+        ToStage = row.ToStage,
+        ToStageName = row.ToStage.ToString(),
+        StageHistoryId = row.Id,
+        ChangedAt = row.ChangedAt,
+    };
+
+    private static PipelineApplicantCardDto ToCard(Applicant a) => new()
+    {
+        Id = a.Id,
+        ApplicationReferenceNumber = a.ApplicationReferenceNumber,
+        FirstName = a.FirstName,
+        LastName = a.LastName,
+        FullName = $"{a.FirstName} {a.LastName}".Trim(),
+        Email = a.Email,
+        Source = a.Source,
+        SourceName = a.Source.ToString(),
+        IsInternal = a.IsInternal,
+        AppliedAt = a.AppliedAt,
+    };
+
     // ── Reference number + file-name helpers ─────────────────────────
 
     private async Task<string> GenerateReferenceNumberAsync(CancellationToken cancellationToken)
@@ -309,6 +611,50 @@ public sealed class ApplicantService : IApplicantService
 
         return $"{Guid.NewGuid():N}{safeExt}";
     }
+
+    public async Task<Result<ResumeDownloadDto>> GetResumeAsync(
+        Guid applicantId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ResumeDownloadDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant-scoped by the global query filter (AC-5).
+        var applicant = await _dbContext.Applicants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == applicantId, cancellationToken);
+
+        if (applicant is null)
+            return Result<ResumeDownloadDto>.Failure("Applicant not found.", 404, "applicant_not_found");
+
+        if (string.IsNullOrWhiteSpace(applicant.ResumeStorageKey))
+            return Result<ResumeDownloadDto>.Failure("This applicant has no resume on file.", 404, "resume_not_found");
+
+        await using var stream = await _fileStorage.OpenReadAsync(
+            _tenantContext.TenantId, applicant.ResumeStorageKey, cancellationToken);
+
+        if (stream is null)
+            return Result<ResumeDownloadDto>.Failure("The resume file could not be found in storage.", 404, "resume_not_found");
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        return Result<ResumeDownloadDto>.Success(new ResumeDownloadDto
+        {
+            Content = buffer.ToArray(),
+            FileName = string.IsNullOrWhiteSpace(applicant.ResumeFileName) ? "resume" : applicant.ResumeFileName,
+            ContentType = InferContentType(applicant.ResumeFileName),
+        });
+    }
+
+    // FR-7: resumes are PDF/DOC/DOCX (BR-4); infer the response content type from the original filename.
+    private static string InferContentType(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".pdf" => "application/pdf",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".doc" => "application/msword",
+            _ => "application/octet-stream",
+        };
 
     private static ApplicantDto ToDto(Applicant a, string? vacancyTitle) => new()
     {
