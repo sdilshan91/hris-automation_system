@@ -87,7 +87,7 @@
 - [x] US-REC-006 — Interviewer submits scorecard *(PR #58)*
 - [x] US-REC-007 — Generate and send offer letter *(PR #59)*
 - [x] US-REC-008 — Applicant tracks application status *(PR #60)*
-- [~] US-REC-009 — Recruitment dashboard and analytics
+- [x] US-REC-009 — Recruitment dashboard and analytics *(PR #61)*
 - [ ] US-REC-010 — Convert applicant to employee record
 
 ## Platform / Cross-Cutting Tech Debt (3 stories)
@@ -160,9 +160,9 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **46** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
+- Done: **47** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **59** (incl. US-PLT-002 Phase 4, US-PLT-003 residual)
+- Pending: **58** (incl. US-PLT-002 Phase 4, US-PLT-003 residual)
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
