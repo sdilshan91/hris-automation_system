@@ -35,5 +35,13 @@ export const RECRUITMENT_ROUTES: Routes = [
         './components/interview-agenda/interview-agenda.component'
       ).then((m) => m.InterviewAgendaComponent),
   },
+  {
+    // US-REC-009: recruitment dashboard & analytics (KPIs, funnel, sources, trends).
+    path: 'dashboard',
+    loadComponent: () =>
+      import(
+        './components/recruitment-dashboard/recruitment-dashboard.component'
+      ).then((m) => m.RecruitmentDashboardComponent),
+  },
   { path: '', redirectTo: 'vacancies', pathMatch: 'full' },
 ];

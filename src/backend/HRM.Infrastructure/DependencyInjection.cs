@@ -175,6 +175,9 @@ public static class DependencyInjection
         // Recruitment notification seam — log-only until the notification platform exists (FR-5/FR-7).
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
 
+        // US-REC-009: Recruitment dashboard + analytics (read-only aggregation, no new entities).
+        services.AddScoped<IRecruitmentDashboardService, RecruitmentDashboardService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.
