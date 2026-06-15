@@ -101,7 +101,7 @@
 - [x] US-PAY-002 — Assign salary structure to employee *(PR #64)*
 - [x] US-PAY-003 — Run monthly payroll *(PR #65)*
 - [x] US-PAY-004 — Generate individual payslips *(PR #66)*
-- [~] US-PAY-005 — Employee views and downloads payslips
+- [x] US-PAY-005 — Employee views and downloads payslips *(PR #67)*
 - [ ] US-PAY-006 — Statutory deductions configuration
 - [ ] US-PAY-007 — Payroll adjustments (bonus, deductions)
 - [ ] US-PAY-008 — Payroll approval workflow
