@@ -46,6 +46,15 @@ public sealed class Tenant
     /// </summary>
     public int? MaxCustomFields { get; set; }
 
+    /// <summary>
+    /// Tenant-level toggle for the public careers page (US-REC-001 FR-4 / BR-5, ref S35.2.9). When
+    /// false, Open vacancies are never exposed on the anonymous public endpoint regardless of a
+    /// vacancy's own PublishToPublicCareers flag. Defaults to false (opt-in). TODO(admin-console):
+    /// surface this in tenant module configuration once that subsystem exists; for now it is a plain
+    /// boolean on the tenant.
+    /// </summary>
+    public bool PublicCareersEnabled { get; set; }
+
     // Password policy
     public int MinPasswordLength { get; set; } = 12;
     public bool RequireUppercase { get; set; } = true;

@@ -62,6 +62,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<AttendanceMonthlySummary> AttendanceMonthlySummaries => Set<AttendanceMonthlySummary>();
     public DbSet<LatePolicy> LatePolicies => Set<LatePolicy>();
     public DbSet<ScheduledReportConfig> ScheduledReportConfigs => Set<ScheduledReportConfig>();
+    public DbSet<Vacancy> Vacancies => Set<Vacancy>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -215,5 +216,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-ATT-010: ScheduledReportConfig tenant isolation + soft-delete filter
         modelBuilder.Entity<ScheduledReportConfig>()
             .HasQueryFilter(c => !c.IsDeleted && (!_tenantContext.IsResolved || c.TenantId == _tenantContext.TenantId));
+
+        // US-REC-001: Vacancy tenant isolation + soft-delete filter (AC-4 cross-tenant isolation).
+        modelBuilder.Entity<Vacancy>()
+            .HasQueryFilter(v => !v.IsDeleted && (!_tenantContext.IsResolved || v.TenantId == _tenantContext.TenantId));
     }
 }
