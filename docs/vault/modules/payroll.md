@@ -350,6 +350,55 @@ Approved/Queued hidden). Detail/PDF re-check the owning run is Finalized.
   scoped to the single self employee) is fully built; flip the flag on once the settings
   entity exists. Until then every `ytdAmount` is null.
 
+## Statutory deductions configuration (US-PAY-006)
+
+Desktop-focused tenant-admin / HR config page. Adds child route `payroll/statutory`
+under the existing `payroll` lazy route (`StatutoryConfigurationComponent`), linked
+from the salary-structures header ("Statutory config" button) — NO separate sidebar
+nav (same as components/runs, all reached from within `/payroll`).
+
+### Frontend contract — NEW service `StatutoryService` (payroll/services)
+Sibling to PayrollService; route strings live ONLY here. Base
+`${apiBaseUrl}/payroll/statutory-rules`. Bare payloads (US-PLT-001), PascalCase
+enums (US-PLT-003: `StatutoryRuleType` = IncomeTax|EPF|ETF|ProfessionalTax|Custom,
+`ApplicableOn` = Basic|Gross|Custom). withCredentials. **ASSUMED contract — BE was
+building in parallel and had NOT pinned routes (grep found only `isStatutory`
+flags, no statutory-rule entity); reconcile in this one file if BE differs:**
+- `GET  /payroll/statutory-rules?fiscalYear=` → `IStatutoryRule[]` (tolerates `{data}`).
+- `GET  /payroll/statutory-rules/fiscal-years` → `string[]` (FR-4 FY selector, newest-first).
+- `POST/PUT/DELETE /payroll/statutory-rules[/:id]` → CRUD.
+- `POST /payroll/statutory-rules/test-calculation` body `{fiscalYear, monthlyGross,
+  monthlyBasic?}` → `ITestCalculationResult` (FR-5 — incomeTax/employeeEpf/
+  employerEpf/etf/otherDeductions/totalDeductions/netPay).
+
+### Slab validation is a PURE helper (FR-6) — `services/slab-validation.ts`
+`validateSlabs(ITaxSlab[])` → `{ issues: Map<origIndex, 'overlap'|'gap'|'invalid'>,
+valid }`. Isolated from the component (mirrors BE NFR-5 side-effect-free calc) so
+it's trivially unit-testable. Sorts by slabFrom but reports against ORIGINAL index;
+gap/overlap flags BOTH adjacent rows; only the last slab may be unlimited
+(slabTo=null); 'invalid' wins over contiguity. The component's `slabsValid` computed
+gates the Save button; offending rows get `bg-rose-50`/`ring-rose-300` in real time.
+
+### UI decisions (US-PAY-006, §8)
+- One page, three TABS (Income Tax / Provident Fund / Other Deductions) as a
+  signal `activeTab`, Notion card per tab. NOT a slide-over (this is a config
+  surface, not a CRUD list).
+- Tax editor = inline add/remove-row table, `ngModel`-bound number inputs; new row
+  continues from previous slabTo.
+- EPF/social-security = plain form (employee/employer rate, annual ceiling nullable,
+  applicableOn select). Other deductions = name + ProfessionalTax|Custom + rate;
+  both serialize to `socialSecurity` on the rule request.
+- Fiscal-year selector = tab strip of `fiscalYears()` + "Add year"; default FY =
+  current (April-start "YYYY-YYYY"); `addFiscalYear` resets editors to a clean slate
+  (persists on first save). `effectiveFrom` = `${startYear}-04-01`.
+- Test-calc panel = sticky right column (`lg:col-span-1`); version history =
+  collapsible newest-first timeline below the form (FR-4, sorted by updatedAt).
+- Mobile (<lg) = read-only summary of current slabs + PF with an amber "configure
+  on desktop" note; the full editor grid is `hidden lg:grid`.
+- `persist()` helper: finds an existing rule of the same type+FY → update, else
+  create. `countryCode` hardcoded 'LK' until tenant-jurisdiction config lands (BR-1).
+- Slab-validation + service + component specs (42 tests) — full FE suite 2125 green.
+
 ### Frontend (US-PAY-005) — reconciled with the BE contract above
 NOT under the `/payroll` lazy route (that parent is `roleGuard(['Tenant Admin','HR Officer'])`
 + `Payroll.View`, blocks a plain Employee). NEW top-level route `my-payslips`

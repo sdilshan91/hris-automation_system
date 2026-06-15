@@ -29,3 +29,9 @@ export * from './models/my-payslip.models';
 export * from './services/my-payslip.service';
 export { MyPayslipsComponent } from './components/my-payslips/my-payslips.component';
 export { MY_PAYSLIPS_ROUTES } from './my-payslips.routes';
+
+/** US-PAY-006: Statutory deductions configuration (tax / PF / other). */
+export * from './models/statutory.models';
+export * from './services/statutory.service';
+export { validateSlabs } from './services/slab-validation';
+export { StatutoryConfigurationComponent } from './components/statutory-configuration/statutory-configuration.component';

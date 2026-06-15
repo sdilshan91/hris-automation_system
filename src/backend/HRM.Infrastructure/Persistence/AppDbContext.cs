@@ -79,6 +79,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
     public DbSet<PayrollSlip> PayrollSlips => Set<PayrollSlip>();
     public DbSet<PayrollSlipDetail> PayrollSlipDetails => Set<PayrollSlipDetail>();
+    public DbSet<StatutoryRule> StatutoryRules => Set<StatutoryRule>();
+    public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
+    public DbSet<SocialSecurityRule> SocialSecurityRules => Set<SocialSecurityRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -300,6 +303,18 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PAY-003: PayrollSlipDetail tenant isolation + soft-delete filter (AC-7).
         modelBuilder.Entity<PayrollSlipDetail>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-006: StatutoryRule tenant isolation + soft-delete filter (AC-4/FR-8 cross-tenant isolation).
+        modelBuilder.Entity<StatutoryRule>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-006: TaxSlab tenant isolation + soft-delete filter (AC-4).
+        modelBuilder.Entity<TaxSlab>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-006: SocialSecurityRule tenant isolation + soft-delete filter (AC-4).
+        modelBuilder.Entity<SocialSecurityRule>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
