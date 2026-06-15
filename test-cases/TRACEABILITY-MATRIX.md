@@ -2185,7 +2185,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | Critical | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 | -- |
 | US-REC-004 | Move Applicant Through Pipeline Stages with Gates | Must Have | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 | 5/5 AC covered |
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | Critical | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
-| **TOTAL** | | | **68 test cases** | **68** | **20/20 AC** |
+| US-REC-005 | Schedule Interviews and Notify Participants | Must Have | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | 13 | 5/5 AC covered |
+| Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | Critical | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
+| **TOTAL** | | | **82 test cases** | **82** | **25/25 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2255,6 +2257,20 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-004-11 | Concurrent moves on same applicant -> optimistic concurrency conflict (no lost update, single history row) | Functional | High | US-REC-004 | NFR-3, FR-2, FR-4 |
 | TC-REC-004-12 | Transition <=800ms P95 incl. audit; stage + history write atomic (single transaction) | Performance | High | US-REC-004 | NFR-1, NFR-3, FR-4 |
 | TC-REC-ISO-013 | Tenant B cannot read/write Tenant A's stage-history/transitions/rejection reasons; rows session-stamped | Security | Critical | US-REC-004 | AC-5, NFR-2, FR-3, FR-4, FR-5 |
+| TC-REC-005-01 | Schedule interview (interviewers + date/time + type + link) -> saved, all participants notified, reminder job scheduled (happy path) | E2E | Critical | US-REC-005 | AC-1, FR-1, FR-3, FR-4, NFR-3 |
+| TC-REC-005-02 | Hangfire reminder fires ~24h before to all participants; idempotent + tenant-aware | Integration | Critical | US-REC-005 | AC-2, FR-4, NFR-3, NFR-4, BR-5, BR-7 |
+| TC-REC-005-03 | Reschedule -> old reminder cancelled + new created + "updated" notifications | Integration | High | US-REC-005 | AC-3, FR-3, FR-4, BR-6, BR-7 |
+| TC-REC-005-04 | Cancel -> Cancelled, reminder removed, cancellation notifications; pipeline stage NOT changed | Integration | High | US-REC-005 | AC-3, FR-3, FR-6, BR-4, BR-6, BR-7 |
+| TC-REC-005-05 | Multiple rounds: Round 1 + Round 2 tracked independently (own interviewers/schedule/scorecards) | Functional | High | US-REC-005 | AC-4, FR-2 |
+| TC-REC-005-06 | Conflict detection: same interviewer double-booked warns + allows override (soft) | Functional | High | US-REC-005 | AC-1, FR-7 |
+| TC-REC-005-07 | Past-date / out-of-business-hours scheduling rejected (also on reschedule) | Functional | High | US-REC-005 | AC-1, AC-3, BR-3, NFR-6 |
+| TC-REC-005-08 | Field validation: >=1 interviewer; location for in-person; video link for video; type-conditional | Functional | High | US-REC-005 | AC-1, FR-1, NFR-6 |
+| TC-REC-005-09 | Interviewer eligibility: active employees, same tenant; inactive/foreign/non-employee rejected | Security | High | US-REC-005 | AC-1, FR-1, BR-2 |
+| TC-REC-005-10 | Status lifecycle Scheduled/Completed/Cancelled/No-Show; calendar filterable by status | Functional | High | US-REC-005 | AC-1, FR-5, FR-6 |
+| TC-REC-005-11 | Authz: schedule/edit/cancel require Manage; others 403; rich-text notes XSS-sanitized | Security | Critical | US-REC-005 | AC-1, AC-3, BR-1 |
+| TC-REC-005-12 | Scheduling <=800ms P95 incl. outbox writes; notification delivery async (non-blocking) | Performance | High | US-REC-005 | NFR-1, NFR-3 |
+| TC-REC-005-13 | Scheduling form + calendar/agenda WCAG 2.1 AA; keyboard/SR/contrast; responsive 360px | Accessibility | High | US-REC-005 | NFR-5 |
+| TC-REC-ISO-014 | Tenant B cannot read/write Tenant A's interviews/interviewers/reminder jobs; rows + jobs session-stamped | Security | Critical | US-REC-005 | AC-5, NFR-2, NFR-4, FR-1, FR-4, FR-5 |
 
 ### US-REC-001 Detailed Requirements Traceability
 
@@ -2429,6 +2445,51 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Accessibility Test Cases | Reused from US-REC-003 (TC-REC-003-13 -- pipeline UI WCAG 2.1 AA) | >= 1 | PASS (reused) |
 | Blocked Test Cases | 0 (TC-REC-004-11 BLOCKED only if EF concurrency token is not wired; TC-REC-004-04/09/10 CONDITIONAL on dependencies) | -- | CLEAR |
 
+### US-REC-005 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Schedule interview (interviewers + date/time + type + location/link) -> saved, participants notified, reminder job scheduled | AC | TC-REC-005-01, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | Direct |
+| AC-2: Hangfire fires a reminder ~24h before to all participants | AC | TC-REC-005-02 | Direct (CONDITIONAL on Hangfire/S25 wiring; enqueue contract asserted) |
+| AC-3: Edit/cancel -> updated/cancellation notifications + reminder rescheduled/removed | AC | TC-REC-005-03, TC-REC-005-04, TC-REC-005-11 | Direct |
+| AC-4: Multiple rounds tracked independently (own interviewers/schedule/scorecards) | AC | TC-REC-005-05 | Direct (per-round scorecard owned by US-REC-006; seam asserted) |
+| AC-5: Tenant B sees zero of Tenant A's interviews; isolation enforced | AC | TC-REC-ISO-014 (+ reused TC-REC-ISO-010, TC-REC-ISO-011) | Direct (EF query filters; RLS noted as extension point) |
+| FR-1: Scheduling form fields (interviewers >=1, date/start/duration, type, location/link conditional, notes) | FR | TC-REC-005-01, TC-REC-005-08, TC-REC-005-09 | Direct |
+| FR-2: Multiple rounds per applicant/vacancy (separate record + round number) | FR | TC-REC-005-05 | Direct |
+| FR-3: Email/in-app notifications on create/update/cancel via tenant templates | FR | TC-REC-005-01, TC-REC-005-03, TC-REC-005-04 | Direct (CONDITIONAL on Notification System S25) |
+| FR-4: Hangfire reminder job 24h before (tenant-configurable) | FR | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03 | Direct |
+| FR-5: Calendar view filterable by interviewer/vacancy/date/status | FR | TC-REC-005-10 | Direct |
+| FR-6: Status Scheduled/Completed/Cancelled/No-Show | FR | TC-REC-005-04, TC-REC-005-10 | Direct |
+| FR-7: Conflict detection -> warn + override (soft) | FR | TC-REC-005-06 | Direct |
+| FR-8: Attach interview guide / evaluation criteria document | FR | (attachment seam) | CONDITIONAL on File & Document Management (S26); seam noted |
+| NFR-1: Scheduling API <= 800ms P95 incl. outbox writes | NFR | TC-REC-005-12 | Direct |
+| NFR-2: Interview data tenant-scoped; RLS | NFR | TC-REC-ISO-014 | Direct (EF query filters today; RLS extension point) |
+| NFR-3: Notifications async via Hangfire (non-blocking) | NFR | TC-REC-005-01, TC-REC-005-02, TC-REC-005-12 | Direct |
+| NFR-4: Reminder jobs idempotent + tenant-aware | NFR | TC-REC-005-02, TC-REC-ISO-014 | Direct |
+| NFR-5: Calendar responsive, mobile 360px+ agenda | NFR | TC-REC-005-13 | Direct |
+| NFR-6: Validate future + business hours | NFR | TC-REC-005-07, TC-REC-005-08 | Direct (business-hours portion CONDITIONAL; past-date hard) |
+| BR-1: Only Recruitment.Manage.All can schedule/edit/cancel | BR | TC-REC-005-11 | Direct |
+| BR-2: Interviewers must be active same-tenant employees | BR | TC-REC-005-09 | Direct |
+| BR-3: No past-date scheduling | BR | TC-REC-005-07 | Direct |
+| BR-4: Cancel does NOT change pipeline stage | BR | TC-REC-005-04 | Direct |
+| BR-5: Reminder lead time configurable per tenant (default 24h) | BR | TC-REC-005-02 | Direct |
+| BR-6: Reschedule -> old reminder cancelled, new created | BR | TC-REC-005-03 | Direct |
+| BR-7: Notify applicant email + each interviewer work email | BR | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04 | Direct |
+
+### Coverage Summary (Recruitment -- US-REC-005)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) -- FR-3 CONDITIONAL on S25; FR-8 CONDITIONAL on S26 (attachment seam) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) -- NFR-2 RLS extension point; NFR-6 business-hours portion CONDITIONAL | >= 85% | PASS |
+| Business Rules Coverage | 7/7 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 1 new dedicated (TC-REC-ISO-014) + 2 reused (TC-REC-ISO-010/011) | >= 1 | PASS |
+| Security Test Cases | TC-REC-005-09 (interviewer eligibility), TC-REC-005-11 (authz + XSS), TC-REC-ISO-014 (+ reused TC-REC-ISO-010/011) | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-REC-005-12 -- schedule <=800ms P95 incl. outbox; async delivery) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-REC-005-13 -- scheduling form + calendar/agenda WCAG 2.1 AA + responsive 360px) | >= 1 | PASS |
+| Blocked Test Cases | 0 (TC-REC-005-02/03/04 CONDITIONAL on Hangfire/S25; TC-REC-005-07 business-hours portion + FR-8 attachment CONDITIONAL) | -- | CLEAR |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -2439,8 +2500,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Core HR (US-CHR-001 through US-CHR-012) | 12 | 372 | 61/61 (100%) | 67 | PASS |
 | Leave Management (US-LV-001 through US-LV-012) | 12 | 303 | 57/57 (100%) | 48 | PASS |
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
-| Recruitment (US-REC-001 through US-REC-004) | 4 | 68 | 20/20 (100%) | 13 | PASS (in progress) |
-| **TOTAL** | **45** | **961** | **234/234 (100%)** | **165** | |
+| Recruitment (US-REC-001 through US-REC-005) | 5 | 82 | 25/25 (100%) | 14 | PASS (in progress) |
+| **TOTAL** | **46** | **975** | **239/239 (100%)** | **166** | |
 
 ---
 

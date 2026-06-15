@@ -176,6 +176,58 @@ On success the drawer reloads its own detail AND emits `moved` so the board relo
 "In <stage> today" / "" (graceful omission). Uses `enteredStageAt` if the backend
 provides it, else falls back to `appliedAt`. Rendered as a neutral chip on each card.
 
+## Interview scheduling (US-REC-005)
+
+Recruiter-facing interview scheduling, reachable from the applicant-detail
+**Interviews** tab (was a placeholder in REC-003). `InterviewService` +
+`interview.models.ts` keep the contract in ONE place. New components under
+`features/recruitment/components/`: `interview-form` (schedule/reschedule
+slide-over), `interview-card` (presentational, reused on the timeline + agenda),
+`interview-cancel-dialog` (confirm + reason), `interview-agenda` (tenant-wide
+view). New route: `recruitment/interviews` (same recruiter `roleGuard`).
+
+### Frontend contract (`InterviewService`, camelCase, base `/api/v1/recruitment`)
+- `POST /recruitment/applicants/:applicantId/interviews` body `IInterviewRequest`
+  → `{ interview, warnings? }` (FR-1/AC-1). **Soft** interviewer-conflict
+  warnings (FR-7) come back as `warnings[]` on a **2xx** — the schedule still
+  succeeds; the FE shows a success toast then a `toastr.warning` per warning. The
+  service tolerates either `{ interview, warnings }` OR a bare `IInterview`.
+- `GET  /recruitment/applicants/:applicantId/interviews` → `IInterview[]` (AC-4
+  multiple rounds — backend assigns `roundNumber`).
+- `PUT  /recruitment/interviews/:id` body `IInterviewRequest` → `{ interview,
+  warnings? }` (AC-3 reschedule).
+- `POST /recruitment/interviews/:id/cancel` body `{ reason? }` → `IInterview`
+  (AC-3; backend notifies participants + removes the Hangfire reminder).
+- `GET  /recruitment/interviews?interviewerId=&vacancyId=&from=&to=&status=` →
+  `IInterview[]` (FR-5/FR-6 tenant-wide agenda).
+- Interviewer lookup reuses Core HR `GET /tenant/employees?search=` (same as
+  VacancyService) → normalized to `ILookupOption` with department as the sublabel.
+
+`IInterview` ≈ `{ id, applicantId, vacancyId, roundNumber, interviewType
+('in-person'|'video'|'phone'), scheduledDate (yyyy-MM-dd), startTime (HH:mm),
+durationMinutes, location, videoLink, notes, status
+('Scheduled'|'Completed'|'Cancelled'|'NoShow'), interviewers:[{employeeId,name,
+department?}], applicantName?, vacancyTitle? }`. The request sends
+`interviewerIds: string[]` (not the full objects). The DTO↔FE mapping lives in
+`InterviewService.mapInterview` / `mapScheduleResult` — a field rename is a
+one-line fix.
+
+### Business rules surfaced in the UI
+- Conditional required fields by type (FR-1): location required for `in-person`,
+  videoLink (URL pattern) required for `video`, neither for `phone`. Validators
+  are swapped on `interviewType` change; on submit the non-relevant field is
+  nulled in the request body.
+- BR-3/NFR-6: date input `min=today` + a cross-field `isPastDateTime` check blocks
+  scheduling in the past (soft, client-side; backend re-validates).
+- §8 status badge colors (single source `INTERVIEW_STATUS_BADGE`): Scheduled=blue,
+  Completed=green, Cancelled=gray, NoShow=amber. Type badges tinted separately.
+- FR-5 calendar: implemented as an **agenda/list grouped by date** (`groupByDate`
+  pure helper), not a calendar grid (acceptable Phase-1 form; it is also the mobile
+  view, NFR-5). Filters: interviewer typeahead, vacancy select, status, date range.
+  Cards there are read-only (`showActions=false`, `showContext=true`).
+- Notifications + the 24h Hangfire reminder (AC-1/AC-2/FR-3/FR-4) are entirely
+  backend concerns; the FE only triggers schedule/reschedule/cancel.
+
 ### Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

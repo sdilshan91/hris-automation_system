@@ -174,6 +174,11 @@ public static class DependencyInjection
         services.AddScoped<IApplicantService, ApplicantService>();
         // Recruitment notification seam — log-only until the notification platform exists (FR-5/FR-7).
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
+
+        // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
+        // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
+        // it the service skips reminder scheduling so the flow never requires real Hangfire storage.
+        services.AddScoped<IInterviewService, InterviewService>();
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

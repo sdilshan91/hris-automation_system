@@ -27,5 +27,13 @@ export const RECRUITMENT_ROUTES: Routes = [
         './components/applicant-pipeline/applicant-pipeline.component'
       ).then((m) => m.ApplicantPipelineComponent),
   },
+  {
+    // US-REC-005: tenant-wide interviews agenda/calendar (FR-5).
+    path: 'interviews',
+    loadComponent: () =>
+      import(
+        './components/interview-agenda/interview-agenda.component'
+      ).then((m) => m.InterviewAgendaComponent),
+  },
   { path: '', redirectTo: 'vacancies', pathMatch: 'full' },
 ];

@@ -164,6 +164,12 @@ try
     // US-ATT-010 FR-8: scheduled attendance-report generation job (recurring). Email delivery deferred.
     builder.Services.AddScoped<HRM.Api.Jobs.ScheduledReportJob>();
 
+    // US-REC-005 FR-4/BR-6: tenant-aware pre-interview reminder job + the Hangfire-backed scheduler seam
+    // (bound to IInterviewReminderScheduler so the Infrastructure InterviewService can enqueue/cancel by
+    // interface). Reminders are scheduled at create, swapped on reschedule, deleted on cancel.
+    builder.Services.AddScoped<HRM.Api.Jobs.InterviewReminderJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IInterviewReminderScheduler, HRM.Api.Jobs.HangfireInterviewReminderScheduler>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())

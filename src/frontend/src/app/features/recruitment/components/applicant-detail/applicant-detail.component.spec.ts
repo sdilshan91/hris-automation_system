@@ -10,13 +10,33 @@ import {
 
 import { ApplicantDetailComponent } from './applicant-detail.component';
 import { PipelineService } from '../../services/pipeline.service';
+import { InterviewService } from '../../services/interview.service';
 import { IApplicantDetail } from '../../models/pipeline.models';
+import { IInterview } from '../../models/interview.models';
 
 describe('ApplicantDetailComponent', () => {
   let component: ApplicantDetailComponent;
   let fixture: ComponentFixture<ApplicantDetailComponent>;
   let serviceSpy: jasmine.SpyObj<PipelineService>;
+  let interviewSpy: jasmine.SpyObj<InterviewService>;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
+
+  const interview = (over: Partial<IInterview> = {}): IInterview => ({
+    id: 'iv-1',
+    applicantId: 'app-1',
+    vacancyId: 'vac-1',
+    roundNumber: 1,
+    interviewType: 'video',
+    scheduledDate: '2026-07-01',
+    startTime: '09:00',
+    durationMinutes: 60,
+    location: null,
+    videoLink: 'https://meet/x',
+    notes: null,
+    status: 'Scheduled',
+    interviewers: [{ employeeId: 'e1', name: 'Ada Lovelace' }],
+    ...over,
+  });
 
   const detail = (over: Partial<IApplicantDetail> = {}): IApplicantDetail => ({
     id: 'app-1',
@@ -56,6 +76,16 @@ describe('ApplicantDetailComponent', () => {
       of({ id: 'app-1', stage: 'Interview', enteredStageAt: null, warnings: [] }),
     );
 
+    interviewSpy = jasmine.createSpyObj('InterviewService', [
+      'listForApplicant',
+      'schedule',
+      'reschedule',
+      'cancel',
+      'searchEmployees',
+    ]);
+    interviewSpy.listForApplicant.and.returnValue(of([interview()]));
+    interviewSpy.cancel.and.returnValue(of(interview({ status: 'Cancelled' })));
+
     toastrSpy = jasmine.createSpyObj('ToastrService', [
       'success',
       'error',
@@ -67,6 +97,7 @@ describe('ApplicantDetailComponent', () => {
       providers: [
         provideAnimationsAsync(),
         { provide: PipelineService, useValue: serviceSpy },
+        { provide: InterviewService, useValue: interviewSpy },
         { provide: ToastrService, useValue: toastrSpy },
       ],
     }).compileComponents();
@@ -262,5 +293,62 @@ describe('ApplicantDetailComponent', () => {
     fixture.detectChanges();
     expect(component.isTerminal()).toBeTrue();
     expect(component.nextStageName()).toBeNull();
+  });
+
+  // ─── Interviews tab (US-REC-005) ───────────────────────────
+
+  it('lazy-loads interview rounds when the Interviews tab opens (AC-4)', () => {
+    expect(interviewSpy.listForApplicant).not.toHaveBeenCalled();
+    component.tab.set('interviews');
+    fixture.detectChanges();
+    expect(interviewSpy.listForApplicant).toHaveBeenCalledWith('app-1');
+    expect(component.interviews().length).toBe(1);
+  });
+
+  it('opens the schedule slide-over for a new round (AC-1)', () => {
+    component.openSchedule();
+    expect(component.showInterviewForm()).toBeTrue();
+    expect(component.editingInterview()).toBeNull();
+  });
+
+  it('opens the slide-over pre-filled to reschedule (AC-3)', () => {
+    const iv = interview({ id: 'iv-9' });
+    component.openReschedule(iv);
+    expect(component.showInterviewForm()).toBeTrue();
+    expect(component.editingInterview()).toBe(iv);
+  });
+
+  it('reloads rounds after a successful save', () => {
+    component.tab.set('interviews');
+    fixture.detectChanges();
+    interviewSpy.listForApplicant.calls.reset();
+    component.onInterviewSaved();
+    expect(component.showInterviewForm()).toBeFalse();
+    expect(interviewSpy.listForApplicant).toHaveBeenCalledWith('app-1');
+  });
+
+  it('cancels an interview after confirmation and reloads (AC-3)', () => {
+    component.tab.set('interviews');
+    fixture.detectChanges();
+    component.askCancel(interview({ id: 'iv-1' }));
+    expect(component.cancellingInterview()).toBeTruthy();
+    interviewSpy.listForApplicant.calls.reset();
+
+    component.confirmCancel('Candidate withdrew');
+
+    expect(interviewSpy.cancel).toHaveBeenCalledWith('iv-1', 'Candidate withdrew');
+    expect(toastrSpy.success).toHaveBeenCalled();
+    expect(interviewSpy.listForApplicant).toHaveBeenCalledWith('app-1');
+    expect(component.cancellingInterview()).toBeNull();
+  });
+
+  it('shows an error toast when interview load fails', () => {
+    interviewSpy.listForApplicant.and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 500 })),
+    );
+    component.tab.set('interviews');
+    fixture.detectChanges();
+    expect(toastrSpy.error).toHaveBeenCalled();
+    expect(component.interviewsLoading()).toBeFalse();
   });
 });
