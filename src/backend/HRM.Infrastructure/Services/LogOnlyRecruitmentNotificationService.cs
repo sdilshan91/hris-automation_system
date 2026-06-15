@@ -94,4 +94,19 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyScorecardSubmittedAsync(
+        Guid scorecardId,
+        Guid interviewId,
+        Guid applicantId,
+        Guid vacancyId,
+        Guid interviewerEmployeeId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for scorecard {ScorecardId} on interview {InterviewId} (applicant {ApplicantId}, vacancy {VacancyId}): interviewer {InterviewerEmployeeId} submitted -> notify recruiter",
+            "scorecard-submitted", scorecardId, interviewId, applicantId, vacancyId, interviewerEmployeeId);
+
+        return Task.CompletedTask;
+    }
 }

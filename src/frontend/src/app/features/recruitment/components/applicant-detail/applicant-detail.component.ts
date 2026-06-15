@@ -21,6 +21,8 @@ import {
 import { InterviewFormComponent } from '../interview-form/interview-form.component';
 import { InterviewCardComponent } from '../interview-card/interview-card.component';
 import { InterviewCancelDialogComponent } from '../interview-cancel-dialog/interview-cancel-dialog.component';
+import { ScorecardPanelComponent } from '../scorecard-panel/scorecard-panel.component';
+import { ScorecardFormComponent } from '../scorecard-form/scorecard-form.component';
 import {
   IApplicantDetail,
   SOURCE_BADGE,
@@ -33,9 +35,16 @@ import {
   relativeAppliedTime,
 } from '../../models/pipeline.models';
 import { IInterview } from '../../models/interview.models';
+import { IScorecard } from '../../models/scorecard.models';
 import { ApplicantSource, ApplicantStage } from '../../models/applicant.models';
 
-type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
+type DetailTab =
+  | 'profile'
+  | 'resume'
+  | 'timeline'
+  | 'interviews'
+  | 'scorecards'
+  | 'notes';
 
 /**
  * US-REC-003: Applicant detail slide-over (AC-3 / FR-7).
@@ -55,6 +64,8 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
     InterviewFormComponent,
     InterviewCardComponent,
     InterviewCancelDialogComponent,
+    ScorecardPanelComponent,
+    ScorecardFormComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
@@ -355,6 +366,44 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
               }
             }
 
+            <!-- Scorecards (US-REC-006 AC-2/AC-3/FR-6/FR-8) -->
+            @if (tab() === 'scorecards') {
+              @if (interviewsLoading()) {
+                <div class="space-y-3">
+                  @for (n of [1, 2]; track n) {
+                    <div class="h-24 animate-pulse rounded-xl bg-neutral-100"></div>
+                  }
+                </div>
+              } @else if (interviews().length === 0) {
+                <div class="py-10 text-center">
+                  <p class="text-sm font-medium text-neutral-700">
+                    No interviews to score
+                  </p>
+                  <p class="mt-1 text-sm text-neutral-500">
+                    Scorecards appear here once an interview is scheduled.
+                  </p>
+                </div>
+              } @else {
+                <div class="space-y-6">
+                  @for (iv of interviews(); track iv.id) {
+                    <section>
+                      <h3 class="mb-2 text-sm font-semibold text-neutral-800">
+                        Round {{ iv.roundNumber }}
+                        <span class="font-normal text-neutral-400"
+                          >· {{ iv.scheduledDate | date: 'MMM d' }}</span
+                        >
+                      </h3>
+                      <app-scorecard-panel
+                        [interviewId]="iv.id"
+                        [reloadToken]="scorecardReloadToken()"
+                        (submitOwn)="openScorecard(iv)"
+                      />
+                    </section>
+                  }
+                </div>
+              }
+            }
+
             <!-- Notes (placeholder — no module yet) -->
             @if (tab() === 'notes') {
               <div class="py-10 text-center">
@@ -446,6 +495,18 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
         (cancelled)="dismissCancel()"
       />
     }
+
+    <!-- Scorecard submit/edit slide-over (US-REC-006 AC-1/FR-2) -->
+    @if (scorecardInterview(); as iv) {
+      <app-scorecard-form
+        [interviewId]="iv.id"
+        [applicantName]="fullName()"
+        [roundNumber]="iv.roundNumber"
+        [scorecard]="editingScorecard()"
+        (saved)="onScorecardSaved()"
+        (cancelled)="closeScorecard()"
+      />
+    }
   `,
   styles: [
     `
@@ -534,6 +595,7 @@ export class ApplicantDetailComponent {
     { id: 'resume', label: 'Resume' },
     { id: 'timeline', label: 'Timeline' },
     { id: 'interviews', label: 'Interviews' },
+    { id: 'scorecards', label: 'Scorecards' },
     { id: 'notes', label: 'Notes' },
   ];
 
@@ -553,6 +615,14 @@ export class ApplicantDetailComponent {
   readonly cancellingInterview = signal<IInterview | null>(null);
   /** Whether the interviews list has been loaded for the current applicant. */
   private interviewsLoaded = false;
+
+  // ─── Scorecards (US-REC-006) ─────────────────────────────
+  /** The interview whose scorecard form is open, or null. */
+  readonly scorecardInterview = signal<IInterview | null>(null);
+  /** The scorecard being edited (FR-2), or null for a new submission (AC-1). */
+  readonly editingScorecard = signal<IScorecard | null>(null);
+  /** Bumped after a save to force the scorecard panels to reload. */
+  readonly scorecardReloadToken = signal(0);
 
   /** True while a stage move is in flight (disables the action buttons). */
   readonly moving = signal(false);
@@ -609,7 +679,8 @@ export class ApplicantDetailComponent {
     // (US-REC-005 AC-4) — avoids an extra request for users who never open it.
     effect(() => {
       const d = this.detail();
-      if (this.tab() === 'interviews' && d && !this.interviewsLoaded) {
+      const t = this.tab();
+      if ((t === 'interviews' || t === 'scorecards') && d && !this.interviewsLoaded) {
         this.loadInterviews(d.id);
       }
     });
@@ -625,6 +696,8 @@ export class ApplicantDetailComponent {
     this.showInterviewForm.set(false);
     this.editingInterview.set(null);
     this.cancellingInterview.set(null);
+    this.scorecardInterview.set(null);
+    this.editingScorecard.set(null);
     this.pipelineService.getApplicant(id).subscribe({
       next: (d) => {
         this.detail.set(d);
@@ -852,5 +925,24 @@ export class ApplicantDetailComponent {
         this.toastr.error(InterviewService.parseErrorMessage(err));
       },
     });
+  }
+
+  // ─── Scorecards (US-REC-006 AC-1/FR-2) ────────────────────
+
+  /** Open the scorecard slide-over to submit (or edit) for an interview. */
+  openScorecard(iv: IInterview, existing: IScorecard | null = null): void {
+    this.editingScorecard.set(existing);
+    this.scorecardInterview.set(iv);
+  }
+
+  closeScorecard(): void {
+    this.scorecardInterview.set(null);
+    this.editingScorecard.set(null);
+  }
+
+  /** After a save, close the form and reload the consolidated panels (AC-2/AC-3/FR-6). */
+  onScorecardSaved(): void {
+    this.closeScorecard();
+    this.scorecardReloadToken.update((n) => n + 1);
   }
 }

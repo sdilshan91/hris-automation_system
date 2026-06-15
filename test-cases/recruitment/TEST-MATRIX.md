@@ -1,7 +1,7 @@
 ---
 module: Recruitment
-total_user_stories: 5
-total_test_cases: 82
+total_user_stories: 6
+total_test_cases: 96
 created: 2026-06-15
 updated: 2026-06-15
 status: in-progress
@@ -9,14 +9,17 @@ status: in-progress
 
 # Recruitment -- Test Matrix
 
-> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). Module total: 82 test cases, 25/25 acceptance criteria covered.
+> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-006 (Interviewer Submits Structured Interview Scorecard) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-006-01..13 + 1 new multi-tenant isolation on the new `interview_scorecard`/`scorecard_criterion_rating` tables: TC-REC-ISO-015; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). Module total: 96 test cases, 29/29 acceptance criteria covered (US-REC-006 has 4 ACs).
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 5 (US-REC-001, US-REC-002, US-REC-003, US-REC-004, US-REC-005) |
-| Total Test Cases | 82 (68 functional/integration/security/perf/a11y + 14 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 6 (US-REC-001, US-REC-002, US-REC-003, US-REC-004, US-REC-005, US-REC-006) |
+| Total Test Cases | 96 (81 functional/integration/security/perf/a11y + 15 dedicated multi-tenant isolation) |
+| US-REC-006 Test Cases | 14 (TC-REC-006-01..13 + TC-REC-ISO-015; reuses TC-REC-ISO-010/011) |
+| Critical Priority (REC-006) | 4 (TC-REC-006-01, TC-REC-006-05, TC-REC-006-06, TC-REC-ISO-015) |
+| High Priority (REC-006) | 10 (TC-REC-006-02*, -03, -04, -07, -08, -09, -10, -11, -12, -13) (*TC-REC-006-02 is critical for the completion gate) |
 | US-REC-005 Test Cases | 14 (TC-REC-005-01..13 + TC-REC-ISO-014; reuses TC-REC-ISO-010/011) |
 | Critical Priority (REC-005) | 3 (TC-REC-005-01, TC-REC-005-02, TC-REC-005-11, TC-REC-ISO-014) |
 | High Priority (REC-005) | 9 (TC-REC-005-03, -04, -05, -06, -07, -08, -09, -10, -12, -13) |
@@ -48,6 +51,8 @@ status: in-progress
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 | US-REC-005 | Schedule Interviews and Notify Participants | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | 13 |
 | Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
+| US-REC-006 | Interviewer Submits Structured Interview Scorecard | TC-REC-006-01, TC-REC-006-02, TC-REC-006-03, TC-REC-006-04, TC-REC-006-05, TC-REC-006-06, TC-REC-006-07, TC-REC-006-08, TC-REC-006-09, TC-REC-006-10, TC-REC-006-11, TC-REC-006-12, TC-REC-006-13 | 13 |
+| Cross-cutting (REC-006) | Multi-tenant isolation (interview scorecard / criterion rating) | TC-REC-ISO-015 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 
 ## Test Type Distribution (US-REC-002)
 
@@ -303,3 +308,69 @@ status: in-progress
 - **Calendar/agenda a11y (NFR-5):** TC-REC-005-13 covers the new scheduling form + calendar/agenda directly (not reused from REC-003, which is the Kanban pipeline board).
 - **EF query filters vs PostgreSQL RLS (AC-5/NFR-2):** US-REC-005 specifies RLS on `interview`; the platform enforces isolation via EF Core global query filters + TenantInterceptor. TC-REC-ISO-014 describes the EF mechanism and notes RLS session-level assertion as an extension point if added.
 - **ISO reuse:** TC-REC-ISO-010 (no/invalid/mismatched tenant context) and TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id) are reused for the recruitment surface; TC-REC-ISO-014 adds the interview/interviewer/reminder-job dimension specific to US-REC-005.
+
+## Test Type Distribution (US-REC-006)
+
+| Type | Test Cases | Count |
+|------|------------|-------|
+| Functional / E2E (REC-006) | TC-REC-006-01, TC-REC-006-02, TC-REC-006-03, TC-REC-006-04, TC-REC-006-07, TC-REC-006-08, TC-REC-006-09, TC-REC-006-10 | 8 |
+| Integration (REC-006) | TC-REC-006-11 (Offer-gate satisfied by submitted scorecard, cross-story US-REC-004) | 1 |
+| Security (REC-006) | TC-REC-006-05 (anti-bias hide), TC-REC-006-06 (assigned-interviewer-only authz), TC-REC-006-13 (feedback XSS sanitization, also a11y), TC-REC-ISO-015 (+ reused TC-REC-ISO-010/011) | 3 + 1 ISO |
+| Performance (REC-006) | TC-REC-006-12 (submission <=800ms P95 incl. average/audit/enqueue; async delivery) | 1 |
+| Accessibility / Cross-browser (REC-006) | TC-REC-006-13 (scorecard form + recruiter consolidated view WCAG 2.1 AA + responsive 360px) | 1 |
+
+(Note: TC-REC-006-02 carries Happy + Negative tags and is critical for the completion gate; TC-REC-006-03/08/09/10 carry Boundary + Negative; TC-REC-006-05/06 are typed Security while also Negative; TC-REC-006-11 carries Happy + Negative; TC-REC-006-13 carries Security + Accessibility + Cross-browser.)
+
+## Acceptance Criteria Coverage (US-REC-006)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | Submit scorecard (rate criteria 1-5 + comments) -> saved, average computed, interview Completed when all submit, recruiter notified | TC-REC-006-01, TC-REC-006-02, TC-REC-006-06, TC-REC-006-07, TC-REC-006-10, TC-REC-006-12, TC-REC-006-13 |
+| AC-2 | Recruiter applicant-detail view shows individual criterion scores + overall average + written feedback | TC-REC-006-04, TC-REC-006-03 |
+| AC-3 | Multiple interviewers: independent scorecards + consolidated aggregate average | TC-REC-006-03, TC-REC-006-05 |
+| AC-4 | Tenant B sees zero of Tenant A's scorecards; isolation enforced | TC-REC-ISO-015 (+ reused TC-REC-ISO-010, TC-REC-ISO-011) |
+
+## Functional Requirement Coverage (US-REC-006)
+
+| FR | Covered By |
+|----|------------|
+| FR-1 (scorecard form: configured criteria, 1-5 scale + labels, optional per-criterion comment, mandatory overall recommendation) | TC-REC-006-01, TC-REC-006-07, TC-REC-006-10, TC-REC-006-13 |
+| FR-2 (exactly one scorecard per interviewer per interview; edits until lock period) | TC-REC-006-08, TC-REC-006-09 |
+| FR-3 (per-card average + aggregate average across interviewers) | TC-REC-006-01, TC-REC-006-03, TC-REC-006-10 |
+| FR-4 (interview -> Completed when ALL assigned interviewers submit) | TC-REC-006-01, TC-REC-006-02 |
+| FR-5 (notify recruiter on submission, in-app + optional email via Hangfire) | TC-REC-006-01, TC-REC-006-12 (CONDITIONAL on Notification System S25) |
+| FR-6 (interviewer cannot view others' scorecards until own submitted; anti-bias) | TC-REC-006-05 |
+| FR-7 (audit scorecard submissions) | TC-REC-006-01, TC-REC-006-08 (Audit module dependency) |
+| FR-8 (recruiter view: individual scores + comparison data, e.g. radar/bar chart) | TC-REC-006-03, TC-REC-006-04 |
+
+## Non-Functional Requirement Coverage (US-REC-006)
+
+| NFR | Covered By |
+|-----|------------|
+| NFR-1 (scorecard submission API <= 800ms P95) | TC-REC-006-12 |
+| NFR-2 (scorecard data tenant-scoped + RLS) | TC-REC-ISO-015 (EF query filters today; RLS extension point) |
+| NFR-3 (scorecard form mobile-responsive 360px+) | TC-REC-006-13 |
+| NFR-4 (scorecard data in analytics aggregations; sub-second up to 1000 scorecards/tenant) | TC-REC-006-12, TC-REC-ISO-015 (aggregate tenant-scoped) (full analytics owned by US-REC-009) |
+
+## Business Rule Coverage (US-REC-006)
+
+| BR | Covered By |
+|----|------------|
+| BR-1 (only the assigned interviewer can submit) | TC-REC-006-06 |
+| BR-2 (evaluation criteria configurable per tenant; defaults provided) | TC-REC-006-01 (defaults used); full per-tenant config owned by tenant module config S35.2.9 |
+| BR-3 (overall recommendation mandatory) | TC-REC-006-07 |
+| BR-4 (immutable after lock period; in-window edits create version history) | TC-REC-006-08 |
+| BR-5 (cannot view others' scorecards until own submitted; anti-bias) | TC-REC-006-05 |
+| BR-6 (submitted scorecard gates advancement to Offer, US-REC-004 FR-1) | TC-REC-006-11 |
+
+## Conditional / Deferred (US-REC-006)
+
+- **Recruiter notification depends on Notification System S25 + Hangfire (FR-5):** TC-REC-006-01/12 assert the queued in-app/outbox entry + non-blocking dispatch; if delivery is a LOG-ONLY stub, assert the outbox/log record. CONDITIONAL, not a gap.
+- **Audit trail depends on the Audit Logging module (FR-7):** TC-REC-006-01/08 assert the submission/edit audit entry; if the cross-cutting Audit module is not yet integrated, assert the in-module audit hook/record. CONDITIONAL, not a gap.
+- **Version history (BR-4):** TC-REC-006-08 asserts in-window edit + version-history capture IF version history is implemented; if not yet implemented, the case asserts the edit + audit at minimum and notes version history as pending -- it must NOT be skipped or weakened to "edits not tracked".
+- **Per-tenant criteria configuration (BR-2/FR-1):** evaluation criteria are configured via tenant module config S35.2.9; TC-REC-006-01 exercises the defaults (Technical Skills, Communication, Problem Solving, Cultural Fit). Full per-tenant criteria customization (and per-vacancy criteria) is a future enhancement per story assumptions.
+- **Offer-gate evaluator (BR-6):** TC-REC-006-11 closes the seam REC-004 left CONDITIONAL on US-REC-006. If REC-004's gate evaluator is still stubbed in this increment, the case asserts the scorecard-presence query the gate consumes; it must NOT be weakened to "no gate".
+- **Recommendation NOT averaged (FR-3):** the numeric average is over criterion scores only; the overall recommendation enum is kept per-interviewer and not folded into any average (asserted in TC-REC-006-03).
+- **Analytics aggregation (NFR-4):** full recruitment analytics is owned by US-REC-009; TC-REC-006-12 asserts the sub-second read over up to 1000 scorecards/tenant and TC-REC-ISO-015 asserts the aggregate stays tenant-scoped.
+- **EF query filters vs PostgreSQL RLS (AC-4/NFR-2):** US-REC-006 specifies RLS on the scorecard tables; the platform enforces isolation via EF Core global query filters + TenantInterceptor. TC-REC-ISO-015 describes the EF mechanism and notes RLS session-level assertion as an extension point if added.
+- **ISO reuse:** TC-REC-ISO-010 (no/invalid/mismatched tenant context) and TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id) are reused for the recruitment surface; TC-REC-ISO-015 adds the interview-scorecard/criterion-rating dimension specific to US-REC-006.

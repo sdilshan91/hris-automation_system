@@ -416,8 +416,11 @@ public sealed class ApplicantService : IApplicantService
 
         var hiredCount = await CountHiredAsync(applicant.VacancyId, cancellationToken);
 
+        // US-REC-006 BR-6: Offer-gate input — does the applicant have ≥1 scorecard?
+        var hasScorecard = await HasAnyScorecardAsync(applicant.Id, cancellationToken);
+
         var ruleCheck = ApplyStageMove(
-            applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount,
+            applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount, hasScorecard,
             out var historyRow, out var warnings);
         if (ruleCheck.IsFailure)
             return Result<MoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
@@ -465,6 +468,9 @@ public sealed class ApplicantService : IApplicantService
         foreach (var vid in vacancyIds)
             hiredCounts[vid] = await CountHiredAsync(vid, cancellationToken);
 
+        // US-REC-006 BR-6: Offer-gate input per applicant — which applicants have ≥1 scorecard?
+        var applicantIdsWithScorecards = await ApplicantIdsWithScorecardsAsync(distinctIds, cancellationToken);
+
         // All-or-nothing: validate every move first, collect (history row + warnings), then persist
         // together so the caller never gets a partial move.
         var staged = new List<(ApplicantStageHistory Row, Applicant Applicant, IReadOnlyList<string> Warnings)>(applicants.Count);
@@ -473,8 +479,10 @@ public sealed class ApplicantService : IApplicantService
             vacancies.TryGetValue(applicant.VacancyId, out var vacancy);
             hiredCounts.TryGetValue(applicant.VacancyId, out var hiredCount);
 
+            var hasScorecard = applicantIdsWithScorecards.Contains(applicant.Id);
+
             var ruleCheck = ApplyStageMove(
-                applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount,
+                applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount, hasScorecard,
                 out var historyRow, out var warnings);
             if (ruleCheck.IsFailure)
                 return Result<BulkMoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
@@ -501,6 +509,54 @@ public sealed class ApplicantService : IApplicantService
     private Task<int> CountHiredAsync(Guid vacancyId, CancellationToken cancellationToken) =>
         _dbContext.Applicants.CountAsync(
             a => a.VacancyId == vacancyId && a.Stage == ApplicantStage.Hired, cancellationToken);
+
+    /// <summary>
+    /// US-REC-006 BR-6: true when the applicant has ≥1 interview scorecard (the Offer-stage gate criterion).
+    /// Tenant-scoped — joins the applicant's interviews to their scorecards through the EF query filters.
+    /// </summary>
+    private async Task<bool> HasAnyScorecardAsync(Guid applicantId, CancellationToken cancellationToken)
+    {
+        var interviewIds = await _dbContext.Interviews
+            .Where(i => i.ApplicantId == applicantId)
+            .Select(i => i.Id)
+            .ToListAsync(cancellationToken);
+
+        if (interviewIds.Count == 0)
+            return false;
+
+        return await _dbContext.InterviewScorecards
+            .AnyAsync(s => interviewIds.Contains(s.InterviewId), cancellationToken);
+    }
+
+    /// <summary>
+    /// US-REC-006 BR-6: of the supplied applicants, the subset that have ≥1 interview scorecard (the
+    /// Offer-stage gate). Tenant-scoped. Used by the bulk-move path.
+    /// </summary>
+    private async Task<HashSet<Guid>> ApplicantIdsWithScorecardsAsync(
+        IReadOnlyList<Guid> applicantIds, CancellationToken cancellationToken)
+    {
+        // applicantId -> interviewIds
+        var interviewLinks = await _dbContext.Interviews
+            .Where(i => applicantIds.Contains(i.ApplicantId))
+            .Select(i => new { i.ApplicantId, i.Id })
+            .ToListAsync(cancellationToken);
+
+        if (interviewLinks.Count == 0)
+            return [];
+
+        var interviewIds = interviewLinks.Select(l => l.Id).ToList();
+        var scoredInterviewIds = (await _dbContext.InterviewScorecards
+            .Where(s => interviewIds.Contains(s.InterviewId))
+            .Select(s => s.InterviewId)
+            .Distinct()
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        return interviewLinks
+            .Where(l => scoredInterviewIds.Contains(l.Id))
+            .Select(l => l.ApplicantId)
+            .ToHashSet();
+    }
 
     /// <summary>
     /// FR-6/NFR-5: fire the per-transition applicant notification (log-only seam). Never let a
@@ -545,7 +601,7 @@ public sealed class ApplicantService : IApplicantService
     /// </summary>
     private Result ApplyStageMove(
         Applicant applicant, ApplicantStage toStage, string? reason, string? notes,
-        RejectionReason? rejectionReason, Vacancy? vacancy, int hiredCount,
+        RejectionReason? rejectionReason, Vacancy? vacancy, int hiredCount, bool hasScorecard,
         out ApplicantStageHistory? historyRow, out IReadOnlyList<string> warnings)
     {
         historyRow = null;
@@ -596,13 +652,15 @@ public sealed class ApplicantService : IApplicantService
                 "advancing more applicants to Offer/Hired may exceed the planned headcount.");
         }
 
-        // FR-1/BR-1: gate framework STUB. The Interview gate (≥1 scheduled interview) and Offer gate
-        // (≥1 completed scorecard) depend on US-REC-005/006, which do not exist yet. The framework is
-        // structurally present but currently always passes — surfaced as an advisory warning only.
-        if (toStage == ApplicantStage.Interview || toStage == ApplicantStage.Offer)
+        // US-REC-006 BR-6 (the Offer gate, FR-1): advancing to Offer requires ≥1 scorecard for the
+        // applicant. The gate is SOFT (advisory warning, never blocking) to match the rest of the
+        // REC-004 gate framework — the recruiter may override (the story sets no minimum-scorecard hard
+        // rule). The data authority is US-REC-006; this surfaces it on the move.
+        if (toStage == ApplicantStage.Offer && !hasScorecard)
         {
             warn.Add(
-                "No gate criteria evaluated (interview/scorecard modules pending — US-REC-005/006).");
+                "No interview scorecard has been submitted for this applicant; " +
+                "advancing to Offer without a scorecard is not recommended.");
         }
 
         applicant.Stage = toStage;

@@ -228,7 +228,65 @@ one-line fix.
 - Notifications + the 24h Hangfire reminder (AC-1/AC-2/FR-3/FR-4) are entirely
   backend concerns; the FE only triggers schedule/reschedule/cancel.
 
-### Rich text
+## Interview scorecards (US-REC-006)
+
+Structured interview scorecard: the assigned interviewer submits 1-5 ratings per
+tenant criterion + an overall recommendation; the recruiter sees a consolidated
+comparison on the applicant-detail **Scorecards** tab (was no tab before). New
+files under `features/recruitment/`: `models/scorecard.models.ts`,
+`services/scorecard.service.ts`, `components/scorecard-form/` (submit/edit
+slide-over), `components/scorecard-panel/` (recruiter consolidated table +
+anti-bias overlay). Reached from the new applicant-detail "Scorecards" tab AND a
+"Submit/Edit scorecard" CTA added to `interview-card` (off by default, gated by
+new `showScorecard`/`scorecardSubmitted` inputs + `scorecard` output).
+
+### Frontend contract (`ScorecardService`, camelCase, base `/api/v1/recruitment`)
+No backend scorecard endpoints existed when this FE was built — this is the FE's
+PROPOSED contract for the backend agent to match:
+- `GET  /recruitment/scorecards/criteria` → `IScorecardCriterion[]`
+  `{ key, name, description?, displayOrder? }` (FR-1/BR-2 tenant defaults:
+  Technical Skills, Communication, Problem Solving, Cultural Fit).
+- `GET  /recruitment/interviews/:interviewId/scorecards` → `IScorecardBoard`
+  `{ interviewId, scorecards[], aggregateAverage, isAssignedInterviewer?,
+  hasSubmittedOwn?, canViewOthers? }`. Tolerates a bare `IScorecard[]` too (then
+  FE computes the aggregate, assumes no gate). **`canViewOthers` defaults to TRUE
+  when absent** so a plain recruiter view is never accidentally hidden.
+- `POST /recruitment/interviews/:interviewId/scorecards` body `IScorecardRequest`
+  `{ ratings:[{criterionKey, score(1-5), comment?}], overallRecommendation,
+  generalNotes? }` → `IScorecard` (AC-1). Interviewer identity is server-side
+  (BR-1) — NEVER sent by the FE.
+- `PUT  /recruitment/scorecards/:id` body `IScorecardRequest` → `IScorecard`
+  (FR-2/BR-4 edit until lock).
+
+`IScorecard` ≈ `{ id, interviewId, interviewerEmployeeId, interviewerName,
+overallRecommendation, ratings[], generalNotes?, averageScore (server-computed),
+submittedAt, lockedAt?, editable?, isMine? }`. Mapping in `ScorecardService`
+tolerates `fullName`→`interviewerName`. All withCredentials + RLS.
+
+### Enum casing (US-PLT-003 — critical)
+`OverallRecommendation` is `'StrongHire' | 'Hire' | 'NoHire' | 'StrongNoHire'`
+(PascalCase = C# member names; the API uses a global JsonStringEnumConverter).
+Source of truth is `RECOMMENDATION_OPTIONS`/`_LABELS`/`_BADGE` in
+scorecard.models.ts. §8 colors: Strong Hire=green, Hire=light-green(emerald),
+No Hire=orange, Strong No Hire=red.
+
+### Business rules surfaced in the UI
+- **Anti-bias (FR-6/BR-5):** the panel reflects the backend's `canViewOthers`
+  flag — false blurs the table behind a "Submit your scorecard first" overlay.
+  The backend is the authority (it omits the other cards); the FE never derives
+  interviewer identity (the FE `IUser` has no employeeId anyway).
+- **Editable until lock (FR-2/BR-4):** `isScorecardEditable()` treats
+  `editable===false` OR a present `lockedAt` as locked; PUT re-checks server-side.
+- Recommendation is mandatory (BR-3); all criteria must be rated before Review.
+- Two-step form: fill → pre-submit summary with Edit → confirm (§8).
+
+### No chart library (FR-8)
+chart.js / ngx-charts / @swimlane are NOT project deps, so the "visual comparison"
+is a clean **comparison table** (criteria × interviewers, per-card average +
+highlighted aggregate), an acceptable Phase-1 form per the story note. Revisit
+(radar/bar) only if a chart lib is added.
+
+## Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to
 keep the build/test gate lean. Output is HTML displayed via Angular's default

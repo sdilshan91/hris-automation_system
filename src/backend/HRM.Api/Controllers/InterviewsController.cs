@@ -166,6 +166,99 @@ public sealed class InterviewsController : ControllerBase
 
         return Ok(ApiResponse<IReadOnlyList<InterviewDto>>.Ok(result.Value!));
     }
+
+    // ── Scorecards (US-REC-006) ───────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/v1/recruitment/interviews/{interviewId}/scorecard
+    /// Submits (or edits) the current interviewer's structured scorecard (AC-1/FR-1..FR-7). Guarded by
+    /// Recruitment.View; the service enforces BR-1 (only the assigned interviewer — 403 otherwise) and BR-4
+    /// (the lock period — 409 once locked). On the final interviewer's submission the interview is marked
+    /// Completed (FR-4).
+    /// </summary>
+    [HttpPost("interviews/{interviewId:guid}/scorecard")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(typeof(ApiResponse<ScorecardDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SubmitScorecard(
+        Guid interviewId,
+        [FromBody] SubmitScorecardRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new SubmitScorecardCommand(
+            interviewId, request.OverallRecommendation, request.GeneralNotes,
+            (request.Ratings ?? []).Select(r => new CriterionRatingInput
+            {
+                CriterionKey = r.CriterionKey,
+                Score = r.Score,
+                Comment = r.Comment,
+            }).ToList()), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<ScorecardDto>.Ok(result.Value!, "Scorecard submitted."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/recruitment/interviews/{interviewId}/scorecards
+    /// Lists the scorecards for an interview the caller may see + the aggregate average (AC-2/AC-3).
+    /// Guarded by Recruitment.View; the service applies the anti-bias rule (FR-6/BR-5).
+    /// </summary>
+    [HttpGet("interviews/{interviewId:guid}/scorecards")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(typeof(ApiResponse<ScorecardSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetScorecardsForInterview(Guid interviewId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetScorecardsForInterviewQuery(interviewId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ScorecardSummaryDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/recruitment/applicants/{applicantId}/scorecards
+    /// Lists the scorecards across all of an applicant's interviews the caller may see + the aggregate
+    /// average (AC-2/AC-3). Guarded by Recruitment.View; the service applies the anti-bias rule (FR-6/BR-5).
+    /// </summary>
+    [HttpGet("applicants/{applicantId:guid}/scorecards")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(typeof(ApiResponse<ScorecardSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetScorecardsForApplicant(Guid applicantId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetScorecardsForApplicantQuery(applicantId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ScorecardSummaryDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/recruitment/scorecard-criteria
+    /// Returns the default evaluation criteria the scorecard form renders (FR-1/BR-2). Guarded by
+    /// Recruitment.View.
+    /// </summary>
+    [HttpGet("scorecard-criteria")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ScorecardCriterionDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetScorecardCriteria(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetScorecardCriteriaQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<ScorecardCriterionDto>>.Ok(result.Value!));
+    }
 }
 
 /// <summary>
@@ -196,4 +289,23 @@ public sealed record UpdateInterviewRequest
     public string? VideoLink { get; init; }
     public string? Notes { get; init; }
     public IReadOnlyList<Guid> InterviewerEmployeeIds { get; init; } = [];
+}
+
+/// <summary>
+/// Request body to submit/edit a scorecard (US-REC-006 FR-1). camelCase on the wire. The interview id comes
+/// from the route and the interviewer from the auth context (BR-1), so neither is in the body.
+/// </summary>
+public sealed record SubmitScorecardRequest
+{
+    public OverallRecommendation OverallRecommendation { get; init; }
+    public string? GeneralNotes { get; init; }
+    public IReadOnlyList<CriterionRatingRequest> Ratings { get; init; } = [];
+}
+
+/// <summary>A single criterion rating in a scorecard submission (US-REC-006 FR-1). camelCase on the wire.</summary>
+public sealed record CriterionRatingRequest
+{
+    public string CriterionKey { get; init; } = string.Empty;
+    public int Score { get; init; }
+    public string? Comment { get; init; }
 }

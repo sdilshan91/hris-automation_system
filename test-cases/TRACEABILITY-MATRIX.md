@@ -2187,7 +2187,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | Critical | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
 | US-REC-005 | Schedule Interviews and Notify Participants | Must Have | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | 13 | 5/5 AC covered |
 | Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | Critical | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
-| **TOTAL** | | | **82 test cases** | **82** | **25/25 AC** |
+| US-REC-006 | Interviewer Submits Structured Interview Scorecard | Must Have | TC-REC-006-01, TC-REC-006-02, TC-REC-006-03, TC-REC-006-04, TC-REC-006-05, TC-REC-006-06, TC-REC-006-07, TC-REC-006-08, TC-REC-006-09, TC-REC-006-10, TC-REC-006-11, TC-REC-006-12, TC-REC-006-13 | 13 | 4/4 AC covered |
+| Cross-cutting (REC-006) | Multi-tenant isolation (interview scorecard / criterion rating) | Critical | TC-REC-ISO-015 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
+| **TOTAL** | | | **96 test cases** | **96** | **29/29 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2271,6 +2273,20 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-005-12 | Scheduling <=800ms P95 incl. outbox writes; notification delivery async (non-blocking) | Performance | High | US-REC-005 | NFR-1, NFR-3 |
 | TC-REC-005-13 | Scheduling form + calendar/agenda WCAG 2.1 AA; keyboard/SR/contrast; responsive 360px | Accessibility | High | US-REC-005 | NFR-5 |
 | TC-REC-ISO-014 | Tenant B cannot read/write Tenant A's interviews/interviewers/reminder jobs; rows + jobs session-stamped | Security | Critical | US-REC-005 | AC-5, NFR-2, NFR-4, FR-1, FR-4, FR-5 |
+| TC-REC-006-01 | Assigned interviewer submits complete scorecard -> saved, criterion average computed, audit logged, recruiter notified (happy path) | E2E | Critical | US-REC-006 | AC-1, FR-1, FR-3, FR-5, FR-7, NFR-3 |
+| TC-REC-006-02 | Interview -> Completed ONLY when ALL assigned interviewers have submitted | Functional | Critical | US-REC-006 | AC-1, FR-4, BR-1 |
+| TC-REC-006-03 | Multiple interviewers: independent scorecards + consolidated aggregate average across interviewers | Functional | High | US-REC-006 | AC-3, FR-3, FR-8 |
+| TC-REC-006-04 | Recruiter detail view: individual criterion scores + overall average + written feedback + recommendation | Functional | High | US-REC-006 | AC-2, FR-8, FR-1 |
+| TC-REC-006-05 | Anti-bias: interviewer cannot view others' scorecards until own submitted (server-side hide) | Security | Critical | US-REC-006 | FR-6, BR-5, AC-3 |
+| TC-REC-006-06 | Only the assigned interviewer may submit; non-assigned/recruiter/impersonation/unauth rejected | Security | Critical | US-REC-006 | BR-1, AC-1 |
+| TC-REC-006-07 | Overall recommendation mandatory; missing/out-of-enum rejected, nothing persisted | Functional | High | US-REC-006 | BR-3, FR-1, AC-1 |
+| TC-REC-006-08 | Lock period: edit within 48h ok (avg recomputed, version/audit), after lock rejected | Functional | High | US-REC-006 | FR-2, BR-4, FR-3, FR-7 |
+| TC-REC-006-09 | Exactly one scorecard per interviewer per interview; second submit edits, not duplicates | Functional | High | US-REC-006 | FR-2, BR-4 |
+| TC-REC-006-10 | Rating boundaries 1-5 (incl. integer + completeness); out-of-range/missing rejected; average computed | Functional | High | US-REC-006 | FR-1, FR-3, AC-1 |
+| TC-REC-006-11 | Submitted scorecard satisfies REC-004 Interview->Offer gate; zero scorecards warns (soft) | Integration | High | US-REC-006 | BR-6, AC-1 |
+| TC-REC-006-12 | Submission <=800ms P95 incl. average/audit/enqueue; notification async (non-blocking) | Performance | High | US-REC-006 | NFR-1, NFR-3, NFR-4 |
+| TC-REC-006-13 | Scorecard form + recruiter view WCAG 2.1 AA; feedback XSS-sanitized; responsive 360px | Accessibility | High | US-REC-006 | NFR-3, AC-1, AC-2 |
+| TC-REC-ISO-015 | Tenant B cannot read/write Tenant A's scorecards/criterion ratings; rows session-stamped; aggregate tenant-scoped | Security | Critical | US-REC-006 | AC-4, NFR-2, NFR-4, FR-1, FR-3, FR-7 |
 
 ### US-REC-001 Detailed Requirements Traceability
 
@@ -2490,6 +2506,46 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Accessibility Test Cases | 1 (TC-REC-005-13 -- scheduling form + calendar/agenda WCAG 2.1 AA + responsive 360px) | >= 1 | PASS |
 | Blocked Test Cases | 0 (TC-REC-005-02/03/04 CONDITIONAL on Hangfire/S25; TC-REC-005-07 business-hours portion + FR-8 attachment CONDITIONAL) | -- | CLEAR |
 
+### US-REC-006 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Submit scorecard (rate criteria 1-5 + comments) -> saved, average computed, interview Completed when all submit, recruiter notified | AC | TC-REC-006-01, TC-REC-006-02, TC-REC-006-06, TC-REC-006-07, TC-REC-006-10, TC-REC-006-12, TC-REC-006-13 | Direct |
+| AC-2: Recruiter detail view shows individual criterion scores + overall average + written feedback | AC | TC-REC-006-04, TC-REC-006-03 | Direct |
+| AC-3: Multiple interviewers -> independent scorecards + consolidated aggregate average | AC | TC-REC-006-03, TC-REC-006-05 | Direct |
+| AC-4: Tenant B sees zero of Tenant A's scorecards; isolation enforced | AC | TC-REC-ISO-015 (+ reused TC-REC-ISO-010, TC-REC-ISO-011) | Direct (EF query filters; RLS noted as extension point) |
+| FR-1: Scorecard form (configured criteria, 1-5 scale + labels, optional per-criterion comment, mandatory overall recommendation) | FR | TC-REC-006-01, TC-REC-006-07, TC-REC-006-10, TC-REC-006-13 | Direct |
+| FR-2: Exactly one scorecard per interviewer per interview; edits until lock period | FR | TC-REC-006-08, TC-REC-006-09 | Direct |
+| FR-3: Per-card average + aggregate average across interviewers | FR | TC-REC-006-01, TC-REC-006-03, TC-REC-006-10 | Direct |
+| FR-4: Interview -> Completed when ALL assigned interviewers submit | FR | TC-REC-006-01, TC-REC-006-02 | Direct |
+| FR-5: Notify recruiter on submission (in-app + optional email via Hangfire) | FR | TC-REC-006-01, TC-REC-006-12 | Direct (CONDITIONAL on Notification System S25) |
+| FR-6: Interviewer cannot view others' scorecards until own submitted (anti-bias) | FR | TC-REC-006-05 | Direct |
+| FR-7: Audit scorecard submissions | FR | TC-REC-006-01, TC-REC-006-08 | Direct (Audit module dependency) |
+| FR-8: Recruiter view individual scores + visual comparison (radar/bar) | FR | TC-REC-006-03, TC-REC-006-04 | Direct |
+| NFR-1: Submission API <= 800ms P95 | NFR | TC-REC-006-12 | Direct |
+| NFR-2: Scorecard data tenant-scoped; RLS | NFR | TC-REC-ISO-015 | Direct (EF query filters today; RLS extension point) |
+| NFR-3: Scorecard form mobile-responsive 360px+ | NFR | TC-REC-006-13 | Direct |
+| NFR-4: Scorecard data in analytics aggregations; sub-second up to 1000/tenant | NFR | TC-REC-006-12, TC-REC-ISO-015 | Direct (full analytics owned by US-REC-009) |
+| BR-1: Only the assigned interviewer can submit | BR | TC-REC-006-06 | Direct |
+| BR-2: Evaluation criteria configurable per tenant; defaults provided | BR | TC-REC-006-01 | Direct (defaults exercised; per-tenant config owned by S35.2.9) |
+| BR-3: Overall recommendation mandatory | BR | TC-REC-006-07 | Direct |
+| BR-4: Immutable after lock period; in-window edits create version history | BR | TC-REC-006-08 | Direct (version history CONDITIONAL if not yet implemented) |
+| BR-5: Cannot view others' scorecards until own submitted (anti-bias) | BR | TC-REC-006-05 | Direct |
+| BR-6: Submitted scorecard gates advancement to Offer (US-REC-004 FR-1) | BR | TC-REC-006-11 | Direct (CONDITIONAL on REC-004 gate evaluator) |
+
+### Coverage Summary (Recruitment -- US-REC-006)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 4/4 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) -- FR-5 CONDITIONAL on S25; FR-7 Audit-module dependency | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 4/4 (100%) -- NFR-2 RLS extension point; NFR-4 full analytics owned by US-REC-009 | >= 85% | PASS |
+| Business Rules Coverage | 6/6 (100%) -- BR-4 version-history CONDITIONAL; BR-6 CONDITIONAL on REC-004 gate evaluator | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 1 new dedicated (TC-REC-ISO-015) + 2 reused (TC-REC-ISO-010/011) | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-REC-006-12 -- submission <=800ms P95 incl. average/audit/enqueue; async delivery) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-REC-006-13 -- scorecard form + recruiter view WCAG 2.1 AA + responsive 360px) | >= 1 | PASS |
+| Blocked Test Cases | 0 (TC-REC-006-01/12 FR-5 CONDITIONAL on Hangfire/S25; TC-REC-006-08 version-history CONDITIONAL; TC-REC-006-11 CONDITIONAL on REC-004 gate evaluator) | -- | CLEAR |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -2500,8 +2556,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Core HR (US-CHR-001 through US-CHR-012) | 12 | 372 | 61/61 (100%) | 67 | PASS |
 | Leave Management (US-LV-001 through US-LV-012) | 12 | 303 | 57/57 (100%) | 48 | PASS |
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
-| Recruitment (US-REC-001 through US-REC-005) | 5 | 82 | 25/25 (100%) | 14 | PASS (in progress) |
-| **TOTAL** | **46** | **975** | **239/239 (100%)** | **166** | |
+| Recruitment (US-REC-001 through US-REC-006) | 6 | 96 | 29/29 (100%) | 15 | PASS (in progress) |
+| **TOTAL** | **47** | **989** | **243/243 (100%)** | **167** | |
 
 ---
 
