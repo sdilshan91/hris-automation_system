@@ -47,4 +47,35 @@ public interface IRecruitmentNotificationService
         string fromStage,
         string toStage,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies all participants (interviewers + the applicant) about an interview lifecycle event
+    /// (US-REC-005 FR-3/BR-7) — scheduled, updated/rescheduled or cancelled. Fire-and-forget; must never
+    /// throw into the request path — the interview write is committed even if dispatch fails. Real
+    /// email/in-app delivery is DEFERRED: this is the log-only seam (mirrors the other recruitment events).
+    /// </summary>
+    /// <param name="eventType">A short event label, e.g. "interview-scheduled" / "interview-updated" / "interview-cancelled".</param>
+    /// <param name="applicantEmail">The applicant's email (from their application, BR-7).</param>
+    /// <param name="interviewerEmails">The interviewers' work emails (from their employee records, BR-7).</param>
+    Task NotifyInterviewAsync(
+        string eventType,
+        Guid interviewId,
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        IReadOnlyList<string> interviewerEmails,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends the pre-interview reminder to all participants (US-REC-005 FR-4/AC-2). Invoked by the
+    /// Hangfire reminder job ~24h before the interview. Fire-and-forget; log-only seam (real delivery
+    /// deferred). Idempotent (NFR-4): re-running it simply re-logs.
+    /// </summary>
+    Task NotifyInterviewReminderAsync(
+        Guid interviewId,
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        IReadOnlyList<string> interviewerEmails,
+        CancellationToken cancellationToken = default);
 }

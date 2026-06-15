@@ -65,6 +65,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Vacancy> Vacancies => Set<Vacancy>();
     public DbSet<Applicant> Applicants => Set<Applicant>();
     public DbSet<ApplicantStageHistory> ApplicantStageHistories => Set<ApplicantStageHistory>();
+    public DbSet<Interview> Interviews => Set<Interview>();
+    public DbSet<InterviewInterviewer> InterviewInterviewers => Set<InterviewInterviewer>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -230,5 +232,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-REC-003: ApplicantStageHistory tenant isolation + soft-delete filter (AC-5).
         modelBuilder.Entity<ApplicantStageHistory>()
             .HasQueryFilter(h => !h.IsDeleted && (!_tenantContext.IsResolved || h.TenantId == _tenantContext.TenantId));
+
+        // US-REC-005: Interview tenant isolation + soft-delete filter (AC-5).
+        modelBuilder.Entity<Interview>()
+            .HasQueryFilter(i => !i.IsDeleted && (!_tenantContext.IsResolved || i.TenantId == _tenantContext.TenantId));
+
+        // US-REC-005: InterviewInterviewer tenant isolation + soft-delete filter (AC-5).
+        modelBuilder.Entity<InterviewInterviewer>()
+            .HasQueryFilter(ii => !ii.IsDeleted && (!_tenantContext.IsResolved || ii.TenantId == _tenantContext.TenantId));
     }
 }

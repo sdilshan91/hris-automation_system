@@ -13,10 +13,14 @@ import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { PipelineService } from '../../services/pipeline.service';
+import { InterviewService } from '../../services/interview.service';
 import {
   StageReasonDialogComponent,
   IStageReasonResult,
 } from '../stage-reason-dialog/stage-reason-dialog.component';
+import { InterviewFormComponent } from '../interview-form/interview-form.component';
+import { InterviewCardComponent } from '../interview-card/interview-card.component';
+import { InterviewCancelDialogComponent } from '../interview-cancel-dialog/interview-cancel-dialog.component';
 import {
   IApplicantDetail,
   SOURCE_BADGE,
@@ -28,6 +32,7 @@ import {
   rejectionReasonLabel,
   relativeAppliedTime,
 } from '../../models/pipeline.models';
+import { IInterview } from '../../models/interview.models';
 import { ApplicantSource, ApplicantStage } from '../../models/applicant.models';
 
 type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
@@ -44,7 +49,13 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
 @Component({
   selector: 'app-applicant-detail',
   standalone: true,
-  imports: [CommonModule, StageReasonDialogComponent],
+  imports: [
+    CommonModule,
+    StageReasonDialogComponent,
+    InterviewFormComponent,
+    InterviewCardComponent,
+    InterviewCancelDialogComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('drawer', [
@@ -297,17 +308,51 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
               }
             }
 
-            <!-- Interviews (placeholder — no module yet) -->
+            <!-- Interviews (US-REC-005 AC-4 — all rounds for this applicant) -->
             @if (tab() === 'interviews') {
-              <div class="py-10 text-center">
-                <p class="text-sm font-medium text-neutral-700">
-                  No interviews scheduled
-                </p>
-                <p class="mt-1 text-sm text-neutral-500">
-                  Interview scheduling will appear here once the interviews module
-                  is available.
-                </p>
+              <div class="mb-4 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-neutral-800">
+                  Interviews
+                  @if (interviews().length) {
+                    <span class="text-neutral-400">({{ interviews().length }})</span>
+                  }
+                </h3>
+                <button
+                  type="button"
+                  class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
+                  (click)="openSchedule()"
+                >
+                  Schedule interview
+                </button>
               </div>
+
+              @if (interviewsLoading()) {
+                <div class="space-y-3">
+                  @for (n of [1, 2]; track n) {
+                    <div class="h-24 animate-pulse rounded-xl bg-neutral-100"></div>
+                  }
+                </div>
+              } @else if (interviews().length === 0) {
+                <div class="py-10 text-center">
+                  <p class="text-sm font-medium text-neutral-700">
+                    No interviews scheduled
+                  </p>
+                  <p class="mt-1 text-sm text-neutral-500">
+                    Schedule the first round to notify the applicant and
+                    interviewers.
+                  </p>
+                </div>
+              } @else {
+                <div class="space-y-3">
+                  @for (iv of interviews(); track iv.id) {
+                    <app-interview-card
+                      [interview]="iv"
+                      (reschedule)="openReschedule($event)"
+                      (cancel)="askCancel($event)"
+                    />
+                  }
+                </div>
+              }
             }
 
             <!-- Notes (placeholder — no module yet) -->
@@ -380,6 +425,27 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
         (cancelled)="cancelReasonMove()"
       />
     }
+
+    <!-- Schedule / reschedule interview slide-over (US-REC-005 AC-1/AC-3) -->
+    @if (showInterviewForm() && detail(); as d) {
+      <app-interview-form
+        [applicantId]="d.id"
+        [vacancyId]="d.vacancyId"
+        [applicantName]="fullName()"
+        [interview]="editingInterview()"
+        (saved)="onInterviewSaved()"
+        (cancelled)="closeInterviewForm()"
+      />
+    }
+
+    <!-- Cancel-interview confirmation (US-REC-005 AC-3) -->
+    @if (cancellingInterview(); as iv) {
+      <app-interview-cancel-dialog
+        [applicantName]="fullName()"
+        (confirmed)="confirmCancel($event)"
+        (cancelled)="dismissCancel()"
+      />
+    }
   `,
   styles: [
     `
@@ -448,6 +514,7 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
 })
 export class ApplicantDetailComponent {
   private readonly pipelineService = inject(PipelineService);
+  private readonly interviewService = inject(InterviewService);
   private readonly toastr = inject(ToastrService);
 
   /** Applicant id to load; the parent passes the clicked card's id. */
@@ -474,6 +541,18 @@ export class ApplicantDetailComponent {
   readonly detail = signal<IApplicantDetail | null>(null);
   readonly loading = signal(true);
   readonly downloading = signal(false);
+
+  // ─── Interviews (US-REC-005) ──────────────────────────────
+  readonly interviews = signal<IInterview[]>([]);
+  readonly interviewsLoading = signal(false);
+  /** Whether the schedule/reschedule slide-over is open. */
+  readonly showInterviewForm = signal(false);
+  /** The interview being rescheduled (AC-3), or null for a new round (AC-1). */
+  readonly editingInterview = signal<IInterview | null>(null);
+  /** The interview pending cancellation confirmation (AC-3), or null. */
+  readonly cancellingInterview = signal<IInterview | null>(null);
+  /** Whether the interviews list has been loaded for the current applicant. */
+  private interviewsLoaded = false;
 
   /** True while a stage move is in flight (disables the action buttons). */
   readonly moving = signal(false);
@@ -525,12 +604,27 @@ export class ApplicantDetailComponent {
       const id = this.applicantId();
       this.load(id);
     });
+
+    // Lazy-load the interviews list the first time the Interviews tab opens
+    // (US-REC-005 AC-4) — avoids an extra request for users who never open it.
+    effect(() => {
+      const d = this.detail();
+      if (this.tab() === 'interviews' && d && !this.interviewsLoaded) {
+        this.loadInterviews(d.id);
+      }
+    });
   }
 
   private load(id: string): void {
     this.loading.set(true);
     this.detail.set(null);
     this.tab.set('profile');
+    // Reset interview state for the newly bound applicant (US-REC-005).
+    this.interviews.set([]);
+    this.interviewsLoaded = false;
+    this.showInterviewForm.set(false);
+    this.editingInterview.set(null);
+    this.cancellingInterview.set(null);
     this.pipelineService.getApplicant(id).subscribe({
       next: (d) => {
         this.detail.set(d);
@@ -683,5 +777,80 @@ export class ApplicantDetailComponent {
 
   sourceBadge(source: ApplicantSource): string {
     return SOURCE_BADGE[source] ?? SOURCE_BADGE.public;
+  }
+
+  // ─── Interviews (US-REC-005 AC-1/AC-3/AC-4) ───────────────
+
+  /** Load all interview rounds for the applicant (AC-4). */
+  private loadInterviews(applicantId: string): void {
+    this.interviewsLoading.set(true);
+    this.interviewService.listForApplicant(applicantId).subscribe({
+      next: (rows) => {
+        this.interviews.set(rows);
+        this.interviewsLoading.set(false);
+        this.interviewsLoaded = true;
+      },
+      error: (err: HttpErrorResponse) => {
+        this.interviewsLoading.set(false);
+        this.interviewsLoaded = true;
+        this.toastr.error(InterviewService.parseErrorMessage(err));
+      },
+    });
+  }
+
+  /** Open the slide-over to schedule a new round (AC-1). */
+  openSchedule(): void {
+    this.editingInterview.set(null);
+    this.showInterviewForm.set(true);
+  }
+
+  /** Open the slide-over pre-filled to reschedule an interview (AC-3). */
+  openReschedule(iv: IInterview): void {
+    this.editingInterview.set(iv);
+    this.showInterviewForm.set(true);
+  }
+
+  closeInterviewForm(): void {
+    this.showInterviewForm.set(false);
+    this.editingInterview.set(null);
+  }
+
+  /** After a successful schedule/reschedule, refresh the rounds list. */
+  onInterviewSaved(): void {
+    this.closeInterviewForm();
+    const d = this.detail();
+    if (d) {
+      this.loadInterviews(d.id);
+    }
+  }
+
+  /** Ask for confirmation before cancelling an interview (AC-3). */
+  askCancel(iv: IInterview): void {
+    this.cancellingInterview.set(iv);
+  }
+
+  dismissCancel(): void {
+    this.cancellingInterview.set(null);
+  }
+
+  /** Confirm cancellation — calls the API then refreshes the rounds list (AC-3). */
+  confirmCancel(reason?: string): void {
+    const iv = this.cancellingInterview();
+    this.cancellingInterview.set(null);
+    if (!iv) {
+      return;
+    }
+    this.interviewService.cancel(iv.id, reason).subscribe({
+      next: () => {
+        this.toastr.success('Interview cancelled. Participants notified.');
+        const d = this.detail();
+        if (d) {
+          this.loadInterviews(d.id);
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        this.toastr.error(InterviewService.parseErrorMessage(err));
+      },
+    });
   }
 }

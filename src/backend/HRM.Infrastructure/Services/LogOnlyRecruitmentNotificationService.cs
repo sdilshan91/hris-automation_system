@@ -61,4 +61,37 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyInterviewAsync(
+        string eventType,
+        Guid interviewId,
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        IReadOnlyList<string> interviewerEmails,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for interview {InterviewId} (applicant {ApplicantId}, vacancy {VacancyId}): notify applicant {Email} + {InterviewerCount} interviewer(s) [{Interviewers}]",
+            eventType, interviewId, applicantId, vacancyId, applicantEmail,
+            interviewerEmails.Count, string.Join(", ", interviewerEmails));
+
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyInterviewReminderAsync(
+        Guid interviewId,
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        IReadOnlyList<string> interviewerEmails,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for interview {InterviewId} (applicant {ApplicantId}, vacancy {VacancyId}): reminder to applicant {Email} + {InterviewerCount} interviewer(s) [{Interviewers}]",
+            "interview-reminder", interviewId, applicantId, vacancyId, applicantEmail,
+            interviewerEmails.Count, string.Join(", ", interviewerEmails));
+
+        return Task.CompletedTask;
+    }
 }

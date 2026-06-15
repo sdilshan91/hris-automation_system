@@ -1,7 +1,7 @@
 ---
 module: Recruitment
-total_user_stories: 4
-total_test_cases: 68
+total_user_stories: 5
+total_test_cases: 82
 created: 2026-06-15
 updated: 2026-06-15
 status: in-progress
@@ -9,14 +9,18 @@ status: in-progress
 
 # Recruitment -- Test Matrix
 
-> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). Module total: 68 test cases, 20/20 acceptance criteria covered.
+> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). Module total: 82 test cases, 25/25 acceptance criteria covered.
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 4 (US-REC-001, US-REC-002, US-REC-003, US-REC-004) |
-| Total Test Cases | 68 (51 functional/integration/security/perf/a11y + 13 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 5 (US-REC-001, US-REC-002, US-REC-003, US-REC-004, US-REC-005) |
+| Total Test Cases | 82 (68 functional/integration/security/perf/a11y + 14 dedicated multi-tenant isolation) |
+| US-REC-005 Test Cases | 14 (TC-REC-005-01..13 + TC-REC-ISO-014; reuses TC-REC-ISO-010/011) |
+| Critical Priority (REC-005) | 3 (TC-REC-005-01, TC-REC-005-02, TC-REC-005-11, TC-REC-ISO-014) |
+| High Priority (REC-005) | 9 (TC-REC-005-03, -04, -05, -06, -07, -08, -09, -10, -12, -13) |
+| Medium Priority (REC-005) | 0 |
 | US-REC-004 Test Cases | 13 (TC-REC-004-01..12 + TC-REC-ISO-013; reuses TC-REC-ISO-009..011) |
 | Critical Priority (REC-004) | 3 (TC-REC-004-01, TC-REC-004-02, TC-REC-ISO-013) |
 | High Priority (REC-004) | 8 (TC-REC-004-03, -05, -06, -07, -08, -09, -11, -12) |
@@ -42,6 +46,8 @@ status: in-progress
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 |
 | US-REC-004 | Move Applicant Through Pipeline Stages with Gates | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 |
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
+| US-REC-005 | Schedule Interviews and Notify Participants | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | 13 |
+| Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 
 ## Test Type Distribution (US-REC-002)
 
@@ -228,3 +234,72 @@ status: in-progress
 - **Headcount-filled warning (BR-4):** TC-REC-004-09 evaluates against Hired-applicant counts available in this increment; CONDITIONAL on full conversion/headcount wiring (US-REC-010).
 - **EF query filters vs PostgreSQL RLS (AC-5/NFR-2):** US-REC-004 specifies RLS on `applicant_stage_history`; the platform enforces isolation via EF Core global query filters + TenantInterceptor. TC-REC-ISO-013 describes the EF mechanism and notes RLS session-level assertion as an extension point if added.
 - **ISO reuse:** TC-REC-ISO-009 (cross-tenant read), TC-REC-ISO-010 (no/invalid/mismatched tenant context), TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id) operate on the same applicant/stage-history tables and are reused for REC-004; TC-REC-ISO-013 adds the rejection-reason + multi-transition-trail dimension specific to US-REC-004.
+
+## Test Type Distribution (US-REC-005)
+
+| Type | Test Cases | Count |
+|------|------------|-------|
+| Functional / E2E (REC-005) | TC-REC-005-01, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10 | 7 |
+| Integration (REC-005) | TC-REC-005-02 (reminder job fire), TC-REC-005-03 (reschedule job swap), TC-REC-005-04 (cancel job removal) | 3 |
+| Security (REC-005) | TC-REC-005-09 (interviewer eligibility), TC-REC-005-11 (authz + XSS notes), TC-REC-ISO-014 (+ reused TC-REC-ISO-010/011) | 2 dedicated + 1 ISO |
+| Performance (REC-005) | TC-REC-005-12 (schedule <=800ms P95 incl. outbox; async delivery) | 1 |
+| Accessibility / Cross-browser (REC-005) | TC-REC-005-13 (form + calendar/agenda WCAG 2.1 AA + responsive 360px) | 1 |
+
+(Note: TC-REC-005-04/06/07/08/09/10/11 carry multiple tags -- Happy + Negative and/or Boundary; TC-REC-005-09 is typed Security while also carrying Negative; TC-REC-005-12 carries Boundary + Performance; TC-REC-005-13 carries Accessibility + Cross-browser.)
+
+## Acceptance Criteria Coverage (US-REC-005)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | Schedule interview (interviewers + date/time + type + location/link) -> saved, participants notified, reminder job scheduled | TC-REC-005-01, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 |
+| AC-2 | Hangfire fires a reminder ~24h before to all participants | TC-REC-005-02 |
+| AC-3 | Edit/cancel -> updated/cancellation notifications + reminder rescheduled/removed | TC-REC-005-03, TC-REC-005-04, TC-REC-005-11 |
+| AC-4 | Multiple rounds tracked independently (own interviewers/schedule/scorecards) | TC-REC-005-05 |
+| AC-5 | Tenant B sees zero of Tenant A's interviews; isolation enforced | TC-REC-ISO-014 (+ reused TC-REC-ISO-010, TC-REC-ISO-011) |
+
+## Functional Requirement Coverage (US-REC-005)
+
+| FR | Covered By |
+|----|------------|
+| FR-1 (scheduling form: interviewers >=1, date/start/duration, type, location for in-person, link for video, notes) | TC-REC-005-01, TC-REC-005-08, TC-REC-005-09 |
+| FR-2 (multiple rounds per applicant/vacancy, separate record + round number) | TC-REC-005-05 |
+| FR-3 (email/in-app notifications on create/update/cancel via tenant templates) | TC-REC-005-01, TC-REC-005-03, TC-REC-005-04 (CONDITIONAL on Notification System S25) |
+| FR-4 (Hangfire reminder job 24h before, tenant-configurable) | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03 |
+| FR-5 (calendar view filterable by interviewer/vacancy/date/status) | TC-REC-005-10 |
+| FR-6 (status: Scheduled/Completed/Cancelled/No-Show) | TC-REC-005-04, TC-REC-005-10 |
+| FR-7 (conflict detection -> warn + override, soft) | TC-REC-005-06 |
+| FR-8 (attach interview guide / evaluation criteria doc) | CONDITIONAL -- depends on File & Document Management (S26); attachment seam, not separately asserted here |
+
+## Non-Functional Requirement Coverage (US-REC-005)
+
+| NFR | Covered By |
+|-----|------------|
+| NFR-1 (scheduling API <= 800ms P95 incl. outbox writes) | TC-REC-005-12 |
+| NFR-2 (interview data tenant-scoped + RLS) | TC-REC-ISO-014 (EF query filters today; RLS extension point) |
+| NFR-3 (notifications async via Hangfire, non-blocking) | TC-REC-005-01, TC-REC-005-02, TC-REC-005-12 |
+| NFR-4 (reminder jobs idempotent + tenant-aware) | TC-REC-005-02, TC-REC-ISO-014 |
+| NFR-5 (calendar responsive, mobile 360px+ agenda) | TC-REC-005-13 |
+| NFR-6 (validate future + business hours) | TC-REC-005-07, TC-REC-005-08 |
+
+## Business Rule Coverage (US-REC-005)
+
+| BR | Covered By |
+|----|------------|
+| BR-1 (only Recruitment.Manage.All can schedule/edit/cancel) | TC-REC-005-11 |
+| BR-2 (interviewers must be active same-tenant employees) | TC-REC-005-09 |
+| BR-3 (no past-date scheduling) | TC-REC-005-07 |
+| BR-4 (cancel does NOT change pipeline stage) | TC-REC-005-04 |
+| BR-5 (reminder lead time configurable per tenant; default 24h) | TC-REC-005-02 |
+| BR-6 (reschedule -> old reminder cancelled, new created) | TC-REC-005-03 |
+| BR-7 (notify applicant email + each interviewer work email) | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04 |
+
+## Conditional / Deferred (US-REC-005)
+
+- **Async notifications depend on Notification System S25 + tenant templates (FR-3/NFR-3/BR-5/BR-7):** TC-REC-005-01..04 assert the queued outbox/in-app entries + non-blocking dispatch + recipient set; if delivery is a LOG-ONLY stub, assert the outbox/log record. CONDITIONAL, not a gap.
+- **Hangfire reminder timing (AC-2/FR-4/NFR-4):** TC-REC-005-02 simulates/advances the clock or triggers the enqueued job; idempotency + tenant-aware execution asserted. If Hangfire is stubbed, assert the enqueue contract (fire time = start - lead time, tenant_id in params).
+- **Business-hours validation (NFR-6):** TC-REC-005-07 asserts past-date rejection (hard) + business-hours rejection where enabled; if business-hours validation is soft/disabled in this increment, the business-hours portion is CONDITIONAL (past-date rejection is NOT). NOT a gap.
+- **Interview guide attachment (FR-8):** depends on File & Document Management (S26); the attachment seam is noted, not separately asserted (owned where that module integrates).
+- **Scorecard association (AC-4):** each round can carry its own scorecard(s) -- owned by US-REC-006; TC-REC-005-05 asserts the per-round association seam only.
+- **Calendar/agenda a11y (NFR-5):** TC-REC-005-13 covers the new scheduling form + calendar/agenda directly (not reused from REC-003, which is the Kanban pipeline board).
+- **EF query filters vs PostgreSQL RLS (AC-5/NFR-2):** US-REC-005 specifies RLS on `interview`; the platform enforces isolation via EF Core global query filters + TenantInterceptor. TC-REC-ISO-014 describes the EF mechanism and notes RLS session-level assertion as an extension point if added.
+- **ISO reuse:** TC-REC-ISO-010 (no/invalid/mismatched tenant context) and TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id) are reused for the recruitment surface; TC-REC-ISO-014 adds the interview/interviewer/reminder-job dimension specific to US-REC-005.
