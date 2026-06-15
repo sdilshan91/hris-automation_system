@@ -139,6 +139,43 @@ stage }`. `ApplicantStage`/`ApplicantSource` reuse the US-REC-002 enums.
 - NFR-4 mobile (<768px): columns horizontally scrollable + a stage-tab strip that
   shows one column at a time.
 
+## Pipeline stage gates + actions (US-REC-004)
+
+Deltas on top of REC-003 (board/drag-drop/detail/dialog/service unchanged in shape,
+extended in place). Mapping stays in `pipeline.service.ts` + `pipeline.models.ts`.
+
+### Move-stage contract additions (reconcile with backend)
+The endpoint is still `POST /recruitment/applicants/:id/move-stage`.
+- **Request** `IStageChangeRequest` adds `rejectionReason?: RejectionReason` — an
+  ENUM string, one of `NotQualified | PositionFilled | Withdrew | Other`. Sent only
+  when `toStage === 'Rejected'` (AC-4). `reason` (free text) is still sent too (it
+  carries the human label for rejections, and the mandatory reason for backward moves).
+- **Response** `MoveApplicantStageResultDto` adds optional `enteredStageAt?: string`
+  (ISO, resets the time-in-stage badge) and `warnings?: string[]`. The service maps
+  to `IStageMoveResult { id, stage, enteredStageAt, warnings }` and defaults
+  `warnings` to `[]`.
+
+### Soft vs hard gates (the key behaviour)
+- Gates are **soft** (§10): headcount-filled (BR-4) or unmet gate criteria (FR-1)
+  come back as `warnings[]` on a **successful** 2xx move. FE shows a success toast
+  THEN one `toastr.warning(w, 'Heads up')` per warning. The move is NOT blocked.
+- A **hard** failure — vacancy closed/cancelled (FR-8) — is an HTTP error (4xx/409);
+  FE rolls back (board) / stays put (detail) and shows the error message verbatim.
+- `RejectionReason` enum values MUST stay byte-identical to the backend enum. The FE
+  source of truth is `REJECTION_REASON_LABELS` in pipeline.models.ts.
+
+### Action buttons (mobile alternative to drag-drop, §8/FR-7)
+The detail slide-over now has a footer: "Move to <nextStage>" (no reason),
+"Move back to <prevStage>" (free-text reason dialog, FR-5), "Reject" (structured
+dialog, AC-4). Terminal stages (Hired/Rejected) show no buttons. `nextStage()` never
+advances into Rejected; the funnel order is Applied→Screening→Interview→Offer→Hired.
+On success the drawer reloads its own detail AND emits `moved` so the board reloads.
+
+### Time-in-stage badge (§8)
+`timeInStageLabel(stage, enteredStageAt, appliedAt)` → "In Screening 5 days" /
+"In <stage> today" / "" (graceful omission). Uses `enteredStageAt` if the backend
+provides it, else falls back to `appliedAt`. Rendered as a neutral chip on each card.
+
 ### Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

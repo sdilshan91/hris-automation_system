@@ -124,7 +124,7 @@ public sealed class ApplicantPipelineController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new MoveApplicantStageCommand(applicantId, request.ToStage, request.Reason, request.Notes),
+            new MoveApplicantStageCommand(applicantId, request.ToStage, request.Reason, request.Notes, request.RejectionReason),
             cancellationToken);
 
         if (result.IsFailure)
@@ -149,7 +149,7 @@ public sealed class ApplicantPipelineController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new BulkMoveApplicantStageCommand(request.ApplicantIds, request.ToStage, request.Reason, request.Notes),
+            new BulkMoveApplicantStageCommand(request.ApplicantIds, request.ToStage, request.Reason, request.Notes, request.RejectionReason),
             cancellationToken);
 
         if (result.IsFailure)

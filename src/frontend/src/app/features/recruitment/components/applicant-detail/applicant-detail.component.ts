@@ -14,9 +14,18 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { PipelineService } from '../../services/pipeline.service';
 import {
+  StageReasonDialogComponent,
+  IStageReasonResult,
+} from '../stage-reason-dialog/stage-reason-dialog.component';
+import {
   IApplicantDetail,
   SOURCE_BADGE,
   STAGE_BADGE,
+  TERMINAL_STAGES,
+  nextStage,
+  previousStage,
+  moveRequiresReason,
+  rejectionReasonLabel,
   relativeAppliedTime,
 } from '../../models/pipeline.models';
 import { ApplicantSource, ApplicantStage } from '../../models/applicant.models';
@@ -35,7 +44,7 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
 @Component({
   selector: 'app-applicant-detail',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, StageReasonDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('drawer', [
@@ -273,9 +282,10 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
                           by {{ h.changedByUserName }}
                         </p>
                       }
-                      @if (h.reason) {
+                      @if (transitionReason(h); as reasonText) {
                         <p class="mt-1 text-sm text-neutral-600">
-                          <span class="font-medium">Reason:</span> {{ h.reason }}
+                          <span class="font-medium">Reason:</span>
+                          {{ reasonText }}
                         </p>
                       }
                       @if (h.notes) {
@@ -313,8 +323,63 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
             <p class="text-sm text-neutral-500">Could not load applicant.</p>
           }
         </div>
+
+        <!-- Stage-transition action buttons (US-REC-004 AC-1/AC-2/AC-4, FR-7/§8) -->
+        @if (detail(); as d) {
+          @if (!isTerminal()) {
+            <div
+              class="flex flex-wrap items-center gap-2 border-t border-neutral-100 px-6 py-4"
+            >
+              @if (nextStageName(); as ns) {
+                <button
+                  type="button"
+                  class="action-btn bg-indigo-600 text-white hover:bg-indigo-700"
+                  [disabled]="moving()"
+                  (click)="moveForward()"
+                >
+                  {{ moving() ? 'Moving…' : 'Move to ' + ns }}
+                </button>
+              }
+              @if (prevStageName(); as ps) {
+                <button
+                  type="button"
+                  class="action-btn border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                  [disabled]="moving()"
+                  (click)="moveBack()"
+                >
+                  Move back to {{ ps }}
+                </button>
+              }
+              <span class="flex-1"></span>
+              <button
+                type="button"
+                class="action-btn border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                [disabled]="moving()"
+                (click)="reject()"
+              >
+                Reject
+              </button>
+            </div>
+          } @else {
+            <div class="border-t border-neutral-100 px-6 py-4">
+              <p class="text-xs text-neutral-400">
+                {{ d.stage }} is a terminal stage — no further moves.
+              </p>
+            </div>
+          }
+        }
       </div>
     </div>
+
+    <!-- Reason prompt for rejection (AC-4) / backward move (FR-5) -->
+    @if (pendingTo(); as to) {
+      <app-stage-reason-dialog
+        [applicantName]="fullName()"
+        [toStage]="to"
+        (confirmed)="confirmReasonMove($event)"
+        (cancelled)="cancelReasonMove()"
+      />
+    }
   `,
   styles: [
     `
@@ -366,6 +431,18 @@ type DetailTab = 'profile' | 'resume' | 'timeline' | 'interviews' | 'notes';
         font-size: 0.875rem;
         color: #404040;
       }
+      .action-btn {
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.875rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+        transition: all 150ms ease;
+      }
+      .action-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
     `,
   ],
 })
@@ -379,6 +456,12 @@ export class ApplicantDetailComponent {
   /** Emitted when the user closes the drawer. */
   readonly closed = output<void>();
 
+  /**
+   * Emitted after a successful stage move (US-REC-004) so the parent board can
+   * reload its columns/counts (FR-7 keeps the Kanban in sync). Carries the new stage.
+   */
+  readonly moved = output<ApplicantStage>();
+
   readonly tabs: { id: DetailTab; label: string }[] = [
     { id: 'profile', label: 'Profile' },
     { id: 'resume', label: 'Resume' },
@@ -391,6 +474,32 @@ export class ApplicantDetailComponent {
   readonly detail = signal<IApplicantDetail | null>(null);
   readonly loading = signal(true);
   readonly downloading = signal(false);
+
+  /** True while a stage move is in flight (disables the action buttons). */
+  readonly moving = signal(false);
+  /**
+   * The target stage of a move awaiting a reason (Reject AC-4, or a backward move
+   * FR-5). Drives the reason dialog; null when no reason is needed.
+   */
+  readonly pendingTo = signal<ApplicantStage | null>(null);
+
+  /** Forward stage from the current one, or null at the end of the funnel (AC-1/AC-2). */
+  readonly nextStageName = computed<ApplicantStage | null>(() => {
+    const d = this.detail();
+    return d ? nextStage(d.stage) : null;
+  });
+
+  /** Previous active stage for a backward move, or null (FR-5). */
+  readonly prevStageName = computed<ApplicantStage | null>(() => {
+    const d = this.detail();
+    return d ? previousStage(d.stage) : null;
+  });
+
+  /** Whether the applicant is in a terminal stage (Hired/Rejected) — no moves. */
+  readonly isTerminal = computed<boolean>(() => {
+    const d = this.detail();
+    return d ? TERMINAL_STAGES.includes(d.stage) : false;
+  });
 
   readonly fullName = computed(() => {
     const d = this.detail();
@@ -475,6 +584,97 @@ export class ApplicantDetailComponent {
 
   close(): void {
     this.closed.emit();
+  }
+
+  // ─── Stage transitions (US-REC-004 AC-1/AC-2/AC-4, FR-5) ──
+
+  /** Move forward to the next funnel stage (AC-1/AC-2). No reason required. */
+  moveForward(): void {
+    const to = this.nextStageName();
+    if (to) {
+      this.persistMove(to);
+    }
+  }
+
+  /** Move back to the previous stage — opens the reason dialog (FR-5). */
+  moveBack(): void {
+    const to = this.prevStageName();
+    if (to) {
+      this.pendingTo.set(to);
+    }
+  }
+
+  /** Reject the applicant — opens the structured rejection dialog (AC-4). */
+  reject(): void {
+    this.pendingTo.set('Rejected');
+  }
+
+  /** Confirm the reason dialog and persist the deferred move (AC-4 / FR-5). */
+  confirmReasonMove(result: IStageReasonResult): void {
+    const to = this.pendingTo();
+    this.pendingTo.set(null);
+    if (to) {
+      this.persistMove(to, result);
+    }
+  }
+
+  /** Dismiss the reason dialog without moving. */
+  cancelReasonMove(): void {
+    this.pendingTo.set(null);
+  }
+
+  private persistMove(to: ApplicantStage, reason?: IStageReasonResult): void {
+    const d = this.detail();
+    if (!d || this.moving()) {
+      return;
+    }
+    // Guard: a reason-required move triggered without a reason re-opens the dialog
+    // rather than calling the API (AC-4 reason is mandatory).
+    if (!reason && moveRequiresReason(d.stage, to)) {
+      this.pendingTo.set(to);
+      return;
+    }
+    this.moving.set(true);
+    this.pipelineService
+      .changeStage(d.id, {
+        toStage: to,
+        reason: reason?.reason,
+        rejectionReason: reason?.rejectionReason,
+        notes: reason?.notes,
+      })
+      .subscribe({
+        next: (res) => {
+          this.moving.set(false);
+          this.toastr.success(`Moved to ${to}.`);
+          // Soft-gate / headcount warnings — the move SUCCEEDED, just warn (BR-4 / FR-1).
+          for (const w of res.warnings) {
+            this.toastr.warning(w, 'Heads up');
+          }
+          // Refresh the detail so the timeline + buttons reflect the new stage,
+          // and tell the parent board to reload its counts (FR-7).
+          this.load(d.id);
+          this.moved.emit(to);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.moving.set(false);
+          // Vacancy closed/cancelled (FR-8) and other hard failures show verbatim.
+          this.toastr.error(PipelineService.parseErrorMessage(err));
+        },
+      });
+  }
+
+  /**
+   * Reason text for a timeline entry — prefers the structured rejection-reason
+   * label when present (AC-4), else the free-text reason. Empty → no row.
+   */
+  transitionReason(h: {
+    reason?: string | null;
+    rejectionReason?: string | null;
+  }): string {
+    if (h.rejectionReason) {
+      return rejectionReasonLabel(h.rejectionReason);
+    }
+    return h.reason ?? '';
   }
 
   stageBadge(stage: ApplicantStage): string {

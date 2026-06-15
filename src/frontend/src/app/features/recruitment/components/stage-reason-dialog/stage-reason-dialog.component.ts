@@ -10,11 +10,21 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ApplicantStage } from '../../models/applicant.models';
-import { REJECTION_REASONS } from '../../models/pipeline.models';
+import {
+  REJECTION_REASON_OPTIONS,
+  RejectionReason,
+  rejectionReasonLabel,
+} from '../../models/pipeline.models';
 
 /** Result emitted when the user confirms a stage move that needs a reason. */
 export interface IStageReasonResult {
+  /** Free-text reason (the human label for rejections, the typed reason otherwise). */
   reason: string;
+  /**
+   * Structured rejection reason enum — present only for a rejection (US-REC-004
+   * AC-4); maps to the backend `rejectionReason` enum value.
+   */
+  rejectionReason?: RejectionReason;
   notes?: string;
 }
 
@@ -81,8 +91,8 @@ export interface IStageReasonResult {
                 (ngModelChange)="onInput()"
               >
                 <option value="" disabled>Select a reason…</option>
-                @for (r of reasons; track r) {
-                  <option [value]="r">{{ r }}</option>
+                @for (r of rejectionReasons; track r.value) {
+                  <option [value]="r.value">{{ r.label }}</option>
                 }
               </select>
             </div>
@@ -173,10 +183,12 @@ export class StageReasonDialogComponent {
   readonly confirmed = output<IStageReasonResult>();
   readonly cancelled = output<void>();
 
-  readonly reasons = REJECTION_REASONS;
+  /** Structured rejection-reason options (US-REC-004 AC-4). */
+  readonly rejectionReasons = REJECTION_REASON_OPTIONS;
 
   // ngModel-backed state (FormsModule).
-  selectedReason = '';
+  /** For rejection this holds the `RejectionReason` enum VALUE (not the label). */
+  selectedReason: RejectionReason | '' = '';
   notes = '';
   freeReason = '';
 
@@ -198,7 +210,7 @@ export class StageReasonDialogComponent {
   readonly canConfirm = computed(() => {
     this.tick(); // re-evaluate on input
     if (this.isRejection()) {
-      return this.selectedReason.trim().length > 0;
+      return this.selectedReason.length > 0;
     }
     return this.freeReason.trim().length > 0;
   });
@@ -211,12 +223,15 @@ export class StageReasonDialogComponent {
   confirm(): void {
     this.tick.update((n) => n + 1);
     if (this.isRejection()) {
-      const reason = this.selectedReason.trim();
-      if (!reason) {
+      const rejectionReason = this.selectedReason;
+      if (!rejectionReason) {
         return;
       }
+      // Emit the structured enum (for the API) AND its human label as `reason`
+      // (for the timeline / display), plus optional notes (US-REC-004 AC-4).
       this.confirmed.emit({
-        reason,
+        reason: rejectionReasonLabel(rejectionReason),
+        rejectionReason,
         notes: this.notes.trim() || undefined,
       });
       return;

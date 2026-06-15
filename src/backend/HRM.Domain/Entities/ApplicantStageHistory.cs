@@ -35,6 +35,13 @@ public sealed class ApplicantStageHistory : BaseEntity
     /// </summary>
     public string? Reason { get; set; }
 
+    /// <summary>
+    /// Structured rejection reason (US-REC-004 AC-4/FR-3). Set ONLY when <see cref="ToStage"/> is
+    /// <see cref="ApplicantStage.Rejected"/> — required for that transition, null otherwise. Captures the
+    /// canned dropdown value; the free-text <see cref="Reason"/>/<see cref="Notes"/> carry any detail.
+    /// </summary>
+    public RejectionReason? RejectionReason { get; set; }
+
     /// <summary>Optional free-text notes about the transition (BR-5). Stored as text.</summary>
     public string? Notes { get; set; }
 

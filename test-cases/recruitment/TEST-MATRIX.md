@@ -1,7 +1,7 @@
 ---
 module: Recruitment
-total_user_stories: 3
-total_test_cases: 55
+total_user_stories: 4
+total_test_cases: 68
 created: 2026-06-15
 updated: 2026-06-15
 status: in-progress
@@ -9,14 +9,18 @@ status: in-progress
 
 # Recruitment -- Test Matrix
 
-> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). Module total: 55 test cases, 15/15 acceptance criteria covered.
+> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). Module total: 68 test cases, 20/20 acceptance criteria covered.
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 3 (US-REC-001, US-REC-002, US-REC-003) |
-| Total Test Cases | 55 (39 functional/security/perf/a11y + 12 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 4 (US-REC-001, US-REC-002, US-REC-003, US-REC-004) |
+| Total Test Cases | 68 (51 functional/integration/security/perf/a11y + 13 dedicated multi-tenant isolation) |
+| US-REC-004 Test Cases | 13 (TC-REC-004-01..12 + TC-REC-ISO-013; reuses TC-REC-ISO-009..011) |
+| Critical Priority (REC-004) | 3 (TC-REC-004-01, TC-REC-004-02, TC-REC-ISO-013) |
+| High Priority (REC-004) | 8 (TC-REC-004-03, -05, -06, -07, -08, -09, -11, -12) |
+| Medium Priority (REC-004) | 1 (TC-REC-004-10) |
 | US-REC-002 Test Cases | 21 (TC-REC-002-01..13 + TC-REC-ISO-005..008) |
 | Critical Priority (REC-002) | 6 (TC-REC-002-01, -04, -09, -10, TC-REC-ISO-005, -006, -007) |
 | High Priority (REC-002) | 7 |
@@ -36,6 +40,8 @@ status: in-progress
 | Cross-cutting (REC-002) | Multi-tenant isolation (applicant) | TC-REC-ISO-005, TC-REC-ISO-006, TC-REC-ISO-007, TC-REC-ISO-008 | 4 |
 | US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14 | 14 |
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 |
+| US-REC-004 | Move Applicant Through Pipeline Stages with Gates | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 |
+| Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 
 ## Test Type Distribution (US-REC-002)
 
@@ -156,3 +162,69 @@ status: in-progress
 - **Convert-to-employee workflow (BR-6):** owned by US-REC-010; TC-REC-003-09 asserts the terminal behaviour + trigger seam only.
 - **EF query filters vs PostgreSQL RLS (AC-5/NFR-3):** US-REC-003 specifies RLS as defense-in-depth; the platform enforces isolation via EF Core global query filters + TenantInterceptor. ISO TCs describe the EF mechanism and note RLS session-level assertion as an extension point if added on `applicant`/`applicant_stage_history`.
 - **Real-time board updates (S10/S35):** SignalR live updates are a "Should Have"; initial coverage assumes manual refresh.
+
+## Test Type Distribution (US-REC-004)
+
+| Type | Test Cases | Count |
+|------|------------|-------|
+| Functional / E2E (REC-004) | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09 | 9 |
+| Integration (REC-004) | TC-REC-004-10 (async notification outbox/Hangfire) | 1 |
+| Security (REC-004) | TC-REC-004-05 (backward authz), TC-REC-ISO-013 (+ reused TC-REC-ISO-009/010/011) | 1 dedicated ISO |
+| Performance (REC-004) | TC-REC-004-12 (transition <=800ms P95 incl. audit + atomicity) | 1 |
+| Accessibility / Cross-browser (REC-004) | (covered for the pipeline UI by TC-REC-003-13; REC-004 reuses it) | 0 new |
+
+(Note: TC-REC-004-02/03/05/06/07/08/09/11 carry multiple tags -- Happy + Negative and/or Boundary; TC-REC-004-05 is typed Functional while also carrying Security/Negative tags for the Manage-only backward authz; TC-REC-004-12 carries Boundary + Performance.)
+
+## Acceptance Criteria Coverage (US-REC-004)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | Applied -> Screening updates stage + history record + notification | TC-REC-004-01, TC-REC-004-10 |
+| AC-2 | Screening -> Interview validates screening, prompts interview schedule | TC-REC-004-01, TC-REC-004-04 |
+| AC-3 | Interview -> Offer validates >=1 scorecard, triggers offer workflow | TC-REC-004-01, TC-REC-004-04 |
+| AC-4 | Reject from any active stage: required reason dropdown + optional notes + rejection email | TC-REC-004-02, TC-REC-004-03, TC-REC-004-10 |
+| AC-5 | Transitions recorded with tenant_id etc.; no cross-tenant audit entries | TC-REC-ISO-013 (+ reused TC-REC-ISO-009/010/011) |
+
+## Functional Requirement Coverage (US-REC-004)
+
+| FR | Covered By |
+|----|------------|
+| FR-1 (gate criteria per stage; soft gates) | TC-REC-004-04 (CONDITIONAL on US-REC-005/006), TC-REC-004-09 |
+| FR-2 (Applied->Screening->Interview->Offer->Hired; skip if permitted) | TC-REC-004-01, TC-REC-004-07 |
+| FR-3 (reject from any active stage; reason + optional notes) | TC-REC-004-02, TC-REC-004-03 |
+| FR-4 (record every transition in applicant_stage_history with full fields) | TC-REC-004-01, TC-REC-004-12, TC-REC-ISO-013 |
+| FR-5 (backward move only for Manage; mandatory reason) | TC-REC-004-05, TC-REC-004-06 |
+| FR-6 (configurable email per transition) | TC-REC-004-10 (CONDITIONAL on Notification System S25) |
+| FR-7 (real-time Kanban count update; optimistic UI) | Covered for the board by TC-REC-003-02/12/13; REC-004 reuses |
+| FR-8 (prevent advancement if vacancy Closed/Cancelled) | TC-REC-004-08 |
+
+## Non-Functional Requirement Coverage (US-REC-004)
+
+| NFR | Covered By |
+|-----|------------|
+| NFR-1 (transition <= 800ms P95 incl. audit) | TC-REC-004-12 |
+| NFR-2 (transition data tenant-scoped; RLS) | TC-REC-ISO-013 (EF query filters today; RLS extension point) |
+| NFR-3 (transition + audit writes atomic, single transaction) | TC-REC-004-12, TC-REC-004-11 |
+| NFR-4 (optimistic UI visual feedback) | Covered for the board by TC-REC-003-12/13; REC-004 reuses |
+| NFR-5 (emails queued via Hangfire, non-blocking) | TC-REC-004-10 (CONDITIONAL on S25/Hangfire wiring) |
+
+## Business Rule Coverage (US-REC-004)
+
+| BR | Covered By |
+|----|------------|
+| BR-1 (gate criteria configurable per tenant per stage; defaults) | TC-REC-004-04 |
+| BR-2 (rejected applicant cannot advance until Manage reactivation) | TC-REC-004-03, TC-REC-004-06 |
+| BR-3 (Hired terminal + irreversible -> convert-to-employee) | TC-REC-004-07 (full workflow owned by US-REC-010) |
+| BR-4 (headcount-filled warning before Offer/Hired at capacity) | TC-REC-004-09 |
+| BR-5 (transition emails use tenant templates + variable substitution) | TC-REC-004-10 |
+| BR-6 (bulk transitions apply gates per applicant; per-applicant failure report) | Covered by TC-REC-003-10 (bulk move); REC-004 gate-per-applicant CONDITIONAL on bulk being delivered |
+
+## Conditional / Deferred (US-REC-004)
+
+- **Soft gates depend on US-REC-005/006 (FR-1/BR-1):** the Interview-schedule and Offer-scorecard gate data sources are US-REC-005 and US-REC-006. TC-REC-004-04 asserts the SOFT-gate contract (warn + pass/fail list + overridable by Manage); if those stories are not yet delivered, the gate evaluator is STUBBED and the case is CONDITIONAL -- it must NOT be weakened to "no gate". NOT a gap.
+- **Async notifications depend on Notification System S25 + Hangfire (FR-6/NFR-5/BR-5):** TC-REC-004-10 asserts the queued outbox entry + non-blocking + template substitution; if delivery is a LOG-ONLY stub, assert the outbox/log record. CONDITIONAL, not a gap.
+- **Optimistic concurrency token (story assumption #10.3):** TC-REC-004-11 asserts last-writer-conflict (409). If the EF concurrency token is not yet wired, the case is BLOCKED (report to caller) -- do NOT weaken to last-write-wins.
+- **Convert-to-employee (BR-3):** owned by US-REC-010; TC-REC-004-07 asserts terminal/irreversible + the trigger seam only.
+- **Headcount-filled warning (BR-4):** TC-REC-004-09 evaluates against Hired-applicant counts available in this increment; CONDITIONAL on full conversion/headcount wiring (US-REC-010).
+- **EF query filters vs PostgreSQL RLS (AC-5/NFR-2):** US-REC-004 specifies RLS on `applicant_stage_history`; the platform enforces isolation via EF Core global query filters + TenantInterceptor. TC-REC-ISO-013 describes the EF mechanism and notes RLS session-level assertion as an extension point if added.
+- **ISO reuse:** TC-REC-ISO-009 (cross-tenant read), TC-REC-ISO-010 (no/invalid/mismatched tenant context), TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id) operate on the same applicant/stage-history tables and are reused for REC-004; TC-REC-ISO-013 adds the rejection-reason + multi-transition-trail dimension specific to US-REC-004.

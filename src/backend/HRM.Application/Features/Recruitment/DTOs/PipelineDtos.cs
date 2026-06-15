@@ -95,6 +95,13 @@ public sealed record ApplicantStageHistoryDto
     public string ToStageName { get; init; } = string.Empty;
     public Guid? ChangedByUserId { get; init; }
     public string? Reason { get; init; }
+
+    /// <summary>Structured rejection reason (US-REC-004 AC-4) — set only on a move to Rejected.</summary>
+    public RejectionReason? RejectionReason { get; init; }
+
+    /// <summary>String name of <see cref="RejectionReason"/> for display (null when not a rejection).</summary>
+    public string? RejectionReasonName { get; init; }
+
     public string? Notes { get; init; }
     public DateTime ChangedAt { get; init; }
 }
@@ -124,6 +131,12 @@ public sealed record MoveApplicantStageRequest
     public ApplicantStage ToStage { get; init; }
     public string? Reason { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>
+    /// Structured rejection reason (US-REC-004 AC-4/FR-3). REQUIRED when <see cref="ToStage"/> is
+    /// Rejected; ignored for any other target stage.
+    /// </summary>
+    public RejectionReason? RejectionReason { get; init; }
 }
 
 /// <summary>
@@ -136,6 +149,12 @@ public sealed record BulkMoveApplicantStageRequest
     public ApplicantStage ToStage { get; init; }
     public string? Reason { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>
+    /// Structured rejection reason (US-REC-004 AC-4/FR-3). REQUIRED when <see cref="ToStage"/> is
+    /// Rejected; ignored for any other target stage.
+    /// </summary>
+    public RejectionReason? RejectionReason { get; init; }
 }
 
 /// <summary>Outcome of a single stage move (AC-2) — the new stage plus the history row id created.</summary>
@@ -148,6 +167,16 @@ public sealed record MoveApplicantStageResultDto
     public string ToStageName { get; init; } = string.Empty;
     public Guid StageHistoryId { get; init; }
     public DateTime ChangedAt { get; init; }
+
+    /// <summary>Structured rejection reason recorded for this move (US-REC-004 AC-4) — null unless Rejected.</summary>
+    public RejectionReason? RejectionReason { get; init; }
+
+    /// <summary>
+    /// Soft, overridable warnings surfaced by this move (US-REC-004): headcount-filled (BR-4) and the
+    /// stubbed interview/scorecard gate framework (FR-1/BR-1, pending US-REC-005/006). The move STILL
+    /// succeeded — these are advisory only, never a hard block. Empty when there is nothing to flag.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 /// <summary>Outcome of a bulk stage move (FR-8) — per-applicant results plus a moved count.</summary>

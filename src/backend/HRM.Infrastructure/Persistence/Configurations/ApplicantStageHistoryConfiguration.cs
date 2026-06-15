@@ -37,6 +37,12 @@ public sealed class ApplicantStageHistoryConfiguration : IEntityTypeConfiguratio
         builder.Property(h => h.Reason).HasColumnType("text");
         builder.Property(h => h.Notes).HasColumnType("text");
 
+        // US-REC-004 AC-4/FR-3: structured rejection reason, stored as a string for readability (matches
+        // the varchar enum pattern). Nullable — only set on a move to Rejected.
+        builder.Property(h => h.RejectionReason)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         builder.Property(h => h.ChangedAt).IsRequired();
 
         builder.Property(h => h.IsDeleted).HasDefaultValue(false).IsRequired();

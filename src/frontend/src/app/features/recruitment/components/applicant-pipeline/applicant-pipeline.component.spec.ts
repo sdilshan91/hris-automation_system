@@ -12,7 +12,9 @@ import {
   IApplicantCard,
   IPipelineBoard,
   IPipelineStage,
+  IStageMoveResult,
 } from '../../models/pipeline.models';
+import { ApplicantStage } from '../../models/applicant.models';
 
 describe('ApplicantPipelineComponent', () => {
   let component: ApplicantPipelineComponent;
@@ -30,6 +32,16 @@ describe('ApplicantPipelineComponent', () => {
     appliedAt: '2026-06-10T00:00:00Z',
     stage: 'Applied',
     ...over,
+  });
+
+  const moveResult = (
+    stage: ApplicantStage,
+    warnings: string[] = [],
+  ): IStageMoveResult => ({
+    id: 'app-1',
+    stage,
+    enteredStageAt: '2026-06-15T00:00:00Z',
+    warnings,
   });
 
   const fullBoard = (): IPipelineBoard => ({
@@ -68,9 +80,13 @@ describe('ApplicantPipelineComponent', () => {
       'downloadResume',
     ]);
     serviceSpy.getPipeline.and.returnValue(of(fullBoard()));
-    serviceSpy.changeStage.and.returnValue(of(card({ stage: 'Screening' })));
+    serviceSpy.changeStage.and.returnValue(of(moveResult('Screening')));
 
-    toastrSpy = jasmine.createSpyObj('ToastrService', ['success', 'error']);
+    toastrSpy = jasmine.createSpyObj('ToastrService', [
+      'success',
+      'error',
+      'warning',
+    ]);
 
     await TestBed.configureTestingModule({
       imports: [ApplicantPipelineComponent],
@@ -153,10 +169,29 @@ describe('ApplicantPipelineComponent', () => {
     expect(serviceSpy.changeStage).toHaveBeenCalledWith('app-1', {
       toStage: 'Screening',
       reason: undefined,
+      rejectionReason: undefined,
       notes: undefined,
     });
     expect(component.pendingMove()).toBeNull();
     expect(toastrSpy.success).toHaveBeenCalled();
+  });
+
+  it('surfaces soft-gate warnings as toasts after a successful move (BR-4/FR-1)', () => {
+    serviceSpy.changeStage.and.returnValue(
+      of(moveResult('Screening', ['Headcount already filled'])),
+    );
+    const cols = component.board();
+    const applied = cols.find((c) => c.stage === 'Applied')!;
+    const screening = cols.find((c) => c.stage === 'Screening')!;
+    const moving = applied.applicants[0];
+
+    component.onDrop(dropEvent(applied, screening, moving));
+
+    expect(toastrSpy.success).toHaveBeenCalled();
+    expect(toastrSpy.warning).toHaveBeenCalledWith(
+      'Headcount already filled',
+      'Heads up',
+    );
   });
 
   it('rolls back the board when the server rejects a move', () => {
@@ -190,19 +225,24 @@ describe('ApplicantPipelineComponent', () => {
     expect(serviceSpy.changeStage).not.toHaveBeenCalled();
   });
 
-  it('persists the deferred move with the reason on confirm', () => {
-    serviceSpy.changeStage.and.returnValue(of(card({ stage: 'Rejected' })));
+  it('persists the deferred move with the structured rejection reason on confirm (AC-4)', () => {
+    serviceSpy.changeStage.and.returnValue(of(moveResult('Rejected')));
     const cols = component.board();
     const applied = cols.find((c) => c.stage === 'Applied')!;
     const rejected = cols.find((c) => c.stage === 'Rejected')!;
     const moving = applied.applicants[0];
 
     component.onDrop(dropEvent(applied, rejected, moving));
-    component.confirmMove({ reason: 'Not qualified', notes: 'n/a' });
+    component.confirmMove({
+      reason: 'Not qualified',
+      rejectionReason: 'NotQualified',
+      notes: 'n/a',
+    });
 
     expect(serviceSpy.changeStage).toHaveBeenCalledWith('app-1', {
       toStage: 'Rejected',
       reason: 'Not qualified',
+      rejectionReason: 'NotQualified',
       notes: 'n/a',
     });
     expect(component.pendingMove()).toBeNull();

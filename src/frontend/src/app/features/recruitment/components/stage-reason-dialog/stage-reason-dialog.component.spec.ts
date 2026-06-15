@@ -41,24 +41,33 @@ describe('StageReasonDialogComponent', () => {
       expect(emitted).toBeUndefined();
     });
 
-    it('confirms with the selected reason + optional notes', () => {
-      component.selectedReason = 'Not qualified';
+    it('confirms with the structured rejection reason + label + optional notes (AC-4)', () => {
+      // selectedReason holds the RejectionReason ENUM value, not the label.
+      component.selectedReason = 'NotQualified';
       component.notes = 'see panel';
       component.onInput();
       expect(component.canConfirm()).toBeTrue();
       let emitted: IStageReasonResult | undefined;
       component.confirmed.subscribe((r) => (emitted = r));
       component.confirm();
-      expect(emitted).toEqual({ reason: 'Not qualified', notes: 'see panel' });
+      expect(emitted).toEqual({
+        reason: 'Not qualified',
+        rejectionReason: 'NotQualified',
+        notes: 'see panel',
+      });
     });
 
-    it('omits empty notes', () => {
-      component.selectedReason = 'Position filled';
+    it('omits empty notes and maps the enum to its label', () => {
+      component.selectedReason = 'PositionFilled';
       component.onInput();
       let emitted: IStageReasonResult | undefined;
       component.confirmed.subscribe((r) => (emitted = r));
       component.confirm();
-      expect(emitted).toEqual({ reason: 'Position filled', notes: undefined });
+      expect(emitted).toEqual({
+        reason: 'Position filled',
+        rejectionReason: 'PositionFilled',
+        notes: undefined,
+      });
     });
   });
 

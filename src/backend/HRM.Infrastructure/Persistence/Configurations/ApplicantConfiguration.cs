@@ -61,6 +61,12 @@ public sealed class ApplicantConfiguration : IEntityTypeConfiguration<Applicant>
             .HasMaxLength(20)
             .IsRequired();
 
+        // US-REC-004 AC-4/FR-3: structured rejection reason for the applicant's current state. Nullable —
+        // set on move to Rejected, cleared on reactivation (BR-2). Stored as a string (varchar enum pattern).
+        builder.Property(a => a.RejectionReason)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         builder.Property(a => a.IsInternal).HasDefaultValue(false).IsRequired();
 
         // FK stored as a nullable UUID column. A hard FK constraint is intentionally omitted to mirror

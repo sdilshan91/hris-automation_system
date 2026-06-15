@@ -15,7 +15,8 @@ public sealed record BulkMoveApplicantStageCommand(
     IReadOnlyList<Guid> ApplicantIds,
     ApplicantStage ToStage,
     string? Reason,
-    string? Notes
+    string? Notes,
+    RejectionReason? RejectionReason = null
 ) : IRequest<Result<BulkMoveApplicantStageResultDto>>;
 
 public sealed class BulkMoveApplicantStageCommandHandler
@@ -26,5 +27,5 @@ public sealed class BulkMoveApplicantStageCommandHandler
     public BulkMoveApplicantStageCommandHandler(IApplicantService service) => _service = service;
 
     public Task<Result<BulkMoveApplicantStageResultDto>> Handle(BulkMoveApplicantStageCommand request, CancellationToken cancellationToken)
-        => _service.BulkMoveStageAsync(request.ApplicantIds, request.ToStage, request.Reason, request.Notes, cancellationToken);
+        => _service.BulkMoveStageAsync(request.ApplicantIds, request.ToStage, request.Reason, request.Notes, request.RejectionReason, cancellationToken);
 }
