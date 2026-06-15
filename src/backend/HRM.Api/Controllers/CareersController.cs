@@ -1,6 +1,8 @@
 using HRM.Application.DTOs;
+using HRM.Application.Features.Recruitment.Commands;
 using HRM.Application.Features.Recruitment.DTOs;
 using HRM.Application.Features.Recruitment.Queries;
+using HRM.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -58,5 +60,40 @@ public sealed class CareersController : ControllerBase
             return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
         return Ok(ApiResponse<PublicVacancyDetailDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/careers/vacancies/{vacancyId}/apply  (multipart/form-data)
+    /// Anonymous public application submission (US-REC-002 AC-1). The tenant is resolved by subdomain.
+    /// Validates the vacancy is Open + before deadline (BR-6), the resume MIME/size (AC-2/BR-4), and
+    /// duplicate email (AC-3/BR-1), virus-scans + stores the resume (FR-2/FR-3), creates the applicant
+    /// at stage Applied (FR-6), and returns the confirmation reference number (§8).
+    /// </summary>
+    [HttpPost("{vacancyId:guid}/apply")]
+    [ProducesResponseType(typeof(ApiResponse<ApplicationConfirmationDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Apply(
+        Guid vacancyId,
+        IFormFile resume,
+        [FromForm] SubmitPublicApplicationRequest form,
+        CancellationToken cancellationToken)
+    {
+        if (resume is null || resume.Length == 0)
+            return BadRequest(ApiResponse.Fail("A resume file is required.", "resume_required"));
+
+        await using var stream = resume.OpenReadStream();
+        var command = new SubmitApplicationCommand(
+            vacancyId, form.FirstName, form.LastName, form.Email, form.Phone, form.CoverLetter,
+            stream, resume.FileName, resume.ContentType, resume.Length,
+            ApplicationSource.Public, LinkedEmployeeId: null);
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<ApplicationConfirmationDto>.Ok(result.Value!, "Application submitted successfully."));
     }
 }
