@@ -189,6 +189,12 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessPayrollRunJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayrollRunJobScheduler, HRM.Api.Jobs.HangfirePayrollRunJobScheduler>();
 
+    // US-PAY-004 FR-4: tenant-aware payslip-PDF generation job + the Hangfire-backed scheduler seam (bound to
+    // IPayslipGenerationJobScheduler so the Infrastructure PayslipGenerationService can enqueue by interface).
+    // The job is enqueued by GeneratePayslips and restores the tenant context before rendering.
+    builder.Services.AddScoped<HRM.Api.Jobs.GeneratePayslipsJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayslipGenerationJobScheduler, HRM.Api.Jobs.HangfirePayslipGenerationJobScheduler>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())

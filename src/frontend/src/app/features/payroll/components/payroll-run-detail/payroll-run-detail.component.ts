@@ -13,6 +13,7 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { PayrollRunService } from '../../services/payroll-run.service';
+import { PayslipListComponent } from '../payslip-list/payslip-list.component';
 import {
   IPayrollRun,
   IPayrollRunProgress,
@@ -34,16 +35,23 @@ import {
  *   `streamProgress` is the single SignalR swap point. The subscription is torn
  *   down on destroy (takeUntil) and when the stream completes (run finished).
  * - On completion (ReviewPending and beyond): a run summary card with total
- *   gross/deductions/net and employee/skipped counts (FR-8), plus a "View details"
- *   link to the payslip list — STUBBED here; full payslip viewing is US-PAY-004/005.
+ *   gross/deductions/net and employee/skipped counts (FR-8), plus a "View payslips"
+ *   toggle that reveals the embedded PayslipListComponent (US-PAY-004 §8): the
+ *   searchable payslip table, the Generate/Regenerate action + status bar, the PDF
+ *   preview modal, and per-employee / bulk-ZIP downloads.
  *
- * Mobile: initiation + progress are available; the detailed payslip list is
- * deferred to desktop (§8).
+ * `canGeneratePayslips` (BR-1/AC-5): payslips may be generated on a ReviewPending,
+ * Approved, or Finalized run, but REGENERATED only on a non-finalized run — the
+ * child handles the generate-vs-regenerate label; here we just gate the action on
+ * non-Finalized so finalized runs are view/download only.
+ *
+ * Mobile (§8): individual payslip view + download are supported; the bulk ZIP
+ * download is hidden on mobile by the child component.
  */
 @Component({
   selector: 'app-payroll-run-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, PayslipListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -245,21 +253,27 @@ import {
                 </div>
               </div>
 
-              <!-- View details (payslip list) — stub for US-PAY-004/005 -->
+              <!-- View payslips (US-PAY-004 §8): reveals the embedded list -->
               <div class="mt-5 border-t border-neutral-100 pt-4">
                 <button
                   type="button"
-                  class="text-sm font-medium text-neutral-400"
-                  disabled
-                  title="Payslip viewing arrives in a later story"
+                  class="text-sm font-medium text-neutral-700 transition hover:text-neutral-900"
+                  [attr.aria-expanded]="showPayslips()"
+                  (click)="togglePayslips()"
                 >
-                  View details →
+                  {{ showPayslips() ? 'Hide payslips' : 'View payslips' }}
+                  {{ showPayslips() ? '↑' : '→' }}
                 </button>
-                <p class="mt-1 text-xs text-neutral-400">
-                  Per-employee payslips are coming soon.
-                </p>
               </div>
             </div>
+
+            <!-- Embedded payslip list (US-PAY-004) -->
+            @if (showPayslips()) {
+              <app-payslip-list
+                [runId]="r.id"
+                [canGenerate]="canGeneratePayslips()"
+              />
+            }
           }
         }
       }
@@ -281,6 +295,9 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
 
   /** Live progress overrides the run's counts while the stream is active (FR-6). */
   readonly progress = signal<IPayrollRunProgress | null>(null);
+
+  /** Whether the embedded payslip list (US-PAY-004) is revealed. */
+  readonly showPayslips = signal(false);
 
   private runId = '';
 
@@ -322,6 +339,14 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
     }
     return Math.min(100, Math.round((this.processed() / t) * 100));
   });
+
+  /**
+   * Generation is allowed on a ReviewPending/Approved/Finalized run (BR-1), but the
+   * child only offers "Regenerate" on a non-finalized run (AC-5). We pass
+   * `canGenerate = run is NOT Finalized` so a finalized run is view/download only;
+   * the child still shows downloads regardless.
+   */
+  readonly canGeneratePayslips = computed(() => this.status() !== 'Finalized');
 
   /** 0-based index of the current step in RUN_STEPPER (Cancelled → -1). */
   readonly stepIndex = computed(() => {
@@ -380,6 +405,10 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
     this.runsService.getRun(this.runId).subscribe({
       next: (r) => this.run.set(r),
     });
+  }
+
+  togglePayslips(): void {
+    this.showPayslips.update((v) => !v);
   }
 
   // ─── Stepper helpers ───────────────────────────────────────

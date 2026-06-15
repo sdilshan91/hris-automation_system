@@ -211,3 +211,80 @@ Structure detail w/ mock-payslip breakdown, linking components↔structure with
 overrides (FR-3 junction), version history (FR-7), the active-structure earning-
 component guard (FR-5). Later Payroll stories add sibling child routes under
 `payroll.routes.ts`.
+
+## Generate individual payslips — PDF (US-PAY-004)
+
+Adds 4 nullable columns to `payroll_slip` (migration `Payroll_PayslipPdfFields`):
+`pdf_generated_at` (timestamptz), `pdf_storage_path` (varchar 500),
+`pdf_status` (varchar 20: Pending/Generated/Failed — constants in
+`HRM.Domain/Payroll/PayslipPdfStatus.cs`, NOT an enum so the wire string == the
+data-spec literal), `pdf_file_size_bytes` (int). A slip exists before its PDF, so
+all are nullable; null pdf_status == "never generated" == Pending to the FE.
+
+### Architecture (3 seams, mirrors US-PAY-003's run-job split)
+- `PayslipPdfRenderer` (static, `HRM.Infrastructure/Services`) — PURE function
+  `PayslipDocumentModel → byte[]` via **QuestPDF** (already referenced for
+  US-ATT-007; `QuestPDF.Settings.License = LicenseType.Community` set idempotently
+  in `Render`). No DB / tenant / FS ⇒ trivially unit-testable (assert `%PDF`
+  header). A4, earnings+deductions side-by-side tables, statutory rows labelled
+  "(Statutory)", net-pay banner, days line, footer disclaimer, optional YTD column.
+- `PayslipDocumentModel` (`HRM.Domain/Payroll`) — denormalized render input built
+  from slip + details (BR-2 point-in-time component names) + employee + tenant.
+- `IPayslipBatchRenderer` / `PayslipBatchRenderer` — the COMPUTE side: bulk-loads
+  slips/employees/departments/jobtitles/details ONCE (no N+1), renders with bounded
+  concurrency (`SemaphoreSlim`, MaxConcurrency=10, NFR-3), stores each via
+  **`IFileStorage.UploadAsync`** (REUSED — the existing US-CHR-001 abstraction;
+  `LocalFileStorage` prefixes `{tenantId}/`, so the path stored is the WITHIN-tenant
+  `payroll/{runId}/{employeeId}.pdf`), then one `SaveChanges`. FR-8: a single render
+  failure flips THAT slip to Failed + logs, batch continues, retryable on regenerate.
+- `IPayslipGenerationService` / `PayslipGenerationService` — ENQUEUE + STATUS +
+  LIST + DOWNLOAD. `GenerateAsync` resets all slips to Pending (AC-5 regenerate
+  detected via any slip already Generated), enqueues the optional
+  `IPayslipGenerationJobScheduler` (Hangfire, in HRM.Api). BR-1 guard: only
+  ReviewPending/Approved/Finalized ⇒ else 400 `run_not_ready_for_payslips`.
+- `GeneratePayslipsJob` (HRM.Api/Jobs) restores tenant context from job args into a
+  fresh DI scope (FR-3 pattern, mirrors `ProcessPayrollRunJob`/AttendanceSummaryExportJob)
+  then calls `RenderRunAsync`.
+
+### Path safety + file naming
+`PayslipStoragePath` (`HRM.Application/Common/Payroll`): storage path is
+GUID-derived ONLY (`payroll/{runId}/{employeeId}.pdf`) — never user input, so
+traversal is structurally impossible; `AssertSafe` is belt-and-braces (rejects
+`..`, rooted/absolute). Download/ZIP-entry file name is BR-5
+`{EmployeeNo}_{PayMonth}_{PayYear}.pdf`, with EmployeeNo sanitized to a safe charset.
+
+### Endpoints (`PayslipsController`, base `api/v1/payroll`, all `[RequirePermission("Payroll.Run")]`)
+- `POST runs/{runId}/payslips/generate`   → 202 (AC-1)
+- `POST runs/{runId}/payslips/regenerate` → 202 (AC-5; delegates to the same
+  `GenerateAsync` — a re-run that resets to Pending)
+- `GET  runs/{runId}/payslips`            → `PayslipListItemDto[]` (§8 table:
+  slipId, employee no/name, dept, net, pdf_status) — added to satisfy the FE
+  `listPayslips`
+- `GET  runs/{runId}/payslips/status`     → counts (FR-7 progress bar)
+- `GET  runs/{runId}/payslips/{employeeId}/download` → single PDF stream (FR-6)
+- `GET  runs/{runId}/payslips/download-all` AND `…/download-zip` (alias) → ZIP
+  (FR-6/AC-3, `System.IO.Compression.ZipArchive` in-memory).
+- Tenant isolation (AC-4): every read goes through the EF global query filter, so a
+  cross-tenant runId/employeeId is simply invisible ⇒ 404. No caller-supplied path
+  is ever accepted.
+
+### FE↔BE reconciliation note (one-file FE fix, NOT done here — frontend is out of my lane)
+`payslip.service.ts` currently calls `payslips/{slipId}/download` (by SLIP id) and
+`…/download-zip`. Backend exposes single download by `{runId}/{employeeId}` and BOTH
+`download-all`+`download-zip`. The ZIP route is aligned; the single-download route
+differs (slipId vs runId+employeeId). The FE table now has `slipId` in the list DTO,
+so the FE can switch to the run/employee route or a future by-slip route — reconcile
+in that one FE service file.
+
+### Deferred (noted per brief; NOT built)
+- **YTD column (BR-4):** the renderer + `BuildYtdAsync` (sum prior months' same-year
+  details by component, earning/deduction buckets) are fully implemented, but
+  `TenantYtdEnabled()` returns `false` — no per-tenant YTD-toggle config surface
+  exists yet. Flipping it on is a one-line change once a tenant payroll-settings
+  entity lands.
+- **Tenant branding:** logo URL / address / brand colour / footer disclaimer are
+  model fields the renderer honours, but there's no tenant payslip-template config
+  surface, so company name = subdomain, address/logo null, default disclaimer. Wire
+  to a tenant-template entity when it exists.
+- Cloud blob storage (local FS only, Phase 1 — `LocalFileStorage`), drag-drop
+  template designer, 5,000-PDF live perf test (NFR-1 — manual harness, NOT a [Skip]).

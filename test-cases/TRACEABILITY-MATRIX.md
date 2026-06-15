@@ -2715,7 +2715,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-002) | Multi-tenant isolation (employee_salary_component / salary_revision_history) | Critical | TC-PAY-ISO-005, TC-PAY-ISO-006, TC-PAY-ISO-007, TC-PAY-ISO-008 | 4 | -- |
 | US-PAY-003 | Run Monthly Payroll for All Employees | Must Have | TC-PAY-003-01, TC-PAY-003-02, TC-PAY-003-03, TC-PAY-003-04, TC-PAY-003-05, TC-PAY-003-06, TC-PAY-003-07, TC-PAY-003-08, TC-PAY-003-09, TC-PAY-003-10, TC-PAY-003-11, TC-PAY-003-12 | 12 | 7/7 AC covered |
 | Cross-cutting (PAY-003) | Multi-tenant isolation (payroll_run / payroll_slip / payroll_slip_detail + compute pipeline) | Critical | TC-PAY-ISO-009, TC-PAY-ISO-010, TC-PAY-ISO-011, TC-PAY-ISO-012 | 4 | -- |
-| **TOTAL** | | | **48 test cases** | **48** | **18/18 AC** |
+| US-PAY-004 | Generate Individual Payslips | Must Have | TC-PAY-004-01, TC-PAY-004-02, TC-PAY-004-03, TC-PAY-004-04, TC-PAY-004-05, TC-PAY-004-06, TC-PAY-004-07, TC-PAY-004-08, TC-PAY-004-09, TC-PAY-004-10, TC-PAY-004-11, TC-PAY-004-12 | 12 | 5/5 AC covered |
+| Cross-cutting (PAY-004) | Multi-tenant isolation (payslip blob storage / download / preview) | Critical | TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-015, TC-PAY-ISO-016 | 4 | -- |
+| **TOTAL** | | | **64 test cases** | **64** | **23/23 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2769,6 +2771,22 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-ISO-010 | Run/slip APIs reject missing/invalid/mismatched tenant context; no cross-tenant read/IDOR | Security | Critical | US-PAY-003 | AC-7, FR-1, FR-3, FR-8 |
 | TC-PAY-ISO-011 | Cross-tenant payroll writes blocked; tenant_id session/job-arg-derived | Security | Critical | US-PAY-003 | AC-7, FR-1, FR-2, FR-3, FR-8 |
 | TC-PAY-ISO-012 | SignalR group / notifications / distributed lock / structure cache tenant-scoped | Security | High | US-PAY-003 | AC-7, FR-6, FR-8, NFR-3, NFR-7 |
+| TC-PAY-004-01 | Generate payslips -> Hangfire job renders 1 PDF/employee at {tenantId}/payroll/{runId}/{employeeId}.pdf with all sections (happy path) | E2E | Critical | US-PAY-004 | AC-1, AC-2, FR-1, FR-2, FR-4, FR-5, FR-7, BR-1 |
+| TC-PAY-004-02 | Single payslip download + Download-All ZIP archive | Integration | High | US-PAY-004 | AC-3, FR-6, BR-5 |
+| TC-PAY-004-03 | Regenerate on non-finalized run overwrites PDFs w/ updated template + bumps timestamp | Functional | High | US-PAY-004 | AC-5, FR-1, FR-3, FR-5, FR-7, BR-1, BR-2 |
+| TC-PAY-004-04 | Generate for a run NOT in ReviewPending/Approved/Finalized -> 400 | Functional | Critical | US-PAY-004 | AC-1, FR-4, BR-1 |
+| TC-PAY-004-05 | Failed render -> pdf_status=Failed, logged, batch continues, individually retryable | Functional | Critical | US-PAY-004 | AC-1, FR-7, FR-8 |
+| TC-PAY-004-06 | PDF <=200KB (NFR-2); BR-5 filename; BR-4 YTD sums; BR-6 terminated final-month payslip | Functional | High | US-PAY-004 | AC-1, AC-2, FR-2, FR-5, NFR-2, BR-4, BR-5, BR-6 |
+| TC-PAY-004-07 | Path-traversal blocked (NFR-6); no JS/executable content in PDF (NFR-5) | Security | Critical | US-PAY-004 | AC-4, FR-5, NFR-5, NFR-6 |
+| TC-PAY-004-08 | Authz: only Payroll.*.All generate/regenerate/retry/download; others 403; 401 unauth | Security | Critical | US-PAY-004 | AC-1, AC-3, AC-4, AC-5 |
+| TC-PAY-004-09 | 5,000 PDFs <=5 min; parallel batch w/ configurable concurrency | Performance | High | US-PAY-004 | AC-1, NFR-1, NFR-3, FR-4, FR-5 |
+| TC-PAY-004-10 | Payslip list table + status bar + inline PDF preview modal + Download All WCAG 2.1 AA | Accessibility | High | US-PAY-004 | AC-1, AC-3 |
+| TC-PAY-004-11 | Point-in-time snapshot (BR-2) + disclaimer/footer (BR-3) + per-tenant branding (FR-3); all FR-2 sections | Functional | High | US-PAY-004 | AC-2, FR-2, FR-3, BR-2, BR-3 |
+| TC-PAY-004-12 | Per-slip pdf_status/timestamp recorded; status-bar reflects progress + failed count | Functional | High | US-PAY-004 | AC-1, FR-7 |
+| TC-PAY-ISO-013 | Tenant B cannot read/download/enumerate Tenant A payslip PDFs (cross-tenant read iso) | Security | Critical | US-PAY-004 | AC-4, FR-5, FR-6 |
+| TC-PAY-ISO-014 | Payslip generate/download/preview APIs reject missing/invalid/mismatched tenant context; no IDOR | Security | Critical | US-PAY-004 | AC-4, FR-5, FR-6 |
+| TC-PAY-ISO-015 | Cross-tenant payslip writes blocked; blob path/slip fields server/job-arg-derived, not client-supplied | Security | Critical | US-PAY-004 | AC-4, FR-4, FR-5, FR-7 |
+| TC-PAY-ISO-016 | Blob layout / ZIP staging / download cache tenant-scoped (no cross-tenant PDF/path/byte leak) | Security | High | US-PAY-004 | AC-4, FR-5, FR-6, NFR-6 |
 
 ### US-PAY-001 Detailed Requirements Traceability
 
@@ -2910,6 +2928,50 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Accessibility Test Cases | 1 (TC-PAY-003-12 -- Runs table + new-run modal + progress bar + status stepper WCAG 2.1 AA) | >= 1 | PASS |
 | Blocked Test Cases | 0 (notification delivery CONDITIONAL on S25/Hangfire; NFR-7 Redis CONDITIONAL; statutory math depends on US-PAY-006; BR-9 overtime CONDITIONAL on US-ATT-009) | -- | CLEAR |
 
+### US-PAY-004 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Generate Payslips on ReviewPending/Finalized -> Hangfire job stores 1 PDF/employee at {tenantId}/payroll/{runId}/{employeeId}.pdf | AC | TC-PAY-004-01, TC-PAY-004-04, TC-PAY-004-05, TC-PAY-004-06, TC-PAY-004-08, TC-PAY-004-09, TC-PAY-004-10, TC-PAY-004-12 | Direct |
+| AC-2: Each PDF contains employee/company details, earnings, deductions, statutory, net, branding | AC | TC-PAY-004-01, TC-PAY-004-06, TC-PAY-004-11 | Direct (tenant branding CONDITIONAL on US-TENANT config; system-default fallback) |
+| AC-3: Download All -> ZIP; individual payslip PDFs downloadable per employee | AC | TC-PAY-004-02, TC-PAY-004-08, TC-PAY-004-10 | Direct |
+| AC-4: Tenant B denied access to Tenant A payslip storage path; tenant-scoped paths + API isolation | AC | TC-PAY-004-07, TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-015, TC-PAY-ISO-016 | Direct (EF-filtered slip lookup + {tenantId}/ blob prefix; RLS extension point) |
+| AC-5: Regenerate on a non-finalized run overwrites existing PDFs with the updated template | AC | TC-PAY-004-03, TC-PAY-004-08 | Direct |
+| FR-1: Generate PDFs via QuestPDF | FR | TC-PAY-004-01, TC-PAY-004-03 | Direct |
+| FR-2: PDF includes company/employee details, earnings, deductions, statutory itemised, gross/net, days | FR | TC-PAY-004-01, TC-PAY-004-06, TC-PAY-004-11 | Direct |
+| FR-3: Per-tenant payslip templates (logo/address/footer/colors/custom fields) | FR | TC-PAY-004-03, TC-PAY-004-11 | Direct (CONDITIONAL on US-TENANT config; logo/footer/colors honoured, system default fallback) |
+| FR-4: PDF generation as a Hangfire background job | FR | TC-PAY-004-01, TC-PAY-004-04, TC-PAY-004-09, TC-PAY-ISO-015 | Direct |
+| FR-5: PDFs stored in tenant-organised blob storage {tenantId}/payroll/{runId}/{employeeId}.pdf | FR | TC-PAY-004-01, TC-PAY-004-06, TC-PAY-004-07, TC-PAY-004-09, TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-015, TC-PAY-ISO-016 | Direct (local FS Phase 1; cloud Phase 2) |
+| FR-6: API to download a single PDF + bulk ZIP endpoint | FR | TC-PAY-004-02, TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-016 | Direct |
+| FR-7: Record generation timestamp + status per payslip (Generated/Failed) | FR | TC-PAY-004-01, TC-PAY-004-03, TC-PAY-004-05, TC-PAY-004-12, TC-PAY-ISO-015 | Direct |
+| FR-8: Failed generations logged w/ error detail + individually retryable | FR | TC-PAY-004-05 | Direct |
+| NFR-1: 5,000 PDFs <= 5 min | NFR | TC-PAY-004-09 | Direct (requires a seeded load environment) |
+| NFR-2: Each PDF <= 200KB | NFR | TC-PAY-004-06 | Direct |
+| NFR-3: PDF generation parallelised (configurable concurrency) | NFR | TC-PAY-004-09 | Direct |
+| NFR-4: >= 85% coverage for payslip rendering logic | NFR | (whole suite) | Met by AC/FR/BR coverage (5/5 AC, 8/8 FR) |
+| NFR-5: PDFs contain no executable content (no JS) | NFR | TC-PAY-004-07 | Direct |
+| NFR-6: Blob storage paths validated against path traversal | NFR | TC-PAY-004-07, TC-PAY-ISO-016 | Direct |
+| BR-1: Payslips only for runs in ReviewPending/Approved/Finalized | BR | TC-PAY-004-01, TC-PAY-004-03, TC-PAY-004-04 | Direct |
+| BR-2: Payslip is a point-in-time snapshot; retains original component names (denormalised) | BR | TC-PAY-004-03, TC-PAY-004-11 | Direct |
+| BR-3: Payslip includes tenant-configured disclaimer/footer | BR | TC-PAY-004-11 | Direct |
+| BR-4: YTD totals per component if tenant enables YTD display | BR | TC-PAY-004-06 | Direct (CONDITIONAL on a tenant YTD toggle; assumes prior-month slips exist) |
+| BR-5: PDF filename {EmployeeNo}_{PayMonth}_{PayYear}.pdf | BR | TC-PAY-004-02, TC-PAY-004-06 | Direct |
+| BR-6: Terminated employees paid in final month still get a payslip | BR | TC-PAY-004-06 | Direct |
+
+### Coverage Summary (Payroll -- US-PAY-004)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) -- FR-3 per-tenant template CONDITIONAL on US-TENANT config (system default fallback) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 6/6 (100%) -- NFR-1 requires a seeded load environment | >= 85% | PASS |
+| Business Rules Coverage | 6/6 (100%) -- BR-4 YTD CONDITIONAL on a tenant YTD toggle + prior-month slips | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated (TC-PAY-ISO-013..016: read / context+IDOR / write+job-arg / blob+ZIP+cache) | >= 1 | PASS |
+| Security Test Cases | TC-PAY-004-07, TC-PAY-004-08, TC-PAY-ISO-013..016 | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-PAY-004-09 -- 5,000 PDFs <= 5 min; parallel batch concurrency) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-PAY-004-10 -- payslip list + status bar + inline preview modal + Download All WCAG 2.1 AA) | >= 1 | PASS |
+| Blocked Test Cases | 0 (FR-3 branding + BR-4 YTD CONDITIONAL on tenant config; NFR-1 requires load env; blob is local FS Phase 1) | -- | CLEAR |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -2921,8 +2983,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Leave Management (US-LV-001 through US-LV-012) | 12 | 303 | 57/57 (100%) | 48 | PASS |
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
-| Payroll (US-PAY-001, US-PAY-002, US-PAY-003) | 3 | 48 | 18/18 (100%) | 12 | PASS |
-| **TOTAL** | **54** | **1094** | **280/280 (100%)** | **183** | |
+| Payroll (US-PAY-001 through US-PAY-004) | 4 | 64 | 23/23 (100%) | 16 | PASS |
+| **TOTAL** | **55** | **1110** | **285/285 (100%)** | **187** | |
 
 ---
 
