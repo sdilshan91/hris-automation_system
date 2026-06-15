@@ -81,7 +81,7 @@
 ## 5. Recruitment (10 stories)
 - [x] US-REC-001 — Create and publish job vacancy *(PR #49)*
 - [x] US-REC-002 — Applicant submits application with resume *(PR #53)*
-- [~] US-REC-003 — Recruiter views applicant pipeline
+- [x] US-REC-003 — Recruiter views applicant pipeline *(PR #54)*
 - [ ] US-REC-004 — Move applicant through pipeline stages
 - [ ] US-REC-005 — Schedule interviews and notify participants
 - [ ] US-REC-006 — Interviewer submits scorecard
@@ -159,9 +159,9 @@
 
 ## Tally
 - Total stories: **104** (incl. 2 Platform/tech-debt)
-- Done: **40** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
+- Done: **41** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **62** (incl. US-PLT-002 Phase 4)
+- Pending: **61** (incl. US-PLT-002 Phase 4)
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
