@@ -11,3 +11,10 @@ export * from './models/employee-salary.models';
 export * from './services/employee-salary.service';
 export { EmployeeCompensationComponent } from './components/employee-compensation/employee-compensation.component';
 export { BulkSalaryAssignmentComponent } from './components/bulk-salary-assignment/bulk-salary-assignment.component';
+
+/** US-PAY-003: Run monthly payroll. */
+export * from './models/payroll-run.models';
+export * from './services/payroll-run.service';
+export { PayrollRunsComponent } from './components/payroll-runs/payroll-runs.component';
+export { NewPayrollRunComponent } from './components/new-payroll-run/new-payroll-run.component';
+export { PayrollRunDetailComponent } from './components/payroll-run-detail/payroll-run-detail.component';

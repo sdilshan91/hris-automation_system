@@ -186,6 +186,14 @@ public static class DependencyInjection
         // bulk assign, future-dated supersession).
         services.AddScoped<ISalaryAssignmentService, SalaryAssignmentService>();
 
+        // US-PAY-003: Payroll — monthly payroll-run engine. The run service (initiate + reads) takes an
+        // OPTIONAL IPayrollRunJobScheduler (Hangfire-backed impl registered in Program.cs) so it never
+        // requires real Hangfire storage in tests/dev. The processor does the heavy compute (invoked by the
+        // Hangfire job, or directly in tests). Notification is a log-only seam until US-NTF.
+        services.AddScoped<IPayrollRunService, PayrollRunService>();
+        services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
+        services.AddScoped<IPayrollNotificationService, LogOnlyPayrollNotificationService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.
