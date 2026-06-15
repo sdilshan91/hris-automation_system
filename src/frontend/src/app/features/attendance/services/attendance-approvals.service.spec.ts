@@ -71,11 +71,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
     const req = httpMock.expectOne(`${base}/pending`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush({
-      success: true,
-      data: { items: [pendingItem], totalCount: 1 },
-      message: null,
-    });
+    req.flush({ items: [pendingItem], totalCount: 1 });
 
     expect(result?.length).toBe(1);
     expect(result?.[0].employeeName).toBe('Ada Lovelace');
@@ -98,7 +94,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
         r.params.get('toDate') === '2026-06-30',
     );
     expect(req.request.method).toBe('GET');
-    req.flush({ success: true, data: { items: [], totalCount: 0 }, message: null });
+    req.flush({ items: [], totalCount: 0 });
   });
 
   it('processRegularization(APPROVE) POSTs to /{id}/approve with { comment }', () => {
@@ -111,7 +107,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ comment: 'looks good' });
     expect(req.request.withCredentials).toBeTrue();
-    req.flush({ success: true, data: makeDecision('reg-1', 'APPROVED'), message: null });
+    req.flush(makeDecision('reg-1', 'APPROVED'));
     expect(result?.status).toBe('APPROVED');
   });
 
@@ -120,7 +116,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
     const req = httpMock.expectOne(`${base}/reg-1/approve`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
-    req.flush({ success: true, data: makeDecision('reg-1', 'APPROVED'), message: null });
+    req.flush(makeDecision('reg-1', 'APPROVED'));
   });
 
   it('processRegularization(REJECT) POSTs to /{id}/reject with { reason } (not comment)', () => {
@@ -133,7 +129,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ reason: 'Times do not match the gate logs.' });
     expect(req.request.body.comment).toBeUndefined();
-    req.flush({ success: true, data: makeDecision('reg-1', 'REJECTED'), message: null });
+    req.flush(makeDecision('reg-1', 'REJECTED'));
     expect(result?.status).toBe('REJECTED');
   });
 
@@ -156,7 +152,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
       regularizationIds: ['reg-1', 'reg-2'],
       comment: 'batch ok',
     });
-    req.flush({ success: true, data: bulkResult, message: null });
+    req.flush(bulkResult);
     expect(result?.items.length).toBe(2);
     expect(result?.items[0].succeeded).toBeTrue();
     expect(result?.succeededCount).toBe(2);
@@ -166,11 +162,7 @@ describe('AttendanceService (US-ATT-004 approvals)', () => {
     service.bulkApprove(['reg-1']).subscribe();
     const req = httpMock.expectOne(`${base}/bulk-approve`);
     expect(req.request.body).toEqual({ regularizationIds: ['reg-1'] });
-    req.flush({
-      success: true,
-      data: { totalRequested: 1, succeededCount: 1, failedCount: 0, items: [] },
-      message: null,
-    });
+    req.flush({ totalRequested: 1, succeededCount: 1, failedCount: 0, items: [] });
   });
 
   describe('parseActionError', () => {
