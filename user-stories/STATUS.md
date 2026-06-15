@@ -97,7 +97,7 @@
 - [~] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(PR #57: global JsonStringEnumConverter DONE + recruitment FE casing DONE; **residual**: leave-management + core-hr FE enum unions still lowercase/kebab — no regression, deferred follow-up)*
 
 ## 6. Payroll (12 stories)
-- [~] US-PAY-001 — Configure salary structure and components
+- [x] US-PAY-001 — Configure salary structure and components *(PR #63)*
 - [ ] US-PAY-002 — Assign salary structure to employee
 - [ ] US-PAY-003 — Run monthly payroll
 - [ ] US-PAY-004 — Generate individual payslips
