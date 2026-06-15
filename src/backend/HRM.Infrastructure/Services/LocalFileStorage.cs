@@ -42,6 +42,22 @@ public sealed class LocalFileStorage : IFileStorage
         return $"/{tenantId}/{relativePath}";
     }
 
+    public Task<Stream?> OpenReadAsync(
+        Guid tenantId,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPath = Path.Combine(_basePath, tenantId.ToString(), relativePath);
+
+        if (!File.Exists(fullPath))
+        {
+            return Task.FromResult<Stream?>(null);
+        }
+
+        Stream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return Task.FromResult<Stream?>(stream);
+    }
+
     public string GetSignedUrl(Guid tenantId, string relativePath, TimeSpan? expiresIn = null)
     {
         // Local dev: return a simple path (no real signing).

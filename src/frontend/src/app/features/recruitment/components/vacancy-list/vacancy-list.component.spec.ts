@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { provideRouter } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -62,6 +63,7 @@ describe('VacancyListComponent', () => {
       imports: [VacancyListComponent],
       providers: [
         provideAnimationsAsync(),
+        provideRouter([]),
         { provide: VacancyService, useValue: serviceSpy },
         { provide: ToastrService, useValue: toastrSpy },
       ],

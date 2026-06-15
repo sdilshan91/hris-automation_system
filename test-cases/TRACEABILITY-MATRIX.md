@@ -2181,7 +2181,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-001) | Multi-tenant isolation (vacancy) | Critical | TC-REC-ISO-001, TC-REC-ISO-002, TC-REC-ISO-003, TC-REC-ISO-004 | 4 | -- |
 | US-REC-002 | Applicant Submits Application with Resume Upload | Must Have | TC-REC-002-01, TC-REC-002-02, TC-REC-002-03, TC-REC-002-04, TC-REC-002-05, TC-REC-002-06, TC-REC-002-07, TC-REC-002-08, TC-REC-002-09, TC-REC-002-10, TC-REC-002-11, TC-REC-002-12, TC-REC-002-13 | 13 | 5/5 AC covered |
 | Cross-cutting (REC-002) | Multi-tenant isolation (applicant) | Critical | TC-REC-ISO-005, TC-REC-ISO-006, TC-REC-ISO-007, TC-REC-ISO-008 | 4 | -- |
-| **TOTAL** | | | **37 test cases** | **37** | **10/10 AC** |
+| US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | Must Have | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14 | 14 | 5/5 AC covered |
+| Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | Critical | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 | -- |
+| **TOTAL** | | | **55 test cases** | **55** | **15/15 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2220,6 +2222,24 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-ISO-006 | Applicant API rejects requests without valid tenant context (incl. public submit) | Security | Critical | US-REC-002 | AC-5, NFR-3 |
 | TC-REC-ISO-007 | Cross-tenant applicant writes blocked; tenant_id + resume path session-derived | Security | Critical | US-REC-002 | AC-5, NFR-3, FR-2, BR-3 |
 | TC-REC-ISO-008 | Resume blob + duplicate-detection index tenant-scoped (no collision/leak) | Security | High | US-REC-002 | AC-5, NFR-3, FR-2, BR-1 |
+| TC-REC-003-01 | Kanban renders column per stage + cards (name/date/source) + per-column counts + total (happy path) | E2E | Critical | US-REC-003 | AC-1, FR-1, FR-2, FR-5 |
+| TC-REC-003-02 | Drag Applied->Screening persists stage + audit/history entry (happy path) | E2E | Critical | US-REC-003 | AC-2, FR-3, BR-5 |
+| TC-REC-003-03 | Detail slide-over: profile + inline resume preview + stage timeline | E2E | High | US-REC-003 | AC-3, FR-7, NFR-5 |
+| TC-REC-003-04 | Filter by stage/source/date/search updates board + counts; clear restores | Functional | High | US-REC-003 | AC-4, FR-6, FR-5 |
+| TC-REC-003-05 | Table/list view toggle = same pipeline as sortable grid (alternative) | Functional | High | US-REC-003 | AC-1, FR-4 |
+| TC-REC-003-06 | Authz: view needs Read.All; move/bulk need Manage.All; others 403 | Security | Critical | US-REC-003 | AC-1, AC-2, BR-1, BR-2 |
+| TC-REC-003-07 | Move to Rejected without reason rejected; with reason recorded | Functional | High | US-REC-003 | AC-2, BR-3, BR-5, FR-3 |
+| TC-REC-003-08 | Backward move requires Manage + reason; forward-only default | Functional | High | US-REC-003 | AC-2, BR-4, BR-5, BR-2, FR-3 |
+| TC-REC-003-09 | Hired is terminal + triggers convert-to-employee seam | Functional | High | US-REC-003 | AC-2, BR-6, BR-5, FR-3 |
+| TC-REC-003-10 | Bulk select multiple + move to a stage | Functional | High | US-REC-003 | AC-2, FR-8, BR-2, BR-3, BR-4, BR-5 |
+| TC-REC-003-11 | Boundary: empty pipeline empty-state; single + all-in-one-stage render | Functional | Medium | US-REC-003 | AC-1, FR-1, FR-2, FR-5 |
+| TC-REC-003-12 | Board <=400ms P95 @ 200 applicants; stage move <=800ms P95 | Performance | High | US-REC-003 | AC-1, AC-2, NFR-1, NFR-2 |
+| TC-REC-003-13 | Kanban WCAG 2.1 AA + keyboard drag alternative + responsive 360px | Accessibility | High | US-REC-003 | AC-1, AC-2, NFR-4 |
+| TC-REC-003-14 | Search/filter XSS+SQLi sanitized; stage-move tampering/forged id rejected | Security | High | US-REC-003 | AC-2, AC-4, FR-3, FR-6, FR-7, NFR-3 |
+| TC-REC-ISO-009 | Tenant B sees zero of Tenant A's pipeline (read isolation) | Security | Critical | US-REC-003 | AC-5, NFR-3 |
+| TC-REC-ISO-010 | Pipeline + stage-move APIs reject requests without valid tenant context | Security | Critical | US-REC-003 | AC-5, NFR-3 |
+| TC-REC-ISO-011 | Cross-tenant stage moves blocked; tenant_id + history rows session-derived | Security | Critical | US-REC-003 | AC-5, NFR-3, BR-5, FR-3, FR-8 |
+| TC-REC-ISO-012 | Board cache + signed resume URLs + stage-config tenant-scoped (no leak) | Security | High | US-REC-003 | AC-5, NFR-3, NFR-5 |
 
 ### US-REC-001 Detailed Requirements Traceability
 
@@ -2305,6 +2325,49 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Performance Test Cases | 1 (TC-REC-002-12 -- upload <=5s @ 25MB; load <=2.5s P95 on 4G) | >= 1 | PASS |
 | Accessibility Test Cases | 1 (TC-REC-002-13 -- public form WCAG 2.1 AA + 360px) | >= 1 | PASS |
 | Blocked Test Cases | 0 | -- | CLEAR |
+
+### US-REC-003 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Kanban board, column per stage with cards (name/date/source), counts + total | AC | TC-REC-003-01, TC-REC-003-05, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13 | Direct |
+| AC-2: Drag-and-drop stage move persists + audit/history; optimistic UI | AC | TC-REC-003-02, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14 | Direct |
+| AC-3: Detail slide-over: profile + resume preview + stage timeline + interviews/notes | AC | TC-REC-003-03 | Direct |
+| AC-4: Filter by stage/source/date/search; counts update; clear restores | AC | TC-REC-003-04, TC-REC-003-14 | Direct |
+| AC-5: Tenant B sees zero of Tenant A's pipeline; isolation enforced | AC | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | Direct (EF query filters; RLS noted as extension point) |
+| FR-1: Kanban one column per stage, ordered by sequence | FR | TC-REC-003-01, TC-REC-003-11 | Direct |
+| FR-2: Card shows name, applied date, source badge, new/unread indicator | FR | TC-REC-003-01, TC-REC-003-11 | Direct |
+| FR-3: Drag-and-drop move w/ optimistic UI + server persistence | FR | TC-REC-003-02, TC-REC-003-07, TC-REC-003-08, TC-REC-003-12, TC-REC-003-14 | Direct |
+| FR-4: Table/list view toggle with sortable columns | FR | TC-REC-003-05 | Direct |
+| FR-5: Per-stage counts + total applicant count | FR | TC-REC-003-01, TC-REC-003-04, TC-REC-003-11 | Direct |
+| FR-6: Filter by stage/source/date range/search (name+email) | FR | TC-REC-003-04, TC-REC-003-14 | Direct |
+| FR-7: Detail panel (profile/resume/timeline/interviews/notes/actions) | FR | TC-REC-003-03, TC-REC-003-14 | Direct (notes sanitization in -14) |
+| FR-8: Bulk select multiple + move to stage | FR | TC-REC-003-10, TC-REC-ISO-011 | Direct (CONDITIONAL if bulk deferred; single move TC-REC-003-02 covers per-applicant persistence) |
+| NFR-1: Board load <= 400ms P95 @ 200 applicants | NFR | TC-REC-003-12 | Direct (Redis board cache CONDITIONAL; DB path measured) |
+| NFR-2: Stage transition persists <= 800ms P95 + optimistic UI | NFR | TC-REC-003-12 | Direct |
+| NFR-3: Applicant queries tenant-scoped; RLS defense-in-depth | NFR | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | Direct (EF query filters today; RLS extension point) |
+| NFR-4: Responsive; mobile horizontal scroll or stacked + stage tabs | NFR | TC-REC-003-13 | Direct |
+| NFR-5: Inline PDF via pdf.js; no raw blob URL exposed | NFR | TC-REC-003-03, TC-REC-ISO-012 | Direct |
+| BR-1: View requires Recruitment.Read.All | BR | TC-REC-003-06 | Direct |
+| BR-2: Move/bulk require Recruitment.Manage.All | BR | TC-REC-003-06, TC-REC-003-08, TC-REC-003-10 | Direct |
+| BR-3: Move to Rejected requires a reason | BR | TC-REC-003-07, TC-REC-003-10 | Direct |
+| BR-4: Backward move requires Manage + reason; forward-only default | BR | TC-REC-003-08 | Direct |
+| BR-5: Each transition recorded (timestamp/user/from/to/notes) | BR | TC-REC-003-02, TC-REC-003-07, TC-REC-003-08, TC-REC-003-10, TC-REC-ISO-011 | Direct (Audit module entry where integrated; in-module `applicant_stage_history` asserted) |
+| BR-6: Hired terminal -> triggers convert-to-employee | BR | TC-REC-003-09 | Direct (full workflow owned by US-REC-010; trigger seam asserted) |
+
+### Coverage Summary (Recruitment -- US-REC-003)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) -- FR-8 bulk CONDITIONAL if deferred (single move verified) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 5/5 (100%) -- NFR-1 Redis board cache CONDITIONAL; NFR-3 RLS extension point | >= 85% | PASS |
+| Business Rules Coverage | 6/6 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated (TC-REC-ISO-009..012: pipeline read/context/write/cache+resume-URL) | >= 1 | PASS |
+| Security Test Cases | TC-REC-003-06, TC-REC-003-14, TC-REC-ISO-009..012 | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-REC-003-12 -- board <=400ms P95 @ 200; stage move <=800ms P95) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-REC-003-13 -- Kanban WCAG 2.1 AA + keyboard drag + 360px) | >= 1 | PASS |
+| Blocked Test Cases | 0 (TC-REC-003-10 BLOCKED only if FR-8 bulk is deferred in the increment) | -- | CLEAR |
 
 ---
 

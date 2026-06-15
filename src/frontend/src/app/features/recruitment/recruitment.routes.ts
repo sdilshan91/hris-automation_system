@@ -19,5 +19,13 @@ export const RECRUITMENT_ROUTES: Routes = [
         (m) => m.VacancyListComponent,
       ),
   },
+  {
+    // US-REC-003: recruiter applicant pipeline (Kanban) for a vacancy.
+    path: 'vacancies/:vacancyId/pipeline',
+    loadComponent: () =>
+      import(
+        './components/applicant-pipeline/applicant-pipeline.component'
+      ).then((m) => m.ApplicantPipelineComponent),
+  },
   { path: '', redirectTo: 'vacancies', pathMatch: 'full' },
 ];

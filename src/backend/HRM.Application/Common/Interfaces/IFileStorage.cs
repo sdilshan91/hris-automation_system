@@ -23,6 +23,18 @@ public interface IFileStorage
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Opens a read stream for a stored file, or returns null if it does not exist.
+    /// The caller owns the returned stream and must dispose it.
+    /// </summary>
+    /// <param name="tenantId">Tenant identifier for path isolation.</param>
+    /// <param name="relativePath">Path within the tenant scope.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Stream?> OpenReadAsync(
+        Guid tenantId,
+        string relativePath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Generates a signed/temporary URL for accessing a stored file.
     /// </summary>
     /// <param name="tenantId">Tenant identifier.</param>
