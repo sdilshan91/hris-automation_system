@@ -436,6 +436,60 @@ Reconcile with the backend agent:
 - All pure helpers (donut/trend geometry, conversions, relativeTime, presetRange) are
   unit-tested in `dashboard.models.spec.ts`; the service spec flushes BARE DTOs.
 
+## Convert applicant → employee (US-REC-010)
+
+HR Officer converts a Hired applicant with an accepted offer into a Core HR
+employee, pre-filling from the application + offer. New files under
+`features/recruitment/`: `models/conversion.models.ts`,
+`services/conversion.service.ts`, `components/conversion-form/` (the slide-over).
+Wired into the existing `applicant-detail` drawer (the Convert action + "Converted"
+badge live there). Completes the Recruitment module.
+
+### Frontend contract (`ConversionService`, camelCase, base `/api/v1/recruitment/applicants`)
+PROPOSED — reconcile with the backend agent:
+- `GET  /recruitment/applicants/:id/conversion-prefill` → `IConversionPrefill`
+  `{ applicantId, alreadyConverted, convertedToEmployeeId?, firstName, lastName,
+  email, phone, jobTitleId/Name, departmentId/Name, reportingManagerId/Name,
+  dateOfJoining, probationMonths, salaryAmount, currency, suggestedEmployeeNumber,
+  vacancyId?/Title?/FilledCount?/Headcount? }` (FR-2/FR-3/FR-4). name/email/phone
+  from the application; job title/dept/manager/salary/start date from the accepted
+  offer; `suggestedEmployeeNumber` is the tenant pattern (FR-4).
+- `POST /recruitment/applicants/:id/convert` body `IConvertEmployeeRequest`
+  `{ firstName, lastName, email, phone, employeeNumber(null→auto), jobTitleId,
+  departmentId, reportingManagerId, employmentType, workLocationId, dateOfJoining,
+  salaryAmount, currency }` → `IConvertResult { employeeId, employeeNumber,
+  firstName, lastName, userAccountCreated?, vacancyFilledCount?, vacancyHeadcount?,
+  vacancyClosed? }`. Atomic server-side (NFR-3): creates employee, links applicant,
+  bumps vacancy fill count, optionally creates the user account (BR-7).
+- The applicant detail's `IApplicantDetail` gained `convertedToEmployeeId?` (FR-6/
+  AC-4); `getApplicant` already spreads `...profile` so it flows through with no
+  service change. The "Converted" badge + footer "View Employee Profile" use a plain
+  `[href]="/employees/:id"` (NOT routerLink) to avoid adding ActivatedRoute to the
+  existing applicant-detail spec.
+
+### Behaviour surfaced in the UI
+- **Convert visibility (FR-1/AC-1):** `canConvert()` = stage `Hired` AND an
+  `Accepted` offer exists AND not already converted. The offers list is loaded
+  EAGERLY when the applicant is Hired (not just when the Offer tab opens) so the
+  button state is correct before the recruiter opens that tab.
+- **Auto-filled marking (§8):** fields present in the prefill get an "auto-filled"
+  chip + tinted input; all are editable (FR-3). Remaining required fields:
+  employment type, work location (lookup), employee number.
+- **Employee number (FR-4):** seeded from `suggestedEmployeeNumber`, read-only +
+  disabled control until the user clicks "Override"; on override→auto it reverts and
+  re-disables. The convert request sends `employeeNumber: null` unless overridden.
+- **Confirmation step (§8):** form → confirm summary (name/position/department/start
+  date/salary) → "Create employee". Then a success state with a "View employee
+  profile" routerLink (the slide-over DOES use routerLink — its own spec adds
+  provideRouter([])).
+- **Blocked conversions:** `already_converted` (BR-2) and `plan_limit_reached`
+  (BR-3) come back as HTTP errors with a typed `code`; shown as an inline red banner
+  (with a "View employee record" link for BR-2), NOT a toast. Untyped errors fall
+  back to a toast.
+- Lookups (dept/jobTitle/location/manager) reuse `VacancyService` (same
+  `ILookupOption` normalization, `/tenant/...` endpoints). `EmploymentType` is
+  imported from the Core HR employees model (PascalCase: Full-Time/…).
+
 ## Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

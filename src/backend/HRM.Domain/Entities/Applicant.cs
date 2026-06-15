@@ -72,4 +72,20 @@ public sealed class Applicant : BaseEntity
 
     /// <summary>UTC instant the application was submitted (§7 applied_at).</summary>
     public DateTime AppliedAt { get; set; } = DateTime.UtcNow;
+
+    // ── Conversion to employee (US-REC-010) ────────────────────────────
+
+    /// <summary>
+    /// FK to the <see cref="Employee"/> created when this applicant was converted (US-REC-010 FR-6).
+    /// Null until the applicant is converted. Once set, the applicant cannot be converted again
+    /// (FR-10/BR-2 — duplicate-conversion prevention). Plain nullable UUID column (no hard FK, mirroring
+    /// the codebase's soft cross-module reference pattern, e.g. <see cref="LinkedEmployeeId"/>).
+    /// </summary>
+    public Guid? ConvertedToEmployeeId { get; set; }
+
+    /// <summary>UTC instant the applicant was converted to an employee (US-REC-010 FR-6). Null until converted.</summary>
+    public DateTime? ConvertedAt { get; set; }
+
+    /// <summary>Id of the user who performed the conversion (US-REC-010 FR-6 converted_by). Null until converted.</summary>
+    public Guid? ConvertedByUserId { get; set; }
 }

@@ -1,22 +1,25 @@
 ---
 module: Recruitment
-total_user_stories: 9
-total_test_cases: 139
+total_user_stories: 10
+total_test_cases: 153
 created: 2026-06-15
 updated: 2026-06-15
-status: in-progress
+status: complete
 ---
 
 # Recruitment -- Test Matrix
 
-> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-006 (Interviewer Submits Structured Interview Scorecard) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-006-01..13 + 1 new multi-tenant isolation on the new `interview_scorecard`/`scorecard_criterion_rating` tables: TC-REC-ISO-015; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-007 (Generate and Send Offer Letter) adds 15 test cases (14 functional/integration/security/perf/a11y: TC-REC-007-01..14 + 1 new multi-tenant isolation on the new `offer` table + tenant-scoped offer PDFs: TC-REC-ISO-016; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-008 (Applicant Tracks Application Status / Candidate Portal via magic link) adds 14 test cases (13 functional/security/perf/a11y: TC-REC-008-01..13 + 1 new multi-tenant isolation on the new public portal surface + `applicant_portal_token`: TC-REC-ISO-017; the generic no/invalid/mismatched tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-009 (Recruitment Dashboard and Analytics) adds 14 test cases (13 functional/security/perf/a11y: TC-REC-009-01..13 + 1 new multi-tenant isolation on the cross-table analytics aggregation surface + tenant-scoped analytics cache/MV: TC-REC-ISO-018; the generic no/invalid/mismatched tenant-context rejection + cross-tenant write/body-injection block are reused from TC-REC-ISO-010/011). Module total: 139 test cases, 43/43 acceptance criteria covered (US-REC-009 has 5 ACs).
+> US-REC-001 (Create and Publish Job Vacancy) established `test-cases/recruitment/` -- 16 test cases (12 functional/security/perf/a11y + 4 dedicated multi-tenant isolation). US-REC-002 (Applicant Submits Application with Resume Upload) adds 21 test cases (13 functional/security/perf/a11y: TC-REC-002-01..13 + 4 dedicated multi-tenant isolation on the new `applicant` table: TC-REC-ISO-005..008). US-REC-003 (Recruiter Views Applicant Pipeline with Stage Management) adds 18 test cases (14 functional/security/perf/a11y: TC-REC-003-01..14 + 4 dedicated multi-tenant isolation on the pipeline/stage-move/stage-history operations: TC-REC-ISO-009..012). US-REC-004 (Move Applicant Through Pipeline Stages with Gates) adds 13 test cases (12 functional/integration/perf: TC-REC-004-01..12 + 1 new multi-tenant isolation on the stage-history/transition/rejection trail: TC-REC-ISO-013; the generic single-move read/context/write isolation is reused from TC-REC-ISO-009..011). US-REC-005 (Schedule Interviews and Notify Participants) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-005-01..13 + 1 new multi-tenant isolation on the new `interview`/`interview_interviewer` tables + tenant-aware reminder jobs: TC-REC-ISO-014; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-006 (Interviewer Submits Structured Interview Scorecard) adds 14 test cases (13 functional/integration/security/perf/a11y: TC-REC-006-01..13 + 1 new multi-tenant isolation on the new `interview_scorecard`/`scorecard_criterion_rating` tables: TC-REC-ISO-015; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-007 (Generate and Send Offer Letter) adds 15 test cases (14 functional/integration/security/perf/a11y: TC-REC-007-01..14 + 1 new multi-tenant isolation on the new `offer` table + tenant-scoped offer PDFs: TC-REC-ISO-016; the generic no/invalid tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-008 (Applicant Tracks Application Status / Candidate Portal via magic link) adds 14 test cases (13 functional/security/perf/a11y: TC-REC-008-01..13 + 1 new multi-tenant isolation on the new public portal surface + `applicant_portal_token`: TC-REC-ISO-017; the generic no/invalid/mismatched tenant-context rejection + cross-tenant write block are reused from TC-REC-ISO-010/011). US-REC-009 (Recruitment Dashboard and Analytics) adds 14 test cases (13 functional/security/perf/a11y: TC-REC-009-01..13 + 1 new multi-tenant isolation on the cross-table analytics aggregation surface + tenant-scoped analytics cache/MV: TC-REC-ISO-018; the generic no/invalid/mismatched tenant-context rejection + cross-tenant write/body-injection block are reused from TC-REC-ISO-010/011). US-REC-010 (Convert Accepted Applicant to Employee Record) -- the FINAL Recruitment story -- adds 14 test cases (13 functional/integration/security/perf: TC-REC-010-01..13 + 1 new multi-tenant isolation on the cross-table conversion mutation -- new `employee` + `user_tenant` + applicant link + vacancy update -- TC-REC-ISO-019; the generic no/invalid/mismatched tenant-context rejection + cross-tenant write/body-injection block are reused from TC-REC-ISO-010/011). Module total: 153 test cases, 48/48 acceptance criteria covered (US-REC-010 has 5 ACs). RECRUITMENT MODULE COMPLETE (10/10 stories).
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 9 (US-REC-001, US-REC-002, US-REC-003, US-REC-004, US-REC-005, US-REC-006, US-REC-007, US-REC-008, US-REC-009) |
-| Total Test Cases | 139 (121 functional/integration/security/perf/a11y + 18 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 10 (US-REC-001 .. US-REC-010) -- MODULE COMPLETE |
+| Total Test Cases | 153 (134 functional/integration/security/perf/a11y + 19 dedicated multi-tenant isolation) |
+| US-REC-010 Test Cases | 14 (TC-REC-010-01..13 + TC-REC-ISO-019; reuses TC-REC-ISO-010/011) |
+| Critical Priority (REC-010) | 5 (TC-REC-010-01, TC-REC-010-06, TC-REC-010-09, TC-REC-010-12, TC-REC-ISO-019) |
+| High Priority (REC-010) | 8 (TC-REC-010-02, -03, -04, -05, -07, -08, -10, -11, -13) |
 | US-REC-009 Test Cases | 14 (TC-REC-009-01..13 + TC-REC-ISO-018; reuses TC-REC-ISO-010/011) |
 | Critical Priority (REC-009) | 4 (TC-REC-009-01, TC-REC-009-02, TC-REC-009-03, TC-REC-009-09, TC-REC-ISO-018) |
 | High Priority (REC-009) | 8 (TC-REC-009-04, -05, -06, -07, -08, -10, -12, -13) |
@@ -69,6 +72,8 @@ status: in-progress
 | Cross-cutting (REC-008) | Multi-tenant isolation (candidate portal / `applicant_portal_token`) | TC-REC-ISO-017 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 | US-REC-009 | Recruitment Dashboard and Analytics | TC-REC-009-01, TC-REC-009-02, TC-REC-009-03, TC-REC-009-04, TC-REC-009-05, TC-REC-009-06, TC-REC-009-07, TC-REC-009-08, TC-REC-009-09, TC-REC-009-10, TC-REC-009-11, TC-REC-009-12, TC-REC-009-13 | 13 |
 | Cross-cutting (REC-009) | Multi-tenant isolation (analytics aggregation / analytics cache + MV) | TC-REC-ISO-018 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
+| US-REC-010 | Convert Accepted Applicant to Employee Record | TC-REC-010-01, TC-REC-010-02, TC-REC-010-03, TC-REC-010-04, TC-REC-010-05, TC-REC-010-06, TC-REC-010-07, TC-REC-010-08, TC-REC-010-09, TC-REC-010-10, TC-REC-010-11, TC-REC-010-12, TC-REC-010-13 | 13 |
+| Cross-cutting (REC-010) | Multi-tenant isolation (conversion graph: employee / user_tenant / applicant link / vacancy) | TC-REC-ISO-019 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 
 ## Test Type Distribution (US-REC-002)
 
@@ -456,3 +461,73 @@ status: in-progress
 - **SignalR / real-time refresh (BR-4):** Phase 1 refreshes on page load only; no real-time streaming is asserted (matches BR-4).
 - **EF query filters vs PostgreSQL RLS (AC-5/NFR-2):** US-REC-009 specifies RLS on the analytics tables; the platform enforces isolation via EF Core global query filters + TenantInterceptor (the aggregation queries inherit the global filters). TC-REC-ISO-018 describes the EF mechanism and notes RLS session-level assertion as an extension point if added.
 - **ISO reuse:** TC-REC-ISO-010 (no/invalid/mismatched tenant context) and TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id, for export-job params) are reused; per-table read isolation is reused from TC-REC-ISO-001/005/009/014/016. TC-REC-ISO-018 adds the CROSS-TABLE AGGREGATION + analytics-cache/MV dimension specific to US-REC-009.
+
+## Test Type Distribution (US-REC-010)
+
+| Type | Test Cases | Count |
+|------|------------|-------|
+| Functional / E2E (REC-010) | TC-REC-010-01, TC-REC-010-02, TC-REC-010-04, TC-REC-010-05, TC-REC-010-06, TC-REC-010-07, TC-REC-010-10, TC-REC-010-11 | 8 |
+| Integration (REC-010) | TC-REC-010-03 (user account + welcome email enqueue), TC-REC-010-08 (vacancy auto-close + notifications), TC-REC-010-09 (atomic rollback) | 3 |
+| Security (REC-010) | TC-REC-010-06 (duplicate-conversion replay), TC-REC-010-07 (eligibility gate), TC-REC-010-12 (dual-permission authz), TC-REC-ISO-019 (+ reused TC-REC-ISO-010/011) | 3 + 1 ISO |
+| Performance (REC-010) | TC-REC-010-13 (conversion <=2s P95 atomic; pre-fill <=400ms P95; email async) | 1 |
+| Accessibility / Cross-browser (REC-010) | (the convert form a11y reuses the Core HR employee-creation form coverage; no new dedicated a11y TC -- see Conditional/Deferred) | 0 new |
+
+(Note: TC-REC-010-01/02/11 carry Happy + Boundary tags; TC-REC-010-04/06/07/09/10/12 carry Negative; TC-REC-010-06/07/12 are typed Security while also Negative; TC-REC-010-08/10/11 carry Boundary; TC-REC-010-13 carries Boundary + Performance.)
+
+## Acceptance Criteria Coverage (US-REC-010)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | "Convert to Employee" on a Hired+Accepted applicant -> pre-filled form mapped from application + offer | TC-REC-010-01, TC-REC-010-02, TC-REC-010-07 |
+| AC-2 | Complete form -> employee created in Core HR + applicant linked + vacancy filled_count++ | TC-REC-010-01, TC-REC-010-09 |
+| AC-3 | Optional user account (Employee role) + welcome/onboarding email | TC-REC-010-03, TC-REC-010-04 |
+| AC-4 | Applicant shows "Converted" badge + link to employee; vacancy filled/headcount ratio | TC-REC-010-05 |
+| AC-5 | Conversion in Tenant A only visible in Tenant A; isolation enforced on `employee` | TC-REC-ISO-019 (+ reused TC-REC-ISO-010, TC-REC-ISO-011) |
+
+## Functional Requirement Coverage (US-REC-010)
+
+| FR | Covered By |
+|----|------------|
+| FR-1 (Convert action only when Hired + accepted offer) | TC-REC-010-01, TC-REC-010-07 |
+| FR-2 (pre-fill mapping: name/email/phone from application; title/dept/manager/salary/start/probation from offer) | TC-REC-010-01, TC-REC-010-02 |
+| FR-3 (review/modify/complete before create) | TC-REC-010-02, TC-REC-010-11 |
+| FR-4 (auto-generate employee number per tenant pattern) | TC-REC-010-01, TC-REC-010-11 |
+| FR-5 (create User + UserTenant + Employee role if auto-create enabled) | TC-REC-010-03, TC-REC-010-04 |
+| FR-6 (applicant link: converted_to_employee_id + converted_at + converted_by) | TC-REC-010-01, TC-REC-010-05, TC-REC-010-06 |
+| FR-7 (increment filled_count; auto-close when filled_count == headcount + recruiter notification) | TC-REC-010-01, TC-REC-010-08 |
+| FR-8 (trigger onboarding workflow if configured) | TC-REC-010-05 (trigger seam; checklist owned by Onboarding module) |
+| FR-9 (welcome email with credentials/onboarding instructions) | TC-REC-010-03 (CONDITIONAL on Notification System S25) |
+| FR-10 (prevent duplicate conversions) | TC-REC-010-06 |
+
+## Non-Functional Requirement Coverage (US-REC-010)
+
+| NFR | Covered By |
+|-----|------------|
+| NFR-1 (conversion <= 2s P95 as an atomic transaction) | TC-REC-010-13 |
+| NFR-2 (all conversion data tenant-scoped + RLS) | TC-REC-ISO-019 (EF query filters today; RLS extension point on `employee`) |
+| NFR-3 (conversion atomic; rollback on any step failure) | TC-REC-010-09, TC-REC-010-13 |
+| NFR-4 (pre-fill form loads <= 400ms P95) | TC-REC-010-13 |
+| NFR-5 (welcome emails async via Hangfire, non-blocking) | TC-REC-010-03, TC-REC-010-13 |
+
+## Business Rule Coverage (US-REC-010)
+
+| BR | Covered By |
+|----|------------|
+| BR-1 (requires Recruitment.Manage.All + Employee.Create.All) | TC-REC-010-12 |
+| BR-2 (convert once; reject duplicates with a clear message) | TC-REC-010-06 |
+| BR-3 (block if it would exceed MaxEmployees; upgrade message) | TC-REC-010-10 |
+| BR-4 (date_of_joining defaults to offer start_date, overridable) | TC-REC-010-01, TC-REC-010-11 |
+| BR-5 (auto-close + remaining-pipeline notification when fully filled) | TC-REC-010-08 |
+| BR-6 (link applicant<->employee; applicant not deleted) | TC-REC-010-01, TC-REC-010-06 |
+| BR-7 (account creation optional, controlled by tenant setting) | TC-REC-010-03, TC-REC-010-04 |
+
+## Conditional / Deferred (US-REC-010)
+
+- **Welcome email depends on Notification System S25 + Hangfire S28 (FR-9/NFR-5):** TC-REC-010-03/13 assert the enqueued Hangfire job/outbox row (tenant_id, recipient, template) + non-blocking dispatch; if delivery is a LOG-ONLY stub, assert the enqueue. CONDITIONAL, not a gap.
+- **Onboarding workflow trigger (FR-8):** owned by the Onboarding module; TC-REC-010-05 asserts only the trigger seam and that a disabled Onboarding module does NOT block conversion (story assumptions). Checklist generation is asserted where that module integrates.
+- **Recruiter / remaining-pipeline notifications on auto-close (FR-7/BR-5):** TC-REC-010-08 asserts the enqueued notification(s); CONDITIONAL on S25 delivery. The auto-close STATUS change itself is asserted directly.
+- **Subscription limit source (BR-3):** `Tenant.MaxEmployees` is a nullable field (null = unlimited; placeholder until a proper Subscription/Plan entity exists). TC-REC-010-10 tests against it as-is; re-point the limit source if plan enforcement moves to a Subscription entity -- the block + upgrade-message behavior must hold.
+- **Convert-form accessibility:** the conversion uses the Core HR employee-creation form surface; its WCAG 2.1 AA + responsive coverage is owned by the Core HR employee-creation a11y TC. No new dedicated a11y TC is added for REC-010; the recruitment-specific pre-fill mapping + actions are functionally covered (TC-REC-010-02/05). If the convert form is a distinct screen, extend Core HR's form a11y coverage to it.
+- **Bank details / payroll fields:** not available from the application/offer; entered manually or during onboarding (story assumptions). TC-REC-010-11 covers the required-field gate for the recruitment-known fields; payroll-specific fields are owned by Payroll/Onboarding.
+- **EF query filters vs PostgreSQL RLS (AC-5/NFR-2):** US-REC-010 specifies RLS on `employee`; the platform enforces isolation via EF Core global query filters + TenantInterceptor across the conversion graph. TC-REC-ISO-019 describes the EF mechanism and notes RLS session-level assertion as an extension point if added on `employee`.
+- **ISO reuse:** TC-REC-ISO-010 (no/invalid/mismatched tenant context) and TC-REC-ISO-011 (cross-tenant write block + body-injected tenant_id) are reused for the recruitment surface; TC-REC-ISO-019 adds the CROSS-TABLE CONVERSION-MUTATION dimension (new employee + user_tenant + applicant link + vacancy update) specific to US-REC-010.

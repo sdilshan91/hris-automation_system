@@ -197,6 +197,10 @@ public static class DependencyInjection
         services.AddScoped<IApplicantPortalTokenService, ApplicantPortalTokenService>();
         services.AddScoped<IApplicantPortalService, ApplicantPortalService>();
 
+        // US-REC-010: Recruitment — convert an accepted applicant to a Core HR employee (atomic, reuses
+        // IEmployeeService.CreateAsync). Completes the Recruitment module.
+        services.AddScoped<IApplicantConversionService, ApplicantConversionService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

@@ -172,6 +172,12 @@ export interface IApplicantDetail {
   appliedAt: string;
   /** Ordered oldest→newest transitions (FR-7 timeline). */
   stageHistory: IStageTransition[];
+  /**
+   * Core HR employee id this applicant was converted into (US-REC-010 AC-4/FR-6),
+   * or null. When set, the detail shows a "Converted" badge linking to the
+   * employee record and hides the "Convert to Employee" action.
+   */
+  convertedToEmployeeId?: string | null;
 }
 
 /** Body for a stage move (FR-3 / BR-3 / BR-4). Reason required for Rejected/backward. */
