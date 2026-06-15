@@ -228,8 +228,12 @@ public sealed class AttendanceClockOutIntegrationTests
     [Fact]
     public async Task AutoClockOutJob_LeavesTodaysOpenRecordUntouched()
     {
-        // Opened 2h ago (within today) — must not be auto-closed.
-        var logId = SeedOpenLog(_tenantA, _employeeA, agoMinutes: 120);
+        // Opened earlier TODAY (after this UTC day's start) — must not be auto-closed.
+        // Clamp the offset to minutes-since-midnight so the seed never crosses into the
+        // previous UTC day when the suite runs shortly after midnight (de-flake; mirrors
+        // the inverse computation in AutoClockOutJob_ClosesOvernightOpenRecord_AsAnomaly).
+        var minutesSinceMidnight = (int)(DateTime.UtcNow - DateTime.UtcNow.Date).TotalMinutes;
+        var logId = SeedOpenLog(_tenantA, _employeeA, agoMinutes: Math.Min(120, minutesSinceMidnight));
         SeedTenantRow(_tenantA);
 
         var provider = BuildJobProvider();
