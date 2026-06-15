@@ -2711,7 +2711,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 |---------------|-----------------|----------|------------|----------|----------|
 | US-PAY-001 | Configure Salary Structure and Components per Tenant | Must Have | TC-PAY-001-01, TC-PAY-001-02, TC-PAY-001-03, TC-PAY-001-04, TC-PAY-001-05, TC-PAY-001-06, TC-PAY-001-07, TC-PAY-001-08, TC-PAY-001-09, TC-PAY-001-10, TC-PAY-001-11, TC-PAY-001-12 | 12 | 6/6 AC covered |
 | Cross-cutting (PAY-001) | Multi-tenant isolation (salary_component / salary_structure / junction) | Critical | TC-PAY-ISO-001, TC-PAY-ISO-002, TC-PAY-ISO-003, TC-PAY-ISO-004 | 4 | -- |
-| **TOTAL** | | | **16 test cases** | **16** | **6/6 AC** |
+| US-PAY-002 | Assign Salary Structure to Employee | Must Have | TC-PAY-002-01, TC-PAY-002-02, TC-PAY-002-03, TC-PAY-002-04, TC-PAY-002-05, TC-PAY-002-06, TC-PAY-002-07, TC-PAY-002-08, TC-PAY-002-09, TC-PAY-002-10, TC-PAY-002-11, TC-PAY-002-12 | 12 | 5/5 AC covered |
+| Cross-cutting (PAY-002) | Multi-tenant isolation (employee_salary_component / salary_revision_history) | Critical | TC-PAY-ISO-005, TC-PAY-ISO-006, TC-PAY-ISO-007, TC-PAY-ISO-008 | 4 | -- |
+| **TOTAL** | | | **32 test cases** | **32** | **11/11 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2733,6 +2735,22 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-ISO-002 | Payroll APIs reject no/invalid/mismatched tenant context | Security | Critical | US-PAY-001 | AC-6, FR-8 |
 | TC-PAY-ISO-003 | Cross-tenant writes blocked; tenant_id session-derived | Security | Critical | US-PAY-001 | AC-6, FR-1, FR-2, FR-3, FR-8 |
 | TC-PAY-ISO-004 | Payroll list caches tenant-scoped (no cross-tenant cache leak) | Security | High | US-PAY-001 | AC-6, FR-8, NFR-1 |
+| TC-PAY-002-01 | Assign structure w/ CTC -> employee_salary_component rows from rules + breakdown preview before confirm (happy path) | E2E | Critical | US-PAY-002 | AC-1, FR-1, FR-2, FR-3, BR-1 |
+| TC-PAY-002-02 | Component override saved while others stay calculated | Functional | High | US-PAY-002 | AC-3, FR-1, FR-2, FR-3, FR-6 |
+| TC-PAY-002-03 | Assigning inactive/deactivated structure rejected 400 | Functional | Critical | US-PAY-002 | FR-7, FR-1 |
+| TC-PAY-002-04 | Component sum != CTC beyond +/-1 tolerance rejected | Functional | High | US-PAY-002 | FR-6, FR-2, FR-3 |
+| TC-PAY-002-05 | Future-dated assignment doesn't supersede current until date arrives | Functional | Critical | US-PAY-002 | AC-2, BR-1, BR-2, BR-3, FR-1, FR-4 |
+| TC-PAY-002-06 | numeric(18,2) precision + CTC-derivation boundary values | Functional | High | US-PAY-002 | FR-1, FR-2, FR-3, FR-6 |
+| TC-PAY-002-07 | Bulk assign to multiple employees w/ individual CTCs + progress indicator | Functional | High | US-PAY-002 | AC-4, FR-5, FR-2, FR-6, BR-3 |
+| TC-PAY-002-08 | Authz: only Payroll.*.All may assign; others 403 | Security | Critical | US-PAY-002 | AC-1, AC-2, AC-3, AC-4, FR-1, FR-3, FR-4, FR-5 |
+| TC-PAY-002-09 | Revision history captures old/new structure + CTC + changed_by/at + reason (regression) | Functional | High | US-PAY-002 | AC-2, FR-4, BR-3, NFR-4 |
+| TC-PAY-002-10 | CTC/override/reason fields resist XSS + SQL injection; PII not leaked | Security | High | US-PAY-002 | FR-1, FR-4, FR-5, NFR-4, NFR-5 |
+| TC-PAY-002-11 | Preview <= 500ms (NFR-2); bulk assign 500 emps <= 30s (NFR-1) | Performance | High | US-PAY-002 | AC-1, AC-4, NFR-1, NFR-2, FR-3, FR-5 |
+| TC-PAY-002-12 | Compensation tab + breakdown table + revision timeline + bulk spreadsheet WCAG 2.1 AA | Accessibility | High | US-PAY-002 | AC-1, AC-2, AC-3, AC-4 |
+| TC-PAY-ISO-005 | Tenant B cannot access Tenant A employee salary assignment/revisions (read iso) | Security | Critical | US-PAY-002 | AC-5, FR-8 |
+| TC-PAY-ISO-006 | Salary APIs reject missing/invalid/mismatched tenant context | Security | Critical | US-PAY-002 | AC-5, FR-8 |
+| TC-PAY-ISO-007 | Cross-tenant salary writes blocked; tenant_id session-derived (incl. bulk) | Security | Critical | US-PAY-002 | AC-5, FR-1, FR-5, FR-8 |
+| TC-PAY-ISO-008 | Salary preview/breakdown caches tenant-scoped (no cross-tenant cache leak) | Security | High | US-PAY-002 | AC-5, FR-8, NFR-2 |
 
 ### US-PAY-001 Detailed Requirements Traceability
 
@@ -2779,6 +2797,50 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Accessibility Test Cases | 1 (TC-PAY-001-12 -- slide-over + inline table + drag-reorder WCAG 2.1 AA) | >= 1 | PASS |
 | Blocked Test Cases | 0 (AC-2/BR-7 historical-payslip CONDITIONAL on Payroll Run; FR-7/BR-5 deferred to later Payroll stories) | -- | CLEAR |
 
+### US-PAY-002 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Assign active structure w/ CTC -> employee_salary_component rows calculated from rules | AC | TC-PAY-002-01, TC-PAY-002-06, TC-PAY-002-08, TC-PAY-002-11, TC-PAY-002-12 | Direct |
+| AC-2: Future-dated assignment saved; current active until date; revision history maintained | AC | TC-PAY-002-05, TC-PAY-002-09, TC-PAY-002-08, TC-PAY-002-12 | Direct |
+| AC-3: Component override saved while others retain calculated values | AC | TC-PAY-002-02, TC-PAY-002-08, TC-PAY-002-12 | Direct |
+| AC-4: Bulk assign to multiple employees w/ individual CTC + progress indicator | AC | TC-PAY-002-07, TC-PAY-002-11, TC-PAY-002-08, TC-PAY-002-12 | Direct |
+| AC-5: Tenant B cannot access Tenant A employee salary assignment; RLS prevents cross-tenant access | AC | TC-PAY-ISO-005, TC-PAY-ISO-006, TC-PAY-ISO-007, TC-PAY-ISO-008 | Direct (EF query filters today; RLS extension point) |
+| FR-1: Assign w/ salary_structure_id, effective_from, annual_ctc + optional per-component overrides | FR | TC-PAY-002-01, TC-PAY-002-02, TC-PAY-002-03, TC-PAY-002-06, TC-PAY-002-08, TC-PAY-002-10, TC-PAY-ISO-007 | Direct |
+| FR-2: Auto-calculate component values from CTC per structure rules | FR | TC-PAY-002-01, TC-PAY-002-02, TC-PAY-002-04, TC-PAY-002-06 | Direct |
+| FR-3: Display CTC breakdown preview before confirm | FR | TC-PAY-002-01, TC-PAY-002-02, TC-PAY-002-04, TC-PAY-002-06, TC-PAY-002-11 | Direct |
+| FR-4: Maintain complete salary revision history per employee | FR | TC-PAY-002-05, TC-PAY-002-09, TC-PAY-002-08, TC-PAY-002-10 | Direct |
+| FR-5: Bulk assignment via CSV/multi-select w/ individual CTCs | FR | TC-PAY-002-07, TC-PAY-002-11, TC-PAY-002-08, TC-PAY-002-10, TC-PAY-ISO-007 | Direct |
+| FR-6: Validate sum of components == declared CTC within +/-1 tolerance | FR | TC-PAY-002-04, TC-PAY-002-02, TC-PAY-002-06, TC-PAY-002-07 | Direct |
+| FR-7: Prevent assigning an inactive/deactivated structure | FR | TC-PAY-002-03 | Direct |
+| FR-8: All employee salary records carry tenant_id, governed by RLS | FR | TC-PAY-ISO-005, TC-PAY-ISO-006, TC-PAY-ISO-007, TC-PAY-ISO-008 | Direct (EF query filters today; RLS extension point) |
+| NFR-1: Bulk assign up to 500 employees <= 30s | NFR | TC-PAY-002-11 | Direct |
+| NFR-2: CTC breakdown preview <= 500ms | NFR | TC-PAY-002-11, TC-PAY-ISO-008 | Direct |
+| NFR-3: >= 85% test coverage for assignment logic | NFR | (whole suite) | Met by AC/FR/BR coverage (5/5 AC, 8/8 FR) |
+| NFR-4: Changes audit-logged with before/after values | NFR | TC-PAY-002-09, TC-PAY-002-10 | Direct (Audit module S24 dependency; record asserted) |
+| NFR-5: Salary data encrypted at rest | NFR | TC-PAY-002-10 | Direct (no PII leak in errors/logs asserted; column/TDE encryption is an infra control) |
+| BR-1: Only ONE active structure at a time; current/past effective date supersedes immediately | BR | TC-PAY-002-01, TC-PAY-002-05 | Direct |
+| BR-2: Future-dated assignment does not affect current payroll until the date | BR | TC-PAY-002-05 | Direct |
+| BR-3: Revision history captures old/new structure + CTC + effective_from + changed_by/at + reason | BR | TC-PAY-002-09, TC-PAY-002-05, TC-PAY-002-07 | Direct |
+| BR-4: Probation vs confirmed employees may use different structures | BR | (noted) | DEFERRED -- distinction allowed by per-employee assignment; probation-specific gating owned by a later story |
+| BR-5: Employee w/o assignment flagged "Payroll Incomplete" + excluded from runs | BR | TC-PAY-002-01 | Partial -- flag asserted; exclusion-from-runs CONDITIONAL on Payroll Run story |
+| BR-6: No backdating into a finalized payroll run unless an adjustment is created | BR | (noted) | CONDITIONAL on US-PAY-007 (adjustment) + Payroll Run lock (not yet built) |
+| BR-7: CTC accounts for employer-side statutory contributions per tenant config | BR | (noted) | CONDITIONAL on US-PAY-006 (statutory config) |
+
+### Coverage Summary (Payroll -- US-PAY-002)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 5/5 (100%) -- NFR-4 Audit S24 dependency; NFR-5 at-rest encryption is an infra control (PII-leak path tested) | >= 85% | PASS |
+| Business Rules Coverage | 7/7 addressed -- BR-1/BR-2/BR-3 Direct; BR-4 deferred; BR-5 partial (flag direct, exclusion CONDITIONAL); BR-6/BR-7 CONDITIONAL on later stories | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated (TC-PAY-ISO-005..008: read / context / write / cache) | >= 1 | PASS |
+| Security Test Cases | TC-PAY-002-08, TC-PAY-002-10, TC-PAY-ISO-005..008 | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-PAY-002-11 -- preview <= 500ms P95; bulk 500 emps <= 30s) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-PAY-002-12 -- Compensation tab + breakdown table + revision timeline + bulk spreadsheet WCAG 2.1 AA) | >= 1 | PASS |
+| Blocked Test Cases | 0 (BR-5 exclusion / BR-6 backdating / BR-7 statutory CONDITIONAL on later Payroll stories) | -- | CLEAR |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -2790,8 +2852,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Leave Management (US-LV-001 through US-LV-012) | 12 | 303 | 57/57 (100%) | 48 | PASS |
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
-| Payroll (US-PAY-001) | 1 | 16 | 6/6 (100%) | 4 | PASS (module bootstrap) |
-| **TOTAL** | **52** | **1062** | **268/268 (100%)** | **175** | |
+| Payroll (US-PAY-001, US-PAY-002) | 2 | 32 | 11/11 (100%) | 8 | PASS |
+| **TOTAL** | **53** | **1078** | **273/273 (100%)** | **179** | |
 
 ---
 

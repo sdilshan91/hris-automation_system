@@ -74,6 +74,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<SalaryComponent> SalaryComponents => Set<SalaryComponent>();
     public DbSet<SalaryStructure> SalaryStructures => Set<SalaryStructure>();
     public DbSet<SalaryStructureComponent> SalaryStructureComponents => Set<SalaryStructureComponent>();
+    public DbSet<EmployeeSalaryComponent> EmployeeSalaryComponents => Set<EmployeeSalaryComponent>();
+    public DbSet<SalaryRevisionHistory> SalaryRevisionHistories => Set<SalaryRevisionHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -275,6 +277,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PAY-001: SalaryStructureComponent tenant isolation + soft-delete filter (AC-6).
         modelBuilder.Entity<SalaryStructureComponent>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-002: EmployeeSalaryComponent tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
+        modelBuilder.Entity<EmployeeSalaryComponent>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-002: SalaryRevisionHistory tenant isolation + soft-delete filter (AC-5).
+        modelBuilder.Entity<SalaryRevisionHistory>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
