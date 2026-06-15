@@ -46,6 +46,10 @@ try
     });
     builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
     builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+    // US-PLT-002: ambient SET LOCAL app.current_tenant for RLS. Registered last so it is
+    // the innermost behavior (its transaction spans the handler). Inert until Rls:Enabled
+    // (Phase-4 switch-on) and a no-op on non-relational providers / system context.
+    builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(HRM.Infrastructure.Behaviors.TenantTransactionBehavior<,>));
 
     // ===== FluentValidation =====
     builder.Services.AddValidatorsFromAssembly(typeof(HRM.Application.Common.Behaviors.ValidationBehavior<,>).Assembly);
