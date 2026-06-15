@@ -202,6 +202,11 @@ public static class DependencyInjection
         services.AddScoped<IPayslipGenerationService, PayslipGenerationService>();
         services.AddScoped<IPayslipBatchRenderer, PayslipBatchRenderer>();
 
+        // US-PAY-005: Payroll — employee self-service payslip read (list / detail / PDF download). Resolves the
+        // caller's employee_id from ICurrentUser and scopes every read to it (own employee + own tenant); only
+        // Finalized-run slips are visible (BR-1); a cross-employee payslip id is a deliberate 403 (AC-4).
+        services.AddScoped<IMyPayslipService, MyPayslipService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.

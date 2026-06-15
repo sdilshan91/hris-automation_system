@@ -23,3 +23,9 @@ export { PayrollRunDetailComponent } from './components/payroll-run-detail/payro
 export * from './models/payslip.models';
 export * from './services/payslip.service';
 export { PayslipListComponent } from './components/payslip-list/payslip-list.component';
+
+/** US-PAY-005: Employee self-service — view + download own payslips. */
+export * from './models/my-payslip.models';
+export * from './services/my-payslip.service';
+export { MyPayslipsComponent } from './components/my-payslips/my-payslips.component';
+export { MY_PAYSLIPS_ROUTES } from './my-payslips.routes';

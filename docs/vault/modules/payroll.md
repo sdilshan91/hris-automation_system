@@ -288,3 +288,85 @@ in that one FE service file.
   to a tenant-template entity when it exists.
 - Cloud blob storage (local FS only, Phase 1 — `LocalFileStorage`), drag-drop
   template designer, 5,000-PDF live perf test (NFR-1 — manual harness, NOT a [Skip]).
+
+## Employee self-service payslip view (US-PAY-005)
+
+The EMPLOYEE-facing read view of their OWN payslips (US-PAY-004 built the HR-facing
+generation/PDF side). Read-only; no new entity, no migration — reuses `payroll_slip`,
+`payroll_slip_detail`, and the PDFs already at `{tenantId}/payroll/{runId}/{employeeId}.pdf`.
+
+### Permission decision (the crux — reconcile vs the story)
+The story names `Payroll.Read.Self`, but that string is **not** in `PermissionCatalog`.
+The catalog already has `Payroll.ViewOwn = "Payroll.View.Own"`, granted to the built-in
+**Employee** role — and the platform's established self convention is `Module.View.Own`
+(cf. `Employee.View.Own`, `Leave.View.Own`, `Attendance.View.Own`). So US-PAY-005 reuses
+the **registered** `Payroll.View.Own` rather than inventing an unregistered permission.
+All three endpoints are `[RequirePermission("Payroll.View.Own")]`. (If the FE/QA were
+written against the literal `Payroll.Read.Self`, that is the reconcile point — but the
+backend gate is `Payroll.View.Own`.)
+
+### Self-resolution + two-layer isolation
+Caller's employee is resolved by `Employee.UserId == ICurrentUser.UserId` (the same
+self-pattern AttendanceService uses). `Employee.UserId` is nullable — no link ⇒ **403**
+`no_employee_linked` (BR-5, never leaks anyone else's data). Isolation is two layers:
+(1) tenant — EF global query filter on every read; (2) employee — explicit `EmployeeId`
+filter on the list, and an explicit owner check on detail/PDF.
+
+### AC-4 — cross-employee = 403, NOT 404 (deliberate)
+Detail + PDF are addressed by a user-supplied `payslipId`. The service loads the slip
+(tenant-scoped) then: not found for tenant ⇒ 404 (`payslip_not_found`; this is also the
+cross-tenant case — the global filter hides it); **belongs to another employee ⇒ 403
+`forbidden_payslip`** (the story explicitly wants Forbidden on URL manipulation, so the
+denial is an authz signal, not a "doesn't exist"); run not Finalized ⇒ 403
+`payslip_not_finalized` (BR-1 — exists for the caller but not yet visible). No other
+employee's data is returned on any path.
+
+### BR-1 — Finalized runs only
+List joins slips to runs and keeps only `PayrollRunStatus.Finalized` (ReviewPending/
+Approved/Queued hidden). Detail/PDF re-check the owning run is Finalized.
+
+### Routes (`MyPayslipsController`, base `api/v1/payroll/my-payslips`) — FE contract
+- `GET /payroll/my-payslips?year=&page=&pageSize=` → `MyPayslipListDto`
+  `{ items[], totalCount, page, pageSize }`; item =
+  `{ payslipId, payMonth, payYear, grossEarnings, totalDeductions, netSalary, paidDays, lopDays, pdfAvailable }`.
+  Most-recent-first (PayYear desc, PayMonth desc); default `pageSize=12` (clamped 1..100,
+  bad values fall back to 12), `page` default 1.
+- `GET /payroll/my-payslips/{payslipId}` → `MyPayslipDetailDto`
+  `{ payslipId, payMonth, payYear, employee{ name, employeeNo, department, designation },
+  earnings[{ componentName, amount, ytdAmount }], deductions[...], grossEarnings,
+  totalDeductions, netSalary, workingDays, paidDays, lopDays }`. Earnings = non-deduction
+  components; deductions = Deduction+Statutory (same `IsDeductionSide` split as the renderer).
+- `GET /payroll/my-payslips/{payslipId}/pdf` → streams the pre-generated PDF
+  (`{EmployeeNo}_{PayMonth}_{PayYear}.pdf`, `application/pdf`); 404 `pdf_not_generated`
+  when not yet rendered.
+
+### Deferred (noted per brief; NOT built)
+- **BR-3 post-termination access policy** (immediate revoke / 30-day / permanent
+  read-only): no tenant policy surface exists, so access defaults to read-only for any
+  linked employee regardless of `EmployeeStatus`. Wire to a tenant payroll-settings entity
+  when it lands (same surface as the YTD toggle).
+- **FR-7 tenant YTD toggle:** `MyPayslipService.TenantYtdEnabled()` returns false (shared
+  deferral with US-PAY-004 `PayslipBatchRenderer`). The per-component YTD sum (`BuildYtdAsync`,
+  scoped to the single self employee) is fully built; flip the flag on once the settings
+  entity exists. Until then every `ytdAmount` is null.
+
+### Frontend (US-PAY-005) — reconciled with the BE contract above
+NOT under the `/payroll` lazy route (that parent is `roleGuard(['Tenant Admin','HR Officer'])`
++ `Payroll.View`, blocks a plain Employee). NEW top-level route `my-payslips`
+(`payroll/my-payslips.routes.ts`, wired in app.routes.ts) guarded
+`roleGuard(['Employee','Manager','HR Officer','Tenant Admin'])`. Sidebar nav "My Payslips"
+(receipt icon) gated on the **registered** `Payroll.View.Own` (the BE permission, NOT the
+story's literal `Payroll.Read.Self` which isn't in the catalog — reconciled to match the gate).
+- NEW `MyPayslipService` (payroll/services), base `${apiBaseUrl}/payroll/my-payslips`, route
+  strings ONLY here. List paginated (`IMyPayslipPage`, default page=1/pageSize=12, `year`
+  omitted when null; `toPage` also tolerates a bare array). Detail `IMyPayslipDetail`. PDF
+  blob via HttpResponse<Blob>+Content-Disposition. Bare payloads (US-PLT-001) + withCredentials.
+- `MyPayslipsComponent`: Notion table (Pay Period | Gross | Deductions | Net), FE re-sorts
+  most-recent-first defensively, amounts `font-mono tabular-nums` right-aligned. Year tabs
+  DERIVED from returned payslips' distinct years (desc) on first load. Detail = inline
+  EXPANDABLE card lazy-loaded on open (guards stale response if `expandedId` changed);
+  earnings `bg-emerald-50/60`, deductions `bg-rose-50/60`; YTD column only when
+  `hasYtd(detail)` (any line has ytdAmount — currently never, BE FR-7 deferred). "Download PDF"
+  disabled when `!pdfAvailable`; reuses the `downloadBlob`/`filenameFromDisposition` anchor-click
+  helpers (local copy, same as payslip-list US-PAY-004). Table → stacked cards at md via
+  `.row-label-mobile` + breakdown `overflow-x-auto` for 360px (AC-5).
