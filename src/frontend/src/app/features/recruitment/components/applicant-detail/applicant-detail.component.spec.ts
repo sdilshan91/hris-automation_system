@@ -365,4 +365,67 @@ describe('ApplicantDetailComponent', () => {
     expect(toastrSpy.error).toHaveBeenCalled();
     expect(component.interviewsLoading()).toBeFalse();
   });
+
+  // ─── Convert to Employee (US-REC-010) ──────────────────────
+
+  /** Recreate the component with a Hired applicant + a given offers list. */
+  function recreateHired(offers: { status: string }[], over = {}): void {
+    serviceSpy.getApplicant.and.returnValue(
+      of(detail({ stage: 'Hired', ...over })),
+    );
+    offerSpy.listForApplicant.and.returnValue(
+      of(offers as unknown as never[]),
+    );
+    fixture.componentRef.setInput('applicantId', 'app-hired');
+    fixture.detectChanges();
+  }
+
+  it('enables Convert only when Hired with an accepted offer (FR-1/AC-1)', () => {
+    recreateHired([{ status: 'Accepted' }]);
+    expect(component.canConvert()).toBeTrue();
+  });
+
+  it('does not enable Convert for a Hired applicant without an accepted offer', () => {
+    recreateHired([{ status: 'Sent' }]);
+    expect(component.canConvert()).toBeFalse();
+  });
+
+  it('does not enable Convert for a non-Hired applicant (default Screening)', () => {
+    expect(component.canConvert()).toBeFalse();
+  });
+
+  it('does not enable Convert once already converted (FR-6/AC-4)', () => {
+    recreateHired([{ status: 'Accepted' }], { convertedToEmployeeId: 'emp-1' });
+    expect(component.canConvert()).toBeFalse();
+  });
+
+  it('opens and closes the conversion slide-over', () => {
+    recreateHired([{ status: 'Accepted' }]);
+    component.openConvert();
+    expect(component.showConversion()).toBeTrue();
+    component.closeConvert();
+    expect(component.showConversion()).toBeFalse();
+  });
+
+  it('reloads the applicant and emits moved(Hired) after a conversion (AC-4)', () => {
+    recreateHired([{ status: 'Accepted' }]);
+    let moved: string | undefined;
+    component.moved.subscribe((s) => (moved = s));
+    serviceSpy.getApplicant.calls.reset();
+
+    component.onConverted({
+      employeeId: 'emp-9',
+      employeeNumber: 'EMP-1',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+    });
+
+    // `load` reloads using the loaded detail's id (the fixture detail id is 'app-1').
+    expect(serviceSpy.getApplicant).toHaveBeenCalledWith('app-1');
+    expect(moved).toBe('Hired');
+  });
+
+  it('builds the employee profile deep link', () => {
+    expect(component.employeeProfileHref('emp-9')).toBe('/employees/emp-9');
+  });
 });

@@ -76,6 +76,13 @@ public sealed class ApplicantConfiguration : IEntityTypeConfiguration<Applicant>
 
         builder.Property(a => a.AppliedAt).IsRequired();
 
+        // US-REC-010 FR-6: conversion linkage. ConvertedToEmployeeId is a soft cross-module reference
+        // (no hard FK, mirroring LinkedEmployeeId); a partial unique index guards against two applicants
+        // pointing at the same employee record within a tenant.
+        builder.Property(a => a.ConvertedToEmployeeId);
+        builder.Property(a => a.ConvertedAt);
+        builder.Property(a => a.ConvertedByUserId);
+
         builder.Property(a => a.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // §7 reference number is unique per tenant (partial — exclude soft-deleted).
@@ -91,5 +98,11 @@ public sealed class ApplicantConfiguration : IEntityTypeConfiguration<Applicant>
         builder.HasIndex(a => new { a.TenantId, a.VacancyId, a.Email })
             .IsUnique()
             .HasFilter("is_deleted = false");
+
+        // US-REC-010 FR-10/BR-2: at most one applicant per tenant may point at a given employee record.
+        // Partial — only rows that have actually been converted (employee id not null).
+        builder.HasIndex(a => new { a.TenantId, a.ConvertedToEmployeeId })
+            .IsUnique()
+            .HasFilter("converted_to_employee_id IS NOT NULL");
     }
 }

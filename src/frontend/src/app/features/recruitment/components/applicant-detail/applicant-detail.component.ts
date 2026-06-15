@@ -24,6 +24,7 @@ import { InterviewCancelDialogComponent } from '../interview-cancel-dialog/inter
 import { ScorecardPanelComponent } from '../scorecard-panel/scorecard-panel.component';
 import { ScorecardFormComponent } from '../scorecard-form/scorecard-form.component';
 import { OfferFormComponent } from '../offer-form/offer-form.component';
+import { ConversionFormComponent } from '../conversion-form/conversion-form.component';
 import { OfferService } from '../../services/offer.service';
 import {
   IOffer,
@@ -44,6 +45,7 @@ import {
 } from '../../models/pipeline.models';
 import { IInterview } from '../../models/interview.models';
 import { IScorecard } from '../../models/scorecard.models';
+import { IConvertResult } from '../../models/conversion.models';
 import { ApplicantSource, ApplicantStage } from '../../models/applicant.models';
 
 type DetailTab =
@@ -76,6 +78,7 @@ type DetailTab =
     ScorecardPanelComponent,
     ScorecardFormComponent,
     OfferFormComponent,
+    ConversionFormComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
@@ -149,6 +152,15 @@ type DetailTab =
                   >
                     {{ d.source }}
                   </span>
+                  <!-- Converted badge + link to the employee record (US-REC-010 AC-4) -->
+                  @if (d.convertedToEmployeeId; as eid) {
+                    <a
+                      class="badge ring-1 ring-inset bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100"
+                      [href]="employeeProfileHref(eid)"
+                    >
+                      Converted
+                    </a>
+                  }
                 }
               </div>
             </div>
@@ -537,15 +549,46 @@ type DetailTab =
               </button>
             </div>
           } @else {
-            <div class="border-t border-neutral-100 px-6 py-4">
-              <p class="text-xs text-neutral-400">
-                {{ d.stage }} is a terminal stage — no further moves.
-              </p>
+            <div
+              class="flex flex-wrap items-center gap-2 border-t border-neutral-100 px-6 py-4"
+            >
+              <!-- Convert to Employee (US-REC-010 FR-1/AC-1): only when Hired with
+                   an accepted offer and not already converted. Primary action. -->
+              @if (canConvert()) {
+                <button
+                  type="button"
+                  class="action-btn bg-emerald-600 text-white hover:bg-emerald-700"
+                  (click)="openConvert()"
+                >
+                  Convert to Employee
+                </button>
+              } @else if (d.convertedToEmployeeId) {
+                <a
+                  class="action-btn border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
+                  [href]="employeeProfileHref(d.convertedToEmployeeId)"
+                >
+                  View Employee Profile
+                </a>
+              } @else {
+                <p class="text-xs text-neutral-400">
+                  {{ d.stage }} is a terminal stage — no further moves.
+                </p>
+              }
             </div>
           }
         }
       </div>
     </div>
+
+    <!-- Convert-to-employee slide-over (US-REC-010) -->
+    @if (showConversion() && detail(); as d) {
+      <app-conversion-form
+        [applicantId]="d.id"
+        [applicantName]="fullName()"
+        (converted)="onConverted($event)"
+        (cancelled)="closeConvert()"
+      />
+    }
 
     <!-- Reason prompt for rejection (AC-4) / backward move (FR-5) -->
     @if (pendingTo(); as to) {
@@ -730,6 +773,23 @@ export class ApplicantDetailComponent {
   /** Whether the offers list has been loaded for the current applicant. */
   private offersLoaded = false;
 
+  // ─── Conversion (US-REC-010) ──────────────────────────────
+  /** Whether the convert-to-employee slide-over is open. */
+  readonly showConversion = signal(false);
+
+  /**
+   * Whether the "Convert to Employee" action is available (US-REC-010 FR-1/AC-1):
+   * the applicant is Hired, not already converted, AND has an accepted offer. The
+   * accepted-offer signal comes from the eagerly-loaded offers list (below).
+   */
+  readonly canConvert = computed<boolean>(() => {
+    const d = this.detail();
+    if (!d || d.stage !== 'Hired' || d.convertedToEmployeeId) {
+      return false;
+    }
+    return this.offers().some((o) => o.status === 'Accepted');
+  });
+
   /** True while a stage move is in flight (disables the action buttons). */
   readonly moving = signal(false);
   /**
@@ -791,11 +851,14 @@ export class ApplicantDetailComponent {
       }
     });
 
-    // Lazy-load the offers list the first time the Offer tab opens (US-REC-007).
+    // Load the offers list the first time the Offer tab opens (US-REC-007) OR
+    // eagerly when the applicant is Hired (US-REC-010) — `canConvert` needs to know
+    // whether an accepted offer exists before the recruiter opens the Offer tab.
     effect(() => {
       const d = this.detail();
       const t = this.tab();
-      if (t === 'offer' && d && !this.offersLoaded) {
+      const wantEager = d?.stage === 'Hired' && !d.convertedToEmployeeId;
+      if ((t === 'offer' || wantEager) && d && !this.offersLoaded) {
         this.loadOffers(d.id);
       }
     });
@@ -818,6 +881,8 @@ export class ApplicantDetailComponent {
     this.offersLoaded = false;
     this.showOfferForm.set(false);
     this.viewingOffer.set(null);
+    // Reset conversion state (US-REC-010).
+    this.showConversion.set(false);
     this.pipelineService.getApplicant(id).subscribe({
       next: (d) => {
         this.detail.set(d);
@@ -1131,5 +1196,35 @@ export class ApplicantDetailComponent {
 
   offerCompensation(o: IOffer): string {
     return formatCompensation(o);
+  }
+
+  // ─── Conversion (US-REC-010 FR-1/AC-1/AC-4) ───────────────
+
+  /** Open the convert-to-employee slide-over (FR-1). */
+  openConvert(): void {
+    this.showConversion.set(true);
+  }
+
+  closeConvert(): void {
+    this.showConversion.set(false);
+  }
+
+  /**
+   * After a successful conversion (AC-4): reload the applicant so it shows the
+   * "Converted" badge + link, and tell the parent board to refresh (vacancy fill
+   * count may have changed). The success state/link live inside the slide-over.
+   */
+  onConverted(_result: IConvertResult): void {
+    const d = this.detail();
+    if (d) {
+      this.offersLoaded = false;
+      this.load(d.id);
+      this.moved.emit('Hired');
+    }
+  }
+
+  /** Deep link to the Core HR employee profile route (/employees/:id). */
+  employeeProfileHref(employeeId: string): string {
+    return `/employees/${employeeId}`;
   }
 }
