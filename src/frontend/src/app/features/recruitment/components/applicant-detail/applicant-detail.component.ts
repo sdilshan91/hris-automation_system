@@ -23,6 +23,14 @@ import { InterviewCardComponent } from '../interview-card/interview-card.compone
 import { InterviewCancelDialogComponent } from '../interview-cancel-dialog/interview-cancel-dialog.component';
 import { ScorecardPanelComponent } from '../scorecard-panel/scorecard-panel.component';
 import { ScorecardFormComponent } from '../scorecard-form/scorecard-form.component';
+import { OfferFormComponent } from '../offer-form/offer-form.component';
+import { OfferService } from '../../services/offer.service';
+import {
+  IOffer,
+  offerStatusBadge,
+  offerStatusLabel,
+  formatCompensation,
+} from '../../models/offer.models';
 import {
   IApplicantDetail,
   SOURCE_BADGE,
@@ -44,6 +52,7 @@ type DetailTab =
   | 'timeline'
   | 'interviews'
   | 'scorecards'
+  | 'offer'
   | 'notes';
 
 /**
@@ -66,6 +75,7 @@ type DetailTab =
     InterviewCancelDialogComponent,
     ScorecardPanelComponent,
     ScorecardFormComponent,
+    OfferFormComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
@@ -404,6 +414,78 @@ type DetailTab =
               }
             }
 
+            <!-- Offer (US-REC-007 AC-1/AC-2/AC-3/FR-6/FR-8) -->
+            @if (tab() === 'offer') {
+              <div class="mb-4 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-neutral-800">
+                  Offers
+                  @if (offers().length) {
+                    <span class="text-neutral-400">({{ offers().length }})</span>
+                  }
+                </h3>
+                <button
+                  type="button"
+                  class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
+                  (click)="openGenerateOffer()"
+                >
+                  Generate offer
+                </button>
+              </div>
+
+              @if (offersLoading()) {
+                <div class="space-y-3">
+                  @for (n of [1, 2]; track n) {
+                    <div class="h-20 animate-pulse rounded-xl bg-neutral-100"></div>
+                  }
+                </div>
+              } @else if (offers().length === 0) {
+                <div class="py-10 text-center">
+                  <p class="text-sm font-medium text-neutral-700">No offers yet</p>
+                  <p class="mt-1 text-sm text-neutral-500">
+                    Generate an offer letter to formally extend a job offer.
+                  </p>
+                </div>
+              } @else {
+                <ul class="space-y-3">
+                  @for (o of offers(); track o.id) {
+                    <li>
+                      <button
+                        type="button"
+                        class="flex w-full items-start justify-between gap-3 rounded-xl border border-neutral-200 px-4 py-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/40"
+                        (click)="openOffer(o)"
+                      >
+                        <div class="min-w-0">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-mono text-xs text-neutral-500">
+                              {{ o.offerReferenceNumber || 'Draft' }}
+                            </span>
+                            @if (o.version > 1) {
+                              <span class="text-xs text-neutral-400">v{{ o.version }}</span>
+                            }
+                            <span
+                              class="badge ring-1 ring-inset"
+                              [class]="offerBadge(o.status)"
+                            >
+                              {{ offerLabel(o.status) }}
+                            </span>
+                          </div>
+                          <p class="mt-1 truncate text-sm font-medium text-neutral-800">
+                            {{ o.offeredPosition }}
+                          </p>
+                          <p class="mt-0.5 text-xs text-neutral-500">
+                            {{ offerCompensation(o) }}
+                          </p>
+                        </div>
+                        <span class="shrink-0 text-xs text-neutral-400">
+                          {{ o.createdAt | date: 'MMM d' }}
+                        </span>
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            }
+
             <!-- Notes (placeholder — no module yet) -->
             @if (tab() === 'notes') {
               <div class="py-10 text-center">
@@ -507,6 +589,18 @@ type DetailTab =
         (cancelled)="closeScorecard()"
       />
     }
+
+    <!-- Offer generate / preview / actions slide-over (US-REC-007) -->
+    @if (showOfferForm() && detail(); as d) {
+      <app-offer-form
+        [applicantId]="d.id"
+        [applicantName]="fullName()"
+        [offer]="viewingOffer()"
+        (changed)="onOfferChanged()"
+        (accepted)="onOfferAccepted()"
+        (cancelled)="closeOfferForm()"
+      />
+    }
   `,
   styles: [
     `
@@ -576,6 +670,7 @@ type DetailTab =
 export class ApplicantDetailComponent {
   private readonly pipelineService = inject(PipelineService);
   private readonly interviewService = inject(InterviewService);
+  private readonly offerService = inject(OfferService);
   private readonly toastr = inject(ToastrService);
 
   /** Applicant id to load; the parent passes the clicked card's id. */
@@ -596,6 +691,7 @@ export class ApplicantDetailComponent {
     { id: 'timeline', label: 'Timeline' },
     { id: 'interviews', label: 'Interviews' },
     { id: 'scorecards', label: 'Scorecards' },
+    { id: 'offer', label: 'Offer' },
     { id: 'notes', label: 'Notes' },
   ];
 
@@ -623,6 +719,16 @@ export class ApplicantDetailComponent {
   readonly editingScorecard = signal<IScorecard | null>(null);
   /** Bumped after a save to force the scorecard panels to reload. */
   readonly scorecardReloadToken = signal(0);
+
+  // ─── Offers (US-REC-007) ──────────────────────────────────
+  readonly offers = signal<IOffer[]>([]);
+  readonly offersLoading = signal(false);
+  /** Whether the offer slide-over is open. */
+  readonly showOfferForm = signal(false);
+  /** The offer being previewed/acted on, or null to generate a new one. */
+  readonly viewingOffer = signal<IOffer | null>(null);
+  /** Whether the offers list has been loaded for the current applicant. */
+  private offersLoaded = false;
 
   /** True while a stage move is in flight (disables the action buttons). */
   readonly moving = signal(false);
@@ -684,6 +790,15 @@ export class ApplicantDetailComponent {
         this.loadInterviews(d.id);
       }
     });
+
+    // Lazy-load the offers list the first time the Offer tab opens (US-REC-007).
+    effect(() => {
+      const d = this.detail();
+      const t = this.tab();
+      if (t === 'offer' && d && !this.offersLoaded) {
+        this.loadOffers(d.id);
+      }
+    });
   }
 
   private load(id: string): void {
@@ -698,6 +813,11 @@ export class ApplicantDetailComponent {
     this.cancellingInterview.set(null);
     this.scorecardInterview.set(null);
     this.editingScorecard.set(null);
+    // Reset offer state for the newly bound applicant (US-REC-007).
+    this.offers.set([]);
+    this.offersLoaded = false;
+    this.showOfferForm.set(false);
+    this.viewingOffer.set(null);
     this.pipelineService.getApplicant(id).subscribe({
       next: (d) => {
         this.detail.set(d);
@@ -944,5 +1064,72 @@ export class ApplicantDetailComponent {
   onScorecardSaved(): void {
     this.closeScorecard();
     this.scorecardReloadToken.update((n) => n + 1);
+  }
+
+  // ─── Offers (US-REC-007 AC-1/AC-2/AC-3/FR-8/FR-9) ─────────
+
+  /** Load all offers (history + versions) for the applicant. */
+  private loadOffers(applicantId: string): void {
+    this.offersLoading.set(true);
+    this.offerService.listForApplicant(applicantId).subscribe({
+      next: (rows) => {
+        this.offers.set(rows);
+        this.offersLoading.set(false);
+        this.offersLoaded = true;
+      },
+      error: (err: HttpErrorResponse) => {
+        this.offersLoading.set(false);
+        this.offersLoaded = true;
+        this.toastr.error(OfferService.parseErrorMessage(err));
+      },
+    });
+  }
+
+  /** Open the slide-over to generate a new offer (AC-1/FR-1). */
+  openGenerateOffer(): void {
+    this.viewingOffer.set(null);
+    this.showOfferForm.set(true);
+  }
+
+  /** Open the slide-over to preview/act on an existing offer (AC-2/AC-3/FR-8). */
+  openOffer(o: IOffer): void {
+    this.viewingOffer.set(o);
+    this.showOfferForm.set(true);
+  }
+
+  closeOfferForm(): void {
+    this.showOfferForm.set(false);
+    this.viewingOffer.set(null);
+  }
+
+  /** After any offer change (generate/send/respond/withdraw) refresh the offer list. */
+  onOfferChanged(): void {
+    const d = this.detail();
+    if (d) {
+      this.offersLoaded = false;
+      this.loadOffers(d.id);
+    }
+  }
+
+  /** Accept advances the applicant to Hired server-side (BR-3) — reload the detail. */
+  onOfferAccepted(): void {
+    this.closeOfferForm();
+    const d = this.detail();
+    if (d) {
+      this.load(d.id);
+      this.moved.emit('Hired');
+    }
+  }
+
+  offerBadge(status: string): string {
+    return offerStatusBadge(status);
+  }
+
+  offerLabel(status: string): string {
+    return offerStatusLabel(status);
+  }
+
+  offerCompensation(o: IOffer): string {
+    return formatCompensation(o);
   }
 }

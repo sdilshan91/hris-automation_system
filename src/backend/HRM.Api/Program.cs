@@ -177,6 +177,12 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.InterviewReminderJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IInterviewReminderScheduler, HRM.Api.Jobs.HangfireInterviewReminderScheduler>();
 
+    // US-REC-007 FR-7/AC-4: tenant-aware offer-expiry job + the Hangfire-backed scheduler seam (bound to
+    // IOfferExpiryScheduler so the Infrastructure OfferService can enqueue/cancel by interface). The expiry
+    // job is scheduled when an offer is sent, cancelled on response/withdraw.
+    builder.Services.AddScoped<HRM.Api.Jobs.OfferExpiryJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOfferExpiryScheduler, HRM.Api.Jobs.HangfireOfferExpiryScheduler>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
