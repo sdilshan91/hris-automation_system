@@ -21,7 +21,7 @@ describe('CareersVacancyDetailComponent', () => {
     title: 'Senior Engineer',
     departmentName: 'Engineering',
     jobTitleName: 'Engineer',
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     locationName: 'HQ',
     description: '<p>Role</p>',
     qualifications: '<p>Skills</p>',
@@ -43,7 +43,7 @@ describe('CareersVacancyDetailComponent', () => {
     coverLetter: null,
     resumeFileName: 'cv.pdf',
     stage: 'Applied',
-    source: 'public',
+    source: 'Public',
     isInternal: false,
     appliedAt: '2026-06-15',
   };

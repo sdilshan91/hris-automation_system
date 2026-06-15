@@ -26,7 +26,7 @@ describe('ApplicantDetailComponent', () => {
     applicantId: 'app-1',
     vacancyId: 'vac-1',
     roundNumber: 1,
-    interviewType: 'video',
+    interviewType: 'Video',
     scheduledDate: '2026-07-01',
     startTime: '09:00',
     durationMinutes: 60,
@@ -49,7 +49,7 @@ describe('ApplicantDetailComponent', () => {
     coverLetter: null,
     resumeFileName: 'ada-cv.pdf',
     stage: 'Screening',
-    source: 'public',
+    source: 'Public',
     isInternal: false,
     appliedAt: '2026-06-10T00:00:00Z',
     stageHistory: [

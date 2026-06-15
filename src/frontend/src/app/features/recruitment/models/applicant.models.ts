@@ -32,8 +32,8 @@ export type ApplicantStage =
   | 'Hired'
   | 'Rejected';
 
-/** Where the application originated (§7 Output). */
-export type ApplicantSource = 'public' | 'internal' | 'referral';
+/** Where the application originated (§7 Output). Matches C# `ApplicationSource` (US-PLT-003). */
+export type ApplicantSource = 'Public' | 'Internal' | 'Referral';
 
 // ─── File-upload constraints (AC-2 / BR-4) ────────────────────
 

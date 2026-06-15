@@ -30,7 +30,7 @@ describe('CareersService', () => {
     title: 'Senior Engineer',
     departmentName: 'Engineering',
     jobTitleName: 'Engineer',
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     locationName: 'HQ',
     description: '<p>Role</p>',
     qualifications: '<p>Skills</p>',
@@ -52,7 +52,7 @@ describe('CareersService', () => {
     coverLetter: null,
     resumeFileName: 'resume.pdf',
     stage: 'Applied',
-    source: 'public',
+    source: 'Public',
     isInternal: false,
     appliedAt: '2026-06-15T00:00:00Z',
   };
@@ -117,7 +117,7 @@ describe('CareersService', () => {
           search: 'eng',
           departmentName: 'Engineering',
           locationName: 'HQ',
-          employmentType: 'Full-Time',
+          employmentType: 'FullTime',
         })
         .subscribe();
       const req = httpMock.expectOne(
@@ -125,7 +125,7 @@ describe('CareersService', () => {
       );
       expect(req.request.params.get('departmentName')).toBe('Engineering');
       expect(req.request.params.get('locationName')).toBe('HQ');
-      expect(req.request.params.get('employmentType')).toBe('Full-Time');
+      expect(req.request.params.get('employmentType')).toBe('FullTime');
       req.flush([]);
     });
   });
@@ -185,7 +185,7 @@ describe('CareersService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.withCredentials).toBeTrue();
       expect(req.request.body instanceof FormData).toBeTrue();
-      req.flush({ ...mockApplicant, isInternal: true, source: 'internal' });
+      req.flush({ ...mockApplicant, isInternal: true, source: 'Internal' });
     });
   });
 

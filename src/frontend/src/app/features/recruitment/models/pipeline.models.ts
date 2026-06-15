@@ -56,9 +56,9 @@ export const STAGE_BADGE: Record<ApplicantStage, string> = {
 
 /** Source pill colors (FR-2 — public/internal/referral). */
 export const SOURCE_BADGE: Record<ApplicantSource, string> = {
-  public: 'bg-sky-50 text-sky-700 ring-sky-200',
-  internal: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
-  referral: 'bg-teal-50 text-teal-700 ring-teal-200',
+  Public: 'bg-sky-50 text-sky-700 ring-sky-200',
+  Internal: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  Referral: 'bg-teal-50 text-teal-700 ring-teal-200',
 };
 
 /**

@@ -315,7 +315,7 @@ function minOneValidator(control: AbstractControl): ValidationErrors | null {
             </div>
 
             <!-- Conditional: location (in-person) -->
-            @if (form.controls.interviewType.value === 'in-person') {
+            @if (form.controls.interviewType.value === 'InPerson') {
               <div>
                 <label class="lbl" for="iv-location"
                   >Location <span class="text-red-500">*</span></label
@@ -334,7 +334,7 @@ function minOneValidator(control: AbstractControl): ValidationErrors | null {
             }
 
             <!-- Conditional: video link (video) -->
-            @if (form.controls.interviewType.value === 'video') {
+            @if (form.controls.interviewType.value === 'Video') {
               <div>
                 <label class="lbl" for="iv-video"
                   >Video meeting link <span class="text-red-500">*</span></label
@@ -503,7 +503,7 @@ export class InterviewFormComponent {
       Validators.required,
       Validators.min(1),
     ]),
-    interviewType: this.fb.nonNullable.control<InterviewType>('in-person', [
+    interviewType: this.fb.nonNullable.control<InterviewType>('InPerson', [
       Validators.required,
     ]),
     location: this.fb.nonNullable.control(''),
@@ -600,11 +600,11 @@ export class InterviewFormComponent {
   private applyConditionalValidators(type: InterviewType): void {
     const location = this.form.controls.location;
     const video = this.form.controls.videoLink;
-    if (type === 'in-person') {
+    if (type === 'InPerson') {
       location.setValidators([Validators.required]);
       video.clearValidators();
       video.setValue('');
-    } else if (type === 'video') {
+    } else if (type === 'Video') {
       video.setValidators([Validators.required, Validators.pattern(/^https?:\/\/.+/i)]);
       location.clearValidators();
       location.setValue('');
@@ -668,8 +668,8 @@ export class InterviewFormComponent {
       scheduledDate: raw.scheduledDate,
       startTime: raw.startTime,
       durationMinutes: raw.durationMinutes,
-      location: raw.interviewType === 'in-person' ? raw.location : null,
-      videoLink: raw.interviewType === 'video' ? raw.videoLink : null,
+      location: raw.interviewType === 'InPerson' ? raw.location : null,
+      videoLink: raw.interviewType === 'Video' ? raw.videoLink : null,
       notes: raw.notes || null,
     };
 

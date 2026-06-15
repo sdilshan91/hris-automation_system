@@ -119,10 +119,10 @@ import {
         </div>
 
         <!-- Location / video -->
-        @if (iv.interviewType === 'in-person' && iv.location) {
+        @if (iv.interviewType === 'InPerson' && iv.location) {
           <p class="mt-1.5 text-sm text-neutral-500">📍 {{ iv.location }}</p>
         }
-        @if (iv.interviewType === 'video' && iv.videoLink) {
+        @if (iv.interviewType === 'Video' && iv.videoLink) {
           <a
             class="mt-1.5 inline-block break-all text-sm text-indigo-600 hover:underline"
             [href]="iv.videoLink"

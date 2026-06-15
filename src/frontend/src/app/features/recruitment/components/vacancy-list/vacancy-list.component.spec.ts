@@ -23,7 +23,7 @@ describe('VacancyListComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Engineer',
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     locationId: 'loc-1',
     locationName: 'HQ',
     hiringManagerId: 'emp-1',
@@ -84,7 +84,7 @@ describe('VacancyListComponent', () => {
     const badge = fixture.nativeElement.querySelector('.badge') as HTMLElement;
     expect(badge.textContent?.trim()).toBe('Draft');
     expect(component.badgeClass('Open')).toContain('green');
-    expect(component.badgeClass('On Hold')).toContain('amber');
+    expect(component.badgeClass('OnHold')).toContain('amber');
     expect(component.badgeClass('Closed')).toContain('red');
     expect(component.badgeClass('Cancelled')).toContain('red');
   });

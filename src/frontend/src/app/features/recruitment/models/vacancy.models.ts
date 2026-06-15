@@ -19,44 +19,61 @@
 
 // ─── Enums ────────────────────────────────────────────────────
 
-/** Vacancy lifecycle status (FR-2). */
+/** Vacancy lifecycle status (FR-2). Matches C# `VacancyStatus` (US-PLT-003). */
 export type VacancyStatus =
   | 'Draft'
   | 'Open'
-  | 'On Hold'
+  | 'OnHold'
   | 'Closed'
   | 'Cancelled';
 
 export const VACANCY_STATUS_OPTIONS: VacancyStatus[] = [
   'Draft',
   'Open',
-  'On Hold',
+  'OnHold',
   'Closed',
   'Cancelled',
 ];
 
-/** Employment type for the position (FR-1). Mirrors Core HR EmploymentType. */
+/** Human-readable labels for vacancy statuses (the wire value is PascalCase, no space). */
+export const VACANCY_STATUS_LABELS: Record<VacancyStatus, string> = {
+  Draft: 'Draft',
+  Open: 'Open',
+  OnHold: 'On Hold',
+  Closed: 'Closed',
+  Cancelled: 'Cancelled',
+};
+
+/** Employment type for the position (FR-1). Matches C# `EmploymentType` (US-PLT-003). */
 export type VacancyEmploymentType =
-  | 'Full-Time'
-  | 'Part-Time'
+  | 'FullTime'
+  | 'PartTime'
   | 'Contract'
   | 'Intern';
 
 export const VACANCY_EMPLOYMENT_TYPE_OPTIONS: VacancyEmploymentType[] = [
-  'Full-Time',
-  'Part-Time',
+  'FullTime',
+  'PartTime',
   'Contract',
   'Intern',
 ];
 
+/** Human-readable labels for employment types (wire value is PascalCase, no hyphen). */
+export const VACANCY_EMPLOYMENT_TYPE_LABELS: Record<VacancyEmploymentType, string> = {
+  FullTime: 'Full-Time',
+  PartTime: 'Part-Time',
+  Contract: 'Contract',
+  Intern: 'Intern',
+};
+
 /**
  * Tailwind utility-class bundle per status for the color-coded badge (§8):
- * Draft=gray, Open=green, On Hold=amber, Closed=red, Cancelled=red.
+ * Draft=gray, Open=green, OnHold=amber, Closed=red, Cancelled=red.
  */
 export const VACANCY_STATUS_BADGE: Record<VacancyStatus, string> = {
   Draft: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
   Open: 'bg-green-100 text-green-700 ring-green-200',
-  'On Hold': 'bg-amber-100 text-amber-700 ring-amber-200',
+  OnHold: 'bg-amber-100 text-amber-700 ring-amber-200',
   Closed: 'bg-red-100 text-red-700 ring-red-200',
   Cancelled: 'bg-red-100 text-red-700 ring-red-200',
 };

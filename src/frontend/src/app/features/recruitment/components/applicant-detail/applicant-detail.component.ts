@@ -776,7 +776,7 @@ export class ApplicantDetailComponent {
   }
 
   sourceBadge(source: ApplicantSource): string {
-    return SOURCE_BADGE[source] ?? SOURCE_BADGE.public;
+    return SOURCE_BADGE[source] ?? SOURCE_BADGE.Public;
   }
 
   // ─── Interviews (US-REC-005 AC-1/AC-3/AC-4) ───────────────

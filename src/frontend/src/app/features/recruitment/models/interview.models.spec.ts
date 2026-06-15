@@ -18,7 +18,7 @@ describe('interview.models helpers', () => {
     applicantId: 'app-1',
     vacancyId: 'vac-1',
     roundNumber: 1,
-    interviewType: 'video',
+    interviewType: 'Video',
     scheduledDate: '2026-07-01',
     startTime: '09:00',
     durationMinutes: 60,
@@ -32,9 +32,9 @@ describe('interview.models helpers', () => {
 
   describe('label / badge maps', () => {
     it('maps interview types to labels', () => {
-      expect(interviewTypeLabel('in-person')).toBe('In-person');
-      expect(interviewTypeLabel('video')).toBe('Video');
-      expect(interviewTypeLabel('phone')).toBe('Phone');
+      expect(interviewTypeLabel('InPerson')).toBe('In-person');
+      expect(interviewTypeLabel('Video')).toBe('Video');
+      expect(interviewTypeLabel('Phone')).toBe('Phone');
       // Unknown values pass through.
       expect(interviewTypeLabel('zoom' as never)).toBe('zoom');
     });
@@ -54,8 +54,8 @@ describe('interview.models helpers', () => {
     });
 
     it('tints type badges and falls back for unknown', () => {
-      expect(interviewTypeBadge('video')).toContain('sky');
-      expect(interviewTypeBadge('???')).toBe(interviewTypeBadge('in-person'));
+      expect(interviewTypeBadge('Video')).toContain('sky');
+      expect(interviewTypeBadge('???')).toBe(interviewTypeBadge('InPerson'));
     });
   });
 

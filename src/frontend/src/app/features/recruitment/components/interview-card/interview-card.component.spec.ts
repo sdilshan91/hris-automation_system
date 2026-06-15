@@ -12,7 +12,7 @@ describe('InterviewCardComponent', () => {
     applicantId: 'app-1',
     vacancyId: 'vac-1',
     roundNumber: 2,
-    interviewType: 'in-person',
+    interviewType: 'InPerson',
     scheduledDate: '2026-07-01',
     startTime: '09:00',
     durationMinutes: 60,
@@ -64,7 +64,7 @@ describe('InterviewCardComponent', () => {
   it('shows a join link for video interviews', () => {
     setup(
       interview({
-        interviewType: 'video',
+        interviewType: 'Video',
         location: null,
         videoLink: 'https://meet/x',
       }),

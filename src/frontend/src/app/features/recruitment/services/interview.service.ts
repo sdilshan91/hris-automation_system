@@ -178,7 +178,7 @@ export class InterviewService {
       applicantId: src.applicantId ?? '',
       vacancyId: src.vacancyId ?? '',
       roundNumber: src.roundNumber ?? 1,
-      interviewType: src.interviewType ?? 'in-person',
+      interviewType: src.interviewType ?? 'InPerson',
       scheduledDate: src.scheduledDate ?? '',
       startTime: src.startTime ?? '',
       durationMinutes: src.durationMinutes ?? 0,

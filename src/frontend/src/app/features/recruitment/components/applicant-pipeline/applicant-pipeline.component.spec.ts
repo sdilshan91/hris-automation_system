@@ -27,7 +27,7 @@ describe('ApplicantPipelineComponent', () => {
     firstName: 'Ada',
     lastName: 'Lovelace',
     email: 'ada@example.com',
-    source: 'public',
+    source: 'Public',
     isInternal: false,
     appliedAt: '2026-06-10T00:00:00Z',
     stage: 'Applied',

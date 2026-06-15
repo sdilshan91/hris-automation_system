@@ -22,7 +22,7 @@ describe('InternalVacancyComponent', () => {
     title: 'Internal Role',
     departmentName: 'Engineering',
     jobTitleName: null,
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     locationName: 'HQ',
     description: '<p>Role</p>',
     qualifications: null,

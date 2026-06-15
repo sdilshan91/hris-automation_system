@@ -21,7 +21,7 @@ describe('InterviewAgendaComponent', () => {
     applicantId: 'app-1',
     vacancyId: 'vac-1',
     roundNumber: 1,
-    interviewType: 'video',
+    interviewType: 'Video',
     scheduledDate: '2026-07-01',
     startTime: '09:00',
     durationMinutes: 60,

@@ -30,8 +30,8 @@
 
 // ─── Enums ────────────────────────────────────────────────────
 
-/** Interview delivery type (FR-1). Conditional required fields hang off this. */
-export type InterviewType = 'in-person' | 'video' | 'phone';
+/** Interview delivery type (FR-1). Conditional required fields hang off this. Matches C# `InterviewType` (US-PLT-003). */
+export type InterviewType = 'InPerson' | 'Video' | 'Phone';
 
 /** Interview lifecycle status (FR-6). */
 export type InterviewStatus = 'Scheduled' | 'Completed' | 'Cancelled' | 'NoShow';
@@ -41,16 +41,16 @@ export const INTERVIEW_TYPE_OPTIONS: readonly {
   value: InterviewType;
   label: string;
 }[] = [
-  { value: 'in-person', label: 'In-person' },
-  { value: 'video', label: 'Video' },
-  { value: 'phone', label: 'Phone' },
+  { value: 'InPerson', label: 'In-person' },
+  { value: 'Video', label: 'Video' },
+  { value: 'Phone', label: 'Phone' },
 ];
 
 /** Human labels for interview types (cards/badges). */
 export const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
-  'in-person': 'In-person',
-  video: 'Video',
-  phone: 'Phone',
+  InPerson: 'In-person',
+  Video: 'Video',
+  Phone: 'Phone',
 };
 
 /** All statuses for the calendar filter dropdown (FR-6). */
@@ -82,9 +82,9 @@ export const INTERVIEW_STATUS_BADGE: Record<InterviewStatus, string> = {
 
 /** Tailwind badge classes per interview type (subtle, type-tinted). */
 export const INTERVIEW_TYPE_BADGE: Record<InterviewType, string> = {
-  'in-person': 'bg-violet-50 text-violet-700 ring-violet-200',
-  video: 'bg-sky-50 text-sky-700 ring-sky-200',
-  phone: 'bg-teal-50 text-teal-700 ring-teal-200',
+  InPerson: 'bg-violet-50 text-violet-700 ring-violet-200',
+  Video: 'bg-sky-50 text-sky-700 ring-sky-200',
+  Phone: 'bg-teal-50 text-teal-700 ring-teal-200',
 };
 
 /** Default interview duration in minutes (FR-1). */
@@ -201,7 +201,7 @@ export function interviewStatusBadge(status: InterviewStatus | string): string {
 export function interviewTypeBadge(type: InterviewType | string): string {
   return (
     INTERVIEW_TYPE_BADGE[type as InterviewType] ??
-    INTERVIEW_TYPE_BADGE['in-person']
+    INTERVIEW_TYPE_BADGE.InPerson
   );
 }
 

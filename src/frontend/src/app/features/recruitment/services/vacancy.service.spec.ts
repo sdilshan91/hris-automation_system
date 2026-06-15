@@ -24,7 +24,7 @@ describe('VacancyService', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Engineer',
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     locationId: 'loc-1',
     locationName: 'HQ',
     hiringManagerId: 'emp-1',
@@ -154,11 +154,11 @@ describe('VacancyService', () => {
   });
 
   it('changeStatus POSTs to /:id/status with the status body', () => {
-    service.changeStatus('vac-1', 'On Hold').subscribe();
+    service.changeStatus('vac-1', 'OnHold').subscribe();
     const req = httpMock.expectOne(`${base}/vac-1/status`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ status: 'On Hold' });
-    req.flush({ ...mockVacancy, status: 'On Hold' });
+    expect(req.request.body).toEqual({ status: 'OnHold' });
+    req.flush({ ...mockVacancy, status: 'OnHold' });
   });
 
   describe('lookups', () => {
