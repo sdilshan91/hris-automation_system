@@ -169,6 +169,11 @@ public static class DependencyInjection
         // US-REC-001: Recruitment — vacancy lifecycle + anonymous public careers page.
         services.AddScoped<IVacancyService, VacancyService>();
         services.AddScoped<IPublicCareersService, PublicCareersService>();
+
+        // US-REC-002: Recruitment — applicant submission (public + internal) + recruiter reads.
+        services.AddScoped<IApplicantService, ApplicantService>();
+        // Recruitment notification seam — log-only until the notification platform exists (FR-5/FR-7).
+        services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

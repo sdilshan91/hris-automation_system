@@ -46,6 +46,52 @@ dropdown stays empty, which is non-blocking since location is optional). All fou
 are normalized to a single `ILookupOption { id, label, sublabel? }` shape in
 `VacancyService` so a DTO mismatch is a one-line fix.
 
+## Public Careers + Application (US-REC-002)
+
+The anonymous public careers experience deferred from US-REC-001. Built under
+`features/recruitment/components/careers/`. Public routes (`/careers`,
+`/careers/:id`) are a **top-level lazy group in app.routes.ts, OUTSIDE
+MainLayout/authGuard** (only `tenantAvailabilityGuard`) so external applicants can
+browse + apply with no session. Tenant is still resolved from the subdomain and
+carried by the tenantInterceptor.
+
+### Frontend contract (`CareersService`, camelCase DTOs)
+- `GET  /careers/vacancies?search=&departmentName=&locationName=&employmentType=`
+  → `IPublicVacancy[]` (tolerates a `{ data }` envelope). **Anonymous — no creds.**
+  FE applies search/filters client-side over the fetched list (small per-tenant
+  dataset); the server params are sent too if the backend wants to filter.
+- `GET  /careers/vacancies/:id` → `IPublicVacancy`. Anonymous.
+- `POST /careers/vacancies/:id/apply` — **multipart/form-data, anonymous** →
+  `IApplicant` (AC-1). Fields: firstName, lastName, email, (phone), (coverLetter),
+  `resume` file. Streams `reportProgress`.
+- `POST /recruitment/vacancies/:id/applicants` — **multipart, withCredentials**
+  (internal employee apply, AC-4/FR-8) → `IApplicant` (isInternal=true). Same form
+  shape; backend links to the employee record.
+
+`IApplicant`: id, applicationReferenceNumber, vacancyId, firstName, lastName,
+email, phone, coverLetter, resumeFileName, stage, source, isInternal, appliedAt.
+The multipart field naming lives in ONE place: `CareersService.buildFormData` — a
+1-line fix if the backend expects different keys.
+
+### Business rules surfaced in the UI
+- AC-2 file validation (client-side, `CareersService.validateResume`): max 25 MB;
+  allowed = PDF/DOCX/DOC. **Extension is the authoritative check** (browsers report
+  `.doc` MIME inconsistently — often empty string); MIME is a secondary signal only
+  when present. Backend still re-validates + virus-scans (FR-3/NFR-4).
+- AC-3 duplicate: `CareersService.isDuplicate(err)` = HTTP 409 OR error body
+  `code:'duplicate'`. Shown as an inline banner on the form, not a toast.
+- AC-4 internal: right slide-over (`InternalApplyComponent`) pre-fills first/last
+  (split from `auth.currentUser().displayName`) + email. Reached via an
+  authenticated route `internal-careers/:id` with a BROAD role guard (Employee…),
+  separate from the recruiter-only `recruitment/*` screens.
+
+### Components
+`careers-page` (listing+filters), `vacancy-detail` (detail + form + confirmation
+screen with reference number), `application-form` (shared by public + internal,
+reactive forms + signals + upload progress), `resume-upload` (CVA drag-and-drop,
+keyboard-operable), `careers-branding` (logo + name + `--brand-primary`),
+`internal-apply` (slide-over), `internal-vacancy` (authenticated container).
+
 ### Rich text
 Description + qualifications use a small in-repo `contenteditable` editor
 (`RichTextEditorComponent`, a ControlValueAccessor) — NOT a 3rd-party lib — to

@@ -21,6 +21,18 @@ export const appRoutes: Routes = [
       ),
   },
 
+  // ─── Public careers (US-REC-002) — anonymous, NO auth/role guard ──
+  // Tenant resolved from subdomain; deliberately outside MainLayout/authGuard
+  // so external applicants can browse open vacancies and apply (NFR-2).
+  {
+    path: 'careers',
+    canActivate: [tenantAvailabilityGuard],
+    loadChildren: () =>
+      import('./features/recruitment/careers.routes').then(
+        (m) => m.CAREERS_ROUTES
+      ),
+  },
+
   // ─── Auth routes (no auth required) ──────────────────────
   {
     path: 'auth',
@@ -237,6 +249,27 @@ export const appRoutes: Routes = [
           ),
         canActivate: [
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
+        ],
+      },
+      // ─── Recruitment / Internal apply (US-REC-002 AC-4) ─────
+      // Authenticated employees (broad role set) view an open vacancy and apply
+      // internally with a pre-filled slide-over. Distinct from the recruiter-only
+      // management screens below.
+      {
+        path: 'internal-careers/:id',
+        loadComponent: () =>
+          import(
+            './features/recruitment/components/careers/internal-vacancy/internal-vacancy.component'
+          ).then((m) => m.InternalVacancyComponent),
+        canActivate: [
+          roleGuard([
+            'Employee',
+            'Manager',
+            'Recruiter',
+            'HR Officer',
+            'HR Manager',
+            'Tenant Admin',
+          ]),
         ],
       },
       // ─── Recruitment / Vacancies (US-REC-001) ──────────────
