@@ -35,6 +35,7 @@ import {
   STAGE_BADGE,
   moveRequiresReason,
   relativeAppliedTime,
+  timeInStageLabel,
 } from '../../models/pipeline.models';
 import { ApplicantSource, ApplicantStage } from '../../models/applicant.models';
 
@@ -308,13 +309,21 @@ interface IPendingMove {
                         </p>
                       </div>
                     </div>
-                    <div class="mt-2">
+                    <div class="mt-2 flex flex-wrap items-center gap-1.5">
                       <span
                         class="badge ring-1 ring-inset"
                         [class]="sourceBadge(card.source)"
                       >
                         {{ card.source }}
                       </span>
+                      @if (timeInStage(card); as t) {
+                        <span
+                          class="badge bg-neutral-100 text-neutral-500 ring-1 ring-inset ring-neutral-200"
+                          [attr.title]="t"
+                        >
+                          {{ t }}
+                        </span>
+                      }
                     </div>
                   </article>
                 }
@@ -393,7 +402,11 @@ interface IPendingMove {
 
     <!-- Detail slide-over (AC-3 / FR-7) -->
     @if (selectedId(); as id) {
-      <app-applicant-detail [applicantId]="id" (closed)="closeDetail()" />
+      <app-applicant-detail
+        [applicantId]="id"
+        (closed)="closeDetail()"
+        (moved)="onDetailMoved()"
+      />
     }
 
     <!-- Reason prompt (BR-3 / BR-4) -->
@@ -684,25 +697,38 @@ export class ApplicantPipelineComponent implements OnInit {
       .changeStage(applicantId, {
         toStage: to,
         reason: reason?.reason,
+        rejectionReason: reason?.rejectionReason,
         notes: reason?.notes,
       })
       .subscribe({
         next: (updated) => {
-          // Reconcile the moved card with the server's version (keeps counts honest).
+          // Reconcile the moved card with the server's version (keeps counts honest);
+          // stamp enteredStageAt so the time-in-stage badge resets (US-REC-004 §8).
           this.board.update((cols) =>
             cols.map((c) => ({
               ...c,
               applicants: c.applicants.map((a) =>
-                a.id === updated.id ? { ...a, ...updated } : a,
+                a.id === updated.id
+                  ? {
+                      ...a,
+                      stage: updated.stage,
+                      enteredStageAt: updated.enteredStageAt ?? a.enteredStageAt,
+                    }
+                  : a,
               ),
               count: c.applicants.length,
             })),
           );
           this.recountColumns();
           this.toastr.success(`Moved to ${to}.`);
+          // Soft-gate / headcount warnings: the move SUCCEEDED, just warn (BR-4 / FR-1).
+          for (const w of updated.warnings) {
+            this.toastr.warning(w, 'Heads up');
+          }
         },
         error: (err: HttpErrorResponse) => {
-          // Roll back to the pre-move snapshot (AC-2 failure path).
+          // Roll back to the pre-move snapshot (AC-2 failure path). A vacancy
+          // closed/cancelled rejection (FR-8) lands here; show the message verbatim.
           this.board.set(snapshot);
           this.toastr.error(PipelineService.parseErrorMessage(err));
         },
@@ -717,6 +743,15 @@ export class ApplicantPipelineComponent implements OnInit {
 
   closeDetail(): void {
     this.selectedId.set(null);
+  }
+
+  /**
+   * A stage move was made from the detail slide-over's action buttons
+   * (US-REC-004 AC-1/AC-2/AC-4). Reload the board so columns + counts stay in
+   * sync (FR-7); the drawer stays open showing the refreshed detail.
+   */
+  onDetailMoved(): void {
+    this.load();
   }
 
   // ─── Table sorting (FR-4) ────────────────────────────────
@@ -767,6 +802,11 @@ export class ApplicantPipelineComponent implements OnInit {
 
   appliedAgo(card: IApplicantCard): string {
     return relativeAppliedTime(card.appliedAt);
+  }
+
+  /** Time-in-stage badge text, e.g. "In Screening 5 days" (US-REC-004 §8). */
+  timeInStage(card: IApplicantCard): string {
+    return timeInStageLabel(card.stage, card.enteredStageAt, card.appliedAt);
   }
 
   stageBadge(stage: ApplicantStage): string {

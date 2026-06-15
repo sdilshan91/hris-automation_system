@@ -15,7 +15,8 @@ public sealed record MoveApplicantStageCommand(
     Guid ApplicantId,
     ApplicantStage ToStage,
     string? Reason,
-    string? Notes
+    string? Notes,
+    RejectionReason? RejectionReason = null
 ) : IRequest<Result<MoveApplicantStageResultDto>>;
 
 public sealed class MoveApplicantStageCommandHandler
@@ -26,5 +27,5 @@ public sealed class MoveApplicantStageCommandHandler
     public MoveApplicantStageCommandHandler(IApplicantService service) => _service = service;
 
     public Task<Result<MoveApplicantStageResultDto>> Handle(MoveApplicantStageCommand request, CancellationToken cancellationToken)
-        => _service.MoveStageAsync(request.ApplicantId, request.ToStage, request.Reason, request.Notes, cancellationToken);
+        => _service.MoveStageAsync(request.ApplicantId, request.ToStage, request.Reason, request.Notes, request.RejectionReason, cancellationToken);
 }

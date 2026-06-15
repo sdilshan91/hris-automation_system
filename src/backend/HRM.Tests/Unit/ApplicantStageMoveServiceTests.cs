@@ -53,16 +53,23 @@ public sealed class ApplicantStageMoveServiceTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private ApplicantService CreateService()
-        => new(
+        => CreateService(out _);
+
+    private ApplicantService CreateService(out IRecruitmentNotificationService notifications)
+    {
+        notifications = Substitute.For<IRecruitmentNotificationService>();
+        return new ApplicantService(
             CreateDbContext(),
             _tenantContext,
             _currentUser,
             Substitute.For<IFileStorage>(),
             Substitute.For<IVirusScanner>(),
-            Substitute.For<IRecruitmentNotificationService>(),
+            notifications,
             Substitute.For<ILogger<ApplicantService>>());
+    }
 
-    private void SeedVacancy()
+    private void SeedVacancy(
+        VacancyStatus status = VacancyStatus.Open, int headcount = 1)
     {
         using var db = CreateDbContext();
         db.Vacancies.Add(new Vacancy
@@ -71,12 +78,20 @@ public sealed class ApplicantStageMoveServiceTests
             TenantId = _tenantId,
             ReferenceNumber = "VAC-2026-0001",
             Title = "Backend Engineer",
-            Status = VacancyStatus.Open,
+            Status = status,
             EmploymentType = EmploymentType.FullTime,
-            Headcount = 1,
+            Headcount = headcount,
             Description = "Build things.",
             IsDeleted = false,
         });
+        db.SaveChanges();
+    }
+
+    private void SetVacancyStatus(VacancyStatus status)
+    {
+        using var db = CreateDbContext();
+        var v = db.Vacancies.First(x => x.Id == _vacancyId);
+        v.Status = status;
         db.SaveChanges();
     }
 
@@ -128,11 +143,14 @@ public sealed class ApplicantStageMoveServiceTests
     {
         var id = SeedApplicant(ApplicantStage.Screening);
 
+        // US-REC-004 AC-4/FR-3: rejection now requires the structured reason in addition to free text.
         var result = await CreateService().MoveStageAsync(
-            id, ApplicantStage.Rejected, reason: "Not a fit for the role.", notes: null);
+            id, ApplicantStage.Rejected, reason: "Not a fit for the role.", notes: null,
+            rejectionReason: RejectionReason.NotQualified);
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.ToStage.Should().Be(ApplicantStage.Rejected);
+        result.Value.RejectionReason.Should().Be(RejectionReason.NotQualified);
     }
 
     // ── BR-4: backward move requires a reason ─────────────────────────
@@ -276,5 +294,173 @@ public sealed class ApplicantStageMoveServiceTests
         await using var db = CreateDbContext();
         (await db.Applicants.CountAsync(x => x.Stage != ApplicantStage.Applied)).Should().Be(0);
         (await db.ApplicantStageHistories.CountAsync()).Should().Be(0);
+    }
+
+    // ── US-REC-004 AC-4/FR-3: structured rejection reason required ─────
+
+    [Fact]
+    public async Task MoveStage_ToRejected_WithoutStructuredReason_IsRejected()
+    {
+        var id = SeedApplicant(ApplicantStage.Screening);
+
+        // Free-text reason supplied, but the structured reason is missing → blocked (AC-4/FR-3).
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Rejected, reason: "Some text.", notes: null, rejectionReason: null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("rejection_reason_required");
+
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).Stage.Should().Be(ApplicantStage.Screening);
+    }
+
+    [Fact]
+    public async Task MoveStage_ToRejected_WithStructuredReason_PersistsItOnApplicantAndHistory()
+    {
+        var id = SeedApplicant(ApplicantStage.Screening);
+
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Rejected, reason: "Position has been filled.", notes: null,
+            rejectionReason: RejectionReason.PositionFilled);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.RejectionReason.Should().Be(RejectionReason.PositionFilled);
+
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).RejectionReason.Should().Be(RejectionReason.PositionFilled);
+        var history = await db.ApplicantStageHistories.SingleAsync(h => h.ApplicantId == id);
+        history.RejectionReason.Should().Be(RejectionReason.PositionFilled);
+    }
+
+    // ── US-REC-004 FR-8: vacancy Closed/Cancelled blocks a forward move ─
+
+    [Fact]
+    public async Task MoveStage_Forward_WhenVacancyClosed_IsBlocked()
+    {
+        var id = SeedApplicant(ApplicantStage.Screening);
+        SetVacancyStatus(VacancyStatus.Closed);
+
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Interview, reason: null, notes: null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("vacancy_not_active");
+
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).Stage.Should().Be(ApplicantStage.Screening);
+    }
+
+    [Fact]
+    public async Task MoveStage_Reject_WhenVacancyCancelled_IsStillAllowed()
+    {
+        var id = SeedApplicant(ApplicantStage.Screening);
+        SetVacancyStatus(VacancyStatus.Cancelled);
+
+        // FR-8: rejection is allowed regardless of vacancy state.
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Rejected, reason: "Withdrawing the role.", notes: null,
+            rejectionReason: RejectionReason.PositionFilled);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ToStage.Should().Be(ApplicantStage.Rejected);
+    }
+
+    // ── US-REC-004 BR-4: headcount-filled soft warning (move still succeeds) ─
+
+    [Fact]
+    public async Task MoveStage_ToOffer_WhenHeadcountFilled_SucceedsWithWarning()
+    {
+        // Headcount 1, and one applicant already Hired → at capacity.
+        SetVacancyStatus(VacancyStatus.Open);
+        SeedApplicant(ApplicantStage.Hired, "hired@example.com");
+        var id = SeedApplicant(ApplicantStage.Interview, "next@example.com");
+
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Offer, reason: null, notes: null);
+
+        // Soft gate: the move STILL succeeds (overridable) but surfaces a warning (BR-4).
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ToStage.Should().Be(ApplicantStage.Offer);
+        result.Value.Warnings.Should().Contain(w => w.Contains("headcount"));
+    }
+
+    [Fact]
+    public async Task MoveStage_ToOffer_WhenHeadcountNotFilled_HasNoHeadcountWarning()
+    {
+        SetVacancyStatus(VacancyStatus.Open);
+        var id = SeedApplicant(ApplicantStage.Interview, "solo@example.com");
+
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Offer, reason: null, notes: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Warnings.Should().NotContain(w => w.Contains("headcount"));
+    }
+
+    // ── US-REC-004 FR-1/BR-1: gate framework stub surfaces an advisory warning ─
+
+    [Fact]
+    public async Task MoveStage_ToInterview_SurfacesGateStubWarning()
+    {
+        var id = SeedApplicant(ApplicantStage.Screening);
+
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Interview, reason: null, notes: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Warnings.Should().Contain(w => w.Contains("gate criteria"));
+    }
+
+    // ── US-REC-004 BR-2: reactivation out of Rejected requires a reason ─
+
+    [Fact]
+    public async Task MoveStage_OutOfRejected_WithoutReason_IsBlocked()
+    {
+        var id = SeedApplicant(ApplicantStage.Rejected);
+
+        // Reactivating a rejected applicant to an active stage with no reason is blocked (BR-2/BR-4).
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Screening, reason: null, notes: null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("reason_required");
+    }
+
+    [Fact]
+    public async Task MoveStage_OutOfRejected_WithReason_Succeeds_AndClearsRejectionReason()
+    {
+        var id = SeedApplicant(ApplicantStage.Rejected);
+        // Stamp a prior structured rejection reason so we can assert it is cleared on reactivation.
+        using (var seed = CreateDbContext())
+        {
+            var a = seed.Applicants.First(x => x.Id == id);
+            a.RejectionReason = RejectionReason.NotQualified;
+            seed.SaveChanges();
+        }
+
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Screening, reason: "Reconsidering after referral.", notes: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.FromStage.Should().Be(ApplicantStage.Rejected);
+        result.Value.ToStage.Should().Be(ApplicantStage.Screening);
+
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).RejectionReason.Should().BeNull();
+    }
+
+    // ── US-REC-004 FR-6/NFR-5: per-transition notification fired on a successful move ─
+
+    [Fact]
+    public async Task MoveStage_OnSuccess_FiresStageChangedNotification()
+    {
+        var id = SeedApplicant(ApplicantStage.Applied, "notify@example.com");
+        var service = CreateService(out var notifications);
+
+        var result = await service.MoveStageAsync(id, ApplicantStage.Screening, reason: null, notes: null);
+
+        result.IsSuccess.Should().BeTrue();
+        await notifications.Received(1).NotifyStageChangedAsync(
+            id, _vacancyId, "notify@example.com",
+            ApplicantStage.Applied.ToString(), ApplicantStage.Screening.ToString(),
+            Arg.Any<CancellationToken>());
     }
 }

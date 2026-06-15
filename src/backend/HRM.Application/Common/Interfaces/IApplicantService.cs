@@ -64,22 +64,30 @@ public interface IApplicantService
     Task<Result<ApplicantDetailDto>> GetDetailAsync(Guid applicantId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// US-REC-003 (AC-2/FR-3/BR-3/BR-4/BR-5/BR-6): moves a single applicant to a new stage, writing an
-    /// immutable stage-history row and an audit-log entry. Enforces: Rejected requires a reason (BR-3);
-    /// a backward move requires a reason (BR-4); Hired is allowed but the convert-to-employee workflow is
-    /// out of scope (BR-6/US-REC-010). Tenant-scoped.
+    /// US-REC-003/004 (AC-2/AC-4/FR-3/FR-6/FR-8/BR-2/BR-3/BR-4): moves a single applicant to a new stage,
+    /// writing an immutable stage-history row and an audit-log entry, and firing the per-transition
+    /// notification (FR-6, log-only seam). Enforces: Rejected requires a structured rejection reason
+    /// (AC-4/FR-3) plus the free-text reason (BR-3); a backward move OR moving out of Rejected
+    /// (reactivation, BR-2) requires a reason (BR-4); a forward/active move is blocked (409) when the
+    /// vacancy is Closed/Cancelled (FR-8). Soft, overridable warnings are returned (never blocking) for
+    /// headcount-filled (BR-4) and the stubbed interview/scorecard gates (FR-1/BR-1, pending
+    /// US-REC-005/006). Hired is allowed; the convert-to-employee workflow is out of scope (US-REC-010).
+    /// Tenant-scoped.
     /// </summary>
     Task<Result<MoveApplicantStageResultDto>> MoveStageAsync(
         Guid applicantId, ApplicantStage toStage, string? reason, string? notes,
+        RejectionReason? rejectionReason = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// US-REC-003 (FR-8): moves several applicants to the same stage in one action, applying the same
     /// per-applicant rules as <see cref="MoveStageAsync"/>. All-or-nothing: if any applicant fails a
-    /// rule the whole batch is rejected so the caller never gets a partial move.
+    /// rule the whole batch is rejected so the caller never gets a partial move. Per-applicant warnings
+    /// (US-REC-004) are aggregated onto each result.
     /// </summary>
     Task<Result<BulkMoveApplicantStageResultDto>> BulkMoveStageAsync(
         IReadOnlyList<Guid> applicantIds, ApplicantStage toStage, string? reason, string? notes,
+        RejectionReason? rejectionReason = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

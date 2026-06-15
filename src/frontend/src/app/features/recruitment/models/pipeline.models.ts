@@ -61,7 +61,38 @@ export const SOURCE_BADGE: Record<ApplicantSource, string> = {
   referral: 'bg-teal-50 text-teal-700 ring-teal-200',
 };
 
-/** Reasons offered when rejecting an applicant (BR-3 dropdown + free text). */
+/**
+ * Structured rejection reason (US-REC-004 AC-4). These string values MUST match
+ * the backend's `rejectionReason` enum exactly — the dialog sends the enum value
+ * (`RejectionReason`), not the human label. Keep this list and the label map in
+ * sync with the backend's enum; it is the single source of truth on the FE.
+ */
+export type RejectionReason =
+  | 'NotQualified'
+  | 'PositionFilled'
+  | 'Withdrew'
+  | 'Other';
+
+/** Human-readable labels for the rejection dropdown (AC-4). */
+export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
+  NotQualified: 'Not qualified',
+  PositionFilled: 'Position filled',
+  Withdrew: 'Withdrew',
+  Other: 'Other',
+};
+
+/** Dropdown options in display order (AC-4). */
+export const REJECTION_REASON_OPTIONS: readonly {
+  value: RejectionReason;
+  label: string;
+}[] = (Object.keys(REJECTION_REASON_LABELS) as RejectionReason[]).map(
+  (value) => ({ value, label: REJECTION_REASON_LABELS[value] }),
+);
+
+/**
+ * Legacy free-text reason list (US-REC-003). Retained for the backward-move dialog
+ * which still uses a free-text reason; rejection now uses the structured enum above.
+ */
 export const REJECTION_REASONS: readonly string[] = [
   'Not qualified',
   'Position filled',
@@ -84,6 +115,12 @@ export interface IApplicantCard {
   /** ISO timestamp — drives "applied X days ago" relative time (§8). */
   appliedAt: string;
   stage: ApplicantStage;
+  /**
+   * ISO timestamp of when the applicant entered the current stage (US-REC-004 §8).
+   * Optional: when the backend omits it the FE falls back to `appliedAt` for the
+   * "In <stage> N days" time-in-stage badge.
+   */
+  enteredStageAt?: string | null;
 }
 
 /** One Kanban column — a stage plus its ordered applicant cards + count (FR-5). */
@@ -109,6 +146,11 @@ export interface IStageTransition {
   changedByUserName?: string | null;
   reason?: string | null;
   notes?: string | null;
+  /**
+   * Structured rejection reason enum, present only on transitions into Rejected
+   * (US-REC-004 AC-4). Shown in the timeline via its human label.
+   */
+  rejectionReason?: RejectionReason | null;
   /** ISO timestamp. */
   changedAt: string;
 }
@@ -135,8 +177,32 @@ export interface IApplicantDetail {
 /** Body for a stage move (FR-3 / BR-3 / BR-4). Reason required for Rejected/backward. */
 export interface IStageChangeRequest {
   toStage: ApplicantStage;
+  /**
+   * Free-text reason (required for backward moves BR-4). For rejections the
+   * structured `rejectionReason` is used instead/as well (US-REC-004 AC-4).
+   */
   reason?: string;
+  /**
+   * Structured rejection reason enum — sent only when moving to Rejected
+   * (US-REC-004 AC-4). Must be one of `RejectionReason`.
+   */
+  rejectionReason?: RejectionReason;
   notes?: string;
+}
+
+/**
+ * Result of a stage move (US-REC-004). The move is a SOFT gate: it succeeds even
+ * when gate criteria fail or the headcount is filled — the backend returns
+ * `warnings` for the recruiter to acknowledge (BR-4 / FR-1 / §8). A hard failure
+ * (e.g. vacancy closed/cancelled, FR-8) is surfaced as an HTTP error instead.
+ */
+export interface IStageMoveResult {
+  id: string;
+  stage: ApplicantStage;
+  /** ISO timestamp the applicant entered the new stage, if the backend returns it. */
+  enteredStageAt?: string | null;
+  /** Soft-gate / headcount warnings to show the recruiter (BR-4 / FR-1). */
+  warnings: string[];
 }
 
 /** Query params for the board endpoint (FR-6 filters). */
@@ -180,6 +246,77 @@ export function moveRequiresReason(
   to: ApplicantStage,
 ): boolean {
   return to === 'Rejected' || isBackwardMove(from, to);
+}
+
+/**
+ * The forward stage in the canonical funnel (US-REC-004 AC-1/AC-2). Skips the
+ * terminal "Rejected" side-stage. Returns null when there is no forward stage
+ * (already at Hired, or in a terminal stage).
+ */
+export function nextStage(stage: ApplicantStage): ApplicantStage | null {
+  if (TERMINAL_STAGES.includes(stage)) {
+    return null;
+  }
+  const i = stageIndex(stage);
+  if (i < 0) {
+    return null;
+  }
+  const next = PIPELINE_STAGES[i + 1];
+  // PIPELINE_STAGES ends with [..., 'Hired', 'Rejected']; never advance into Rejected.
+  if (!next || next === 'Rejected') {
+    return null;
+  }
+  return next;
+}
+
+/**
+ * The previous active stage in the funnel for a backward move (US-REC-004 FR-5).
+ * Returns null when there is no earlier stage (at Applied) or the stage is terminal.
+ */
+export function previousStage(stage: ApplicantStage): ApplicantStage | null {
+  if (TERMINAL_STAGES.includes(stage)) {
+    return null;
+  }
+  const i = stageIndex(stage);
+  if (i <= 0) {
+    return null;
+  }
+  return PIPELINE_STAGES[i - 1] ?? null;
+}
+
+/** Human label for a structured rejection reason, tolerating unknown values. */
+export function rejectionReasonLabel(reason: RejectionReason | string): string {
+  return (
+    REJECTION_REASON_LABELS[reason as RejectionReason] ?? String(reason)
+  );
+}
+
+/**
+ * Time-in-stage badge text, e.g. "In Screening 5 days" (US-REC-004 §8). Computed
+ * from `enteredStageAt` when the backend provides it, else falls back to
+ * `appliedAt`. Returns an empty string when no timestamp is usable (graceful
+ * omission). Same-day → "today".
+ */
+export function timeInStageLabel(
+  stage: ApplicantStage,
+  enteredStageAt: string | null | undefined,
+  appliedAt: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  const iso = enteredStageAt || appliedAt;
+  if (!iso) {
+    return '';
+  }
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return '';
+  }
+  const diffMs = Math.max(0, now.getTime() - then);
+  const days = Math.floor(diffMs / 86400000);
+  if (days < 1) {
+    return `In ${stage} today`;
+  }
+  return `In ${stage} ${days} day${days === 1 ? '' : 's'}`;
 }
 
 /** "Applied 3 days ago" style relative time from an ISO timestamp (§8). */

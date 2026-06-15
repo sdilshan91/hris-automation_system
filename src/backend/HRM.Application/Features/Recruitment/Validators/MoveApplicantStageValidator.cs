@@ -24,9 +24,16 @@ public sealed class MoveApplicantStageValidator : AbstractValidator<MoveApplican
         RuleFor(x => x.ToStage)
             .IsInEnum().WithMessage("A valid target stage is required.");
 
-        // BR-3: moving to Rejected requires a rejection reason.
+        // BR-3: moving to Rejected requires a free-text reason.
         RuleFor(x => x.Reason)
             .NotEmpty().WithMessage("A reason is required when rejecting an applicant.")
+            .When(x => x.ToStage == ApplicantStage.Rejected);
+
+        // US-REC-004 AC-4/FR-3: moving to Rejected ALSO requires a structured rejection reason (the AC-4
+        // dropdown). Service re-enforces this (the service is callable directly).
+        RuleFor(x => x.RejectionReason)
+            .NotNull().WithMessage("A rejection reason is required when rejecting an applicant.")
+            .IsInEnum().WithMessage("A valid rejection reason is required.")
             .When(x => x.ToStage == ApplicantStage.Rejected);
 
         RuleFor(x => x.Reason)
@@ -58,9 +65,15 @@ public sealed class BulkMoveApplicantStageValidator : AbstractValidator<BulkMove
         RuleFor(x => x.ToStage)
             .IsInEnum().WithMessage("A valid target stage is required.");
 
-        // BR-3: a bulk move to Rejected requires a reason.
+        // BR-3: a bulk move to Rejected requires a free-text reason.
         RuleFor(x => x.Reason)
             .NotEmpty().WithMessage("A reason is required when rejecting applicants.")
+            .When(x => x.ToStage == ApplicantStage.Rejected);
+
+        // US-REC-004 AC-4/FR-3: a bulk rejection also requires a structured rejection reason.
+        RuleFor(x => x.RejectionReason)
+            .NotNull().WithMessage("A rejection reason is required when rejecting applicants.")
+            .IsInEnum().WithMessage("A valid rejection reason is required.")
             .When(x => x.ToStage == ApplicantStage.Rejected);
 
         RuleFor(x => x.Reason)

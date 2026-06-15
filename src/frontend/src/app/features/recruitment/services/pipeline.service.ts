@@ -10,11 +10,11 @@ import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import { ApplicantStage } from '../models/applicant.models';
 import {
-  IApplicantCard,
   IApplicantDetail,
   IPipelineBoard,
   IPipelineFilters,
   IStageChangeRequest,
+  IStageMoveResult,
   IStageTransition,
   PIPELINE_STAGES,
 } from '../models/pipeline.models';
@@ -92,21 +92,37 @@ export class PipelineService {
   /**
    * Move an applicant to a new stage. Backend records the audit trail + history
    * (BR-5) and enforces reason rules (BR-3/BR-4) authoritatively; the FE prompts
-   * up front for UX. Returns the updated card.
+   * up front for UX.
+   *
+   * The gates are SOFT (US-REC-004 / §10): the move still succeeds when headcount
+   * is filled or gate criteria fail — the backend returns `warnings[]` for the
+   * recruiter to acknowledge (BR-4 / FR-1). A HARD failure (vacancy closed or
+   * cancelled, FR-8) comes back as an HTTP error and is surfaced by the caller.
+   *
+   * Reconciles the backend `MoveApplicantStageResultDto` shape to `IStageMoveResult`
+   * in ONE place here. Tolerates `warnings` being absent (defaults to `[]`).
    */
   changeStage(
     id: string,
     request: IStageChangeRequest,
-  ): Observable<Pick<IApplicantCard, 'id' | 'stage'>> {
-    // Backend returns MoveApplicantStageResultDto { applicantId, toStage, ... }; map it to the
-    // minimal { id, stage } patch the board uses to reconcile the moved card.
+  ): Observable<IStageMoveResult> {
     return this.http
-      .post<{ applicantId: string; toStage: ApplicantStage }>(
-        `${this.base}/applicants/${id}/move-stage`,
-        request,
-        { withCredentials: true },
-      )
-      .pipe(map((r) => ({ id: r.applicantId, stage: r.toStage })));
+      .post<{
+        applicantId: string;
+        toStage: ApplicantStage;
+        enteredStageAt?: string | null;
+        warnings?: string[] | null;
+      }>(`${this.base}/applicants/${id}/move-stage`, request, {
+        withCredentials: true,
+      })
+      .pipe(
+        map((r) => ({
+          id: r.applicantId,
+          stage: r.toStage,
+          enteredStageAt: r.enteredStageAt ?? null,
+          warnings: r.warnings ?? [],
+        })),
+      );
   }
 
   // ─── Resume download (FR-7 / NFR-5) ──────────────────────

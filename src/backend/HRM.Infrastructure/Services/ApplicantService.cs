@@ -376,6 +376,8 @@ public sealed class ApplicantService : IApplicantService
             ToStageName = h.ToStage.ToString(),
             ChangedByUserId = h.ChangedByUserId,
             Reason = h.Reason,
+            RejectionReason = h.RejectionReason,
+            RejectionReasonName = h.RejectionReason?.ToString(),
             Notes = h.Notes,
             ChangedAt = h.ChangedAt,
         }).ToList();
@@ -395,6 +397,7 @@ public sealed class ApplicantService : IApplicantService
 
     public async Task<Result<MoveApplicantStageResultDto>> MoveStageAsync(
         Guid applicantId, ApplicantStage toStage, string? reason, string? notes,
+        RejectionReason? rejectionReason = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -406,7 +409,16 @@ public sealed class ApplicantService : IApplicantService
         if (applicant is null)
             return Result<MoveApplicantStageResultDto>.Failure("Applicant not found.", 404, "applicant_not_found");
 
-        var ruleCheck = ApplyStageMove(applicant, toStage, reason, notes, out var historyRow);
+        // FR-8/BR-4: load the owning vacancy (tenant-scoped) for the Closed/Cancelled gate and the
+        // headcount-filled warning.
+        var vacancy = await _dbContext.Vacancies
+            .FirstOrDefaultAsync(v => v.Id == applicant.VacancyId, cancellationToken);
+
+        var hiredCount = await CountHiredAsync(applicant.VacancyId, cancellationToken);
+
+        var ruleCheck = ApplyStageMove(
+            applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount,
+            out var historyRow, out var warnings);
         if (ruleCheck.IsFailure)
             return Result<MoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
 
@@ -414,11 +426,14 @@ public sealed class ApplicantService : IApplicantService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result<MoveApplicantStageResultDto>.Success(ToMoveResult(historyRow!));
+        await NotifyStageChangedSafeAsync(applicant, historyRow!, cancellationToken);
+
+        return Result<MoveApplicantStageResultDto>.Success(ToMoveResult(historyRow!, warnings));
     }
 
     public async Task<Result<BulkMoveApplicantStageResultDto>> BulkMoveStageAsync(
         IReadOnlyList<Guid> applicantIds, ApplicantStage toStage, string? reason, string? notes,
+        RejectionReason? rejectionReason = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -439,44 +454,102 @@ public sealed class ApplicantService : IApplicantService
             return Result<BulkMoveApplicantStageResultDto>.Failure(
                 "One or more applicants were not found.", 404, "applicant_not_found");
 
-        // All-or-nothing: validate every move first, collect history rows, then persist together so the
-        // caller never gets a partial move.
-        var historyRows = new List<ApplicantStageHistory>(applicants.Count);
+        // Pre-load the distinct owning vacancies + per-vacancy Hired counts for the FR-8 gate / BR-4
+        // warning (tenant-scoped). Hired counts are snapshot before the batch; a single bulk move to
+        // Offer/Hired therefore warns based on the pre-move count (the soft gate is advisory).
+        var vacancyIds = applicants.Select(a => a.VacancyId).Distinct().ToList();
+        var vacancies = await _dbContext.Vacancies
+            .Where(v => vacancyIds.Contains(v.Id))
+            .ToDictionaryAsync(v => v.Id, cancellationToken);
+        var hiredCounts = new Dictionary<Guid, int>();
+        foreach (var vid in vacancyIds)
+            hiredCounts[vid] = await CountHiredAsync(vid, cancellationToken);
+
+        // All-or-nothing: validate every move first, collect (history row + warnings), then persist
+        // together so the caller never gets a partial move.
+        var staged = new List<(ApplicantStageHistory Row, Applicant Applicant, IReadOnlyList<string> Warnings)>(applicants.Count);
         foreach (var applicant in applicants)
         {
-            var ruleCheck = ApplyStageMove(applicant, toStage, reason, notes, out var historyRow);
+            vacancies.TryGetValue(applicant.VacancyId, out var vacancy);
+            hiredCounts.TryGetValue(applicant.VacancyId, out var hiredCount);
+
+            var ruleCheck = ApplyStageMove(
+                applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount,
+                out var historyRow, out var warnings);
             if (ruleCheck.IsFailure)
                 return Result<BulkMoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
 
-            historyRows.Add(historyRow!);
+            staged.Add((historyRow!, applicant, warnings));
         }
 
-        foreach (var row in historyRows)
+        foreach (var (row, _, _) in staged)
             WriteStageChangeAuditLog(row);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        foreach (var (row, applicant, _) in staged)
+            await NotifyStageChangedSafeAsync(applicant, row, cancellationToken);
+
         return Result<BulkMoveApplicantStageResultDto>.Success(new BulkMoveApplicantStageResultDto
         {
-            MovedCount = historyRows.Count,
-            Results = historyRows.Select(ToMoveResult).ToList(),
+            MovedCount = staged.Count,
+            Results = staged.Select(s => ToMoveResult(s.Row, s.Warnings)).ToList(),
         });
+    }
+
+    /// <summary>Tenant-scoped count of Hired applicants for a vacancy (BR-4 headcount warning).</summary>
+    private Task<int> CountHiredAsync(Guid vacancyId, CancellationToken cancellationToken) =>
+        _dbContext.Applicants.CountAsync(
+            a => a.VacancyId == vacancyId && a.Stage == ApplicantStage.Hired, cancellationToken);
+
+    /// <summary>
+    /// FR-6/NFR-5: fire the per-transition applicant notification (log-only seam). Never let a
+    /// notification failure fail a committed move — mirrors the submit-path notification handling. The
+    /// async-queue (Hangfire) delivery is deferred.
+    /// </summary>
+    private async Task NotifyStageChangedSafeAsync(
+        Applicant applicant, ApplicantStageHistory row, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _notifications.NotifyStageChangedAsync(
+                applicant.Id, applicant.VacancyId, applicant.Email,
+                row.FromStage.ToString(), row.ToStage.ToString(), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Stage-change notification failed (non-fatal). ApplicantId={ApplicantId}, TenantId={TenantId}",
+                applicant.Id, _tenantContext.TenantId);
+        }
     }
 
     /// <summary>
     /// Applies the stage-move business rules to a tracked applicant, mutates its stage, and stages an
     /// <see cref="ApplicantStageHistory"/> row in the change tracker (BR-5). Does NOT call SaveChanges —
-    /// the caller batches the save (so bulk moves are atomic). Rules:
-    /// BR-3 Rejected requires a reason; BR-4 a backward move (lower stage index) requires a reason;
-    /// BR-6 Hired is allowed (terminal — convert-to-employee is US-REC-010, out of scope). A no-op move
-    /// (same stage) is rejected. Backward/forward permission (BR-1/BR-2/BR-4) is enforced at the API
-    /// layer (the move endpoint requires Recruitment.Manage), so any caller here already holds Manage.
+    /// the caller batches the save (so bulk moves are atomic). Hard rules (failure):
+    /// <list type="bullet">
+    /// <item>A no-op move (same stage) is rejected (409).</item>
+    /// <item>US-REC-004 AC-4/FR-3: moving to Rejected requires a structured <paramref name="rejectionReason"/>
+    /// AND the free-text reason (BR-3).</item>
+    /// <item>BR-4 / BR-2: a backward move, OR moving OUT of Rejected to an active stage (reactivation),
+    /// requires a reason.</item>
+    /// <item>FR-8: a forward/active move (anything other than Rejected) is blocked (409) when the owning
+    /// vacancy is Closed or Cancelled. Rejection is always allowed.</item>
+    /// </list>
+    /// Soft, overridable warnings (success, never blocking) are returned for: BR-4 headcount-filled when
+    /// moving to Offer/Hired at/over capacity, and the FR-1/BR-1 interview/scorecard gates (stubbed —
+    /// always passes, pending US-REC-005/006). Hired is allowed (convert-to-employee is US-REC-010, out of
+    /// scope). Backward/forward permission (BR-2) is enforced at the API layer (the endpoint requires
+    /// Recruitment.Manage), so any caller here already holds Manage.
     /// </summary>
     private Result ApplyStageMove(
         Applicant applicant, ApplicantStage toStage, string? reason, string? notes,
-        out ApplicantStageHistory? historyRow)
+        RejectionReason? rejectionReason, Vacancy? vacancy, int hiredCount,
+        out ApplicantStageHistory? historyRow, out IReadOnlyList<string> warnings)
     {
         historyRow = null;
+        warnings = [];
 
         var fromStage = applicant.Stage;
 
@@ -484,20 +557,57 @@ public sealed class ApplicantService : IApplicantService
             return Result.Failure("The applicant is already in this stage.", 409, "stage_unchanged");
 
         var isBackward = (int)toStage < (int)fromStage;
+        var isReactivation = fromStage == ApplicantStage.Rejected && toStage != ApplicantStage.Rejected;
+        var isRejection = toStage == ApplicantStage.Rejected;
 
-        // BR-3: moving to Rejected requires a reason.
-        if (toStage == ApplicantStage.Rejected && string.IsNullOrWhiteSpace(reason))
+        // BR-3: moving to Rejected requires the free-text reason (the audit trail/email carry context).
+        if (isRejection && string.IsNullOrWhiteSpace(reason))
             return Result.Failure("A reason is required when rejecting an applicant.", 400, "reason_required");
 
-        // BR-4: a backward move requires a reason (the Recruitment.Manage permission is enforced at the
-        // API layer — every mover here already holds it).
-        if (isBackward && string.IsNullOrWhiteSpace(reason))
+        // US-REC-004 AC-4/FR-3: moving to Rejected ALSO requires a structured rejection reason.
+        if (isRejection && rejectionReason is null)
+            return Result.Failure(
+                "A rejection reason is required when rejecting an applicant.", 400, "rejection_reason_required");
+
+        // BR-4 / BR-2: a backward move, or reactivation out of Rejected, requires a reason (the
+        // Recruitment.Manage permission is enforced at the API layer — every mover here already holds it).
+        if ((isBackward || isReactivation) && string.IsNullOrWhiteSpace(reason))
             return Result.Failure("A reason is required to move an applicant to an earlier stage.", 400, "reason_required");
+
+        // FR-8: block a forward/active move when the vacancy is no longer accepting progress. Rejection is
+        // always allowed (you can reject regardless of vacancy state).
+        if (!isRejection && vacancy is not null &&
+            (vacancy.Status == VacancyStatus.Closed || vacancy.Status == VacancyStatus.Cancelled))
+            return Result.Failure(
+                "The vacancy is closed or cancelled; applicants cannot be advanced.", 409, "vacancy_not_active");
 
         var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         var trimmedNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
 
+        // ── Soft, overridable warnings (US-REC-004) — never block the move ──────────────────────────
+        var warn = new List<string>();
+
+        // BR-4: warn when moving to Offer/Hired and the vacancy headcount is already filled.
+        if ((toStage == ApplicantStage.Offer || toStage == ApplicantStage.Hired) &&
+            vacancy is not null && hiredCount >= vacancy.Headcount)
+        {
+            warn.Add(
+                $"The vacancy headcount ({vacancy.Headcount}) is already filled ({hiredCount} hired); " +
+                "advancing more applicants to Offer/Hired may exceed the planned headcount.");
+        }
+
+        // FR-1/BR-1: gate framework STUB. The Interview gate (≥1 scheduled interview) and Offer gate
+        // (≥1 completed scorecard) depend on US-REC-005/006, which do not exist yet. The framework is
+        // structurally present but currently always passes — surfaced as an advisory warning only.
+        if (toStage == ApplicantStage.Interview || toStage == ApplicantStage.Offer)
+        {
+            warn.Add(
+                "No gate criteria evaluated (interview/scorecard modules pending — US-REC-005/006).");
+        }
+
         applicant.Stage = toStage;
+        // Track structured rejection state on the applicant (set on reject, clear on reactivation, BR-2).
+        applicant.RejectionReason = isRejection ? rejectionReason : null;
 
         historyRow = new ApplicantStageHistory
         {
@@ -508,6 +618,7 @@ public sealed class ApplicantService : IApplicantService
             ToStage = toStage,
             ChangedByUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
             Reason = trimmedReason,
+            RejectionReason = isRejection ? rejectionReason : null,
             Notes = trimmedNotes,
             ChangedAt = DateTime.UtcNow,
             IsDeleted = false,
@@ -517,9 +628,11 @@ public sealed class ApplicantService : IApplicantService
 
         _logger.LogInformation(
             "Applicant stage moved. ApplicantId={ApplicantId}, From={From}, To={To}, " +
-            "ChangedByUserId={UserId}, TenantId={TenantId}",
-            applicant.Id, fromStage, toStage, historyRow.ChangedByUserId, _tenantContext.TenantId);
+            "RejectionReason={RejectionReason}, Warnings={WarningCount}, ChangedByUserId={UserId}, TenantId={TenantId}",
+            applicant.Id, fromStage, toStage, historyRow.RejectionReason, warn.Count,
+            historyRow.ChangedByUserId, _tenantContext.TenantId);
 
+        warnings = warn;
         return Result.Success();
     }
 
@@ -539,7 +652,8 @@ public sealed class ApplicantService : IApplicantService
         });
     }
 
-    private static MoveApplicantStageResultDto ToMoveResult(ApplicantStageHistory row) => new()
+    private static MoveApplicantStageResultDto ToMoveResult(
+        ApplicantStageHistory row, IReadOnlyList<string> warnings) => new()
     {
         ApplicantId = row.ApplicantId,
         FromStage = row.FromStage,
@@ -548,6 +662,8 @@ public sealed class ApplicantService : IApplicantService
         ToStageName = row.ToStage.ToString(),
         StageHistoryId = row.Id,
         ChangedAt = row.ChangedAt,
+        RejectionReason = row.RejectionReason,
+        Warnings = warnings,
     };
 
     private static PipelineApplicantCardDto ToCard(Applicant a) => new()

@@ -33,4 +33,18 @@ public interface IRecruitmentNotificationService
         Guid vacancyId,
         Guid? hiringManagerEmployeeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the applicant that their pipeline stage changed (US-REC-004 FR-6/NFR-5, AC-1 email).
+    /// Fire-and-forget; must never throw into the request path — the stage move is committed even if
+    /// dispatch fails. The async-queue (Hangfire) delivery from NFR-5 is DEFERRED: this is the log-only
+    /// seam (mirrors the application-received/new-application events).
+    /// </summary>
+    Task NotifyStageChangedAsync(
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        string fromStage,
+        string toStage,
+        CancellationToken cancellationToken = default);
 }

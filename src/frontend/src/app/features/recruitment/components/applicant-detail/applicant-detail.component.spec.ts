@@ -49,10 +49,18 @@ describe('ApplicantDetailComponent', () => {
     serviceSpy = jasmine.createSpyObj('PipelineService', [
       'getApplicant',
       'downloadResume',
+      'changeStage',
     ]);
     serviceSpy.getApplicant.and.returnValue(of(detail()));
+    serviceSpy.changeStage.and.returnValue(
+      of({ id: 'app-1', stage: 'Interview', enteredStageAt: null, warnings: [] }),
+    );
 
-    toastrSpy = jasmine.createSpyObj('ToastrService', ['success', 'error']);
+    toastrSpy = jasmine.createSpyObj('ToastrService', [
+      'success',
+      'error',
+      'warning',
+    ]);
 
     await TestBed.configureTestingModule({
       imports: [ApplicantDetailComponent],
@@ -130,5 +138,129 @@ describe('ApplicantDetailComponent', () => {
     component.closed.subscribe(() => (closed = true));
     component.close();
     expect(closed).toBeTrue();
+  });
+
+  // ─── Stage transition action buttons (US-REC-004) ──────────
+
+  it('computes the next/previous stage from the current stage (AC-1/AC-2/FR-5)', () => {
+    // detail() defaults to Screening.
+    expect(component.nextStageName()).toBe('Interview');
+    expect(component.prevStageName()).toBe('Applied');
+    expect(component.isTerminal()).toBeFalse();
+  });
+
+  it('moves forward without a reason and emits moved (AC-1/AC-2)', () => {
+    let moved: string | undefined;
+    component.moved.subscribe((s) => (moved = s));
+
+    component.moveForward();
+
+    expect(serviceSpy.changeStage).toHaveBeenCalledWith('app-1', {
+      toStage: 'Interview',
+      reason: undefined,
+      rejectionReason: undefined,
+      notes: undefined,
+    });
+    expect(toastrSpy.success).toHaveBeenCalled();
+    expect(moved).toBe('Interview');
+    expect(component.moving()).toBeFalse();
+  });
+
+  it('opens the reason dialog when rejecting (AC-4) and does not call the API yet', () => {
+    component.reject();
+    expect(component.pendingTo()).toBe('Rejected');
+    expect(serviceSpy.changeStage).not.toHaveBeenCalled();
+  });
+
+  it('persists the rejection with the structured reason on confirm (AC-4)', () => {
+    serviceSpy.changeStage.and.returnValue(
+      of({ id: 'app-1', stage: 'Rejected', enteredStageAt: null, warnings: [] }),
+    );
+    component.reject();
+    component.confirmReasonMove({
+      reason: 'Not qualified',
+      rejectionReason: 'NotQualified',
+      notes: 'weak fit',
+    });
+
+    expect(serviceSpy.changeStage).toHaveBeenCalledWith('app-1', {
+      toStage: 'Rejected',
+      reason: 'Not qualified',
+      rejectionReason: 'NotQualified',
+      notes: 'weak fit',
+    });
+    expect(component.pendingTo()).toBeNull();
+  });
+
+  it('opens the reason dialog for a backward move (FR-5)', () => {
+    component.moveBack();
+    expect(component.pendingTo()).toBe('Applied');
+    expect(serviceSpy.changeStage).not.toHaveBeenCalled();
+  });
+
+  it('surfaces soft-gate warnings as toasts after a move (BR-4/FR-1)', () => {
+    serviceSpy.changeStage.and.returnValue(
+      of({
+        id: 'app-1',
+        stage: 'Interview',
+        enteredStageAt: null,
+        warnings: ['No interview scheduled yet'],
+      }),
+    );
+    component.moveForward();
+    expect(toastrSpy.warning).toHaveBeenCalledWith(
+      'No interview scheduled yet',
+      'Heads up',
+    );
+  });
+
+  it('shows the error message when the move is rejected (e.g. vacancy closed, FR-8)', () => {
+    serviceSpy.changeStage.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { message: 'Vacancy is closed.' },
+          }),
+      ),
+    );
+    component.moveForward();
+    expect(toastrSpy.error).toHaveBeenCalledWith('Vacancy is closed.');
+    expect(component.moving()).toBeFalse();
+  });
+
+  it('renders the structured rejection reason in the timeline (AC-4)', () => {
+    serviceSpy.getApplicant.and.returnValue(
+      of(
+        detail({
+          stage: 'Rejected',
+          stageHistory: [
+            {
+              fromStage: 'Screening',
+              toStage: 'Rejected',
+              changedByUserName: 'Recruiter Rita',
+              reason: null,
+              rejectionReason: 'PositionFilled',
+              notes: null,
+              changedAt: '2026-06-12T00:00:00Z',
+            },
+          ],
+        }),
+      ),
+    );
+    fixture.componentRef.setInput('applicantId', 'app-2');
+    fixture.detectChanges();
+    component.tab.set('timeline');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Position filled');
+  });
+
+  it('shows no action buttons for a terminal stage (Hired/Rejected)', () => {
+    serviceSpy.getApplicant.and.returnValue(of(detail({ stage: 'Hired' })));
+    fixture.componentRef.setInput('applicantId', 'app-3');
+    fixture.detectChanges();
+    expect(component.isTerminal()).toBeTrue();
+    expect(component.nextStageName()).toBeNull();
   });
 });

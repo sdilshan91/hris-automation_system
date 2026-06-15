@@ -303,6 +303,108 @@ public sealed class ApplicantPipelineIntegrationTests
         move.StatusCode.Should().Be(404);
     }
 
+    // ── US-REC-004: structured rejection, FR-8 vacancy gate, BR-4 warning, BR-2 reactivation ─────────
+
+    [Fact]
+    public async Task MoveStage_ToRejected_WithoutStructuredReason_IsRejected()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "ada@a.com");
+
+        // Free-text reason only, no structured rejection reason → AC-4/FR-3 blocks it.
+        var move = await mediator.Send(new MoveApplicantStageCommand(
+            id, ApplicantStage.Rejected, "Some text.", null, null));
+
+        move.IsFailure.Should().BeTrue();
+        move.StatusCode.Should().Be(400);
+        move.ErrorCode.Should().Be("rejection_reason_required");
+    }
+
+    [Fact]
+    public async Task MoveStage_ToRejected_WithStructuredReason_PersistsOnTimeline()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "ada@a.com");
+
+        var move = await mediator.Send(new MoveApplicantStageCommand(
+            id, ApplicantStage.Rejected, "Not qualified.", null, RejectionReason.NotQualified));
+
+        move.IsSuccess.Should().BeTrue();
+        move.Value!.RejectionReason.Should().Be(RejectionReason.NotQualified);
+
+        var detail = await mediator.Send(new GetApplicantDetailQuery(id));
+        detail.Value!.StageHistory[0].RejectionReason.Should().Be(RejectionReason.NotQualified);
+        detail.Value.StageHistory[0].RejectionReasonName.Should().Be("NotQualified");
+    }
+
+    [Fact]
+    public async Task MoveStage_Forward_WhenVacancyClosed_Returns409()
+    {
+        SetVacancyStatus(_vacancyA, VacancyStatus.Closed);
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "cleo@a.com"); // Screening
+
+        var move = await mediator.Send(new MoveApplicantStageCommand(
+            id, ApplicantStage.Interview, null, null));
+
+        move.IsFailure.Should().BeTrue();
+        move.StatusCode.Should().Be(409);
+        move.ErrorCode.Should().Be("vacancy_not_active");
+    }
+
+    [Fact]
+    public async Task MoveStage_ToOffer_WhenHeadcountFilled_SucceedsWithWarning()
+    {
+        // Headcount = 1; mark one applicant Hired so the vacancy is at capacity.
+        SetApplicantStage(_tenantA, "dan@a.com", ApplicantStage.Hired); // was Rejected → now Hired
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "cleo@a.com"); // Screening
+
+        var move = await mediator.Send(new MoveApplicantStageCommand(
+            id, ApplicantStage.Offer, null, null));
+
+        move.IsSuccess.Should().BeTrue();
+        move.Value!.Warnings.Should().Contain(w => w.Contains("headcount"));
+    }
+
+    [Fact]
+    public async Task MoveStage_OutOfRejected_WithoutReason_IsBlocked()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "dan@a.com"); // Rejected
+
+        var move = await mediator.Send(new MoveApplicantStageCommand(
+            id, ApplicantStage.Screening, null, null));
+
+        move.IsFailure.Should().BeTrue();
+        move.ErrorCode.Should().Be("reason_required");
+    }
+
+    private Guid ApplicantId(IMediator mediator, string email)
+        => mediator.Send(new GetApplicantPipelineQuery(_vacancyA, new PipelineFilter()))
+            .GetAwaiter().GetResult()
+            .Value!.Stages.SelectMany(s => s.Applicants).First(c => c.Email == email).Id;
+
+    private void SetVacancyStatus(Guid vacancyId, VacancyStatus status)
+    {
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+        var v = db.Vacancies.First(x => x.Id == vacancyId);
+        v.Status = status;
+        db.SaveChanges();
+    }
+
+    private void SetApplicantStage(Guid tenantId, string email, ApplicantStage stage)
+    {
+        var ctx = new MutableTenantContext { TenantId = tenantId };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+        var a = db.Applicants.First(x => x.Email == email);
+        a.Stage = stage;
+        db.SaveChanges();
+    }
+
     private static int Count(ApplicantPipelineBoardDto board, ApplicantStage stage)
         => board.Stages.Single(s => s.Stage == stage).Count;
 

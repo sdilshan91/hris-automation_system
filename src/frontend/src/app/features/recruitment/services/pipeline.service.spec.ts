@@ -16,6 +16,7 @@ import {
   IApplicantCard,
   IApplicantDetail,
   IPipelineBoard,
+  IStageMoveResult,
   PIPELINE_STAGES,
 } from '../models/pipeline.models';
 
@@ -154,10 +155,14 @@ describe('PipelineService', () => {
 
   // ─── changeStage ───────────────────────────────────────────
 
-  it('changeStage POSTs the body with credentials', () => {
-    let updated: Pick<IApplicantCard, 'id' | 'stage'> | undefined;
+  it('changeStage POSTs the body with credentials and maps the move result', () => {
+    let updated: IStageMoveResult | undefined;
     service
-      .changeStage('app-1', { toStage: 'Rejected', reason: 'Not qualified' })
+      .changeStage('app-1', {
+        toStage: 'Rejected',
+        reason: 'Not qualified',
+        rejectionReason: 'NotQualified',
+      })
       .subscribe((c) => (updated = c));
     const req = httpMock.expectOne(`${base}/applicants/app-1/move-stage`);
     expect(req.request.method).toBe('POST');
@@ -165,11 +170,37 @@ describe('PipelineService', () => {
     expect(req.request.body).toEqual({
       toStage: 'Rejected',
       reason: 'Not qualified',
+      rejectionReason: 'NotQualified',
     });
-    // Backend returns MoveApplicantStageResultDto; the service maps it to an { id, stage } patch.
-    req.flush({ applicantId: 'app-1', toStage: 'Rejected', stageHistoryId: 'h-1' });
+    // Backend returns MoveApplicantStageResultDto; the service maps it to IStageMoveResult.
+    req.flush({
+      applicantId: 'app-1',
+      toStage: 'Rejected',
+      enteredStageAt: '2026-06-15T00:00:00Z',
+      stageHistoryId: 'h-1',
+    });
     expect(updated!.id).toBe('app-1');
     expect(updated!.stage).toBe('Rejected');
+    expect(updated!.enteredStageAt).toBe('2026-06-15T00:00:00Z');
+    // Absent warnings default to an empty array (US-REC-004 soft gate).
+    expect(updated!.warnings).toEqual([]);
+  });
+
+  it('changeStage surfaces soft-gate warnings from the response (BR-4/FR-1)', () => {
+    let updated: IStageMoveResult | undefined;
+    service
+      .changeStage('app-1', { toStage: 'Offer' })
+      .subscribe((c) => (updated = c));
+    const req = httpMock.expectOne(`${base}/applicants/app-1/move-stage`);
+    req.flush({
+      applicantId: 'app-1',
+      toStage: 'Offer',
+      warnings: ['Headcount already filled', 'No interview scorecard on file'],
+    });
+    expect(updated!.warnings).toEqual([
+      'Headcount already filled',
+      'No interview scorecard on file',
+    ]);
   });
 
   // ─── downloadResume ────────────────────────────────────────

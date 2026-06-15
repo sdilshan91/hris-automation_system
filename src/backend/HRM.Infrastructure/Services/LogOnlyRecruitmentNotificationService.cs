@@ -46,4 +46,19 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyStageChangedAsync(
+        Guid applicantId,
+        Guid vacancyId,
+        string applicantEmail,
+        string fromStage,
+        string toStage,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType} for applicant {ApplicantId} on vacancy {VacancyId}: stage {From} -> {To} (notify {Email})",
+            "stage-changed", applicantId, vacancyId, fromStage, toStage, applicantEmail);
+
+        return Task.CompletedTask;
+    }
 }

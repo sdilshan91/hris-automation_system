@@ -50,6 +50,14 @@ public sealed class Applicant : BaseEntity
     /// <summary>Current pipeline stage (FR-6). Always <see cref="ApplicantStage.Applied"/> on submit.</summary>
     public ApplicantStage Stage { get; set; } = ApplicantStage.Applied;
 
+    /// <summary>
+    /// Structured rejection reason for the applicant's CURRENT state (US-REC-004 AC-4/FR-3). Set when the
+    /// applicant is moved to <see cref="ApplicantStage.Rejected"/>; cleared when reactivated out of
+    /// Rejected (BR-2). Null while the applicant is in any active stage. The full per-transition history
+    /// lives on <see cref="ApplicantStageHistory"/>.
+    /// </summary>
+    public RejectionReason? RejectionReason { get; set; }
+
     /// <summary>Submission channel (§7). Public for anonymous, Internal for authenticated employees (BR-5).</summary>
     public ApplicationSource Source { get; set; } = ApplicationSource.Public;
 
