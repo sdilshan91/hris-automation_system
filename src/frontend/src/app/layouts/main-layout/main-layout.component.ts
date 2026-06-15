@@ -684,6 +684,15 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 10.818v2.614A3.13 3.13 0 0 0 11.888 13c.482-.315.612-.648.612-.875 0-.227-.13-.56-.612-.875a3.13 3.13 0 0 0-1.138-.432ZM8.33 8.62c.053.055.115.11.184.164.208.16.46.284.736.363V6.603a2.45 2.45 0 0 0-.35.13c-.14.065-.27.143-.386.233-.377.292-.514.627-.514.909 0 .184.058.39.202.592.037.051.08.102.128.152Z"/><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-6a.75.75 0 0 1 .75.75v.316a3.78 3.78 0 0 1 1.653.713c.426.33.744.74.925 1.2a.75.75 0 0 1-1.395.55 1.35 1.35 0 0 0-.447-.563 2.187 2.187 0 0 0-.736-.363V9.3c.698.093 1.383.32 1.959.696.787.514 1.29 1.27 1.29 2.13 0 .86-.504 1.616-1.29 2.13-.576.377-1.261.603-1.96.696v.299a.75.75 0 1 1-1.5 0v-.3a3.78 3.78 0 0 1-1.653-.712 3.22 3.22 0 0 1-.925-1.2.75.75 0 0 1 1.395-.55c.12.3.3.54.447.563a2.19 2.19 0 0 0 .736.363V10.7a5.007 5.007 0 0 1-1.96-.696C4.504 9.49 4 8.735 4 7.875c0-.86.504-1.616 1.29-2.13.577-.377 1.262-.603 1.96-.696V4.75A.75.75 0 0 1 10 4Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      label: 'My Payslips',
+      route: '/my-payslips',
+      // Story names Payroll.Read.Self, but that string isn't in the permission
+      // catalog; the registered self permission (and the backend gate) is
+      // Payroll.View.Own. Use the registered one so the nav item actually shows.
+      permission: 'Payroll.View.Own',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.5 2A1.5 1.5 0 0 0 3 3.5v14.793a.5.5 0 0 0 .724.447L6 17.618l2.276 1.122a.5.5 0 0 0 .448 0L11 17.618l2.276 1.122a.5.5 0 0 0 .448 0L16 17.618l2.276 1.122A.5.5 0 0 0 19 18.293V3.5A1.5 1.5 0 0 0 17.5 2h-13ZM6 6.75A.75.75 0 0 1 6.75 6h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 6 6.75Zm0 3.5A.75.75 0 0 1 6.75 9.5h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 6 10.25Zm.75 2.75a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
       label: 'Recruitment',
       route: '/recruitment',
       permission: 'Recruitment.View',

@@ -307,6 +307,20 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Payroll / My Payslips (US-PAY-005) — employee self-service ─
+      // Distinct from the HR-facing '/payroll' screens above (Tenant Admin / HR
+      // Officer). Any authenticated employee can view their OWN payslips; the
+      // backend enforces Payroll.Read.Self so cross-employee/tenant data is invisible.
+      {
+        path: 'my-payslips',
+        loadChildren: () =>
+          import('./features/payroll/my-payslips.routes').then(
+            (m) => m.MY_PAYSLIPS_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',
