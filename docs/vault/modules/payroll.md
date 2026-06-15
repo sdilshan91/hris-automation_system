@@ -168,6 +168,44 @@ Method semantics decided HERE:
 - BR-4 probation-vs-confirmed distinction, BR-5 "Payroll Incomplete" flag (FE-only
   badge), BR-7 employer-statutory-in/out-of-CTC, CSV upload parsing — not in scope.
 
+## Run monthly payroll (US-PAY-003)
+
+Adds payroll RUNS under the existing `payroll` lazy route: child routes `runs`
+(Notion-style table) + `runs/:id` (detail). New sibling service `PayrollRunService`
+(payroll/services) — route strings live ONLY here, base `${apiBaseUrl}/payroll/runs`.
+Bare payloads (US-PLT-001), `PayrollRunStatus` PascalCase string enum (US-PLT-003).
+
+### Frontend contract — `PayrollRunService` (assumed REST; reconcile in this one file)
+- `GET  /payroll/runs` → `IPayrollRun[]` (tolerates `{ data }`).
+- `GET  /payroll/runs/:id` → `IPayrollRun`.
+- `POST /payroll/runs/validate` body `{ payMonth, payYear }` → `IPayrollRunValidation`
+  ({ totalEmployees, readyEmployees, missingSalaryStructure, canRun, blockers[] }) —
+  backs the modal pre-run summary; `canRun:false` (e.g. already finalized AC-4) disables Submit.
+- `POST /payroll/runs` body `{ payMonth, payYear }` + **`Idempotency-Key` header** (FR-9)
+  → `IPayrollRun` (status Queued; BE returns 202). 409 ⇒ period already finalized (AC-4).
+- `GET  /payroll/runs/:id/progress` → `IPayrollRunProgress`
+  ({ runId, status, processedEmployees, totalEmployees, skippedEmployees }).
+
+### Progress: POLLING, with a one-method SignalR swap point (FR-6)
+`PayrollRunService.streamProgress(id)` = `timer(0, 2000ms)` → `switchMap(getProgress)`
+→ `takeWhile(Queued|Processing, inclusive:true)`. It emits the first terminal snapshot
+then completes; the detail cmp then refetches the run for the summary card. This is THE
+isolated method to replace if the BE later exposes a SignalR hub — emit the same
+`IPayrollRunProgress` shape, nothing else changes. fakeAsync test: `timer(0,…)` needs a
+`tick(0)` before the FIRST `expectOne` (it does NOT fire synchronously on subscribe).
+
+### UI decisions (US-PAY-003, §8)
+- Runs list = Notion table (desktop) / stacked cards (mobile); sortable header buttons
+  (period/status/employees/net/date, toggle dir) + status filter pills. Row click →
+  `/payroll/runs/:id`.
+- New run = right slide-over modal (same `@drawer`/`@backdrop` pattern), month+year
+  selects, pre-run summary, Submit gated on `canRun`. Default period = PREVIOUS month
+  (payroll runs in arrears). On create → route to detail.
+- Detail = horizontal stepper Queued>Processing>Review>Approved>Finalized (Cancelled is
+  an off-path banner, not a node); live progress bar while active; completion summary
+  card (gross/deductions/net + paid/skipped/total) once ReviewPending+. "View details"
+  payslip link is a DISABLED stub — full payslip viewing is US-PAY-004/005.
+
 ### Deferred (NOT in US-PAY-001)
 Structure detail w/ mock-payslip breakdown, linking components↔structure with
 overrides (FR-3 junction), version history (FR-7), the active-structure earning-

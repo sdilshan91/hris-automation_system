@@ -35,5 +35,21 @@ export const PAYROLL_ROUTES: Routes = [
         './components/bulk-salary-assignment/bulk-salary-assignment.component'
       ).then((m) => m.BulkSalaryAssignmentComponent),
   },
+  {
+    // US-PAY-003 (§8): Notion-style payroll runs table; "New run" modal lives here.
+    path: 'runs',
+    loadComponent: () =>
+      import('./components/payroll-runs/payroll-runs.component').then(
+        (m) => m.PayrollRunsComponent,
+      ),
+  },
+  {
+    // US-PAY-003 (§8): run detail — status stepper, live progress, summary card.
+    path: 'runs/:id',
+    loadComponent: () =>
+      import(
+        './components/payroll-run-detail/payroll-run-detail.component'
+      ).then((m) => m.PayrollRunDetailComponent),
+  },
   { path: '', redirectTo: 'structures', pathMatch: 'full' },
 ];

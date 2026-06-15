@@ -183,6 +183,12 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.OfferExpiryJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOfferExpiryScheduler, HRM.Api.Jobs.HangfireOfferExpiryScheduler>();
 
+    // US-PAY-003 FR-2/FR-3: tenant-aware payroll-run processing job + the Hangfire-backed scheduler seam
+    // (bound to IPayrollRunJobScheduler so the Infrastructure PayrollRunService can enqueue by interface).
+    // The job is enqueued by InitiatePayrollRun and restores the tenant context before computing.
+    builder.Services.AddScoped<HRM.Api.Jobs.ProcessPayrollRunJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayrollRunJobScheduler, HRM.Api.Jobs.HangfirePayrollRunJobScheduler>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
