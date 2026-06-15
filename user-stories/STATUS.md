@@ -78,7 +78,7 @@
 - [x] US-ATT-009 — Attendance integration with payroll *(PR #47)*
 - [x] US-ATT-010 — Attendance dashboard and reports *(PR #48)*
 
-## 5. Recruitment (10 stories)
+## 5. Recruitment (10 stories) — COMPLETE ✅
 - [x] US-REC-001 — Create and publish job vacancy *(PR #49)*
 - [x] US-REC-002 — Applicant submits application with resume *(PR #53)*
 - [x] US-REC-003 — Recruiter views applicant pipeline *(PR #54)*
@@ -88,7 +88,7 @@
 - [x] US-REC-007 — Generate and send offer letter *(PR #59)*
 - [x] US-REC-008 — Applicant tracks application status *(PR #60)*
 - [x] US-REC-009 — Recruitment dashboard and analytics *(PR #61)*
-- [~] US-REC-010 — Convert applicant to employee record
+- [x] US-REC-010 — Convert applicant to employee record *(PR #62)*
 
 ## Platform / Cross-Cutting Tech Debt (3 stories)
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
@@ -160,9 +160,9 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **47** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
+- Done: **48** (AUTH-001..004 scaffolded; AUTH-006 PR #2; AUTH-007 PR #5; **Core HR US-CHR-001..012 COMPLETE** — #13,#14,#16,#17,#18,#19,#20,#21,#22; **Leave Management US-LV-001..012 COMPLETE** — #23,#24,#29,#30,#31,#32,#33,#34,#35,#36,#37,#38; **Attendance US-ATT-001..010 COMPLETE** — #39,#40,#41,#42,#43,#44,#45,#46,#47,#48; **Recruitment US-REC-001** — #49)
 - In progress: **1** (AUTH-005 in PR #1)
-- Pending: **58** (incl. US-PLT-002 Phase 4, US-PLT-003 residual)
+- Pending: **57** (incl. US-PLT-002 Phase 4, US-PLT-003 residual)
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
