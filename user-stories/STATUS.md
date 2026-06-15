@@ -88,7 +88,7 @@
 - [x] US-REC-007 — Generate and send offer letter *(PR #59)*
 - [x] US-REC-008 — Applicant tracks application status *(PR #60)*
 - [x] US-REC-009 — Recruitment dashboard and analytics *(PR #61)*
-- [ ] US-REC-010 — Convert applicant to employee record
+- [~] US-REC-010 — Convert applicant to employee record
 
 ## Platform / Cross-Cutting Tech Debt (3 stories)
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
