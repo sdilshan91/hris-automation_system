@@ -78,4 +78,18 @@ public interface IRecruitmentNotificationService
         string applicantEmail,
         IReadOnlyList<string> interviewerEmails,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the recruiter / hiring team that an interviewer submitted (or edited) a scorecard
+    /// (US-REC-006 FR-5). Fire-and-forget; must never throw into the request path — the scorecard write is
+    /// committed even if dispatch fails. Real in-app/email delivery is DEFERRED: this is the log-only seam
+    /// (mirrors the other recruitment events).
+    /// </summary>
+    Task NotifyScorecardSubmittedAsync(
+        Guid scorecardId,
+        Guid interviewId,
+        Guid applicantId,
+        Guid vacancyId,
+        Guid interviewerEmployeeId,
+        CancellationToken cancellationToken = default);
 }

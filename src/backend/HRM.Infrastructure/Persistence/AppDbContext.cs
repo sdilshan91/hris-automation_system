@@ -67,6 +67,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<ApplicantStageHistory> ApplicantStageHistories => Set<ApplicantStageHistory>();
     public DbSet<Interview> Interviews => Set<Interview>();
     public DbSet<InterviewInterviewer> InterviewInterviewers => Set<InterviewInterviewer>();
+    public DbSet<InterviewScorecard> InterviewScorecards => Set<InterviewScorecard>();
+    public DbSet<ScorecardCriterionRating> ScorecardCriterionRatings => Set<ScorecardCriterionRating>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -240,5 +242,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-REC-005: InterviewInterviewer tenant isolation + soft-delete filter (AC-5).
         modelBuilder.Entity<InterviewInterviewer>()
             .HasQueryFilter(ii => !ii.IsDeleted && (!_tenantContext.IsResolved || ii.TenantId == _tenantContext.TenantId));
+
+        // US-REC-006: InterviewScorecard tenant isolation + soft-delete filter (AC-4).
+        modelBuilder.Entity<InterviewScorecard>()
+            .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
+
+        // US-REC-006: ScorecardCriterionRating tenant isolation + soft-delete filter (AC-4).
+        modelBuilder.Entity<ScorecardCriterionRating>()
+            .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
     }
 }

@@ -396,17 +396,19 @@ public sealed class ApplicantStageMoveServiceTests
         result.Value!.Warnings.Should().NotContain(w => w.Contains("headcount"));
     }
 
-    // ── US-REC-004 FR-1/BR-1: gate framework stub surfaces an advisory warning ─
+    // ── US-REC-004 FR-1/BR-1 gate, now REAL via US-REC-006: Offer requires a scorecard ─
 
     [Fact]
-    public async Task MoveStage_ToInterview_SurfacesGateStubWarning()
+    public async Task MoveStage_ToOfferWithoutScorecard_SurfacesGateWarning()
     {
-        var id = SeedApplicant(ApplicantStage.Screening);
+        // US-REC-006 replaced the REC-004 gate stub with the real Offer gate: advancing to Offer
+        // without any interview scorecard surfaces a soft (non-blocking) warning.
+        var id = SeedApplicant(ApplicantStage.Interview);
 
-        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Interview, reason: null, notes: null);
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Offer, reason: null, notes: null);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value!.Warnings.Should().Contain(w => w.Contains("gate criteria"));
+        result.Value!.Warnings.Should().Contain(w => w.Contains("scorecard"));
     }
 
     // ── US-REC-004 BR-2: reactivation out of Rejected requires a reason ─

@@ -156,6 +156,19 @@ import {
             {{ iv.notes }}
           </p>
         }
+
+        <!-- Scorecard CTA (US-REC-006 AC-1) — the assigned interviewer submits. -->
+        @if (showScorecard()) {
+          <div class="mt-3 border-t border-neutral-100 pt-3">
+            <button
+              type="button"
+              class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100"
+              (click)="scorecard.emit(iv)"
+            >
+              {{ scorecardSubmitted() ? 'Edit scorecard' : 'Submit scorecard' }}
+            </button>
+          </div>
+        }
       </div>
     }
   `,
@@ -181,9 +194,18 @@ export class InterviewCardComponent {
   readonly showActions = input<boolean>(true);
   /** Show applicant/vacancy context line (agenda view). */
   readonly showContext = input<boolean>(false);
+  /**
+   * US-REC-006: show the "Submit/Edit scorecard" CTA (the assigned interviewer's
+   * view). Off by default so the recruiter timeline isn't cluttered.
+   */
+  readonly showScorecard = input<boolean>(false);
+  /** Whether the current user already submitted a scorecard (toggles the CTA label). */
+  readonly scorecardSubmitted = input<boolean>(false);
 
   readonly reschedule = output<IInterview>();
   readonly cancel = output<IInterview>();
+  /** US-REC-006: emitted when the interviewer opens the scorecard form. */
+  readonly scorecard = output<IInterview>();
 
   readonly endLabel = computed(() => {
     const iv = this.interview();
