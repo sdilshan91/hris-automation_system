@@ -178,6 +178,10 @@ public static class DependencyInjection
         // US-REC-009: Recruitment dashboard + analytics (read-only aggregation, no new entities).
         services.AddScoped<IRecruitmentDashboardService, RecruitmentDashboardService>();
 
+        // US-PAY-001: Payroll — salary component + salary structure configuration.
+        services.AddScoped<ISalaryComponentService, SalaryComponentService>();
+        services.AddScoped<ISalaryStructureService, SalaryStructureService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.
