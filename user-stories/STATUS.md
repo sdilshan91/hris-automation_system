@@ -83,7 +83,7 @@
 - [x] US-REC-002 — Applicant submits application with resume *(PR #53)*
 - [x] US-REC-003 — Recruiter views applicant pipeline *(PR #54)*
 - [x] US-REC-004 — Move applicant through pipeline stages *(PR #55)*
-- [ ] US-REC-005 — Schedule interviews and notify participants
+- [~] US-REC-005 — Schedule interviews and notify participants
 - [ ] US-REC-006 — Interviewer submits scorecard
 - [ ] US-REC-007 — Generate and send offer letter
 - [ ] US-REC-008 — Applicant tracks application status
