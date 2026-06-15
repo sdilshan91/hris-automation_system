@@ -94,7 +94,7 @@
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
 - [x] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(PR #50; surfaced in US-REC-001 / PR #49)*
 - [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(Phases 1-3 plumbing in PR #51, inert by default; **Phase 4 switch-on DEFERRED** — needs Docker/Postgres env, see Persistence/Rls/README.md)*
-- [ ] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(surfaced in US-REC-005 / PR #56; API has no JsonStringEnumConverter → enums serialize as ints, FE assumes strings — app-wide)*
+- [~] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(surfaced in US-REC-005 / PR #56; API has no JsonStringEnumConverter → enums serialize as ints, FE assumes strings — app-wide)*
 
 ## 6. Payroll (12 stories)
 - [ ] US-PAY-001 — Configure salary structure and components
