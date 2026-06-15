@@ -58,6 +58,116 @@ arrive as STRINGS. Source of truth = payroll.models.ts:
 - Tenant primary color via `[style.background-color]="'var(--brand-primary)'"` on
   action buttons / header CTAs (same as careers-branding).
 
+## Assign salary to employee (US-PAY-002)
+
+Adds a 12th **"Compensation"** tab to the Core HR employee profile (sectionList
+index 11, `key: 'compensation'`). Implemented as a self-contained child
+`EmployeeCompensationComponent` (payroll feature) embedded with
+`[employeeId]="employeeId"` — same child pattern as employee-documents /
+employee-leave-overrides, so the employee-profile diff is tiny (import + imports
+array + sectionList entry + one `@if (activeTab() === 11)` block). NOTE: any new
+tab bumps the employee-profile spec's hardcoded `sectionList.length` assertion —
+update that count, it is not a weakening.
+
+### Frontend contract — NEW service `EmployeeSalaryService` (payroll/services)
+Sibling to PayrollService; route strings live ONLY here. Base `/api/v1/payroll`.
+Bare payloads (US-PLT-001 envelope), PascalCase enums (US-PLT-003).
+- `POST /payroll/salary-assignments/preview` body `ISalaryAssignmentRequest` →
+  `ICtcBreakdown` (FR-3 preview-before-confirm; same body shape as assign so the
+  previewed numbers == what is saved). `balanced` flag = FR-6 tolerance check.
+- `POST /payroll/salary-assignments` → `ISalaryAssignmentResult` (FR-1).
+- `POST /payroll/salary-assignments/bulk` body `IBulkAssignmentRequest` →
+  `IBulkAssignmentResult` (per-row `results[]` drive the progress bar + per-row
+  status chips, AC-4).
+- `GET  /payroll/employees/:id/compensation` → `IEmployeeCompensation`
+  (null structure/ctc ⇒ render "Payroll Incomplete" badge, BR-5).
+- `GET  /payroll/employees/:id/revision-history` → `ISalaryRevision[]`
+  (tolerates `{ data }`; newest-first timeline, FR-4/BR-3).
+
+### UI decisions (US-PAY-002, §8)
+- Compensation tab: stat cards (structure/annual/monthly CTC) + Notion inline
+  breakdown table (Component | Monthly | Annual, total row). Override lines get
+  `bg-brand-50` + an "Override" badge (AC-3 visually distinct).
+- Assign/revise = right slide-over drawer (same `@drawer`/`@backdrop` pattern as
+  component-form). The form's `valueChanges` clears the preview so a stale
+  preview can never be the one confirmed; **Confirm is disabled until a preview
+  exists** (enforces FR-3 preview-before-confirm). Overrides are a FormArray in a
+  dashed brand-bordered panel.
+- Revision history = vertical timeline; each row expands to a 2-col before/after
+  comparison (FR-4).
+- Bulk assign = dedicated child route `payroll/bulk-assign` (NOT a tab).
+  Spreadsheet-like grid: pick one structure + date, then paste two columns
+  (employeeId, CTC) into a textarea — `parsePaste` splits on tab OR comma and
+  strips currency chars. **Desktop only**: `md:hidden` message replaces the grid
+  on mobile (§8). Progress bar + per-row success/failed chips after submit.
+- Shared utility classes (`badge`, `skeleton-line`, `btn-spinner`) are
+  component-scoped in employee-profile, NOT global — re-declared in each new
+  payroll component's `styles` block (ViewEncapsulation).
+
+### Backend implementation (US-PAY-002) — reconciled with the FE contract above
+Entities `EmployeeSalaryComponent` + `SalaryRevisionHistory` (both BaseEntity,
+tenant-scoped; migration `Payroll_EmployeeSalaryAssignment`). Service
+`ISalaryAssignmentService`/`SalaryAssignmentService`. Controller
+`EmployeeSalaryController`, base `api/v1/payroll`, all
+`[RequirePermission("Payroll.Configure")]` (no separate Assign permission exists).
+Routes implemented to MATCH the FE contract: `salary-assignments/preview`,
+`salary-assignments`, `salary-assignments/bulk`, `employees/{id}/compensation`,
+`employees/{id}/revision-history`. Preview AND assign both return `CtcBreakdownDto`
+(same shape ⇒ previewed numbers == saved). `CtcBreakdownDto.Balanced` (bool) is the
+FE's FR-6 indicator (`|TotalAnnualEarnings − AnnualCtc| <= 1`).
+- FE expected separate `ICtcBreakdown` vs `ISalaryAssignmentResult` and a `balanced`
+  flag — backend returns ONE `CtcBreakdownDto` for both with a `Balanced` field; FE
+  can alias both interfaces to it. Bulk → `BulkAssignResultDto` { totalRequested,
+  succeededCount, failedCount, results[] { employeeId, success, error, errorCode } }.
+
+### CTC breakdown calc (`CtcBreakdownCalculator`, pure domain, `HRM.Domain/Payroll`)
+Resolves a structure's effective component rules → annual+monthly for a declared
+annual CTC, in ProcessingOrder (earlier components visible to later formulas).
+`monthly = annual/12`; all money `Math.Round(.,2,AwayFromZero)` (numeric(18,2)).
+Method semantics decided HERE:
+- `Fixed` → effective value is a fixed ANNUAL amount.
+- `PercentageOfGross` → value% of the declared annual CTC (gross == CTC at assignment).
+- `PercentageOfBasic` → value% of the resolved component coded `BASIC`.
+- `Formula` → reuses **`SalaryFormula.Evaluate`, NOT NCalc** (the story brief says
+  NCalc, but US-PAY-001 rejected NCalc over a NuGet conflict; the existing
+  recursive-descent evaluator is the source of truth). Variables = each earlier
+  component's resolved ANNUAL amount by code + aliases `gross`/`ctc` (== CTC) and
+  `basic` (resolved BASIC). Useful pattern: a residual "Special Allowance"
+  `ctc - BASIC - HRA` makes earnings always total the CTC so FR-6 passes at any CTC.
+- Per-component override (component id → fixed annual amount) short-circuits the rule,
+  is flagged `IsOverride` (AC-3), and IS visible to later formulas.
+
+### Assignment domain rules (decided in US-PAY-002)
+- FR-6: |sum(EARNING annual amounts) − CTC| ≤ ±1 (`CtcTolerance=1m`) else
+  `ctc_sum_mismatch` 400. Only EARNING components count toward CTC (statutory/
+  deduction/reimbursement excluded).
+- FR-7: inactive structure → `structure_inactive` 400 (service-side, needs DB). Missing
+  structure → `structure_not_found` 404; missing employee → `employee_not_found` 404.
+- BR-1/BR-2 supersession: an assign closes the employee's currently-active rows (window
+  contains today) at `effectiveFrom − 1`, ONLY shortening (never extending) the window.
+  Current/past date supersedes immediately; a FUTURE date closes the old window in the
+  future so today's "current" comp is unchanged until the date arrives. New rows start
+  with `effective_to = null`. "Current" read = `effective_from <= today &&
+  (effective_to == null || effective_to >= today)`.
+- BR-3 revision history: every assign appends a `salary_revision_history` row — old/new
+  structure + old/new CTC (old = prior CURRENT rows' summed earnings; null on first-ever
+  assign), effective date, reason, `changed_by = currentUser.UserId`, `changed_at =
+  UtcNow`. Append-only.
+- Bulk (AC-4/FR-5): structure validated once up front (whole batch fails fast on a
+  bad/inactive structure); per-employee unknown ⇒ SKIPPED with per-row
+  `employee_not_found`, valid ones succeed; all staged + one `SaveChanges` (NFR-1).
+
+### Deferred (NOT in US-PAY-002) — confirmed per the story brief
+- NFR-5 column-level encryption at rest (pgcrypto) — not built.
+- BR-6 backdating-into-finalized-payroll guard — depends on payroll-run US-PAY-003
+  (doesn't exist yet).
+- DB-level RLS — US-PLT-002 (isolation here is EF global filters + TenantInterceptor).
+- NFR-4 before/after audit log — reuses the existing `AuditInterceptor` (stamps audit
+  fields on SaveChanges); `salary_revision_history` IS the domain before/after record.
+  No new audit infra added.
+- BR-4 probation-vs-confirmed distinction, BR-5 "Payroll Incomplete" flag (FE-only
+  badge), BR-7 employer-statutory-in/out-of-CTC, CSV upload parsing — not in scope.
+
 ### Deferred (NOT in US-PAY-001)
 Structure detail w/ mock-payslip breakdown, linking components↔structure with
 overrides (FR-3 junction), version history (FR-7), the active-structure earning-

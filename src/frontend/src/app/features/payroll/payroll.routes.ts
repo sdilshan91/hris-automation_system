@@ -27,5 +27,13 @@ export const PAYROLL_ROUTES: Routes = [
         './components/salary-components/salary-components.component'
       ).then((m) => m.SalaryComponentsComponent),
   },
+  {
+    // US-PAY-002 FR-5/AC-4: spreadsheet-like bulk salary-structure assignment.
+    path: 'bulk-assign',
+    loadComponent: () =>
+      import(
+        './components/bulk-salary-assignment/bulk-salary-assignment.component'
+      ).then((m) => m.BulkSalaryAssignmentComponent),
+  },
   { path: '', redirectTo: 'structures', pathMatch: 'full' },
 ];

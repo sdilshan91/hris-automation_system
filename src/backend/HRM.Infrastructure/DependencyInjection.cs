@@ -182,6 +182,10 @@ public static class DependencyInjection
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();
 
+        // US-PAY-002: Payroll — assign salary structure to employee (CTC breakdown, revision history,
+        // bulk assign, future-dated supersession).
+        services.AddScoped<ISalaryAssignmentService, SalaryAssignmentService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.

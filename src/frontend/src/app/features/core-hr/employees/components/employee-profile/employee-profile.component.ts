@@ -40,6 +40,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
 import { EmployeeLeaveOverridesComponent } from '../../../../leave-management/components/employee-leave-overrides/employee-leave-overrides.component';
+import { EmployeeCompensationComponent } from '../../../../payroll/components/employee-compensation/employee-compensation.component';
 import { CustomFieldService } from '../../../custom-fields/services/custom-field.service';
 import {
   ICustomFieldDefinition,
@@ -58,7 +59,7 @@ import {
 @Component({
   selector: 'app-employee-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent, EmployeeCompensationComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -1170,6 +1171,16 @@ import {
               }
             </section>
           }
+
+          <!-- US-PAY-002 §8: Compensation tab -->
+          @if (activeTab() === 11) {
+            <section @fadeIn class="card-notion" [attr.aria-label]="'Compensation'">
+              <div class="section-header">
+                <h3 class="section-title">Compensation</h3>
+              </div>
+              <app-employee-compensation [employeeId]="employeeId" />
+            </section>
+          }
         </div>
       }
 
@@ -1744,6 +1755,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     { key: 'documents', label: 'Documents' },
     { key: 'leave' as any, label: 'Leave' },
     { key: 'custom-fields', label: 'Custom Fields' },
+    { key: 'compensation' as any, label: 'Compensation' },
   ];
 
   // ─── Signals ───────────────────────────────────────────────
