@@ -296,6 +296,17 @@ export const appRoutes: Routes = [
           roleGuard(['Recruiter', 'HR Officer', 'HR Manager', 'Tenant Admin']),
         ],
       },
+      // ─── Payroll / Salary structures + components (US-PAY-001) ─
+      {
+        path: 'payroll',
+        loadChildren: () =>
+          import('./features/payroll/payroll.routes').then(
+            (m) => m.PAYROLL_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer']),
+        ],
+      },
       // ─── Core HR / Employees (US-CHR-001) ──────────────────
       {
         path: 'employees',

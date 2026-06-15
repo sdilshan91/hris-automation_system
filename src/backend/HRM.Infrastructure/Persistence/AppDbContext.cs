@@ -71,6 +71,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<ScorecardCriterionRating> ScorecardCriterionRatings => Set<ScorecardCriterionRating>();
     public DbSet<Offer> Offers => Set<Offer>();
     public DbSet<ApplicantPortalToken> ApplicantPortalTokens => Set<ApplicantPortalToken>();
+    public DbSet<SalaryComponent> SalaryComponents => Set<SalaryComponent>();
+    public DbSet<SalaryStructure> SalaryStructures => Set<SalaryStructure>();
+    public DbSet<SalaryStructureComponent> SalaryStructureComponents => Set<SalaryStructureComponent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -261,5 +264,17 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // isolation — a token row is only ever readable within its own tenant).
         modelBuilder.Entity<ApplicantPortalToken>()
             .HasQueryFilter(t => !t.IsDeleted && (!_tenantContext.IsResolved || t.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-001: SalaryComponent tenant isolation + soft-delete filter (AC-6 cross-tenant isolation).
+        modelBuilder.Entity<SalaryComponent>()
+            .HasQueryFilter(c => !c.IsDeleted && (!_tenantContext.IsResolved || c.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-001: SalaryStructure tenant isolation + soft-delete filter (AC-6).
+        modelBuilder.Entity<SalaryStructure>()
+            .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-001: SalaryStructureComponent tenant isolation + soft-delete filter (AC-6).
+        modelBuilder.Entity<SalaryStructureComponent>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
