@@ -51,5 +51,14 @@ export const PAYROLL_ROUTES: Routes = [
         './components/payroll-run-detail/payroll-run-detail.component'
       ).then((m) => m.PayrollRunDetailComponent),
   },
+  {
+    // US-PAY-006 (§8): statutory configuration — tax slabs, PF, other deductions,
+    // fiscal-year versioning, test-calc panel + version history.
+    path: 'statutory',
+    loadComponent: () =>
+      import(
+        './components/statutory-configuration/statutory-configuration.component'
+      ).then((m) => m.StatutoryConfigurationComponent),
+  },
   { path: '', redirectTo: 'structures', pathMatch: 'full' },
 ];

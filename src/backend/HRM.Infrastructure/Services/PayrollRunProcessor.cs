@@ -26,9 +26,13 @@ namespace HRM.Infrastructure.Services;
 /// (AC-3). Re-running a ReviewPending/Cancelled run replaces its prior slips (FR-7). Finalized is immutable
 /// (BR-7).</para>
 ///
-/// <para>STATUTORY (FR-5c): a real statutory-rule engine is US-PAY-006 (not built). Here, components flagged
-/// <c>is_statutory</c> on the structure are applied as-is from the assigned amounts and summed into the run's
-/// statutory total. Documented deferral in the module note.</para>
+/// <para>STATUTORY (FR-5c / US-PAY-006): when the tenant has configured statutory rules in effect for the
+/// run's period, the <see cref="IStatutoryDeductionResolver"/> computes the employee-side statutory
+/// deductions (progressive income tax over slabs, EPF with wage ceiling, ETF, professional/custom) and those
+/// REPLACE the structure's as-is <c>is_statutory</c> component lines. When NO rules are configured (the
+/// pre-US-PAY-006 case, and every existing US-PAY-003 test), the resolver returns an empty result and the
+/// processor falls back to applying the structure's <c>is_statutory</c> components as-is — so this wiring is
+/// purely additive and changes nothing until a tenant configures rules.</para>
 /// </summary>
 public sealed class PayrollRunProcessor : IPayrollRunProcessor
 {
@@ -36,6 +40,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     private readonly ITenantContext _tenantContext;
     private readonly IAttendancePayrollService _attendancePayroll;
     private readonly IPayrollNotificationService _notifications;
+    private readonly IStatutoryDeductionResolver _statutoryResolver;
     private readonly ILogger<PayrollRunProcessor> _logger;
 
     /// <summary>Synthetic component id for the LOP deduction line (BR-2). Stable so the slip detail FK is consistent.</summary>
@@ -46,12 +51,14 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         ITenantContext tenantContext,
         IAttendancePayrollService attendancePayroll,
         IPayrollNotificationService notifications,
+        IStatutoryDeductionResolver statutoryResolver,
         ILogger<PayrollRunProcessor> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _attendancePayroll = attendancePayroll;
         _notifications = notifications;
+        _statutoryResolver = statutoryResolver;
         _logger = logger;
     }
 
@@ -155,6 +162,10 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             var slipInput = new PayrollSlipInput(emp.Id, inputs, workingDays, lopDays, proRataPaidDays);
             var result = PayrollSlipCalculator.Compute(slipInput, LopComponentId);
 
+            // US-PAY-006 FR-?: when statutory rules are configured for the period, replace the structure's
+            // as-is statutory lines with rule-computed deductions. No-op (returns `result`) when no rules exist.
+            result = await ApplyStatutoryRulesAsync(result, run.PayYear, run.PayMonth, runLog, cancellationToken);
+
             var slip = new PayrollSlip
             {
                 Id = BaseEntity.NewUuidV7(),
@@ -247,6 +258,98 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         return await _dbContext.SalaryComponents.AsNoTracking()
             .Where(c => ids.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id, ct);
+    }
+
+    private const string BasicCode = "BASIC";
+
+    /// <summary>
+    /// US-PAY-006 integration: replaces the structure's as-is statutory lines with statutory-rule-computed
+    /// deductions for the period, when rules are configured. Resolves via the shared
+    /// <see cref="IStatutoryDeductionResolver"/> (so previewed test-calc numbers == run numbers), using the
+    /// slip's gross (for tax / Gross-based contributions) and resolved BASIC line (for Basic-based EPF/ETF).
+    ///
+    /// <para>FAIL-OPEN / NO-OP: if no rules are in effect (empty fiscal year) or resolution fails, the
+    /// original <paramref name="result"/> is returned unchanged, preserving the legacy as-is behaviour and
+    /// keeping every existing US-PAY-003 test green.</para>
+    /// </summary>
+    private async Task<PayrollSlipResult> ApplyStatutoryRulesAsync(
+        PayrollSlipResult result, int payYear, int payMonth, StringBuilder runLog, CancellationToken ct)
+    {
+        var basic = result.Lines
+            .Where(l => l.Type == SalaryComponentType.Earning)
+            .FirstOrDefault(l => string.Equals(l.Name, "Basic", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(l.Name, BasicCode, StringComparison.OrdinalIgnoreCase))
+            .Amount;
+        if (basic == 0m)
+            basic = result.GrossEarnings; // no identifiable BASIC line → use gross as the contribution base.
+
+        var wage = new StatutoryWageInput(
+            MonthlyGross: result.GrossEarnings,
+            MonthlyBasic: basic,
+            ExemptEarnings: 0m,
+            DeclaredExemptions: 0m,
+            ComponentAmountsById: null);
+
+        Result<StatutoryDeductions> resolved;
+        try
+        {
+            resolved = await _statutoryResolver.ResolveAsync(payYear, payMonth, wage, fiscalYearOverride: null, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Statutory resolution failed for employee {Employee}; applying structure statutory components as-is.", result.EmployeeId);
+            return result;
+        }
+
+        // No rules in effect (the pre-US-PAY-006 path): keep the structure's as-is statutory lines.
+        if (resolved.IsFailure || resolved.Value is null || string.IsNullOrEmpty(resolved.Value.FiscalYear) || resolved.Value.Lines.Count == 0)
+            return result;
+
+        var deductions = resolved.Value;
+
+        // Drop the structure's as-is statutory lines; keep earnings/reimbursements/non-statutory deductions (incl. LOP).
+        var lines = result.Lines.Where(l => l.Type != SalaryComponentType.Statutory).ToList();
+
+        // Add the rule-computed EMPLOYEE-side statutory lines (employer contributions are informational, not deducted).
+        decimal statutoryTotal = 0m;
+        foreach (var line in deductions.Lines.Where(l => !l.IsEmployerContribution))
+        {
+            lines.Add(new PayrollSlipLine(
+                line.RuleId, line.Label, SalaryComponentType.Statutory, IsStatutory: true, line.Amount, line.Basis));
+            statutoryTotal += line.Amount;
+        }
+
+        // Recompute the rolled-up totals from the adjusted line set (BR — statutory reduces net).
+        decimal gross = 0m, totalDeductions = 0m;
+        foreach (var l in lines)
+        {
+            switch (l.Type)
+            {
+                case SalaryComponentType.Earning:
+                case SalaryComponentType.Reimbursement:
+                    gross += l.Amount;
+                    break;
+                case SalaryComponentType.Deduction:
+                case SalaryComponentType.Statutory:
+                    totalDeductions += l.Amount;
+                    break;
+            }
+        }
+
+        gross = Round(gross);
+        totalDeductions = Round(totalDeductions);
+        var net = Round(gross - totalDeductions);
+
+        runLog.AppendLine($"Statutory rules (FY {deductions.FiscalYear}) applied for employee {result.EmployeeId}: tax {deductions.IncomeTax:0.##}, EPF {deductions.EmployeeEpf:0.##}.");
+
+        return result with
+        {
+            GrossEarnings = gross,
+            TotalDeductions = totalDeductions,
+            NetSalary = net,
+            StatutoryTotal = Round(statutoryTotal),
+            Lines = lines,
+        };
     }
 
     /// <summary>Maps an employee's resolved salary-component rows to the engine's component inputs (FR-5a).</summary>

@@ -202,6 +202,13 @@ public static class DependencyInjection
         services.AddScoped<IPayslipGenerationService, PayslipGenerationService>();
         services.AddScoped<IPayslipBatchRenderer, PayslipBatchRenderer>();
 
+        // US-PAY-006: Payroll — statutory deduction configuration (income-tax slabs, EPF/ETF/professional/custom
+        // social-security) + the side-effect-free FR-5 test calculation. The deduction resolver (FR-4) is the
+        // single source of truth shared by the test calc AND the payroll-run engine (US-PAY-003) so previewed
+        // numbers == run numbers; all math is delegated to the pure HRM.Domain StatutoryCalculator (NFR-5).
+        services.AddScoped<IStatutoryRuleService, StatutoryRuleService>();
+        services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
+
         // US-PAY-005: Payroll — employee self-service payslip read (list / detail / PDF download). Resolves the
         // caller's employee_id from ICurrentUser and scopes every read to it (own employee + own tenant); only
         // Finalized-run slips are visible (BR-1); a cross-employee payslip id is a deliberate 403 (AC-4).

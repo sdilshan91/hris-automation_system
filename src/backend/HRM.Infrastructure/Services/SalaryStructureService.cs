@@ -103,6 +103,13 @@ public sealed class SalaryStructureService : ISalaryStructureService
         if (linkCheck is not null)
             return Result<SalaryStructureDto>.Failure(linkCheck.Value.error, linkCheck.Value.status, linkCheck.Value.code);
 
+        // US-PAY-006 AC-5: a wholesale structure edit must not silently drop a mandatory statutory component.
+        // The single-link UnlinkComponentAsync already guards this (BR-3); the update path replaces the whole
+        // link set, so re-check here that every currently-mandatory statutory component survives the edit.
+        var mandatoryGuard = await ValidateMandatoryStatutoryRetainedAsync(structureId, input.Components, cancellationToken);
+        if (mandatoryGuard is not null)
+            return Result<SalaryStructureDto>.Failure(mandatoryGuard.Value.error, 409, mandatoryGuard.Value.code);
+
         structure.Name = input.Name.Trim();
         structure.Code = code;
         structure.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
@@ -472,6 +479,35 @@ public sealed class SalaryStructureService : ISalaryStructureService
             IsMandatory = i.IsMandatory,
             IsDeleted = false,
         });
+
+    /// <summary>
+    /// US-PAY-006 AC-5: ensures a wholesale structure edit retains every component that is currently a
+    /// MANDATORY STATUTORY link. Returns an error when such a component would be dropped from the structure;
+    /// null when all mandatory statutory components are still present in the new input set.
+    /// </summary>
+    private async Task<(string error, string code)?> ValidateMandatoryStatutoryRetainedAsync(
+        Guid structureId, IReadOnlyList<SalaryStructureComponentInput> newInputs, CancellationToken cancellationToken)
+    {
+        var mandatoryLinks = await _dbContext.SalaryStructureComponents.AsNoTracking()
+            .Where(x => x.SalaryStructureId == structureId && x.IsMandatory)
+            .ToListAsync(cancellationToken);
+        if (mandatoryLinks.Count == 0)
+            return null;
+
+        var mandatoryComponentIds = mandatoryLinks.Select(l => l.SalaryComponentId).Distinct().ToList();
+        var statutoryMandatoryIds = await _dbContext.SalaryComponents.AsNoTracking()
+            .Where(c => mandatoryComponentIds.Contains(c.Id) && c.IsStatutory)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+        if (statutoryMandatoryIds.Count == 0)
+            return null;
+
+        var retainedIds = newInputs.Select(i => i.SalaryComponentId).ToHashSet();
+        if (statutoryMandatoryIds.Any(id => !retainedIds.Contains(id)))
+            return ("A mandatory statutory component cannot be removed from the structure.", "statutory_mandatory");
+
+        return null;
+    }
 
     private async Task ClearExistingDefaultAsync(Guid keepId, CancellationToken cancellationToken)
     {

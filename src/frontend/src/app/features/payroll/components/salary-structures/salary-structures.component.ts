@@ -51,13 +51,21 @@ import { ISalaryStructure } from '../../models/payroll.models';
             components.
           </p>
         </div>
-        <a
-          routerLink="/payroll/components"
-          class="self-start rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90 sm:self-auto"
-          [style.background-color]="'var(--brand-primary)'"
-        >
-          Manage components
-        </a>
+        <div class="flex flex-wrap gap-2 self-start sm:self-auto">
+          <a
+            routerLink="/payroll/statutory"
+            class="rounded-lg px-4 py-2 text-sm font-medium text-neutral-700 ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+          >
+            Statutory config
+          </a>
+          <a
+            routerLink="/payroll/components"
+            class="rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+            [style.background-color]="'var(--brand-primary)'"
+          >
+            Manage components
+          </a>
+        </div>
       </div>
 
       <!-- Loading -->
