@@ -99,7 +99,7 @@
 ## 6. Payroll (12 stories)
 - [x] US-PAY-001 — Configure salary structure and components *(PR #63)*
 - [x] US-PAY-002 — Assign salary structure to employee *(PR #64)*
-- [~] US-PAY-003 — Run monthly payroll
+- [x] US-PAY-003 — Run monthly payroll *(PR #65)*
 - [ ] US-PAY-004 — Generate individual payslips
 - [ ] US-PAY-005 — Employee views and downloads payslips
 - [ ] US-PAY-006 — Statutory deductions configuration
