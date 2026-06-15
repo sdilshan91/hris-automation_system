@@ -170,9 +170,9 @@ interface IPendingMove {
               (ngModelChange)="updateFilter({ source: $event || null })"
             >
               <option [ngValue]="null">All sources</option>
-              <option value="public">Public</option>
-              <option value="internal">Internal</option>
-              <option value="referral">Referral</option>
+              <option value="Public">Public</option>
+              <option value="Internal">Internal</option>
+              <option value="Referral">Referral</option>
             </select>
           </div>
           <div>
@@ -814,7 +814,7 @@ export class ApplicantPipelineComponent implements OnInit {
   }
 
   sourceBadge(source: ApplicantSource): string {
-    return SOURCE_BADGE[source] ?? SOURCE_BADGE.public;
+    return SOURCE_BADGE[source] ?? SOURCE_BADGE.Public;
   }
 
   isColumnHiddenOnMobile(stage: ApplicantStage): boolean {

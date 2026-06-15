@@ -25,7 +25,7 @@ describe('InterviewFormComponent', () => {
     applicantId: 'app-1',
     vacancyId: 'vac-1',
     roundNumber: 2,
-    interviewType: 'in-person',
+    interviewType: 'InPerson',
     scheduledDate: futureDate,
     startTime: '10:00',
     durationMinutes: 90,
@@ -83,7 +83,7 @@ describe('InterviewFormComponent', () => {
   it('creates and defaults to a 60-minute in-person interview (FR-1)', () => {
     expect(component).toBeTruthy();
     expect(component.form.controls.durationMinutes.value).toBe(60);
-    expect(component.form.controls.interviewType.value).toBe('in-person');
+    expect(component.form.controls.interviewType.value).toBe('InPerson');
     expect(component.isEdit()).toBeFalse();
   });
 
@@ -103,7 +103,7 @@ describe('InterviewFormComponent', () => {
     component.form.patchValue({
       scheduledDate: futureDate,
       startTime: '09:00',
-      interviewType: 'in-person',
+      interviewType: 'InPerson',
       location: '',
     });
     component.submit();
@@ -113,7 +113,7 @@ describe('InterviewFormComponent', () => {
 
   it('requires a video link for video interviews (conditional validator)', () => {
     component.addInterviewer({ id: 'e1', label: 'Ada Lovelace' });
-    component.form.controls.interviewType.setValue('video');
+    component.form.controls.interviewType.setValue('Video');
     component.form.patchValue({
       scheduledDate: futureDate,
       startTime: '09:00',
@@ -144,7 +144,7 @@ describe('InterviewFormComponent', () => {
     component.form.patchValue({
       scheduledDate: futureDate,
       startTime: '09:00',
-      interviewType: 'in-person',
+      interviewType: 'InPerson',
       location: 'Room 2',
       notes: 'hello',
     });

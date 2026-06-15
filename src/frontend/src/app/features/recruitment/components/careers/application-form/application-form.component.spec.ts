@@ -23,7 +23,7 @@ describe('ApplicationFormComponent', () => {
     coverLetter: null,
     resumeFileName: 'cv.pdf',
     stage: 'Applied',
-    source: 'public',
+    source: 'Public',
     isInternal: false,
     appliedAt: '2026-06-15T00:00:00Z',
   };

@@ -24,7 +24,7 @@ describe('InternalApplyComponent', () => {
     coverLetter: null,
     resumeFileName: 'cv.pdf',
     stage: 'Applied',
-    source: 'internal',
+    source: 'Internal',
     isInternal: true,
     appliedAt: '2026-06-15',
   };

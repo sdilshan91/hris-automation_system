@@ -26,7 +26,7 @@ describe('VacancyFormComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Engineer',
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     locationId: 'loc-1',
     locationName: 'HQ',
     hiringManagerId: 'emp-1',

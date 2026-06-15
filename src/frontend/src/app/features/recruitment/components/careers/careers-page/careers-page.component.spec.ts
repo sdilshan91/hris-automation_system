@@ -33,9 +33,9 @@ describe('CareersPageComponent', () => {
   });
 
   const list: IPublicVacancy[] = [
-    vac({ id: 'a', title: 'Backend Engineer', departmentName: 'Engineering', locationName: 'HQ', employmentType: 'Full-Time' }),
+    vac({ id: 'a', title: 'Backend Engineer', departmentName: 'Engineering', locationName: 'HQ', employmentType: 'FullTime' }),
     vac({ id: 'b', title: 'Recruiter', departmentName: 'People', locationName: 'Remote', employmentType: 'Contract' }),
-    vac({ id: 'c', title: 'Frontend Engineer', departmentName: 'Engineering', locationName: 'Remote', employmentType: 'Full-Time' }),
+    vac({ id: 'c', title: 'Frontend Engineer', departmentName: 'Engineering', locationName: 'Remote', employmentType: 'FullTime' }),
   ];
 
   const setup = async () => {
@@ -73,7 +73,7 @@ describe('CareersPageComponent', () => {
   it('derives distinct sorted filter options', () => {
     expect(component.departments()).toEqual(['Engineering', 'People']);
     expect(component.locations()).toEqual(['HQ', 'Remote']);
-    expect(component.employmentTypes()).toEqual(['Contract', 'Full-Time']);
+    expect(component.employmentTypes()).toEqual(['Contract', 'FullTime']);
   });
 
   it('filters by search title', () => {

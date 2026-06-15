@@ -84,6 +84,13 @@ try
     builder.Services.AddControllers(options =>
     {
         options.Filters.Add<ValidationFilter>();
+    })
+    .AddJsonOptions(options =>
+    {
+        // US-PLT-003: serialize enums as their string names (PascalCase) instead of integers,
+        // matching what the Angular frontend consumes. Deserialization is case-insensitive.
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
     builder.Services.AddHttpContextAccessor();

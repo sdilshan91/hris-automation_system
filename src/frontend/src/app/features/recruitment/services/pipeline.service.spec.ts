@@ -30,7 +30,7 @@ describe('PipelineService', () => {
     firstName: 'Ada',
     lastName: 'Lovelace',
     email: 'ada@example.com',
-    source: 'public',
+    source: 'Public',
     isInternal: false,
     appliedAt: '2026-06-10T00:00:00Z',
     stage: 'Applied',
@@ -88,7 +88,7 @@ describe('PipelineService', () => {
       service
         .getPipeline('vac-1', {
           stage: 'Screening',
-          source: 'internal',
+          source: 'Internal',
           from: '2026-01-01',
           to: '2026-12-31',
           search: 'ada',
@@ -100,7 +100,7 @@ describe('PipelineService', () => {
           r.url === `${base}/vacancies/vac-1/pipeline` &&
           r.params.get('stage') === 'Screening',
       );
-      expect(req.request.params.get('source')).toBe('internal');
+      expect(req.request.params.get('source')).toBe('Internal');
       expect(req.request.params.get('from')).toBe('2026-01-01');
       expect(req.request.params.get('to')).toBe('2026-12-31');
       expect(req.request.params.get('search')).toBe('ada');
@@ -144,7 +144,7 @@ describe('PipelineService', () => {
         coverLetter: null,
         resumeFileName: 'cv.pdf',
         stage: 'Applied',
-        source: 'public',
+        source: 'Public',
         isInternal: false,
         appliedAt: '2026-06-10T00:00:00Z',
       },
