@@ -80,7 +80,7 @@
 
 ## 5. Recruitment (10 stories)
 - [x] US-REC-001 — Create and publish job vacancy *(PR #49)*
-- [ ] US-REC-002 — Applicant submits application with resume
+- [~] US-REC-002 — Applicant submits application with resume
 - [ ] US-REC-003 — Recruiter views applicant pipeline
 - [ ] US-REC-004 — Move applicant through pipeline stages
 - [ ] US-REC-005 — Schedule interviews and notify participants
