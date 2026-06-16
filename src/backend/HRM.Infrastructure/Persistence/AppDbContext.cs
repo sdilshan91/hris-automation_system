@@ -80,6 +80,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<PayrollApprovalHistory> PayrollApprovalHistories => Set<PayrollApprovalHistory>();
     public DbSet<PayrollSlip> PayrollSlips => Set<PayrollSlip>();
     public DbSet<PayrollSlipDetail> PayrollSlipDetails => Set<PayrollSlipDetail>();
+    public DbSet<PayslipEmailLog> PayslipEmailLogs => Set<PayslipEmailLog>();
     public DbSet<StatutoryRule> StatutoryRules => Set<StatutoryRule>();
     public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
@@ -325,6 +326,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PAY-007: PayrollAdjustment tenant isolation + soft-delete filter (AC-5/FR-8 cross-tenant isolation).
         modelBuilder.Entity<PayrollAdjustment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-011: PayslipEmailLog tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
+        modelBuilder.Entity<PayslipEmailLog>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

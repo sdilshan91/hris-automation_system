@@ -775,3 +775,69 @@ DepartmentService spy.
 - Per-tenant bank-advice column/format config (FR-6) and fiscal-year-start config
   (BR-5) are backend concerns; the FE passes `period`/`department` and renders whatever
   the BE returns.
+
+## Bulk payslip email distribution (US-PAY-011) — FRONTEND
+
+EXTENDS the existing run-detail page (US-PAY-003/008). New self-contained child
+`PayslipDistributionComponent` (payroll/components/payslip-distribution) embedded in
+run-detail with `[runId]`/`[runStatus]`/`[employeeCount]` inside the `@if (isComplete())`
+block (same pattern as the embedded `app-payslip-list`). Renders a "Send Payslips"
+primary action + confirm dialog + live progress bar + per-employee delivery summary.
+
+### Frontend contract — NEW service `PayslipEmailService` (payroll/services)
+Sibling to PayslipService; route strings live ONLY here. Base
+`${apiBaseUrl}/payroll/runs`. Bare payloads (US-PLT-001), `EmailDeliveryStatus`
+PascalCase string enum (US-PLT-003: `Queued|Sent|Failed|Skipped`). withCredentials.
+**ASSUMED contract — BE built in parallel and had NOT pinned routes (grep found no
+EmailDeliveryStatus/send-payslips/PayslipEmail .cs when the FE was written);
+reconcile in this one file if BE differs:**
+- `POST /payroll/runs/:runId/send-payslips` body `{ confirm }` → `IPayslipDistributionStatus`
+  (AC-1, 202). `confirm:true` is the FR-7/BR-5 duplicate-send ack (BE rejects a re-send
+  without it once `hasSent`).
+- `GET  /payroll/runs/:runId/payslip-emails/status` → `IPayslipDistributionStatus`
+  ({ isSending, hasSent, total/sent/failed/skipped/queued, started/completedAt,
+  recipients[] }). `recipients[]` = `IEmployeeDistribution` (employeeId/name/no,
+  recipientEmail, status, failureReason, sentAt) → the expandable Sent/Failed/Skipped lists.
+- `POST /payroll/runs/:runId/payslip-emails/resend` body `{ allFailed:true }` OR
+  `{ employeeIds:[] }` → refreshed status (FR-4 re-send all-failed / per-employee).
+
+### Progress: POLLING, with the one-method SignalR swap point (§8 real-time bar)
+`PayslipEmailService.streamDistributionStatus(id)` = `timer(0,2000)` →
+`switchMap(getDistributionStatus)` → `takeWhile(isSending, inclusive:true)` — SAME
+shape as PayslipService.streamGenerationStatus / PayrollRunService.streamProgress.
+Replace THIS method only for a SignalR distribution hub. fakeAsync test: `tick(0)`
+before the FIRST `expectOne` (timer(0,…) doesn't fire on subscribe).
+
+### Send-enablement (AC-1) — PDF readiness derived, not a new endpoint
+`canSend = runStatus()==='Finalized' && hasGeneratedPdfs()`. PDF readiness is read
+from the EXISTING `PayslipService.getGenerationStatus` (`generatedCount > 0`) on init —
+no new "are PDFs ready" endpoint. Disabled-state hint explains which precondition fails.
+
+### UI decisions (US-PAY-011, §8)
+- "Send payslips" / "Re-send payslips" primary button (✉ icon, brand-primary). Confirm
+  DIALOG (centered modal, NOT a slide-over) with "{count} employees… cannot be undone.
+  Continue?"; when `hasSent`, an amber alert + a REQUIRED ack checkbox gates Confirm
+  (`canConfirm` = !hasSent || resendAck) and the send passes `confirm:true` (FR-7/BR-5).
+- Progress bar while `isSending`; then a summary card: 3 clickable count tiles
+  (Sent=emerald / Failed=rose / Skipped=amber) that expand a per-employee list;
+  "Re-send all failed" + per-row "Re-send" on Failed rows (FR-4). `isDistributed` =
+  `hasSent && !isSending` gates the summary card.
+- `resendAllFailed`/`resendOne` both set status from the response then re-enter the
+  poll stream so the bar resumes. Mobile: same layout stacks (initiate + view status).
+
+### Specs (service 6 + component 21) — full FE suite 2362 green
+The run-detail spec's TWO TestBed configs (`setup` + nested `setupProcessing`) BOTH
+needed `PayslipEmailService` + `PayslipService` spies added (the embedded child fires
+`getDistributionStatus`+`getGenerationStatus` on init) — `makeChildSpies()` helper +
+both providers in each config. Component spec: a send that re-enters an EMPTY `of()`
+stream collapses `sending` back to false synchronously (stream completes) — use an
+open `Subject` when asserting `sending()` stays true; `detectChanges()` after a signal
+update before asserting dialog DOM.
+
+### Deferred (noted per brief; NOT built on the FE)
+- §8 push-notification mobile progress — the poll/SignalR status is the only progress
+  surface; no web-push wiring.
+- Opt-out preference (BR-3) — surfaced only as a Skipped status from the BE; no FE
+  preference toggle.
+- Rate-limit / template / sender-domain config (FR-3/FR-6/BR-2/BR-4) are backend
+  concerns; the FE shows whatever delivery outcomes the status endpoint returns.

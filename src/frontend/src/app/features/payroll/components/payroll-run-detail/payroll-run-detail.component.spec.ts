@@ -10,7 +10,11 @@ import { of, throwError, Subject } from 'rxjs';
 import { PayrollRunDetailComponent } from './payroll-run-detail.component';
 import { PayrollRunService } from '../../services/payroll-run.service';
 import { PayrollApprovalService } from '../../services/payroll-approval.service';
+import { PayslipEmailService } from '../../services/payslip-email.service';
+import { PayslipService } from '../../services/payslip.service';
 import { AuthService } from '../../../../core/auth/auth.service';
+import { IPayslipDistributionStatus } from '../../models/payslip-email.models';
+import { IPayslipGenerationStatus } from '../../models/payslip.models';
 import {
   IPayrollRun,
   IPayrollRunProgress,
@@ -25,8 +29,54 @@ describe('PayrollRunDetailComponent', () => {
   let component: PayrollRunDetailComponent;
   let runs: jasmine.SpyObj<PayrollRunService>;
   let approval: jasmine.SpyObj<PayrollApprovalService>;
+  let email: jasmine.SpyObj<PayslipEmailService>;
+  let payslips: jasmine.SpyObj<PayslipService>;
   let auth: jasmine.SpyObj<AuthService>;
   let toastr: jasmine.SpyObj<ToastrService>;
+
+  const emptyDistribution: IPayslipDistributionStatus = {
+    runId: 'r-1',
+    isSending: false,
+    hasSent: false,
+    totalEmployees: 0,
+    emailsSent: 0,
+    emailsFailed: 0,
+    emailsSkipped: 0,
+    emailsQueued: 0,
+    startedAt: null,
+    completedAt: null,
+    recipients: [],
+  };
+
+  const emptyGeneration: IPayslipGenerationStatus = {
+    runId: 'r-1',
+    isGenerating: false,
+    totalCount: 0,
+    generatedCount: 0,
+    failedCount: 0,
+    pendingCount: 0,
+  };
+
+  /**
+   * The embedded US-PAY-011 distribution child injects PayslipEmailService +
+   * PayslipService and fires status reads on init — stub both so the run-detail
+   * spec stays focused on US-PAY-003/008 behaviour.
+   */
+  function makeChildSpies(): void {
+    email = jasmine.createSpyObj<PayslipEmailService>('PayslipEmailService', [
+      'sendPayslips',
+      'getDistributionStatus',
+      'streamDistributionStatus',
+      'resendAllFailed',
+      'resendSelective',
+    ]);
+    email.getDistributionStatus.and.returnValue(of(emptyDistribution));
+    email.streamDistributionStatus.and.returnValue(of());
+    payslips = jasmine.createSpyObj<PayslipService>('PayslipService', [
+      'getGenerationStatus',
+    ]);
+    payslips.getGenerationStatus.and.returnValue(of(emptyGeneration));
+  }
 
   const baseRun: IPayrollRun = {
     id: 'r-1',
@@ -106,6 +156,7 @@ describe('PayrollRunDetailComponent', () => {
     runs.streamProgress.and.returnValue(of());
     makeApproval();
     makeAuth(canApprove);
+    makeChildSpies();
 
     TestBed.configureTestingModule({
       imports: [PayrollRunDetailComponent],
@@ -116,6 +167,8 @@ describe('PayrollRunDetailComponent', () => {
         provideNoopAnimations(),
         { provide: PayrollRunService, useValue: runs },
         { provide: PayrollApprovalService, useValue: approval },
+        { provide: PayslipEmailService, useValue: email },
+        { provide: PayslipService, useValue: payslips },
         { provide: AuthService, useValue: auth },
         { provide: ToastrService, useValue: toastr },
         {
@@ -237,6 +290,7 @@ describe('PayrollRunDetailComponent', () => {
       runs.streamProgress.and.returnValue(stream.asObservable());
       makeApproval();
       makeAuth(true);
+      makeChildSpies();
 
       TestBed.configureTestingModule({
         imports: [PayrollRunDetailComponent],
@@ -247,6 +301,8 @@ describe('PayrollRunDetailComponent', () => {
           provideNoopAnimations(),
           { provide: PayrollRunService, useValue: runs },
           { provide: PayrollApprovalService, useValue: approval },
+          { provide: PayslipEmailService, useValue: email },
+          { provide: PayslipService, useValue: payslips },
           { provide: AuthService, useValue: auth },
           { provide: ToastrService, useValue: toastr },
           {

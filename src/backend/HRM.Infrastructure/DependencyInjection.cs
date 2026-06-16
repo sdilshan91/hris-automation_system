@@ -203,6 +203,16 @@ public static class DependencyInjection
         services.AddScoped<IPayslipGenerationService, PayslipGenerationService>();
         services.AddScoped<IPayslipBatchRenderer, PayslipBatchRenderer>();
 
+        // US-PAY-011: Payroll — bulk payslip-email distribution. The distribution service (enqueue + summary +
+        // duplicate-send guard) takes an OPTIONAL IPayslipDistributionJobScheduler (Hangfire-backed impl in
+        // Program.cs) so it never requires real Hangfire storage in tests/dev. The runner does the per-employee
+        // send loop with Polly retry (NFR-2) + writes a PayslipEmailLog per employee; it reuses the existing
+        // IFileStorage abstraction to load each PDF and the log-only IPayslipEmailSender seam to dispatch (real
+        // SMTP deferred, TODO US-NTF).
+        services.AddScoped<IPayslipDistributionService, PayslipDistributionService>();
+        services.AddScoped<IPayslipDistributionRunner, PayslipDistributionRunner>();
+        services.AddScoped<IPayslipEmailSender, LogOnlyPayslipEmailSender>();
+
         // US-PAY-006: Payroll — statutory deduction configuration (income-tax slabs, EPF/ETF/professional/custom
         // social-security) + the side-effect-free FR-5 test calculation. The deduction resolver (FR-4) is the
         // single source of truth shared by the test calc AND the payroll-run engine (US-PAY-003) so previewed
