@@ -126,6 +126,18 @@ export const appRoutes: Routes = [
           ),
         canActivate: [roleGuard(['System Admin'])],
       },
+      // ─── Admin / Monitoring (US-ADM-002) — System Admin Console ──
+      // Platform/system context (admin.yourhrm.com). Both System Admin and
+      // System Support may view the monitoring dashboard (BR-1); System Support
+      // is read-only — privileged quick-actions are hidden in-component.
+      {
+        path: 'admin/monitoring',
+        loadChildren: () =>
+          import('./features/admin/monitoring/monitoring.routes').then(
+            (m) => m.MONITORING_ROUTES
+          ),
+        canActivate: [roleGuard(['System Admin', 'System Support'])],
+      },
       // ─── Admin / Roles (US-AUTH-006) ──────────────────────
       {
         path: 'admin/roles',
