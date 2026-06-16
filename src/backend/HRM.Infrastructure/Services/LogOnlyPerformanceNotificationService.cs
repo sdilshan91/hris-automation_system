@@ -25,4 +25,24 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             eventType, goalId, employeeId, cycleId);
         return Task.CompletedTask;
     }
+
+    public Task NotifySelfAssessmentSubmittedAsync(
+        Guid selfAssessmentId, Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] self-assessment-submitted: {SelfAssessmentId} by employee {EmployeeId} " +
+            "in cycle {CycleId}; manager notified. Real in-app/email delivery deferred (US-NTF).",
+            selfAssessmentId, employeeId, cycleId);
+        return Task.CompletedTask;
+    }
+
+    public Task NotifySelfAssessmentReminderAsync(
+        Guid employeeId, Guid cycleId, int daysUntilDeadline, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] self-assessment-reminder: employee {EmployeeId} in cycle {CycleId} " +
+            "has {Days} day(s) until the self-assessment deadline. Real in-app/email delivery deferred (US-NTF).",
+            employeeId, cycleId, daysUntilDeadline);
+        return Task.CompletedTask;
+    }
 }

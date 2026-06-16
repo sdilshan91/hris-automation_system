@@ -56,6 +56,41 @@ an active-cycle endpoint that only exists once HR cycle-management lands. When U
 is built, align `PerformanceGoalService` to the real routes (single-file change) and decide
 full-replace vs per-goal CRUD (BE currently per-goal). Tracked in the US-PRF-001 PR.
 
+## US-PRF-002 — Employee self-rates against goals ("My Review")
+
+FE-only so far (backend not yet built). New employee-persona view, **separate top-level
+route `/my-review`** (guard `['Employee','Manager','HR Officer','Tenant Admin']`) — NOT
+under `/performance`, because `/performance` is gated to managers/HR. Mirrors the
+`/my-payslips` self-service pattern (US-PAY-005). Files: `models/self-assessment.models.ts`,
+`services/self-assessment.service.ts`, `components/my-review/`, `my-review.routes.ts`.
+
+### FE↔BE contract the FE service ASSUMES (backend agent must build/reconcile)
+`apiBaseUrl` includes `/api/v1`. All under `/performance/self-assessment`. Tenant +
+employee resolved server-side from session (FE sends no ids); `Performance.Read.Self` + RLS.
+
+- `GET  /performance/self-assessment/active` → `ISelfAssessment` — the whole "My Review"
+  screen in one call: the active cycle, assigned goals (read-only goal fields + the
+  employee's saved rating/achievement/comment/attachments), `ratingScaleMax`
+  (tenant-configured scale, FR-2), and **`windowOpen: boolean`** (authoritative
+  open/closed gate, AC-4 — FE renders read-only off this flag, NOT off dates).
+- `PUT  /performance/self-assessment/{id}/draft` body `{goals:[{goalId,selfRating,
+  achievementPercent,comment}]}` → `ISelfAssessment` (partial save, status stays Draft).
+- `POST /performance/self-assessment/{id}/submit` same body → `ISelfAssessment`. Server
+  re-validates all-goals-rated + each comment ≥20 chars, computes weighted self-score
+  (FR-4), flips status→`Submitted`, locks, notifies the manager.
+- `POST /performance/self-assessment/{id}/goals/{goalId}/attachments` multipart field
+  **`file`** → `IAssessmentAttachment` (FR-5: ≤5 files, ≤10MB each; virus-scan + tenant
+  storage). **Most speculative part of the contract** — the upload route/field is a guess.
+- `DELETE /performance/self-assessment/{id}/attachments/{attachmentId}` → 204.
+
+Status enum `SelfAssessmentStatus`: `NotStarted | Draft | Submitted` (PascalCase strings).
+Closed-window message is the literal **"The self-assessment period for this cycle has ended"**
+(AC-4 — QA asserts verbatim, exported as `WINDOW_CLOSED_MESSAGE`). Like US-PRF-001 this is a
+thin single-file service so a route mismatch is a one-file fix; reconcile alongside US-PRF-004.
+
+Deferred (AC-5 / FR-7 Hangfire deadline reminders) is a BACKEND concern — no FE work.
+Rich-text comment is a plain textarea, drag-drop upload is a plain file input (§8 pragmatic).
+
 ### Design choices
 - Weight distribution bar is a **pure CSS/Tailwind stacked bar**, not chart.js
   (§8 suggested chart.js but no chart lib is a FE dependency — see frontend-dev

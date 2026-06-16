@@ -88,6 +88,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<SocialSecurityRule> SocialSecurityRules => Set<SocialSecurityRule>();
     public DbSet<AppraisalCycle> AppraisalCycles => Set<AppraisalCycle>();
     public DbSet<Goal> Goals => Set<Goal>();
+    public DbSet<SelfAssessment> SelfAssessments => Set<SelfAssessment>();
+    public DbSet<SelfAssessmentItem> SelfAssessmentItems => Set<SelfAssessmentItem>();
+    public DbSet<SelfAssessmentAttachment> SelfAssessmentAttachments => Set<SelfAssessmentAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -341,6 +344,18 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-001: Goal tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
         modelBuilder.Entity<Goal>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-002: SelfAssessment tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<SelfAssessment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-002: SelfAssessmentItem tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<SelfAssessmentItem>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-002: SelfAssessmentAttachment tenant isolation + soft-delete filter (NFR-2/NFR-4).
+        modelBuilder.Entity<SelfAssessmentAttachment>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
