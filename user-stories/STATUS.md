@@ -118,7 +118,7 @@
 - [x] US-PRF-005 — 360-degree review *(PR #79)*
 - [x] US-PRF-006 — Review meeting notes and sign-off *(PR #80)*
 - [x] US-PRF-007 — Performance dashboard and analytics *(PR #81)*
-- [ ] US-PRF-008 — Performance improvement plan (PIP)
+- [~] US-PRF-008 — Performance improvement plan (PIP)
 - [ ] US-PRF-009 — Goal tracking with progress updates
 - [ ] US-PRF-010 — Performance-based recommendations
 

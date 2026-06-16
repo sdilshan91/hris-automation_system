@@ -157,6 +157,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.AutoClockOutJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.SelfAssessmentReminderJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ReviewSignoffAutoCloseJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.PipReminderJob>();
 
     // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
     // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
@@ -385,6 +386,14 @@ try
             "performance-review-signoff-auto-close",
             job => job.RunAsync(),
             "0 9 * * *"); // 09:00 UTC daily
+
+        // US-PRF-008 FR-3/BR-4: daily PIP sweep — checkpoint reminders (3 days before each), end-date
+        // reminders, overdue-checkpoint alerts, and the "Not Acknowledged" flag for PIPs unacknowledged within
+        // 5 business days. Idempotent + tenant-safe; dispatches via the log-only performance seam until US-NTF.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.PipReminderJob>(
+            "performance-pip-reminders",
+            job => job.RunAsync(),
+            "0 10 * * *"); // 10:00 UTC daily
     }
 
     app.Run();

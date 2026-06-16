@@ -115,4 +115,15 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             managerReviewId, employeeId, cycleId);
         return Task.CompletedTask;
     }
+
+    public Task NotifyPipEventAsync(
+        string eventType, Guid pipId, Guid employeeId, Guid? recipientEmployeeId, string? detail = null,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] {EventType}: PIP {PipId} for employee {EmployeeId}, recipient " +
+            "{Recipient}{Detail}. Real in-app/email delivery deferred (US-NTF).",
+            eventType, pipId, employeeId, recipientEmployeeId, detail is null ? string.Empty : $" ({detail})");
+        return Task.CompletedTask;
+    }
 }

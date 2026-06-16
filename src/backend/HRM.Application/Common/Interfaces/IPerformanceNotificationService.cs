@@ -114,4 +114,19 @@ public interface IPerformanceNotificationService
         Guid employeeId,
         Guid cycleId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies a PIP stakeholder of an event (US-PRF-008 AC-2/AC-3/AC-5/FR-3). Used for initiation (employee +
+    /// manager + mentor), checkpoint recorded (employee), checkpoint reminders / end-date reminder / overdue
+    /// alerts (FR-3) and escalation confirmation (stakeholders). Fire-and-forget; must never throw into the
+    /// request path — the PIP write is committed even if dispatch fails.
+    /// </summary>
+    /// <param name="eventType">A short event label, e.g. "pip-initiated" / "pip-checkpoint-recorded" / "pip-checkpoint-reminder" / "pip-end-date-reminder" / "pip-checkpoint-overdue" / "pip-extended" / "pip-completed" / "pip-not-met" / "pip-escalation-confirmed" / "pip-not-acknowledged".</param>
+    Task NotifyPipEventAsync(
+        string eventType,
+        Guid pipId,
+        Guid employeeId,
+        Guid? recipientEmployeeId,
+        string? detail = null,
+        CancellationToken cancellationToken = default);
 }

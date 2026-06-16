@@ -332,6 +332,53 @@ Completed | NoResponse`. Thin single-file service so a route mismatch is a one-f
 whether the server returns `timeline` or the FE derives it. AC-2/AC-3 notifications +
 BR-3 auto-close are BACKEND concerns — no FE work.
 
+## US-PRF-008 — Performance Improvement Plan (PIP) (FE + BE both landed this branch)
+
+HR-led, sensitive. EXTENDS `/performance` (HR/manager-gated) + `/my-review` (employee).
+FE files: `models/pip.models.ts`, `services/pip.service.ts`, `components/pip-list/`,
+`components/pip-form/`, `components/pip-detail/`, `components/my-pip/`. Routes added to
+both `performance.routes.ts` (`pips`, `pips/new`, `pips/:pipId`) and `my-review.routes.ts`
+(`pip/:pipId`). Confidentiality banner copy = `PIP_CONFIDENTIAL_NOTICE`; acknowledge copy
+= `PIP_ACKNOWLEDGE_MESSAGE` (both exported, QA may assert verbatim).
+
+Key FE decisions: no chart lib — the §8 timeline is a pure CSS/SVG duration bar with
+checkpoint markers (`pipTimelineProgress` / `checkpointMarkerPosition` pure helpers) +
+an accordion per objective. Role gating (BR-1) is derived client-side via `isPipHrRole`
+/ `canSetOutcome` / `canEscalate` / `canRecordCheckpoint` pure helpers AND re-enforced
+server-side: managers see Record-Checkpoint only, never close/extend/escalate. Checkpoint
+modal uses the traffic-light selector (`CHECKPOINT_STATUS_OPTIONS`, green OnTrack / amber
+AtRisk / red NotMet); file attach is multipart (field `file`) when present, JSON otherwise.
+Lifecycle badges via `PIP_STATUS_BADGE`/`PIP_STATUS_LABEL`.
+
+### ⚠️ FE↔BE contract MISMATCH (US-PRF-008) — reconcile in PipService (one-file fix)
+The FE service ASSUMES a contract; the BE (`PipController`, fully tested) shipped a
+DIFFERENT one. Both pass tests independently (mocked HTTP) but are NOT wired end-to-end.
+Reconcile by editing `PipService` + `pip.models.ts` (the documented single change-point);
+some field renames also touch the components (employeeNo, names→ids, enum split fields).
+
+| Concern | FE assumes | BE (`PipController`/`PipDtos`) actually exposes |
+|---|---|---|
+| Base path | `/api/v1/performance/pips` | `/api/v1/tenant/performance/pips` |
+| Create-form prefill | `GET /pips/draft?employeeId&reviewId` → `IPipDraft` | **NO draft endpoint** — FE must build the blank/prefilled form itself; origin review id is `OriginManagerReviewId` on the create body |
+| Record checkpoint | `POST /pips/{id}/checkpoints/{checkpointId}` (per scheduled slot) | `POST /pips/{id}/checkpoints` — checkpoint identified by `CheckpointDate` in the body, **append-only** (no slot id; checkpoints are a history list, not pre-scheduled rows) |
+| Checkpoint attach | multipart, server stores the file (field `file`) | metadata-only JSON: `AttachmentFileName/StorageKey/ContentType/SizeBytes` — **client uploads the blob elsewhere first**, then sends the storage key. The FE has no such upload step yet |
+| Escalate path | `POST /pips/{id}/escalate` | `POST /pips/{id}/escalation` |
+| Outcome enum | `ISetOutcomeRequest.outcome: PipOutcome` ('SuccessfullyCompleted'\|'Extended'\|'NotMet') | `SetPipOutcomeRequest.Outcome: PipOutcomeKind` (same names, **serialized as PascalCase via the platform enum-string convention** — confirm string vs int) + `Notes` field the FE omits |
+| PIP DTO shape | `IPip` flat: `mentorName`, `escalationAction`, `escalation: IPipEscalation\|null`, `acknowledgement`, `acknowledgedSignature`, objectives carry **nested `checkpoints[]`** | `PipDto`: split `Status`/`StatusName` (+ same dual fields for escalation/ack), `EmployeeNo`, `OriginManagerReviewId`, `InitiatedAt`, top-level **`Checkpoints[]` + `Events[]` as flat lists** (NOT nested under objectives) + `FinalOutcomeNotes`/`EscalationNotes`/`EscalationConfirmed` |
+| Objective shape | `successCriteria`, `dueDate`, nested `checkpoints` | `PipObjectiveDto`: `Description` is **nullable**, has `SortOrder`/`AddedAtExtension`, **no nested checkpoints** |
+| Summary row | `objectiveCount`, `checkpointsRecorded`/`checkpointsTotal`, `jobTitle` | `PipSummaryDto`: `EmployeeNo`, `ObjectiveCount`, single `CheckpointCount` (no recorded/total split), `MentorName` (no jobTitle) |
+| Acknowledge | `POST /pips/{id}/acknowledge` (no body) | **same** ✓ |
+
+Biggest reconciliation items: (1) the FE groups checkpoints UNDER objectives for the
+accordion, but the BE returns a FLAT `Checkpoints[]` keyed by date — the FE will need to
+group client-side (no `objectiveId` link on the BE checkpoint, so grouping is by date/order,
+not objective — may need a BE field). (2) The FE assumes the server stores the attachment;
+the BE expects a pre-uploaded storage key — needs either a BE multipart variant or a FE
+pre-upload step. (3) No draft/prefill endpoint — the "pre-filled when flagged" AC-1 path
+needs either a BE endpoint or the FE to pass through the flagged employee via route state.
+Tracked in the US-PRF-008 PR; deliberately NOT force-fitted here (FE specs are built around
+the assumed contract and all pass; reconciliation is a deliberate single-file+models change).
+
 ## US-PRF-007 — Performance dashboard + analytics (BACKEND landed; FE pending)
 
 Read-only analytics. **NO new entities, NO migration.** Aggregates LIVE over the existing

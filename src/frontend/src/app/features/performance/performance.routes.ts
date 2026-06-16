@@ -112,6 +112,33 @@ export const PERFORMANCE_ROUTES: Routes = [
       ).then((m) => m.Feedback360ConfigComponent),
   },
   {
+    // US-PRF-008 AC-1: PIP creation form. STATIC 'new' segment declared BEFORE
+    // 'pips/:pipId' so it matches first.
+    path: 'pips/new',
+    loadComponent: () =>
+      import('./components/pip-form/pip-form.component').then(
+        (m) => m.PipFormComponent,
+      ),
+  },
+  {
+    // US-PRF-008 AC-3/AC-4/AC-5/§8: PIP detail/timeline (record checkpoint, HR-only
+    // outcome + escalation). Manager/HR role-gated by the parent /performance guard;
+    // the backend restricts visibility (FR-8) and HR-only actions (BR-1).
+    path: 'pips/:pipId',
+    loadComponent: () =>
+      import('./components/pip-detail/pip-detail.component').then(
+        (m) => m.PipDetailComponent,
+      ),
+  },
+  {
+    // US-PRF-008 AC-1: PIP list — the Performance > PIP entry point.
+    path: 'pips',
+    loadComponent: () =>
+      import('./components/pip-list/pip-list.component').then(
+        (m) => m.PipListComponent,
+      ),
+  },
+  {
     // US-PRF-007 FR-5: department drill-down (Dashboard > Department > Employee).
     // Declared BEFORE the 'dashboard' overview route so the more-specific
     // static 'departments' segment matches first.

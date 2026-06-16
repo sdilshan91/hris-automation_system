@@ -1,7 +1,7 @@
 ---
 module: Performance Management
-total_user_stories: 7
-total_test_cases: 126
+total_user_stories: 8
+total_test_cases: 145
 created: 2026-06-16
 updated: 2026-06-16
 status: in-progress
@@ -65,12 +65,20 @@ status: in-progress
 >
 > CONDITIONAL/DEFERRED for US-PRF-007 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7/NFR-2 name PostgreSQL RLS on performance_summary; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-025/027). (2) DEPENDS ON US-PRF-001/002/003 (goals + submitted self/manager reviews to aggregate), US-PRF-004 (cycles for cycle filtering + trend), and Core HR (department/grade/location for filtering) -- all assumed seeded. (3) NFR-3 Redis aggregate caching is CONDITIONAL on a cache layer being wired -- TC-PRF-007-11 / TC-PRF-ISO-028 assert the materialized-view path with tenant-scoped keys and document Redis as the extension point (consistent with the module's deferred-Redis convention). (4) NFR-3/BR-4 performance_summary materialized-view refresh via Hangfire (default 4h, tenant-configurable) is asserted at the refresh SEAM (TC-PRF-007-13, TC-PRF-ISO-028) -- if the recurring job is not yet scheduled, a manual refresh trigger is asserted and the Hangfire schedule documented as the extension point. (5) FR-8 PDF/XLSX RENDERING is CONDITIONAL on the reporting library (QuestPDF / XLSX writer) being wired -- TC-PRF-007-05 asserts the export data model + tenant branding inputs + <=5s budget at the seam; full visual fidelity is an extension point (consistent with US-PRF-005 FR-7 / US-PRF-006 FR-6). (6) NFR-1 <=2.5s P95 @ 5,000 employees + NFR-5 export <=5s @ 5,000 require a seeded performance environment (TC-PRF-007-11/-05). (7) The FR-3 trend-indicator and tie-break rules (TC-PRF-007-10) + the same-N / configurable-N clamp rule (TC-PRF-007-15) assert whatever the implementation documents is applied CONSISTENTLY; the exact formula/clamp is an implementation contract, not a gap.
 
+> US-PRF-008 (Performance Improvement Plan / PIP) is the EIGHTH Performance story -- the structured, compliance-grade corrective-action workflow for underperforming employees. It adds 19 test cases: 15 functional/security/perf/a11y (TC-PRF-008-01..15) + 4 dedicated multi-tenant isolation on the new `pip` / `pip_objectives` / `pip_checkpoints` tables + Hangfire reminder/ack-timeout jobs + checkpoint attachments + escalation/audit + report artifacts (TC-PRF-ISO-029..032, continuing the running ISO counter from 028). All 5 acceptance criteria of US-PRF-008 are covered.
+>
+> KEY notes: happy path (TC-PRF-008-01) HR opens "Create PIP" for a flagged employee -> form with employee(pre-filled)/reason/duration/objectives(title+desc+success-criteria+due)/checkpoint-dates/mentor/escalation (AC-1) -> "Initiate PIP" persists pip+objectives+checkpoints tenant-scoped, Draft->Active (FR-2), notifies employee+manager+mentor (in-app+email), schedules Hangfire start/checkpoint-reminder(3 days before)/end/overdue jobs (AC-2, FR-1/3); checkpoint recording (TC-PRF-008-02) manager OR HR records progress/evidence/status(OnTrack/AtRisk/NotMet)/comments/attachment -> employee notified, immutable history entry (AC-3, FR-4, BR-1); lifecycle positive (TC-PRF-008-03) Draft->Active->checkpoint->Extended(new end date + added objectives, FR-6)->Successfully Completed(employee returns to normal) (AC-4, FR-2); lifecycle negative (TC-PRF-008-04) checkpoints Not Met -> outcome Not Met -> HR confirms escalation(reassignment/demotion/non-renewal/termination-recommendation, BR-6) -> stakeholders notified + immutable audit record (AC-4/AC-5, FR-5); negatives -- second active PIP for same employee rejected client+server, released only on terminal state (BR-2, TC-PRF-008-05), duration <30 days rejected + exactly-30 boundary accepted + reversed range rejected (BR-3, TC-PRF-008-06), a MANAGER attempting create/extend/close/escalate rejected 403 (managers checkpoint-only) + employee/unauth blocked, HR positive control (BR-1, TC-PRF-008-07); acknowledgement (TC-PRF-008-08) employee acknowledges (immutable) else 5-BUSINESS-day Hangfire "Not Acknowledged" flag + PIP proceeds (BR-4); visibility (TC-PRF-008-09) ONLY employee/manager/HR/mentor view the PIP, unrelated employee blocked incl. by id, PIP data EXCLUDED from the US-PRF-007 general dashboard/exports (FR-8, BR-5); immutability (TC-PRF-008-10) checkpoint outcomes + status changes + escalation form a complete append-only history, no actor incl. HR edits/deletes, server-derived actor+timestamp, retained per policy (FR-5, NFR-3); encryption (TC-PRF-008-11) reason + escalation notes encrypted at rest via pgcrypto -- asserted at the encryption SEAM, conditional on column-encryption being wired (NFR-4); performance (TC-PRF-008-12) PIP create + checkpoint <=800ms P95, no N+1 (NFR-1); accessibility (TC-PRF-008-13) checkpoint form full-screen single-column at 360px for in-person recording + WCAG 2.1 AA, traffic-light status not color-only (NFR-5); PDF report (TC-PRF-008-14) PIP summary report with objectives/checkpoints/outcomes/signatures + branding + authz(FR-8)/tenant-scoping at the export SEAM, PDF rendering conditional (FR-7); Hangfire (TC-PRF-008-15) start/checkpoint-reminder(3 days prior)/end/overdue jobs fire at the right times to the right recipients, tenant-scoped + idempotent + Polly-retried + rescheduled on extension (FR-3).
+>
+> Tenant isolation (NFR-2) for US-PRF-008: TC-PRF-ISO-029 cross-tenant read of pip/objectives/checkpoints/escalation/history/report (Tenant B sees zero of Tenant A's, incl. by direct id), ISO-030 missing/invalid/mismatched tenant-context rejection + cross-tenant IDOR (view/checkpoint/extend/outcome/escalation/acknowledge/report), ISO-031 cross-tenant write block + server-derived tenant_id (no body injection) + foreign employee/manager/mentor id rejected, ISO-032 tenant-scoped Hangfire jobs(reminders/end/overdue/ack-timeout) + checkpoint-attachment storage + notifications + audit/history + report artifacts.
+>
+> CONDITIONAL/DEFERRED for US-PRF-008 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7/NFR-2 name PostgreSQL RLS on pip/pip_objectives/pip_checkpoints; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-029/031). (2) DEPENDS ON US-PRF-003 (manager performance-improvement flag, FR-6) + a completed below-threshold review, US-PRF-007 (general dashboard the PIP must be EXCLUDED from, BR-5), and Core HR org tree (manager/mentor relationships) -- all assumed seeded. (3) NFR-4 pgcrypto column encryption of reason + escalation notes is CONDITIONAL on column-level encryption being wired -- TC-PRF-008-11 asserts the encryption SEAM (`IFieldEncryptor` / pgcrypto) + cleartext-not-at-rest and documents pgcrypto-at-rest as the extension point; tenant-scoping/authz hold regardless. (4) FR-7 PDF RENDERING is CONDITIONAL on the reporting library (QuestPDF or similar) being wired -- TC-PRF-008-14 asserts the export SEAM + report data model (objectives/checkpoints/outcomes/signatures) + branding + authz/tenant-scoping; full visual fidelity is the extension point (consistent with US-PRF-005 FR-7 / US-PRF-006 FR-6 / US-PRF-007 FR-8). (5) AC-2/AC-3/AC-5/BR-4/FR-3 notification + reminder + ack-timeout DELIVERY (in-app + email) CONDITIONAL on the Notification System (S25) -- in-app push + email enqueue asserted, delivery conditional (TC-PRF-008-01/-02/-04/-08/-15, TC-PRF-ISO-032). (6) Any PIP list/aggregate cache (S10) is asserted tenant-scoped, CONDITIONAL on a cache layer -- if computed on demand it asserts tenant-filtered queries with no shared/global key (TC-PRF-ISO-032). (7) NFR-1 <=800ms P95 requires a seeded performance environment (TC-PRF-008-12). (8) NFR-3 7-year retention is asserted at the retention seam (TC-PRF-008-10); the retention purge mechanism is platform-owned. (9) The BR-6 escalation OPTION SET (reassignment/demotion/non-renewal/termination-recommendation) is tenant-configurable; TC-PRF-008-04 exercises the configured options and asserts each records identically -- the exact per-tenant option list is a config seam, not a gap.
+
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 7 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004, US-PRF-005, US-PRF-006, US-PRF-007) |
-| Total Test Cases | 126 (98 functional/security/perf/a11y + 28 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 8 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004, US-PRF-005, US-PRF-006, US-PRF-007, US-PRF-008) |
+| Total Test Cases | 145 (113 functional/security/perf/a11y + 32 dedicated multi-tenant isolation) |
 | US-PRF-001 Test Cases | 16 (TC-PRF-001-01..12 + TC-PRF-ISO-001..004) |
 | US-PRF-002 Test Cases | 19 (TC-PRF-002-01..15 + TC-PRF-ISO-005..008) |
 | US-PRF-003 Test Cases | 17 (TC-PRF-003-01..13 + TC-PRF-ISO-009..012) |
@@ -78,15 +86,16 @@ status: in-progress
 | US-PRF-005 Test Cases | 18 (TC-PRF-005-01..14 + TC-PRF-ISO-017..020) |
 | US-PRF-006 Test Cases | 18 (TC-PRF-006-01..14 + TC-PRF-ISO-021..024) |
 | US-PRF-007 Test Cases | 19 (TC-PRF-007-01..15 + TC-PRF-ISO-025..028) |
-| Critical Priority | 43 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019; US-PRF-006: -01/-07/-11 + ISO-021/-022/-023; US-PRF-007: -01/-06/-08 + ISO-025/-026/-027) |
-| High Priority | 83 (remaining functional/perf/a11y of all seven stories + TC-PRF-ISO-004, -008, -012, -016, -020, -024, -028) |
+| US-PRF-008 Test Cases | 19 (TC-PRF-008-01..15 + TC-PRF-ISO-029..032) |
+| Critical Priority | 50 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019; US-PRF-006: -01/-07/-11 + ISO-021/-022/-023; US-PRF-007: -01/-06/-08 + ISO-025/-026/-027; US-PRF-008: -01/-07/-09/-10 + ISO-029/-030/-031) |
+| High Priority | 95 (remaining functional/perf/a11y of all eight stories + TC-PRF-ISO-004, -008, -012, -016, -020, -024, -028, -032) |
 | Medium Priority | 0 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 |
-| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5; US-PRF-005 5/5; US-PRF-006 4/4 (US-PRF-006 has only AC-1..AC-4); US-PRF-007 5/5 |
+| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5; US-PRF-005 5/5; US-PRF-006 4/4 (US-PRF-006 has only AC-1..AC-4); US-PRF-007 5/5; US-PRF-008 5/5 |
 | Status | All Draft |
 
-> Note: Critical-priority IDs total 43 across the seven stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019 = 6; US-PRF-006: -01/-07/-11 + ISO-021/-022/-023 = 6; US-PRF-007: -01/-06/-08 + ISO-025/-026/-027 = 6); High totals 83; summing to 126.
+> Note: Critical-priority IDs total 50 across the eight stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019 = 6; US-PRF-006: -01/-07/-11 + ISO-021/-022/-023 = 6; US-PRF-007: -01/-06/-08 + ISO-025/-026/-027 = 6; US-PRF-008: -01/-07/-09/-10 + ISO-029/-030/-031 = 7); High totals 95; summing to 145.
 
 ## User Story to Test Case Matrix
 
@@ -106,6 +115,8 @@ status: in-progress
 | Cross-cutting (PRF-006) | Multi-tenant isolation (review_meeting_notes + review_signoffs tables + auto-close jobs + notifications + audit + PDF export) | TC-PRF-ISO-021, TC-PRF-ISO-022, TC-PRF-ISO-023, TC-PRF-ISO-024 | 4 |
 | US-PRF-007 | Performance Dashboard and Analytics | TC-PRF-007-01, TC-PRF-007-02, TC-PRF-007-03, TC-PRF-007-04, TC-PRF-007-05, TC-PRF-007-06, TC-PRF-007-07, TC-PRF-007-08, TC-PRF-007-09, TC-PRF-007-10, TC-PRF-007-11, TC-PRF-007-12, TC-PRF-007-13, TC-PRF-007-14, TC-PRF-007-15 | 15 |
 | Cross-cutting (PRF-007) | Multi-tenant isolation (performance_summary materialized view + aggregate caches + export artifacts + Hangfire refresh jobs) | TC-PRF-ISO-025, TC-PRF-ISO-026, TC-PRF-ISO-027, TC-PRF-ISO-028 | 4 |
+| US-PRF-008 | Performance Improvement Plan (PIP) | TC-PRF-008-01, TC-PRF-008-02, TC-PRF-008-03, TC-PRF-008-04, TC-PRF-008-05, TC-PRF-008-06, TC-PRF-008-07, TC-PRF-008-08, TC-PRF-008-09, TC-PRF-008-10, TC-PRF-008-11, TC-PRF-008-12, TC-PRF-008-13, TC-PRF-008-14, TC-PRF-008-15 | 15 |
+| Cross-cutting (PRF-008) | Multi-tenant isolation (pip/pip_objectives/pip_checkpoints tables + Hangfire reminder/ack-timeout jobs + checkpoint attachments + escalation/audit + report artifacts) | TC-PRF-ISO-029, TC-PRF-ISO-030, TC-PRF-ISO-031, TC-PRF-ISO-032 | 4 |
 
 ## Acceptance Criteria -> Test Case Coverage (US-PRF-001)
 
@@ -332,3 +343,37 @@ status: in-progress
 | NFR-3 aggregates via materialized views / Redis caching | TC-PRF-007-11, -13, TC-PRF-ISO-027, -028 |
 | NFR-4 chart.js responsive sizing for all viewports + WCAG 2.1 AA | TC-PRF-007-12 |
 | NFR-5 export generation for up to 5,000 employees <=5s | TC-PRF-007-05 |
+
+## Acceptance Criteria -> Test Case Coverage (US-PRF-008)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | "Create PIP" form: employee(pre-filled)/reason/duration/objectives(success criteria)/checkpoint dates/mentor/escalation | TC-PRF-008-01, TC-PRF-008-06, TC-PRF-008-13 |
+| AC-2 | "Initiate PIP" -> PIP created, employee+manager+mentor notified (in-app+email), Hangfire checkpoint reminders scheduled | TC-PRF-008-01, TC-PRF-008-07, TC-PRF-008-15 |
+| AC-3 | "Record Checkpoint" -> progress/evidence/status(OnTrack/AtRisk/NotMet)/comments/attachment; employee notified | TC-PRF-008-02, TC-PRF-008-04, TC-PRF-008-10 |
+| AC-4 | PIP outcome review -> Successfully Completed / Extended (new end date) / Not Met (triggers escalation) | TC-PRF-008-03, TC-PRF-008-04, TC-PRF-008-07 |
+| AC-5 | Outcome Not Met + HR confirms escalation -> decision recorded, stakeholders notified, immutable audit record | TC-PRF-008-04, TC-PRF-008-10 |
+
+## Requirement -> Test Case Coverage (US-PRF-008) (FR / BR / NFR)
+
+| Requirement | Covered By |
+|-------------|------------|
+| FR-1 create PIP: reason + duration(30/60/90) + objectives w/ success criteria + checkpoints + mentor + escalation | TC-PRF-008-01, TC-PRF-008-06 |
+| FR-2 status lifecycle Draft/Active/Extended/Successfully Completed/Not Met/Cancelled | TC-PRF-008-03, TC-PRF-008-04, TC-PRF-008-05 |
+| FR-3 Hangfire jobs: start / checkpoint reminders (3 days prior) / end reminder / overdue alerts | TC-PRF-008-01, TC-PRF-008-15, TC-PRF-008-08, TC-PRF-ISO-032 |
+| FR-4 record checkpoint: progress status + evidence notes + file attachments | TC-PRF-008-02, TC-PRF-008-04 |
+| FR-5 complete immutable history of actions / status changes / checkpoint outcomes | TC-PRF-008-04, TC-PRF-008-10, TC-PRF-008-08 |
+| FR-6 extension with new end date + additional objectives | TC-PRF-008-03, TC-PRF-008-15 |
+| FR-7 PIP summary report (PDF): objectives/checkpoints/outcomes/signatures | TC-PRF-008-14 |
+| FR-8 visibility restricted to employee/manager/HR/mentor | TC-PRF-008-09, TC-PRF-008-14 |
+| BR-1 only HR `.All` create/extend/close; managers record checkpoints only | TC-PRF-008-07, TC-PRF-008-02 |
+| BR-2 only one active PIP per employee at a time | TC-PRF-008-05 |
+| BR-3 PIP duration minimum 30 days | TC-PRF-008-06 |
+| BR-4 employee acknowledgement; non-ack within 5 business days -> "Not Acknowledged" flag (Hangfire) | TC-PRF-008-08, TC-PRF-ISO-032 |
+| BR-5 PIP data excluded from general dashboards/reports (US-PRF-007) | TC-PRF-008-09 |
+| BR-6 configurable escalation: reassignment / demotion / contract non-renewal / termination recommendation | TC-PRF-008-04 |
+| NFR-1 PIP creation + checkpoint recording <=800ms P95 | TC-PRF-008-12 |
+| NFR-2 tenant isolation via RLS (EF query filters as the platform mechanism) | TC-PRF-008-07, TC-PRF-008-09, TC-PRF-ISO-029, -030, -031, -032 |
+| NFR-3 7-year retention of PIP records (retention seam) | TC-PRF-008-10 |
+| NFR-4 sensitive fields (reason, escalation notes) encrypted at rest via pgcrypto | TC-PRF-008-11 |
+| NFR-5 PIP UI mobile-accessible (checkpoint recording at 360px) + WCAG 2.1 AA | TC-PRF-008-13 |

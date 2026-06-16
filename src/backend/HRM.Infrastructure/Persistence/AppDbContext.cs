@@ -101,6 +101,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<ReviewerAssignment> ReviewerAssignments => Set<ReviewerAssignment>();
     public DbSet<Feedback360> Feedback360s => Set<Feedback360>();
     public DbSet<Feedback360Item> Feedback360Items => Set<Feedback360Item>();
+    public DbSet<Pip> Pips => Set<Pip>();
+    public DbSet<PipObjective> PipObjectives => Set<PipObjective>();
+    public DbSet<PipCheckpoint> PipCheckpoints => Set<PipCheckpoint>();
+    public DbSet<PipEvent> PipEvents => Set<PipEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -406,6 +410,22 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-005: Feedback360Item tenant isolation + soft-delete filter (NFR-2).
         modelBuilder.Entity<Feedback360Item>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-008: Pip tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<Pip>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-008: PipObjective tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<PipObjective>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-008: PipCheckpoint tenant isolation + soft-delete filter (NFR-2). Append-only history.
+        modelBuilder.Entity<PipCheckpoint>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-008: PipEvent tenant isolation + soft-delete filter (NFR-2). Immutable append-only audit log.
+        modelBuilder.Entity<PipEvent>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
