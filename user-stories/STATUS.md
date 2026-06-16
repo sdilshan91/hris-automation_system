@@ -124,7 +124,7 @@
 
 ## 8. Admin Console (10 stories)
 - [x] US-ADM-001 — System Admin provisions new tenant *(PR #85)*
-- [~] US-ADM-002 — Monitor platform health and usage
+- [x] US-ADM-002 — Monitor platform health and usage *(PR #86)*
 - [ ] US-ADM-003 — Impersonate tenant user with audit
 - [ ] US-ADM-004 — Suspend/terminate a tenant
 - [ ] US-ADM-005 — Manage users and role assignments
@@ -160,10 +160,10 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **78** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001** (#85)
+- Done: **79** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001..002** (#85–#86)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **25** — Admin Console (9: US-ADM-002..010), Onboarding (6), Notifications (5), Reports (5)
-- **Next module by priority: Admin Console (US-ADM-002..010)**
+- Pending: **24** — Admin Console (8: US-ADM-003..010), Onboarding (6), Notifications (5), Reports (5)
+- **Next module by priority: Admin Console (US-ADM-003..010)**
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
 ## Module → directory map
