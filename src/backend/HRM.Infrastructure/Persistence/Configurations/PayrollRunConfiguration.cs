@@ -40,6 +40,15 @@ public sealed class PayrollRunConfiguration : IEntityTypeConfiguration<PayrollRu
         builder.Property(x => x.InitiatedBy).IsRequired();
         builder.Property(x => x.InitiatedAt).IsRequired();
         builder.Property(x => x.CompletedAt);
+
+        // US-PAY-008 approval-workflow state (additive).
+        builder.Property(x => x.CurrentWorkflowInstanceId);
+        builder.Property(x => x.CurrentApprovalStep);
+        builder.Property(x => x.TotalApprovalSteps);
+        builder.Property(x => x.SubmittedBy);
+        builder.Property(x => x.SubmittedAt);
+        builder.Property(x => x.RejectionReason).HasColumnType("text");
+
         builder.Property(x => x.ApprovedBy);
         builder.Property(x => x.ApprovedAt);
         builder.Property(x => x.FinalizedAt);

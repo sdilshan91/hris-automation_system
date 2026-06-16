@@ -75,4 +75,7 @@ public interface IPayrollNotificationService
 {
     /// <summary>AC-3: notify HR that a run finished computing and is awaiting review.</summary>
     Task NotifyRunReadyForReviewAsync(Guid tenantId, Guid runId, int processed, int skipped, CancellationToken cancellationToken = default);
+
+    /// <summary>US-PAY-008 AC-1: notify the designated approver(s) that a run was submitted for approval.</summary>
+    Task NotifyApprovalEventAsync(Guid tenantId, Guid runId, string eventType, CancellationToken cancellationToken = default);
 }

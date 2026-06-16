@@ -1,0 +1,439 @@
+using HRM.Application.Common.Interfaces;
+using HRM.Application.Common.Models;
+using HRM.Application.Features.Payroll.DTOs;
+using HRM.Domain.Authorization;
+using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace HRM.Infrastructure.Services;
+
+/// <summary>
+/// The payroll-run approval workflow (US-PAY-008). Implements the additive approval state machine over the
+/// existing US-PAY-003 run lifecycle (BR-4). No shared approval-workflow engine exists (technical doc
+/// section 34 / US-ADM-007 is not built), so this is a payroll-specific flow mirroring the established
+/// leave/attendance approval-history pattern (LeaveApprovalHistory / RegularizationApprovalHistory).
+///
+/// <para>All queries are tenant-scoped via ITenantContext + EF global query filters (BR-8). Each action
+/// writes one immutable <see cref="PayrollApprovalHistory"/> row (FR-7/NFR-5) and commits it atomically with
+/// the run-status change, then fires the log-only notification seam (real SignalR/email deferred — US-NTF).</para>
+///
+/// <para>STATE MACHINE (rejects every other transition with a 409):
+///   ReviewPending  --Submit-->        AwaitingApproval   (AC-1)
+///   AwaitingApproval --Approve-->      AwaitingApproval (advance step) | Approved (all steps done) (AC-2/AC-4)
+///   AwaitingApproval --Reject-->       Rejected           (AC-3, reason required)
+///   AwaitingApproval --Return-->       ReviewPending      (FR-9, comments required)
+///   Rejected/ReviewPending --Submit--> AwaitingApproval   (re-submit = new instance, BR-3)
+///   Approved --Finalize-->             Finalized          (AC-5, terminal; BR-1 blocks no-approval finalize).</para>
+/// </summary>
+public sealed class PayrollApprovalService : IPayrollApprovalService
+{
+    private readonly AppDbContext _dbContext;
+    private readonly ITenantContext _tenantContext;
+    private readonly ICurrentUser _currentUser;
+    private readonly IPayrollNotificationService _notifications;
+    private readonly ILogger<PayrollApprovalService> _logger;
+
+    private const int MinReasonLength = 10;
+
+    public PayrollApprovalService(
+        AppDbContext dbContext,
+        ITenantContext tenantContext,
+        ICurrentUser currentUser,
+        IPayrollNotificationService notifications,
+        ILogger<PayrollApprovalService> logger)
+    {
+        _dbContext = dbContext;
+        _tenantContext = tenantContext;
+        _currentUser = currentUser;
+        _notifications = notifications;
+        _logger = logger;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Submit for approval (AC-1, BR-3 re-submit)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<PayrollApprovalResultDto>> SubmitForApprovalAsync(
+        Guid runId, int? totalApprovalSteps, string? comments, string? ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        var load = await LoadRunAsync(runId, cancellationToken);
+        if (load.Failure is not null) return load.Failure;
+        var run = load.Run!;
+
+        // BR-4: submit is allowed from ReviewPending (first submission) or Rejected/ReviewPending after a
+        // correction (BR-3 — re-submit starts a NEW workflow instance).
+        if (run.Status is not (PayrollRunStatus.ReviewPending or PayrollRunStatus.Rejected))
+            return InvalidTransition(run.Status, "submitted for approval");
+
+        int steps = totalApprovalSteps is { } s && s > 0 ? s : 1;  // BR-2 default single-step.
+
+        // BR-3: every submission is a fresh workflow instance.
+        var instanceId = BaseEntity.NewUuidV7();
+        run.Status = PayrollRunStatus.AwaitingApproval;
+        run.CurrentWorkflowInstanceId = instanceId;
+        run.CurrentApprovalStep = 1;
+        run.TotalApprovalSteps = steps;
+        run.SubmittedBy = _currentUser.UserId;
+        run.SubmittedAt = DateTime.UtcNow;
+        run.RejectionReason = null;  // a re-submit clears the prior rejection reason.
+
+        var history = NewHistory(run, instanceId, 1, PayrollApprovalAction.Submitted, Trim(comments), ipAddress);
+        _dbContext.PayrollApprovalHistories.Add(history);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // AC-1: notify the designated approver(s). Log-only seam; SignalR/email deferred.
+        await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-submitted", cancellationToken);
+
+        Log(run, PayrollApprovalAction.Submitted);
+        return Ok(run, PayrollApprovalAction.Submitted);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Approve (AC-2, AC-4 multi-step, BR-5 maker-checker)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<PayrollApprovalResultDto>> ApproveAsync(
+        Guid runId, string? comments, string? ipAddress, CancellationToken cancellationToken = default)
+    {
+        var load = await LoadRunAsync(runId, cancellationToken);
+        if (load.Failure is not null) return load.Failure;
+        var run = load.Run!;
+
+        if (run.Status != PayrollRunStatus.AwaitingApproval)
+            return InvalidTransition(run.Status, "approved");
+
+        // BR-5 maker-checker: the submitter cannot approve their own run, UNLESS the tenant has fewer than 2
+        // eligible approvers (small-team exception). "Eligible approver" = an active tenant user whose roles
+        // grant the Payroll.Approve permission (the same gate the controller enforces).
+        if (run.SubmittedBy == _currentUser.UserId)
+        {
+            var eligibleApprovers = await CountEligibleApproversAsync(cancellationToken);
+            if (eligibleApprovers >= 2)
+                return Result<PayrollApprovalResultDto>.Failure(
+                    "You cannot approve a payroll run that you submitted. It must be approved by another authorized approver (maker-checker).",
+                    403, "self_approval");
+            // else: small-team exception — fall through and allow the self-approval.
+        }
+
+        int step = run.CurrentApprovalStep ?? 1;
+        int total = run.TotalApprovalSteps ?? 1;
+        var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
+
+        var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Approved, Trim(comments), ipAddress);
+        _dbContext.PayrollApprovalHistories.Add(history);
+
+        if (step >= total)
+        {
+            // AC-2 / AC-4: all steps complete — the run is Approved.
+            run.Status = PayrollRunStatus.Approved;
+            run.ApprovedBy = _currentUser.UserId;
+            run.ApprovedAt = DateTime.UtcNow;
+            run.CurrentApprovalStep = null;
+        }
+        else
+        {
+            // AC-4: advance to the next step; the run stays AwaitingApproval until the last step approves.
+            run.CurrentApprovalStep = step + 1;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-approved", cancellationToken);
+
+        Log(run, PayrollApprovalAction.Approved);
+        return Ok(run, PayrollApprovalAction.Approved);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Reject (AC-3 — reason required)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<PayrollApprovalResultDto>> RejectAsync(
+        Guid runId, string reason, string? ipAddress, CancellationToken cancellationToken = default)
+    {
+        var trimmed = Trim(reason) ?? string.Empty;
+        if (trimmed.Length < MinReasonLength)
+            return Result<PayrollApprovalResultDto>.Failure(
+                $"A rejection reason of at least {MinReasonLength} characters is required.", 400, "reason_required");
+
+        var load = await LoadRunAsync(runId, cancellationToken);
+        if (load.Failure is not null) return load.Failure;
+        var run = load.Run!;
+
+        if (run.Status != PayrollRunStatus.AwaitingApproval)
+            return InvalidTransition(run.Status, "rejected");
+
+        int step = run.CurrentApprovalStep ?? 1;
+        var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
+
+        // AC-3: status -> Rejected, store the reason. HR corrects + re-submits (BR-3, new instance).
+        run.Status = PayrollRunStatus.Rejected;
+        run.RejectionReason = trimmed;
+        run.CurrentApprovalStep = null;
+
+        var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Rejected, trimmed, ipAddress);
+        _dbContext.PayrollApprovalHistories.Add(history);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-rejected", cancellationToken);
+
+        Log(run, PayrollApprovalAction.Rejected);
+        return Ok(run, PayrollApprovalAction.Rejected);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Return to HR (FR-9 — comments required, no formal rejection)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<PayrollApprovalResultDto>> ReturnToHrAsync(
+        Guid runId, string comments, string? ipAddress, CancellationToken cancellationToken = default)
+    {
+        var trimmed = Trim(comments) ?? string.Empty;
+        if (trimmed.Length < MinReasonLength)
+            return Result<PayrollApprovalResultDto>.Failure(
+                $"Return comments of at least {MinReasonLength} characters are required.", 400, "comments_required");
+
+        var load = await LoadRunAsync(runId, cancellationToken);
+        if (load.Failure is not null) return load.Failure;
+        var run = load.Run!;
+
+        if (run.Status != PayrollRunStatus.AwaitingApproval)
+            return InvalidTransition(run.Status, "returned to HR");
+
+        int step = run.CurrentApprovalStep ?? 1;
+        var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
+
+        // FR-9: send back to HR without a formal rejection. Closes the active workflow instance; a subsequent
+        // submit starts a new one (mirrors the BR-3 re-submit semantics).
+        run.Status = PayrollRunStatus.ReviewPending;
+        run.CurrentWorkflowInstanceId = null;
+        run.CurrentApprovalStep = null;
+        run.TotalApprovalSteps = null;
+
+        var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Returned, trimmed, ipAddress);
+        _dbContext.PayrollApprovalHistories.Add(history);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-returned", cancellationToken);
+
+        Log(run, PayrollApprovalAction.Returned);
+        return Ok(run, PayrollApprovalAction.Returned);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Finalize (AC-5, BR-1 require approval first, BR-6 terminal)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<PayrollApprovalResultDto>> FinalizeAsync(
+        Guid runId, string? ipAddress, CancellationToken cancellationToken = default)
+    {
+        var load = await LoadRunAsync(runId, cancellationToken);
+        if (load.Failure is not null) return load.Failure;
+        var run = load.Run!;
+
+        // BR-6: Finalized is terminal/irreversible.
+        if (run.Status == PayrollRunStatus.Finalized)
+            return Result<PayrollApprovalResultDto>.Failure(
+                "This payroll run is already finalized.", 409, "already_finalized");
+
+        // AC-5/BR-1: only an Approved run can be finalized. A direct ReviewPending -> Finalized (no approval
+        // step) is explicitly blocked — a run MUST go through at least one approval.
+        if (run.Status != PayrollRunStatus.Approved)
+            return Result<PayrollApprovalResultDto>.Failure(
+                "A payroll run must be approved before it can be finalized.", 409, "approval_required");
+
+        run.Status = PayrollRunStatus.Finalized;
+        run.FinalizedAt = DateTime.UtcNow;
+        run.CurrentApprovalStep = null;
+
+        // FR-8: lock all payslips for the run immutable. The slips become read-only by virtue of the run being
+        // Finalized (US-PAY-005 list/detail already gate on Finalized, and the processor refuses to reprocess a
+        // Finalized run, US-PAY-003 BR-7) — there is no per-slip mutable flag to flip, so the Finalized run
+        // status IS the immutability lock. No history row required for finalize per the §7 action set, but we
+        // record one for a complete audit trail (FR-7) using the last instance.
+        var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
+        // Finalize is not in the §7 action enum; the audit trail captures it as an Approved-instance closure
+        // via the run's FinalizedAt. We intentionally do NOT invent a new action value to keep the wire enum
+        // aligned with the data spec.
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-finalized", cancellationToken);
+
+        _logger.LogInformation(
+            "Payroll run {RunId} FINALIZED by {User} in tenant {TenantId}. Instance {Instance}.",
+            run.Id, _currentUser.UserId, _tenantContext.TenantId, instanceId);
+
+        return Ok(run, "Finalized");
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Reads — history (FR-7) + summary (FR-4)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<IReadOnlyList<PayrollApprovalHistoryDto>>> GetHistoryAsync(
+        Guid runId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<PayrollApprovalHistoryDto>>.Failure("Tenant context is not resolved.", 400);
+
+        var exists = await _dbContext.PayrollRuns.AsNoTracking().AnyAsync(r => r.Id == runId, cancellationToken);
+        if (!exists)
+            return Result<IReadOnlyList<PayrollApprovalHistoryDto>>.Failure("Payroll run not found.", 404, "run_not_found");
+
+        var rows = await _dbContext.PayrollApprovalHistories.AsNoTracking()
+            .Where(h => h.PayrollRunId == runId)
+            .OrderByDescending(h => h.ActedAt)
+            .Select(h => new PayrollApprovalHistoryDto
+            {
+                Id = h.Id,
+                PayrollRunId = h.PayrollRunId,
+                WorkflowInstanceId = h.WorkflowInstanceId,
+                StepNumber = h.StepNumber,
+                Action = h.Action,
+                ActorUserId = h.ActorUserId,
+                Comments = h.Comments,
+                ActedAt = h.ActedAt,
+                IpAddress = h.IpAddress,
+            })
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<PayrollApprovalHistoryDto>>.Success(rows);
+    }
+
+    public async Task<Result<PayrollApprovalSummaryDto>> GetSummaryAsync(
+        Guid runId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayrollApprovalSummaryDto>.Failure("Tenant context is not resolved.", 400);
+
+        var run = await _dbContext.PayrollRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+        if (run is null)
+            return Result<PayrollApprovalSummaryDto>.Failure("Payroll run not found.", 404, "run_not_found");
+
+        // FR-4: previous-month baseline = the most recent FINALIZED run for the tenant in an EARLIER period
+        // than this run. Tenant-scoped by the global query filter (BR-8).
+        var previous = await _dbContext.PayrollRuns.AsNoTracking()
+            .Where(r => r.Status == PayrollRunStatus.Finalized
+                && (r.PayYear < run.PayYear || (r.PayYear == run.PayYear && r.PayMonth < run.PayMonth)))
+            .OrderByDescending(r => r.PayYear).ThenByDescending(r => r.PayMonth)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        decimal? previousNet = previous?.TotalNet;
+        decimal? variance = previousNet is { } p && p != 0m
+            ? Math.Round((run.TotalNet - p) / p * 100m, 2, MidpointRounding.AwayFromZero)
+            : null;
+
+        // Exceptions (FR-4): warnings the approver should review. Built from stored counters + per-slip checks.
+        var exceptions = new List<string>();
+        if (run.SkippedEmployees > 0)
+            exceptions.Add($"{run.SkippedEmployees} employee(s) were skipped (e.g. missing salary structure). See the run log.");
+
+        var negativeNetCount = await _dbContext.PayrollSlips.AsNoTracking()
+            .CountAsync(s => s.PayrollRunId == runId && s.NetSalary < 0m, cancellationToken);
+        if (negativeNetCount > 0)
+            exceptions.Add($"{negativeNetCount} payslip(s) have a negative net salary.");
+
+        if (run.ProcessedEmployees == 0)
+            exceptions.Add("No employees were processed in this run.");
+
+        return Result<PayrollApprovalSummaryDto>.Success(new PayrollApprovalSummaryDto
+        {
+            RunId = run.Id,
+            PayMonth = run.PayMonth,
+            PayYear = run.PayYear,
+            Status = run.Status.ToString(),
+            TotalEmployees = run.TotalEmployees,
+            TotalGross = run.TotalGross,
+            TotalDeductions = run.TotalDeductions,
+            TotalStatutory = run.TotalStatutory,
+            TotalNet = run.TotalNet,
+            PreviousMonthTotalNet = previousNet,
+            VariancePercentage = variance,
+            Exceptions = exceptions,
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Helpers
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// BR-5: counts the tenant's eligible payroll approvers — distinct ACTIVE tenant users whose assigned
+    /// roles grant the <c>Payroll.Approve</c> permission. When this is &lt; 2 the maker-checker rule is relaxed
+    /// (a single HR/Finance user may approve their own submission, the small-team exception). UserTenant /
+    /// role join tables are not BaseEntity, so they are filtered explicitly by tenant id.
+    /// </summary>
+    private async Task<int> CountEligibleApproversAsync(CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        var query =
+            from ut in _dbContext.UserTenants.AsNoTracking()
+            where ut.TenantId == tenantId && ut.Status == UserTenantStatus.Active
+            join utr in _dbContext.UserTenantRoles.AsNoTracking() on ut.Id equals utr.UserTenantId
+            join rp in _dbContext.RolePermissions.AsNoTracking() on utr.RoleId equals rp.RoleId
+            where rp.Permission == PermissionCatalog.Payroll.Approve
+            select ut.UserId;
+
+        return await query.Distinct().CountAsync(cancellationToken);
+    }
+
+    private async Task<(PayrollRun? Run, Result<PayrollApprovalResultDto>? Failure)> LoadRunAsync(
+        Guid runId, CancellationToken cancellationToken)
+    {
+        if (!_tenantContext.IsResolved)
+            return (null, Result<PayrollApprovalResultDto>.Failure("Tenant context is not resolved.", 400));
+
+        // Tracked load (we mutate Status). Tenant-scoped by the global filter — a cross-tenant run is invisible
+        // (returns 404, never leaks cross-tenant existence, BR-8).
+        var run = await _dbContext.PayrollRuns.FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+        return run is null
+            ? (null, Result<PayrollApprovalResultDto>.Failure("Payroll run not found.", 404, "run_not_found"))
+            : (run, null);
+    }
+
+    private static Result<PayrollApprovalResultDto> InvalidTransition(PayrollRunStatus current, string action) =>
+        Result<PayrollApprovalResultDto>.Failure(
+            $"A payroll run in status {current} cannot be {action}.", 409, "invalid_transition");
+
+    private PayrollApprovalHistory NewHistory(
+        PayrollRun run, Guid instanceId, int step, string action, string? comments, string? ipAddress) => new()
+    {
+        Id = BaseEntity.NewUuidV7(),
+        TenantId = _tenantContext.TenantId,
+        PayrollRunId = run.Id,
+        WorkflowInstanceId = instanceId,
+        StepNumber = step,
+        Action = action,
+        ActorUserId = _currentUser.UserId,
+        Comments = comments,
+        ActedAt = DateTime.UtcNow,
+        IpAddress = ipAddress,
+    };
+
+    private static Result<PayrollApprovalResultDto> Ok(PayrollRun run, string action) =>
+        Result<PayrollApprovalResultDto>.Success(new PayrollApprovalResultDto
+        {
+            RunId = run.Id,
+            Status = run.Status.ToString(),
+            Action = action,
+            WorkflowInstanceId = run.CurrentWorkflowInstanceId,
+            CurrentApprovalStep = run.CurrentApprovalStep,
+            TotalApprovalSteps = run.TotalApprovalSteps,
+        });
+
+    private void Log(PayrollRun run, string action) =>
+        _logger.LogInformation(
+            "Payroll run {RunId} approval action {Action} by {User} in tenant {TenantId}. New status {Status}.",
+            run.Id, action, _currentUser.UserId, _tenantContext.TenantId, run.Status);
+
+    private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

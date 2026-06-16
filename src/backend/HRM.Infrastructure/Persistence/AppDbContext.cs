@@ -77,6 +77,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<EmployeeSalaryComponent> EmployeeSalaryComponents => Set<EmployeeSalaryComponent>();
     public DbSet<SalaryRevisionHistory> SalaryRevisionHistories => Set<SalaryRevisionHistory>();
     public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
+    public DbSet<PayrollApprovalHistory> PayrollApprovalHistories => Set<PayrollApprovalHistory>();
     public DbSet<PayrollSlip> PayrollSlips => Set<PayrollSlip>();
     public DbSet<PayrollSlipDetail> PayrollSlipDetails => Set<PayrollSlipDetail>();
     public DbSet<StatutoryRule> StatutoryRules => Set<StatutoryRule>();
@@ -296,6 +297,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PAY-003: PayrollRun tenant isolation + soft-delete filter (AC-7).
         modelBuilder.Entity<PayrollRun>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-008: PayrollApprovalHistory tenant isolation + soft-delete filter (BR-8).
+        modelBuilder.Entity<PayrollApprovalHistory>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PAY-003: PayrollSlip tenant isolation + soft-delete filter (AC-7).

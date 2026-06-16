@@ -192,6 +192,7 @@ public static class DependencyInjection
         // Hangfire job, or directly in tests). Notification is a log-only seam until US-NTF.
         services.AddScoped<IPayrollRunService, PayrollRunService>();
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
+        services.AddScoped<IPayrollApprovalService, PayrollApprovalService>();  // US-PAY-008
         services.AddScoped<IPayrollNotificationService, LogOnlyPayrollNotificationService>();
 
         // US-PAY-004: Payroll — payslip-PDF generation. The generation service (enqueue + status + downloads)

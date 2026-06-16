@@ -53,6 +53,37 @@ public sealed class PayrollRun : BaseEntity
     /// <summary>When the job finished computing (status -&gt; ReviewPending), nullable.</summary>
     public DateTime? CompletedAt { get; set; }
 
+    // ── Approval workflow (US-PAY-008) ────────────────────────────────────────
+
+    /// <summary>
+    /// US-PAY-008: the active approval workflow instance id (groups the current attempt's history rows). Set
+    /// on SubmitForApproval; a re-submit after rejection starts a NEW instance (BR-3). Null until first
+    /// submitted.
+    /// </summary>
+    public Guid? CurrentWorkflowInstanceId { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 AC-4: the current 1-based approval step awaiting a decision within the active instance.
+    /// Advances on each step approval; the run becomes Approved only when it exceeds
+    /// <see cref="TotalApprovalSteps"/>. Null when not in an approval workflow.
+    /// </summary>
+    public int? CurrentApprovalStep { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 AC-4/FR-2: total sequential approval steps configured for the active instance (default 1 —
+    /// single-step HR-submit/Finance-approve, BR-2). Null when not in an approval workflow.
+    /// </summary>
+    public int? TotalApprovalSteps { get; set; }
+
+    /// <summary>US-PAY-008 AC-1/BR-5: user who submitted the run for approval (maker, for maker-checker). Nullable.</summary>
+    public Guid? SubmittedBy { get; set; }
+
+    /// <summary>US-PAY-008 AC-1: when the run was submitted for approval, nullable.</summary>
+    public DateTime? SubmittedAt { get; set; }
+
+    /// <summary>US-PAY-008 AC-3: the latest rejection reason, nullable (cleared on re-submit).</summary>
+    public string? RejectionReason { get; set; }
+
     /// <summary>User who approved the run (BR-6), nullable.</summary>
     public Guid? ApprovedBy { get; set; }
 

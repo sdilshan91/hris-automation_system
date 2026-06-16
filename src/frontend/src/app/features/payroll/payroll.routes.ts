@@ -44,7 +44,19 @@ export const PAYROLL_ROUTES: Routes = [
       ),
   },
   {
+    // US-PAY-008 (§8): approver "Pending Approvals" queue — runs in
+    // AwaitingApproval, gated by Payroll.Approve at the backend; cards link to
+    // runs/:id for the review + approve/reject/return actions. Declared BEFORE
+    // 'runs/:id' so it is matched literally (it is a sibling, not a run id).
+    path: 'approvals',
+    loadComponent: () =>
+      import(
+        './components/pending-approvals/pending-approvals.component'
+      ).then((m) => m.PendingApprovalsComponent),
+  },
+  {
     // US-PAY-003 (§8): run detail — status stepper, live progress, summary card.
+    // US-PAY-008 extends it with the approval review layout + action bar + history.
     path: 'runs/:id',
     loadComponent: () =>
       import(
