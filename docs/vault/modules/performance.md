@@ -379,6 +379,68 @@ needs either a BE endpoint or the FE to pass through the flagged employee via ro
 Tracked in the US-PRF-008 PR; deliberately NOT force-fitted here (FE specs are built around
 the assumed contract and all pass; reconciliation is a deliberate single-file+models change).
 
+## US-PRF-009 — Goal tracking with progress updates (FE-only so far; backend pending)
+
+Employee + manager. EMPLOYEE "My Goals" lives under the self-service area at the NEW
+route `/my-review/my-goals` (same employee guard as /my-review). MANAGER "Team Goal
+Progress" is a NEW, DISTINCT route `/performance/team-goal-progress` — deliberately
+SEPARATE from the existing US-PRF-001 `team-goals` goal-SETTING dashboard (that one
+tracks goal-setting status; this one tracks goal PROGRESS). Do NOT clobber team-goals.
+
+Files: `models/goal-progress.models.ts`, `services/goal-progress.service.ts`,
+`components/my-goals/`, `components/team-goal-progress/`.
+
+Key FE decisions:
+- **No chart lib** (still none) → the §8 overall-completion widget is a pure SVG/CSS
+  donut (`completionDonut` helper, reusing the US-PRF-007 `donutGeometry` pattern).
+  Progress bars are animated CSS-transition fills colored by status.
+- **BR-2 (100%→Completed, overridable)** is the pure helper `statusForProgress(pct,
+  current)`: 100% forces Completed; dropping a stale Completed below 100% demotes to
+  InProgress/NotStarted; AtRisk/Blocked chosen below 100% are left untouched. Unit-tested.
+- **FR-4 weighted overall completion** is `weightedOverallCompletion(goals)` (pure):
+  weighted average by goal weight, simple-average fallback when all weights are 0. The
+  SERVER value (`IMyGoals.overallCompletionPercent`) is authoritative; the FE recompute
+  is the optimistic-display fallback after posting an update.
+- **Window gate (BR-1)** rendered off authoritative `windowOpen`, NOT cycle dates (like
+  US-PRF-001/002). Closed message = `GOAL_WINDOW_CLOSED_MESSAGE` (exported; QA may assert).
+- **Add Update** is a mobile-first bottom-sheet (NFR-4): slider (step 5) + status chips +
+  notes textarea (≤2000, plain — no RTE) + optional ≤3 file attachments (10MB each).
+  Multipart with repeated `files` field when attached, JSON otherwise.
+- **History timeline (AC-3)** is lazily loaded on card expand; manager comment thread
+  (FR-8) renders under each update. Manager side can POST a comment (FR-8) per update.
+- Append-only (NFR-3): the FE exposes no edit/delete of a posted update.
+
+### ASSUMED backend contract (backend agent must build/reconcile) — US-PRF-009
+`apiBaseUrl` includes `/api/v1`. All under `/performance/goal-progress`. Tenant + acting
+user resolved server-side (FE sends no ids for self views); `Performance.Read.Self`
+(employee) + RLS for my-goals; `Performance.Review.Team`/`.All` (manager/HR) for team
+views. Bare payloads (US-PLT-001), PascalCase enum strings (US-PLT-003).
+- `GET  /performance/goal-progress/my-goals` → `IMyGoals` { cycleId, cycleName,
+  windowOpen, overallCompletionPercent, goals[ IGoalProgress { goalId, title, target,
+  weight, progressPercent, status, lastUpdatedOn, needsAttention } ] }. One call = the
+  whole My Goals screen (AC-1).
+- `GET  /performance/goal-progress/goals/{goalId}/updates` → `IGoalUpdate[]` (AC-3
+  timeline; each update has progressPercent, previousProgressPercent, status, notes,
+  authorName, createdOn, attachments[], comments[] FR-8). Tolerates `{ data }`.
+- `POST /performance/goal-progress/goals/{goalId}/updates` body
+  `IAddGoalUpdateRequest {progressPercent,status,notes}` → `IGoalUpdate` (AC-2/FR-2).
+  Multipart (repeated field `files`, ≤3) when attachments present, JSON otherwise.
+  Server appends + timestamps, notifies manager (FR-5), + HR if Blocked (BR-3).
+- `POST /performance/goal-progress/updates/{updateId}/comments` body `{comment}` →
+  `IGoalComment` (FR-8 manager/HR comment, ≤500 chars).
+- `GET  /performance/goal-progress/team` → `ITeamGoalProgressRow[]` (AC-4: employeeId,
+  employeeName, jobTitle, overallCompletionPercent, goalCount, goalsAtRisk,
+  lastUpdatedOn). Tolerates `{ data }`. Restricted to direct reports server-side.
+- `GET  /performance/goal-progress/team/{employeeId}` → `IEmployeeGoalProgress`
+  (AC-4 drill-down: employee + their `IGoalProgress[]`).
+
+Enum `GoalProgressStatus` = `NotStarted | InProgress | Completed | AtRisk | Blocked`
+(§8 chip colors gray/blue/green/amber/red). AC-5 stale-goal Hangfire nudge + `needsAttention`
+flag are a BACKEND concern (the FE only renders the flag). Thin single-file service so a
+route mismatch is a one-file fix in `GoalProgressService`. **Most speculative parts**: the
+multipart `files` upload field (server may instead want pre-uploaded storage keys, like
+the US-PRF-008 reconciliation), and the team/{employeeId} drill-down shape.
+
 ## US-PRF-007 — Performance dashboard + analytics (BACKEND landed; FE pending)
 
 Read-only analytics. **NO new entities, NO migration.** Aggregates LIVE over the existing

@@ -112,6 +112,19 @@ export const PERFORMANCE_ROUTES: Routes = [
       ).then((m) => m.Feedback360ConfigComponent),
   },
   {
+    // US-PRF-009 AC-4: MANAGER "Team Goal Progress" — a DISTINCT view from the
+    // US-PRF-001 team-goals goal-SETTING dashboard. Summary table of direct reports
+    // (overall completion %, # at risk, last update) + drill-down to an employee's
+    // goals + update timeline where the manager can comment (FR-8). Manager/HR
+    // role-gated by the parent /performance guard; backend restricts to direct
+    // reports (Performance.Review.Team + RLS).
+    path: 'team-goal-progress',
+    loadComponent: () =>
+      import(
+        './components/team-goal-progress/team-goal-progress.component'
+      ).then((m) => m.TeamGoalProgressComponent),
+  },
+  {
     // US-PRF-008 AC-1: PIP creation form. STATIC 'new' segment declared BEFORE
     // 'pips/:pipId' so it matches first.
     path: 'pips/new',

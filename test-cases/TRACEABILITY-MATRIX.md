@@ -3518,7 +3518,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PRF-007) | Multi-tenant isolation (performance_summary materialized view + aggregate caches + export artifacts + Hangfire refresh jobs) | Critical | TC-PRF-ISO-025, TC-PRF-ISO-026, TC-PRF-ISO-027, TC-PRF-ISO-028 | 4 | -- |
 | US-PRF-008 | Performance Improvement Plan (PIP) | Should Have | TC-PRF-008-01, TC-PRF-008-02, TC-PRF-008-03, TC-PRF-008-04, TC-PRF-008-05, TC-PRF-008-06, TC-PRF-008-07, TC-PRF-008-08, TC-PRF-008-09, TC-PRF-008-10, TC-PRF-008-11, TC-PRF-008-12, TC-PRF-008-13, TC-PRF-008-14, TC-PRF-008-15 | 15 | 5/5 AC covered |
 | Cross-cutting (PRF-008) | Multi-tenant isolation (pip/pip_objectives/pip_checkpoints tables + Hangfire reminder/ack-timeout jobs + checkpoint attachments + escalation/audit + report artifacts) | Critical | TC-PRF-ISO-029, TC-PRF-ISO-030, TC-PRF-ISO-031, TC-PRF-ISO-032 | 4 | -- |
-| **TOTAL** | | | **145 test cases** | **145** | **39/39 AC** |
+| US-PRF-009 | Goal Tracking with Progress Updates | Should Have | TC-PRF-009-01, TC-PRF-009-02, TC-PRF-009-03, TC-PRF-009-04, TC-PRF-009-05, TC-PRF-009-06, TC-PRF-009-07, TC-PRF-009-08, TC-PRF-009-09, TC-PRF-009-10, TC-PRF-009-11, TC-PRF-009-12, TC-PRF-009-13, TC-PRF-009-14, TC-PRF-009-15 | 15 | 5/5 AC covered |
+| Cross-cutting (PRF-009) | Multi-tenant isolation (goal_progress_updates + goal_comments tables + stale-detection Hangfire job + attachments + caches + notifications) | Critical | TC-PRF-ISO-033, TC-PRF-ISO-034, TC-PRF-ISO-035, TC-PRF-ISO-036 | 4 | -- |
+| **TOTAL** | | | **164 test cases** | **164** | **44/44 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -3669,6 +3671,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-030 | PIP APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (view/checkpoint/extend/outcome/escalation/report) | Security | Critical | US-PRF-008 | NFR-2, FR-4, FR-5, FR-7, FR-8 |
 | TC-PRF-ISO-031 | Cross-tenant write block: server-derived tenant_id on pip/objectives/checkpoints/escalation + foreign employee/manager/mentor rejected | Security | Critical | US-PRF-008 | NFR-2, FR-1, FR-4 |
 | TC-PRF-ISO-032 | Tenant-scoped PIP Hangfire jobs + checkpoint-attachment storage + notifications + audit/history + report artifacts | Security | High | US-PRF-008 | NFR-2, FR-3, FR-4, FR-5, FR-7, BR-4 |
+| TC-PRF-009-01 | Employee opens My Goals (cards w/ progress/status/bar) -> Add Update (progress/status/notes/attachment) -> timestamped + logged + manager notified + bar updates (happy path) | E2E | Critical | US-PRF-009 | AC-1, AC-2, FR-1/2/5, BR-1 |
+| TC-PRF-009-02 | Multiple updates on a goal -> expand card -> chronological timeline with date/progress change/notes/attachments | Functional | High | US-PRF-009 | AC-3, FR-3, NFR-3 |
+| TC-PRF-009-03 | Manager Team Goals summary table (overall completion %/# at-risk/last update) per direct report + drill-down; scope = direct reports | Functional | High | US-PRF-009 | AC-4, FR-3, FR-4, NFR-2 |
+| TC-PRF-009-04 | Stale-goal nudge: no update > X days (default 14) -> Hangfire nudge + "Needs Attention" flag; interval 0 disables | Integration | High | US-PRF-009 | AC-5, FR-6, BR-4 |
+| TC-PRF-009-05 | Status rules: 100% auto-Completed (employee override) + transitions NotStarted->InProgress->Completed/AtRisk/Blocked | Functional | High | US-PRF-009 | FR-7, BR-2, AC-2 |
+| TC-PRF-009-06 | Goal marked Blocked -> notifies manager + HR; non-Blocked does not over-notify HR | Integration | High | US-PRF-009 | BR-3, FR-5, FR-7 |
+| TC-PRF-009-07 | Weighted overall completion: 3 goals (50/30/20% x 80/50/10%) -> 57.0% weighted (not 46.7% mean), server-authoritative | Functional | High | US-PRF-009 | FR-4, AC-4 |
+| TC-PRF-009-08 | Append-only: modify/delete a progress update via API rejected (employee + HR); correction = new appended entry | Security | Critical | US-PRF-009 | NFR-3, FR-3 |
+| TC-PRF-009-09 | Manager comment thread on an update -> conversation displays in order, <=500 chars, employee replies | Functional | High | US-PRF-009 | FR-8, BR-5, AC-4 |
+| TC-PRF-009-10 | Visibility: updates visible to employee/manager/HR, peer blocked incl. by id unless tenant enables shared visibility | Security | Critical | US-PRF-009 | BR-5, NFR-2 |
+| TC-PRF-009-11 | Input validation + sanitization: progress 0-100 / status enum / notes <=2000 / <=3 files <=10MB + XSS/SQLi on notes+comments | Security | High | US-PRF-009 | FR-2, FR-8, S10 |
+| TC-PRF-009-12 | Boundary: progress 0/100, notes exactly 2000, exactly 3 files/exactly 10MB; BR-1 update only during the active cycle window | Functional | High | US-PRF-009 | FR-2, BR-1, AC-2 |
+| TC-PRF-009-13 | Authz: employee posts/views only OWN goals (Performance.Read.Self), cross-employee IDOR blocked, manager = direct reports, unauth 401 | Security | Critical | US-PRF-009 | NFR-2, BR-5, AC-4 |
+| TC-PRF-009-14 | Performance: goal list <=400ms P95 (<=10 goals, no N+1) + stale-detection job <=60s @ 5,000 employees | Performance | High | US-PRF-009 | NFR-1, NFR-5, FR-6 |
+| TC-PRF-009-15 | Accessibility/mobile: add-update at 360px bottom-sheet + WCAG 2.1 AA + animated progress bars (aria + reduced-motion) | Accessibility | High | US-PRF-009 | NFR-4, AC-1, AC-2 |
+| TC-PRF-ISO-033 | Goal progress updates (+comments/attachments/aggregates/stale-flags) in Tenant A invisible from Tenant B (cross-tenant read, incl. by direct id) | Security | Critical | US-PRF-009 | NFR-2 |
+| TC-PRF-ISO-034 | Goal-tracking APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (view/add-update/comment/drill-down) | Security | Critical | US-PRF-009 | NFR-2, FR-1, FR-3, FR-5, FR-8 |
+| TC-PRF-ISO-035 | Cross-tenant write block: server-derived tenant_id on updates/comments (no body injection) + foreign goal_id/employee_id rejected | Security | Critical | US-PRF-009 | NFR-2, FR-1, FR-8 |
+| TC-PRF-ISO-036 | Tenant-scoped stale-detection Hangfire job + nudge/update/Blocked notifications + attachment storage + goal-list/summary caches | Security | High | US-PRF-009 | NFR-2, FR-5, FR-6, FR-8, BR-3, BR-4 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 
@@ -3949,6 +3970,48 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 ---
 
+### US-PRF-009 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: My Goals cards (title/target/current progress %/status/last-update/progress bar) | AC | TC-PRF-009-01, -15 | Direct |
+| AC-2: "Add Update" (progress/status/notes/attachment) -> timestamped + logged + manager notified + progress bar updates | AC | TC-PRF-009-01, -05, -12 | Direct |
+| AC-3: multiple updates -> chronological timeline (date/progress change/notes/attachments) | AC | TC-PRF-009-02 | Direct |
+| AC-4: manager Team Goals summary table per direct report + drill-down to goals/updates | AC | TC-PRF-009-03, -07, -09 | Direct |
+| AC-5: stale goal (no update > X days) -> Hangfire nudge + "Needs Attention" flag on manager dashboard | AC | TC-PRF-009-04 | Direct (delivery CONDITIONAL on S25) |
+| FR-1: update goal progress anytime during the active cycle | FR | TC-PRF-009-01, -12 | Direct |
+| FR-2: update fields (progress 0-100 / status / notes <=2000 / <=3 files <=10MB) | FR | TC-PRF-009-01, -11, -12 | Direct |
+| FR-3: full update history per goal as a timeline | FR | TC-PRF-009-02, -08 | Direct |
+| FR-4: overall completion = weighted average of goal progress | FR | TC-PRF-009-07 | Direct |
+| FR-5: manager notified (SignalR/polling) on a progress update | FR | TC-PRF-009-01, -06 | Direct (enqueue; delivery CONDITIONAL on S25) |
+| FR-6: Hangfire daily stale-goal detection + nudge (default 14d) | FR | TC-PRF-009-04, TC-PRF-ISO-036 | Direct (enqueue; delivery CONDITIONAL on S25) |
+| FR-7: status transitions NotStarted -> InProgress -> Completed / AtRisk / Blocked | FR | TC-PRF-009-05, -11 | Direct |
+| FR-8: manager comment thread per goal/update | FR | TC-PRF-009-09 | Direct |
+| BR-1: updates only during the active cycle window | BR | TC-PRF-009-12 | Direct (window dates seeded via US-PRF-004) |
+| BR-2: 100% auto-sets Completed (employee can override) | BR | TC-PRF-009-05 | Direct |
+| BR-3: Blocked notifies manager + HR | BR | TC-PRF-009-06 | Direct (delivery CONDITIONAL on S25) |
+| BR-4: stale interval tenant-configurable (default 14d; 0 disables) | BR | TC-PRF-009-04 | Direct |
+| BR-5: updates visible to employee/manager/HR, not peers unless shared visibility enabled | BR | TC-PRF-009-10, -13 | Direct |
+| NFR-1: goal list <=400ms P95 (<=10 goals) | NFR | TC-PRF-009-14 | Direct (needs seeded perf env) |
+| NFR-2: tenant isolation via RLS (EF query filters as the platform mechanism) | NFR | TC-PRF-009-13, TC-PRF-ISO-033, -034, -035, -036 | Direct (RLS = extension point) |
+| NFR-3: progress update history append-only (no edit/delete) | NFR | TC-PRF-009-08 | Direct |
+| NFR-4: goal tracking UI mobile-optimized + WCAG 2.1 AA | NFR | TC-PRF-009-15 | Direct |
+| NFR-5: stale-detection job processes 5,000-employee tenant <=60s | NFR | TC-PRF-009-14 | Direct (needs seeded perf env) |
+
+### US-PRF-009 Coverage Summary
+
+| Metric | Value |
+|--------|-------|
+| Acceptance Criteria | 5/5 (AC-1..AC-5) directly covered |
+| Test Cases | 19 (TC-PRF-009-01..15 + TC-PRF-ISO-033..036) |
+| Critical Priority | 7 (TC-PRF-009-01, -08, -10, -13 + TC-PRF-ISO-033, -034, -035) |
+| High Priority | 12 (TC-PRF-009-02, -03, -04, -05, -06, -07, -09, -11, -12, -14, -15 + TC-PRF-ISO-036) |
+| Medium Priority | 0 |
+| Multi-Tenant Isolation | 4 (TC-PRF-ISO-033..036) |
+| Blocked | 0 (FR-5/FR-6/BR-3 notification delivery + goal-list/summary cache CONDITIONAL on S25/S10; stale-job schedule + attachment virus-scan = seam; FR-7 transition set + BR-2 override = impl contract; NFR-1/NFR-5 need seeded perf env -- none blocking) |
+
+---
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
@@ -3959,8 +4022,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
 | Payroll (US-PAY-001 through US-PAY-012) | 12 | 192 | 63/63 (100%) | 48 | PASS (module complete) |
-| Performance Management (US-PRF-001 through US-PRF-008) | 8 | 145 | 39/39 (100%) | 32 | IN PROGRESS |
-| **TOTAL** | **71** | **1383** | **364/364 (100%)** | **251** | |
+| Performance Management (US-PRF-001 through US-PRF-009) | 9 | 164 | 44/44 (100%) | 36 | IN PROGRESS |
+| **TOTAL** | **72** | **1402** | **369/369 (100%)** | **255** | |
 
 ---
 

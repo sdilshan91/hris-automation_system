@@ -126,4 +126,15 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             eventType, pipId, employeeId, recipientEmployeeId, detail is null ? string.Empty : $" ({detail})");
         return Task.CompletedTask;
     }
+
+    public Task NotifyGoalProgressAsync(
+        string eventType, Guid goalId, Guid employeeId, Guid? recipientEmployeeId, string? detail = null,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] {EventType}: goal {GoalId} for employee {EmployeeId}, recipient " +
+            "{Recipient}{Detail}. Real-time/SignalR delivery deferred (US-NTF-001). Real in-app/email delivery deferred (US-NTF).",
+            eventType, goalId, employeeId, recipientEmployeeId, detail is null ? string.Empty : $" ({detail})");
+        return Task.CompletedTask;
+    }
 }
