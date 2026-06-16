@@ -319,6 +319,18 @@ public static class DependencyInjection
         services.AddScoped<IFeedback360Service, Feedback360Service>();
         services.AddScoped<IFeedback360ReminderService, Feedback360ReminderService>();
 
+        // US-PRF-008: Performance Improvement Plans (PIP). HR-only create/extend/close/escalate (BR-1), one
+        // non-terminal PIP per employee (BR-2), ≥30-day duration (BR-3), the immutable acknowledgement +
+        // append-only checkpoint/event history (BR-4/FR-5, reusing the US-PRF-006 ReviewSignoff pattern) and the
+        // FR-8 visibility restriction (employee / manager / HR / mentor) are enforced in PipService. PIP data is
+        // intentionally NOT surfaced in the general performance dashboard (BR-5). The reminder/not-acknowledged
+        // sweep (FR-3/BR-4) is driven by the PipReminderJob via the same log-only performance notification seam.
+        // Encryption of the sensitive Reason/EscalationNotes (NFR-4) is a documented seam (no PII-encryption
+        // mechanism exists in the codebase — stored plain text today). IPipCheckpointScheduler is an OPTIONAL
+        // Hangfire seam bound in HRM.Api; absent in tests, where the service simply skips explicit scheduling.
+        services.AddScoped<IPipService, PipService>();
+        services.AddScoped<IPipReminderService, PipReminderService>();
+
         // US-PRF-004: Performance — full appraisal-cycle management (create/edit/clone/transition/cancel +
         // dashboard + active-cycle). The phase-sequencing/in-range rules (FR-2/BR-3) are in the validators;
         // participant scoping (FR-3), BR-4 (no two active same-type cycles per employee), the FR-7 status

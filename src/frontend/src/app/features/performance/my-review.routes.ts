@@ -29,4 +29,14 @@ export const MY_REVIEW_ROUTES: Routes = [
         './components/review-signoff-employee/review-signoff-employee.component'
       ).then((m) => m.ReviewSignoffEmployeeComponent),
   },
+  {
+    // US-PRF-008 BR-4/FR-8: the employee's own PIP ("My PIP") — read-only view +
+    // acknowledge initiation. Same employee self-service guard as /my-review; the
+    // backend enforces PIP ownership + RLS so an employee sees only their OWN PIP.
+    path: 'pip/:pipId',
+    loadComponent: () =>
+      import('./components/my-pip/my-pip.component').then(
+        (m) => m.MyPipComponent,
+      ),
+  },
 ];

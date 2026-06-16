@@ -3516,7 +3516,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PRF-006) | Multi-tenant isolation (review_meeting_notes + review_signoffs tables + auto-close jobs + notifications + audit + PDF export) | Critical | TC-PRF-ISO-021, TC-PRF-ISO-022, TC-PRF-ISO-023, TC-PRF-ISO-024 | 4 | -- |
 | US-PRF-007 | Performance Dashboard and Analytics | Should Have | TC-PRF-007-01, TC-PRF-007-02, TC-PRF-007-03, TC-PRF-007-04, TC-PRF-007-05, TC-PRF-007-06, TC-PRF-007-07, TC-PRF-007-08, TC-PRF-007-09, TC-PRF-007-10, TC-PRF-007-11, TC-PRF-007-12, TC-PRF-007-13, TC-PRF-007-14, TC-PRF-007-15 | 15 | 5/5 AC covered |
 | Cross-cutting (PRF-007) | Multi-tenant isolation (performance_summary materialized view + aggregate caches + export artifacts + Hangfire refresh jobs) | Critical | TC-PRF-ISO-025, TC-PRF-ISO-026, TC-PRF-ISO-027, TC-PRF-ISO-028 | 4 | -- |
-| **TOTAL** | | | **126 test cases** | **126** | **34/34 AC** |
+| US-PRF-008 | Performance Improvement Plan (PIP) | Should Have | TC-PRF-008-01, TC-PRF-008-02, TC-PRF-008-03, TC-PRF-008-04, TC-PRF-008-05, TC-PRF-008-06, TC-PRF-008-07, TC-PRF-008-08, TC-PRF-008-09, TC-PRF-008-10, TC-PRF-008-11, TC-PRF-008-12, TC-PRF-008-13, TC-PRF-008-14, TC-PRF-008-15 | 15 | 5/5 AC covered |
+| Cross-cutting (PRF-008) | Multi-tenant isolation (pip/pip_objectives/pip_checkpoints tables + Hangfire reminder/ack-timeout jobs + checkpoint attachments + escalation/audit + report artifacts) | Critical | TC-PRF-ISO-029, TC-PRF-ISO-030, TC-PRF-ISO-031, TC-PRF-ISO-032 | 4 | -- |
+| **TOTAL** | | | **145 test cases** | **145** | **39/39 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -3648,6 +3650,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-026 | Dashboard APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (overview/trend/drill-down/export) | Security | Critical | US-PRF-007 | NFR-2, FR-4, FR-5, FR-7, FR-8 |
 | TC-PRF-ISO-027 | Materialized-view aggregates + refresh tenant-derived (server-side tenant_id, no foreign-id injection / cross-tenant aggregation) | Security | Critical | US-PRF-007 | NFR-2, NFR-3 |
 | TC-PRF-ISO-028 | Aggregate caches + export artifacts + Hangfire materialized-view refresh jobs tenant-scoped | Security | High | US-PRF-007 | NFR-2, NFR-3, BR-4 |
+| TC-PRF-008-01 | HR creates PIP (reason/duration/objectives+success criteria/checkpoints/mentor/escalation) -> Initiate -> employee+manager+mentor notified + Hangfire reminders scheduled (happy path) | E2E | Critical | US-PRF-008 | AC-1, AC-2, FR-1/2/3, NFR-1, NFR-4 |
+| TC-PRF-008-02 | Manager or HR records a checkpoint (status OnTrack/AtRisk/NotMet + evidence + attachment) -> employee notified | Functional | High | US-PRF-008 | AC-3, FR-4, FR-5, BR-1 |
+| TC-PRF-008-03 | Lifecycle (positive): Draft -> Active -> checkpoint -> Extended (new end date + objectives) -> Successfully Completed (employee returns to normal) | E2E | High | US-PRF-008 | AC-4, FR-2, FR-6, FR-5 |
+| TC-PRF-008-04 | Lifecycle (negative): checkpoints Not Met -> outcome Not Met -> HR confirms escalation (BR-6) -> stakeholders notified + immutable audit record | E2E | High | US-PRF-008 | AC-4, AC-5, FR-2, FR-5, BR-6 |
+| TC-PRF-008-05 | Second active PIP for the same employee rejected (client + server); released only on terminal state | Functional | High | US-PRF-008 | BR-2, FR-2 |
+| TC-PRF-008-06 | Duration <30 days rejected; exactly-30 boundary accepted; reversed range rejected | Functional | High | US-PRF-008 | BR-3, FR-1 |
+| TC-PRF-008-07 | Authz: manager cannot create/extend/close/escalate (checkpoint-only); employee/unauth blocked; HR positive control | Security | Critical | US-PRF-008 | BR-1, AC-2, AC-4, AC-5, NFR-2 |
+| TC-PRF-008-08 | Employee acknowledges PIP; non-ack within 5 business days -> "Not Acknowledged" flag (Hangfire), PIP proceeds | Integration | High | US-PRF-008 | BR-4, FR-3, FR-5 |
+| TC-PRF-008-09 | Visibility restricted to employee/manager/HR/mentor; unrelated employee blocked (no IDOR); PIP excluded from general dashboard (US-PRF-007) | Security | Critical | US-PRF-008 | FR-8, BR-5, NFR-2 |
+| TC-PRF-008-10 | Immutability: checkpoint outcomes + status changes + escalation form a complete append-only history; no actor incl. HR edits/deletes | Security | Critical | US-PRF-008 | FR-5, NFR-3, AC-3, AC-4, AC-5 |
+| TC-PRF-008-11 | Sensitive fields (reason, escalation notes) encrypted at rest via pgcrypto -- asserted at the encryption seam (conditional) | Security | High | US-PRF-008 | NFR-4 |
+| TC-PRF-008-12 | PIP create + checkpoint recording <=800ms P95, no N+1 | Performance | High | US-PRF-008 | NFR-1, AC-2, AC-3 |
+| TC-PRF-008-13 | Checkpoint form full-screen single-column at 360px + WCAG 2.1 AA (traffic-light status not color-only) | Accessibility | High | US-PRF-008 | NFR-5, AC-1, AC-3 |
+| TC-PRF-008-14 | PIP summary report (PDF): objectives/checkpoints/outcomes/signatures + branding + authz/tenant-scoping at the export seam (PDF conditional) | Security | Medium | US-PRF-008 | FR-7, FR-8, NFR-2 |
+| TC-PRF-008-15 | Hangfire jobs (start / checkpoint reminder 3d prior / end / overdue) fire at the right times to the right recipients; tenant-scoped + idempotent + retried + rescheduled on extension | Integration | High | US-PRF-008 | FR-3, AC-2, AC-3, FR-6, NFR-2 |
+| TC-PRF-ISO-029 | PIPs (+objectives/checkpoints/escalation/history/report) in Tenant A invisible from Tenant B (cross-tenant read, incl. by direct id) | Security | Critical | US-PRF-008 | NFR-2 |
+| TC-PRF-ISO-030 | PIP APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (view/checkpoint/extend/outcome/escalation/report) | Security | Critical | US-PRF-008 | NFR-2, FR-4, FR-5, FR-7, FR-8 |
+| TC-PRF-ISO-031 | Cross-tenant write block: server-derived tenant_id on pip/objectives/checkpoints/escalation + foreign employee/manager/mentor rejected | Security | Critical | US-PRF-008 | NFR-2, FR-1, FR-4 |
+| TC-PRF-ISO-032 | Tenant-scoped PIP Hangfire jobs + checkpoint-attachment storage + notifications + audit/history + report artifacts | Security | High | US-PRF-008 | NFR-2, FR-3, FR-4, FR-5, FR-7, BR-4 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 
@@ -3885,6 +3906,49 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 ---
 
+### US-PRF-008 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: "Create PIP" form (employee pre-filled / reason / duration / objectives+success criteria / checkpoints / mentor / escalation) | AC | TC-PRF-008-01, -06, -13 | Direct |
+| AC-2: "Initiate PIP" -> created, employee+manager+mentor notified, Hangfire checkpoint reminders scheduled | AC | TC-PRF-008-01, -07, -15 | Direct |
+| AC-3: "Record Checkpoint" (progress/evidence/status/comments/attachment) -> employee notified | AC | TC-PRF-008-02, -04, -10 | Direct |
+| AC-4: outcome review -> Successfully Completed / Extended / Not Met | AC | TC-PRF-008-03, -04, -07 | Direct |
+| AC-5: Not Met + HR confirms escalation -> recorded + stakeholders notified + immutable audit record | AC | TC-PRF-008-04, -10 | Direct |
+| FR-1: create PIP with reason/duration(30/60/90)/objectives w/ success criteria/checkpoints/mentor/escalation | FR | TC-PRF-008-01, -06 | Direct |
+| FR-2: status lifecycle (Draft/Active/Extended/Successfully Completed/Not Met/Cancelled) | FR | TC-PRF-008-03, -04, -05 | Direct |
+| FR-3: Hangfire jobs (start / checkpoint reminders 3d prior / end reminder / overdue alerts) | FR | TC-PRF-008-01, -15, -08, TC-PRF-ISO-032 | Direct (enqueue; delivery CONDITIONAL on S25) |
+| FR-4: record checkpoint (progress status + evidence notes + attachments) | FR | TC-PRF-008-02, -04 | Direct |
+| FR-5: complete immutable history of actions / status changes / checkpoint outcomes | FR | TC-PRF-008-04, -10, -08 | Direct |
+| FR-6: extension (new end date + additional objectives) | FR | TC-PRF-008-03, -15 | Direct |
+| FR-7: PIP summary report (PDF) -- objectives/checkpoints/outcomes/signatures | FR | TC-PRF-008-14 | Direct (export seam; PDF rendering CONDITIONAL on reporting lib) |
+| FR-8: visibility restricted to employee/manager/HR/mentor | FR | TC-PRF-008-09, -14 | Direct |
+| BR-1: only HR `.All` create/extend/close; managers record checkpoints only | BR | TC-PRF-008-07, -02 | Direct |
+| BR-2: one active PIP per employee at a time | BR | TC-PRF-008-05 | Direct |
+| BR-3: PIP duration minimum 30 days | BR | TC-PRF-008-06 | Direct |
+| BR-4: acknowledgement; non-ack within 5 business days -> "Not Acknowledged" flag (Hangfire) | BR | TC-PRF-008-08, TC-PRF-ISO-032 | Direct |
+| BR-5: PIP data excluded from general dashboards/reports (US-PRF-007) | BR | TC-PRF-008-09 | Direct |
+| BR-6: configurable escalation (reassignment / demotion / non-renewal / termination recommendation) | BR | TC-PRF-008-04 | Direct (tenant-configurable option set) |
+| NFR-1: PIP creation + checkpoint <=800ms P95 | NFR | TC-PRF-008-12 | Direct (needs seeded perf env) |
+| NFR-2: tenant isolation (RLS / EF query filters) | NFR | TC-PRF-008-07, -09, TC-PRF-ISO-029, -030, -031, -032 | Direct (EF filters; RLS = extension point) |
+| NFR-3: 7-year retention of PIP records | NFR | TC-PRF-008-10 | Direct (retention seam; purge mechanism platform-owned) |
+| NFR-4: sensitive fields (reason, escalation notes) encrypted at rest via pgcrypto | NFR | TC-PRF-008-11 | Direct (encryption seam; pgcrypto-at-rest CONDITIONAL) |
+| NFR-5: PIP UI mobile-accessible (checkpoint at 360px) + WCAG 2.1 AA | NFR | TC-PRF-008-13 | Direct |
+
+### US-PRF-008 Coverage Summary
+
+| Metric | Value |
+|--------|-------|
+| Acceptance Criteria | 5/5 (AC-1..AC-5) directly covered |
+| Test Cases | 19 (TC-PRF-008-01..15 + TC-PRF-ISO-029..032) |
+| Critical Priority | 7 (TC-PRF-008-01, -07, -09, -10 + TC-PRF-ISO-029, -030, -031) |
+| High Priority | 11 (TC-PRF-008-02, -03, -04, -05, -06, -08, -11, -12, -13, -15 + TC-PRF-ISO-032) |
+| Medium Priority | 1 (TC-PRF-008-14) |
+| Multi-Tenant Isolation | 4 (TC-PRF-ISO-029..032) |
+| Blocked | 0 (NFR-4 pgcrypto + FR-7 PDF rendering + AC/FR-3/BR-4 notification delivery + PIP cache CONDITIONAL; BR-6 escalation options + NFR-3 retention = config/platform seam; NFR-1 needs seeded perf env -- none blocking) |
+
+---
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
@@ -3895,8 +3959,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
 | Payroll (US-PAY-001 through US-PAY-012) | 12 | 192 | 63/63 (100%) | 48 | PASS (module complete) |
-| Performance Management (US-PRF-001 through US-PRF-006) | 6 | 107 | 29/29 (100%) | 24 | IN PROGRESS |
-| **TOTAL** | **69** | **1345** | **354/354 (100%)** | **243** | |
+| Performance Management (US-PRF-001 through US-PRF-008) | 8 | 145 | 39/39 (100%) | 32 | IN PROGRESS |
+| **TOTAL** | **71** | **1383** | **364/364 (100%)** | **251** | |
 
 ---
 
