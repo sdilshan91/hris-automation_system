@@ -1,5 +1,6 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Features.Attendance.DTOs;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -26,19 +27,28 @@ public sealed class PayrollRunService : IPayrollRunService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IAttendancePayrollService _attendancePayroll;
     private readonly IPayrollRunJobScheduler? _jobScheduler;
     private readonly ILogger<PayrollRunService> _logger;
+
+    private static readonly string[] MonthNames =
+    {
+        string.Empty, "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    };
 
     public PayrollRunService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IAttendancePayrollService attendancePayroll,
         ILogger<PayrollRunService> logger,
         IPayrollRunJobScheduler? jobScheduler = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _attendancePayroll = attendancePayroll;
         _logger = logger;
         _jobScheduler = jobScheduler;
     }
@@ -75,6 +85,17 @@ public sealed class PayrollRunService : IPayrollRunService
                     $"Payroll for {input.PayYear:D4}-{input.PayMonth:D2} is already finalized.", 409, "period_already_finalized")
                 : Result<PayrollRunAcceptedDto>.Failure(
                     $"A payroll run for {input.PayYear:D4}-{input.PayMonth:D2} is already in progress.", 409, "run_in_progress");
+        }
+
+        // US-PAY-010 AC-4/FR-6: BLOCK initiate when attendance for the period is NOT finalized/locked. The
+        // attendance PERIOD LOCK (US-ATT-009) is the "finalized" signal — HR locks the period before payroll so
+        // retroactive attendance edits can't invalidate the computed slips. Without it, LOP/overtime cannot be
+        // trusted, so we fail-closed with a clear, FE-friendly warning rather than running on provisional data.
+        if (!await IsAttendanceFinalizedAsync(input.PayYear, input.PayMonth, cancellationToken))
+        {
+            var monthName = input.PayMonth is >= 1 and <= 12 ? MonthNames[input.PayMonth] : input.PayMonth.ToString();
+            return Result<PayrollRunAcceptedDto>.Failure(
+                $"Attendance data for {monthName} {input.PayYear} is not yet finalized.", 409, "attendance_not_finalized");
         }
 
         var now = DateTime.UtcNow;
@@ -187,6 +208,130 @@ public sealed class PayrollRunService : IPayrollRunService
             SkippedEmployees = run.SkippedEmployees,
             IsComplete = complete,
         });
+    }
+
+    public async Task<Result<PrePayrollReconciliationDto>> GetPrePayrollReconciliationAsync(
+        int payYear, int payMonth, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PrePayrollReconciliationDto>.Failure("Tenant context is not resolved.", 400);
+        if (payMonth is < 1 or > 12)
+            return Result<PrePayrollReconciliationDto>.Failure("Pay month must be between 1 and 12.", 400, "invalid_month");
+
+        // Active employees (tenant-scoped by the global filter — FR-8). Mirror the run engine's active set.
+        var employees = await _dbContext.Employees.AsNoTracking()
+            .Where(e => e.IsActive
+                && (e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation))
+            .OrderBy(e => e.EmployeeNo)
+            .ToListAsync(cancellationToken);
+        var employeeIds = employees.Select(e => e.Id).ToList();
+
+        // FR-7: reuse the US-ATT-009 attendance pull for working/present/absent/LOP/overtime (best-effort —
+        // no rows when attendance is unavailable; the report still renders the leave + employee columns).
+        var attendanceByEmployee = new Dictionary<Guid, AttendancePayrollRowDto>();
+        try
+        {
+            var pull = await _attendancePayroll.GetPayrollDataAsync(payYear, payMonth, employeeIds, cancellationToken);
+            if (pull.IsSuccess && pull.Value is not null)
+                attendanceByEmployee = pull.Value.Rows.ToDictionary(r => r.EmployeeId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Reconciliation attendance pull failed for {Year}-{Month}.", payYear, payMonth);
+        }
+
+        // FR-2/FR-7: approved-leave days for the period, grouped by employee + leave-type name (tenant-scoped).
+        var leaveByEmployee = await ApprovedLeaveByEmployeeAsync(payYear, payMonth, employeeIds, cancellationToken);
+
+        var finalized = await IsAttendanceFinalizedAsync(payYear, payMonth, cancellationToken);
+        var workingDaysFallback = WorkingDaysInMonth(payYear, payMonth);
+
+        var rows = new List<PrePayrollReconciliationRowDto>(employees.Count);
+        foreach (var emp in employees)
+        {
+            var att = attendanceByEmployee.GetValueOrDefault(emp.Id);
+            var leave = leaveByEmployee.GetValueOrDefault(emp.Id) ?? new Dictionary<string, decimal>();
+
+            rows.Add(new PrePayrollReconciliationRowDto
+            {
+                EmployeeId = emp.Id,
+                EmployeeNo = emp.EmployeeNo,
+                EmployeeName = $"{emp.FirstName} {emp.LastName}".Trim(),
+                WorkingDays = att?.TotalWorkingDays ?? workingDaysFallback,
+                PresentDays = att?.TotalPresentDays ?? 0m,
+                AbsentDays = att?.TotalAbsentDays ?? 0m,
+                LeaveDaysByType = leave,
+                TotalLeaveDays = leave.Values.Sum(),
+                OvertimeHours = att is null ? 0m : Math.Round(att.ApprovedOvertimeMinutes / 60m, 2, MidpointRounding.AwayFromZero),
+                CalculatedLopDays = att?.LopDays ?? 0m,
+            });
+        }
+
+        return Result<PrePayrollReconciliationDto>.Success(new PrePayrollReconciliationDto
+        {
+            Period = $"{payYear:D4}-{payMonth:D2}",
+            PayMonth = payMonth,
+            PayYear = payYear,
+            AttendanceFinalized = finalized,
+            Rows = rows,
+        });
+    }
+
+    /// <summary>
+    /// FR-2/FR-7: approved-leave days in the period per employee, grouped by leave-type name. A request counts
+    /// toward the period when its [start, end] window overlaps the month; full-period TotalDays is attributed
+    /// (a finer day-in-month split is a documented follow-up). Tenant-scoped by the global filter.
+    /// </summary>
+    private async Task<Dictionary<Guid, Dictionary<string, decimal>>> ApprovedLeaveByEmployeeAsync(
+        int year, int month, IReadOnlyList<Guid> employeeIds, CancellationToken ct)
+    {
+        if (employeeIds.Count == 0) return new Dictionary<Guid, Dictionary<string, decimal>>();
+
+        var monthStart = new DateOnly(year, month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        var rows = await (
+            from r in _dbContext.LeaveRequests.AsNoTracking()
+            join t in _dbContext.LeaveTypes.AsNoTracking() on r.LeaveTypeId equals t.Id
+            where r.Status == LeaveRequestStatus.Approved
+                && employeeIds.Contains(r.EmployeeId)
+                && r.StartDate <= monthEnd && r.EndDate >= monthStart
+            select new { r.EmployeeId, TypeName = t.Name, r.TotalDays }).ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.EmployeeId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(x => x.TypeName)
+                      .ToDictionary(tg => tg.Key, tg => tg.Sum(x => x.TotalDays)));
+    }
+
+    private static int WorkingDaysInMonth(int year, int month)
+    {
+        var start = new DateOnly(year, month, 1);
+        var end = start.AddMonths(1).AddDays(-1);
+        return end.DayNumber - start.DayNumber + 1;
+    }
+
+    /// <summary>
+    /// US-PAY-010 AC-4/FR-6: is the attendance period finalized? Reuses the US-ATT-009 period lock — a period is
+    /// "finalized" when an ACTIVE lock covers it. A failed lookup is treated as NOT finalized (fail-closed): the
+    /// gate exists precisely to prevent running on un-trustworthy attendance, so an unknown state must block.
+    /// </summary>
+    private async Task<bool> IsAttendanceFinalizedAsync(int year, int month, CancellationToken ct)
+    {
+        try
+        {
+            var lockResult = await _attendancePayroll.GetPeriodLockAsync(year, month, ct);
+            return lockResult.IsSuccess && lockResult.Value is { IsLocked: true };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Attendance-finalized check failed for {Year}-{Month}; blocking payroll initiate (fail-closed).",
+                year, month);
+            return false;
+        }
     }
 
     private static PayrollRunDto Map(PayrollRun r) => new()

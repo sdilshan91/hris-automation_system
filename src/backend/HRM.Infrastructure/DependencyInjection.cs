@@ -218,6 +218,13 @@ public static class DependencyInjection
         services.AddScoped<IPayrollAdjustmentService, PayrollAdjustmentService>();
         services.AddScoped<IPayrollAdjustmentResolver, PayrollAdjustmentResolver>();
 
+        // US-PAY-010: Payroll — attendance + leave integration. The overtime earning (AC-2) is wired into the
+        // run engine (PayrollRunProcessor) via the existing US-ATT-009 attendance pull; leave encashment (AC-3)
+        // reuses the US-PAY-007 adjustment mechanism (creates a Bonus earning for the next run); the
+        // attendance-finalized gate (AC-4) lives in PayrollRunService.InitiateAsync; the pre-payroll
+        // reconciliation report (FR-7) is a read on PayrollRunService. Only the encashment service is new.
+        services.AddScoped<ILeaveEncashmentService, LeaveEncashmentService>();
+
         // US-PAY-005: Payroll — employee self-service payslip read (list / detail / PDF download). Resolves the
         // caller's employee_id from ICurrentUser and scopes every read to it (own employee + own tenant); only
         // Finalized-run slips are visible (BR-1); a cross-employee payslip id is a deliberate 403 (AC-4).

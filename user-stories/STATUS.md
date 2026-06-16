@@ -106,7 +106,7 @@
 - [x] US-PAY-007 — Payroll adjustments (bonus, deductions) *(PR #69)*
 - [x] US-PAY-008 — Payroll approval workflow *(PR #70)*
 - [x] US-PAY-009 — Payroll reports and analytics *(PR #71)*
-- [ ] US-PAY-010 — Attendance/leave integration into payroll
+- [~] US-PAY-010 — Attendance/leave integration into payroll
 - [ ] US-PAY-011 — Bulk payslip email distribution
 - [ ] US-PAY-012 — Payroll history and audit trail
 

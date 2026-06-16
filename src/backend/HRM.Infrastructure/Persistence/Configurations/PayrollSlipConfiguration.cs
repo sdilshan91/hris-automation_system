@@ -39,6 +39,12 @@ public sealed class PayrollSlipConfiguration : IEntityTypeConfiguration<PayrollS
         builder.Property(x => x.PdfStatus).HasMaxLength(20);
         builder.Property(x => x.PdfFileSizeBytes);
 
+        // US-PAY-010 (§7): attendance + leave integration enrichment. Default 0 — a pre-US-PAY-010 slip has none.
+        builder.Property(x => x.OvertimeHours).HasColumnType("numeric(7,2)").HasDefaultValue(0m).IsRequired();
+        builder.Property(x => x.OvertimeAmount).HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+        builder.Property(x => x.LeaveEncashmentDays).HasColumnType("numeric(5,2)").HasDefaultValue(0m).IsRequired();
+        builder.Property(x => x.LeaveEncashmentAmount).HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+
         builder.Property(x => x.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // Owned details are managed via the dedicated DbSet, not as a mapped nav.
