@@ -42,7 +42,7 @@ public sealed class SalaryComponentServiceTests
     {
         var ctx = Tenant(tenantId);
         var db = TestDbContextFactory.Create(ctx, _dbName);
-        return new SalaryComponentService(db, ctx, _currentUser, Substitute.For<ILogger<SalaryComponentService>>());
+        return new SalaryComponentService(db, ctx, _currentUser, Substitute.For<IPayrollAuditLogger>(), Substitute.For<ILogger<SalaryComponentService>>());
     }
 
     private static SalaryComponentInput Earning(string code = "BASIC", string name = "Basic Salary")

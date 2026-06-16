@@ -72,6 +72,7 @@ public sealed class SalaryStructureIntegrationTests
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton<ICurrentUser>(new FakeCurrentUser { TenantId = tenantId });
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(CreateSalaryComponentCommand).Assembly));

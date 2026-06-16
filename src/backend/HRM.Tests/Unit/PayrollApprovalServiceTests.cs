@@ -55,7 +55,7 @@ public sealed class PayrollApprovalServiceTests
         currentUser.UserId.Returns(actingUserId);
         var notifications = Substitute.For<IPayrollNotificationService>();
         var logger = Substitute.For<ILogger<PayrollApprovalService>>();
-        return new PayrollApprovalService(Db(), _tenantContext, currentUser, notifications, logger);
+        return new PayrollApprovalService(Db(), _tenantContext, currentUser, notifications, Substitute.For<IPayrollAuditLogger>(), logger);
     }
 
     private async Task<Guid> SeedRunAsync(PayrollRunStatus status, Guid? submittedBy = null,

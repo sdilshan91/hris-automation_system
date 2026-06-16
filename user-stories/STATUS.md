@@ -108,7 +108,7 @@
 - [x] US-PAY-009 — Payroll reports and analytics *(PR #71)*
 - [x] US-PAY-010 — Attendance/leave integration into payroll *(PR #72)*
 - [x] US-PAY-011 — Bulk payslip email distribution *(PR #73)*
-- [ ] US-PAY-012 — Payroll history and audit trail
+- [~] US-PAY-012 — Payroll history and audit trail
 
 ## 7. Performance Management (10 stories)
 - [ ] US-PRF-001 — Manager sets goals/KPIs for team

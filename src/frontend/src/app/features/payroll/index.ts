@@ -64,3 +64,9 @@ export * from './models/payroll-report.models';
 export * from './services/payroll-report.service';
 export { PayrollReportsComponent } from './components/payroll-reports/payroll-reports.component';
 export { PayrollAnalyticsComponent } from './components/payroll-analytics/payroll-analytics.component';
+
+/** US-PAY-012: Payroll history + audit trail (history table, audit timeline + diff). */
+export * from './models/audit.models';
+export * from './services/audit.service';
+export { PayrollHistoryComponent } from './components/payroll-history/payroll-history.component';
+export { AuditTrailComponent } from './components/audit-trail/audit-trail.component';

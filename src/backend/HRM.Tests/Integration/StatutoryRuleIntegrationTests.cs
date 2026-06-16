@@ -70,6 +70,7 @@ public sealed class StatutoryRuleIntegrationTests
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton<ICurrentUser>(new FakeCurrentUser { TenantId = tenantId });
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
         services.AddScoped<IStatutoryRuleService, StatutoryRuleService>();
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();

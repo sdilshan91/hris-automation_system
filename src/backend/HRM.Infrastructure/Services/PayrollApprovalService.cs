@@ -7,6 +7,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 
 namespace HRM.Infrastructure.Services;
 
@@ -34,6 +35,7 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IPayrollNotificationService _notifications;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayrollApprovalService> _logger;
 
     private const int MinReasonLength = 10;
@@ -43,14 +45,24 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IPayrollNotificationService notifications,
+        IPayrollAuditLogger audit,
         ILogger<PayrollApprovalService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _notifications = notifications;
+        _audit = audit;
         _logger = logger;
     }
+
+    /// <summary>US-PAY-012: audited snapshot of a run's status/totals/actor fields (before/after JSON).</summary>
+    private static object RunSnapshot(PayrollRun r) => new
+    {
+        Status = r.Status.ToString(), r.PayMonth, r.PayYear, r.TotalEmployees,
+        r.TotalGross, r.TotalDeductions, r.TotalNet,
+        r.SubmittedBy, r.ApprovedBy, r.RejectionReason,
+    };
 
     // ══════════════════════════════════════════════════════════════
     //  Submit for approval (AC-1, BR-3 re-submit)
@@ -83,6 +95,10 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
 
         var history = NewHistory(run, instanceId, 1, PayrollApprovalAction.Submitted, Trim(comments), ipAddress);
         _dbContext.PayrollApprovalHistories.Add(history);
+
+        // US-PAY-012 (FR-2): structured audit alongside the PayrollApprovalHistory row.
+        _audit.Log(PA.PayrollRunSubmittedForApproval, PA.ResourceType.PayrollRun,
+            run.Id.ToString(), before: null, after: RunSnapshot(run), ipAddress: ipAddress);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -123,6 +139,7 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         int step = run.CurrentApprovalStep ?? 1;
         int total = run.TotalApprovalSteps ?? 1;
         var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
+        var beforeApprove = RunSnapshot(run);
 
         var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Approved, Trim(comments), ipAddress);
         _dbContext.PayrollApprovalHistories.Add(history);
@@ -134,6 +151,12 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             run.ApprovedBy = _currentUser.UserId;
             run.ApprovedAt = DateTime.UtcNow;
             run.CurrentApprovalStep = null;
+
+            // US-PAY-012 (FR-2/BR-5): audit the terminal Approved transition WITH IP/user-agent (sensitive
+            // action). Intermediate step approvals are captured in PayrollApprovalHistory; the PayrollRun.Approved
+            // audit action fires once on the final approval (matches the §7 single action value).
+            _audit.Log(PA.PayrollRunApproved, PA.ResourceType.PayrollRun,
+                run.Id.ToString(), before: beforeApprove, after: RunSnapshot(run), ipAddress: ipAddress);
         }
         else
         {
@@ -171,6 +194,8 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         int step = run.CurrentApprovalStep ?? 1;
         var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
 
+        var beforeReject = RunSnapshot(run);
+
         // AC-3: status -> Rejected, store the reason. HR corrects + re-submits (BR-3, new instance).
         run.Status = PayrollRunStatus.Rejected;
         run.RejectionReason = trimmed;
@@ -178,6 +203,10 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
 
         var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Rejected, trimmed, ipAddress);
         _dbContext.PayrollApprovalHistories.Add(history);
+
+        // US-PAY-012 (FR-2): audit the rejection with before/after JSON + the IP.
+        _audit.Log(PA.PayrollRunRejected, PA.ResourceType.PayrollRun,
+            run.Id.ToString(), before: beforeReject, after: RunSnapshot(run), ipAddress: ipAddress);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -249,9 +278,16 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             return Result<PayrollApprovalResultDto>.Failure(
                 "A payroll run must be approved before it can be finalized.", 409, "approval_required");
 
+        var beforeFinalize = RunSnapshot(run);
         run.Status = PayrollRunStatus.Finalized;
         run.FinalizedAt = DateTime.UtcNow;
         run.CurrentApprovalStep = null;
+
+        // US-PAY-012 (FR-2/BR-5): finalize is the most sensitive action — audit with before/after + IP/user-agent
+        // (non-repudiation). This is a STRUCTURED audit entry distinct from PayrollApprovalHistory (which records
+        // no finalize row per the §7 action set).
+        _audit.Log(PA.PayrollRunFinalized, PA.ResourceType.PayrollRun,
+            run.Id.ToString(), before: beforeFinalize, after: RunSnapshot(run), ipAddress: ipAddress);
 
         // FR-8: lock all payslips for the run immutable. The slips become read-only by virtue of the run being
         // Finalized (US-PAY-005 list/detail already gate on Finalized, and the processor refuses to reprocess a

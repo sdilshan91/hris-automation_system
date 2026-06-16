@@ -75,6 +75,7 @@ public sealed class PayrollApprovalIntegrationTests
         services.AddSingleton<ICurrentUser>(new FakeCurrentUser { TenantId = tenantId, UserId = actingUser });
         services.AddSingleton<IPayrollNotificationService, LogOnlyPayrollNotificationService>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<IPayrollApprovalService, PayrollApprovalService>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(SubmitPayrollForApprovalCommand).Assembly));
         return services.BuildServiceProvider();

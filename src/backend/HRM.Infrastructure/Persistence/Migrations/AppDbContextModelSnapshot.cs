@@ -913,6 +913,24 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Action")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("action");
+
+                    b.Property<string>("ActorEmployeeNo")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("actor_employee_no");
+
+                    b.Property<string>("After")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("after");
+
+                    b.Property<string>("Before")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("before");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -933,9 +951,24 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("ip_address");
 
+                    b.Property<string>("ResourceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("resource_id");
+
+                    b.Property<string>("ResourceType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("resource_type");
+
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("trace_id");
 
                     b.Property<string>("UserAgent")
                         .HasMaxLength(500)
@@ -951,6 +984,9 @@ namespace HRM.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "CreatedAt")
                         .HasDatabaseName("ix_audit_logs_tenant_id_created_at");
+
+                    b.HasIndex("TenantId", "ResourceType", "CreatedAt")
+                        .HasDatabaseName("ix_audit_logs_tenant_id_resource_type_created_at");
 
                     b.HasIndex("UserId", "EventType", "CreatedAt")
                         .HasDatabaseName("ix_audit_logs_user_id_event_type_created_at");

@@ -19,6 +19,7 @@ import { PayrollRunService } from '../../services/payroll-run.service';
 import { PayrollApprovalService } from '../../services/payroll-approval.service';
 import { PayslipListComponent } from '../payslip-list/payslip-list.component';
 import { PayslipDistributionComponent } from '../payslip-distribution/payslip-distribution.component';
+import { AuditTrailComponent } from '../audit-trail/audit-trail.component';
 import {
   IPayrollRun,
   IPayrollRunProgress,
@@ -86,6 +87,7 @@ type CommentAction = 'reject' | 'return' | null;
     RouterLink,
     PayslipListComponent,
     PayslipDistributionComponent,
+    AuditTrailComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
@@ -420,7 +422,7 @@ type CommentAction = 'reject' | 'return' | null;
         @if (history().length > 0) {
           <div
             @fadeIn
-            class="mb-24 mt-2 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
+            class="mt-2 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
           >
             <h2 class="mb-4 text-sm font-semibold text-neutral-900">
               Approval history
@@ -464,6 +466,16 @@ type CommentAction = 'reject' | 'return' | null;
             </ol>
           </div>
         }
+
+        <!-- US-PAY-012 (AC-2, FR-6/FR-8): the per-run Audit Trail — the full
+             timeline of every action on this run (config, run events, approvals,
+             payslip generation, email) with an expandable before/after diff per
+             change. Reuses the AuditTrailComponent in per-run mode (filter
+             bar/export hidden; the standalone /payroll/audit page is where
+             cross-run filtering + export live). -->
+        <div class="mb-24 mt-2 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <app-audit-trail [runId]="r.id" />
+        </div>
 
         <!-- Sticky bottom action bar (US-PAY-008 §8) -->
         @if (hasActions()) {

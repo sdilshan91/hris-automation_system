@@ -246,6 +246,12 @@ public static class DependencyInjection
         // setup via the pure PayrollReportRenderer; no new export infra is introduced.
         services.AddScoped<IPayrollReportService, PayrollReportService>();
 
+        // US-PAY-012: Payroll — history + structured audit trail. The audit logger writes structured entries
+        // into the shared audit_log table (extended additively); the history/audit-trail/export reads live in
+        // PayrollAuditService. Audit export reuses the US-PAY-009 PayrollReportRenderer + IReportExportStorage.
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
+        services.AddScoped<IPayrollAuditService, PayrollAuditService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.
