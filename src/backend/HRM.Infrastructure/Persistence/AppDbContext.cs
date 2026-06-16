@@ -95,6 +95,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<SelfAssessmentAttachment> SelfAssessmentAttachments => Set<SelfAssessmentAttachment>();
     public DbSet<ManagerReview> ManagerReviews => Set<ManagerReview>();
     public DbSet<ManagerReviewItem> ManagerReviewItems => Set<ManagerReviewItem>();
+    public DbSet<ReviewMeetingNotes> ReviewMeetingNotes => Set<ReviewMeetingNotes>();
+    public DbSet<ReviewMeetingNotesAction> ReviewMeetingNotesActions => Set<ReviewMeetingNotesAction>();
+    public DbSet<ReviewSignoff> ReviewSignoffs => Set<ReviewSignoff>();
     public DbSet<ReviewerAssignment> ReviewerAssignments => Set<ReviewerAssignment>();
     public DbSet<Feedback360> Feedback360s => Set<Feedback360>();
     public DbSet<Feedback360Item> Feedback360Items => Set<Feedback360Item>();
@@ -379,6 +382,18 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-003: ManagerReviewItem tenant isolation + soft-delete filter (NFR-2).
         modelBuilder.Entity<ManagerReviewItem>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-006: ReviewMeetingNotes tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<ReviewMeetingNotes>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-006: ReviewMeetingNotesAction tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<ReviewMeetingNotesAction>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-006: ReviewSignoff tenant isolation + soft-delete filter (NFR-2). Immutable append-only.
+        modelBuilder.Entity<ReviewSignoff>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PRF-005: ReviewerAssignment tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).

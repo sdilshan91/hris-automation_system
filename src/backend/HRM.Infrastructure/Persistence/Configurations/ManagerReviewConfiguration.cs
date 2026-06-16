@@ -33,6 +33,15 @@ public sealed class ManagerReviewConfiguration : IEntityTypeConfiguration<Manage
             .HasMaxLength(20)
             .IsRequired();
 
+        // US-PRF-006: sign-off workflow state on the review.
+        builder.Property(r => r.SignoffStatus)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+        builder.Property(r => r.SignoffRequestedAt);
+        builder.Property(r => r.SignoffCompletedAt);
+        builder.Property(r => r.IsLocked).HasDefaultValue(false).IsRequired();
+
         builder.Property(r => r.WeightedManagerScore).HasColumnType("numeric(6,2)");
         builder.Property(r => r.FinalScore).HasColumnType("numeric(6,2)");
         builder.Property(r => r.SelfScoreAtSubmit).HasColumnType("numeric(6,2)");
@@ -54,6 +63,17 @@ public sealed class ManagerReviewConfiguration : IEntityTypeConfiguration<Manage
         builder.HasMany(r => r.Items)
             .WithOne(i => i.ManagerReview!)
             .HasForeignKey(i => i.ManagerReviewId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // US-PRF-006: one-to-one meeting notes; one-to-many immutable sign-off log.
+        builder.HasOne(r => r.MeetingNotes)
+            .WithOne(n => n.ManagerReview!)
+            .HasForeignKey<ReviewMeetingNotes>(n => n.ManagerReviewId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(r => r.Signoffs)
+            .WithOne(s => s.ManagerReview!)
+            .HasForeignKey(s => s.ManagerReviewId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

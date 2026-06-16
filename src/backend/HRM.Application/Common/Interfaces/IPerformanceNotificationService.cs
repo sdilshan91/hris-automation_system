@@ -85,4 +85,33 @@ public interface IPerformanceNotificationService
         Guid revieweeEmployeeId,
         Guid cycleId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies an employee that their manager requested sign-off on the review meeting notes (US-PRF-006 AC-2).
+    /// Fire-and-forget; must never throw into the request path.
+    /// </summary>
+    Task NotifyReviewSignOffRequestedAsync(
+        Guid managerReviewId,
+        Guid employeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies the manager and HR that the employee disputed the review (US-PRF-006 AC-3/FR-5). Fire-and-forget.
+    /// </summary>
+    Task NotifyReviewDisputedAsync(
+        Guid managerReviewId,
+        Guid employeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies HR that a review was auto-closed with No Response because the employee did not sign within the
+    /// configured window (US-PRF-006 BR-3). Dispatched by the Hangfire auto-close job. Fire-and-forget.
+    /// </summary>
+    Task NotifyReviewAutoClosedAsync(
+        Guid managerReviewId,
+        Guid employeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
 }

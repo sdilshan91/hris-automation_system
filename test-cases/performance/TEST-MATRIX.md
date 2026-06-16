@@ -1,7 +1,7 @@
 ---
 module: Performance Management
-total_user_stories: 5
-total_test_cases: 89
+total_user_stories: 6
+total_test_cases: 107
 created: 2026-06-16
 updated: 2026-06-16
 status: in-progress
@@ -49,26 +49,35 @@ status: in-progress
 >
 > CONDITIONAL/DEFERRED for US-PRF-005 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7 names PostgreSQL RLS on feedback_360; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-017/019). (2) DEPENDS ON US-PRF-004 (cycle with 360 toggle + feedback window), US-PRF-001 (goals/competencies), US-PRF-002/003 (self + manager perspectives), and Core HR org tree (manager + direct reports) -- all assumed seeded. (3) FR-7 PDF RENDERING is CONDITIONAL on the PDF library (QuestPDF or similar) being wired -- TC-PRF-005-13 asserts the export SEAM + report data model + authz/tenant-scoping + anonymized comments; full visual fidelity is an extension point. (4) AC-2/AC-5/FR-8 notification + reminder DELIVERY (in-app + email) CONDITIONAL on the Notification System (S25) -- in-app push + email enqueue asserted, delivery conditional (TC-PRF-005-09/-10, TC-PRF-ISO-020). (5) The results/aggregate/completion-tracker cache (NFR-4, TC-PRF-005-11 / TC-PRF-ISO-020) is CONDITIONAL on a cache layer (S10) -- if computed on demand it asserts tenant-filtered set-based aggregates with no shared/global key. (6) NFR-1 <=400ms + NFR-4 <=2s/20-reviewers require a seeded performance environment (TC-PRF-005-11). (7) The BR-4 minimum-peer-threshold OVERRIDE path + the BR-6 360-into-final-score BLENDING RULE are exercised against whatever the implementation documents (TC-PRF-005-04/-08) -- the exact override/blend formula is an implementation contract, not a gap. (8) The zero-reviewer-category renormalization rule (TC-PRF-005-08 step 5 / TC-PRF-005-14 step 6) asserts the documented behavior is applied CONSISTENTLY.
 
+> US-PRF-006 (Performance Review Meeting Notes and Sign-Off) is the SIXTH Performance story -- the formal, auditable sign-off layer that locks a completed review with mutual digital acknowledgement. NOTE: this story has FOUR acceptance criteria (AC-1..AC-4), not five. It adds 18 test cases: 14 functional/security/perf/a11y (TC-PRF-006-01..14) + 4 dedicated multi-tenant isolation on the new `review_meeting_notes` + `review_signoffs` (append-only) tables + auto-close Hangfire jobs + notifications + audit + PDF export (TC-PRF-ISO-021..024, continuing the running ISO counter from 020). All 4 acceptance criteria of US-PRF-006 are covered.
+>
+> KEY notes: happy path (TC-PRF-006-01) manager (review already submitted, BR-1) clicks "Add Meeting Notes" -> templated rich-text editor with the four sections strengths/areas-for-improvement/agreed-actions-with-deadlines/summary + goal-titles+ratings reference (AC-1, FR-1/2) -> "Request Employee Sign-Off" saves notes + records the manager sign-off (name+timestamp+IP) + status "Pending Employee Sign-Off" + notifies the employee (AC-2, FR-3/7) -> employee reads the notes (BR-2 read-tracking) + "Acknowledge & Sign" -> employee signature (name+timestamp+IP) recorded, status "Signed Off", review LOCKED (AC-3, BR-5) -> HR/manager views the full record + Export PDF option (AC-4); negatives -- notes/sign-off rejected BEFORE the manager review is submitted (BR-1, TC-PRF-006-02), a dispute submitted without comments rejected client+server (FR-4, TC-PRF-006-03); DISPUTE flow (TC-PRF-006-04) employee disputes with comments -> manager + HR notified with the comments -> status "Disputed" until HR resolves, not locked + not auto-closed while Disputed (AC-3/FR-4/FR-5/BR-4), and HR resolution (TC-PRF-006-12) by AMEND (edit + re-request sign-off -> Pending Employee Sign-Off) or CONFIRM (uphold), `.Team`-only manager cannot resolve (BR-4/FR-5); AUTO-CLOSE (TC-PRF-006-05) employee does not sign within the tenant-configurable window -> Hangfire closes to "No Response" + notifies HR, idempotent + tenant-scoped, signed/disputed reviews untouched (BR-3); READ-TRACKING (TC-PRF-006-06) system records the notes were opened/read before signing (BR-2); IMMUTABILITY (TC-PRF-006-07) a recorded signature cannot be modified/deleted by anyone incl. HR + a locked review cannot be edited -- only a system-admin compliance correction (audited) may touch it, review_signoffs is append-only (NFR-3/BR-5); AUDIT (TC-PRF-006-08) every sign-off action immutably logged with user id + server timestamp + server-derived IP, client-spoofed IP/timestamp ignored (FR-7); PDF EXPORT (TC-PRF-006-09) complete review (goals/ratings/notes/signatures) exportable with tenant branding <=3s, authz + tenant-scoped, rendering CONDITIONAL on the PDF library (AC-4/FR-6/NFR-4); template + rich-text XSS/HTML sanitization (TC-PRF-006-10, FR-1/2/S10); authz + ordering (TC-PRF-006-11) only the managing manager/HR add notes, only the assigned employee signs (manager cannot sign on the employee's behalf), manager-first ordering server-enforced, IDOR/unauth blocked (FR-3/BR-1); performance notes editor <=400ms P95, no N+1 on the goals/ratings reference (NFR-1, TC-PRF-006-13); accessibility sign-off flow at 360px + touch-friendly confirmation dialogs + WCAG 2.1 AA (NFR-5, TC-PRF-006-14).
+>
+> Tenant isolation (NFR-2) for US-PRF-006: TC-PRF-ISO-021 cross-tenant read of meeting notes/sign-offs/disputes/signed records (Tenant B sees zero of Tenant A's, incl. by direct id), ISO-022 missing/invalid/mismatched tenant-context rejection + cross-tenant IDOR (sign/dispute/resolve/export another tenant's review), ISO-023 cross-tenant write block + server-derived tenant_id (no body injection) + foreign review/employee rejected, ISO-024 tenant-scoped Hangfire auto-close jobs + sign-off/dispute/auto-close notifications + audit entries + PDF export + caches.
+>
+> CONDITIONAL/DEFERRED for US-PRF-006 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7 names PostgreSQL RLS on review_meeting_notes/review_signoffs; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-021/023). (2) DEPENDS ON US-PRF-003 (submitted manager review, BR-1 gate), US-PRF-004 (cycle with a sign-off phase), and a tenant-configured meeting-notes template + auto-close window -- all assumed seeded. (3) FR-6 PDF RENDERING is CONDITIONAL on the PDF library being wired -- TC-PRF-006-09 asserts the export SEAM + report data model (goals/ratings/notes/signatures) + tenant branding + authz/tenant-scoping; full visual fidelity is an extension point (consistent with US-PRF-005 FR-7). (4) AC-2/FR-5/BR-3 notification DELIVERY (sign-off request, dispute escalation to manager+HR, auto-close to HR; in-app + email) CONDITIONAL on the Notification System (S25) -- in-app push + email enqueue asserted, delivery conditional (TC-PRF-006-01/-04/-05/-12, TC-PRF-ISO-024). (5) The editor reference cache (NFR-1, TC-PRF-006-13 / TC-PRF-ISO-024) is CONDITIONAL on a cache layer (S10) -- if computed on demand it asserts tenant-filtered queries with no shared/global key. (6) NFR-1 400ms P95 + NFR-4 3s PDF require a seeded performance environment. (7) BR-2 read-before-sign ENFORCEMENT (hard block vs. recorded-flag) is asserted against whatever the implementation documents (TC-PRF-006-06) -- the exact gate is an implementation contract, not a gap; the read state is never silently lost. (8) BR-5 system-admin compliance-correction path (TC-PRF-006-07) is the ONLY route to touch a locked review -- it is asserted as gated to the admin role + audited; the system-admin console itself is owned by the Admin module. (9) FR-7 audit surfaces the Audit module (S24) -- the audit entry shape (user id + timestamp + IP) + tenant scoping are asserted against the AuditInterceptor seam.
+
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 5 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004, US-PRF-005) |
-| Total Test Cases | 89 (69 functional/security/perf/a11y + 20 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 6 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004, US-PRF-005, US-PRF-006) |
+| Total Test Cases | 107 (83 functional/security/perf/a11y + 24 dedicated multi-tenant isolation) |
 | US-PRF-001 Test Cases | 16 (TC-PRF-001-01..12 + TC-PRF-ISO-001..004) |
 | US-PRF-002 Test Cases | 19 (TC-PRF-002-01..15 + TC-PRF-ISO-005..008) |
 | US-PRF-003 Test Cases | 17 (TC-PRF-003-01..13 + TC-PRF-ISO-009..012) |
 | US-PRF-004 Test Cases | 19 (TC-PRF-004-01..15 + TC-PRF-ISO-013..016) |
 | US-PRF-005 Test Cases | 18 (TC-PRF-005-01..14 + TC-PRF-ISO-017..020) |
-| Critical Priority | 32 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019) |
-| High Priority | 57 (remaining functional/perf/a11y of all five stories + TC-PRF-ISO-004, -008, -012, -016, -020) |
+| US-PRF-006 Test Cases | 18 (TC-PRF-006-01..14 + TC-PRF-ISO-021..024) |
+| Critical Priority | 38 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019; US-PRF-006: -01/-07/-11 + ISO-021/-022/-023) |
+| High Priority | 69 (remaining functional/perf/a11y of all six stories + TC-PRF-ISO-004, -008, -012, -016, -020, -024) |
 | Medium Priority | 0 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 |
-| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5; US-PRF-005 5/5 (AC-1..AC-5 each) |
+| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5; US-PRF-005 5/5; US-PRF-006 4/4 (US-PRF-006 has only AC-1..AC-4) |
 | Status | All Draft |
 
-> Note: Critical-priority IDs total 32 across the five stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019 = 6); High totals 57; summing to 89.
+> Note: Critical-priority IDs total 38 across the six stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019 = 6; US-PRF-006: -01/-07/-11 + ISO-021/-022/-023 = 6); High totals 69; summing to 107.
 
 ## User Story to Test Case Matrix
 
@@ -84,6 +93,8 @@ status: in-progress
 | Cross-cutting (PRF-004) | Multi-tenant isolation (cycles/phases/participants tables + Hangfire jobs + dashboard caches + notifications) | TC-PRF-ISO-013, TC-PRF-ISO-014, TC-PRF-ISO-015, TC-PRF-ISO-016 | 4 |
 | US-PRF-005 | 360-Degree Review (Peers, Reports, Manager, Self) | TC-PRF-005-01, TC-PRF-005-02, TC-PRF-005-03, TC-PRF-005-04, TC-PRF-005-05, TC-PRF-005-06, TC-PRF-005-07, TC-PRF-005-08, TC-PRF-005-09, TC-PRF-005-10, TC-PRF-005-11, TC-PRF-005-12, TC-PRF-005-13, TC-PRF-005-14 | 14 |
 | Cross-cutting (PRF-005) | Multi-tenant isolation (feedback_360 table + reminder jobs + results caches + notifications) | TC-PRF-ISO-017, TC-PRF-ISO-018, TC-PRF-ISO-019, TC-PRF-ISO-020 | 4 |
+| US-PRF-006 | Performance Review Meeting Notes and Sign-Off | TC-PRF-006-01, TC-PRF-006-02, TC-PRF-006-03, TC-PRF-006-04, TC-PRF-006-05, TC-PRF-006-06, TC-PRF-006-07, TC-PRF-006-08, TC-PRF-006-09, TC-PRF-006-10, TC-PRF-006-11, TC-PRF-006-12, TC-PRF-006-13, TC-PRF-006-14 | 14 |
+| Cross-cutting (PRF-006) | Multi-tenant isolation (review_meeting_notes + review_signoffs tables + auto-close jobs + notifications + audit + PDF export) | TC-PRF-ISO-021, TC-PRF-ISO-022, TC-PRF-ISO-023, TC-PRF-ISO-024 | 4 |
 
 ## Acceptance Criteria -> Test Case Coverage (US-PRF-001)
 
@@ -245,3 +256,36 @@ status: in-progress
 | NFR-3 anonymity enforced at DB/API level (no reviewer ids in payload) | TC-PRF-005-06 |
 | NFR-4 results + radar render <=2s for up to 20 reviewers | TC-PRF-005-11, -14 |
 | NFR-5 feedback form mobile-responsive (any device) | TC-PRF-005-12 |
+
+## Acceptance Criteria -> Test Case Coverage (US-PRF-006)
+
+> NOTE: US-PRF-006 has FOUR acceptance criteria (AC-1..AC-4), not five.
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | "Add Meeting Notes" -> templated rich-text editor with the four sections | TC-PRF-006-01, TC-PRF-006-10, TC-PRF-006-13, TC-PRF-006-14 |
+| AC-2 | "Request Employee Sign-Off" -> notes saved, status "Pending Employee Sign-Off", employee notified | TC-PRF-006-01, TC-PRF-006-02, TC-PRF-006-11 |
+| AC-3 | Employee Acknowledge & Sign (-> "Signed Off", locked) OR Dispute (-> comments captured, manager+HR notified) | TC-PRF-006-01, TC-PRF-006-03, TC-PRF-006-04, TC-PRF-006-06, TC-PRF-006-07, TC-PRF-006-12 |
+| AC-4 | Full signed record (goals/ratings/notes/timestamps/signatures) viewable + PDF export | TC-PRF-006-01, TC-PRF-006-07, TC-PRF-006-09 |
+
+## Requirement -> Test Case Coverage (US-PRF-006) (FR / BR / NFR)
+
+| Requirement | Covered By |
+|-------------|------------|
+| FR-1 rich-text editor with configurable tenant template | TC-PRF-006-01, -10 |
+| FR-2 sections: strengths / dev areas / agreed actions+deadlines / summary | TC-PRF-006-01, -10 |
+| FR-3 digital sign-off workflow: manager first, then employee | TC-PRF-006-01, -02, -11 |
+| FR-4 employee Acknowledge & Sign or Dispute (mandatory comments) | TC-PRF-006-03, -04 |
+| FR-5 disputed reviews escalated to HR with comments for resolution | TC-PRF-006-04, -12 |
+| FR-6 PDF of complete review with tenant branding | TC-PRF-006-09 |
+| FR-7 sign-off actions immutably audit-logged (user id + timestamp + IP) | TC-PRF-006-08, -01, TC-PRF-ISO-024 |
+| BR-1 meeting notes only after manager review submitted | TC-PRF-006-02, -11 |
+| BR-2 employee must review notes before signing; opened/read tracked | TC-PRF-006-06, -01 |
+| BR-3 no sign-off within window -> auto-close "No Response" + notify HR | TC-PRF-006-05, TC-PRF-ISO-024 |
+| BR-4 disputed remains "Disputed" until HR amends or confirms | TC-PRF-006-04, -12 |
+| BR-5 locked after both sign off; only system-admin compliance correction | TC-PRF-006-01, -07 |
+| NFR-1 meeting-notes editor loads <=400ms P95 | TC-PRF-006-13 |
+| NFR-2 tenant isolation (RLS / EF query filters) | TC-PRF-ISO-021, -022, -023, -024 |
+| NFR-3 sign-off records immutable; no user incl. HR can modify a signature | TC-PRF-006-07, -08 |
+| NFR-4 PDF export completes <=3s for a single review | TC-PRF-006-09 |
+| NFR-5 mobile-accessible sign-off + touch-friendly confirmation dialogs | TC-PRF-006-14 |

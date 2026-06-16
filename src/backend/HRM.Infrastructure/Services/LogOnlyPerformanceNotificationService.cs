@@ -85,4 +85,34 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             reviewerEmployeeId, revieweeEmployeeId, cycleId);
         return Task.CompletedTask;
     }
+
+    public Task NotifyReviewSignOffRequestedAsync(
+        Guid managerReviewId, Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] review-signoff-requested: review {ManagerReviewId} for employee " +
+            "{EmployeeId} in cycle {CycleId}; employee asked to acknowledge & sign. Real in-app/email delivery deferred (US-NTF).",
+            managerReviewId, employeeId, cycleId);
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyReviewDisputedAsync(
+        Guid managerReviewId, Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] review-disputed: review {ManagerReviewId} for employee {EmployeeId} " +
+            "in cycle {CycleId}; manager + HR notified for resolution. Real in-app/email delivery deferred (US-NTF).",
+            managerReviewId, employeeId, cycleId);
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyReviewAutoClosedAsync(
+        Guid managerReviewId, Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] review-auto-closed: review {ManagerReviewId} for employee {EmployeeId} " +
+            "in cycle {CycleId} auto-closed (No Response); HR notified. Real in-app/email delivery deferred (US-NTF).",
+            managerReviewId, employeeId, cycleId);
+        return Task.CompletedTask;
+    }
 }
