@@ -91,6 +91,51 @@ thin single-file service so a route mismatch is a one-file fix; reconcile alongs
 Deferred (AC-5 / FR-7 Hangfire deadline reminders) is a BACKEND concern — no FE work.
 Rich-text comment is a plain textarea, drag-drop upload is a plain file input (§8 pragmatic).
 
+## US-PRF-003 — Manager rates direct reports ("Team Reviews" + per-employee review)
+
+MANAGER-side, FE-only so far (backend not yet built). Extends the `/performance`
+area (manager/HR role-gated). Two child routes added to `performance.routes.ts`:
+`/performance/team-reviews` (the AC-4 dashboard) and `/performance/reviews/:employeeId`
+(the per-employee review). Files: `models/manager-review.models.ts`,
+`services/manager-review.service.ts`, `components/team-reviews/`,
+`components/manager-review/`.
+
+The per-employee view is side-by-side (AC-1): employee self-rating/comment read-only
+on the LEFT, manager rating/comment inputs on the RIGHT, stacking on mobile. Submit
+(AC-2) is gated on all-goals-rated + each manager comment ≥20 chars; a blocked submit
+shows a validation error LISTING the unrated goal titles (AC-3, pure helper
+`unratedManagerGoalTitles`). After submit the view locks read-only (AC-5). The final
+combined score (BR-4) is DISPLAY-ONLY off `finalScore` — the FE never computes it
+(depends on tenant self/manager weights the server owns). No chart lib added (FE has
+none); self-vs-manager comparison is the layout + `ratingBandClasses` green/yellow/red
+badges (§8 radar chart skipped).
+
+### FE↔BE contract the FE service ASSUMES (backend agent must build/reconcile)
+`apiBaseUrl` includes `/api/v1`. All under `/performance/manager-review`. Manager +
+tenant resolved server-side from the session (FE sends no tenant id);
+`Performance.Review.Team` (direct reports, BR-2) / `Performance.Review.All` (HR, BR-3)
++ RLS. Bare payloads (US-PLT-001 unwrap); PascalCase enum strings (US-PLT-003).
+
+- `GET  /performance/manager-review/cycles/active/team` → `IManagerTeamRow[]` (the
+  AC-4 dashboard rows: reviewId, employeeId, employeeName, jobTitle, status, goalCount,
+  selfSubmittedOn). Tolerates a `{ data }` page.
+- `GET  /performance/manager-review/employees/{employeeId}/active` → `IManagerReview`
+  (one employee's review for the active cycle: each goal's self-rating/comment +
+  manager rating/comment, `ratingScaleMax`, `windowOpen` authoritative gate, and the
+  computed `selfScore`/`managerScore`/`finalScore`). One call loads the whole screen.
+- `PUT  /performance/manager-review/{reviewId}/draft` body `ISaveManagerReviewRequest`
+  `{goals:[{goalId,managerRating,managerComment}],summaryComment,flag}` → `IManagerReview`
+  (partial save).
+- `POST /performance/manager-review/{reviewId}/submit` same body → `IManagerReview`.
+  Server re-validates all-goals-rated + each comment ≥20 chars, computes weighted
+  manager score + final combined score (FR-4/BR-4), flips status→`ManagerReviewSubmitted`,
+  locks, notifies the employee (AC-2).
+
+Status enum `ManagerReviewStatus`: `PendingSelfAssessment | SelfAssessmentSubmitted |
+ManagerReviewSubmitted | Completed`. Flag enum `ReviewFlag`: `None | Recognition |
+PromotionConsideration | PIP` (FR-6). Like US-PRF-001/002 this is a thin single-file
+service so a route mismatch is a one-file fix — reconcile alongside US-PRF-004.
+
 ### Design choices
 - Weight distribution bar is a **pure CSS/Tailwind stacked bar**, not chart.js
   (§8 suggested chart.js but no chart lib is a FE dependency — see frontend-dev

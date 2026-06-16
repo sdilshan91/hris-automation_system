@@ -52,10 +52,22 @@ public sealed class AppraisalCycle : BaseEntity
     /// <summary>
     /// Tenant-configurable self-rating weight in the self-vs-manager blend (US-PRF-002 BR-4), as a whole
     /// percent in [0, 100]. The manager weight is (100 - SelfWeightPercent). Default 30 ⇒ a 30:70 self:manager
-    /// ratio. Used by US-PRF-002 only to surface the self-weight to the FE; the final blended score is computed
-    /// once manager ratings land (later story).
+    /// ratio. Used by US-PRF-002 to surface the self-weight; the final blended score (US-PRF-003 BR-4) is
+    /// computed from this ratio once manager ratings land.
     /// </summary>
     public int SelfWeightPercent { get; set; } = 30;
+
+    // ── Manager-review window (US-PRF-003) ─────────────────────────────
+    // MINIMAL extension to unblock US-PRF-003. Full cycle/phase management stays with US-PRF-004.
+
+    /// <summary>
+    /// UTC start of the manager-review window (US-PRF-003 BR-1/AC-5). Manager reviews may only be
+    /// saved/submitted/reopened while "now" is within [ManagerReviewStart, ManagerReviewEnd] inclusive.
+    /// </summary>
+    public DateTime ManagerReviewStart { get; set; }
+
+    /// <summary>UTC end of the manager-review window (US-PRF-003 BR-1/AC-5).</summary>
+    public DateTime ManagerReviewEnd { get; set; }
 
     /// <summary>
     /// True if "now" falls inside the goal-setting window AND the cycle is Active (BR-1/AC-5).
@@ -74,4 +86,16 @@ public sealed class AppraisalCycle : BaseEntity
         => Status == AppraisalCycleStatus.Active
            && nowUtc >= SelfAssessmentStart
            && nowUtc <= SelfAssessmentEnd;
+
+    /// <summary>
+    /// True if "now" falls inside the manager-review window AND the cycle is Active (US-PRF-003 BR-1/AC-5).
+    /// Used by the manager-review service to fail-closed (read-only) when the window has closed.
+    /// </summary>
+    public bool IsManagerReviewOpen(DateTime nowUtc)
+        => Status == AppraisalCycleStatus.Active
+           && nowUtc >= ManagerReviewStart
+           && nowUtc <= ManagerReviewEnd;
+
+    /// <summary>The manager weight in the self-vs-manager blend (BR-4): 100 - SelfWeightPercent.</summary>
+    public int ManagerWeightPercent => 100 - SelfWeightPercent;
 }

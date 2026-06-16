@@ -27,4 +27,20 @@ export const PERFORMANCE_ROUTES: Routes = [
         (m) => m.GoalSettingComponent,
       ),
   },
+  {
+    // US-PRF-003 AC-4: Team Reviews dashboard (manager rates direct reports).
+    path: 'team-reviews',
+    loadComponent: () =>
+      import('./components/team-reviews/team-reviews.component').then(
+        (m) => m.TeamReviewsComponent,
+      ),
+  },
+  {
+    // US-PRF-003 AC-1/AC-2/AC-3/AC-5: per-employee manager review.
+    path: 'reviews/:employeeId',
+    loadComponent: () =>
+      import('./components/manager-review/manager-review.component').then(
+        (m) => m.ManagerReviewComponent,
+      ),
+  },
 ];

@@ -42,4 +42,14 @@ public interface IPerformanceNotificationService
         Guid cycleId,
         int daysUntilDeadline,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies an employee that their manager submitted their performance review (US-PRF-003 AC-2).
+    /// Fire-and-forget; must never throw into the request path — the review write is committed regardless.
+    /// </summary>
+    Task NotifyManagerReviewSubmittedAsync(
+        Guid managerReviewId,
+        Guid employeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
 }
