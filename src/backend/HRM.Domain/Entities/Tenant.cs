@@ -47,6 +47,14 @@ public sealed class Tenant
     public int? MaxCustomFields { get; set; }
 
     /// <summary>
+    /// Number of days a goal may go without a progress update before the daily stale-goal sweep nudges the
+    /// employee and flags the goal "Needs Attention" for the manager (US-PRF-009 AC-5/FR-6/BR-4). Default 14.
+    /// Setting it to 0 DISABLES nudge notifications for the tenant (BR-4). TODO(admin-console): surface this in
+    /// tenant performance configuration once that subsystem exists; for now it is a plain int on the tenant.
+    /// </summary>
+    public int StaleGoalNudgeDays { get; set; } = 14;
+
+    /// <summary>
     /// Tenant-level toggle for the public careers page (US-REC-001 FR-4 / BR-5, ref S35.2.9). When
     /// false, Open vacancies are never exposed on the anonymous public endpoint regardless of a
     /// vacancy's own PublishToPublicCareers flag. Defaults to false (opt-in). TODO(admin-console):

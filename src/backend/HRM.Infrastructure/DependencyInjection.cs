@@ -331,6 +331,18 @@ public static class DependencyInjection
         services.AddScoped<IPipService, PipService>();
         services.AddScoped<IPipReminderService, PipReminderService>();
 
+        // US-PRF-009: Performance — goal tracking with progress updates. GoalProgressService enforces the
+        // APPEND-ONLY progress-update history (NFR-3/FR-3 — no update/delete path), the active-cycle window gate on
+        // posting (BR-1), BR-2 (100% auto-sets Completed, overridable), BR-3 (Blocked notifies manager + HR), the
+        // FR-4 weighted overall completion (pure GoalProgressCalculator), the AC-4 manager team summary scoped to
+        // direct reports (Review.Team) / all (Review.All), the FR-8 manager/HR comment thread, and BR-5 visibility
+        // (employee / manager / HR only). The manager-notify on every update (FR-5) goes through the log-only
+        // performance seam; real-time/SignalR delivery is a deferred hook (US-NTF-001 — SignalR is not set up
+        // here). The daily stale-goal nudge sweep (AC-5/FR-6/BR-4) is StaleGoalNudgeService, driven by the
+        // StaleGoalNudgeJob Hangfire job; the tenant-configurable interval is Tenant.StaleGoalNudgeDays (0 disables).
+        services.AddScoped<IGoalProgressService, GoalProgressService>();
+        services.AddScoped<IStaleGoalNudgeService, StaleGoalNudgeService>();
+
         // US-PRF-004: Performance — full appraisal-cycle management (create/edit/clone/transition/cancel +
         // dashboard + active-cycle). The phase-sequencing/in-range rules (FR-2/BR-3) are in the validators;
         // participant scoping (FR-3), BR-4 (no two active same-type cycles per employee), the FR-7 status

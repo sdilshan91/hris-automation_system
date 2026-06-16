@@ -30,6 +30,17 @@ export const MY_REVIEW_ROUTES: Routes = [
       ).then((m) => m.ReviewSignoffEmployeeComponent),
   },
   {
+    // US-PRF-009 AC-1/AC-2/AC-3: employee "My Goals" — goal cards with progress %,
+    // animated bars, status chips, the Add-Update bottom-sheet, and the per-goal
+    // append-only update timeline. Same employee self-service guard as /my-review;
+    // the backend enforces Performance.Read.Self + RLS (own goals only).
+    path: 'my-goals',
+    loadComponent: () =>
+      import('./components/my-goals/my-goals.component').then(
+        (m) => m.MyGoalsComponent,
+      ),
+  },
+  {
     // US-PRF-008 BR-4/FR-8: the employee's own PIP ("My PIP") — read-only view +
     // acknowledge initiation. Same employee self-service guard as /my-review; the
     // backend enforces PIP ownership + RLS so an employee sees only their OWN PIP.

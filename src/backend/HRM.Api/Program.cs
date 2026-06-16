@@ -158,6 +158,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.SelfAssessmentReminderJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ReviewSignoffAutoCloseJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.PipReminderJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.StaleGoalNudgeJob>();
 
     // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
     // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
@@ -394,6 +395,15 @@ try
             "performance-pip-reminders",
             job => job.RunAsync(),
             "0 10 * * *"); // 10:00 UTC daily
+
+        // US-PRF-009 AC-5/FR-6/BR-4: daily stale-goal sweep — nudges employees whose active goals have gone
+        // without a progress update beyond the tenant-configurable interval (Tenant.StaleGoalNudgeDays, 0 disables)
+        // and flags those goals "Needs Attention" for the manager dashboard. Idempotent + tenant-safe; dispatches
+        // via the log-only performance seam until US-NTF (real-time/SignalR deferred to US-NTF-001).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.StaleGoalNudgeJob>(
+            "performance-stale-goal-nudges",
+            job => job.RunAsync(),
+            "0 11 * * *"); // 11:00 UTC daily
     }
 
     app.Run();

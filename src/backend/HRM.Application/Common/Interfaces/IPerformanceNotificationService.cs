@@ -129,4 +129,19 @@ public interface IPerformanceNotificationService
         Guid? recipientEmployeeId,
         string? detail = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies a recipient of a goal-progress event (US-PRF-009 AC-2/AC-5/FR-5/FR-6/BR-3). Used for: a posted
+    /// progress update (notify the manager, FR-5), a Blocked status (notify the manager + HR, BR-3), and the daily
+    /// stale-goal nudge (notify the employee + flag for the manager, AC-5/FR-6). Fire-and-forget; must never throw
+    /// into the request path — the goal-progress write is committed even if dispatch fails.
+    /// </summary>
+    /// <param name="eventType">A short event label, e.g. "goal-progress-updated" / "goal-blocked" / "goal-stale-nudge".</param>
+    Task NotifyGoalProgressAsync(
+        string eventType,
+        Guid goalId,
+        Guid employeeId,
+        Guid? recipientEmployeeId,
+        string? detail = null,
+        CancellationToken cancellationToken = default);
 }

@@ -105,6 +105,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<PipObjective> PipObjectives => Set<PipObjective>();
     public DbSet<PipCheckpoint> PipCheckpoints => Set<PipCheckpoint>();
     public DbSet<PipEvent> PipEvents => Set<PipEvent>();
+    public DbSet<GoalProgressUpdate> GoalProgressUpdates => Set<GoalProgressUpdate>();
+    public DbSet<GoalProgressAttachment> GoalProgressAttachments => Set<GoalProgressAttachment>();
+    public DbSet<GoalComment> GoalComments => Set<GoalComment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -426,6 +429,18 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-008: PipEvent tenant isolation + soft-delete filter (NFR-2). Immutable append-only audit log.
         modelBuilder.Entity<PipEvent>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-009: GoalProgressUpdate tenant isolation + soft-delete filter (NFR-2). Append-only history.
+        modelBuilder.Entity<GoalProgressUpdate>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-009: GoalProgressAttachment tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<GoalProgressAttachment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-009: GoalComment tenant isolation + soft-delete filter (NFR-2). Manager/HR comment thread.
+        modelBuilder.Entity<GoalComment>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
