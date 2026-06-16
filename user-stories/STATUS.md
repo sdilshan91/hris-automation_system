@@ -111,7 +111,7 @@
 - [x] US-PAY-012 — Payroll history and audit trail *(PR #74)*
 
 ## 7. Performance Management (10 stories)
-- [~] US-PRF-001 — Manager sets goals/KPIs for team
+- [x] US-PRF-001 — Manager sets goals/KPIs for team *(PR #75)*
 - [ ] US-PRF-002 — Employee self-rates against goals
 - [ ] US-PRF-003 — Manager rates employee performance
 - [ ] US-PRF-004 — HR creates appraisal cycles
@@ -160,9 +160,9 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **67** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50)
+- Done: **68** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **US-PRF-001** (#75)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **36** — Performance (10), Admin Console (10), Onboarding (6), Notifications (5), Reports (5)
+- Pending: **35** — Performance (9 of 10 left), Admin Console (10), Onboarding (6), Notifications (5), Reports (5)
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
 ## Module → directory map
