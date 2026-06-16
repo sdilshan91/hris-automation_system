@@ -223,6 +223,12 @@ public static class DependencyInjection
         // Finalized-run slips are visible (BR-1); a cross-employee payslip id is a deliberate 403 (AC-4).
         services.AddScoped<IMyPayslipService, MyPayslipService>();
 
+        // US-PAY-009: Payroll — reports + analytics. Pure read/aggregation over the existing slips/details/
+        // adjustments from FINALIZED runs only (BR-1), tenant-scoped via the EF global query filter (AC-5).
+        // Exports reuse the leave-module export approach (ClosedXML/CsvHelper) + the US-PAY-004 QuestPDF
+        // setup via the pure PayrollReportRenderer; no new export infra is introduced.
+        services.AddScoped<IPayrollReportService, PayrollReportService>();
+
         // US-REC-005: Recruitment — interview scheduling/rescheduling/cancellation + calendar reads.
         // IInterviewReminderScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without
         // it the service skips reminder scheduling so the flow never requires real Hangfire storage.

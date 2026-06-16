@@ -81,5 +81,24 @@ export const PAYROLL_ROUTES: Routes = [
         './components/statutory-configuration/statutory-configuration.component'
       ).then((m) => m.StatutoryConfigurationComponent),
   },
+  {
+    // US-PAY-009 (§8, AC-1/AC-2/AC-4): Payroll Reports page — Notion-style report-type
+    // sidebar, filter panel (period + department), preview table + bar chart, bank-advice
+    // preview with masked accounts, and CSV/Excel/PDF blob exports.
+    path: 'reports',
+    loadComponent: () =>
+      import(
+        './components/payroll-reports/payroll-reports.component'
+      ).then((m) => m.PayrollReportsComponent),
+  },
+  {
+    // US-PAY-009 (FR-5): payroll analytics dashboard — card-based pure-SVG charts
+    // (monthly trend line, department cost bars, statutory stacked bars).
+    path: 'analytics',
+    loadComponent: () =>
+      import(
+        './components/payroll-analytics/payroll-analytics.component'
+      ).then((m) => m.PayrollAnalyticsComponent),
+  },
   { path: '', redirectTo: 'structures', pathMatch: 'full' },
 ];
