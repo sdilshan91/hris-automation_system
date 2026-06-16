@@ -26,9 +26,10 @@ public sealed class PermissionPolicyProvider : IAuthorizationPolicyProvider
     {
         if (policyName.StartsWith(PolicyPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            var permission = policyName[PolicyPrefix.Length..];
+            var permissions = policyName[PolicyPrefix.Length..]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var policy = new AuthorizationPolicyBuilder()
-                .AddRequirements(new PermissionRequirement(permission))
+                .AddRequirements(new PermissionRequirement(permissions))
                 .Build();
             return Task.FromResult<AuthorizationPolicy?>(policy);
         }

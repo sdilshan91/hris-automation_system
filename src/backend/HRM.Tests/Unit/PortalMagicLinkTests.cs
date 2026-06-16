@@ -59,7 +59,13 @@ public sealed class PortalMagicLinkTests
     public void Verify_TamperedSignature_IsRejected()
     {
         var token = PortalMagicLink.Issue(_tenant, "ada@example.com", DateTime.UtcNow.AddDays(30), Secret);
-        var tampered = token[..^1] + (token[^1] == 'A' ? 'B' : 'A');
+
+        // Flip the FIRST signature char (immediately after the '.'). Flipping the LAST char is unreliable:
+        // base64url's final char of a 32-byte signature carries only 4 meaningful bits + 2 padding bits,
+        // so an A<->B swap there can decode to the same bytes and leave the signature valid. The first
+        // signature char always carries 6 meaningful bits, so this swap is guaranteed to alter the signature.
+        var sigStart = token.IndexOf('.') + 1;
+        var tampered = token[..sigStart] + (token[sigStart] == 'A' ? 'B' : 'A') + token[(sigStart + 1)..];
 
         var ok = PortalMagicLink.TryVerify(tampered, Secret, out _, out _, out _);
 

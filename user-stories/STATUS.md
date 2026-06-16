@@ -111,7 +111,7 @@
 - [x] US-PAY-012 — Payroll history and audit trail *(PR #74)*
 
 ## 7. Performance Management (10 stories)
-- [ ] US-PRF-001 — Manager sets goals/KPIs for team
+- [~] US-PRF-001 — Manager sets goals/KPIs for team
 - [ ] US-PRF-002 — Employee self-rates against goals
 - [ ] US-PRF-003 — Manager rates employee performance
 - [ ] US-PRF-004 — HR creates appraisal cycles

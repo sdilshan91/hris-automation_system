@@ -22,7 +22,7 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
     {
         var permissionClaims = context.User.FindAll("permissions").Select(c => c.Value).ToHashSet();
 
-        if (permissionClaims.Contains(requirement.Permission))
+        if (requirement.Permissions.Any(permissionClaims.Contains))
         {
             context.Succeed(requirement);
         }
@@ -34,7 +34,7 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
 
             _logger.LogWarning(
                 "Authorization denied. User={UserId}, Tenant={TenantId}, MissingPermission={Permission}",
-                userId, tenantId, requirement.Permission);
+                userId, tenantId, string.Join(" | ", requirement.Permissions));
         }
 
         return Task.CompletedTask;

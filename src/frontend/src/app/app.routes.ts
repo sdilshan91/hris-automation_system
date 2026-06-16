@@ -307,6 +307,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Performance / Goal-setting (US-PRF-001) ──────────────
+      {
+        path: 'performance',
+        loadChildren: () =>
+          import('./features/performance/performance.routes').then(
+            (m) => m.PERFORMANCE_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Manager', 'HR Officer', 'HR Manager', 'Tenant Admin']),
+        ],
+      },
       // ─── Payroll / My Payslips (US-PAY-005) — employee self-service ─
       // Distinct from the HR-facing '/payroll' screens above (Tenant Admin / HR
       // Officer). Any authenticated employee can view their OWN payslips; the
