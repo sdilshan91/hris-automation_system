@@ -119,7 +119,7 @@
 - [x] US-PRF-006 — Review meeting notes and sign-off *(PR #80)*
 - [x] US-PRF-007 — Performance dashboard and analytics *(PR #81)*
 - [x] US-PRF-008 — Performance improvement plan (PIP) *(PR #82)*
-- [ ] US-PRF-009 — Goal tracking with progress updates
+- [~] US-PRF-009 — Goal tracking with progress updates
 - [ ] US-PRF-010 — Performance-based recommendations
 
 ## 8. Admin Console (10 stories)
