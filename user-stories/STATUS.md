@@ -115,7 +115,7 @@
 - [x] US-PRF-002 — Employee self-rates against goals *(PR #76)*
 - [x] US-PRF-003 — Manager rates employee performance *(PR #77)*
 - [x] US-PRF-004 — HR creates appraisal cycles *(PR #78)*
-- [ ] US-PRF-005 — 360-degree review
+- [~] US-PRF-005 — 360-degree review
 - [ ] US-PRF-006 — Review meeting notes and sign-off
 - [ ] US-PRF-007 — Performance dashboard and analytics
 - [ ] US-PRF-008 — Performance improvement plan (PIP)
