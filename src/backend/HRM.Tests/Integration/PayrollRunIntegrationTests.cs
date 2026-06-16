@@ -95,6 +95,7 @@ public sealed class PayrollRunIntegrationTests
         services.AddScoped<IAttendancePayrollService, AttendancePayrollService>();
         services.AddScoped<IReportExportStorage, InMemoryExportStorage>();
         services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
+        services.AddScoped<IPayrollAdjustmentResolver, PayrollAdjustmentResolver>();
         services.AddScoped<IPayrollRunService, PayrollRunService>();
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(InitiatePayrollRunCommand).Assembly));

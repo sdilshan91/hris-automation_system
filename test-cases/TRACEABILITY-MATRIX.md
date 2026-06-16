@@ -2721,7 +2721,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-005) | Multi-tenant isolation (employee payslip read surface: list / detail / download / cache) | Critical | TC-PAY-ISO-017, TC-PAY-ISO-018, TC-PAY-ISO-019, TC-PAY-ISO-020 | 4 | -- |
 | US-PAY-006 | Statutory Deductions Configuration (Tax, Social Security) | Must Have | TC-PAY-006-01, TC-PAY-006-02, TC-PAY-006-03, TC-PAY-006-04, TC-PAY-006-05, TC-PAY-006-06, TC-PAY-006-07, TC-PAY-006-08, TC-PAY-006-09, TC-PAY-006-10, TC-PAY-006-11, TC-PAY-006-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-006) | Multi-tenant isolation (statutory_rule / tax_slab / social_security_rule + statutory cache) | Critical | TC-PAY-ISO-021, TC-PAY-ISO-022, TC-PAY-ISO-023, TC-PAY-ISO-024 | 4 | -- |
-| **TOTAL** | | | **96 test cases** | **96** | **33/33 AC** |
+| US-PAY-007 | Payroll Adjustments (Bonus, Deductions, Reimbursements) | Must Have | TC-PAY-007-01, TC-PAY-007-02, TC-PAY-007-03, TC-PAY-007-04, TC-PAY-007-05, TC-PAY-007-06, TC-PAY-007-07, TC-PAY-007-08, TC-PAY-007-09, TC-PAY-007-10, TC-PAY-007-11, TC-PAY-007-12 | 12 | 5/5 AC covered |
+| Cross-cutting (PAY-007) | Multi-tenant isolation (payroll_adjustment + supporting-document blob + bulk-CSV resolution + caches) | Critical | TC-PAY-ISO-025, TC-PAY-ISO-026, TC-PAY-ISO-027, TC-PAY-ISO-028 | 4 | -- |
+| **TOTAL** | | | **112 test cases** | **112** | **38/38 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2823,6 +2825,22 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-ISO-022 | Statutory-config APIs reject missing/invalid/mismatched tenant context; no rule/slab IDOR | Security | Critical | US-PAY-006 | AC-4, FR-1, FR-2, FR-8 |
 | TC-PAY-ISO-023 | Cross-tenant statutory writes blocked; tenant_id session-derived; foreign statutory_rule_id/component link rejected | Security | Critical | US-PAY-006 | AC-4, FR-1, FR-2, FR-8 |
 | TC-PAY-ISO-024 | Statutory Redis cache tenant-scoped; write invalidates only writing tenant; no cross-tenant cache leak | Security | High | US-PAY-006 | AC-4, FR-8, NFR-1 |
+| TC-PAY-007-01 | Create Bonus for period -> included as payslip line in that run; reimbursement doc stored at {tenantId}/payroll/adjustments/{id}/ (happy path) | E2E | Critical | US-PAY-007 | AC-1, AC-3, FR-1, FR-3, NFR-5, BR-1, BR-2 |
+| TC-PAY-007-02 | Deduction subtracts from net salary on the payslip; reconciles; gross unchanged | Functional | Critical | US-PAY-007 | AC-2, FR-1, FR-3, BR-3 |
+| TC-PAY-007-03 | Deduction driving net negative -> HR warning + run-time guard; exact-zero boundary accepted | Functional | Critical | US-PAY-007 | AC-2, FR-3, BR-3 |
+| TC-PAY-007-04 | Adjustment to a Finalized period -> redirected to next period as Arrears referencing original payslip | Functional | Critical | US-PAY-007 | AC-4, FR-7, BR-5, BR-7 |
+| TC-PAY-007-05 | Recurring adjustment auto-creates correct future pending count; cancel-remaining + separation auto-cancel; boundaries | Functional | High | US-PAY-007 | FR-5, FR-6, BR-6 |
+| TC-PAY-007-06 | Adjustment created after target run enters Processing -> deferred to next period | Functional | High | US-PAY-007 | FR-3, BR-7, BR-8 |
+| TC-PAY-007-07 | Mark Applied after finalized run prevents double-application; cancel only while Pending; Applied/Cancelled terminal | Functional | Critical | US-PAY-007 | FR-3, FR-4, FR-6 |
+| TC-PAY-007-08 | Field/enum/period/numeric(18,2) validation; BR-1 active-structure required; is_taxable defaults | Functional | High | US-PAY-007 | AC-1, FR-1, BR-1, BR-2, BR-4 |
+| TC-PAY-007-09 | Authz Payroll.*.All (403/401); doc type/size/content-sniff; XSS+SQLi; audit before/after | Security | Critical | US-PAY-007 | AC-5, FR-1, FR-2, FR-8, NFR-3, NFR-5 |
+| TC-PAY-007-10 | Bulk CSV 1,000 records <=30s + validation preview; adjustment processing <=10% run overhead | Performance | High | US-PAY-007 | FR-2, FR-3, NFR-1, NFR-2 |
+| TC-PAY-007-11 | Run-engine pickup: only Pending matching tenant+period; mixed-type aggregation; Cancelled/other-period excluded | Functional | High | US-PAY-007 | AC-1, AC-2, AC-4, FR-3, FR-4, FR-7, BR-2, BR-3, BR-4, BR-5 |
+| TC-PAY-007-12 | Adjustments table + slide-over + bulk-CSV drop + recurrence preview WCAG 2.1 AA; bulk desktop-only | Accessibility | High | US-PAY-007 | AC-1, AC-3, AC-4, FR-1, FR-2, FR-5 |
+| TC-PAY-ISO-025 | Tenant B cannot see/retrieve/download Tenant A adjustments or supporting documents (cross-tenant read iso) | Security | Critical | US-PAY-007 | AC-5, FR-8 |
+| TC-PAY-ISO-026 | Adjustment/document APIs reject missing/invalid/mismatched tenant context; no IDOR | Security | Critical | US-PAY-007 | AC-5, FR-1, FR-2, FR-8 |
+| TC-PAY-ISO-027 | Cross-tenant adjustment writes blocked; tenant_id session-derived; foreign refs rejected; bulk-CSV resolves within tenant; server-derived doc path | Security | Critical | US-PAY-007 | AC-5, FR-1, FR-2, FR-8, NFR-5 |
+| TC-PAY-ISO-028 | Adjustments list / pending-lookup / document-download caches tenant-scoped (no cross-tenant leak) | Security | High | US-PAY-007 | AC-5, FR-8, NFR-1 |
 
 ### US-PAY-001 Detailed Requirements Traceability
 
@@ -3097,6 +3115,51 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Statutory Calc Coverage (NFR-3 >= 90%) | Golden progressive tax (62,500) + golden EPF (1,800) + taxable-income/below-threshold + per-period ceiling/YTD boundaries | >= 90% | PASS |
 | Blocked Test Cases | 0 (NFR-1/2 require a Redis/load environment; BR-5 YTD depends on US-PAY-003; BR-7 adjustment workflow on US-PAY-007; audit store on S24 -- all written CONDITIONAL, none blocking) | -- | CLEAR |
 
+### US-PAY-007 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Create adjustment (Bonus) for employee/period -> saved, linked, included in that period's run | AC | TC-PAY-007-01, TC-PAY-007-08, TC-PAY-007-11, TC-PAY-007-12 | Direct |
+| AC-2: Deduction adjustment subtracted from net salary on the payslip | AC | TC-PAY-007-02, TC-PAY-007-03, TC-PAY-007-11 | Direct |
+| AC-3: Reimbursement with supporting document stored at {tenantId}/payroll/adjustments/{id}/ and linked | AC | TC-PAY-007-01, TC-PAY-007-12 | Direct |
+| AC-4: Correction to a Finalized period applied in the next run as an arrears line item | AC | TC-PAY-007-04, TC-PAY-007-11 | Direct |
+| AC-5: Tenant B sees only its adjustments; RLS-level isolation | AC | TC-PAY-007-09, TC-PAY-ISO-025, TC-PAY-ISO-026, TC-PAY-ISO-027, TC-PAY-ISO-028 | Direct (EF query filters + TenantInterceptor; RLS extension point) |
+| FR-1: Create adjustment (type/amount/period/description/document/taxable/recurring fields) | FR | TC-PAY-007-01, TC-PAY-007-02, TC-PAY-007-08, TC-PAY-ISO-026, TC-PAY-ISO-027 | Direct |
+| FR-2: Bulk CSV upload (employee_no/type/amount/description/is_taxable) | FR | TC-PAY-007-09, TC-PAY-007-10, TC-PAY-007-12, TC-PAY-ISO-027 | Direct |
+| FR-3: Run engine auto-picks pending adjustments as payslip line items | FR | TC-PAY-007-01, TC-PAY-007-02, TC-PAY-007-06, TC-PAY-007-07, TC-PAY-007-11 | Direct |
+| FR-4: Mark adjustments Applied after a finalized run (prevent double application) | FR | TC-PAY-007-07, TC-PAY-007-11 | Direct |
+| FR-5: Recurring adjustments auto-included until recurrence ends | FR | TC-PAY-007-05, TC-PAY-007-12 | Direct |
+| FR-6: Cancel pending (not-yet-applied) adjustments | FR | TC-PAY-007-05, TC-PAY-007-07 | Direct |
+| FR-7: Correction/Arrears reference original run + payslip | FR | TC-PAY-007-04, TC-PAY-007-11 | Direct |
+| FR-8: All adjustment records carry tenant_id + governed by RLS | FR | TC-PAY-ISO-025, TC-PAY-ISO-026, TC-PAY-ISO-027, TC-PAY-ISO-028 | Direct (EF query filters; RLS extension point) |
+| NFR-1: Adjustment processing <=10% run overhead | NFR | TC-PAY-007-10, TC-PAY-ISO-028 | Direct (requires a seeded load environment) |
+| NFR-2: Bulk upload of 1,000 records <=30s | NFR | TC-PAY-007-10 | Direct (requires a seeded load environment) |
+| NFR-3: >=85% coverage for adjustment processing logic | NFR | (whole suite) | Met by AC/FR/BR coverage (5/5 AC, 8/8 FR) |
+| NFR-4: Adjustment changes audit-logged with before/after | NFR | TC-PAY-007-09 | Direct (Audit module S24 dependency; record asserted) |
+| NFR-5: Supporting documents validated for type (PDF/JPG/PNG) + size (<=5MB) | NFR | TC-PAY-007-01, TC-PAY-007-09, TC-PAY-ISO-027 | Direct |
+| BR-1: Adjustment only for employees with an active salary assignment | BR | TC-PAY-007-08 | Direct |
+| BR-2: Bonus is an earning; increases gross; taxable if is_taxable | BR | TC-PAY-007-01, TC-PAY-007-08, TC-PAY-007-11 | Direct |
+| BR-3: Deduction subtracted; cannot drive net negative (warn) | BR | TC-PAY-007-02, TC-PAY-007-03, TC-PAY-007-11 | Direct |
+| BR-4: Reimbursements non-taxable by default unless marked taxable | BR | TC-PAY-007-08, TC-PAY-007-11 | Direct |
+| BR-5: Correction/Arrears reference original payslip + show as "Arrears" | BR | TC-PAY-007-04, TC-PAY-007-11 | Direct |
+| BR-6: Recurring auto-creates pending per period; cancellable | BR | TC-PAY-007-05 | Direct |
+| BR-7: No adjustment to a period with a Finalized run -> next available period | BR | TC-PAY-007-04, TC-PAY-007-06, TC-PAY-007-07 | Direct |
+| BR-8: Adjustments after run enters Processing deferred to next period | BR | TC-PAY-007-06 | Direct |
+
+### Coverage Summary (Payroll -- US-PAY-007)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 5/5 (100%) -- NFR-1/2 require a seeded load environment; NFR-4 Audit S24 dependency | >= 85% | PASS |
+| Business Rules Coverage | 8/8 (100%) | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated (TC-PAY-ISO-025..028: read / context+IDOR / write-block+foreign-ref / cache) | >= 1 | PASS |
+| Security Test Cases | TC-PAY-007-09, TC-PAY-ISO-025..028 | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-PAY-007-10 -- bulk 1,000 <=30s + <=10% run overhead) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-PAY-007-12 -- adjustments table + slide-over + bulk-CSV drop + recurrence preview WCAG 2.1 AA) | >= 1 | PASS |
+| Blocked Test Cases | 0 (NFR-1/2 require a load environment; audit store on S24 -- written CONDITIONAL, none blocking) | -- | CLEAR |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -3108,8 +3171,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Leave Management (US-LV-001 through US-LV-012) | 12 | 303 | 57/57 (100%) | 48 | PASS |
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
-| Payroll (US-PAY-001 through US-PAY-006) | 6 | 96 | 33/33 (100%) | 24 | PASS |
-| **TOTAL** | **57** | **1142** | **295/295 (100%)** | **195** | |
+| Payroll (US-PAY-001 through US-PAY-007) | 7 | 112 | 38/38 (100%) | 28 | PASS |
+| **TOTAL** | **58** | **1158** | **300/300 (100%)** | **199** | |
 
 ---
 

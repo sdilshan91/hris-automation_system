@@ -399,6 +399,66 @@ gates the Save button; offending rows get `bg-rose-50`/`ring-rose-300` in real t
   create. `countryCode` hardcoded 'LK' until tenant-jurisdiction config lands (BR-1).
 - Slab-validation + service + component specs (42 tests) — full FE suite 2125 green.
 
+## Payroll adjustments (US-PAY-007)
+
+HR/Admin CRUD surface for ad-hoc bonuses / deductions / reimbursements /
+corrections. Adds child route `payroll/adjustments` (`PayrollAdjustmentsComponent`)
+under the existing `payroll` lazy route (already `roleGuard(['Tenant Admin','HR
+Officer'])` + `Payroll.View`) — reached from within `/payroll`, no separate sidebar
+nav (same as components/runs/statutory).
+
+### Frontend contract — NEW service `AdjustmentService` (payroll/services)
+Sibling to PayrollRunService/PayslipService; route strings live ONLY here. Base
+`${apiBaseUrl}/payroll/adjustments`. Bare payloads (US-PLT-001), PascalCase enums
+(US-PLT-003: `AdjustmentType` = Bonus|Deduction|Reimbursement|Correction,
+`AdjustmentStatus` = Pending|Applied|Cancelled). withCredentials. **ASSUMED contract
+— BE was building in parallel and had NOT pinned adjustment routes in this vault
+(no adjustment .cs files existed when the FE was written); reconcile in this one
+file if BE differs:**
+- `GET  /payroll/adjustments?status=&type=&period=&employeeId=` → `IAdjustment[]`
+  (tolerates `{data}`). `period` is the wire `YYYY-MM` string (one param carries
+  month+year).
+- `POST /payroll/adjustments` body `IAdjustmentRequest` → `IAdjustment` (FR-1).
+- `POST /payroll/adjustments/:id/cancel` → `IAdjustment` (FR-6; BE rejects non-Pending).
+- `POST /payroll/adjustments/bulk` (multipart `file` + `commit` flag) — `commit=false`
+  is the dry-run preview (`IBulkAdjustmentPreview`, FR-2), `commit=true` commits
+  (`IBulkAdjustmentResult`). SAME endpoint, the flag toggles preview vs commit.
+- `POST /payroll/adjustments/:id/document` (multipart) → `IAdjustment` (AC-3; uploaded
+  AFTER create, separate call — JSON create carries everything else).
+- `GET  /payroll/adjustments/:id/document` (blob) + `GET …/template` (blob CSV) —
+  both `responseType:'blob'`+`observe:'response'`, bypass the envelope, anchor-click
+  download (local `downloadBlob`/`filenameFromDisposition` copy, same as payslip-list).
+
+### Period + recurrence helpers are PURE (adjustment.models.ts, BR-6)
+`periodLabel(m,y)`→"Jun 2026", `toPeriodParam(m,y)`→"2026-06", and
+`recurringPeriods(startM,startY,endM,endY)` enumerates every affected future period
+inclusive (rolls year over; [] for a reversed/invalid range; capped at 60 as a
+typo guard). Isolated from the component so they're trivially unit-tested; the form's
+recurrence preview (BR-6) and the table period cell both use them.
+
+### UI decisions (US-PAY-007, §8)
+- Page = Notion table with Status/Type/Period/Employee filters + sortable column
+  headers (employee/type/amount/period/status, toggle dir) + status/type badges.
+  TWO tabs split **Active** (Pending+Cancelled) from **Applied** (§8 "dimmed or moved
+  to an Applied tab"); Applied/Cancelled rows ALSO get `opacity-50`. Status-filter
+  options are tab-aware (Applied tab → only Applied). Employee filter is free-text
+  narrowed client-side (list API filters by employeeId; the box matches name/no).
+- "New Adjustment" = right slide-over drawer (same `@drawer`/`@backdrop` pattern as
+  component-form/adjustment-form). Employee TYPEAHEAD reuses
+  `EmployeeService.searchActiveEmployees(term, n)` (Core HR, cross-feature import
+  `../../../core-hr/employees/...`), debounced 250ms, min 2 chars. is_recurring toggle
+  reveals a recurrence-end period selector + a live chip preview of every affected
+  period (BR-6). Supporting-doc upload validated CLIENT-SIDE (NFR-5: PDF/JPG/PNG,
+  ≤5MB via `Object.defineProperty(file,'size',…)` in tests). Doc uploads AFTER the
+  create succeeds (best-effort: a failed doc upload warns but still emits the created
+  record).
+- Bulk upload = collapsible card hosting `AdjustmentBulkUploadComponent`:
+  drag-and-drop CSV drop zone + template download link + validation-preview table
+  (per-row valid/invalid, FR-2) BEFORE commit; Commit gated on validCount>0.
+  **Desktop-only** (`md:hidden` message, same as bulk-salary-assignment). CSV gate =
+  `.csv` extension OR a recognized csv mime (generic `text/plain` alone is NOT enough).
+- Adjustment/bulk/page/model specs (67 tests) — full FE suite 2192 green.
+
 ### Frontend (US-PAY-005) — reconciled with the BE contract above
 NOT under the `/payroll` lazy route (that parent is `roleGuard(['Tenant Admin','HR Officer'])`
 + `Payroll.View`, blocks a plain Employee). NEW top-level route `my-payslips`
