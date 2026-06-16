@@ -114,7 +114,7 @@
 - [x] US-PRF-001 — Manager sets goals/KPIs for team *(PR #75)*
 - [x] US-PRF-002 — Employee self-rates against goals *(PR #76)*
 - [x] US-PRF-003 — Manager rates employee performance *(PR #77)*
-- [ ] US-PRF-004 — HR creates appraisal cycles
+- [~] US-PRF-004 — HR creates appraisal cycles
 - [ ] US-PRF-005 — 360-degree review
 - [ ] US-PRF-006 — Review meeting notes and sign-off
 - [ ] US-PRF-007 — Performance dashboard and analytics

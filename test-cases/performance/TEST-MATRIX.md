@@ -1,7 +1,7 @@
 ---
 module: Performance Management
-total_user_stories: 3
-total_test_cases: 52
+total_user_stories: 4
+total_test_cases: 71
 created: 2026-06-16
 updated: 2026-06-16
 status: in-progress
@@ -33,24 +33,33 @@ status: in-progress
 >
 > CONDITIONAL/DEFERRED for US-PRF-003 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7 names PostgreSQL RLS on the Review table; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-009/011). (2) DEPENDS ON US-PRF-001 (goals), US-PRF-002 (submitted self-assessment), US-PRF-004 (cycle + manager-review window dates), and Core HR org tree (manager-report relationships) -- all assumed seeded; window-state branches asserted against those dates and scope against the org tree. (3) FR-7 notification DELIVERY (employee submission notice) CONDITIONAL on the Notification System (S25) -- in-app push asserted, email enqueue asserted, delivery conditional (TC-PRF-003-01, TC-PRF-ISO-012). (4) The dashboard/review-form cache (NFR-1, TC-PRF-003-12 / TC-PRF-ISO-012) is CONDITIONAL on a cache layer (S10) -- if computed on demand it asserts tenant-filtered queries with no shared/global key. (5) FR-7 audit logging surfaces the Audit module (S24); TC-PRF-003-11 / TC-PRF-ISO-012 assert the audit entry shape + tenant scoping against the AuditInterceptor seam. (6) NFR-1 400ms P95 requires a seeded performance environment (TC-PRF-003-12). (7) FR-6 (flag for recognition / promotion / PIP) and BR-5 (360-degree peer/report ratings folded into the final score) are NOT asserted in US-PRF-003's set -- FR-6 is a lightweight flag persisted alongside the review (touched in the happy-path summary but no dedicated TC) and BR-5 is explicitly owned by US-PRF-005 (360-degree feedback); both DEFERRED. (8) The tenant self:manager weight ratio (BR-4) is assumed settable via an HR/admin config seam (US-PRF-004-adjacent); TC-PRF-003-04 reconfigures it between runs.
 
+> US-PRF-004 (HR Creates and Manages Appraisal Cycles) is the FOURTH Performance story and the upstream owner of the appraisal CYCLE that US-PRF-001/002/003 depend on (active-cycle + phase-window dates). It adds 19 test cases: 15 functional/security/performance/accessibility (TC-PRF-004-01..15) + 4 dedicated multi-tenant isolation on the new `cycles` / `cycle_phases` / `cycle_participants` tables + Hangfire jobs + dashboard caches + notifications (TC-PRF-ISO-013..016, continuing the running ISO counter from 012). All 5 acceptance criteria of US-PRF-004 are covered.
+>
+> KEY notes: happy path (TC-PRF-004-01) HR opens "Create New Cycle" form with all required fields (AC-1) -> fills valid name/period + >=3 sequential non-overlapping phases within the window + department scope + rating scale + 360/calibration/weight config -> Create -> cycle+phases+participants persisted tenant-scoped, Hangfire phase-transition/reminder jobs scheduled, confirmation shown (AC-2, FR-1/2/3/5/6); negatives -- overlapping/non-sequential/reversed/zero-duration phases rejected client+server (FR-2, TC-PRF-004-02), phase dates outside the cycle window rejected incl. shrinking the window under a phase (BR-3, TC-PRF-004-03), create/edit/clone/transition/cancel by a non-authorized user (manager `.Team`/employee/unauth) blocked 403/401 (BR-1, TC-PRF-004-04); cycle dashboard timeline + per-phase completion % (goal-setting/self-assessment/manager-review) + overdue counts over the tenant participant set (AC-3, TC-PRF-004-05); phase extension re-validates sequencing/non-overlap/window, reschedules Hangfire jobs, notifies only affected (non-completed) participants (AC-5/FR-2/FR-5, TC-PRF-004-06); Hangfire deadline reminder fires to current-phase non-completers only, runs in tenant context, retries with Polly exponential backoff, idempotent (AC-4/FR-5/NFR-3, TC-PRF-004-07); status transitions Draft->Active->Paused->Active->Completed + Draft->Cancelled valid, invalid transitions (Completed->Active, Cancelled->Active, Draft->Completed) rejected, paused cycle suspends reminders (FR-7, TC-PRF-004-08); BR-2 cannot delete a cycle with submitted reviews (cancel only; empty Draft still deletable) + BR-6 cancellation requires a reason + notifies ALL participants, review data retained (TC-PRF-004-09); BR-5 rating scale editable in Draft, locked once Active (TC-PRF-004-10); participant scoping -- department scope excludes other departments, manual add of an out-of-scope employee rejected (FR-3), employee cannot be in two ACTIVE cycles of the SAME type but may span an annual + a quarterly (BR-4/FR-4, TC-PRF-004-11); clone a completed cycle copies all config (phases re-anchored, scope, scale, weights, toggles) into a new Draft with fresh dates and NO progress/review data (FR-8, TC-PRF-004-12); performance -- creation of 5,000 participants <=5s + dashboard <=2s P95 with set-based aggregates (NFR-1/NFR-4, TC-PRF-004-13); accessibility -- cycle form + timeline WCAG 2.1 AA, keyboard-operable date pickers + department tree, status-badge contrast not color-only, vertical stepper + swipeable stat cards at 360px (S8, TC-PRF-004-14); boundary -- FR-1 minimum 3 phases enforced (2 rejected, exactly 3 accepted), first-start==cycle-start / last-end==cycle-end inclusive, contiguous adjacent phases valid, same-boundary-day handled per a documented contiguity rule (FR-1/FR-2/BR-3, TC-PRF-004-15).
+>
+> Tenant isolation (NFR-2) for US-PRF-004: TC-PRF-ISO-013 cross-tenant read of cycles/phases/participants/dashboard (Tenant B sees zero of Tenant A's, incl. by direct id), ISO-014 missing/invalid/mismatched tenant-context rejection + cross-tenant IDOR block on the cycle APIs, ISO-015 cross-tenant write block + server-derived tenant_id (no body injection) + foreign department/employee/rating-scale rejected, ISO-016 tenant-scoped Hangfire cycle jobs + dashboard caches + phase/cancellation notifications.
+>
+> CONDITIONAL/DEFERRED for US-PRF-004 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7 names PostgreSQL RLS on cycles/cycle_phases/cycle_participants; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-013/015). (2) DEPENDS ON a configured rating scale (precondition) + Core HR employees/departments/grades for participant scoping -- all assumed seeded. (3) FR-5 notification DELIVERY (phase-start/close, deadline reminder, cancellation; in-app + email) CONDITIONAL on the Notification System (S25) -- in-app push + email enqueue asserted, delivery conditional (TC-PRF-004-06/-07/-09, TC-PRF-ISO-016). (4) The dashboard/aggregate cache (NFR-4, TC-PRF-004-05/-13 / TC-PRF-ISO-016) is CONDITIONAL on a cache layer (S10) -- if computed on demand it asserts tenant-filtered set-based aggregates with no shared/global key. (5) NFR-1 5,000-participant <=5s + NFR-4 dashboard <=2s P95 require a seeded performance environment (TC-PRF-004-13). (6) The FR-6 360-degree / calibration / anonymity toggles are persisted + cloned as configuration here (TC-PRF-004-01/-12); their downstream BEHAVIOR (peer feedback collection, calibration sessions) is owned by later Performance stories (US-PRF-005+) and is NOT asserted in US-PRF-004's set. (7) The same-boundary-day phase contiguity rule (TC-PRF-004-15 step 5) asserts whatever the implementation documents (inclusive ranges -> overlap-reject) is applied CONSISTENTLY; the exact rule is an implementation contract, not a gap.
+
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 3 (US-PRF-001, US-PRF-002, US-PRF-003) |
-| Total Test Cases | 52 (40 functional/security/perf/a11y + 12 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 4 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004) |
+| Total Test Cases | 71 (55 functional/security/perf/a11y + 16 dedicated multi-tenant isolation) |
 | US-PRF-001 Test Cases | 16 (TC-PRF-001-01..12 + TC-PRF-ISO-001..004) |
 | US-PRF-002 Test Cases | 19 (TC-PRF-002-01..15 + TC-PRF-ISO-005..008) |
 | US-PRF-003 Test Cases | 17 (TC-PRF-003-01..13 + TC-PRF-ISO-009..012) |
-| Critical Priority | 20 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011) |
-| High Priority | 32 (remaining functional/perf/a11y of all three stories + TC-PRF-ISO-004, -008, -012) |
+| US-PRF-004 Test Cases | 19 (TC-PRF-004-01..15 + TC-PRF-ISO-013..016) |
+| Critical Priority | 26 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015) |
+| High Priority | 45 (remaining functional/perf/a11y of all four stories + TC-PRF-ISO-004, -008, -012, -016) |
 | Medium Priority | 0 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 |
-| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5 (AC-1..AC-5 each) |
+| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5 (AC-1..AC-5 each) |
 | Status | All Draft |
 
-> Note: Critical-priority IDs total 20 across the three stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7); High totals 32; summing to 52.
+> Note: Critical-priority IDs total 26 across the four stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6); High totals 45; summing to 71.
 
 ## User Story to Test Case Matrix
 
@@ -62,6 +71,8 @@ status: in-progress
 | Cross-cutting (PRF-002) | Multi-tenant isolation (self_assessment table + attachments + auto-save + notifications) | TC-PRF-ISO-005, TC-PRF-ISO-006, TC-PRF-ISO-007, TC-PRF-ISO-008 | 4 |
 | US-PRF-003 | Manager Rates Employee Performance | TC-PRF-003-01, TC-PRF-003-02, TC-PRF-003-03, TC-PRF-003-04, TC-PRF-003-05, TC-PRF-003-06, TC-PRF-003-07, TC-PRF-003-08, TC-PRF-003-09, TC-PRF-003-10, TC-PRF-003-11, TC-PRF-003-12, TC-PRF-003-13 | 13 |
 | Cross-cutting (PRF-003) | Multi-tenant isolation (review table + dashboard caches + notifications + audit) | TC-PRF-ISO-009, TC-PRF-ISO-010, TC-PRF-ISO-011, TC-PRF-ISO-012 | 4 |
+| US-PRF-004 | HR Creates and Manages Appraisal Cycles | TC-PRF-004-01, TC-PRF-004-02, TC-PRF-004-03, TC-PRF-004-04, TC-PRF-004-05, TC-PRF-004-06, TC-PRF-004-07, TC-PRF-004-08, TC-PRF-004-09, TC-PRF-004-10, TC-PRF-004-11, TC-PRF-004-12, TC-PRF-004-13, TC-PRF-004-14, TC-PRF-004-15 | 15 |
+| Cross-cutting (PRF-004) | Multi-tenant isolation (cycles/phases/participants tables + Hangfire jobs + dashboard caches + notifications) | TC-PRF-ISO-013, TC-PRF-ISO-014, TC-PRF-ISO-015, TC-PRF-ISO-016 | 4 |
 
 ## Acceptance Criteria -> Test Case Coverage (US-PRF-001)
 
@@ -156,3 +167,36 @@ status: in-progress
 | NFR-2 tenant isolation (own-tenant + direct-report scope; RLS / EF query filters) | TC-PRF-003-07, TC-PRF-ISO-009, -010, -011, -012 |
 | NFR-3 optimistic concurrency (HR + manager simultaneous edit) | TC-PRF-003-10 |
 | NFR-4 WCAG 2.1 AA + keyboard navigation for rating inputs + 360px stacked | TC-PRF-003-13 |
+
+## Acceptance Criteria -> Test Case Coverage (US-PRF-004)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | Create-cycle form with name/period/phases/scope/rating-scale/360 fields | TC-PRF-004-01, TC-PRF-004-14, TC-PRF-004-15 |
+| AC-2 | Valid cycle created -> phases+participants persisted tenant-scoped, Hangfire jobs scheduled, confirmation | TC-PRF-004-01, TC-PRF-004-02, TC-PRF-004-08 |
+| AC-3 | Cycle dashboard: timeline + per-phase completion stats + overdue counts | TC-PRF-004-05, TC-PRF-004-13, TC-PRF-004-14 |
+| AC-4 | Deadline approaching -> Hangfire reminder (in-app + email) to non-completers | TC-PRF-004-07 |
+| AC-5 | Edit/extend a phase -> re-validate sequencing/non-overlap, reschedule jobs, notify affected | TC-PRF-004-06, TC-PRF-004-02, TC-PRF-004-03 |
+
+## Requirement -> Test Case Coverage (US-PRF-004) (FR / BR / NFR)
+
+| Requirement | Covered By |
+|-------------|------------|
+| FR-1 cycle with min 3 phases (goal-setting, assessment, publish) | TC-PRF-004-01, -15 |
+| FR-2 phases sequential + non-overlapping, configurable dates | TC-PRF-004-01, -02, -06, -15 |
+| FR-3 scope to all / departments / grades / custom list | TC-PRF-004-01, -11 |
+| FR-4 multiple concurrent cycles (not same-type for one employee) | TC-PRF-004-11 |
+| FR-5 Hangfire phase-start/reminder/close/escalation jobs | TC-PRF-004-01, -06, -07, TC-PRF-ISO-016 |
+| FR-6 rating scale + weight ratio + 360 + calibration + anonymity config | TC-PRF-004-01, -10, -12 |
+| FR-7 statuses Draft/Active/Paused/Completed/Cancelled | TC-PRF-004-08, -09, -10 |
+| FR-8 clone an existing cycle as a template | TC-PRF-004-12 |
+| BR-1 only Performance.SetGoal.All / .Publish.All create/modify cycles | TC-PRF-004-04, -08, -12 |
+| BR-2 cannot delete with submitted reviews (cancel only) | TC-PRF-004-09 |
+| BR-3 phase dates within the cycle window | TC-PRF-004-03, -06, -15 |
+| BR-4 no employee in two active cycles of the same type | TC-PRF-004-11 |
+| BR-5 rating scale locks on Draft->Active | TC-PRF-004-10 |
+| BR-6 cancellation requires a reason + notifies all participants | TC-PRF-004-09 |
+| NFR-1 cycle creation with 5,000 participants <=5s | TC-PRF-004-13 |
+| NFR-2 tenant isolation (RLS / EF query filters) | TC-PRF-ISO-013, -014, -015, -016 |
+| NFR-3 Hangfire jobs tenant-scoped + retry/backoff (Polly) | TC-PRF-004-07, TC-PRF-ISO-016 |
+| NFR-4 dashboard loads <=2s P95 incl. aggregate stats | TC-PRF-004-05, -13 |

@@ -142,3 +142,59 @@ service so a route mismatch is a one-file fix — reconcile alongside US-PRF-004
   memory `no-chart-lib-comparison-table`).
 - Drag-reorder, cascade tree, and bulk template assignment (§8) were deferred as
   nice-to-haves; not implemented in US-PRF-001.
+
+## US-PRF-004 — HR creates/manages appraisal cycles (Cycle Management UI)
+
+HR/manager-side, FE-only so far (backend not yet built). Extends the `/performance`
+area. Added FOUR child routes to `performance.routes.ts`: `/performance/cycles` (list,
+the cycle-management entry point), `/performance/cycles/new` (create form),
+`/performance/cycles/:cycleId/edit` (edit), `/performance/cycles/:cycleId` (dashboard).
+Files: `models/cycle.models.ts`, `services/cycle.service.ts`, `components/cycle-list/`,
+`components/cycle-form/`, `components/cycle-dashboard/`.
+
+Key FE decisions:
+- **No chart lib** (still none) → the dashboard phase timeline is a **vertical CSS/Tailwind
+  stepper** with per-phase **progress bars**, NOT chart.js donuts (§8 nice-to-have).
+- **Phase sequencing validation is a pure helper** `validatePhaseSequencing(phases,
+  cycleStart, cycleEnd)` (FR-2/BR-3): sorts to canonical PHASE_ORDER, rejects reversed
+  ranges, out-of-window dates, and overlaps (each phase must start strictly after the
+  prev ends). Shared by the form gate + QA. `allowedTransitions(status)` is the FR-7
+  status machine (Draft→Activate/Cancel; Active→Pause/Complete/Cancel; Paused→Resume/
+  Complete/Cancel; Completed/Cancelled terminal).
+- **Participant scope is self-contained** (FR-3): a `ParticipantScopeType` enum
+  (`AllEmployees|Departments|Grades|CustomList`) + comma-separated id lists the FE sends
+  raw; the **backend resolves ids→participants**. Deliberately did NOT couple to a Core
+  HR department tree / employee picker (kept the contract thin, like US-PRF-003 deferrals).
+- `canSave()` in the form is a **method, not a computed** — it reads `form.valid` which is
+  not a signal, so a computed would cache against its signal deps and miss validity changes.
+
+### ASSUMED backend contract (backend agent must build/reconcile) — US-PRF-004
+`apiBaseUrl` includes `/api/v1`. All under `/performance/cycles`. Tenant resolved
+server-side; `Performance.SetGoal.All` / `Performance.Publish.All` + RLS (BR-1/NFR-2).
+Bare payloads (US-PLT-001 unwrap), PascalCase enum strings (US-PLT-003).
+- `GET    /performance/cycles`                  → `ICycleSummary[]` (FR-7 list; tolerates `{data}`)
+- `GET    /performance/cycles/{id}`             → `ICycle` (full detail: phases + scope)
+- `POST   /performance/cycles`  body `ISaveCycleRequest` → `ICycle` (AC-1/AC-2; schedules Hangfire)
+- `PUT    /performance/cycles/{id}`  body `ISaveCycleRequest` → `ICycle` (AC-5 edit/extend)
+- `GET    /performance/cycles/{id}/dashboard`   → `ICycleDashboard` (AC-3 per-phase stats + overdue)
+- `POST   /performance/cycles/{id}/transition`  body `{action, reason?}` → `ICycle` (FR-7; reason req. for Cancel/BR-6)
+- `POST   /performance/cycles/{id}/clone`       body `{name, startDate, endDate}` → `ICycle` (FR-8)
+- `GET    /performance/cycles/rating-scales`    → `IRatingScaleOption[]` (FR-6 scale picker; tolerates `{data}`)
+
+DTO shapes (see `cycle.models.ts`):
+- `ICyclePhase {kind: CyclePhaseKind, startDate, endDate}` where `CyclePhaseKind =
+  GoalSetting|SelfAssessment|ManagerReview|Calibration|Publish`.
+- `IParticipantScope {type, departmentIds[], gradeIds[], employeeIds[]}` (only the list
+  matching `type` is populated).
+- `ICycle` adds `ratingScaleId, selfWeight (0-100; manager=100-self), enable360,
+  enableCalibration, participantCount, cancelledReason?`.
+- `IPhaseStat {kind, startDate, endDate, completedCount, totalCount, overdueCount}`.
+- Enums: `CycleStatus = Draft|Active|Paused|Completed|Cancelled`; `CycleType =
+  Annual|Quarterly|Probation`; `CycleTransitionAction = Activate|Pause|Resume|Complete|Cancel`.
+
+### ⚠️ US-PRF-001 reconciliation is NOW UNBLOCKED
+US-PRF-004 lands the active-cycle/cycle-management endpoints US-PRF-001 was waiting on.
+The US-PRF-001 path mismatch (`/performance` vs `/tenant/performance`, team vs
+team-dashboard, full-replace vs per-goal CRUD — see the table above) can now be
+reconciled once the BACKEND for both stories exists. NOT done in this FE-only US-PRF-004
+pass (no backend to wire against yet); still a single-file change in `PerformanceGoalService`.

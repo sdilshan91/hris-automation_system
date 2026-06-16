@@ -43,4 +43,36 @@ export const PERFORMANCE_ROUTES: Routes = [
         (m) => m.ManagerReviewComponent,
       ),
   },
+  {
+    // US-PRF-004 FR-7/§8: HR appraisal-cycle list (the cycle-management entry point).
+    path: 'cycles',
+    loadComponent: () =>
+      import('./components/cycle-list/cycle-list.component').then(
+        (m) => m.CycleListComponent,
+      ),
+  },
+  {
+    // US-PRF-004 AC-1: create a new cycle.
+    path: 'cycles/new',
+    loadComponent: () =>
+      import('./components/cycle-form/cycle-form.component').then(
+        (m) => m.CycleFormComponent,
+      ),
+  },
+  {
+    // US-PRF-004 AC-5: edit a cycle / extend a phase deadline.
+    path: 'cycles/:cycleId/edit',
+    loadComponent: () =>
+      import('./components/cycle-form/cycle-form.component').then(
+        (m) => m.CycleFormComponent,
+      ),
+  },
+  {
+    // US-PRF-004 AC-3/FR-7/FR-8: cycle dashboard (timeline, stats, transitions, clone).
+    path: 'cycles/:cycleId',
+    loadComponent: () =>
+      import('./components/cycle-dashboard/cycle-dashboard.component').then(
+        (m) => m.CycleDashboardComponent,
+      ),
+  },
 ];

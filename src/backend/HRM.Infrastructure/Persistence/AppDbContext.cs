@@ -87,6 +87,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
     public DbSet<SocialSecurityRule> SocialSecurityRules => Set<SocialSecurityRule>();
     public DbSet<AppraisalCycle> AppraisalCycles => Set<AppraisalCycle>();
+    public DbSet<CyclePhase> CyclePhases => Set<CyclePhase>();
+    public DbSet<CycleParticipant> CycleParticipants => Set<CycleParticipant>();
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<SelfAssessment> SelfAssessments => Set<SelfAssessment>();
     public DbSet<SelfAssessmentItem> SelfAssessmentItems => Set<SelfAssessmentItem>();
@@ -342,6 +344,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-001: AppraisalCycle tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
         modelBuilder.Entity<AppraisalCycle>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-004: CyclePhase tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<CyclePhase>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-004: CycleParticipant tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<CycleParticipant>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PRF-001: Goal tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).

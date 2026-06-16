@@ -6,11 +6,16 @@ namespace HRM.Domain.Performance;
 /// <summary>
 /// A performance appraisal cycle within a tenant.
 ///
-/// MINIMAL placeholder created by US-PRF-001 to unblock goal-setting: it carries only what goal-setting
-/// needs — a name, the goal-setting window (start/end), and a status. Full cycle management
-/// (phases beyond goal-setting, review/calibration windows, lifecycle transitions, the create/edit UI)
-/// is owned by US-PRF-004 and will flesh this entity out later. Tenant-scoped via
-/// <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>.
+/// Originally a MINIMAL placeholder (US-PRF-001..003) carrying a name, the goal-setting / self-assessment /
+/// manager-review windows, status, and the rating-scale + self:manager weight config. US-PRF-004 turns it
+/// into FULL cycle management: cycle type, an overall window, the full status state machine, a sequence of
+/// <see cref="CyclePhase"/> rows that are the SOURCE OF TRUTH for the window gates, a resolved set of
+/// <see cref="CycleParticipant"/> rows, and feature toggles (360, calibration, anonymity).
+///
+/// Backward-compat: the legacy <c>GoalSettingStart/End</c>, <c>SelfAssessmentStart/End</c>,
+/// <c>ManagerReviewStart/End</c> columns are RETAINED and kept in sync with the corresponding phases on save,
+/// so US-PRF-001/002/003 services (which read those columns / call the IsXOpen helpers) keep working unchanged.
+/// Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>.
 /// Maps to the "appraisal_cycle" table.
 /// </summary>
 public sealed class AppraisalCycle : BaseEntity
@@ -18,84 +23,145 @@ public sealed class AppraisalCycle : BaseEntity
     /// <summary>Human-readable cycle name, e.g. "FY2026 Annual Review" (required, max 200 chars).</summary>
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Cycle type — Annual / Quarterly / Probation (US-PRF-004 FR-4). Drives BR-4. Defaults to Annual.</summary>
+    public CycleType Type { get; set; } = CycleType.Annual;
+
     /// <summary>Current lifecycle status. Defaults to Draft.</summary>
     public AppraisalCycleStatus Status { get; set; } = AppraisalCycleStatus.Draft;
 
+    // ── Overall cycle window (US-PRF-004 BR-3) ─────────────────────────
+
+    /// <summary>UTC start of the overall cycle (US-PRF-004 §7). All phases must fall within [StartDate, EndDate].</summary>
+    public DateTime StartDate { get; set; }
+
+    /// <summary>UTC end of the overall cycle (US-PRF-004 §7).</summary>
+    public DateTime EndDate { get; set; }
+
+    // ── Legacy phase windows (US-PRF-001/002/003) — kept in sync with phases ───
+
     /// <summary>
-    /// UTC start of the goal-setting window (BR-1/AC-5). Goals may only be created/edited/deleted while
-    /// "now" is within [GoalSettingStart, GoalSettingEnd] inclusive.
+    /// UTC start of the goal-setting window (BR-1/AC-5). Retained for back-compat; kept in sync with the
+    /// GoalSetting <see cref="CyclePhase"/> on save. Goals may only be created/edited while open.
     /// </summary>
     public DateTime GoalSettingStart { get; set; }
 
-    /// <summary>UTC end of the goal-setting window (BR-1/AC-5).</summary>
+    /// <summary>UTC end of the goal-setting window (BR-1/AC-5). Synced from the GoalSetting phase.</summary>
     public DateTime GoalSettingEnd { get; set; }
 
-    // ── Self-assessment window + scoring config (US-PRF-002) ───────────
-    // MINIMAL extension to unblock US-PRF-002. Full cycle/phase management stays with US-PRF-004.
-
-    /// <summary>
-    /// UTC start of the employee self-assessment window (US-PRF-002 BR-1/AC-4). Self-assessments may
-    /// only be saved/submitted while "now" is within [SelfAssessmentStart, SelfAssessmentEnd] inclusive.
-    /// </summary>
+    /// <summary>UTC start of the self-assessment window (US-PRF-002). Synced from the SelfAssessment phase.</summary>
     public DateTime SelfAssessmentStart { get; set; }
 
-    /// <summary>UTC end of the self-assessment window (US-PRF-002 BR-1/AC-4). Also the reminder deadline (FR-7/AC-5).</summary>
+    /// <summary>UTC end of the self-assessment window (US-PRF-002). Synced from the SelfAssessment phase.</summary>
     public DateTime SelfAssessmentEnd { get; set; }
 
-    /// <summary>
-    /// Tenant-configurable rating scale maximum (US-PRF-002 FR-2/BR-4). A self-rating must be an integer in
-    /// [1, RatingScaleMax]. Defaults to 5 (a 1-5 scale). Stored per cycle so the scale is consistent for all
-    /// goals in the cycle (Assumptions §10).
-    /// </summary>
-    public int RatingScaleMax { get; set; } = 5;
-
-    /// <summary>
-    /// Tenant-configurable self-rating weight in the self-vs-manager blend (US-PRF-002 BR-4), as a whole
-    /// percent in [0, 100]. The manager weight is (100 - SelfWeightPercent). Default 30 ⇒ a 30:70 self:manager
-    /// ratio. Used by US-PRF-002 to surface the self-weight; the final blended score (US-PRF-003 BR-4) is
-    /// computed from this ratio once manager ratings land.
-    /// </summary>
-    public int SelfWeightPercent { get; set; } = 30;
-
-    // ── Manager-review window (US-PRF-003) ─────────────────────────────
-    // MINIMAL extension to unblock US-PRF-003. Full cycle/phase management stays with US-PRF-004.
-
-    /// <summary>
-    /// UTC start of the manager-review window (US-PRF-003 BR-1/AC-5). Manager reviews may only be
-    /// saved/submitted/reopened while "now" is within [ManagerReviewStart, ManagerReviewEnd] inclusive.
-    /// </summary>
+    /// <summary>UTC start of the manager-review window (US-PRF-003). Synced from the ManagerReview phase.</summary>
     public DateTime ManagerReviewStart { get; set; }
 
-    /// <summary>UTC end of the manager-review window (US-PRF-003 BR-1/AC-5).</summary>
+    /// <summary>UTC end of the manager-review window (US-PRF-003). Synced from the ManagerReview phase.</summary>
     public DateTime ManagerReviewEnd { get; set; }
 
-    /// <summary>
-    /// True if "now" falls inside the goal-setting window AND the cycle is Active (BR-1/AC-5).
-    /// Used by the goal service to fail-closed when the window has closed.
-    /// </summary>
-    public bool IsGoalSettingOpen(DateTime nowUtc)
-        => Status == AppraisalCycleStatus.Active
-           && nowUtc >= GoalSettingStart
-           && nowUtc <= GoalSettingEnd;
+    // ── Rating-scale / weight config (US-PRF-002/003) ──────────────────
 
-    /// <summary>
-    /// True if "now" falls inside the self-assessment window AND the cycle is Active (US-PRF-002 BR-1/AC-4).
-    /// Used by the self-assessment service to fail-closed (read-only) when the window has closed.
-    /// </summary>
-    public bool IsSelfAssessmentOpen(DateTime nowUtc)
-        => Status == AppraisalCycleStatus.Active
-           && nowUtc >= SelfAssessmentStart
-           && nowUtc <= SelfAssessmentEnd;
+    /// <summary>Tenant-configurable rating scale maximum (US-PRF-002 FR-2/BR-4). Locked once Active (BR-5). Default 5.</summary>
+    public int RatingScaleMax { get; set; } = 5;
 
-    /// <summary>
-    /// True if "now" falls inside the manager-review window AND the cycle is Active (US-PRF-003 BR-1/AC-5).
-    /// Used by the manager-review service to fail-closed (read-only) when the window has closed.
-    /// </summary>
-    public bool IsManagerReviewOpen(DateTime nowUtc)
-        => Status == AppraisalCycleStatus.Active
-           && nowUtc >= ManagerReviewStart
-           && nowUtc <= ManagerReviewEnd;
+    /// <summary>Self-rating weight in the self-vs-manager blend (US-PRF-002 BR-4), 0-100. Manager weight is 100-this. Default 30.</summary>
+    public int SelfWeightPercent { get; set; } = 30;
+
+    // ── Feature toggles (US-PRF-004 FR-6) ──────────────────────────────
+
+    /// <summary>Whether 360-degree (peer) feedback is enabled for this cycle (FR-6).</summary>
+    public bool Is360Enabled { get; set; }
+
+    /// <summary>Whether a calibration phase is included (FR-6). Mirrors the presence of a Calibration phase.</summary>
+    public bool IsCalibrationEnabled { get; set; }
+
+    /// <summary>Whether peer feedback is anonymous (FR-6).</summary>
+    public bool IsAnonymousFeedback { get; set; }
+
+    // ── Participant scope snapshot (US-PRF-004 FR-3) ───────────────────
+
+    /// <summary>How the participant set was resolved at creation (FR-3).</summary>
+    public ParticipantScopeType ParticipantScope { get; set; } = ParticipantScopeType.AllEmployees;
+
+    /// <summary>Cancellation reason (US-PRF-004 BR-6). Required when Status is Cancelled.</summary>
+    public string? CancellationReason { get; set; }
+
+    // ── Navigation ─────────────────────────────────────────────────────
+    public List<CyclePhase> Phases { get; set; } = [];
+    public List<CycleParticipant> Participants { get; set; } = [];
+
+    // ── Window gates ───────────────────────────────────────────────────
+    // Prefer the loaded CyclePhase when present (the phase model is the source of truth); fall back to the
+    // legacy *Start/*End columns (which the create/edit handlers keep in sync) when phases are not loaded —
+    // this is what keeps US-PRF-001/002/003 services and their tests green without forcing an Include.
+
+    /// <summary>True if the cycle is Active AND "now" is inside the goal-setting window (BR-1/AC-5).</summary>
+    public bool IsGoalSettingOpen(DateTime nowUtc) => IsPhaseOpen(CyclePhaseType.GoalSetting, GoalSettingStart, GoalSettingEnd, nowUtc);
+
+    /// <summary>True if the cycle is Active AND "now" is inside the self-assessment window (US-PRF-002 BR-1/AC-4).</summary>
+    public bool IsSelfAssessmentOpen(DateTime nowUtc) => IsPhaseOpen(CyclePhaseType.SelfAssessment, SelfAssessmentStart, SelfAssessmentEnd, nowUtc);
+
+    /// <summary>True if the cycle is Active AND "now" is inside the manager-review window (US-PRF-003 BR-1/AC-5).</summary>
+    public bool IsManagerReviewOpen(DateTime nowUtc) => IsPhaseOpen(CyclePhaseType.ManagerReview, ManagerReviewStart, ManagerReviewEnd, nowUtc);
+
+    private bool IsPhaseOpen(CyclePhaseType phaseType, DateTime legacyStart, DateTime legacyEnd, DateTime nowUtc)
+    {
+        if (Status != AppraisalCycleStatus.Active)
+            return false;
+
+        var phase = Phases.FirstOrDefault(p => p.PhaseType == phaseType);
+        if (phase is not null)
+            return phase.ContainsInstant(nowUtc);
+
+        // Fallback: phases not loaded ⇒ consult the synced legacy columns.
+        return nowUtc >= legacyStart && nowUtc <= legacyEnd;
+    }
 
     /// <summary>The manager weight in the self-vs-manager blend (BR-4): 100 - SelfWeightPercent.</summary>
     public int ManagerWeightPercent => 100 - SelfWeightPercent;
+
+    // ── Status state machine (US-PRF-004 FR-7) ─────────────────────────
+
+    /// <summary>Valid status transitions (FR-7). Cancelled requires a reason (BR-6, enforced by the service).</summary>
+    public static bool IsValidTransition(AppraisalCycleStatus from, AppraisalCycleStatus to) => (from, to) switch
+    {
+        (AppraisalCycleStatus.Draft, AppraisalCycleStatus.Active) => true,
+        (AppraisalCycleStatus.Draft, AppraisalCycleStatus.Cancelled) => true,
+        (AppraisalCycleStatus.Active, AppraisalCycleStatus.Paused) => true,
+        (AppraisalCycleStatus.Active, AppraisalCycleStatus.Completed) => true,
+        (AppraisalCycleStatus.Active, AppraisalCycleStatus.Cancelled) => true,
+        (AppraisalCycleStatus.Paused, AppraisalCycleStatus.Active) => true,
+        (AppraisalCycleStatus.Paused, AppraisalCycleStatus.Cancelled) => true,
+        _ => false,
+    };
+
+    /// <summary>Terminal statuses no transition can leave (FR-7).</summary>
+    public bool IsTerminal => Status is AppraisalCycleStatus.Completed
+        or AppraisalCycleStatus.Cancelled or AppraisalCycleStatus.Closed;
+
+    /// <summary>
+    /// Syncs the legacy goal-setting / self-assessment / manager-review window columns from the current
+    /// phase set, so US-PRF-001/002/003 services that read those columns observe the phase-driven windows.
+    /// Called by the create/edit handlers after phases are assigned.
+    /// </summary>
+    public void SyncLegacyWindowsFromPhases() => SyncLegacyWindowsFromPhases(Phases);
+
+    /// <summary>
+    /// As <see cref="SyncLegacyWindowsFromPhases()"/> but reads from an EXPLICIT phase source instead of the
+    /// <see cref="Phases"/> navigation. The edit path uses this so it can sync the new windows without having
+    /// to mutate the tracked navigation collection (mutating it while the old phases are pending-delete makes
+    /// EF's cascade fixup resurrect a deleted child as a modified row on save).
+    /// </summary>
+    public void SyncLegacyWindowsFromPhases(IEnumerable<CyclePhase> phases)
+    {
+        var goal = phases.FirstOrDefault(p => p.PhaseType == CyclePhaseType.GoalSetting);
+        if (goal is not null) { GoalSettingStart = goal.StartDate; GoalSettingEnd = goal.EndDate; }
+
+        var self = phases.FirstOrDefault(p => p.PhaseType == CyclePhaseType.SelfAssessment);
+        if (self is not null) { SelfAssessmentStart = self.StartDate; SelfAssessmentEnd = self.EndDate; }
+
+        var mgr = phases.FirstOrDefault(p => p.PhaseType == CyclePhaseType.ManagerReview);
+        if (mgr is not null) { ManagerReviewStart = mgr.StartDate; ManagerReviewEnd = mgr.EndDate; }
+    }
 }

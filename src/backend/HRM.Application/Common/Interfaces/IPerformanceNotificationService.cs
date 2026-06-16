@@ -52,4 +52,17 @@ public interface IPerformanceNotificationService
         Guid employeeId,
         Guid cycleId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies all participants of a cycle-level event (US-PRF-004 AC-2/AC-4/AC-5/BR-6): phase-start,
+    /// deadline-reminder, phase-close, overdue-escalation, cycle-updated, cycle-cancelled. Fire-and-forget;
+    /// must never throw into the request path.
+    /// </summary>
+    /// <param name="eventType">A short event label, e.g. "phase-start" / "deadline-reminder" / "phase-close" / "overdue-escalation" / "cycle-updated" / "cycle-cancelled".</param>
+    Task NotifyCycleEventAsync(
+        string eventType,
+        Guid cycleId,
+        Guid employeeId,
+        string? detail = null,
+        CancellationToken cancellationToken = default);
 }
