@@ -54,6 +54,11 @@ export * from './services/reconciliation.service';
 export { PayrollReconciliationComponent } from './components/payroll-reconciliation/payroll-reconciliation.component';
 export { LeaveEncashmentFormComponent } from './components/leave-encashment-form/leave-encashment-form.component';
 
+/** US-PAY-011: Bulk payslip email distribution (send / progress / summary / re-send). */
+export * from './models/payslip-email.models';
+export * from './services/payslip-email.service';
+export { PayslipDistributionComponent } from './components/payslip-distribution/payslip-distribution.component';
+
 /** US-PAY-009: Payroll reports & analytics (reports page + analytics dashboard). */
 export * from './models/payroll-report.models';
 export * from './services/payroll-report.service';

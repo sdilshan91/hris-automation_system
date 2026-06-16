@@ -195,6 +195,12 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.GeneratePayslipsJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayslipGenerationJobScheduler, HRM.Api.Jobs.HangfirePayslipGenerationJobScheduler>();
 
+    // US-PAY-011 FR-1/FR-8: tenant-aware bulk payslip-email distribution job + the Hangfire-backed scheduler
+    // seam (bound to IPayslipDistributionJobScheduler so the Infrastructure PayslipDistributionService can
+    // enqueue by interface). The job restores the tenant context, then runs the per-employee send loop.
+    builder.Services.AddScoped<HRM.Api.Jobs.SendPayslipEmailsJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayslipDistributionJobScheduler, HRM.Api.Jobs.HangfirePayslipDistributionJobScheduler>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())

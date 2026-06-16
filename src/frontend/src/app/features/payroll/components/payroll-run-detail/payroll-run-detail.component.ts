@@ -18,6 +18,7 @@ import { AuthService } from '../../../../core/auth/auth.service';
 import { PayrollRunService } from '../../services/payroll-run.service';
 import { PayrollApprovalService } from '../../services/payroll-approval.service';
 import { PayslipListComponent } from '../payslip-list/payslip-list.component';
+import { PayslipDistributionComponent } from '../payslip-distribution/payslip-distribution.component';
 import {
   IPayrollRun,
   IPayrollRunProgress,
@@ -79,7 +80,13 @@ type CommentAction = 'reject' | 'return' | null;
 @Component({
   selector: 'app-payroll-run-detail',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, PayslipListComponent],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    RouterLink,
+    PayslipListComponent,
+    PayslipDistributionComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -397,6 +404,15 @@ type CommentAction = 'reject' | 'return' | null;
                 [canGenerate]="canGeneratePayslips()"
               />
             }
+
+            <!-- Bulk payslip email distribution (US-PAY-011): Send Payslips,
+                 progress, and the per-employee delivery summary. Self-gates on a
+                 Finalized run with generated PDFs (AC-1). -->
+            <app-payslip-distribution
+              [runId]="r.id"
+              [runStatus]="r.status"
+              [employeeCount]="r.processedEmployees"
+            />
           }
         }
 
