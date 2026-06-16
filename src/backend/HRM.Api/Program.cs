@@ -155,6 +155,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessAbsenteeismJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.AutoClockOutJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.SelfAssessmentReminderJob>();
 
     // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
     // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
@@ -359,6 +360,14 @@ try
             "attendance-scheduled-reports",
             job => job.RunAsync(),
             "0 * * * *"); // top of every hour, UTC
+
+        // US-PRF-002 FR-7 / AC-5: daily self-assessment deadline reminders (default 7/3/1 days before the
+        // self-assessment window closes). Idempotent per day + tenant-safe; dispatches via the log-only
+        // performance notification seam until US-NTF lands a real in-app/email channel.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.SelfAssessmentReminderJob>(
+            "performance-self-assessment-reminders",
+            job => job.RunAsync(),
+            "0 7 * * *"); // 07:00 UTC daily
     }
 
     app.Run();

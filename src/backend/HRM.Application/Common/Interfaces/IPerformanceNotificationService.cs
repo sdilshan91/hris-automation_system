@@ -22,4 +22,24 @@ public interface IPerformanceNotificationService
         Guid employeeId,
         Guid cycleId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies an employee's manager that the employee submitted their self-assessment (US-PRF-002 AC-2).
+    /// Fire-and-forget; must never throw into the request path.
+    /// </summary>
+    Task NotifySelfAssessmentSubmittedAsync(
+        Guid selfAssessmentId,
+        Guid employeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reminds an employee that their self-assessment is not yet submitted and the deadline is approaching
+    /// (US-PRF-002 FR-7/AC-5). Dispatched by the Hangfire reminder job at the configured day thresholds.
+    /// </summary>
+    Task NotifySelfAssessmentReminderAsync(
+        Guid employeeId,
+        Guid cycleId,
+        int daysUntilDeadline,
+        CancellationToken cancellationToken = default);
 }

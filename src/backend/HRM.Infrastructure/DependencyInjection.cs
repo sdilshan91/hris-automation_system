@@ -283,6 +283,14 @@ public static class DependencyInjection
         services.AddScoped<IGoalService, GoalService>();
         services.AddScoped<IPerformanceNotificationService, LogOnlyPerformanceNotificationService>();
 
+        // US-PRF-002: Performance — employee self-assessment (get-my / save-draft / submit). Every read/write
+        // is scoped to the calling employee's own record + tenant (NFR-2); the self-assessment-window gate
+        // (BR-1/AC-4), all-goals-rated + comment-length submit rules (BR-2/FR-3), weighted-score calc (FR-4)
+        // and submitted-lock (BR-3) are enforced in the service. The reminder service (FR-7/AC-5) is driven by
+        // the SelfAssessmentReminderJob Hangfire job and dispatches via the shared performance notification seam.
+        services.AddScoped<ISelfAssessmentService, SelfAssessmentService>();
+        services.AddScoped<ISelfAssessmentReminderService, SelfAssessmentReminderService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

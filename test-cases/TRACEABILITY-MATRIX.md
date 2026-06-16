@@ -3504,7 +3504,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 |---------------|-----------------|----------|------------|----------|----------|
 | US-PRF-001 | Manager Sets Goals/KPIs for Team Members | Must Have | TC-PRF-001-01, TC-PRF-001-02, TC-PRF-001-03, TC-PRF-001-04, TC-PRF-001-05, TC-PRF-001-06, TC-PRF-001-07, TC-PRF-001-08, TC-PRF-001-09, TC-PRF-001-10, TC-PRF-001-11, TC-PRF-001-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PRF-001) | Multi-tenant isolation (goals table + caches + notifications) | Critical | TC-PRF-ISO-001, TC-PRF-ISO-002, TC-PRF-ISO-003, TC-PRF-ISO-004 | 4 | -- |
-| **TOTAL** | | | **16 test cases** | **16** | **5/5 AC** |
+| US-PRF-002 | Employee Self-Rates Against Goals | Must Have | TC-PRF-002-01, TC-PRF-002-02, TC-PRF-002-03, TC-PRF-002-04, TC-PRF-002-05, TC-PRF-002-06, TC-PRF-002-07, TC-PRF-002-08, TC-PRF-002-09, TC-PRF-002-10, TC-PRF-002-11, TC-PRF-002-12, TC-PRF-002-13, TC-PRF-002-14, TC-PRF-002-15 | 15 | 5/5 AC covered |
+| Cross-cutting (PRF-002) | Multi-tenant isolation (self_assessment table + attachments + auto-save + notifications) | Critical | TC-PRF-ISO-005, TC-PRF-ISO-006, TC-PRF-ISO-007, TC-PRF-ISO-008 | 4 | -- |
+| **TOTAL** | | | **35 test cases** | **35** | **10/10 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -3526,6 +3528,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-002 | Goal APIs reject missing/invalid/mismatched tenant context + IDOR | Security | Critical | US-PRF-001 | NFR-2, FR-1 |
 | TC-PRF-ISO-003 | Cross-tenant write block: server-derived tenant_id + foreign employee/cycle rejected | Security | Critical | US-PRF-001 | NFR-2, FR-1 |
 | TC-PRF-ISO-004 | Goal list/dashboard caches + notifications tenant-scoped | Security | High | US-PRF-001 | NFR-1, NFR-2, FR-7 |
+| TC-PRF-002-01 | Employee rates all goals + submits -> "Self-Assessment Submitted" + manager notified + locked (happy path) | E2E | Critical | US-PRF-002 | AC-1, AC-2, FR-1/2/3/4, BR-2/3 |
+| TC-PRF-002-02 | Submit with one goal unrated rejected; partial saved as draft only | Functional | Critical | US-PRF-002 | AC-2, AC-3, FR-3, BR-2 |
+| TC-PRF-002-03 | Comment <20 chars / rating outside scale / achievement % outside 0-100 rejected | Functional | High | US-PRF-002 | FR-2, FR-3 |
+| TC-PRF-002-04 | Boundary: comment exactly 20 chars / achievement 0 and 100 / rating at scale min+max | Functional | High | US-PRF-002 | FR-2, FR-3 |
+| TC-PRF-002-05 | Save as draft + resume across sessions | Functional | High | US-PRF-002 | AC-3, FR-6 |
+| TC-PRF-002-06 | Draft auto-saves every 60s; data recovered after crash | Functional | High | US-PRF-002 | NFR-3, FR-6 |
+| TC-PRF-002-07 | Closed self-assessment window read-only + "...period for this cycle has ended" | Functional | Critical | US-PRF-002 | AC-4, BR-1, FR-1 |
+| TC-PRF-002-08 | Hangfire deadline reminder (in-app + email) fires for non-submitters only | Integration | High | US-PRF-002 | AC-5, FR-7 |
+| TC-PRF-002-09 | Authz: employee sees only OWN assessment; A cannot view B; IDOR + unauth blocked | Security | Critical | US-PRF-002 | NFR-2 |
+| TC-PRF-002-10 | File attachment limits: max 5 files / 10MB each, at and past boundary | Functional | High | US-PRF-002 | FR-5 |
+| TC-PRF-002-11 | File upload security: virus-scan before accept + tenant-scoped storage path | Security | High | US-PRF-002 | NFR-4 |
+| TC-PRF-002-12 | Weighted self-score computed from ratings + weights; ratio not double-applied | Functional | High | US-PRF-002 | FR-4, BR-4 |
+| TC-PRF-002-13 | Submitted assessment locked unless manager/HR reopens | Functional | High | US-PRF-002 | AC-2, BR-3 |
+| TC-PRF-002-14 | Self-assessment form loads within 400ms P95 incl. all goal data | Performance | High | US-PRF-002 | NFR-1, AC-1 |
+| TC-PRF-002-15 | Self-assessment UI WCAG 2.1 AA + responsive 360px, touch + keyboard ratings | Accessibility | High | US-PRF-002 | NFR-5, AC-1, AC-3 |
+| TC-PRF-ISO-005 | Self-assessments in Tenant A invisible from Tenant B (cross-tenant read) | Security | Critical | US-PRF-002 | NFR-2 |
+| TC-PRF-ISO-006 | Self-assessment APIs reject missing/invalid/mismatched tenant context + IDOR | Security | Critical | US-PRF-002 | NFR-2, FR-1 |
+| TC-PRF-ISO-007 | Cross-tenant write block: server-derived tenant_id + foreign goal/cycle/employee rejected | Security | Critical | US-PRF-002 | NFR-2, FR-1, FR-6 |
+| TC-PRF-ISO-008 | Attachment paths + auto-save drafts + notifications/reminders tenant-scoped | Security | High | US-PRF-002 | NFR-2, NFR-3, NFR-4, FR-7 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 
@@ -3564,6 +3585,44 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Multi-Tenant Isolation | 4 (TC-PRF-ISO-001..004) |
 | Blocked | 0 (FR-4/5/6, BR-5 deferred to later stories; FR-7 delivery + NFR-1 cache CONDITIONAL -- none blocking) |
 
+### US-PRF-002 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Open-window My Review form with all goals + self-rating/achievement/comment inputs | AC | TC-PRF-002-01, -14, -15 | Direct |
+| AC-2: Rate all goals -> Submit -> "Self-Assessment Submitted" + manager notified + edits prevented | AC | TC-PRF-002-01, -02, -13 | Direct |
+| AC-3: Save as Draft -> partial progress persisted, resume later | AC | TC-PRF-002-05, -02, -15 | Direct |
+| AC-4: Closed window -> read-only + "The self-assessment period for this cycle has ended" | AC | TC-PRF-002-07 | Direct |
+| AC-5: Deadline approaching -> Hangfire reminder (in-app + email) to non-submitters | AC | TC-PRF-002-08 | Direct |
+| FR-1: display each goal (title/desc/weight/target/due) + self-rating inputs | FR | TC-PRF-002-01, -07 | Direct |
+| FR-2: self-rating uses tenant-configured rating scale | FR | TC-PRF-002-03, -04 | Direct |
+| FR-3: self-assessment comment min 20 chars per goal | FR | TC-PRF-002-01, -03, -04 | Direct |
+| FR-4: weighted self-assessment score from ratings + weights | FR | TC-PRF-002-01, -12 | Direct |
+| FR-5: file attachments per goal, max 5 files / 10MB each | FR | TC-PRF-002-10, TC-PRF-ISO-008 | Direct |
+| FR-6: save-as-draft persistence | FR | TC-PRF-002-05, -06, -02 | Direct |
+| FR-7: Hangfire reminder for non-submitters (in-app + email) | FR | TC-PRF-002-08, TC-PRF-ISO-008 | Direct (in-app delivered; email enqueue; delivery CONDITIONAL on S25) |
+| BR-1: submit only during the self-assessment phase window | BR | TC-PRF-002-07 | Direct |
+| BR-2: all goals rated before submission; partial = draft only | BR | TC-PRF-002-02 | Direct |
+| BR-3: submitted assessment locked unless manager/HR reopens | BR | TC-PRF-002-13, -01 | Direct |
+| BR-4: self:manager weight ratio applied at final score (not in raw self-score) | BR | TC-PRF-002-12 | Direct (final composite owned by later story) |
+| BR-5: self-assessment optional when disabled in tenant config | BR | -- | PRECONDITION (enabled assumed; out of US-PRF-002 set) |
+| NFR-1: form loads <=400ms P95 incl. all goal data | NFR | TC-PRF-002-14 | Direct (seeded perf env) |
+| NFR-2: tenant isolation -- own-only + RLS / EF query filters | NFR | TC-PRF-002-09, TC-PRF-ISO-005, -006, -007, -008 | Direct (EF filters; RLS extension point) |
+| NFR-3: draft auto-save every 60s | NFR | TC-PRF-002-06, TC-PRF-ISO-008 | Direct |
+| NFR-4: file virus-scan + tenant-scoped storage path | NFR | TC-PRF-002-11, TC-PRF-ISO-008 | Direct (scan seam asserted; scanner CONDITIONAL) |
+| NFR-5: responsive 360px + touch + keyboard for rating inputs | NFR | TC-PRF-002-15 | Direct |
+
+### US-PRF-002 Coverage Summary
+
+| Metric | Value |
+|--------|-------|
+| Acceptance Criteria | 5/5 (AC-1..AC-5) directly covered |
+| Test Cases | 19 (TC-PRF-002-01..15 + TC-PRF-ISO-005..008) |
+| Critical Priority | 6 (TC-PRF-002-01, -07, -09 + TC-PRF-ISO-005, -006, -007) |
+| High Priority | 13 (TC-PRF-002-02..06, -08, -10..15 + TC-PRF-ISO-008) |
+| Multi-Tenant Isolation | 4 (TC-PRF-ISO-005..008) |
+| Blocked | 0 (FR-7 delivery + NFR-4 scanner + cache CONDITIONAL; BR-4 final composite + BR-5 disabled-config out of scope -- none blocking) |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -3576,8 +3635,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
 | Payroll (US-PAY-001 through US-PAY-012) | 12 | 192 | 63/63 (100%) | 48 | PASS (module complete) |
-| Performance Management (US-PRF-001) | 1 | 16 | 5/5 (100%) | 4 | IN PROGRESS (first story) |
-| **TOTAL** | **64** | **1254** | **330/330 (100%)** | **223** | |
+| Performance Management (US-PRF-001 through US-PRF-002) | 2 | 35 | 10/10 (100%) | 8 | IN PROGRESS |
+| **TOTAL** | **65** | **1273** | **335/335 (100%)** | **227** | |
 
 ---
 

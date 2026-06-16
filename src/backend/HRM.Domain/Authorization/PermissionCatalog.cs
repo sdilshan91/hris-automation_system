@@ -217,6 +217,14 @@ public static class PermissionCatalog
         /// Granted to HR Officer / HR Manager / Tenant Admin.
         /// </summary>
         public const string SetGoalAll = "Performance.SetGoal.All";
+
+        /// <summary>
+        /// US-PRF-002 (NFR-2): an employee reads + writes ONLY their OWN self-assessment for the active
+        /// cycle. Granted to the Employee role (the self-assessment persona). The service additionally
+        /// scopes every read/write to the caller's own employee record, so the permission gates entry but
+        /// never lets one employee see another's data.
+        /// </summary>
+        public const string ReadSelf = "Performance.Read.Self";
     }
 
     // ── Reports Module ───────────────────────────────────────────────
@@ -327,7 +335,7 @@ public static class PermissionCatalog
 
         // Performance
         Performance.ViewOwn, Performance.ViewTeam, Performance.ViewAll, Performance.Manage,
-        Performance.SetGoalTeam, Performance.SetGoalAll,
+        Performance.SetGoalTeam, Performance.SetGoalAll, Performance.ReadSelf,
 
         // Reports
         Reports.View, Reports.Export,
@@ -496,7 +504,7 @@ public static class PermissionCatalog
             Holiday.View,
             Attendance.ViewOwn, Attendance.CheckIn, Attendance.RegularizeSelf,
             Payroll.ViewOwn,
-            Performance.ViewOwn,
+            Performance.ViewOwn, Performance.ReadSelf,
             Notifications.ViewOwn,
             Training.ViewOwn,
             Benefits.ViewOwn,

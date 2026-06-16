@@ -318,6 +318,20 @@ export const appRoutes: Routes = [
           roleGuard(['Manager', 'HR Officer', 'HR Manager', 'Tenant Admin']),
         ],
       },
+      // ─── Performance / My Review (US-PRF-002) — employee self-service ─
+      // Employee self-assessment against assigned goals. Distinct from the
+      // manager/HR-facing '/performance' screens above; the backend enforces
+      // Performance.Read.Self so an employee only ever sees their OWN review.
+      {
+        path: 'my-review',
+        loadChildren: () =>
+          import('./features/performance/my-review.routes').then(
+            (m) => m.MY_REVIEW_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
+        ],
+      },
       // ─── Payroll / My Payslips (US-PAY-005) — employee self-service ─
       // Distinct from the HR-facing '/payroll' screens above (Tenant Admin / HR
       // Officer). Any authenticated employee can view their OWN payslips; the
