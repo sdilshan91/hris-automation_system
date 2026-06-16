@@ -298,6 +298,18 @@ public static class DependencyInjection
         // ComputeFinalScore is the single extension point US-PRF-005 (360 feedback, BR-5) will widen.
         services.AddScoped<IManagerReviewService, ManagerReviewService>();
 
+        // US-PRF-005: Performance — 360-degree feedback. ReviewerAssignmentService handles reviewer
+        // nomination/auto-suggest (Self+Manager auto, Peers same-dept, Direct Reports org-tree) + notify;
+        // Feedback360Service handles reviewer submission (BR-3 one-per-reviewer-per-cycle, anonymity captured
+        // at submit per BR-5) and aggregation (per-competency/category averages + composite FR-6 + BR-4
+        // peer-threshold gate). Anonymity is enforced in the DTO projection (NFR-3/FR-5 — reviewer ids are
+        // never written into results when anonymity is on). The BR-6 final-score incorporation lives in
+        // ManagerReviewService.ComputeFinalScoreWith360 (delegates to the pure ThreeSixtyScoreCalculator).
+        // The reminder service (AC-5/FR-8) is driven by the Feedback360ReminderJob via the notification seam.
+        services.AddScoped<IReviewerAssignmentService, ReviewerAssignmentService>();
+        services.AddScoped<IFeedback360Service, Feedback360Service>();
+        services.AddScoped<IFeedback360ReminderService, Feedback360ReminderService>();
+
         // US-PRF-004: Performance — full appraisal-cycle management (create/edit/clone/transition/cancel +
         // dashboard + active-cycle). The phase-sequencing/in-range rules (FR-2/BR-3) are in the validators;
         // participant scoping (FR-3), BR-4 (no two active same-type cycles per employee), the FR-7 status

@@ -233,8 +233,25 @@ public sealed class ManagerReviewService : IManagerReviewService
             review.SubmittedAt = DateTime.UtcNow;
             review.WeightedManagerScore = managerScore;
             review.SelfScoreAtSubmit = selfScore;
-            review.FinalScore = ComputeFinalScore(
-                selfScore.Value, managerScore, cycle.SelfWeightPercent, cycle.ManagerWeightPercent);
+
+            if (cycle.Is360Enabled)
+            {
+                // BR-6 (US-PRF-005): incorporate the 360 composite alongside self + manager. The composite
+                // weights self/manager/peers/reports by the cycle's 360 config and normalizes by the
+                // categories that actually have feedback, so when only self+manager exist it degrades to a
+                // self+manager blend by the 360 weights. The peer/report averages come from submitted
+                // Feedback360 rows.
+                var (peerAvg, reportAvg) = await LoadPeerReportAveragesAsync(
+                    input.EmployeeId, input.CycleId, cancellationToken);
+                review.FinalScore = ComputeFinalScoreWith360(
+                    selfScore.Value, managerScore, peerAvg, reportAvg, cycle);
+            }
+            else
+            {
+                // Existing US-PRF-003 behavior — UNCHANGED when 360 is disabled (keeps existing tests green).
+                review.FinalScore = ComputeFinalScore(
+                    selfScore.Value, managerScore, cycle.SelfWeightPercent, cycle.ManagerWeightPercent);
+            }
         }
 
         try
@@ -401,6 +418,45 @@ public sealed class ManagerReviewService : IManagerReviewService
         var self = selfScore * selfWeightPercent / 100m;
         var manager = managerScore * managerWeightPercent / 100m;
         return Math.Round(self + manager, 2, MidpointRounding.AwayFromZero);
+    }
+
+    // ── 360 final-score incorporation (US-PRF-005 BR-6) ──────────────
+    //
+    // When the cycle has 360 enabled, the final score blends self + manager + peers + direct-reports by the
+    // cycle's 360 per-category weights (FR-6), normalizing by the categories that actually have data. The
+    // self perspective uses the submitted self-score; the manager perspective uses the weighted manager
+    // score just computed; peers/reports use the average of their submitted Feedback360 ratings (null when
+    // none). This delegates to the pure domain ThreeSixtyScoreCalculator so the math is one source of truth.
+    internal static decimal ComputeFinalScoreWith360(
+        decimal selfScore, decimal managerScore, decimal? peerAvg, decimal? reportAvg, AppraisalCycle cycle)
+        => ThreeSixtyScoreCalculator.ComputeComposite(
+            new ThreeSixtyScoreCalculator.CategoryAverages(selfScore, managerScore, peerAvg, reportAvg),
+            new ThreeSixtyScoreCalculator.CategoryWeights(
+                cycle.ThreeSixtySelfWeightPercent,
+                cycle.ThreeSixtyManagerWeightPercent,
+                cycle.ThreeSixtyPeerWeightPercent,
+                cycle.ThreeSixtyReportWeightPercent));
+
+    // Average rating across submitted Feedback360 rows for the Peer / DirectReport categories (null when
+    // a category has no feedback). Used by the BR-6 final-score blend.
+    private async Task<(decimal? PeerAvg, decimal? ReportAvg)> LoadPeerReportAveragesAsync(
+        Guid employeeId, Guid cycleId, CancellationToken cancellationToken)
+    {
+        var ratings = await _dbContext.Feedback360s
+            .AsNoTracking()
+            .Where(f => f.CycleId == cycleId && f.RevieweeEmployeeId == employeeId
+                && (f.Category == ReviewerCategory.Peer || f.Category == ReviewerCategory.DirectReport))
+            .SelectMany(f => f.Items.Where(i => !i.IsDeleted).Select(i => new { f.Category, i.Rating }))
+            .ToListAsync(cancellationToken);
+
+        decimal? Avg(ReviewerCategory cat)
+        {
+            var vals = ratings.Where(r => r.Category == cat).Select(r => r.Rating).ToList();
+            return vals.Count == 0 ? null
+                : Math.Round((decimal)vals.Average(), 2, MidpointRounding.AwayFromZero);
+        }
+
+        return (Avg(ReviewerCategory.Peer), Avg(ReviewerCategory.DirectReport));
     }
 
     // ── Weighted manager score ───────────────────────────────────────

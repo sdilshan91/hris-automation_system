@@ -75,4 +75,29 @@ export const PERFORMANCE_ROUTES: Routes = [
         (m) => m.CycleDashboardComponent,
       ),
   },
+  {
+    // US-PRF-005 AC-2: a reviewer's 360 feedback form (deep link). Static segment
+    // 'assignment' keeps it from colliding with the :employeeId config route below.
+    path: 'feedback-360/assignment/:assignmentId',
+    loadComponent: () =>
+      import(
+        './components/feedback-360-form/feedback-360-form.component'
+      ).then((m) => m.Feedback360FormComponent),
+  },
+  {
+    // US-PRF-005 AC-4: aggregated 360 results dashboard for an employee.
+    path: 'feedback-360/:employeeId/results',
+    loadComponent: () =>
+      import(
+        './components/feedback-360-results/feedback-360-results.component'
+      ).then((m) => m.Feedback360ResultsComponent),
+  },
+  {
+    // US-PRF-005 AC-1/AC-3: 360 reviewer nomination + completion tracker.
+    path: 'feedback-360/:employeeId',
+    loadComponent: () =>
+      import(
+        './components/feedback-360-config/feedback-360-config.component'
+      ).then((m) => m.Feedback360ConfigComponent),
+  },
 ];

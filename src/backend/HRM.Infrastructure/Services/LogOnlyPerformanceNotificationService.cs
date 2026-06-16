@@ -65,4 +65,24 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             eventType, cycleId, employeeId, detail is null ? string.Empty : $" ({detail})");
         return Task.CompletedTask;
     }
+
+    public Task NotifyReviewerAssignedAsync(
+        Guid reviewerEmployeeId, Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] 360-reviewer-assigned: reviewer {ReviewerId} has a pending 360 " +
+            "feedback form for reviewee {RevieweeId} in cycle {CycleId}. Real in-app/email delivery deferred (US-NTF).",
+            reviewerEmployeeId, revieweeEmployeeId, cycleId);
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyReviewerReminderAsync(
+        Guid reviewerEmployeeId, Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] 360-reviewer-reminder: reviewer {ReviewerId} has not submitted 360 " +
+            "feedback for reviewee {RevieweeId} in cycle {CycleId}. Real in-app/email delivery deferred (US-NTF).",
+            reviewerEmployeeId, revieweeEmployeeId, cycleId);
+        return Task.CompletedTask;
+    }
 }
