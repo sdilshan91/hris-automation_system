@@ -41,10 +41,14 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     private readonly IAttendancePayrollService _attendancePayroll;
     private readonly IPayrollNotificationService _notifications;
     private readonly IStatutoryDeductionResolver _statutoryResolver;
+    private readonly IPayrollAdjustmentResolver _adjustmentResolver;
     private readonly ILogger<PayrollRunProcessor> _logger;
 
     /// <summary>Synthetic component id for the LOP deduction line (BR-2). Stable so the slip detail FK is consistent.</summary>
     private static readonly Guid LopComponentId = Guid.Parse("00000000-0000-0000-0000-0000000010ce");
+
+    /// <summary>Synthetic component id for adjustment lines (US-PAY-007). Stable so the slip detail FK is consistent.</summary>
+    private static readonly Guid AdjustmentComponentId = Guid.Parse("00000000-0000-0000-0000-00000000ad57");
 
     public PayrollRunProcessor(
         AppDbContext dbContext,
@@ -52,6 +56,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         IAttendancePayrollService attendancePayroll,
         IPayrollNotificationService notifications,
         IStatutoryDeductionResolver statutoryResolver,
+        IPayrollAdjustmentResolver adjustmentResolver,
         ILogger<PayrollRunProcessor> logger)
     {
         _dbContext = dbContext;
@@ -59,6 +64,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _attendancePayroll = attendancePayroll;
         _notifications = notifications;
         _statutoryResolver = statutoryResolver;
+        _adjustmentResolver = adjustmentResolver;
         _logger = logger;
     }
 
@@ -133,6 +139,12 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
 
         var (workingDaysInMonth, monthStart, monthEnd) = MonthBounds(run.PayYear, run.PayMonth);
 
+        // US-PAY-007 FR-3: Pending adjustments for the period, grouped by employee, loaded ONCE (no N+1). Empty
+        // when none are configured → the per-employee lookup misses and the engine behaves exactly as before,
+        // keeping every existing US-PAY-003/006 test green (purely additive wiring).
+        var adjustmentsByEmployee = await _adjustmentResolver.ResolveForPeriodAsync(run.PayYear, run.PayMonth, cancellationToken);
+        var appliedAdjustmentIds = new List<Guid>();
+
         var slips = new List<PayrollSlip>();
         var details = new List<PayrollSlipDetail>();
         int processed = 0, skipped = 0;
@@ -162,9 +174,26 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             var slipInput = new PayrollSlipInput(emp.Id, inputs, workingDays, lopDays, proRataPaidDays);
             var result = PayrollSlipCalculator.Compute(slipInput, LopComponentId);
 
-            // US-PAY-006 FR-?: when statutory rules are configured for the period, replace the structure's
-            // as-is statutory lines with rule-computed deductions. No-op (returns `result`) when no rules exist.
+            // US-PAY-007: this employee's Pending adjustments for the period (empty when none → no-op).
+            var employeeAdjustments = adjustmentsByEmployee.GetValueOrDefault(emp.Id, EmployeeAdjustments.Empty);
+
+            // US-PAY-007 ordering: TAXABLE bonuses are added to gross BEFORE statutory runs so the progressive
+            // tax (US-PAY-006) is computed on the inflated gross. Non-taxable adjustments (reimbursements,
+            // non-taxable bonuses, deductions, corrections) are added AFTER statutory so they never inflate the
+            // tax base (BR-2/BR-4).
+            result = ApplyTaxableAdjustments(result, employeeAdjustments);
+
+            // US-PAY-006: when statutory rules are configured for the period, replace the structure's as-is
+            // statutory lines with rule-computed deductions. No-op (returns `result`) when no rules exist.
             result = await ApplyStatutoryRulesAsync(result, run.PayYear, run.PayMonth, runLog, cancellationToken);
+
+            // US-PAY-007: remaining (non-tax-base) adjustment lines, then track applied ids for FR-4.
+            result = ApplyNonTaxableAdjustments(result, employeeAdjustments);
+            if (!employeeAdjustments.IsEmpty)
+            {
+                appliedAdjustmentIds.AddRange(employeeAdjustments.Adjustments.Select(a => a.AdjustmentId));
+                runLog.AppendLine($"Adjustments ({employeeAdjustments.Adjustments.Count}) applied for employee {emp.Id}.");
+            }
 
             var slip = new PayrollSlip
             {
@@ -211,6 +240,13 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         if (slips.Count > 0) _dbContext.PayrollSlips.AddRange(slips);
         if (details.Count > 0) _dbContext.PayrollSlipDetails.AddRange(details);
 
+        // US-PAY-007 FR-4: mark the included adjustments Applied with this run id, so they are not applied
+        // again (a re-run reverts them first — see RemoveExistingSlipsAsync). Done at SLIP-PERSIST time (this
+        // same SaveChanges that writes the slips), NOT at a separate Finalize step, so the applied state is
+        // always consistent with the persisted slips. The resolver only flips tracked entities; this
+        // SaveChanges commits them alongside the slips.
+        await _adjustmentResolver.MarkAppliedAsync(appliedAdjustmentIds, run.Id, cancellationToken);
+
         // FR-8: stamp summary totals + counters; AC-3: move to ReviewPending on completion.
         run.ProcessedEmployees = processed;
         run.SkippedEmployees = skipped;
@@ -238,8 +274,25 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
 
     private async Task RemoveExistingSlipsAsync(Guid runId, CancellationToken ct)
     {
+        // US-PAY-007 FR-7 consistency: revert adjustments this run had marked Applied back to Pending so the
+        // re-run re-picks them (otherwise a re-run would silently drop the adjustment lines). Double application
+        // across DIFFERENT runs is still prevented — those stay Applied under their own run id.
+        var appliedHere = await _dbContext.PayrollAdjustments
+            .Where(a => a.AppliedInPayrollRunId == runId && a.Status == AdjustmentStatus.Applied)
+            .ToListAsync(ct);
+        foreach (var a in appliedHere)
+        {
+            a.Status = AdjustmentStatus.Pending;
+            a.AppliedInPayrollRunId = null;
+            a.UpdatedAt = DateTime.UtcNow;
+        }
+
         var existingSlips = await _dbContext.PayrollSlips.Where(s => s.PayrollRunId == runId).ToListAsync(ct);
-        if (existingSlips.Count == 0) return;
+        if (existingSlips.Count == 0)
+        {
+            if (appliedHere.Count > 0) await _dbContext.SaveChangesAsync(ct);
+            return;
+        }
 
         var slipIds = existingSlips.Select(s => s.Id).ToList();
         var existingDetails = await _dbContext.PayrollSlipDetails
@@ -351,6 +404,107 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             Lines = lines,
         };
     }
+
+    /// <summary>
+    /// US-PAY-007 (pre-statutory pass): adds TAXABLE bonus adjustments as earning lines so they are in gross
+    /// BEFORE the statutory pass computes progressive tax (BR-2 — a taxable bonus flows to tax). Returns the
+    /// result unchanged when the employee has no taxable bonuses (so the existing tax flow is untouched).
+    /// </summary>
+    private static PayrollSlipResult ApplyTaxableAdjustments(PayrollSlipResult result, EmployeeAdjustments adjustments)
+    {
+        if (adjustments.IsEmpty) return result;
+
+        var taxable = adjustments.Adjustments
+            .Where(a => a.AdjustmentType == AdjustmentType.Bonus && a.IsTaxable)
+            .ToList();
+        if (taxable.Count == 0) return result;
+
+        var lines = result.Lines.ToList();
+        foreach (var a in taxable)
+            lines.Add(new PayrollSlipLine(AdjustmentComponentId, AdjustmentLabel(a), SalaryComponentType.Earning, false, Round(a.Amount), "adjustment"));
+
+        return RollUp(result, lines);
+    }
+
+    /// <summary>
+    /// US-PAY-007 (post-statutory pass): adds the adjustment lines that must NOT inflate the tax base —
+    /// reimbursements (earning, non-taxable by default BR-4), non-taxable bonuses (earning), deductions
+    /// (subtract, BR-3), and corrections (arrears earning referencing the original slip, BR-5/FR-7). Returns
+    /// the result unchanged when the employee has none of these.
+    /// </summary>
+    private static PayrollSlipResult ApplyNonTaxableAdjustments(PayrollSlipResult result, EmployeeAdjustments adjustments)
+    {
+        if (adjustments.IsEmpty) return result;
+
+        var rest = adjustments.Adjustments
+            .Where(a => !(a.AdjustmentType == AdjustmentType.Bonus && a.IsTaxable))
+            .ToList();
+        if (rest.Count == 0) return result;
+
+        var lines = result.Lines.ToList();
+        foreach (var a in rest)
+        {
+            switch (a.AdjustmentType)
+            {
+                case AdjustmentType.Bonus:        // non-taxable bonus → earning, outside the tax base.
+                case AdjustmentType.Reimbursement: // BR-4: reimbursement is a (non-taxable) earning.
+                    lines.Add(new PayrollSlipLine(AdjustmentComponentId, AdjustmentLabel(a), SalaryComponentType.Reimbursement, false, Round(a.Amount), "adjustment"));
+                    break;
+                case AdjustmentType.Deduction:    // BR-3: subtracted from net.
+                    lines.Add(new PayrollSlipLine(AdjustmentComponentId, AdjustmentLabel(a), SalaryComponentType.Deduction, false, Round(a.Amount), "adjustment"));
+                    break;
+                case AdjustmentType.Correction:   // BR-5/FR-7: arrears line referencing the original slip.
+                    var label = $"Arrears: {a.Description}" + (a.ReferencePayrollSlipId is { } slipId ? $" (ref {slipId})" : "");
+                    lines.Add(new PayrollSlipLine(AdjustmentComponentId, label, SalaryComponentType.Reimbursement, false, Round(a.Amount), "arrears"));
+                    break;
+            }
+        }
+
+        return RollUp(result, lines);
+    }
+
+    /// <summary>Re-rolls gross/deductions/net from a line set after adjustment lines were added (US-PAY-007).</summary>
+    private static PayrollSlipResult RollUp(PayrollSlipResult result, List<PayrollSlipLine> lines)
+    {
+        decimal gross = 0m, deductions = 0m, statutory = 0m;
+        foreach (var l in lines)
+        {
+            switch (l.Type)
+            {
+                case SalaryComponentType.Earning:
+                case SalaryComponentType.Reimbursement:
+                    gross += l.Amount;
+                    break;
+                case SalaryComponentType.Deduction:
+                    deductions += l.Amount;
+                    break;
+                case SalaryComponentType.Statutory:
+                    deductions += l.Amount;
+                    statutory += l.Amount;
+                    break;
+            }
+        }
+
+        gross = Round(gross);
+        deductions = Round(deductions);
+        return result with
+        {
+            GrossEarnings = gross,
+            TotalDeductions = deductions,
+            NetSalary = Round(gross - deductions),
+            StatutoryTotal = Round(statutory),
+            Lines = lines,
+        };
+    }
+
+    private static string AdjustmentLabel(ResolvedAdjustment a) => a.AdjustmentType switch
+    {
+        AdjustmentType.Bonus => $"Bonus: {a.Description}",
+        AdjustmentType.Reimbursement => $"Reimbursement: {a.Description}",
+        AdjustmentType.Deduction => $"Deduction: {a.Description}",
+        AdjustmentType.Correction => $"Arrears: {a.Description}",
+        _ => a.Description,
+    };
 
     /// <summary>Maps an employee's resolved salary-component rows to the engine's component inputs (FR-5a).</summary>
     private static List<PayrollComponentInput> BuildComponentInputs(

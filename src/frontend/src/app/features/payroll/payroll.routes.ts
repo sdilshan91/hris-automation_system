@@ -52,6 +52,15 @@ export const PAYROLL_ROUTES: Routes = [
       ).then((m) => m.PayrollRunDetailComponent),
   },
   {
+    // US-PAY-007 (§8): payroll adjustments — Notion table with filters + tabs,
+    // "New Adjustment" slide-over, bulk CSV upload, cancel pending.
+    path: 'adjustments',
+    loadComponent: () =>
+      import(
+        './components/payroll-adjustments/payroll-adjustments.component'
+      ).then((m) => m.PayrollAdjustmentsComponent),
+  },
+  {
     // US-PAY-006 (§8): statutory configuration — tax slabs, PF, other deductions,
     // fiscal-year versioning, test-calc panel + version history.
     path: 'statutory',

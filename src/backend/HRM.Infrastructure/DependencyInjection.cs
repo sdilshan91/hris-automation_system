@@ -209,6 +209,14 @@ public static class DependencyInjection
         services.AddScoped<IStatutoryRuleService, StatutoryRuleService>();
         services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
 
+        // US-PAY-007: Payroll — adjustments (bonus/deduction/reimbursement/correction). CRUD + bulk CSV +
+        // supporting-document upload live in the service; the run-engine integration is the adjustment resolver
+        // (FR-3 pickup + FR-4 mark-Applied), wired ADDITIVELY into PayrollRunProcessor exactly like the
+        // statutory resolver — when no adjustments exist it is a no-op and existing US-PAY-003/006 runs are
+        // unchanged. Documents reuse the existing IFileStorage abstraction.
+        services.AddScoped<IPayrollAdjustmentService, PayrollAdjustmentService>();
+        services.AddScoped<IPayrollAdjustmentResolver, PayrollAdjustmentResolver>();
+
         // US-PAY-005: Payroll — employee self-service payslip read (list / detail / PDF download). Resolves the
         // caller's employee_id from ICurrentUser and scopes every read to it (own employee + own tenant); only
         // Finalized-run slips are visible (BR-1); a cross-employee payslip id is a deliberate 403 (AC-4).

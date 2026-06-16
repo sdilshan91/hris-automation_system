@@ -80,6 +80,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<PayrollSlip> PayrollSlips => Set<PayrollSlip>();
     public DbSet<PayrollSlipDetail> PayrollSlipDetails => Set<PayrollSlipDetail>();
     public DbSet<StatutoryRule> StatutoryRules => Set<StatutoryRule>();
+    public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
     public DbSet<SocialSecurityRule> SocialSecurityRules => Set<SocialSecurityRule>();
 
@@ -315,6 +316,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PAY-006: SocialSecurityRule tenant isolation + soft-delete filter (AC-4).
         modelBuilder.Entity<SocialSecurityRule>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-007: PayrollAdjustment tenant isolation + soft-delete filter (AC-5/FR-8 cross-tenant isolation).
+        modelBuilder.Entity<PayrollAdjustment>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

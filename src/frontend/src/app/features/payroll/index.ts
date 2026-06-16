@@ -35,3 +35,10 @@ export * from './models/statutory.models';
 export * from './services/statutory.service';
 export { validateSlabs } from './services/slab-validation';
 export { StatutoryConfigurationComponent } from './components/statutory-configuration/statutory-configuration.component';
+
+/** US-PAY-007: Payroll adjustments (bonus / deduction / reimbursement / correction). */
+export * from './models/adjustment.models';
+export * from './services/adjustment.service';
+export { PayrollAdjustmentsComponent } from './components/payroll-adjustments/payroll-adjustments.component';
+export { AdjustmentFormComponent } from './components/adjustment-form/adjustment-form.component';
+export { AdjustmentBulkUploadComponent } from './components/adjustment-bulk-upload/adjustment-bulk-upload.component';
