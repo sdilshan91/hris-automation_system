@@ -511,3 +511,67 @@ Projecting through a **required navigation that has its own query filter** (`e.D
 the raw FK ids and resolving department/job-title NAMES via separate tenant-scoped lookups. Also:
 captured `HashSet`/`IReadOnlySet.Contains` is not translated by InMemory — use `List.Contains` in
 EF `Where` predicates.
+
+## US-PRF-010 — Performance-based recommendations (promotion/bonus/increment) (FE-only so far; backend pending)
+
+FINAL Performance story. HR-led, SENSITIVE compensation data (NFR-3/NFR-5). EXTENDS the
+`/performance` area (HR/manager-gated). Added THREE child routes to `performance.routes.ts`:
+`/performance/recommendations` (the HR workspace), `/performance/recommendations/summary`
+(AC-4 aggregate; STATIC `summary` declared BEFORE `recommendations` so it matches first —
+the workspace links to it relatively), and `/performance/team-recommendations` (AC-5 manager
+view, DISTINCT from the HR workspace). Files: `models/recommendation.models.ts`,
+`services/recommendation.service.ts`, `components/recommendation-workspace/`,
+`components/team-recommendations/`, `components/recommendation-summary/`.
+
+Key FE decisions:
+- **No chart lib** (still none) → AC-4 increment/promotion distribution by department is
+  pure CSS bars (`deptBarPercent` helper); the budget tracker (FR-8) is a CSS progress bar.
+- **Auto-gen rule engine is a PURE model fn** (`matchAutoRule` / `buildAutoPreview`): the
+  wizard PREVIEW (BR-3) is computed client-side from the current page rows so what HR sees
+  equals what the backend will apply; strongest-threshold-wins. `apply` re-POSTs with
+  `preview=false` to persist. Unit-tested without HTTP.
+- **Override justification gate (FR-3)** is the pure `isOverrideJustified`: type None never
+  needs a justification (clearing); any non-None recommendation requires a non-blank one.
+  The drawer's `canSaveEdit()`/`justificationRequired()` are **methods, not computeds** — they
+  read `form.*` plain-object props (not signals), so a computed would cache against empty deps
+  (same reasoning as US-PRF-004's `canSave()`).
+- **Budget thresholds (FR-8/BR-4)** are pure: `budgetHealth` green <80% / amber 80–100% /
+  red >100% (Exceeded is a SOFT warning, never a hard block — `BUDGET_EXCEEDED_MESSAGE`). The
+  bar width clamps at 100% even when consumed exceeds allocated.
+- **Comparison cards (FR-5)** are the current-vs-recommended layout in the edit drawer.
+- **Manager scope (AC-5)** is enforced server-side; the FE's TeamRecommendationsComponent only
+  knows the `/team` endpoint (no workspace/edit/submit surface) — read-only direct reports.
+- **Compensation visibility (§10)** is server-controlled: nullable comp fields render "—"; the
+  workspace carries `compensationVisible`. **Export (FR-6)** wired only for
+  `availableExportFormats` the backend reports (blob-download + Content-Disposition filename).
+- **Access (NFR-5)** is the parent /performance role guard + server authz; no general employee
+  access (no `/my-review` self-service route was added — recommendations are HR/manager-only).
+
+### ASSUMED backend contract (backend agent must build/reconcile) — US-PRF-010
+`apiBaseUrl` includes `/api/v1`. All under `/performance/recommendations`. Tenant + acting
+user resolved server-side; `Performance.Publish.All` (HR org-wide workspace) /
+`Performance.Read.Team` (manager direct reports only — AC-5) + RLS (NFR-2). Bare payloads
+(US-PLT-001), PascalCase enum strings (US-PLT-003). Compensation encrypted at rest (NFR-3).
+- `GET  /performance/recommendations/cycles/completed` → `ICompletedCycleOption[]` (BR-1; `{data}` ok)
+- `GET  /performance/recommendations/workspace?cycleId&type&status&search&departmentId&sort&dir&page&pageSize`
+  → `IRecommendationWorkspace` { cycleId, cycleName, page{ rows[ `IRecommendationRow` ], totalCount,
+  page, pageSize }, budget `IBudgetTracker`, compensationVisible, availableExportFormats[] } (AC-1, paginated)
+- `POST /performance/recommendations/auto-generate?preview=true|false` body `IAutoGenerateRequest`
+  {cycleId, rules[ `IAutoGenerateRule` {minScore,type,amount?,percentage?} ], skipManualOverrides}
+  → `IAutoGeneratePreview` {applied, rows[], affectedCount} (AC-2/FR-2/BR-3 preview-then-apply)
+- `PUT  /performance/recommendations/{id}` body `IUpdateRecommendationRequest` → `IRecommendationRow`
+  (§8 inline edit / FR-3 — server re-validates mandatory justification, 400 without it)
+- `POST /performance/recommendations/{id}/submit` body {comment?} → `IRecommendationRow` (AC-3 → workflow)
+- `POST /performance/recommendations/{id}/decision` body {decision:'Approve'|'Reject',comment?} → row
+- `GET  /performance/recommendations/budget?cycleId` → `IBudgetTracker` {enabled,currency,allocated,consumed}
+- `GET  /performance/recommendations/summary?cycleId` → `IRecommendationSummary` (AC-4/FR-6: totals,
+  bonusPoolAllocated, byDepartment[ `IDepartmentRecommendationStat` ], comparison[ `ICycleComparisonStat` ])
+- `GET  /performance/recommendations/team?cycleId` → `IRecommendationRow[]` (AC-5 direct reports; `{data}` ok)
+- `GET  /performance/recommendations/export?format=Excel|Pdf&cycleId` → HttpResponse<Blob> (FR-6)
+
+Enums: `RecommendationType = None|Promotion|Bonus|Increment|TrainingNomination|LateralMove|PipReferral`;
+`RecommendationStatus = Draft|Submitted|PendingApproval|Approved|Rejected`. Thin single-file service so
+a route mismatch is a one-file fix in `RecommendationService`. **Most speculative parts**: the
+workspace filter/sort param names, the auto-generate `preview` flag vs a separate preview endpoint,
+and the summary `comparison` shape (FR-7 cross-cycle history). Downstream Core HR/Payroll/Training
+integration on approval (BR-6) + the approval workflow engine (FR-4) are BACKEND concerns — no FE work.
