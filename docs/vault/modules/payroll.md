@@ -619,3 +619,159 @@ New status wire values: **`AwaitingApproval`**, **`Rejected`** (plus existing `A
   (US-PAY-005 reads + US-PAY-003 reprocess guard both already gate on Finalized). No new lock column.
 - Finalize writes no history row (not in the §7 action enum; `FinalizedAt` is the audit signal) — kept
   the wire action set aligned to the data spec rather than inventing a "Finalized" action value.
+
+## Payroll reports + analytics (US-PAY-009)
+
+Pure READ/aggregation over the existing `payroll_slip` / `payroll_slip_detail` / `payroll_adjustment`
+data from **FINALIZED runs only** (BR-1). **No new entity, no migration** — every figure computed
+on-the-fly from persisted slips (the §7 pre-aggregated materialized table is a documented perf
+follow-up). Tenant-scoped purely via the **EF global query filter** (AC-5/FR-8) — slips/details/runs/
+employees are all BaseEntity, so a cross-tenant row is invisible; no extra WHERE.
+
+### REUSED export infra (no duplicate added)
+The leave module (US-LV-012) already built the export plumbing — REUSED, not re-derived:
+`IReportExportStorage`/`LocalReportExportStorage` (the tenant-scoped temp-file seam, NO 24h TTL purge
+exists → NFR-4 auto-delete noted as a follow-up), **ClosedXML** for `.xlsx`, **CsvHelper** for CSV.
+PDF reuses the US-PAY-004 **QuestPDF** setup (`LicenseType.Community`, A4). All three render paths live
+in ONE pure function `PayrollReportRenderer.Render(format, PayrollReportResult)` (Infrastructure/Services)
+— no DB/tenant/FS, so unit-testable (`%PDF` header / header-row asserts). Reports are SYNCHRONOUS;
+async-large via Hangfire (FR-4) is deferred.
+
+### Permission (reconciled with the catalog — `Payroll.Export` already existed)
+ALL report endpoints gate on **`Payroll.Export` = "Payroll.Export"** (already in `PermissionCatalog`,
+granted to Tenant Admin + HR Officer — the report consumers). No `Reports.*` cross-module permission and
+no new permission invented.
+
+### Reports BUILT (7 of 8) + the YET (FR-1) report-type identifiers (the `{reportType}` path value)
+`PayrollSummary` (FR-1a, dept breakdown + grand-total row: Department, Employee Count, Total Basic,
+Total Allowances, Total Gross, Total Statutory, Total Other Deductions, Total Net), `DepartmentSummary`
+(FR-1c — same builder as PayrollSummary), `EmployeeRegister` (FR-1b, one row/employee, one col per
+distinct component name + Gross/Deductions/Net), `StatutoryDeduction` (FR-1d, one row per statutory
+component), `BankAdvice` (FR-1e/AC-2), `Ctc` (FR-1h, current EARNING-side `employee_salary_component`
+annual sum — only EARNING counts, mirrors US-PAY-002 CTC rule), `Variance` (FR-1g/BR-4).
+**`YearEndTaxStatement` (FR-1f) is a documented STUB** — returns an empty result + deferral note; the
+per-employee PDF + bulk-ZIP + 5,000-scale (AC-3/FR-7/NFR-2) is the deferred follow-up.
+
+### Component split (slip details have a denormalized `ComponentType` string, NOT the enum)
+Statutory = `ComponentType == "Statutory"`; Deduction = `"Deduction"`; both are deduction-side. Basic is
+matched by component NAME ("Basic"/"Basic Salary") or a BASIC mention in `CalculationBasis` (there is no
+BASIC marker on the detail row); everything else earning-side = "allowances".
+
+### Bank advice (FR-1e/AC-2/BR-2) — the EMPLOYEE-BANK-FIELDS GAP
+**The Employee entity has NO bank columns** (no bank_name / branch_code / account_number). So Bank Name /
+Branch Code / Account Number are emitted EMPTY; Net Amount + Narration ("Salary {Month} {Year}") are
+fully derived from the slip. Every result carries a `Note` documenting the gap +
+`TODO(US-PAY-009 bank-fields)` to add encrypted bank columns. **BR-2 masking IS implemented + tested**:
+`PayrollReportService.MaskAccount` (last-4 only) is applied on the preview path and bypassed on the
+export path — the wiring is correct for when the columns land (preview masked, file full).
+
+### Variance (FR-1g/BR-4)
+Month-over-month NET per employee vs the previous calendar month (Jan rolls to Dec/prev-year). Flagged
+when |change%| > 10% OR the employee newly appears/drops. Sorted flagged-first then biggest abs change.
+
+### Analytics chart-type identifiers (FR-5, chart-lib-agnostic JSON)
+`MonthlyTrend` (multi-series Gross/Deductions/Net over last 12 finalized months, shared `categories`
+"YYYY-MM"), `DepartmentCostDistribution` (single-series net per dept for the period),
+`StatutoryBreakdown` (single-series total per statutory component for the period).
+
+### FE CONTRACT (pin — base `api/v1/payroll`, ApiResponse<T> envelope, `Payroll.Export` gate)
+- `GET reports` → `PayrollReportDescriptorDto[]` ({ id, name, description, deferred }) — the sidebar list.
+- `GET reports/{reportType}?payMonth=&payYear=&departmentId=&jobTitleId=&employmentType=&employeeSearch=`
+  → `PayrollReportResult` ({ reportType, title, payMonth, payYear, columns[], rows[{cells[]}], totalRow?,
+  totalCount, note? }). Period defaults to the MOST RECENT finalized run when month/year omitted; no
+  finalized run → 404. BankAdvice here is MASKED.
+- `GET analytics/{chartType}?...` → `PayrollAnalyticsResult` ({ chartType, points[{label,value}],
+  categories[], series[{name, points[]}] }).
+- `GET reports/bank-advice/preview?...` → `BankAdvicePreviewDto` ({ payMonth, payYear,
+  lines[{employeeNo, employeeName, bankName, branchCode, accountNumber, netAmount, narration}],
+  employeeCount, totalNetAmount, note }) — accountNumber MASKED (BR-2).
+- `GET reports/{reportType}/export?format=csv|xlsx|pdf&...` → streamed file (FR-2/AC-4). BankAdvice export
+  carries FULL account numbers. Export-format wire values: **`csv` / `xlsx` / `pdf`** (case-insensitive).
+
+### Deferred (noted per brief; NOT built)
+- Year-end tax statements (FR-1f/AC-3/FR-7): per-employee PDF + bulk ZIP + 5,000-scale — stub only.
+- Async-large report generation via Hangfire (FR-4) — reports are synchronous.
+- Pre-aggregated materialized dashboard table (§7) — compute on-the-fly.
+- Read-replica / Redis caching (NFR-3); tenant-configurable bank formats (FR-6 — generic CSV/Excel/PDF);
+  country-specific statutory formatting (BR-6); fiscal-year-start-month config (BR-5 — calendar/Jan assumed).
+- NFR-4 export-file 24h auto-delete — `IReportExportStorage` has no TTL purge (shared leave-module gap).
+
+## Payroll reports & analytics (US-PAY-009) — FRONTEND
+
+Adds TWO child routes under the existing `payroll` lazy route (already
+`roleGuard(['Tenant Admin','HR Officer'])` + `Payroll.View`): `reports`
+(`PayrollReportsComponent`) and `analytics` (`PayrollAnalyticsComponent`). New
+sidebar nav item **"Payroll Reports"** → `/payroll/reports`, gated on `Payroll.View`
+(same capability as the Payroll parent). Reports page links across to analytics.
+
+### NO charting library — pure SVG/CSS (REUSED the US-ATT-010 approach)
+The attendance dashboard (US-ATT-010) draws charts with pure SVG/CSS via the
+`buildDonutSegments` helper — there is NO chart.js / ngx-charts / swimlane dep in
+`package.json`. US-PAY-009 follows the SAME approach (do NOT add a charting lib):
+- Trend LINE chart = an SVG `<polyline>` per series (gross/deductions/net) from pure
+  `polylinePoints`/`lineX`/`lineY`/`trendMax` helpers in `payroll-report.models.ts`
+  (unit-tested), mirroring the attendance trends chart's `pointX`/`pointY`.
+- Department cost distribution = horizontal CSS bars (width %), sorted desc (§8).
+- Statutory breakdown = CSS flex-col-reverse stacked bars (segment height = frac of
+  month total). Distinct component legend derived first-seen across months.
+
+### Frontend contract — NEW service `PayrollReportService` (payroll/services)
+Sibling to PayslipService; route strings live ONLY here. Base
+`${apiBaseUrl}/payroll/reports`. Bare payloads (US-PLT-001), PascalCase report-type
+ids (US-PLT-003). withCredentials. **ASSUMED REST contract — BE built in parallel and
+had NOT pinned report routes in this vault (no reports controller existed when the FE
+was written; only `LeaveReportsController` exists). Reconcile in this one file if BE
+differs:**
+- `GET  /payroll/reports/types` → `IReportTypeMeta[]` (tolerates `{data}`). The FE
+  ALSO ships a static `REPORT_TYPES` list it uses for the sidebar (the `/types`
+  method exists for parity but the page renders the static list).
+- `GET  /payroll/reports/:reportType?period=YYYY-MM&department=` → `IReportResult`
+  ({ summary[] stat cards, columns[], rows[], chart? bar series }). Generic
+  column/row shape so the FE need not hardcode each report's columns.
+- `GET  /payroll/reports/:reportType/export?format=csv|xlsx|pdf&period=&department=`
+  → blob (`responseType:'blob'`+`observe:'response'`, bypasses envelope; anchor-click
+  download via local `downloadBlob`/`filenameFromDisposition`, same as payslip-list).
+- `GET  /payroll/reports/dashboard` → `IDashboardAnalytics` ({ trend[], departmentCosts[],
+  statutory[] }), pre-aggregated (NFR-6).
+- `GET  /payroll/reports/bank-advice?period=&department=` → `IBankAdvicePreview` with
+  account numbers ALREADY MASKED by the BE (`accountNumberMasked`, last-4 only, BR-2).
+- `GET  /payroll/reports/bank-advice/download?period=&format=csv|xlsx` → FULL file blob
+  (un-masked, BR-2/AC-2).
+
+### Report-type ids (`PayrollReportType`, payroll-report.models.ts)
+PascalCase union = `PayrollSummary | EmployeeRegister | DepartmentSummary |
+StatutoryDeduction | BankAdvice | Ctc | Variance` (== the `:reportType` path segment).
+Export format = lowercase `csv | xlsx | pdf`. `defaultReportPeriod()` = PREVIOUS month
+(payroll runs in arrears, same as the run-create default).
+
+### UI decisions (US-PAY-009, §8)
+- Reports page = Notion two-pane: LEFT sidebar of report types (renders the static
+  `REPORT_TYPES` list, role="tablist"); RIGHT a filter panel (period `<input type=month>`
+  + department `<select>` reusing **Core HR `DepartmentService.getDepartments`**,
+  cross-feature import `../../../core-hr/departments/...`) + preview. Selecting a report
+  CLEARS the stale preview (user re-generates). Generic reports → stat cards + optional
+  bar chart + data table; Bank Advice swaps to the masked table + "Download Full File"
+  button (no Export menu shown for bank advice). Export = toolbar dropdown (CSV/Excel/PDF).
+- Mobile (§8): charts + export/download stay available; the detailed data table is
+  `hidden md:block` with a "best viewed on a larger screen" note replacing it. Bank
+  advice mobile shows a compact masked-account card list (so AC-2 masking still visible).
+- Analytics page = card-based grid (trend full-width, dept + statutory side-by-side);
+  charts collapse to one column on mobile; loads on init, error → empty card + toast.
+- NOT a slide-over (these are read/preview surfaces, not CRUD lists).
+
+### Specs (47 new) — full FE suite 2276 green
+`payroll-report.models.spec` (helpers), `payroll-report.service.spec` (all routes +
+envelope + blob/format params), `payroll-analytics.component.spec`,
+`payroll-reports.component.spec`. Export/download specs stub `HTMLAnchorElement.prototype.click`.
+Both component specs need `provideRouter([])` (RouterLink in templates) + a
+PayrollReportService spy + a ToastrService spy; the reports spec also needs a
+DepartmentService spy.
+
+### Deferred (noted per the story; NOT built on the FE)
+- Year-End Tax Statements (AC-3/FR-7, bulk-ZIP PDF) + async large-report generation
+  (FR-4: "we'll notify you" progress) — these are async Hangfire/notification flows;
+  the 7 synchronous report types + the bank advice + the dashboard are the FE scope.
+  The sidebar omits a "Year-End Tax Statements" entry until the async/notify surface lands.
+- Per-tenant bank-advice column/format config (FR-6) and fiscal-year-start config
+  (BR-5) are backend concerns; the FE passes `period`/`department` and renders whatever
+  the BE returns.

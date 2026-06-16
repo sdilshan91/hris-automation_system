@@ -47,3 +47,9 @@ export { AdjustmentBulkUploadComponent } from './components/adjustment-bulk-uplo
 export * from './models/approval.models';
 export * from './services/payroll-approval.service';
 export { PendingApprovalsComponent } from './components/pending-approvals/pending-approvals.component';
+
+/** US-PAY-009: Payroll reports & analytics (reports page + analytics dashboard). */
+export * from './models/payroll-report.models';
+export * from './services/payroll-report.service';
+export { PayrollReportsComponent } from './components/payroll-reports/payroll-reports.component';
+export { PayrollAnalyticsComponent } from './components/payroll-analytics/payroll-analytics.component';

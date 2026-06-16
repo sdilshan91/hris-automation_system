@@ -692,6 +692,15 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      // US-PAY-009 (§8): payroll reports + analytics. Gated on Payroll.View (same
+      // capability as the Payroll parent — HR Officer / Tenant Admin); the reports
+      // page links across to the analytics dashboard.
+      label: 'Payroll Reports',
+      route: '/payroll/reports',
+      permission: 'Payroll.View',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M15.5 2A1.5 1.5 0 0 1 17 3.5v13A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-13A1.5 1.5 0 0 1 4.5 2h11ZM6 13.25a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-1.5 0v-.5a.75.75 0 0 1 .75-.75Zm3-3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0V11a.75.75 0 0 1 .75-.75Zm3-2a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75ZM6.75 5.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z"/></svg>`,
+    },
+    {
       label: 'My Payslips',
       route: '/my-payslips',
       // Story names Payroll.Read.Self, but that string isn't in the permission
