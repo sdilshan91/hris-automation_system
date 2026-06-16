@@ -20,4 +20,13 @@ export const MY_REVIEW_ROUTES: Routes = [
         (m) => m.MyReviewComponent,
       ),
   },
+  {
+    // US-PRF-006 AC-3/AC-4/FR-4: employee reviews meeting notes then acknowledges &
+    // signs or disputes. Same employee self-service guard as the parent /my-review.
+    path: 'sign-off/:reviewId',
+    loadComponent: () =>
+      import(
+        './components/review-signoff-employee/review-signoff-employee.component'
+      ).then((m) => m.ReviewSignoffEmployeeComponent),
+  },
 ];

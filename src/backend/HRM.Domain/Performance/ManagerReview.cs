@@ -3,6 +3,7 @@ using HRM.Domain.Enums;
 
 namespace HRM.Domain.Performance;
 
+
 /// <summary>
 /// A manager's performance review of one employee for one appraisal cycle (US-PRF-003). Exactly one per
 /// employee per cycle (enforced by a tenant-scoped unique index). Holds the overall status, the weighted
@@ -56,6 +57,30 @@ public sealed class ManagerReview : BaseEntity
     /// <summary>UTC submission timestamp (AC-2). Null until submitted.</summary>
     public DateTime? SubmittedAt { get; set; }
 
+    // ── Meeting-notes & sign-off workflow (US-PRF-006) ──────────────────
+
+    /// <summary>
+    /// Sign-off lifecycle (US-PRF-006). Starts at <see cref="ReviewSignoffStatus.NotStarted"/> and only
+    /// advances once the review is <see cref="ManagerReviewStatus.Submitted"/> (BR-1). The meeting-notes +
+    /// digital-sign-off workflow is intentionally separate from the rating <see cref="Status"/>.
+    /// </summary>
+    public ReviewSignoffStatus SignoffStatus { get; set; } = ReviewSignoffStatus.NotStarted;
+
+    /// <summary>
+    /// UTC timestamp employee sign-off was requested (AC-2). Drives the BR-3 auto-close clock — a review still
+    /// <see cref="ReviewSignoffStatus.PendingEmployeeSignOff"/> this many days later is auto-closed.
+    /// </summary>
+    public DateTime? SignoffRequestedAt { get; set; }
+
+    /// <summary>UTC timestamp the review reached a terminal sign-off state (SignedOff / NoResponse). Null otherwise.</summary>
+    public DateTime? SignoffCompletedAt { get; set; }
+
+    /// <summary>
+    /// True once the review is locked against edits (BR-5) — set when the employee signs off
+    /// (<see cref="ReviewSignoffStatus.SignedOff"/>). A locked review's notes and sign-off cannot be changed.
+    /// </summary>
+    public bool IsLocked { get; set; }
+
     /// <summary>
     /// Optimistic concurrency token (NFR-3 — prevents lost updates if HR and the manager edit at once).
     /// Maps to the PostgreSQL xmin system column via the Npgsql row-version convention (no schema DDL);
@@ -67,4 +92,10 @@ public sealed class ManagerReview : BaseEntity
     public AppraisalCycle? Cycle { get; set; }
     public Employee? Employee { get; set; }
     public List<ManagerReviewItem> Items { get; set; } = [];
+
+    /// <summary>The meeting notes for this review (US-PRF-006), at most one.</summary>
+    public ReviewMeetingNotes? MeetingNotes { get; set; }
+
+    /// <summary>The immutable, append-only sign-off log (US-PRF-006 NFR-3/BR-5).</summary>
+    public List<ReviewSignoff> Signoffs { get; set; } = [];
 }

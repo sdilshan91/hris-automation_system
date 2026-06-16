@@ -51,6 +51,10 @@ public sealed class AppraisalCycleConfiguration : IEntityTypeConfiguration<Appra
         builder.Property(c => c.RatingScaleMax).HasDefaultValue(5).IsRequired();
         builder.Property(c => c.SelfWeightPercent).HasDefaultValue(30).IsRequired();
 
+        // US-PRF-006: sign-off config (BR-3 auto-close window + tenant meeting-notes template, §10).
+        builder.Property(c => c.SignoffAutoCloseDays).HasDefaultValue(7).IsRequired();
+        builder.Property(c => c.MeetingNotesTemplate);
+
         // US-PRF-004 feature toggles (FR-6).
         builder.Property(c => c.Is360Enabled).HasDefaultValue(false).IsRequired();
         builder.Property(c => c.IsCalibrationEnabled).HasDefaultValue(false).IsRequired();

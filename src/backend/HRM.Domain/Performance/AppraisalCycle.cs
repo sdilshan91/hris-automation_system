@@ -68,6 +68,21 @@ public sealed class AppraisalCycle : BaseEntity
     /// <summary>Self-rating weight in the self-vs-manager blend (US-PRF-002 BR-4), 0-100. Manager weight is 100-this. Default 30.</summary>
     public int SelfWeightPercent { get; set; } = 30;
 
+    // ── Sign-off config (US-PRF-006) ───────────────────────────────────
+
+    /// <summary>
+    /// Tenant-configurable number of days an employee has to sign off a review before it auto-closes with
+    /// <c>NoResponse</c> status (US-PRF-006 BR-3, §10). Default 7.
+    /// </summary>
+    public int SignoffAutoCloseDays { get; set; } = 7;
+
+    /// <summary>
+    /// Tenant-configurable default meeting-notes template (US-PRF-006 FR-1, §10 — HR-configured at the tenant
+    /// level). Sanitized HTML pre-populated into the editor when notes are first created. Null ⇒ a built-in
+    /// default template is used. Deliberately MINIMAL: a single override field, not a template-editor subsystem.
+    /// </summary>
+    public string? MeetingNotesTemplate { get; set; }
+
     // ── Feature toggles (US-PRF-004 FR-6) ──────────────────────────────
 
     /// <summary>Whether 360-degree (peer) feedback is enabled for this cycle (FR-6).</summary>

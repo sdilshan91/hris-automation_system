@@ -127,11 +127,20 @@ interface IManagerGoalFormValue {
             data-testid="locked-banner"
           >
             <span aria-hidden="true">✓</span>
-            <div>
+            <div class="min-w-0">
               <p class="font-medium">Manager review submitted</p>
               <p class="mt-0.5 text-emerald-700/80">
                 This review is locked. Editing is only possible if HR reopens it.
               </p>
+              <!-- US-PRF-006 AC-1: proceed to meeting notes + sign-off. -->
+              <a
+                [routerLink]="['/performance/reviews', r.employeeId, 'signoff']"
+                [queryParams]="{ reviewId: r.id }"
+                class="mt-2 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700"
+                data-testid="add-meeting-notes-link"
+              >
+                Add Meeting Notes
+              </a>
             </div>
           </div>
         } @else if (!r.windowOpen) {

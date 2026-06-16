@@ -156,6 +156,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessAbsenteeismJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.AutoClockOutJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.SelfAssessmentReminderJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ReviewSignoffAutoCloseJob>();
 
     // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
     // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
@@ -376,6 +377,14 @@ try
             "performance-360-reviewer-reminders",
             job => job.RunAsync(),
             "0 8 * * *"); // 08:00 UTC daily
+
+        // US-PRF-006 BR-3: daily auto-close of reviews the employee never signed within the cycle's
+        // tenant-configurable window (default 7 days) → No Response + HR notified. Idempotent + tenant-safe;
+        // dispatches via the same log-only performance notification seam until US-NTF.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ReviewSignoffAutoCloseJob>(
+            "performance-review-signoff-auto-close",
+            job => job.RunAsync(),
+            "0 9 * * *"); // 09:00 UTC daily
     }
 
     app.Run();

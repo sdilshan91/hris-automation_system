@@ -36,6 +36,17 @@ export const PERFORMANCE_ROUTES: Routes = [
       ),
   },
   {
+    // US-PRF-006 AC-1/AC-2/AC-4: manager meeting-notes + request employee sign-off.
+    // STATIC 'signoff' segment under reviews/:employeeId; the active reviewId flows
+    // in as a ?reviewId query param. Declared BEFORE 'reviews/:employeeId' so the
+    // static segment is matched first.
+    path: 'reviews/:employeeId/signoff',
+    loadComponent: () =>
+      import('./components/review-signoff/review-signoff.component').then(
+        (m) => m.ReviewSignoffComponent,
+      ),
+  },
+  {
     // US-PRF-003 AC-1/AC-2/AC-3/AC-5: per-employee manager review.
     path: 'reviews/:employeeId',
     loadComponent: () =>

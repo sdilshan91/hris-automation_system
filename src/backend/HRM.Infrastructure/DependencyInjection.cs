@@ -298,6 +298,15 @@ public static class DependencyInjection
         // ComputeFinalScore is the single extension point US-PRF-005 (360 feedback, BR-5) will widen.
         services.AddScoped<IManagerReviewService, ManagerReviewService>();
 
+        // US-PRF-006: Performance — review meeting notes + digital sign-off. The notes-only-after-submit gate
+        // (BR-1), HTML sanitization of rich text (FR-1/§10), the manager→employee sign-off order (FR-3), the
+        // IMMUTABLE append-only ReviewSignoff log + locked-review enforcement (NFR-3/BR-5), mandatory dispute
+        // comments + HR resolve (FR-4/FR-5/BR-4) and the client-IP/timestamp audit (FR-7) are enforced in the
+        // service. The auto-close service (BR-3) is driven by the ReviewSignoffAutoCloseJob via the same
+        // performance notification seam. PDF export (FR-6) is a data endpoint + a deliberate seam (no PDF lib).
+        services.AddScoped<IReviewSignoffService, ReviewSignoffService>();
+        services.AddScoped<IReviewSignoffAutoCloseService, ReviewSignoffAutoCloseService>();
+
         // US-PRF-005: Performance — 360-degree feedback. ReviewerAssignmentService handles reviewer
         // nomination/auto-suggest (Self+Manager auto, Peers same-dept, Direct Reports org-tree) + notify;
         // Feedback360Service handles reviewer submission (BR-3 one-per-reviewer-per-cycle, anonymity captured

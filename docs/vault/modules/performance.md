@@ -262,3 +262,72 @@ The US-PRF-001 path mismatch (`/performance` vs `/tenant/performance`, team vs
 team-dashboard, full-replace vs per-goal CRUD — see the table above) can now be
 reconciled once the BACKEND for both stories exists. NOT done in this FE-only US-PRF-004
 pass (no backend to wire against yet); still a single-file change in `PerformanceGoalService`.
+
+## US-PRF-006 — Meeting notes + digital sign-off (manager + employee)
+
+FE-only so far (backend not yet built). Extends BOTH performance areas, keyed by the
+US-PRF-003 manager-review `reviewId`:
+- MANAGER: new child route `/performance/reviews/:employeeId/signoff?reviewId=…`
+  (STATIC `signoff` segment declared BEFORE `reviews/:employeeId` so it matches first).
+  Reached from a new **"Add Meeting Notes"** link in the locked-banner of the
+  manager-review view (US-PRF-003), shown once the manager review is submitted.
+- EMPLOYEE: new child route `/my-review/sign-off/:reviewId` (same employee
+  self-service guard as `/my-review`).
+- Files: `models/review-signoff.models.ts`, `services/review-signoff.service.ts`,
+  `components/review-signoff/` (manager notes editor + request), `components/review-
+  signoff-employee/` (acknowledge/dispute), `components/review-record/`
+  (shared completed-record view: timeline + signatures + export, `[record]` input).
+
+Key FE decisions:
+- **No heavy RTE dep** (per the no-dep RTE convention): meeting notes use a self-
+  contained `contenteditable` + `document.execCommand` editor inside the manager
+  component (NOT the recruitment `RichTextEditorComponent` — kept performance feature
+  self-contained). Notes are stored/echoed as sanitized HTML; rendered via Angular
+  `[innerHTML]` which sanitizes (NFR-4 XSS) — never bypassSecurityTrust.
+- **Template (AC-1)** is a pure helper `buildMeetingNotesTemplate(goals, scaleMax)`:
+  strengths / areas for improvement / agreed actions w/ deadlines / overall summary +
+  a "Goals reviewed" list referencing goal titles + manager ratings. HTML-escapes titles.
+- **Timeline (AC-4)** is a pure helper `buildSignoffTimeline(record)`: uses the server
+  `timeline` if present, else derives Notes Added → Sign-Off Requested → Employee
+  Signed / **Disputed** → Completed from the signatures + status. No chart lib (CSS
+  ordered-list stepper).
+- **Dispute gate (FR-4)**: `canSubmitDispute` requires ≥`DISPUTE_COMMENT_MIN` (10)
+  trimmed chars; submit button disabled until met.
+- **Acknowledge (AC-3)** opens a touch-friendly confirmation modal with the VERBATIM
+  copy `SIGNOFF_CONFIRM_MESSAGE` = "By signing, you acknowledge this review has been
+  discussed." (exported; QA may assert). On confirm the server records the signature.
+- **Export PDF (FR-6)** lives in `review-record`, wired only when
+  `record.exportAvailable` is true; reads Content-Disposition filename off an
+  `HttpResponse<Blob>` (the blob-export-download pattern).
+- **Immutability (NFR-3)** is a BACKEND concern; the FE never edits a recorded
+  signature — once status is SignedOff/Completed/NoResponse the record is read-only.
+- BR-3 auto-close (NoResponse) is a BACKEND/Hangfire concern; the FE only renders the
+  resulting status + badge.
+
+### ASSUMED backend contract (backend agent must build/reconcile) — US-PRF-006
+`apiBaseUrl` includes `/api/v1`. All under `/performance/sign-off`. Tenant + acting
+user resolved server-side; manager/HR (`Performance.Review.Team`/`.All`) for notes +
+request + resolve, review-ownership for acknowledge/dispute, + RLS (NFR-2). Bare
+payloads (US-PLT-001), PascalCase enums (US-PLT-003). Keyed by the US-PRF-003 reviewId.
+- `GET  /performance/sign-off/reviews/{reviewId}` → `IReviewSignoff` (whole record:
+  meetingNotesHtml, status, manager/employee `ISignature`, disputeComments, goal+rating
+  snapshot, optional `timeline`, `exportAvailable`).
+- `PUT  /performance/sign-off/reviews/{reviewId}/notes` body `{meetingNotesHtml}` →
+  `IReviewSignoff` (BR-1: only while `NotesDraft`).
+- `POST /performance/sign-off/reviews/{reviewId}/request` body `{meetingNotesHtml}` →
+  `IReviewSignoff` (AC-2: records manager signature, status→`PendingEmployeeSignOff`).
+- `POST /performance/sign-off/reviews/{reviewId}/acknowledge` (no body) →
+  `IReviewSignoff` (AC-3: records employee signature, status→`SignedOff`).
+- `POST /performance/sign-off/reviews/{reviewId}/dispute` body `{comments}` →
+  `IReviewSignoff` (FR-4/FR-5: status→`Disputed`, notifies manager+HR).
+- `POST /performance/sign-off/reviews/{reviewId}/resolve` body
+  `{resolution: 'Amend'|'Confirm', note?}` → `IReviewSignoff` (BR-4, HR-only).
+- `GET  /performance/sign-off/reviews/{reviewId}/export` (OPTIONAL) → `application/pdf`
+  (HttpResponse<Blob> + Content-Disposition). FR-6.
+
+Enum `SignoffStatus` = `NotesDraft | PendingEmployeeSignOff | SignedOff | Disputed |
+Completed | NoResponse`. Thin single-file service so a route mismatch is a one-file fix.
+**Most speculative parts**: the `/sign-off` base path, the reviewId↔employeeId linkage
+(manager route passes `?reviewId=`; falls back to the employeeId as the lookup id), and
+whether the server returns `timeline` or the FE derives it. AC-2/AC-3 notifications +
+BR-3 auto-close are BACKEND concerns — no FE work.
