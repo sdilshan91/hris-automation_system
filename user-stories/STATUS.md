@@ -123,7 +123,7 @@
 - [x] US-PRF-010 — Performance-based recommendations *(PR #84)*
 
 ## 8. Admin Console (10 stories)
-- [ ] US-ADM-001 — System Admin provisions new tenant
+- [~] US-ADM-001 — System Admin provisions new tenant
 - [ ] US-ADM-002 — Monitor platform health and usage
 - [ ] US-ADM-003 — Impersonate tenant user with audit
 - [ ] US-ADM-004 — Suspend/terminate a tenant

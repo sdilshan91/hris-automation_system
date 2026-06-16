@@ -377,6 +377,16 @@ public static class DependencyInjection
         services.AddScoped<IRecommendationService, RecommendationService>();
         services.AddScoped<IRecommendationIntegrationService, LogOnlyRecommendationIntegrationService>();
 
+        // US-ADM-001: Admin Console — system-admin tenant provisioning. Runs in the system/admin context
+        // (no resolved tenant) and operates across tenants: creates the tenant + owner user/membership +
+        // Tenant Owner role, seeds default master data (built-in roles, Annual/Sick/Casual leave types, a
+        // default shift), writes the lifecycle event + structured audit, and dispatches the welcome email.
+        // Idempotent on subdomain (NFR-2). Tenant isolation for the new tenant is the existing EF global
+        // query filter + TenantInterceptor (no RLS — deferred platform work). The welcome-email send is a
+        // log-only seam (mirrors IPayslipEmailSender; real SMTP deferred, TODO US-NTF).
+        services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
+        services.AddScoped<ITenantWelcomeEmailService, LogOnlyTenantWelcomeEmailService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

@@ -1,0 +1,254 @@
+// ============================================================================
+// US-ADM-001: System Admin provisions new tenant — integration tests.
+//
+// Exercises TenantProvisioningService over a real AppDbContext (InMemory) in the SYSTEM/admin context
+// (no resolved tenant — the service uses IgnoreQueryFilters and stamps TenantId explicitly), covering the
+// cross-cutting behaviour a validator unit test cannot:
+//   - AC-1/AC-4: a happy-path provision writes Tenant + owner User + UserTenant + UserTenantRole(Tenant Owner)
+//                + TenantLifecycleEvent("created") + structured AuditLog("Tenant.Provisioned"), and dispatches
+//                the welcome email exactly once.
+//   - AC-3:      an owner email that already belongs to a global user is LINKED via a new UserTenant row — no
+//                duplicate User is created and the result/email flag OwnerLinked=true.
+//   - BR-3:      plan TrialDays>0 ⇒ status Trial + TrialEndsAt set; TrialDays=0 ⇒ status Active + no trial end.
+//   - NFR-2/BR-2: a second provision with the same subdomain fails (never duplicates).
+//   - plan gate: an inactive plan is rejected.
+//   - §7:        default master data (Annual/Sick/Casual leave types + a default General Shift) is seeded.
+//
+// PROVIDER: InMemory — same rationale as the sibling integration tests (the verify gate runs `dotnet test`
+// with no PostgreSQL / Docker). Real-PG behaviour is validated by the `migrations` CI job.
+// ============================================================================
+
+using FluentAssertions;
+using HRM.Application.Common.Interfaces;
+using HRM.Application.Features.Tenants.DTOs;
+using HRM.Domain.Authorization;
+using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace HRM.Tests.Integration;
+
+public sealed class TenantProvisioningIntegrationTests
+{
+    private readonly string _dbName = Guid.NewGuid().ToString();
+    private readonly Guid _actorUserId = Guid.NewGuid();
+
+    // The provisioning service runs in the system/admin context: no tenant is resolved.
+    private sealed class SystemTenantContext : ITenantContext
+    {
+        public Guid TenantId => Guid.Empty;
+        public string Subdomain => "admin";
+        public TenantStatus Status => TenantStatus.Active;
+        public string? Plan => null;
+        public IReadOnlyCollection<string> EnabledModules => [];
+        public string? LogoUrl => null;
+        public string? PrimaryColor => null;
+        public bool IsSystemContext => true;
+        public bool IsResolved => false;
+        public void SetTenant(Guid tenantId, string subdomain, TenantStatus status,
+            string? plan = null, IReadOnlyCollection<string>? enabledModules = null,
+            string? logoUrl = null, string? primaryColor = null) { }
+        public void SetSystemContext() { }
+    }
+
+    private AppDbContext Db()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        return new AppDbContext(options, new SystemTenantContext());
+    }
+
+    private (TenantProvisioningService Service, ITenantWelcomeEmailService Email) Service()
+    {
+        var email = Substitute.For<ITenantWelcomeEmailService>();
+        var user = Substitute.For<ICurrentUser>();
+        user.UserId.Returns(_actorUserId);
+        user.IsAuthenticated.Returns(true);
+        user.Email.Returns("sysadmin@platform.test");
+
+        var config = new ConfigurationBuilder().Build(); // empty ⇒ service falls back to the default reserved list
+
+        var service = new TenantProvisioningService(
+            Db(), user, email, config, NullLogger<TenantProvisioningService>.Instance);
+        return (service, email);
+    }
+
+    /// <summary>Seeds an active plan and returns its id. TrialDays controls trial-vs-active behaviour (BR-3).</summary>
+    private async Task<Guid> SeedPlanAsync(int trialDays = 14, bool isActive = true, int? maxEmployees = 50)
+    {
+        var plan = new SubscriptionPlan
+        {
+            Id = Guid.NewGuid(),
+            Name = "Professional",
+            Code = $"pro-{Guid.NewGuid():N}".Substring(0, 12),
+            PriceMonthly = 99m,
+            TrialDays = trialDays,
+            MaxEmployees = maxEmployees,
+            IsActive = isActive,
+            CreatedAt = DateTime.UtcNow,
+        };
+        using var db = Db();
+        db.SubscriptionPlans.Add(plan);
+        await db.SaveChangesAsync();
+        return plan.Id;
+    }
+
+    private static ProvisionTenantInput Input(Guid planId, string subdomain = "acme",
+        string ownerEmail = "owner@acme.com", int? trialDays = null)
+        => new("Acme Corp", subdomain, planId, ownerEmail, "us-east", trialDays);
+
+    // ── AC-1 / AC-4: full happy-path provisioning ───────────────────────────
+
+    [Fact]
+    public async Task Provision_NewOwner_CreatesTenantMembershipRoleLifecycleAndAudit()
+    {
+        var planId = await SeedPlanAsync(trialDays: 14);
+        var (service, email) = Service();
+
+        var result = await service.ProvisionAsync(Input(planId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.OwnerLinked.Should().BeFalse();
+        result.Value.Status.Should().Be(nameof(TenantStatus.Trial));
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+        tenant.Status.Should().Be(TenantStatus.Trial);
+        tenant.TrialEndsAt.Should().NotBeNull();
+        tenant.BillingEmail.Should().Be("owner@acme.com"); // BR-4
+
+        var user = await db.Users.IgnoreQueryFilters().SingleAsync(u => u.Email == "owner@acme.com");
+        var membership = await db.UserTenants.IgnoreQueryFilters()
+            .SingleAsync(ut => ut.TenantId == tenant.Id && ut.UserId == user.Id);
+        var ownerRole = await db.Roles.IgnoreQueryFilters()
+            .SingleAsync(r => r.TenantId == tenant.Id && r.Name == PermissionCatalog.BuiltInRoles.TenantOwner);
+        (await db.UserTenantRoles.IgnoreQueryFilters()
+            .AnyAsync(utr => utr.UserTenantId == membership.Id && utr.RoleId == ownerRole.Id))
+            .Should().BeTrue();
+
+        (await db.TenantLifecycleEvents.IgnoreQueryFilters()
+            .AnyAsync(e => e.TenantId == tenant.Id && e.EventType == "created")).Should().BeTrue();
+        (await db.AuditLogs.IgnoreQueryFilters()
+            .AnyAsync(a => a.TenantId == tenant.Id && a.Action == "Tenant.Provisioned")).Should().BeTrue();
+
+        await email.Received(1).SendWelcomeAsync(
+            Arg.Is<TenantWelcomeEmailMessage>(m => m.Subdomain == "acme" && !m.OwnerExists && m.IsTrial),
+            Arg.Any<CancellationToken>());
+    }
+
+    // ── AC-3: existing global user is linked, not duplicated ────────────────
+
+    [Fact]
+    public async Task Provision_ExistingGlobalUser_LinksWithoutDuplicate()
+    {
+        var planId = await SeedPlanAsync();
+        await using (var seed = Db())
+        {
+            seed.Users.Add(new User
+            {
+                Id = Guid.NewGuid(),
+                Email = "owner@acme.com",
+                DisplayName = "Existing Owner",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var (service, email) = Service();
+        var result = await service.ProvisionAsync(Input(planId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.OwnerLinked.Should().BeTrue();
+
+        using var db = Db();
+        (await db.Users.IgnoreQueryFilters().CountAsync(u => u.Email == "owner@acme.com"))
+            .Should().Be(1); // no duplicate user
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+        (await db.UserTenants.IgnoreQueryFilters().AnyAsync(ut => ut.TenantId == tenant.Id))
+            .Should().BeTrue();
+
+        await email.Received(1).SendWelcomeAsync(
+            Arg.Is<TenantWelcomeEmailMessage>(m => m.OwnerExists), Arg.Any<CancellationToken>());
+    }
+
+    // ── BR-3: trial vs active status from trial days ────────────────────────
+
+    [Fact]
+    public async Task Provision_ZeroTrialDays_CreatesActiveTenantWithNoTrialEnd()
+    {
+        var planId = await SeedPlanAsync(trialDays: 0);
+        var (service, _) = Service();
+
+        var result = await service.ProvisionAsync(Input(planId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Status.Should().Be(nameof(TenantStatus.Active));
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+        tenant.Status.Should().Be(TenantStatus.Active);
+        tenant.TrialEndsAt.Should().BeNull();
+    }
+
+    // ── NFR-2 / BR-2: idempotency — duplicate subdomain never duplicates ────
+
+    [Fact]
+    public async Task Provision_DuplicateSubdomain_FailsAndDoesNotDuplicate()
+    {
+        var planId = await SeedPlanAsync();
+        var (service1, _) = Service();
+        (await service1.ProvisionAsync(Input(planId))).IsSuccess.Should().BeTrue();
+
+        var (service2, email2) = Service();
+        var second = await service2.ProvisionAsync(Input(planId)); // same subdomain "acme"
+
+        second.IsFailure.Should().BeTrue();
+        second.ErrorCode.Should().Be("subdomain_taken");
+
+        using var db = Db();
+        (await db.Tenants.IgnoreQueryFilters().CountAsync(t => t.Subdomain == "acme")).Should().Be(1);
+        await email2.DidNotReceive().SendWelcomeAsync(Arg.Any<TenantWelcomeEmailMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── plan gate: inactive plan rejected ───────────────────────────────────
+
+    [Fact]
+    public async Task Provision_InactivePlan_IsRejected()
+    {
+        var planId = await SeedPlanAsync(isActive: false);
+        var (service, _) = Service();
+
+        var result = await service.ProvisionAsync(Input(planId));
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("plan_invalid");
+        using var db = Db();
+        (await db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Subdomain == "acme")).Should().BeFalse();
+    }
+
+    // ── §7: default master data seeded for the new tenant ───────────────────
+
+    [Fact]
+    public async Task Provision_SeedsDefaultLeaveTypesAndShift()
+    {
+        var planId = await SeedPlanAsync();
+        var (service, _) = Service();
+
+        await service.ProvisionAsync(Input(planId));
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+
+        var leaveTypes = await db.LeaveTypes.IgnoreQueryFilters()
+            .Where(lt => lt.TenantId == tenant.Id).Select(lt => lt.Code).ToListAsync();
+        leaveTypes.Should().BeEquivalentTo(new[] { "AL", "SL", "CL" });
+
+        (await db.Shifts.IgnoreQueryFilters().CountAsync(s => s.TenantId == tenant.Id && s.IsDefault))
+            .Should().Be(1);
+    }
+}

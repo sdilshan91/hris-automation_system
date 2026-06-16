@@ -28,6 +28,9 @@ public static class DbInitializer
 
     private static async Task SeedAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
+        // US-ADM-001: seed the default subscription plans tenant provisioning selects from.
+        await SeedSubscriptionPlansAsync(db, logger, ct);
+
         var defaultEnabledModules = PermissionCatalog.ByModule.Keys.OrderBy(module => module).ToList();
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
@@ -163,6 +166,51 @@ public static class DbInitializer
         // Reconcile across ALL tenants (existing + newly-seeded) so new catalog permissions and the
         // US-ATT-005 default shift land on tenants provisioned before this release (idempotent).
         await ReconcileAllTenantsAsync(db, logger, ct);
+    }
+
+    /// <summary>
+    /// Seeds the default platform subscription plans (US-ADM-001) tenant provisioning selects from. Idempotent:
+    /// each plan is keyed by its unique <c>Code</c> and only inserted when absent. Full plan CRUD is US-ADM-009.
+    /// </summary>
+    private static async Task SeedSubscriptionPlansAsync(AppDbContext db, ILogger logger, CancellationToken ct)
+    {
+        var defaults = new (string Name, string Code, decimal PriceMonthly, int TrialDays, int? MaxEmployees)[]
+        {
+            ("Starter", "starter", 0m, 30, 25),
+            ("Professional", "professional", 49m, 14, 200),
+            ("Enterprise", "enterprise", 199m, 0, null),
+        };
+
+        var existingCodes = await db.SubscriptionPlans
+            .Select(p => p.Code)
+            .ToListAsync(ct);
+        var existing = existingCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = 0;
+        foreach (var (name, code, price, trialDays, maxEmployees) in defaults)
+        {
+            if (existing.Contains(code))
+                continue;
+
+            db.SubscriptionPlans.Add(new SubscriptionPlan
+            {
+                Id = BaseEntity.NewUuidV7(),
+                Name = name,
+                Code = code,
+                PriceMonthly = price,
+                TrialDays = trialDays,
+                MaxEmployees = maxEmployees,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            });
+            added++;
+        }
+
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Seeded {Count} default subscription plan(s)", added);
+        }
     }
 
     /// <summary>

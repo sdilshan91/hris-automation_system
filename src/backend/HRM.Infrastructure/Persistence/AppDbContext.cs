@@ -21,6 +21,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     }
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
+    public DbSet<TenantLifecycleEvent> TenantLifecycleEvents => Set<TenantLifecycleEvent>();
     public DbSet<User> Users => Set<User>();
     public DbSet<UserTenant> UserTenants => Set<UserTenant>();
     public DbSet<Role> Roles => Set<Role>();

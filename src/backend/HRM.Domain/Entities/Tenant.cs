@@ -14,6 +14,19 @@ public sealed class Tenant
     public string? LogoUrl { get; set; }
     public string? PrimaryColor { get; set; }
     public string? ContactEmail { get; set; }
+
+    /// <summary>
+    /// When the trial period ends (US-ADM-001 BR-3). Set at provisioning when the chosen plan has
+    /// TrialDays &gt; 0; null for tenants created directly in Active status (TrialDays = 0).
+    /// </summary>
+    public DateTime? TrialEndsAt { get; set; }
+
+    /// <summary>
+    /// Billing contact email (US-ADM-001 BR-4). Defaults to the primary owner email at provisioning.
+    /// Billing/payment is offline in Phase 1; this is informational.
+    /// </summary>
+    public string? BillingEmail { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
     public bool IsDeleted { get; set; }
