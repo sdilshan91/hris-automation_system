@@ -55,6 +55,17 @@ export const PAYROLL_ROUTES: Routes = [
       ).then((m) => m.PendingApprovalsComponent),
   },
   {
+    // US-PAY-010 (FR-7, §8, AC-3/AC-4): pre-payroll reconciliation — per-employee
+    // attendance/leave summary table with color-coded cells + mismatch filter, the
+    // attendance-not-finalized warning banner (AC-4), and the leave-encashment
+    // trigger drawer (AC-3). Declared BEFORE 'runs/:id' so it is matched literally.
+    path: 'reconciliation',
+    loadComponent: () =>
+      import(
+        './components/payroll-reconciliation/payroll-reconciliation.component'
+      ).then((m) => m.PayrollReconciliationComponent),
+  },
+  {
     // US-PAY-003 (§8): run detail — status stepper, live progress, summary card.
     // US-PAY-008 extends it with the approval review layout + action bar + history.
     path: 'runs/:id',

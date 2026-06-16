@@ -48,6 +48,12 @@ export * from './models/approval.models';
 export * from './services/payroll-approval.service';
 export { PendingApprovalsComponent } from './components/pending-approvals/pending-approvals.component';
 
+/** US-PAY-010: Attendance/leave → payroll integration (reconciliation + leave encashment). */
+export * from './models/reconciliation.models';
+export * from './services/reconciliation.service';
+export { PayrollReconciliationComponent } from './components/payroll-reconciliation/payroll-reconciliation.component';
+export { LeaveEncashmentFormComponent } from './components/leave-encashment-form/leave-encashment-form.component';
+
 /** US-PAY-009: Payroll reports & analytics (reports page + analytics dashboard). */
 export * from './models/payroll-report.models';
 export * from './services/payroll-report.service';

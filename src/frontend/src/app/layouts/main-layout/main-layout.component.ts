@@ -684,6 +684,15 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 10.818v2.614A3.13 3.13 0 0 0 11.888 13c.482-.315.612-.648.612-.875 0-.227-.13-.56-.612-.875a3.13 3.13 0 0 0-1.138-.432ZM8.33 8.62c.053.055.115.11.184.164.208.16.46.284.736.363V6.603a2.45 2.45 0 0 0-.35.13c-.14.065-.27.143-.386.233-.377.292-.514.627-.514.909 0 .184.058.39.202.592.037.051.08.102.128.152Z"/><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-6a.75.75 0 0 1 .75.75v.316a3.78 3.78 0 0 1 1.653.713c.426.33.744.74.925 1.2a.75.75 0 0 1-1.395.55 1.35 1.35 0 0 0-.447-.563 2.187 2.187 0 0 0-.736-.363V9.3c.698.093 1.383.32 1.959.696.787.514 1.29 1.27 1.29 2.13 0 .86-.504 1.616-1.29 2.13-.576.377-1.261.603-1.96.696v.299a.75.75 0 1 1-1.5 0v-.3a3.78 3.78 0 0 1-1.653-.712 3.22 3.22 0 0 1-.925-1.2.75.75 0 0 1 1.395-.55c.12.3.3.54.447.563a2.19 2.19 0 0 0 .736.363V10.7a5.007 5.007 0 0 1-1.96-.696C4.504 9.49 4 8.735 4 7.875c0-.86.504-1.616 1.29-2.13.577-.377 1.262-.603 1.96-.696V4.75A.75.75 0 0 1 10 4Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      // US-PAY-010 (FR-7, §8): pre-payroll reconciliation — attendance/leave summary
+      // per employee + leave-encashment trigger. Gated on Payroll.View (same
+      // capability as the Payroll parent — HR Officer / Tenant Admin).
+      label: 'Reconciliation',
+      route: '/payroll/reconciliation',
+      permission: 'Payroll.View',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v11.5A2.25 2.25 0 0 1 15.75 18H4.25A2.25 2.25 0 0 1 2 15.75V4.25Zm4.03 1.97a.75.75 0 0 0-1.06 1.06l1.5 1.5a.75.75 0 0 0 1.06 0l3-3a.75.75 0 1 0-1.06-1.06L7 7.19l-.97-.97ZM11.25 6.5a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Zm0 5a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Zm-6.5 0a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
       // US-PAY-008 (§8): approver queue of payroll runs awaiting approval. Gated
       // on Payroll.Approve so only approvers see it; the page shows a badge count.
       label: 'Pending Approvals',

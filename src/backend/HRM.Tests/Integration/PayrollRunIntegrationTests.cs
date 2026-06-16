@@ -152,12 +152,47 @@ public sealed class PayrollRunIntegrationTests
         return empId;
     }
 
+    /// <summary>
+    /// US-PAY-010 AC-4/FR-6 fixture: locks the attendance period so the payroll initiate gate passes. This
+    /// reflects US-PAY-003's own precondition ("attendance data is finalized") — without it, initiate now
+    /// returns 409 attendance_not_finalized. A fixture correction, NOT a weakening of any assertion.
+    /// </summary>
+    private async Task LockAttendance(Guid tenantId, int year, int month)
+    {
+        using var db = Db(tenantId);
+        var start = new DateOnly(year, month, 1);
+        db.AttendancePeriodLocks.Add(new AttendancePeriodLock
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId,
+            PeriodStart = start, PeriodEnd = start.AddMonths(1).AddDays(-1),
+            IsLocked = true, LockedAt = DateTime.UtcNow,
+        });
+
+        // A finalized period has materialized attendance summaries. Without them the on-demand summary
+        // fabricates full-month absence (no clock-ins) → full LOP → net 0. Seed a FULLY-PRESENT summary
+        // (LopDays = 0, no overtime) for every employee so these net=gross assertions hold. Tests that want
+        // LOP/overtime seed their own summaries on top.
+        var yearMonth = $"{year:D4}-{month:D2}";
+        var employeeIds = await db.Employees.Select(e => e.Id).ToListAsync();
+        foreach (var empId in employeeIds)
+        {
+            db.AttendanceMonthlySummaries.Add(new AttendanceMonthlySummary
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = tenantId, EmployeeId = empId,
+                YearMonth = yearMonth, TotalPresentDays = 22m, TotalAbsentDays = 0m,
+                LopDays = 0m, TotalOvertimeMinutes = 0, GeneratedAt = DateTime.UtcNow,
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
     // ── AC-1 / FR-2: initiate creates Queued + enqueues ─────────────────────
 
     [Fact]
     public async Task Initiate_CreatesQueuedRun_AndEnqueuesJob()
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
         var mediator = Pipeline(_tenantA);
 
         var result = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
@@ -175,6 +210,7 @@ public sealed class PayrollRunIntegrationTests
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
         await SeedEmployeeWithSalary(_tenantA, "A2", 30_000m);
+        await LockAttendance(_tenantA, 2026, 5);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -206,6 +242,7 @@ public sealed class PayrollRunIntegrationTests
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
         await SeedEmployeeWithSalary(_tenantA, "A2", 0m, withSalary: false);
+        await LockAttendance(_tenantA, 2026, 5);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -224,6 +261,7 @@ public sealed class PayrollRunIntegrationTests
     public async Task Initiate_DuplicatePeriod_Returns409()
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
         var mediator = Pipeline(_tenantA);
 
         var first = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
@@ -241,6 +279,7 @@ public sealed class PayrollRunIntegrationTests
     public async Task Initiate_FinalizedPeriod_Returns409_AlreadyFinalized()
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -266,6 +305,8 @@ public sealed class PayrollRunIntegrationTests
     public async Task Initiate_DuplicateIdempotencyKey_Returns409()
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        await LockAttendance(_tenantA, 2026, 6);
         var mediator = Pipeline(_tenantA);
 
         var first = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, "key-123"));
@@ -285,6 +326,7 @@ public sealed class PayrollRunIntegrationTests
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
         await SeedEmployeeWithSalary(_tenantB, "B1", 99_000m);
+        await LockAttendance(_tenantA, 2026, 5);
 
         var providerA = Provider(_tenantA);
         var mediatorA = providerA.GetRequiredService<IMediator>();
@@ -308,6 +350,7 @@ public sealed class PayrollRunIntegrationTests
     public async Task Process_ReRun_ReplacesPriorSlips()
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
         var processor = provider.GetRequiredService<IPayrollRunProcessor>();

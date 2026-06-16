@@ -36,6 +36,15 @@ public interface IPayrollRunService
 
     /// <summary>Gets a run's processed/total progress (FR-6). The FE polls this while the run is Processing.</summary>
     Task<Result<PayrollRunProgressDto>> GetProgressAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// US-PAY-010 FR-7: the pre-payroll attendance reconciliation report for a period — per-employee working/
+    /// present/absent days, approved-leave days broken down by type, overtime hours, and calculated LOP days.
+    /// Reuses the US-ATT-009 attendance pull (LOP/overtime) + the leave module (leave-by-type) and surfaces
+    /// whether attendance is finalized (the AC-4 banner driver). Tenant-scoped via the EF global query filter.
+    /// </summary>
+    Task<Result<PrePayrollReconciliationDto>> GetPrePayrollReconciliationAsync(
+        int payYear, int payMonth, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

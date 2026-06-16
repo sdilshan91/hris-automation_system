@@ -2727,7 +2727,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-008) | Multi-tenant isolation (payroll_approval_history + approval workflow state + queue/notification surface) | Critical | TC-PAY-ISO-029, TC-PAY-ISO-030, TC-PAY-ISO-031, TC-PAY-ISO-032 | 4 | -- |
 | US-PAY-009 | Payroll Reports and Analytics | Should Have | TC-PAY-009-01, TC-PAY-009-02, TC-PAY-009-03, TC-PAY-009-04, TC-PAY-009-05, TC-PAY-009-06, TC-PAY-009-07, TC-PAY-009-08, TC-PAY-009-09, TC-PAY-009-10, TC-PAY-009-11, TC-PAY-009-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-009) | Multi-tenant isolation (report/export/bank-advice/tax-statement surface + pre-aggregated dashboard table + caches) | Critical | TC-PAY-ISO-033, TC-PAY-ISO-034, TC-PAY-ISO-035, TC-PAY-ISO-036 | 4 | -- |
-| **TOTAL** | | | **128 test cases** | **128** | **43/43 AC** |
+| US-PAY-010 | Attendance and Leave Data Integration into Payroll | Must Have | TC-PAY-010-01, TC-PAY-010-02, TC-PAY-010-03, TC-PAY-010-04, TC-PAY-010-05, TC-PAY-010-06, TC-PAY-010-07, TC-PAY-010-08, TC-PAY-010-09, TC-PAY-010-10, TC-PAY-010-11, TC-PAY-010-12 | 12 | 5/5 AC covered |
+| Cross-cutting (PAY-010) | Multi-tenant isolation (attendance/leave fetch + reconciliation + encashment + advisory-lock + caches) | Critical | TC-PAY-ISO-037, TC-PAY-ISO-038, TC-PAY-ISO-039, TC-PAY-ISO-040 | 4 | -- |
+| **TOTAL** | | | **160 test cases** | **160** | **53/53 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2877,6 +2879,22 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-ISO-034 | Report/export/bank-advice/tax-statement/job-handle APIs reject missing/invalid/mismatched tenant context; no cross-tenant file/job IDOR | Security | Critical | US-PAY-009 | AC-5, FR-1, FR-2, FR-4, FR-8 |
 | TC-PAY-ISO-035 | Cross-tenant report generation/write blocked; query-level tenant_id (injected ids ignored); server-derived tenant-scoped artefact storage + pre-agg writes | Security | Critical | US-PAY-009 | AC-5, FR-1, FR-2, FR-4, FR-5, FR-8 |
 | TC-PAY-ISO-036 | Pre-aggregated dashboard cache + report/export temp-file store tenant-scoped; per-tenant refresh/invalidation + 24h auto-delete (no cross-tenant aggregate/chart/byte leak) | Security | High | US-PAY-009 | AC-5, FR-5, FR-8, NFR-3, NFR-4, NFR-6 |
+| TC-PAY-010-01 | LOP from absence -- 3 unapproved absent days -> lop_days=3 + deduction (22,000/22)*3 = 3,000 (golden) (happy path) | E2E | Critical | US-PAY-010 | AC-1, FR-1, FR-2, FR-3, BR-1, BR-8 |
+| TC-PAY-010-02 | Overtime -- 10h approved OT at tenant 1.5x, base hourly 200 -> overtime_amount 3,000 (golden) (happy path) | E2E | Critical | US-PAY-010 | AC-2, FR-1, FR-4, BR-4 |
+| TC-PAY-010-03 | Leave encashment -- 5 eligible days at daily 1,000 -> 5,000 added as earning to NEXT run (golden) (happy path) | E2E | Critical | US-PAY-010 | AC-3, FR-5, BR-6 |
+| TC-PAY-010-04 | Attendance NOT finalized -> run blocked with "Attendance data for May 2026 is not yet finalized" warning + link | Functional | Critical | US-PAY-010 | AC-4, FR-1, FR-7 |
+| TC-PAY-010-05 | Half-day absence = 0.5 LOP (incl. 2-full+1-half = 2.5; covered-half excluded) | Functional | High | US-PAY-010 | AC-1, FR-1, FR-3, BR-1, BR-2 |
+| TC-PAY-010-06 | Late-to-LOP -- 6 lates @ "3=0.5" -> 1.0 LOP; below/at/above-threshold boundaries | Functional | High | US-PAY-010 | AC-1, FR-1, FR-3, BR-3 |
+| TC-PAY-010-07 | Unapproved overtime EXCLUDED; mixed approved/unapproved pays only approved | Functional | High | US-PAY-010 | AC-2, FR-1, FR-4, BR-4 |
+| TC-PAY-010-08 | Public-holiday work = 2x OT; standard+holiday mixed-rate; holiday needs approval | Functional | High | US-PAY-010 | AC-2, FR-1, FR-4, BR-4, BR-5 |
+| TC-PAY-010-09 | Encashment only encashable-type over carry-forward (14/CF10 -> 4) + non-encashable rejected; daily rate from shift calendar not flat 30; notice-period 2x LOP | Functional | High | US-PAY-010 | AC-1, AC-3, FR-3, FR-5, BR-6, BR-7, BR-8 |
+| TC-PAY-010-10 | Pre-payroll reconciliation report (all columns + mismatch Reconcile) + advisory attendance/leave lock on Processing + release-on-cancel + post-lock regularization deferred | Functional | High | US-PAY-010 | AC-4, FR-6, FR-7, NFR-2, BR-9 |
+| TC-PAY-010-11 | Authz (403/401) + internal-service (non-HTTP) cross-module access; 5,000-emp fetch <=2min; reconciliation <=30s | Performance | Critical | US-PAY-010 | AC-4, AC-5, FR-1, FR-2, FR-7, NFR-1, NFR-4, NFR-5 |
+| TC-PAY-010-12 | Color-coded reconciliation table (status not color-only) + drill-down + not-finalized banner + OT tooltip + encashment UI WCAG 2.1 AA; 360-1920 | Accessibility | High | US-PAY-010 | AC-1, AC-3, AC-4, FR-5, FR-7, NFR-3 |
+| TC-PAY-ISO-037 | Cross-tenant READ on attendance/leave fetch + reconciliation -- A's run consumes zero B records (name-collision probe) | Security | Critical | US-PAY-010 | AC-5, FR-1, FR-2, FR-8 |
+| TC-PAY-ISO-038 | Integration/reconciliation/encashment APIs reject missing/invalid/mismatched tenant context; no cross-tenant reconciliation/encashment IDOR | Security | Critical | US-PAY-010 | AC-5, FR-5, FR-7, FR-8 |
+| TC-PAY-ISO-039 | Cross-tenant write/compute block -- encashment + slip lop/OT/encashment enrichment + advisory lock server-tenant-stamped; injected ids ignored | Security | Critical | US-PAY-010 | AC-5, FR-2, FR-3, FR-5, FR-6, FR-8 |
+| TC-PAY-ISO-040 | Attendance/leave summary cache + reconciliation cache + advisory-lock registry tenant-scoped (no cross-tenant cache hit/lock leak) | Security | High | US-PAY-010 | AC-5, FR-6, FR-8, NFR-1 |
 
 ### US-PAY-001 Detailed Requirements Traceability
 
@@ -3298,6 +3316,55 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 ---
 
+### US-PAY-010 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: 3 unapproved absent days -> 3 LOP days + LOP deduction = (monthly_basic/working_days)*3; net reduced | AC | TC-PAY-010-01, TC-PAY-010-05, TC-PAY-010-06, TC-PAY-010-09, TC-PAY-010-12 | Direct (golden 22,000/22/3 -> 3,000) |
+| AC-2: 10h approved overtime -> overtime earning per tenant OT rate (e.g. 1.5x) | AC | TC-PAY-010-02, TC-PAY-010-07, TC-PAY-010-08 | Direct (golden 10h@1.5x, hourly 200 -> 3,000) |
+| AC-3: 5 days eligible leave encashment -> (5 * daily_basic) added as earning adjustment to the next run | AC | TC-PAY-010-03, TC-PAY-010-09, TC-PAY-010-12 | Direct (golden 5@1,000 -> 5,000) |
+| AC-4: Attendance NOT finalized -> run blocked with "Attendance data for May 2026 is not yet finalized" | AC | TC-PAY-010-04, TC-PAY-010-10, TC-PAY-010-11, TC-PAY-010-12 | Direct |
+| AC-5: Attendance/leave tenant-scoped; only run-tenant records retrieved; RLS enforces isolation | AC | TC-PAY-010-11, TC-PAY-ISO-037, TC-PAY-ISO-038, TC-PAY-ISO-039, TC-PAY-ISO-040 | Direct (EF query filters + TenantInterceptor; Postgres RLS extension point) |
+| FR-1: Fetch monthly attendance summary per employee (working/present/absent/half/late/OT) | FR | TC-PAY-010-01, TC-PAY-010-02, TC-PAY-010-04, TC-PAY-010-06, TC-PAY-010-11, TC-PAY-ISO-037 | Direct (via internal service; depends on Attendance summary API) |
+| FR-2: Fetch approved leave records (type, duration, paid/unpaid) | FR | TC-PAY-010-01, TC-PAY-010-05, TC-PAY-010-11, TC-PAY-ISO-037, TC-PAY-ISO-039 | Direct (via internal service; depends on Leave summary API) |
+| FR-3: LOP = (absent w/o approved/unpaid leave) * daily_rate; daily_rate = monthly_basic / total_working_days | FR | TC-PAY-010-01, TC-PAY-010-05, TC-PAY-010-06, TC-PAY-010-09 | Direct |
+| FR-4: Overtime earnings per tenant OT rules (multiplier, applicable hours, base hourly derivation) | FR | TC-PAY-010-02, TC-PAY-010-07, TC-PAY-010-08 | Direct |
+| FR-5: Leave encashment = eligible days * daily_rate; manual or fiscal-year-end | FR | TC-PAY-010-03, TC-PAY-010-09, TC-PAY-010-12, TC-PAY-ISO-038, TC-PAY-ISO-039 | Direct (fiscal-year-end auto-trigger assumes the scheduler) |
+| FR-6: Lock attendance/leave for the period on transition to Processing (advisory) | FR | TC-PAY-010-10, TC-PAY-ISO-039, TC-PAY-ISO-040 | Direct (advisory app-level flag per NFR-2/BR-9) |
+| FR-7: Pre-payroll attendance reconciliation report (per-employee working/present/leave-by-type/absent/OT/LOP days) | FR | TC-PAY-010-04, TC-PAY-010-10, TC-PAY-010-11, TC-PAY-010-12, TC-PAY-ISO-037, TC-PAY-ISO-038 | Direct |
+| FR-8: All cross-module data access tenant-scoped via ITenantContext + RLS | FR | TC-PAY-010-11, TC-PAY-ISO-037, TC-PAY-ISO-038, TC-PAY-ISO-039, TC-PAY-ISO-040 | Direct (EF query filters + TenantInterceptor; Postgres RLS extension point) |
+| NFR-1: Attendance/leave fetch for 5,000 employees <= 2 min | NFR | TC-PAY-010-11, TC-PAY-ISO-040 | Direct (requires a seeded performance environment) |
+| NFR-2: Attendance lock advisory (app-level flag), not a DB-level lock | NFR | TC-PAY-010-10 | Direct |
+| NFR-3: LOP/overtime calculation logic >= 85% test coverage | NFR | (whole suite) | Met by AC/FR/BR golden + boundary coverage (LOP/OT/encashment + half-day/late/holiday/notice cases) |
+| NFR-4: Cross-module access via internal service interfaces (not HTTP) | NFR | TC-PAY-010-11 | Direct |
+| NFR-5: Pre-payroll reconciliation report <= 30 s for 5,000 employees | NFR | TC-PAY-010-11 | Direct (requires a seeded performance environment) |
+| BR-1: LOP only for days both absent AND without approved paid leave | BR | TC-PAY-010-01, TC-PAY-010-05 | Direct |
+| BR-2: Half-day absence = 0.5 LOP days | BR | TC-PAY-010-05 | Direct |
+| BR-3: Late arrivals beyond tenant threshold convert to LOP (e.g. 3 lates = 0.5 day) | BR | TC-PAY-010-06 | Direct |
+| BR-4: Overtime must be pre-approved by the manager; unapproved excluded | BR | TC-PAY-010-02, TC-PAY-010-07, TC-PAY-010-08 | Direct |
+| BR-5: Public holidays worked = overtime at the holiday OT rate (typically 2x) | BR | TC-PAY-010-08 | Direct |
+| BR-6: Encashment only for encashment-enabled types + only balance exceeding carry-forward | BR | TC-PAY-010-03, TC-PAY-010-09 | Direct (assumes leave-type encashment/carry-forward config) |
+| BR-7: Notice-period employees may have different LOP rules (e.g. 2x deduction) | BR | TC-PAY-010-09 | Direct (assumes tenant notice-period policy) |
+| BR-8: Working days from the employee's shift calendar, not a flat 30 | BR | TC-PAY-010-01, TC-PAY-010-09 | Direct |
+| BR-9: Regularizations approved after the payroll lock processed as corrections in the next run | BR | TC-PAY-010-10 | Direct (depends on the attendance regularization surface) |
+
+### Coverage Summary (Payroll -- US-PAY-010)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Acceptance Criteria Coverage | 5/5 (100%) | >= 100% | PASS |
+| Functional Requirements Coverage | 8/8 (100%) -- FR-1/2 via internal service interfaces (depend on Attendance/Leave summary APIs); FR-5 fiscal-year-end auto-trigger assumes the scheduler | >= 85% | PASS |
+| Non-Functional Requirements Coverage | 5/5 (100%) -- NFR-1/5 require a seeded env; NFR-3 met by golden+boundary coverage; NFR-2/4 directly asserted | >= 85% | PASS |
+| Business Rules Coverage | 9/9 (100%) -- BR-6/7/9 assume leave-type/notice-period/regularization config surfaces | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 4 dedicated (TC-PAY-ISO-037..040: read / context+IDOR / write-block+server-stamp / cache+lock-scope) | >= 1 | PASS |
+| Security Test Cases | TC-PAY-010-10, TC-PAY-010-11, TC-PAY-ISO-037..040 | >= 1 | PASS |
+| Performance Test Cases | 1 (TC-PAY-010-11 -- 5,000-emp fetch <=2min + reconciliation <=30s) | >= 1 | PASS |
+| Accessibility Test Cases | 1 (TC-PAY-010-12 -- color-coded reconciliation table + warning banner + encashment UI WCAG 2.1 AA + responsive) | >= 1 | PASS |
+| Critical-Module Requirement Coverage (NFR-3 >= 85%) | 5/5 AC + 8/8 FR with golden LOP/OT/encashment + half-day/late/holiday/notice + reconciliation + isolation | >= 85% | PASS |
+| Blocked Test Cases | 0 (Attendance/Leave summary APIs + US-PAY-001/002/003 + shift-calendar/leave-type/notice config + cache layer written CONDITIONAL; NFR-1/5 require a seeded env -- none blocking) | -- | CLEAR |
+
+---
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
@@ -3307,8 +3374,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Leave Management (US-LV-001 through US-LV-012) | 12 | 303 | 57/57 (100%) | 48 | PASS |
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
-| Payroll (US-PAY-001 through US-PAY-009) | 9 | 144 | 48/48 (100%) | 36 | PASS |
-| **TOTAL** | **60** | **1190** | **310/310 (100%)** | **207** | |
+| Payroll (US-PAY-001 through US-PAY-010) | 10 | 160 | 53/53 (100%) | 40 | PASS |
+| **TOTAL** | **61** | **1206** | **315/315 (100%)** | **211** | |
 
 ---
 

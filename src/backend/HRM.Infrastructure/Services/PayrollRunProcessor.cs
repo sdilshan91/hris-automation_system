@@ -50,6 +50,12 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// <summary>Synthetic component id for adjustment lines (US-PAY-007). Stable so the slip detail FK is consistent.</summary>
     private static readonly Guid AdjustmentComponentId = Guid.Parse("00000000-0000-0000-0000-00000000ad57");
 
+    /// <summary>Synthetic component id for the overtime earning line (US-PAY-010 AC-2). Stable FK target.</summary>
+    private static readonly Guid OvertimeComponentId = Guid.Parse("00000000-0000-0000-0000-00000000007e");
+
+    /// <summary>Prefix the encashment adjustment description carries so the run can recognise + stamp it (US-PAY-010 AC-3).</summary>
+    internal const string EncashmentDescriptionPrefix = "Leave Encashment";
+
     public PayrollRunProcessor(
         AppDbContext dbContext,
         ITenantContext tenantContext,
@@ -174,8 +180,20 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             var slipInput = new PayrollSlipInput(emp.Id, inputs, workingDays, lopDays, proRataPaidDays);
             var result = PayrollSlipCalculator.Compute(slipInput, LopComponentId);
 
+            // US-PAY-010 AC-2/FR-4: overtime earning. Derived from the attendance pull's APPROVED overtime
+            // (BR-4 — pending/rejected are excluded upstream) per multiplier bucket (BR-5 holiday OT = its
+            // bucket multiplier). hourly_rate = monthly_basic / (working_days * standard_hours_per_day). The
+            // overtime line is added BEFORE statutory so it is in the tax base. Zero OT → no line, no-op.
+            var overtime = ComputeOvertime(result, attendance, workingDays);
+            if (!overtime.IsZero)
+                result = ApplyOvertime(result, overtime);
+
             // US-PAY-007: this employee's Pending adjustments for the period (empty when none → no-op).
             var employeeAdjustments = adjustmentsByEmployee.GetValueOrDefault(emp.Id, EmployeeAdjustments.Empty);
+
+            // US-PAY-010 AC-3/FR-5: total leave-encashment days/amount the period's adjustments carry for this
+            // employee (an encashment is a Bonus adjustment whose description starts with the encashment prefix).
+            var (encashmentDays, encashmentAmount) = EncashmentTotals(employeeAdjustments);
 
             // US-PAY-007 ordering: TAXABLE bonuses are added to gross BEFORE statutory runs so the progressive
             // tax (US-PAY-006) is computed on the inflated gross. Non-taxable adjustments (reimbursements,
@@ -209,6 +227,10 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
                 PaidDays = result.PaidDays,
                 PayMonth = run.PayMonth,
                 PayYear = run.PayYear,
+                OvertimeHours = overtime.OvertimeHours,
+                OvertimeAmount = overtime.OvertimeAmount,
+                LeaveEncashmentDays = encashmentDays,
+                LeaveEncashmentAmount = encashmentAmount,
                 IsDeleted = false,
             };
             slips.Add(slip);
@@ -495,6 +517,80 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             StatutoryTotal = Round(statutory),
             Lines = lines,
         };
+    }
+
+    /// <summary>
+    /// US-PAY-010 AC-2/FR-4: computes the overtime earning for the employee from the attendance pull's approved
+    /// overtime (per-multiplier buckets, BR-5) using the slip's resolved BASIC as the hourly-rate base. Returns
+    /// <see cref="PayrollOvertimeCalculator.OvertimeResult.Zero"/> when there is no attendance row or no approved OT.
+    /// </summary>
+    private static PayrollOvertimeCalculator.OvertimeResult ComputeOvertime(
+        PayrollSlipResult result, AttendancePayrollRowDto? attendance, decimal workingDays)
+    {
+        if (attendance is null
+            || (attendance.ApprovedOvertimeMinutes <= 0
+                && (attendance.OvertimeMultiplierDetails is null || attendance.OvertimeMultiplierDetails.Count == 0)))
+            return PayrollOvertimeCalculator.OvertimeResult.Zero;
+
+        var basic = ResolvedBasic(result);
+        return PayrollOvertimeCalculator.Compute(
+            basic, workingDays, attendance.OvertimeMultiplierDetails, attendance.ApprovedOvertimeMinutes);
+    }
+
+    /// <summary>Adds the overtime earning line (US-PAY-010 AC-2) and re-rolls gross/net.</summary>
+    private static PayrollSlipResult ApplyOvertime(PayrollSlipResult result, PayrollOvertimeCalculator.OvertimeResult overtime)
+    {
+        var lines = result.Lines.ToList();
+        var basis = $"{overtime.OvertimeHours:0.##}h @ {overtime.HourlyRate:0.##}/h";
+        lines.Add(new PayrollSlipLine(
+            OvertimeComponentId, PayrollOvertimeCalculator.OvertimeLineName,
+            SalaryComponentType.Earning, IsStatutory: false, overtime.OvertimeAmount, basis));
+        return RollUp(result, lines);
+    }
+
+    /// <summary>The resolved BASIC earning on a slip (for the OT hourly-rate base); falls back to gross when none.</summary>
+    private static decimal ResolvedBasic(PayrollSlipResult result)
+    {
+        var basic = result.Lines
+            .Where(l => l.Type == SalaryComponentType.Earning)
+            .FirstOrDefault(l => string.Equals(l.Name, "Basic", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(l.Name, BasicCode, StringComparison.OrdinalIgnoreCase))
+            .Amount;
+        return basic > 0m ? basic : result.GrossEarnings;
+    }
+
+    /// <summary>
+    /// US-PAY-010 AC-3/FR-5: totals the leave-encashment days + amount this employee's period adjustments carry.
+    /// An encashment is a <see cref="AdjustmentType.Bonus"/> whose description starts with
+    /// <see cref="EncashmentDescriptionPrefix"/>; the day count is parsed from the description suffix
+    /// "(N days)". Returns (0, 0) when the employee has no encashment adjustment.
+    /// </summary>
+    private static (decimal Days, decimal Amount) EncashmentTotals(EmployeeAdjustments adjustments)
+    {
+        if (adjustments.IsEmpty) return (0m, 0m);
+
+        decimal days = 0m, amount = 0m;
+        foreach (var a in adjustments.Adjustments)
+        {
+            if (a.AdjustmentType != AdjustmentType.Bonus
+                || !a.Description.StartsWith(EncashmentDescriptionPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            amount += a.Amount;
+            days += ParseEncashmentDays(a.Description);
+        }
+        return (Round(days), Round(amount));
+    }
+
+    /// <summary>Parses the encashed-days count from an encashment description "...(N days)". 0 when absent.</summary>
+    private static decimal ParseEncashmentDays(string description)
+    {
+        var open = description.LastIndexOf('(');
+        if (open < 0) return 0m;
+        var close = description.IndexOf(' ', open);
+        if (close < 0) return 0m;
+        var token = description.Substring(open + 1, close - open - 1);
+        return decimal.TryParse(token, System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0m;
     }
 
     private static string AdjustmentLabel(ResolvedAdjustment a) => a.AdjustmentType switch

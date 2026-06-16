@@ -164,6 +164,40 @@ public sealed class PayrollAdjustmentIntegrationTests
         return empId;
     }
 
+    /// <summary>
+    /// US-PAY-010 AC-4/FR-6 fixture: locks all of <paramref name="year"/> so the payroll initiate gate passes
+    /// for any month a test runs. This reflects US-PAY-003's own "attendance finalized" precondition — without
+    /// the lock, initiate now returns 409 attendance_not_finalized. A fixture correction, NOT a weakening.
+    /// </summary>
+    private async Task LockYear(Guid tenantId, int year)
+    {
+        using var db = Db(tenantId);
+        db.AttendancePeriodLocks.Add(new AttendancePeriodLock
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId,
+            PeriodStart = new DateOnly(year, 1, 1), PeriodEnd = new DateOnly(year, 12, 31),
+            IsLocked = true, LockedAt = DateTime.UtcNow,
+        });
+
+        // A finalized period has materialized attendance summaries. Without them the on-demand summary
+        // fabricates full-month absence → full LOP → net 0. Seed a FULLY-PRESENT summary (LopDays = 0, no
+        // overtime) for every employee for every month of the year so the adjustment net/gross assertions hold.
+        var employeeIds = await db.Employees.Select(e => e.Id).ToListAsync();
+        foreach (var empId in employeeIds)
+        {
+            for (var month = 1; month <= 12; month++)
+            {
+                db.AttendanceMonthlySummaries.Add(new AttendanceMonthlySummary
+                {
+                    Id = BaseEntity.NewUuidV7(), TenantId = tenantId, EmployeeId = empId,
+                    YearMonth = $"{year:D4}-{month:D2}", TotalPresentDays = 22m, TotalAbsentDays = 0m,
+                    LopDays = 0m, TotalOvertimeMinutes = 0, GeneratedAt = DateTime.UtcNow,
+                });
+            }
+        }
+        await db.SaveChangesAsync();
+    }
+
     private static CreatePayrollAdjustmentCommand Bonus(Guid empId, decimal amount, int m, int y, bool taxable = false)
         => new(empId, nameof(AdjustmentType.Bonus), amount, "Performance bonus", m, y, taxable, false, null, null, null);
 
@@ -176,6 +210,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task Bonus_AppearsAsSlipLine_AndIsMarkedApplied()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -206,6 +241,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task TaxableBonus_IncreasesGross_AndFlowsToTax()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 600_000m); // high monthly basic so tax > 0.
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -258,6 +294,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task Deduction_IsSubtractedFromNet()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -277,6 +314,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task Deduction_ExceedingNet_RaisesNegativeNetWarning_OnSecondCreate()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -297,6 +335,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task AdjustmentForFinalizedPeriod_DefersToNextPeriod()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -348,6 +387,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task Correction_ReferencesOriginalSlip_AndShowsAsArrears()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -383,6 +423,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task ReRun_ReAppliesAdjustments_NoDoubleApplicationNoDroppedLines()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
         var processor = provider.GetRequiredService<IPayrollRunProcessor>();
@@ -409,6 +450,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task NoAdjustments_RunTotalsUnchanged()
     {
         await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 
@@ -465,6 +507,7 @@ public sealed class PayrollAdjustmentIntegrationTests
     public async Task Cancel_Pending_Succeeds_Applied_Fails()
     {
         var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockYear(_tenantA, 2026);
         var provider = Provider(_tenantA);
         var mediator = provider.GetRequiredService<IMediator>();
 

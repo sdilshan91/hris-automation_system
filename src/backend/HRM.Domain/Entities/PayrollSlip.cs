@@ -67,4 +67,32 @@ public sealed class PayrollSlip : BaseEntity
 
     /// <summary>Size of the rendered PDF in bytes (US-PAY-004 FR-7/NFR-2 &lt;=200KB target). Null until generated. int?.</summary>
     public int? PdfFileSizeBytes { get; set; }
+
+    // ── US-PAY-010: attendance + leave integration enrichment (§7) ─────────────
+
+    /// <summary>
+    /// Total approved overtime hours rolled into this slip (US-PAY-010 AC-2/FR-4), from the attendance pull's
+    /// approved-overtime minutes / 60. numeric(7,2), default 0. The OVERTIME earning line in
+    /// <see cref="Details"/> carries the per-multiplier basis.
+    /// </summary>
+    public decimal OvertimeHours { get; set; }
+
+    /// <summary>
+    /// Overtime EARNING amount on this slip (US-PAY-010 AC-2/FR-4): sum over the attendance multiplier buckets of
+    /// <c>(minutes/60) * hourly_rate * multiplier</c>, where hourly_rate = monthly_basic / (working_days *
+    /// standard_hours_per_day). numeric(18,2), default 0. Included in <see cref="GrossEarnings"/>.
+    /// </summary>
+    public decimal OvertimeAmount { get; set; }
+
+    /// <summary>
+    /// Leave-encashment days applied within this run (US-PAY-010 AC-3/FR-5), when an encashment earning
+    /// adjustment was picked up for the employee in this period. numeric(5,2), default 0.
+    /// </summary>
+    public decimal LeaveEncashmentDays { get; set; }
+
+    /// <summary>
+    /// Leave-encashment EARNING amount applied within this run (US-PAY-010 AC-3/FR-5) = eligible_days *
+    /// daily_rate. numeric(18,2), default 0. Included in <see cref="GrossEarnings"/>.
+    /// </summary>
+    public decimal LeaveEncashmentAmount { get; set; }
 }
