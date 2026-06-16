@@ -111,4 +111,23 @@ export const PERFORMANCE_ROUTES: Routes = [
         './components/feedback-360-config/feedback-360-config.component'
       ).then((m) => m.Feedback360ConfigComponent),
   },
+  {
+    // US-PRF-007 FR-5: department drill-down (Dashboard > Department > Employee).
+    // Declared BEFORE the 'dashboard' overview route so the more-specific
+    // static 'departments' segment matches first.
+    path: 'dashboard/departments/:departmentId',
+    loadComponent: () =>
+      import(
+        './components/department-drilldown/department-drilldown.component'
+      ).then((m) => m.DepartmentDrilldownComponent),
+  },
+  {
+    // US-PRF-007 AC-1..AC-5: the Performance Dashboard & Analytics overview
+    // (HR/manager-gated; scope decided server-side, employees redirected to /my-review).
+    path: 'dashboard',
+    loadComponent: () =>
+      import(
+        './components/performance-dashboard/performance-dashboard.component'
+      ).then((m) => m.PerformanceDashboardComponent),
+  },
 ];

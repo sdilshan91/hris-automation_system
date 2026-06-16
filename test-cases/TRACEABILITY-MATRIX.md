@@ -3514,7 +3514,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PRF-005) | Multi-tenant isolation (feedback_360 table + reminder jobs + results caches + notifications) | Critical | TC-PRF-ISO-017, TC-PRF-ISO-018, TC-PRF-ISO-019, TC-PRF-ISO-020 | 4 | -- |
 | US-PRF-006 | Performance Review Meeting Notes and Sign-Off | Should Have | TC-PRF-006-01, TC-PRF-006-02, TC-PRF-006-03, TC-PRF-006-04, TC-PRF-006-05, TC-PRF-006-06, TC-PRF-006-07, TC-PRF-006-08, TC-PRF-006-09, TC-PRF-006-10, TC-PRF-006-11, TC-PRF-006-12, TC-PRF-006-13, TC-PRF-006-14 | 14 | 4/4 AC covered |
 | Cross-cutting (PRF-006) | Multi-tenant isolation (review_meeting_notes + review_signoffs tables + auto-close jobs + notifications + audit + PDF export) | Critical | TC-PRF-ISO-021, TC-PRF-ISO-022, TC-PRF-ISO-023, TC-PRF-ISO-024 | 4 | -- |
-| **TOTAL** | | | **107 test cases** | **107** | **29/29 AC** |
+| US-PRF-007 | Performance Dashboard and Analytics | Should Have | TC-PRF-007-01, TC-PRF-007-02, TC-PRF-007-03, TC-PRF-007-04, TC-PRF-007-05, TC-PRF-007-06, TC-PRF-007-07, TC-PRF-007-08, TC-PRF-007-09, TC-PRF-007-10, TC-PRF-007-11, TC-PRF-007-12, TC-PRF-007-13, TC-PRF-007-14, TC-PRF-007-15 | 15 | 5/5 AC covered |
+| Cross-cutting (PRF-007) | Multi-tenant isolation (performance_summary materialized view + aggregate caches + export artifacts + Hangfire refresh jobs) | Critical | TC-PRF-ISO-025, TC-PRF-ISO-026, TC-PRF-ISO-027, TC-PRF-ISO-028 | 4 | -- |
+| **TOTAL** | | | **126 test cases** | **126** | **34/34 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -3627,6 +3629,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-022 | Sign-off APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (sign/dispute/resolve/export) | Security | Critical | US-PRF-006 | NFR-2, FR-3, FR-7 |
 | TC-PRF-ISO-023 | Cross-tenant write block: server-derived tenant_id on notes/sign-offs + foreign review/employee rejected | Security | Critical | US-PRF-006 | NFR-2, FR-1, FR-3, FR-7 |
 | TC-PRF-ISO-024 | Auto-close jobs + sign-off/dispute/auto-close notifications + audit + PDF export tenant-scoped | Security | High | US-PRF-006 | NFR-2, FR-5, FR-6, FR-7, BR-3 |
+| TC-PRF-007-01 | HR opens dashboard -> overview: completion rate + avg score + distribution histogram + department bar + top/bottom performers + cycle progress (happy path) | E2E | Critical | US-PRF-007 | AC-1, FR-1/2/3/6, NFR-3 |
+| TC-PRF-007-02 | Filter by department + grade + cycle (+ location, employment type) -> all widgets update to the filtered population | Functional | High | US-PRF-007 | AC-2, FR-4 |
+| TC-PRF-007-03 | Multi-cycle Trend: select 3 cycles -> line chart of average-score series + per-department overlay | Functional | High | US-PRF-007 | AC-3, FR-7 |
+| TC-PRF-007-04 | Drill-down: click a department bar -> that department's employee list with individual scores + breadcrumb | Functional | High | US-PRF-007 | FR-5, AC-1, AC-2 |
+| TC-PRF-007-05 | Export CSV / Excel (XLSX) / PDF -> data accuracy + tenant branding on PDF + <=5s for 5,000 employees | Integration | High | US-PRF-007 | AC-4, FR-8, NFR-5 |
+| TC-PRF-007-06 | Manager dashboard scoped to direct reports only + "team ranking" (NOT org-wide top/bottom) | Security | Critical | US-PRF-007 | AC-5, BR-1, BR-3, NFR-2 |
+| TC-PRF-007-07 | Employee navigating to the dashboard is redirected to their own review page; dashboard/export endpoints reject employee scope | Security | High | US-PRF-007 | BR-1, AC-5, NFR-2 |
+| TC-PRF-007-08 | Server rejects a manager pulling org-wide aggregates (scope cannot be escalated via params) | Security | Critical | US-PRF-007 | AC-5, BR-1, BR-3, NFR-2 |
+| TC-PRF-007-09 | Distribution + aggregates exclude probation-cycle employees unless explicitly included via filter | Functional | High | US-PRF-007 | BR-2, FR-1, FR-2, FR-4 |
+| TC-PRF-007-10 | Top N / Bottom N performers: ordering + configurable N (default 10) + name/dept/score/trend + deterministic ties | Functional | High | US-PRF-007 | FR-3, AC-1, BR-2, BR-3 |
+| TC-PRF-007-11 | Dashboard loads <=2.5s P95 @ 5,000 employees via materialized-view / Redis aggregate path, no N+1 | Performance | High | US-PRF-007 | NFR-1, NFR-3 |
+| TC-PRF-007-12 | Charts responsive 360px->4K + WCAG 2.1 AA + loading skeletons | Accessibility | High | US-PRF-007 | NFR-4, NFR-1, S8 |
+| TC-PRF-007-13 | Dashboard refreshes from materialized views on a tenant-configurable interval (default 4h via Hangfire) | Integration | High | US-PRF-007 | BR-4, NFR-3 |
+| TC-PRF-007-14 | Combined filters + empty-state / single-employee / no-data boundary handling (no org-wide fallback) | Functional | High | US-PRF-007 | AC-2, FR-4, NFR-4 |
+| TC-PRF-007-15 | Filter / query parameters sanitized (SQLi, injection, type/range validation) on dashboard + export | Security | High | US-PRF-007 | NFR-2, NFR-3, FR-4, FR-7, FR-8 |
+| TC-PRF-ISO-025 | Dashboard in Tenant A shows ZERO Tenant B data -- cross-tenant aggregate read isolation (incl. by direct id) | Security | Critical | US-PRF-007 | NFR-2 |
+| TC-PRF-ISO-026 | Dashboard APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (overview/trend/drill-down/export) | Security | Critical | US-PRF-007 | NFR-2, FR-4, FR-5, FR-7, FR-8 |
+| TC-PRF-ISO-027 | Materialized-view aggregates + refresh tenant-derived (server-side tenant_id, no foreign-id injection / cross-tenant aggregation) | Security | Critical | US-PRF-007 | NFR-2, NFR-3 |
+| TC-PRF-ISO-028 | Aggregate caches + export artifacts + Hangfire materialized-view refresh jobs tenant-scoped | Security | High | US-PRF-007 | NFR-2, NFR-3, BR-4 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 

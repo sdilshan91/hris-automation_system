@@ -117,7 +117,7 @@
 - [x] US-PRF-004 — HR creates appraisal cycles *(PR #78)*
 - [x] US-PRF-005 — 360-degree review *(PR #79)*
 - [x] US-PRF-006 — Review meeting notes and sign-off *(PR #80)*
-- [ ] US-PRF-007 — Performance dashboard and analytics
+- [~] US-PRF-007 — Performance dashboard and analytics
 - [ ] US-PRF-008 — Performance improvement plan (PIP)
 - [ ] US-PRF-009 — Goal tracking with progress updates
 - [ ] US-PRF-010 — Performance-based recommendations
