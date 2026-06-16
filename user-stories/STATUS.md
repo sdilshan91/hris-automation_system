@@ -120,7 +120,7 @@
 - [x] US-PRF-007 — Performance dashboard and analytics *(PR #81)*
 - [x] US-PRF-008 — Performance improvement plan (PIP) *(PR #82)*
 - [x] US-PRF-009 — Goal tracking with progress updates *(PR #83)*
-- [ ] US-PRF-010 — Performance-based recommendations
+- [~] US-PRF-010 — Performance-based recommendations
 
 ## 8. Admin Console (10 stories)
 - [ ] US-ADM-001 — System Admin provisions new tenant
