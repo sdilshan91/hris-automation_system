@@ -66,6 +66,12 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.ContactEmail)
             .HasMaxLength(150);
 
+        // US-ADM-001: trial expiry + billing contact (BR-3 / BR-4).
+        builder.Property(t => t.TrialEndsAt);
+
+        builder.Property(t => t.BillingEmail)
+            .HasMaxLength(150);
+
         builder.Property(t => t.MfaPolicy)
             .HasMaxLength(20)
             .HasDefaultValue("off");

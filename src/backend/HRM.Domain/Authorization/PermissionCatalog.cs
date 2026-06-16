@@ -270,6 +270,16 @@ public static class PermissionCatalog
         public const string ManageSettings = "Tenant.ManageSettings";
         public const string ManageUsers = "Tenant.ManageUsers";
         public const string ManageBilling = "Tenant.ManageBilling";
+
+        /// <summary>
+        /// US-ADM-001 (BR-1): provision a new tenant from the System Admin Console — list tenants and
+        /// check subdomain availability. A SYSTEM-level capability: only the platform SystemAdmin role
+        /// (which is seeded with every catalog permission) holds it. SystemSupport is intentionally NOT
+        /// granted this permission, so it cannot provision tenants. The admin endpoints additionally run
+        /// only in the system/admin context, so a tenant-scoped TenantOwner who nominally holds this
+        /// permission can never reach them.
+        /// </summary>
+        public const string Provision = "Tenant.Provision";
     }
 
     // ── Audit ────────────────────────────────────────────────────────
@@ -366,7 +376,7 @@ public static class PermissionCatalog
         Roles.View, Roles.Manage, Roles.AssignUsers,
 
         // Tenant
-        Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
+        Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling, Tenant.Provision,
 
         // Audit
         Audit.View,

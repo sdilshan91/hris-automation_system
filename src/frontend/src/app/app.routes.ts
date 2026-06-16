@@ -115,6 +115,17 @@ export const appRoutes: Routes = [
             (m) => m.DashboardComponent
           ),
       },
+      // ─── Admin / Tenants (US-ADM-001) — System Admin Console ──
+      // Platform/system context (admin.yourhrm.com). Only the SystemAdmin
+      // role may provision tenants (BR-1); SystemSupport is denied.
+      {
+        path: 'admin/tenants',
+        loadChildren: () =>
+          import('./features/admin/tenants/tenants.routes').then(
+            (m) => m.TENANT_ROUTES
+          ),
+        canActivate: [roleGuard(['System Admin'])],
+      },
       // ─── Admin / Roles (US-AUTH-006) ──────────────────────
       {
         path: 'admin/roles',
