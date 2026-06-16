@@ -331,3 +331,74 @@ Completed | NoResponse`. Thin single-file service so a route mismatch is a one-f
 (manager route passes `?reviewId=`; falls back to the employeeId as the lookup id), and
 whether the server returns `timeline` or the FE derives it. AC-2/AC-3 notifications +
 BR-3 auto-close are BACKEND concerns — no FE work.
+
+## US-PRF-007 — Performance dashboard + analytics (BACKEND landed; FE pending)
+
+Read-only analytics. **NO new entities, NO migration.** Aggregates LIVE over the existing
+ManagerReview / SelfAssessment / Goal / Feedback360 / AppraisalCycle / CycleParticipant +
+Core HR (Employee / Department / JobTitle / Location), all tenant-scoped by the EF global
+query filters (NFR-2/AC-5). The headline score REUSES `ManagerReview.FinalScore` (BR-4) — the
+dashboard never recomputes scores; only a SUBMITTED manager review counts as "scored".
+
+Files: `IPerformanceDashboardService` + `PerformanceDashboardService` (Infrastructure),
+`PerformanceDashboardDtos.cs` + `PerformanceDashboardQueries.cs` (Application/Features/Performance),
+`PerformanceDashboardController.cs` (Api). DI in `DependencyInjection.cs`.
+
+### Permission mapping (important for FE/QA)
+The story names `Performance.Read.All` / `Performance.Read.Team`, which **do not exist** in
+`PermissionCatalog`. Reused the existing equivalents: **`Performance.View.All`** (HR org-wide,
+on HR Officer/Manager/Tenant Admin) and **`Performance.View.Team`** (Manager). Every endpoint
+admits EITHER; the **service** resolves the scope. A caller with neither (e.g. Employee) is
+**403 `forbidden`** server-side (BR-1 — FE also redirects).
+
+### Scope enforcement (AC-5/BR-1/BR-3) — the critical part
+`ResolveScopeAsync` reads the caller's permissions:
+- `View.All` ⇒ **Organization** scope: all in-tenant employees, top-N AND bottom-N performers.
+- else `View.Team` ⇒ **Team** scope: the in-scope employee id set is HARD-restricted to the
+  caller's direct reports (`Employee.ReportsToEmployeeId == me`). A manager gets the team ranking
+  as `topPerformers` and an **empty `bottomPerformers`** (BR-3). A manager drilling into a dept
+  where they have no reports gets an empty list — they can never pull org-wide or non-report data.
+
+### API contract (camelCase, ApiResponse<T> envelope) — base `/api/v1/tenant/performance`
+- `GET dashboard/overview?cycleId&departmentId&gradeId&employmentType&locationId&topBottomCount=10&includeProbation=false`
+  → `PerformanceDashboardDto` { cycleId, cycleName, scope ("Organization"|"Team"), ratingScaleMax,
+  scoredEmployeeCount, averageScore, progress{ totalParticipants, goalSettingCompleted,
+  selfAssessmentCompleted, managerReviewCompleted, signedOff, completionRate }, scoreDistribution[
+  { rangeStart, rangeEnd, label, count } ], departmentAverages[ { departmentId, departmentName,
+  headcount, averageScore } ], topPerformers[ { employeeId, employeeName, employeeNo, departmentId,
+  departmentName, score } ], bottomPerformers[] }.
+- `GET dashboard/department/{departmentId}?cycleId&…` → `DepartmentDrilldownDto` { cycleId,
+  departmentId, departmentName, headcount, averageScore, employees[ { employeeId, employeeName,
+  employeeNo, jobTitle, score?, status } ] }. (FR-5)
+- `GET dashboard/trend?cycleIds=g1&cycleIds=g2&includeDepartmentSeries=false&…` → `PerformanceTrendDto`
+  { scope, points[ { cycleId, cycleName, startDate, averageScore, scoredEmployeeCount } ],
+  departmentSeries[ { departmentId, departmentName, points[] } ] }. Empty cycleIds ⇒ all cycles. (AC-3/FR-7)
+- `GET dashboard/export?format=csv|xlsx&cycleId&…` → file download (`File(...)`, no envelope). (FR-8/AC-4)
+
+Filters (FR-4) all combine (AND): cycle (default = most recently started cycle), department,
+grade (resolved via `JobTitle.GradeId` — there's no Grade entity), employmentType (PascalCase enum,
+e.g. "FullTime"), location (`Employee.LocationId`). BR-2: probation-status employees excluded
+unless `includeProbation=true`. Distribution = unit-wide buckets across the rating scale, top
+bucket inclusive of the max.
+
+### Export decision (FR-8)
+**Reused ClosedXML** (already a `HRM.Infrastructure` dependency) for XLSX + a hand-rolled CSV
+StringBuilder — mirroring `RecruitmentDashboardService`. **PDF is a documented SEAM** (QuestPDF is
+present-but-commented-out in `HRM.Infrastructure.csproj`); `NormalizeFormat` accepts only csv/xlsx,
+anything else → 400 `invalid_format`. PDF + async large-dataset export are deferred (same posture as
+the recruitment dashboard).
+
+### EXTENSION POINT — materialized views / Redis (NFR-3/BR-4) — NOT built
+The platform does **not** use Postgres materialized views or a Redis cache for these aggregates.
+They are computed **live** per request with tenant-scoped EF GroupBy queries (correct + fine for
+current data sizes). A future story can add a `performance_summary` materialized view + a Hangfire
+4-hourly refresh + a Redis read-through cache keyed by (tenantId, cycleId, filter-hash, scope)
+**without changing the contract** — the DTOs are the stable seam. Marked with comments in
+`IPerformanceDashboardService` / `PerformanceDashboardService`.
+
+### InMemory gotcha (for future dashboard work)
+Projecting through a **required navigation that has its own query filter** (`e.Department.Name`,
+`e.JobTitle.TitleName`) returned an EMPTY list under the EF InMemory provider. Fixed by selecting
+the raw FK ids and resolving department/job-title NAMES via separate tenant-scoped lookups. Also:
+captured `HashSet`/`IReadOnlySet.Contains` is not translated by InMemory — use `List.Contains` in
+EF `Where` predicates.

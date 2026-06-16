@@ -329,6 +329,14 @@ public static class DependencyInjection
         // bound in HRM.Api) — absent in tests, where the service simply skips scheduling.
         services.AddScoped<IAppraisalCycleService, AppraisalCycleService>();
 
+        // US-PRF-007: Performance — dashboard + analytics. Read-only tenant-scoped aggregation over
+        // ManagerReview/SelfAssessment/Goal/Feedback360/AppraisalCycle/CycleParticipant + Core HR; NO new
+        // entities. HR (Performance.View.All) sees org-wide data + top/bottom performers; a manager
+        // (Performance.View.Team) is hard-scoped to their direct reports + a team ranking (BR-1/BR-3/AC-5).
+        // Final scores reuse ManagerReview.FinalScore (BR-4). CSV+XLSX export via ClosedXML; PDF + the
+        // materialized-view/Redis refresh (NFR-3) are documented extension points, not built here.
+        services.AddScoped<IPerformanceDashboardService, PerformanceDashboardService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 
