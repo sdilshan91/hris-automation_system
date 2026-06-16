@@ -225,6 +225,20 @@ public static class PermissionCatalog
         /// never lets one employee see another's data.
         /// </summary>
         public const string ReadSelf = "Performance.Read.Self";
+
+        /// <summary>
+        /// US-PRF-003 (BR-2): a manager rates their own DIRECT REPORTS' performance against their goals.
+        /// Granted to the Manager role (the reviewing persona). The team-scoped counterpart of
+        /// <see cref="ReviewAll"/>. The service additionally enforces the direct-report check (BR-2) so the
+        /// permission gates entry but never lets a manager review a non-report.
+        /// </summary>
+        public const string ReviewTeam = "Performance.Review.Team";
+
+        /// <summary>
+        /// US-PRF-003 (BR-3): HR rates ANY employee in the tenant and can REOPEN submitted reviews (AC-5).
+        /// Granted to HR Officer / HR Manager / Tenant Admin.
+        /// </summary>
+        public const string ReviewAll = "Performance.Review.All";
     }
 
     // ── Reports Module ───────────────────────────────────────────────
@@ -336,6 +350,7 @@ public static class PermissionCatalog
         // Performance
         Performance.ViewOwn, Performance.ViewTeam, Performance.ViewAll, Performance.Manage,
         Performance.SetGoalTeam, Performance.SetGoalAll, Performance.ReadSelf,
+        Performance.ReviewTeam, Performance.ReviewAll,
 
         // Reports
         Reports.View, Reports.Export,
@@ -436,7 +451,7 @@ public static class PermissionCatalog
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
-            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll,
+            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll,
             Reports.View, Reports.Export,
             Roles.View, Roles.Manage, Roles.AssignUsers,
             Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
@@ -460,7 +475,7 @@ public static class PermissionCatalog
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Payroll.View, Payroll.Run,
             Recruitment.View, Recruitment.Manage,
-            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll,
+            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll,
             Reports.View, Reports.Export,
             Training.ViewAll, Training.Manage,
             Benefits.ViewAll, Benefits.Manage,
@@ -478,7 +493,7 @@ public static class PermissionCatalog
             Leave.ViewAll, Leave.ApproveAll, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Recruitment.View, Recruitment.Manage,
-            Performance.ViewAll, Performance.SetGoalAll,
+            Performance.ViewAll, Performance.SetGoalAll, Performance.ReviewAll,
             Reports.View,
             Training.ViewAll,
             Onboarding.View, Onboarding.Manage,
@@ -492,7 +507,7 @@ public static class PermissionCatalog
             Leave.ViewTeam, Leave.ApproveTeam,
             Holiday.View,
             Attendance.ViewTeam, Attendance.ApproveTeam,
-            Performance.ViewTeam, Performance.SetGoalTeam,
+            Performance.ViewTeam, Performance.SetGoalTeam, Performance.ReviewTeam,
             Reports.View,
             Training.ViewAll,
         },

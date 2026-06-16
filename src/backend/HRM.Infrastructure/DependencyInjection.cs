@@ -291,6 +291,13 @@ public static class DependencyInjection
         services.AddScoped<ISelfAssessmentService, SelfAssessmentService>();
         services.AddScoped<ISelfAssessmentReminderService, SelfAssessmentReminderService>();
 
+        // US-PRF-003: Performance — manager performance review (workspace / save-draft / submit / reopen /
+        // team dashboard). The manager-review-window gate (BR-1/AC-5), the direct-report scope (BR-2) and
+        // HR-override + reopen (BR-3/AC-5), the all-goals-rated + comment-length submit rules (AC-3/FR-3), the
+        // weighted-manager-score and the FINAL combined-score blend (BR-4) are enforced in the service.
+        // ComputeFinalScore is the single extension point US-PRF-005 (360 feedback, BR-5) will widen.
+        services.AddScoped<IManagerReviewService, ManagerReviewService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

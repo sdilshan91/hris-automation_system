@@ -91,6 +91,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<SelfAssessment> SelfAssessments => Set<SelfAssessment>();
     public DbSet<SelfAssessmentItem> SelfAssessmentItems => Set<SelfAssessmentItem>();
     public DbSet<SelfAssessmentAttachment> SelfAssessmentAttachments => Set<SelfAssessmentAttachment>();
+    public DbSet<ManagerReview> ManagerReviews => Set<ManagerReview>();
+    public DbSet<ManagerReviewItem> ManagerReviewItems => Set<ManagerReviewItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -356,6 +358,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-002: SelfAssessmentAttachment tenant isolation + soft-delete filter (NFR-2/NFR-4).
         modelBuilder.Entity<SelfAssessmentAttachment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-003: ManagerReview tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<ManagerReview>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-003: ManagerReviewItem tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<ManagerReviewItem>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

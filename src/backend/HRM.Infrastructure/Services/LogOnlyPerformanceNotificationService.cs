@@ -45,4 +45,14 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             employeeId, cycleId, daysUntilDeadline);
         return Task.CompletedTask;
     }
+
+    public Task NotifyManagerReviewSubmittedAsync(
+        Guid managerReviewId, Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] manager-review-submitted: {ManagerReviewId} for employee {EmployeeId} " +
+            "in cycle {CycleId}; employee notified. Real in-app/email delivery deferred (US-NTF).",
+            managerReviewId, employeeId, cycleId);
+        return Task.CompletedTask;
+    }
 }

@@ -3506,7 +3506,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PRF-001) | Multi-tenant isolation (goals table + caches + notifications) | Critical | TC-PRF-ISO-001, TC-PRF-ISO-002, TC-PRF-ISO-003, TC-PRF-ISO-004 | 4 | -- |
 | US-PRF-002 | Employee Self-Rates Against Goals | Must Have | TC-PRF-002-01, TC-PRF-002-02, TC-PRF-002-03, TC-PRF-002-04, TC-PRF-002-05, TC-PRF-002-06, TC-PRF-002-07, TC-PRF-002-08, TC-PRF-002-09, TC-PRF-002-10, TC-PRF-002-11, TC-PRF-002-12, TC-PRF-002-13, TC-PRF-002-14, TC-PRF-002-15 | 15 | 5/5 AC covered |
 | Cross-cutting (PRF-002) | Multi-tenant isolation (self_assessment table + attachments + auto-save + notifications) | Critical | TC-PRF-ISO-005, TC-PRF-ISO-006, TC-PRF-ISO-007, TC-PRF-ISO-008 | 4 | -- |
-| **TOTAL** | | | **35 test cases** | **35** | **10/10 AC** |
+| US-PRF-003 | Manager Rates Employee Performance | Must Have | TC-PRF-003-01, TC-PRF-003-02, TC-PRF-003-03, TC-PRF-003-04, TC-PRF-003-05, TC-PRF-003-06, TC-PRF-003-07, TC-PRF-003-08, TC-PRF-003-09, TC-PRF-003-10, TC-PRF-003-11, TC-PRF-003-12, TC-PRF-003-13 | 13 | 5/5 AC covered |
+| Cross-cutting (PRF-003) | Multi-tenant isolation (review table + dashboard caches + notifications + audit) | Critical | TC-PRF-ISO-009, TC-PRF-ISO-010, TC-PRF-ISO-011, TC-PRF-ISO-012 | 4 | -- |
+| **TOTAL** | | | **52 test cases** | **52** | **15/15 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -3547,6 +3549,23 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-006 | Self-assessment APIs reject missing/invalid/mismatched tenant context + IDOR | Security | Critical | US-PRF-002 | NFR-2, FR-1 |
 | TC-PRF-ISO-007 | Cross-tenant write block: server-derived tenant_id + foreign goal/cycle/employee rejected | Security | Critical | US-PRF-002 | NFR-2, FR-1, FR-6 |
 | TC-PRF-ISO-008 | Attachment paths + auto-save drafts + notifications/reminders tenant-scoped | Security | High | US-PRF-002 | NFR-2, NFR-3, NFR-4, FR-7 |
+| TC-PRF-003-01 | Manager rates all goals + submits -> manager score + FINAL score, "Manager Review Submitted", employee notified, locked (happy path) | E2E | Critical | US-PRF-003 | AC-1, AC-2, FR-1/2/3/4/5, BR-1/2/4 |
+| TC-PRF-003-02 | Submit with unrated goal(s) -> error LISTING unrated goals, blocked client+server | Functional | Critical | US-PRF-003 | AC-3, FR-3, BR-1 |
+| TC-PRF-003-03 | Manager comment <20 chars / rating outside scale / summary > 5000 rejected | Functional | High | US-PRF-003 | FR-2, FR-3, FR-5 |
+| TC-PRF-003-04 | FINAL score = (self*self_w)+(manager*manager_w) across 50:50, 30:70, 0:100 (data-driven) | Functional | High | US-PRF-003 | FR-4, BR-4 |
+| TC-PRF-003-05 | Boundary: rating min(1)/max(5), comment exactly 20, summary exactly 5000; one past each rejected | Functional | High | US-PRF-003 | FR-2, FR-3, FR-5 |
+| TC-PRF-003-06 | Team Reviews dashboard status workflow color-coded per direct report | Functional | High | US-PRF-003 | AC-4, FR-1, BR-2 |
+| TC-PRF-003-07 | Scope authz: manager can ONLY review direct reports; non-report 403 + IDOR; unauth 401 | Security | Critical | US-PRF-003 | BR-2, NFR-2, FR-1 |
+| TC-PRF-003-08 | HR Performance.Review.All reviews anyone + reopens submitted review; .Team cannot reopen | Security | High | US-PRF-003 | AC-5, BR-2, BR-3, FR-7 |
+| TC-PRF-003-09 | Submitted review locked/read-only + manager-review window enforced before/after | Functional | Critical | US-PRF-003 | AC-5, BR-1, FR-1 |
+| TC-PRF-003-10 | Optimistic concurrency: HR + manager edit same review, stale save 409, no lost update | Functional | High | US-PRF-003 | NFR-3, FR-1 |
+| TC-PRF-003-11 | Manager rating actions (submit/reopen/re-submit) audit-logged with user id + timestamp | Security | High | US-PRF-003 | FR-7, NFR-2 |
+| TC-PRF-003-12 | Single-employee review form (incl. self-assessment data) loads <=400ms P95, no N+1 | Performance | High | US-PRF-003 | NFR-1, AC-1 |
+| TC-PRF-003-13 | Manager-review UI WCAG 2.1 AA + keyboard rating inputs + 360px stacked layout | Accessibility | High | US-PRF-003 | NFR-4, AC-1, AC-4 |
+| TC-PRF-ISO-009 | Reviews in Tenant A invisible from Tenant B (cross-tenant read); HR .All tenant-bounded | Security | Critical | US-PRF-003 | NFR-2, BR-3 |
+| TC-PRF-ISO-010 | Review APIs reject missing/invalid/mismatched tenant context + IDOR | Security | Critical | US-PRF-003 | NFR-2, FR-1 |
+| TC-PRF-ISO-011 | Cross-tenant write block: server-derived tenant_id + foreign employee/cycle/goal rejected | Security | Critical | US-PRF-003 | NFR-2, FR-1, FR-7 |
+| TC-PRF-ISO-012 | Dashboard caches + submission notifications + audit entries tenant-scoped | Security | High | US-PRF-003 | NFR-2, FR-7 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 
@@ -3623,6 +3642,43 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Multi-Tenant Isolation | 4 (TC-PRF-ISO-005..008) |
 | Blocked | 0 (FR-7 delivery + NFR-4 scanner + cache CONDITIONAL; BR-4 final composite + BR-5 disabled-config out of scope -- none blocking) |
 
+### US-PRF-003 Detailed Requirements Traceability
+
+| Requirement | Type | Test Cases | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Side-by-side view -- each goal + employee self-rating/comments alongside empty manager fields | AC | TC-PRF-003-01, -12, -13 | Direct |
+| AC-2: Rate all goals -> Submit -> manager score + final score, "Manager Review Submitted", employee notified | AC | TC-PRF-003-01, -03, -04 | Direct |
+| AC-3: Submit without rating all goals -> validation error LISTING unrated goals, prevented | AC | TC-PRF-003-02 | Direct |
+| AC-4: Team Reviews dashboard -- per-member status (pending self / submitted / manager pending / completed) color-coded | AC | TC-PRF-003-06 | Direct |
+| AC-5: Submitted review read-only; editable only if HR reopens | AC | TC-PRF-003-08, -09 | Direct |
+| FR-1: display self-rating/comments alongside each goal | FR | TC-PRF-003-01, -06, -09 | Direct |
+| FR-2: manager rating uses the same tenant-configured scale | FR | TC-PRF-003-03, -05 | Direct |
+| FR-3: manager comment min 20 chars per goal | FR | TC-PRF-003-01, -03, -05 | Direct |
+| FR-4: final weighted score via tenant self:manager ratio | FR | TC-PRF-003-01, -04 | Direct |
+| FR-5: overall summary comment (max 5000 chars) | FR | TC-PRF-003-01, -03, -05 | Direct |
+| FR-6: flag for recognition / promotion / PIP | FR | -- | DEFERRED (lightweight flag; no dedicated TC) |
+| FR-7: rating actions audit-logged with user id + timestamp | FR | TC-PRF-003-11, TC-PRF-ISO-012 | Direct (AuditInterceptor seam; S24) |
+| BR-1: submit only during the manager-review phase window | BR | TC-PRF-003-09 | Direct |
+| BR-2: manager can only rate direct reports | BR | TC-PRF-003-06, -07 | Direct (org tree authoritative) |
+| BR-3: HR `Performance.Review.All` rates anyone + reopens submitted reviews | BR | TC-PRF-003-08, -09 | Direct (tenant-bounded, TC-PRF-ISO-009) |
+| BR-4: final = (self*self_w)+(manager*manager_w) | BR | TC-PRF-003-04 | Direct |
+| BR-5: 360-degree peer/report ratings folded into final score | BR | -- | DEFERRED (US-PRF-005) |
+| NFR-1: single-employee review form (incl. self-assessment data) <=400ms P95 | NFR | TC-PRF-003-12 | Direct (seeded perf env) |
+| NFR-2: tenant isolation (own-tenant + direct-report scope; RLS / EF query filters) | NFR | TC-PRF-003-07, TC-PRF-ISO-009, -010, -011, -012 | Direct (EF filters; RLS extension point) |
+| NFR-3: optimistic concurrency (HR + manager simultaneous edit) | NFR | TC-PRF-003-10 | Direct |
+| NFR-4: WCAG 2.1 AA + keyboard rating inputs + 360px stacked | NFR | TC-PRF-003-13 | Direct |
+
+### US-PRF-003 Coverage Summary
+
+| Metric | Value |
+|--------|-------|
+| Acceptance Criteria | 5/5 (AC-1..AC-5) directly covered |
+| Test Cases | 17 (TC-PRF-003-01..13 + TC-PRF-ISO-009..012) |
+| Critical Priority | 7 (TC-PRF-003-01, -02, -07, -09 + TC-PRF-ISO-009, -010, -011) |
+| High Priority | 10 (TC-PRF-003-03, -04, -05, -06, -08, -10, -11, -12, -13 + TC-PRF-ISO-012) |
+| Multi-Tenant Isolation | 4 (TC-PRF-ISO-009..012) |
+| Blocked | 0 (FR-7 delivery + dashboard cache CONDITIONAL; FR-6 flag + BR-5 360-degree DEFERRED to US-PRF-005 -- none blocking) |
+
 ---
 
 ### Cross-Module Coverage Summary
@@ -3635,8 +3691,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
 | Payroll (US-PAY-001 through US-PAY-012) | 12 | 192 | 63/63 (100%) | 48 | PASS (module complete) |
-| Performance Management (US-PRF-001 through US-PRF-002) | 2 | 35 | 10/10 (100%) | 8 | IN PROGRESS |
-| **TOTAL** | **65** | **1273** | **335/335 (100%)** | **227** | |
+| Performance Management (US-PRF-001 through US-PRF-003) | 3 | 52 | 15/15 (100%) | 12 | IN PROGRESS |
+| **TOTAL** | **66** | **1290** | **340/340 (100%)** | **231** | |
 
 ---
 
