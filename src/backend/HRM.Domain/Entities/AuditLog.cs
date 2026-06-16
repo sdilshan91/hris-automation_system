@@ -49,4 +49,19 @@ public sealed class AuditLog
 
     /// <summary>Distributed trace identifier for correlation (FR-3, technical doc §19.9). Nullable.</summary>
     public string? TraceId { get; set; }
+
+    // ── Impersonator attribution (US-ADM-003 FR-3/AC-2) — all NULLABLE (additive) ──
+
+    /// <summary>
+    /// When this row was written during an impersonation session, the System Admin / System Support user who
+    /// was operating the workspace (NOT the impersonated <see cref="UserId"/>). Null for ordinary actions.
+    /// Stamped automatically by <c>AuditInterceptor</c> from <c>ICurrentUser</c> when impersonating.
+    /// </summary>
+    public Guid? ImpersonatorUserId { get; set; }
+
+    /// <summary>The <c>impersonation_sessions</c> row id this action belongs to (US-ADM-003 AC-2). Nullable.</summary>
+    public Guid? ImpersonationSessionId { get; set; }
+
+    /// <summary>True iff this audit row was produced while an impersonation session was active. Default false.</summary>
+    public bool IsImpersonationAction { get; set; }
 }

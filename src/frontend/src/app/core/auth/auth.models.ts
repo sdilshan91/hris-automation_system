@@ -34,6 +34,20 @@ export interface ITokenClaims {
   roles: string[];
   permissions: string[];
   is_impersonation: boolean;
+  // ─── Impersonation claims (US-ADM-003 FR-2) ────────────────
+  // Present only when is_impersonation is true. Decoded as-is from the JWT, so
+  // string/number types match whatever the backend emits (imp_expires_at is a
+  // unix-seconds value that may decode as a number or numeric string).
+  /** Impersonation session id (the audit reference shown in the banner). */
+  imp_session_id?: string;
+  /** Original System Admin user_id who initiated the session. */
+  imp_actor_id?: string;
+  /** Truncated reason captured at session start. */
+  imp_reason?: string;
+  /** Read-only flag (AC-5/AC-6) — "true"/"false" string or boolean from the token. */
+  imp_readonly?: boolean | string;
+  /** Session hard-expiry as unix seconds (number or numeric string). */
+  imp_expires_at?: number | string;
   iat: number;
   exp: number;
   iss: string;

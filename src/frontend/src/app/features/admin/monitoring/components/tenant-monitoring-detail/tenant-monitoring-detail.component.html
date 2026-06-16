@@ -37,11 +37,15 @@
           <!-- Quick actions (AC-4) — all disabled, point to later releases -->
           <div class="flex flex-wrap items-center gap-2" data-testid="quick-actions">
             @if (canManage()) {
+              <!-- US-ADM-003 AC-1: enabled (terminated tenants can't be impersonated). -->
               <button
                 type="button"
-                class="btn-secondary opacity-50 cursor-not-allowed"
-                disabled
-                title="Available in a later release"
+                class="btn-secondary"
+                [disabled]="d.status === 'terminated'"
+                [class.opacity-50]="d.status === 'terminated'"
+                [class.cursor-not-allowed]="d.status === 'terminated'"
+                [title]="d.status === 'terminated' ? 'Terminated tenants cannot be impersonated' : 'Impersonate a user in this tenant'"
+                (click)="openImpersonate()"
                 data-testid="impersonate-btn"
               >
                 Impersonate
@@ -174,5 +178,15 @@
         </div>
       </div>
     </div>
+
+    <!-- US-ADM-003 AC-1: impersonation confirmation modal. -->
+    @if (impersonateOpen()) {
+      <app-impersonate-dialog
+        [tenantId]="d.tenantId"
+        [tenantName]="d.name"
+        (started)="onImpersonationStarted($event)"
+        (cancelled)="closeImpersonate()"
+      />
+    }
   }
 </div>

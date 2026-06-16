@@ -305,6 +305,20 @@ public static class PermissionCatalog
         public const string View = "Audit.View";
     }
 
+    // ── Impersonation (US-ADM-003) ───────────────────────────────────
+    public static class Impersonation
+    {
+        /// <summary>
+        /// US-ADM-003 (BR-1): initiate / end a tenant-user impersonation session and list impersonation
+        /// targets. A SYSTEM-level capability held by the platform <c>SystemAdmin</c> role (seeded with every
+        /// catalog permission) AND the read-only <c>System Support</c> system role. The endpoints additionally
+        /// run only in the system/admin context, so a tenant-scoped role that nominally held this could never
+        /// reach them. Whether a started session is READ-ONLY is decided server-side (System Support ⇒ always
+        /// read-only; a Suspended target tenant ⇒ read-only), not by a permission.
+        /// </summary>
+        public const string Initiate = "Impersonation.Initiate";
+    }
+
     // ── Notifications ────────────────────────────────────────────────
     public static class Notifications
     {
@@ -400,6 +414,9 @@ public static class PermissionCatalog
 
         // Audit
         Audit.View,
+
+        // Impersonation
+        Impersonation.Initiate,
 
         // Notifications
         Notifications.ViewOwn, Notifications.ManageTemplates,
@@ -576,5 +593,18 @@ public static class PermissionCatalog
             Reports.View, Reports.Export,
         },
         _ => Array.Empty<string>(),
+    };
+
+    /// <summary>
+    /// US-ADM-003 (BR-1/AC-6): the MINIMAL permission set for the platform "System Support" system role. It can
+    /// initiate impersonation (read-only is enforced server-side, not by permission) and read the monitoring
+    /// dashboard, but holds NO destructive or tenant-provisioning capability. Kept deliberately small so a
+    /// read-only support session is real and testable; the role lives in the system tenant (TenantId = the
+    /// platform tenant) alongside SystemAdmin.
+    /// </summary>
+    public static IReadOnlyList<string> SystemSupportPermissions { get; } = new[]
+    {
+        Impersonation.Initiate,
+        Monitoring.View,
     };
 }

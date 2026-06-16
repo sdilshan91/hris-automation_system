@@ -65,6 +65,10 @@ public sealed class PayrollAuditIntegrationTests
         public IReadOnlyList<string> Roles => [];
         public IReadOnlyList<string> Permissions => [];
         public bool IsAuthenticated => true;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
     }
 
     private IServiceProvider Provider(Guid tenantId)

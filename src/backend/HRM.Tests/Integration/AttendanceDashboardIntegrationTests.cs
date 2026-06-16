@@ -85,6 +85,10 @@ public sealed class AttendanceDashboardIntegrationTests
         public IReadOnlyList<string> Roles => [];
         public IReadOnlyList<string> Permissions { get; init; } = [];
         public bool IsAuthenticated => true;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
     }
 
     private (IMediator Mediator, IServiceProvider Provider) BuildPipeline(

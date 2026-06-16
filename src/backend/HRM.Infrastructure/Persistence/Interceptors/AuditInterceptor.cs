@@ -59,5 +59,30 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                     break;
             }
         }
+
+        StampImpersonationAttribution(context);
+    }
+
+    /// <summary>
+    /// US-ADM-003 (FR-3/AC-2): when the current request is operating under an impersonation session, stamp every
+    /// NEWLY-ADDED <see cref="AuditLog"/> row with the impersonator's identity + session id so the tenant audit
+    /// trail attributes the action to "platform support", not just the impersonated user. Backward-compatible and
+    /// additive: when the caller is not impersonating, or a writer already set these fields explicitly, this is a
+    /// no-op. <see cref="AuditLog"/> is not a <see cref="BaseEntity"/>, so it is handled here directly.
+    /// </summary>
+    private void StampImpersonationAttribution(DbContext context)
+    {
+        if (!_currentUser.IsImpersonating)
+            return;
+
+        foreach (var entry in context.ChangeTracker.Entries<AuditLog>())
+        {
+            if (entry.State != EntityState.Added)
+                continue;
+
+            entry.Entity.IsImpersonationAction = true;
+            entry.Entity.ImpersonatorUserId ??= _currentUser.ImpersonatorId;
+            entry.Entity.ImpersonationSessionId ??= _currentUser.ImpersonationSessionId;
+        }
     }
 }

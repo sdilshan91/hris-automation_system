@@ -46,6 +46,10 @@ try
     });
     builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
     builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+    // US-ADM-003 (AC-5/AC-6/FR-3/FR-6): block writes under a read-only impersonation session and block the
+    // FR-6 destructive ops even under a full impersonation. Runs before the handler (and before the tenant
+    // transaction) so a forbidden write never touches the database.
+    builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ImpersonationReadOnlyBehavior<,>));
     // US-PLT-002: ambient SET LOCAL app.current_tenant for RLS. Registered last so it is
     // the innermost behavior (its transaction spans the handler). Inert until Rls:Enabled
     // (Phase-4 switch-on) and a no-op on non-relational providers / system context.
@@ -260,6 +264,11 @@ try
     app.UseCors();
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // US-ADM-003 (AC-3/NFR-2): session-based revocation + expiry for impersonation tokens. After auth (needs the
+    // resolved ICurrentUser), before controllers — rejects 401 once the session is ended/expired and best-effort
+    // counts mutating actions. No-op for non-impersonated traffic.
+    app.UseMiddleware<ImpersonationEnforcementMiddleware>();
 
     // Session activity tracking — debounced last_active_at update (US-AUTH-009 FR-4)
     app.UseMiddleware<SessionActivityMiddleware>();

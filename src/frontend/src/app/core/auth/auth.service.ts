@@ -38,6 +38,15 @@ export class AuthService {
   // In-memory only -- never stored in localStorage (XSS protection)
   private accessToken: string | null = null;
 
+  // US-ADM-003: the admin's own access token, stashed when an impersonation
+  // session is activated so "End Session" can restore the original session
+  // without a re-login. In-memory only, same XSS posture as accessToken.
+  private adminAccessToken: string | null = null;
+
+  // Bumped whenever the active token changes so the impersonation computed
+  // signals below recompute (decodeToken reads a plain field, not a signal).
+  private readonly tokenVersion = signal(0);
+
   // Signals for reactive state
   readonly currentUser = signal<IUser | null>(null);
   readonly currentTenant = signal<ITenantInfo | null>(null);
@@ -51,6 +60,38 @@ export class AuthService {
   readonly mfaEnabled = computed(() => this.currentUser()?.mfaEnabled ?? false);
   readonly mfaRequiresEnrollment = signal(false);
   readonly loginEmail = signal('');
+
+  // ─── Impersonation state (US-ADM-003) ───────────────────────
+  // Derived from the active JWT's impersonation claims (FR-2). The persistent
+  // banner (NFR-4) reads these. tokenVersion() forces recompute on token swap.
+
+  /** AC-2: true when the active token is an impersonation token. */
+  readonly isImpersonating = computed(() => {
+    this.tokenVersion();
+    return this.decodeToken()?.is_impersonation === true;
+  });
+
+  /** Session audit reference shown in the banner (FR-2). */
+  readonly impersonationSessionId = computed(() => {
+    this.tokenVersion();
+    return this.decodeToken()?.imp_session_id ?? null;
+  });
+
+  /** AC-5/AC-6: whether the impersonated session is read-only. */
+  readonly impersonationReadOnly = computed(() => {
+    this.tokenVersion();
+    const v = this.decodeToken()?.imp_readonly;
+    return v === true || v === 'true';
+  });
+
+  /** NFR-2: session hard-expiry as unix seconds (null when not impersonating). */
+  readonly impersonationExpiresAt = computed<number | null>(() => {
+    this.tokenVersion();
+    const raw = this.decodeToken()?.imp_expires_at;
+    if (raw === undefined || raw === null) return null;
+    const n = typeof raw === 'string' ? Number(raw) : raw;
+    return Number.isFinite(n) ? n : null;
+  });
 
   // Refresh token queue management (FR-10 from US-AUTH-002)
   private isRefreshing = false;
@@ -324,6 +365,46 @@ export class AuthService {
     return this.accessToken;
   }
 
+  // ─── Impersonation (US-ADM-003) ─────────────────────────────
+
+  /**
+   * AC-1: activate an impersonation token in THIS SPA. The admin's current
+   * access token is stashed so endImpersonation() can restore it without a
+   * re-login. Roles/permissions are re-derived from the impersonation JWT so
+   * the rest of the app reflects the target user's authorization.
+   *
+   * NOTE: this is a single-SPA dev model. True cross-subdomain impersonation
+   * (opening the tenant subdomain in a new tab with the token) is deferred to a
+   * production token-handoff mechanism — an in-memory token cannot cross origins.
+   */
+  activateImpersonation(token: string): void {
+    if (this.accessToken && !this.isImpersonating()) {
+      this.adminAccessToken = this.accessToken;
+    }
+    this.setAccessToken(token);
+    const claims = this.decodeToken();
+    this.roles.set(claims?.roles ?? []);
+    this.permissions.set(claims?.permissions ?? []);
+  }
+
+  /**
+   * AC-3: restore the admin's original session after ending impersonation.
+   * Returns true if a stashed admin token was restored, false otherwise (in
+   * which case the caller should fall back to a full logout / re-login).
+   */
+  endImpersonation(): boolean {
+    const admin = this.adminAccessToken;
+    if (!admin) {
+      return false;
+    }
+    this.adminAccessToken = null;
+    this.setAccessToken(admin);
+    const claims = this.decodeToken();
+    this.roles.set(claims?.roles ?? []);
+    this.permissions.set(claims?.permissions ?? []);
+    return true;
+  }
+
   /** Check if user has a specific permission */
   hasPermission(permission: string): boolean {
     return this.permissions().includes(permission);
@@ -403,10 +484,13 @@ export class AuthService {
 
   private setAccessToken(token: string): void {
     this.accessToken = token;
+    this.tokenVersion.update((v) => v + 1);
   }
 
   private clearSession(): void {
     this.accessToken = null;
+    this.adminAccessToken = null;
+    this.tokenVersion.update((v) => v + 1);
     this.currentUser.set(null);
     this.currentTenant.set(null);
     this.permissions.set([]);

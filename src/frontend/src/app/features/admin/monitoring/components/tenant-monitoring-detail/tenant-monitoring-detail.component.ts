@@ -7,7 +7,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { PlatformMonitoringService } from '../../services/platform-monitoring.service';
 import { AuthService } from '../../../../../core/auth/auth.service';
@@ -15,6 +15,8 @@ import {
   ITenantMonitoringDetail,
   bandClass,
 } from '../../models/monitoring.models';
+import { ImpersonateDialogComponent } from '../../../impersonation/components/impersonate-dialog/impersonate-dialog.component';
+import { IStartImpersonationResponse } from '../../../impersonation/models/impersonation.models';
 
 /**
  * US-ADM-002 AC-4: System Admin tenant monitoring detail.
@@ -33,7 +35,7 @@ import {
 @Component({
   selector: 'app-tenant-monitoring-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, ImpersonateDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeSlideIn', [
@@ -49,10 +51,14 @@ export class TenantMonitoringDetailComponent implements OnInit {
   private readonly service = inject(PlatformMonitoringService);
   private readonly route = inject(ActivatedRoute);
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
 
   readonly detail = signal<ITenantMonitoringDetail | null>(null);
   readonly isLoading = signal(true);
   readonly errorMessage = signal<string | null>(null);
+
+  /** US-ADM-003 AC-1: whether the impersonation confirmation modal is open. */
+  readonly impersonateOpen = signal(false);
 
   readonly bandClass = bandClass;
 
@@ -86,6 +92,28 @@ export class TenantMonitoringDetailComponent implements OnInit {
         this.isLoading.set(false);
       },
     });
+  }
+
+  // ─── Impersonation (US-ADM-003) ─────────────────────────────
+
+  /** AC-1: open the impersonation confirmation modal for this tenant. */
+  openImpersonate(): void {
+    this.impersonateOpen.set(true);
+  }
+
+  closeImpersonate(): void {
+    this.impersonateOpen.set(false);
+  }
+
+  /**
+   * AC-1: the modal already activated the impersonation token via AuthService.
+   * Cross-subdomain new-tab hand-off is a production concern (an in-memory token
+   * cannot cross origins), so in this single-SPA model we navigate into the app
+   * — the global banner then renders from the active impersonation token.
+   */
+  onImpersonationStarted(_res: IStartImpersonationResponse): void {
+    this.impersonateOpen.set(false);
+    this.router.navigate(['/dashboard']);
   }
 
   /** Status badge colour. */

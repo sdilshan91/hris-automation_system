@@ -63,6 +63,10 @@ public sealed class PayrollRunIntegrationTests
         public IReadOnlyList<string> Roles => [];
         public IReadOnlyList<string> Permissions => [];
         public bool IsAuthenticated => true;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
     }
 
     /// <summary>Captures the enqueue so the test can assert FR-2 without a live Hangfire server.</summary>

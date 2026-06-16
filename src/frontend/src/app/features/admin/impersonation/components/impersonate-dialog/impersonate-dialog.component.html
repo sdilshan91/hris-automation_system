@@ -1,0 +1,138 @@
+<div
+  @backdrop
+  class="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-900/40 p-4"
+  (click)="cancel()"
+>
+  <div
+    @pop
+    class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="impersonate-title"
+    (click)="$event.stopPropagation()"
+    data-testid="impersonate-dialog"
+  >
+    <div class="flex items-start gap-3">
+      <span
+        class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700"
+        aria-hidden="true"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 h-5 w-5">
+          <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+        </svg>
+      </span>
+      <div class="min-w-0">
+        <h2 id="impersonate-title" class="text-base font-semibold text-neutral-900">
+          Impersonate User
+        </h2>
+        <p class="mt-1 text-sm text-neutral-500">
+          @if (selectedTarget(); as t) {
+            You are about to impersonate
+            <span class="font-medium text-neutral-700">{{ t.displayName }}</span>
+            in
+            <span class="font-medium text-neutral-700">{{ tenantName() }}</span>.
+            Provide a reason for this action.
+          } @else {
+            Choose a user in
+            <span class="font-medium text-neutral-700">{{ tenantName() }}</span>
+            and provide a reason for this action.
+          }
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-5 space-y-4">
+      <!-- Target picker -->
+      <div>
+        <label for="impersonate-target" class="mb-1 block text-sm font-medium text-neutral-700">
+          Target user <span class="text-red-500">*</span>
+        </label>
+        @if (targetsLoading()) {
+          <div class="h-10 animate-pulse rounded-lg bg-neutral-100" data-testid="targets-loading"></div>
+        } @else if (targetsError()) {
+          <p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="targets-error">
+            {{ targetsError() }}
+          </p>
+        } @else {
+          <select
+            id="impersonate-target"
+            class="field"
+            [(ngModel)]="selectedUserId"
+            (ngModelChange)="onInput()"
+            data-testid="target-select"
+          >
+            <option value="" disabled>Select a user…</option>
+            @for (t of targets(); track t.userId) {
+              <option [value]="t.userId">
+                {{ t.email }}@if (t.roles.length) { — {{ t.roles.join(', ') }} }
+              </option>
+            } @empty {
+              <option value="" disabled>No impersonatable users in this tenant.</option>
+            }
+          </select>
+        }
+      </div>
+
+      <!-- Reason -->
+      <div>
+        <div class="mb-1 flex items-center justify-between">
+          <label for="impersonate-reason" class="block text-sm font-medium text-neutral-700">
+            Reason <span class="text-red-500">*</span>
+          </label>
+          <span
+            class="text-xs"
+            [class.text-neutral-400]="reasonValid()"
+            [class.text-red-500]="!reasonValid()"
+            data-testid="reason-counter"
+          >
+            {{ reasonLength() }} / {{ REASON_MAX }}
+          </span>
+        </div>
+        <textarea
+          id="impersonate-reason"
+          rows="3"
+          class="field resize-none"
+          [attr.maxlength]="REASON_MAX"
+          [attr.aria-invalid]="!reasonValid()"
+          placeholder="Why are you impersonating this user? (min 10 characters)"
+          [(ngModel)]="reason"
+          (ngModelChange)="onInput()"
+          data-testid="reason-input"
+        ></textarea>
+        <p class="mt-1 text-xs text-neutral-400">
+          The reason is stored verbatim and sent to the tenant's administrators.
+        </p>
+      </div>
+
+      @if (submitError()) {
+        <p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" data-testid="submit-error">
+          {{ submitError() }}
+        </p>
+      }
+    </div>
+
+    <div class="mt-6 flex justify-end gap-2">
+      <button
+        type="button"
+        class="rounded-lg px-4 py-2 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100"
+        (click)="cancel()"
+        data-testid="cancel-btn"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="!canSubmit()"
+        (click)="confirm()"
+        data-testid="confirm-btn"
+      >
+        @if (submitting()) {
+          Starting…
+        } @else {
+          Start session
+        }
+      </button>
+    </div>
+  </div>
+</div>

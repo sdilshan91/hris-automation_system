@@ -15,6 +15,12 @@ namespace HRM.Infrastructure.Identity;
 /// </summary>
 public sealed class JwtService : IJwtService
 {
+    /// <summary>US-ADM-003 NFR-2: impersonation tokens are capped at 60 minutes and are not refreshable.</summary>
+    private const int ImpersonationMaxTtlMinutes = 60;
+
+    /// <summary>US-ADM-003 FR-2: the truncation length for the <c>imp_reason</c> claim.</summary>
+    private const int ImpersonationReasonClaimMaxLength = 100;
+
     private readonly IConfiguration _configuration;
     private readonly RsaSecurityKey _signingKey;
     private readonly RsaSecurityKey _validationKey;
@@ -63,6 +69,68 @@ public sealed class JwtService : IJwtService
             claims: claims,
             notBefore: DateTime.UtcNow,
             expires: DateTime.UtcNow.AddMinutes(15),
+            signingCredentials: signingCredentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public string GenerateImpersonationToken(
+        User targetUser,
+        Guid targetTenantId,
+        Guid targetUserTenantId,
+        IEnumerable<string> roles,
+        IEnumerable<string> permissions,
+        Guid sessionId,
+        Guid impersonatorUserId,
+        string reason,
+        bool isReadOnly,
+        DateTime expiresAt)
+    {
+        var now = DateTime.UtcNow;
+
+        // NFR-2: hard-cap the TTL at 60 minutes. The token's exp is the EARLIER of the requested session
+        // expiry and now+60min, so a caller can never mint a longer-lived impersonation token.
+        var maxExpiry = now.AddMinutes(ImpersonationMaxTtlMinutes);
+        var effectiveExpiry = expiresAt < maxExpiry ? expiresAt : maxExpiry;
+
+        // The reason is informational in the token (the verbatim copy lives on the session row); truncate it
+        // so the token stays small and never carries an oversized free-text field.
+        var truncatedReason = reason.Length > ImpersonationReasonClaimMaxLength
+            ? reason[..ImpersonationReasonClaimMaxLength]
+            : reason;
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, targetUser.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, targetUser.Email),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("tenant_id", targetTenantId.ToString()),
+            new("user_tenant_id", targetUserTenantId.ToString()),
+            // is_impersonation flips to "true" for this token type (it is "false" on a normal access token).
+            new(ImpersonationClaims.IsImpersonation, "true"),
+            new(ImpersonationClaims.SessionId, sessionId.ToString()),
+            new(ImpersonationClaims.ActorId, impersonatorUserId.ToString()),
+            new(ImpersonationClaims.Reason, truncatedReason),
+            new(ImpersonationClaims.ReadOnly, isReadOnly ? "true" : "false"),
+            new(ImpersonationClaims.ExpiresAt,
+                new DateTimeOffset(effectiveExpiry).ToUnixTimeSeconds().ToString(),
+                ClaimValueTypes.Integer64),
+        };
+
+        foreach (var role in roles)
+            claims.Add(new Claim("roles", role));
+
+        foreach (var permission in permissions)
+            claims.Add(new Claim("permissions", permission));
+
+        var signingCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _configuration["Jwt:Issuer"] ?? "hrm-api",
+            audience: _configuration["Jwt:Audience"] ?? "hrm-client",
+            claims: claims,
+            notBefore: now,
+            expires: effectiveExpiry,
             signingCredentials: signingCredentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

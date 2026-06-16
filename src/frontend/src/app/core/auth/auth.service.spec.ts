@@ -247,6 +247,73 @@ describe('AuthService', () => {
     );
     expect(redirectSpy).toHaveBeenCalledWith('https://bravo.yourhrm.com/dashboard');
   });
+
+  // ─── Impersonation (US-ADM-003) ─────────────────────────────
+  describe('impersonation', () => {
+    it('isImpersonating is false for a normal token', () => {
+      service.activateImpersonation(tokenFor({ is_impersonation: false }));
+      // activating a non-impersonation token still exposes its claims; the flag
+      // is what the banner reads.
+      expect(service.isImpersonating()).toBeFalse();
+    });
+
+    it('exposes the impersonation claims from the active token', () => {
+      service.activateImpersonation(
+        tokenFor({
+          is_impersonation: true,
+          imp_session_id: 'sess-7',
+          imp_readonly: 'true',
+          imp_expires_at: 1800000000,
+          roles: ['HR Officer'],
+        }),
+      );
+
+      expect(service.isImpersonating()).toBeTrue();
+      expect(service.impersonationSessionId()).toBe('sess-7');
+      expect(service.impersonationReadOnly()).toBeTrue();
+      expect(service.impersonationExpiresAt()).toBe(1800000000);
+      // Roles re-derive from the impersonation JWT.
+      expect(service.roles()).toEqual(['HR Officer']);
+    });
+
+    it('coerces a numeric-string imp_expires_at and boolean imp_readonly', () => {
+      service.activateImpersonation(
+        tokenFor({
+          is_impersonation: true,
+          imp_session_id: 'sess-8',
+          imp_readonly: false,
+          imp_expires_at: '1700000000',
+        }),
+      );
+
+      expect(service.impersonationReadOnly()).toBeFalse();
+      expect(service.impersonationExpiresAt()).toBe(1700000000);
+    });
+
+    it('endImpersonation restores the stashed admin token and clears impersonation', () => {
+      const adminToken = tokenFor({ is_impersonation: false, roles: ['System Admin'] });
+      // Establish the admin session as the active token first.
+      service.activateImpersonation(adminToken);
+      // Now activate an impersonation token (admin token gets stashed).
+      service.activateImpersonation(
+        tokenFor({ is_impersonation: true, imp_session_id: 'sess-1' }),
+      );
+      expect(service.isImpersonating()).toBeTrue();
+
+      const restored = service.endImpersonation();
+      expect(restored).toBeTrue();
+      expect(service.isImpersonating()).toBeFalse();
+      expect(service.getAccessToken()).toBe(adminToken);
+      expect(service.roles()).toEqual(['System Admin']);
+    });
+
+    it('endImpersonation returns false when there is no stashed admin token', () => {
+      service.activateImpersonation(
+        tokenFor({ is_impersonation: true, imp_session_id: 'sess-1' }),
+      );
+      expect(service.endImpersonation()).toBeFalse();
+    });
+  });
 });
 
 function tokenFor(overrides: Partial<ITokenClaims>): string {
