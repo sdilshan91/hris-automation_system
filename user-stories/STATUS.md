@@ -113,7 +113,7 @@
 ## 7. Performance Management (10 stories)
 - [x] US-PRF-001 — Manager sets goals/KPIs for team *(PR #75)*
 - [x] US-PRF-002 — Employee self-rates against goals *(PR #76)*
-- [ ] US-PRF-003 — Manager rates employee performance
+- [~] US-PRF-003 — Manager rates employee performance
 - [ ] US-PRF-004 — HR creates appraisal cycles
 - [ ] US-PRF-005 — 360-degree review
 - [ ] US-PRF-006 — Review meeting notes and sign-off
