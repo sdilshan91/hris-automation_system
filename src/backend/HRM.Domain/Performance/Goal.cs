@@ -1,0 +1,64 @@
+using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+
+namespace HRM.Domain.Performance;
+
+/// <summary>
+/// A performance goal / KPI assigned to an employee for an appraisal cycle (US-PRF-001). Set by the
+/// employee's direct reporting manager (or HR) during the cycle's goal-setting window. Tenant-scoped via
+/// <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>.
+/// Maps to the "goal" table.
+/// </summary>
+public sealed class Goal : BaseEntity
+{
+    /// <summary>The appraisal cycle this goal belongs to (FK, required).</summary>
+    public Guid CycleId { get; set; }
+
+    /// <summary>The employee this goal is assigned to (FK to <see cref="Employee"/>, required).</summary>
+    public Guid EmployeeId { get; set; }
+
+    /// <summary>Goal title (FR-2, required, max 200 chars).</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>Goal description / detail (FR-2, optional, max 2000 chars).</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Category — KPI / Competency / Project (FR-2, required).</summary>
+    public GoalCategory Category { get; set; } = GoalCategory.Kpi;
+
+    /// <summary>
+    /// Weight as a whole-number percentage (FR-2). 1-100, in increments of 5% (BR-3). Per-employee
+    /// per-cycle weights must sum to exactly 100% (FR-3/AC-3) — enforced at save time.
+    /// </summary>
+    public int Weight { get; set; }
+
+    /// <summary>Target value the goal is measured against (FR-2, required, free-text e.g. "95%", "12").</summary>
+    public string TargetValue { get; set; } = string.Empty;
+
+    /// <summary>Unit of measurement (FR-2, required, e.g. "%", "tickets", "days").</summary>
+    public string MeasurementUnit { get; set; } = string.Empty;
+
+    /// <summary>Due date for the goal (FR-2, required). Date only — no time component.</summary>
+    public DateOnly DueDate { get; set; }
+
+    /// <summary>
+    /// Optional parent goal for cascading (FR-4): links this employee goal to a higher-level
+    /// departmental/organizational objective. Stored as a nullable self-FK (same tenant via global filter).
+    /// </summary>
+    public Guid? ParentGoalId { get; set; }
+
+    /// <summary>Current lifecycle status (AC-4). Defaults to Draft on create.</summary>
+    public GoalStatus Status { get; set; } = GoalStatus.Draft;
+
+    /// <summary>
+    /// Optimistic concurrency token (NFR-4). On PostgreSQL this maps to the xmin system column via the
+    /// Npgsql row-version convention (no schema DDL); the InMemory test provider ignores it. Mirrors the
+    /// <c>LeaveRequest.Version</c> pattern.
+    /// </summary>
+    public uint Version { get; set; }
+
+    // ── Navigation ─────────────────────────────────────────────────
+    public AppraisalCycle? Cycle { get; set; }
+    public Employee? Employee { get; set; }
+    public Goal? ParentGoal { get; set; }
+}

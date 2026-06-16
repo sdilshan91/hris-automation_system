@@ -275,6 +275,14 @@ public static class DependencyInjection
         // IEmployeeService.CreateAsync). Completes the Recruitment module.
         services.AddScoped<IApplicantConversionService, ApplicantConversionService>();
 
+        // US-PRF-001: Performance — manager goal-setting (create/update/delete goals + team dashboard +
+        // per-employee goals). Authorization (BR-4), goal-setting-window gate (BR-1/AC-5), 1-10 count (BR-2)
+        // and ≤100% weight (FR-3/AC-3) are enforced in the service. Notification is a log-only seam (FR-7,
+        // TODO US-NTF). The minimal AppraisalCycle entity is created here to unblock goal-setting; full cycle
+        // management is owned by US-PRF-004.
+        services.AddScoped<IGoalService, GoalService>();
+        services.AddScoped<IPerformanceNotificationService, LogOnlyPerformanceNotificationService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

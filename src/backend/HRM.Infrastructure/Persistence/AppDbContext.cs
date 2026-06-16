@@ -1,6 +1,7 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Interfaces;
+using HRM.Domain.Performance;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Infrastructure.Persistence;
@@ -85,6 +86,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
     public DbSet<SocialSecurityRule> SocialSecurityRules => Set<SocialSecurityRule>();
+    public DbSet<AppraisalCycle> AppraisalCycles => Set<AppraisalCycle>();
+    public DbSet<Goal> Goals => Set<Goal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -330,6 +333,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PAY-011: PayslipEmailLog tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
         modelBuilder.Entity<PayslipEmailLog>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-001: AppraisalCycle tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<AppraisalCycle>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-001: Goal tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<Goal>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
