@@ -66,6 +66,25 @@ export const PAYROLL_ROUTES: Routes = [
       ).then((m) => m.PayrollReconciliationComponent),
   },
   {
+    // US-PAY-012 (AC-1, §8): Payroll History — Notion table of all runs with the
+    // audit columns, sortable + filterable by year/status. Declared BEFORE
+    // 'runs/:id' so it is matched literally (it is a sibling, not a run id).
+    path: 'history',
+    loadComponent: () =>
+      import(
+        './components/payroll-history/payroll-history.component'
+      ).then((m) => m.PayrollHistoryComponent),
+  },
+  {
+    // US-PAY-012 (AC-4, FR-4/FR-5/FR-8): Audit Trail — filterable timeline with
+    // before/after diff + CSV/Excel export. Declared BEFORE 'runs/:id'.
+    path: 'audit',
+    loadComponent: () =>
+      import('./components/audit-trail/audit-trail.component').then(
+        (m) => m.AuditTrailComponent,
+      ),
+  },
+  {
     // US-PAY-003 (§8): run detail — status stepper, live progress, summary card.
     // US-PAY-008 extends it with the approval review layout + action bar + history.
     path: 'runs/:id',

@@ -12,6 +12,7 @@ import { PayrollRunService } from '../../services/payroll-run.service';
 import { PayrollApprovalService } from '../../services/payroll-approval.service';
 import { PayslipEmailService } from '../../services/payslip-email.service';
 import { PayslipService } from '../../services/payslip.service';
+import { AuditService } from '../../services/audit.service';
 import { AuthService } from '../../../../core/auth/auth.service';
 import { IPayslipDistributionStatus } from '../../models/payslip-email.models';
 import { IPayslipGenerationStatus } from '../../models/payslip.models';
@@ -31,6 +32,7 @@ describe('PayrollRunDetailComponent', () => {
   let approval: jasmine.SpyObj<PayrollApprovalService>;
   let email: jasmine.SpyObj<PayslipEmailService>;
   let payslips: jasmine.SpyObj<PayslipService>;
+  let audit: jasmine.SpyObj<AuditService>;
   let auth: jasmine.SpyObj<AuthService>;
   let toastr: jasmine.SpyObj<ToastrService>;
 
@@ -76,6 +78,14 @@ describe('PayrollRunDetailComponent', () => {
       'getGenerationStatus',
     ]);
     payslips.getGenerationStatus.and.returnValue(of(emptyGeneration));
+    // The embedded US-PAY-012 audit-trail child fires getRunAuditTrail on init.
+    audit = jasmine.createSpyObj<AuditService>('AuditService', [
+      'getHistory',
+      'getAuditTrail',
+      'getRunAuditTrail',
+      'exportAuditTrail',
+    ]);
+    audit.getRunAuditTrail.and.returnValue(of([]));
   }
 
   const baseRun: IPayrollRun = {
@@ -169,6 +179,7 @@ describe('PayrollRunDetailComponent', () => {
         { provide: PayrollApprovalService, useValue: approval },
         { provide: PayslipEmailService, useValue: email },
         { provide: PayslipService, useValue: payslips },
+        { provide: AuditService, useValue: audit },
         { provide: AuthService, useValue: auth },
         { provide: ToastrService, useValue: toastr },
         {
@@ -303,6 +314,7 @@ describe('PayrollRunDetailComponent', () => {
           { provide: PayrollApprovalService, useValue: approval },
           { provide: PayslipEmailService, useValue: email },
           { provide: PayslipService, useValue: payslips },
+          { provide: AuditService, useValue: audit },
           { provide: AuthService, useValue: auth },
           { provide: ToastrService, useValue: toastr },
           {

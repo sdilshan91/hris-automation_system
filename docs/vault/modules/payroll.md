@@ -841,3 +841,68 @@ update before asserting dialog DOM.
   preference toggle.
 - Rate-limit / template / sender-domain config (FR-3/FR-6/BR-2/BR-4) are backend
   concerns; the FE shows whatever delivery outcomes the status endpoint returns.
+
+## Payroll history + audit trail (US-PAY-012) — FRONTEND (capstone)
+
+Two NEW read surfaces + a run-detail extension, all under the existing `payroll`
+lazy route (`roleGuard(['Tenant Admin','HR Officer'])` + `Payroll.View`). NEW
+sibling service `AuditService` (payroll/services) — route strings live ONLY here.
+Bare payloads (US-PLT-001), PascalCase `action`/`resourceType` wire strings
+(US-PLT-003), withCredentials; tenant + RLS server-side (AC-5).
+
+### Frontend contract — `AuditService` (ASSUMED REST — BE built in parallel, NO audit/history controller existed when FE was written; reconcile in this one file)
+Base `${apiBaseUrl}/payroll`. No `audit_log` read controller or pinned action-name
+values existed in the repo/vault at FE-write time (only the shared `AuditLog`
+entity + EmployeeFieldAuditLog). Action names mirror the §7 "Payroll Action Types"
+table verbatim.
+- `GET /payroll/history?year=&status=` → `IPayrollHistoryRun[]` (tolerates `{data}`).
+  History row adds `approvedByName` + `finalizedAt` to the run summary (AC-1 columns).
+- `GET /payroll/audit-trail?dateFrom=&dateTo=&action=&resourceType=&actor=`
+  → `IAuditEntry[]` (FR-4; every empty filter omitted).
+- `GET /payroll/runs/:id/audit-trail` → `IAuditEntry[]` (FR-6 per-run timeline).
+- `GET /payroll/audit-trail/export?format=csv|xlsx&...` → blob (`responseType:'blob'`
+  +`observe:'response'`, bypasses envelope; anchor-click via local
+  `downloadBlob`/`filenameFromDisposition`, same as payroll-reports/payslip-list).
+
+### Diff is a PURE helper (`buildDiff` in audit.models.ts, FR-8)
+`buildDiff(before, after)` → `IDiffRow[]` (field, before, after, kind). Union of
+keys SORTED so the two columns line up; key only-in-after = `added` (green),
+only-in-before = `removed` (red), both-differ = `modified` (amber), else
+`unchanged`. null before = create (all-added), null after = delete (all-removed),
+both null = []. Nested values → compact JSON, null → "—". Isolated from the
+component so trivially unit-tested. `auditActionLabel` de-camelCases unknown future
+actions; `auditDotClass` keys timeline-dot colour off the resource PREFIX so a new
+verb still colours sensibly.
+
+### UI decisions (US-PAY-012, §8)
+- `PayrollHistoryComponent` (route `payroll/history`, declared BEFORE `runs/:id`) =
+  Notion table (desktop) / stacked cards (mobile). Columns: Pay Period, Status badge,
+  Employees, Total Net, Initiated By, Approved By, Finalized. Sortable headers
+  (period/status/employees/net/finalized, toggle dir; default period-desc) + YEAR
+  pills (derived from data, newest-first) + STATUS `<select>`. Filtering is
+  CLIENT-SIDE over the loaded list (service also accepts year/status params). Row
+  click → `runs/:id`. "View audit trail →" link to `payroll/audit`.
+- `AuditTrailComponent` is REUSED in two modes via an `input()` `runId`:
+  - standalone page (route `payroll/audit`, declared BEFORE `runs/:id`) → filter bar
+    (date-range/action/resource/actor, FR-4) + CSV/Excel export (FR-5) + tenant-wide
+    timeline. `applyFilters()` snapshots the ngModel filter bar into an `activeFilters`
+    signal then reloads (so a stale edit can't be the one exported).
+  - embedded in run-detail `<app-audit-trail [runId]="r.id" />` (after the US-PAY-008
+    approval-history block; that block's `mb-24` MOVED to the audit wrapper) → per-run
+    timeline (FR-6), filter bar + export HIDDEN.
+  Vertical timeline, each card "View changes" toggles a SIDE-BY-SIDE before/after diff
+  table that is **desktop-only** (`hidden md:block`); mobile shows a "view on desktop"
+  note (§8). Timeline itself stays scrollable on mobile.
+
+### Run-detail spec gotcha (embedded child = new injected dep)
+The embedded `AuditTrailComponent` injects `AuditService` + fires `getRunAuditTrail`
+on init. The run-detail spec has TWO TestBed configs (`setup` + nested
+`setupProcessing`) — BOTH need an `AuditService` spy provider (added the spy to the
+shared `makeChildSpies()` helper + both providers arrays), same pattern as the
+US-PAY-011 PayslipEmail/Payslip child spies. Full FE suite 2418 green (56 new tests).
+
+### Deferred / not-FE (noted per brief)
+- AC-3 (write-side audit log creation), FR-2/FR-3 (logging every write op), NFR-1
+  async writes, NFR-3 BRIN indexes, NFR-7 cold-storage archival, AC-5 RLS — all BACKEND.
+  The FE is pure READ over `audit_log` + the run history.
+- 7-year retention (FR-7/NFR-5) — data-retention policy, backend.

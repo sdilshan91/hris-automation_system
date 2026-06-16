@@ -49,7 +49,7 @@ public sealed class SalaryStructureServiceTests
     {
         var ctx = Tenant(tenantId);
         var db = TestDbContextFactory.Create(ctx, _dbName);
-        return new SalaryComponentService(db, ctx, _currentUser, Substitute.For<ILogger<SalaryComponentService>>());
+        return new SalaryComponentService(db, ctx, _currentUser, Substitute.For<IPayrollAuditLogger>(), Substitute.For<ILogger<SalaryComponentService>>());
     }
 
     private async Task<Guid> SeedComponent(

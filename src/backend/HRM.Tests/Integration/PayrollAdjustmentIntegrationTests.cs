@@ -108,6 +108,7 @@ public sealed class PayrollAdjustmentIntegrationTests
         services.AddScoped<IAttendanceSummaryService, AttendanceSummaryService>();
         services.AddScoped<IAttendancePayrollService, AttendancePayrollService>();
         services.AddScoped<IReportExportStorage, InMemoryExportStorage>();
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
         services.AddScoped<IPayrollAdjustmentResolver, PayrollAdjustmentResolver>();
         services.AddScoped<IPayrollAdjustmentService, PayrollAdjustmentService>();

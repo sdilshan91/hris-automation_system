@@ -7,6 +7,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 
 namespace HRM.Infrastructure.Services;
 
@@ -27,6 +28,7 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IFileStorage _fileStorage;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayrollAdjustmentService> _logger;
 
     // NFR-5: supporting document constraints.
@@ -48,14 +50,23 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IFileStorage fileStorage,
+        IPayrollAuditLogger audit,
         ILogger<PayrollAdjustmentService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _fileStorage = fileStorage;
+        _audit = audit;
         _logger = logger;
     }
+
+    /// <summary>US-PAY-012: audited snapshot of an adjustment (before/after JSON).</summary>
+    private static object Snapshot(PayrollAdjustment a) => new
+    {
+        a.EmployeeId, AdjustmentType = a.AdjustmentType.ToString(), a.Amount, a.Description,
+        a.ApplicablePayMonth, a.ApplicablePayYear, a.IsTaxable, a.IsRecurring, Status = a.Status.ToString(),
+    };
 
     // ── FR-1: create ────────────────────────────────────────────────────────
 
@@ -122,6 +133,11 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
             }
         }
 
+        // US-PAY-012 (FR-2): audit the create — before=null, after=snapshot of the primary record. Committed
+        // atomically. (Recurring occurrences share the series id captured in the snapshot's period fields.)
+        _audit.Log(PA.PayrollAdjustmentCreated, PA.ResourceType.PayrollAdjustment,
+            first.Id.ToString(), before: null, after: Snapshot(first));
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var dto = ToDto(first, employee, negativeNetWarning);
@@ -148,8 +164,14 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
         if (adj.Status == AdjustmentStatus.Cancelled)
             return Result.Failure("Adjustment is already cancelled.", 409, "adjustment_already_cancelled");
 
+        var before = Snapshot(adj);
         adj.Status = AdjustmentStatus.Cancelled;
         adj.UpdatedAt = DateTime.UtcNow;
+
+        // US-PAY-012 (FR-2): audit the cancellation with before/after JSON.
+        _audit.Log(PA.PayrollAdjustmentCancelled, PA.ResourceType.PayrollAdjustment,
+            adj.Id.ToString(), before: before, after: Snapshot(adj));
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }

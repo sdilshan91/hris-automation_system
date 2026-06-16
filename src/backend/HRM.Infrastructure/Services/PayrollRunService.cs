@@ -7,6 +7,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 
 namespace HRM.Infrastructure.Services;
 
@@ -28,6 +29,7 @@ public sealed class PayrollRunService : IPayrollRunService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IAttendancePayrollService _attendancePayroll;
+    private readonly IPayrollAuditLogger _audit;
     private readonly IPayrollRunJobScheduler? _jobScheduler;
     private readonly ILogger<PayrollRunService> _logger;
 
@@ -42,6 +44,7 @@ public sealed class PayrollRunService : IPayrollRunService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IAttendancePayrollService attendancePayroll,
+        IPayrollAuditLogger audit,
         ILogger<PayrollRunService> logger,
         IPayrollRunJobScheduler? jobScheduler = null)
     {
@@ -49,6 +52,7 @@ public sealed class PayrollRunService : IPayrollRunService
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _attendancePayroll = attendancePayroll;
+        _audit = audit;
         _logger = logger;
         _jobScheduler = jobScheduler;
     }
@@ -113,6 +117,12 @@ public sealed class PayrollRunService : IPayrollRunService
         };
 
         _dbContext.PayrollRuns.Add(run);
+
+        // US-PAY-012 (FR-2): audit the run initiation — staged into the SAME SaveChanges so a unique-index
+        // conflict (BR-1) discards the audit entry too (no audit row for a run that was never created).
+        _audit.Log(PA.PayrollRunInitiated, PA.ResourceType.PayrollRun,
+            run.Id.ToString(), before: null,
+            after: new { run.PayMonth, run.PayYear, Status = run.Status.ToString(), run.InitiatedBy });
 
         try
         {

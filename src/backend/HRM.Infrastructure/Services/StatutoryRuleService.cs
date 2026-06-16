@@ -6,6 +6,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 
 namespace HRM.Infrastructure.Services;
 
@@ -23,6 +24,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IStatutoryDeductionResolver _resolver;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<StatutoryRuleService> _logger;
 
     private const int MaxPageSize = 100;
@@ -32,14 +34,25 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IStatutoryDeductionResolver resolver,
+        IPayrollAuditLogger audit,
         ILogger<StatutoryRuleService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _resolver = resolver;
+        _audit = audit;
         _logger = logger;
     }
+
+    /// <summary>US-PAY-012: audited snapshot of a statutory rule's defining fields (before/after JSON).</summary>
+    private static object Snapshot(StatutoryRule r) => new
+    {
+        RuleType = r.RuleType.ToString(), r.RuleName, r.CountryCode, r.FiscalYear,
+        EffectiveFrom = r.EffectiveFrom.ToString("yyyy-MM-dd"),
+        EffectiveTo = r.EffectiveTo?.ToString("yyyy-MM-dd"),
+        r.IsActive, SlabCount = r.TaxSlabs?.Count ?? 0,
+    };
 
     public async Task<Result<StatutoryRuleDto>> CreateAsync(CreateStatutoryRuleInput input, CancellationToken cancellationToken = default)
     {
@@ -68,6 +81,11 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         };
 
         _dbContext.StatutoryRules.Add(rule);
+
+        // US-PAY-012 (FR-2): audit the create — before=null, after=snapshot. Committed atomically.
+        _audit.Log(PA.StatutoryRuleCreated, PA.ResourceType.StatutoryRule,
+            rule.Id.ToString(), before: null, after: Snapshot(rule));
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -96,6 +114,9 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
 
+        // US-PAY-012: capture the BEFORE snapshot prior to mutating (TaxSlabs already Included above).
+        var before = Snapshot(rule);
+
         rule.RuleName = input.RuleName.Trim();
         rule.CountryCode = input.CountryCode.Trim().ToUpperInvariant();
         rule.FiscalYear = input.FiscalYear.Trim();
@@ -111,6 +132,10 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         if (rule.SocialSecurityRule is not null)
             _dbContext.SocialSecurityRules.Remove(rule.SocialSecurityRule);
         rule.SocialSecurityRule = BuildSocialSecurity(ruleId, input.SocialSecurity);
+
+        // US-PAY-012 (FR-2): audit the update with before/after JSON.
+        _audit.Log(PA.StatutoryRuleUpdated, PA.ResourceType.StatutoryRule,
+            rule.Id.ToString(), before: before, after: Snapshot(rule));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

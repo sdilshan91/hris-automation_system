@@ -5,6 +5,7 @@ using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,7 @@ public sealed class SalaryComponentService : ISalaryComponentService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<SalaryComponentService> _logger;
 
     private const int MaxPageSize = 100;
@@ -29,13 +31,25 @@ public sealed class SalaryComponentService : ISalaryComponentService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IPayrollAuditLogger audit,
         ILogger<SalaryComponentService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _audit = audit;
         _logger = logger;
     }
+
+    /// <summary>
+    /// US-PAY-012 AC-3: the audited snapshot of a salary component (the fields whose change matters). Used as
+    /// the before/after JSON payload so a diff view can show exactly what changed.
+    /// </summary>
+    private static object Snapshot(SalaryComponent c) => new
+    {
+        c.Name, c.Code, Type = c.Type.ToString(), CalculationMethod = c.CalculationMethod.ToString(),
+        c.DefaultValue, c.FormulaExpression, c.IsTaxable, c.IsStatutory, c.IsActive, c.ProcessingOrder,
+    };
 
     public async Task<Result<SalaryComponentDto>> CreateAsync(SalaryComponentInput input, CancellationToken cancellationToken = default)
     {
@@ -72,6 +86,11 @@ public sealed class SalaryComponentService : ISalaryComponentService
         };
 
         _dbContext.SalaryComponents.Add(component);
+
+        // US-PAY-012 (FR-2): audit the create — before=null (new), after=snapshot. Committed atomically.
+        _audit.Log(PA.SalaryComponentCreated, PA.ResourceType.SalaryComponent,
+            component.Id.ToString(), before: null, after: Snapshot(component));
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -101,6 +120,9 @@ public sealed class SalaryComponentService : ISalaryComponentService
             return Result<SalaryComponentDto>.Failure(
                 $"A salary component with code '{code}' already exists.", 409, "duplicate_code");
 
+        // US-PAY-012 AC-3: capture the BEFORE snapshot prior to mutating (old values as JSON).
+        var before = Snapshot(component);
+
         component.Name = input.Name.Trim();
         component.Code = code;
         component.Type = input.Type;
@@ -112,6 +134,10 @@ public sealed class SalaryComponentService : ISalaryComponentService
         component.IsStatutory = input.IsStatutory;
         component.IsActive = input.IsActive;
         component.ProcessingOrder = input.ProcessingOrder;
+
+        // US-PAY-012 AC-3: audit the update with before/after JSON of the changed fields.
+        _audit.Log(PA.SalaryComponentUpdated, PA.ResourceType.SalaryComponent,
+            component.Id.ToString(), before: before, after: Snapshot(component));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -205,6 +231,10 @@ public sealed class SalaryComponentService : ISalaryComponentService
             return Result.Failure(
                 $"This component is used by {inUseCount} salary structure(s) and cannot be deleted. Remove the links first.",
                 409, "component_in_use");
+
+        // US-PAY-012 (FR-2): audit the soft-delete — before=snapshot, after=null (deleted).
+        _audit.Log(PA.SalaryComponentDeleted, PA.ResourceType.SalaryComponent,
+            component.Id.ToString(), before: Snapshot(component), after: null);
 
         component.IsDeleted = true;
         await _dbContext.SaveChangesAsync(cancellationToken);
