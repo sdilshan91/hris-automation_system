@@ -96,7 +96,7 @@
 - [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(Phases 1-3 plumbing in PR #51, inert by default; **Phase 4 switch-on DEFERRED** — needs Docker/Postgres env, see Persistence/Rls/README.md)*
 - [~] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(PR #57: global JsonStringEnumConverter DONE + recruitment FE casing DONE; **residual**: leave-management + core-hr FE enum unions still lowercase/kebab — no regression, deferred follow-up)*
 
-## 6. Payroll (12 stories)
+## 6. Payroll (12 stories) — COMPLETE ✅
 - [x] US-PAY-001 — Configure salary structure and components *(PR #63)*
 - [x] US-PAY-002 — Assign salary structure to employee *(PR #64)*
 - [x] US-PAY-003 — Run monthly payroll *(PR #65)*
@@ -108,7 +108,7 @@
 - [x] US-PAY-009 — Payroll reports and analytics *(PR #71)*
 - [x] US-PAY-010 — Attendance/leave integration into payroll *(PR #72)*
 - [x] US-PAY-011 — Bulk payslip email distribution *(PR #73)*
-- [~] US-PAY-012 — Payroll history and audit trail
+- [x] US-PAY-012 — Payroll history and audit trail *(PR #74)*
 
 ## 7. Performance Management (10 stories)
 - [ ] US-PRF-001 — Manager sets goals/KPIs for team
