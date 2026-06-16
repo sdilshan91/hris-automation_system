@@ -119,7 +119,7 @@
 - [x] US-PRF-006 — Review meeting notes and sign-off *(PR #80)*
 - [x] US-PRF-007 — Performance dashboard and analytics *(PR #81)*
 - [x] US-PRF-008 — Performance improvement plan (PIP) *(PR #82)*
-- [~] US-PRF-009 — Goal tracking with progress updates
+- [x] US-PRF-009 — Goal tracking with progress updates *(PR #83)*
 - [ ] US-PRF-010 — Performance-based recommendations
 
 ## 8. Admin Console (10 stories)
@@ -160,9 +160,9 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **75** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **US-PRF-001..008** (#75–#82)
+- Done: **76** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **US-PRF-001..009** (#75–#83)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **28** — Performance (2 of 10 left), Admin Console (10), Onboarding (6), Notifications (5), Reports (5)
+- Pending: **27** — Performance (1 of 10 left), Admin Console (10), Onboarding (6), Notifications (5), Reports (5)
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
 ## Module → directory map
