@@ -298,6 +298,16 @@ public static class DependencyInjection
         // ComputeFinalScore is the single extension point US-PRF-005 (360 feedback, BR-5) will widen.
         services.AddScoped<IManagerReviewService, ManagerReviewService>();
 
+        // US-PRF-004: Performance — full appraisal-cycle management (create/edit/clone/transition/cancel +
+        // dashboard + active-cycle). The phase-sequencing/in-range rules (FR-2/BR-3) are in the validators;
+        // participant scoping (FR-3), BR-4 (no two active same-type cycles per employee), the FR-7 status
+        // state machine, BR-5 (scale-lock on Active), BR-6 (cancel-needs-reason + notify) and BR-2
+        // (delete-only-Draft-without-reviews) are enforced in the service. The GoalSetting/SelfAssessment/
+        // ManagerReview phases are kept in sync with the legacy cycle window columns, so US-PRF-001/002/003
+        // windows are now phase-driven. Hangfire scheduling (FR-5) is an OPTIONAL seam (ICyclePhaseScheduler,
+        // bound in HRM.Api) — absent in tests, where the service simply skips scheduling.
+        services.AddScoped<IAppraisalCycleService, AppraisalCycleService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

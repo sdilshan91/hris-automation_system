@@ -55,4 +55,14 @@ public sealed class LogOnlyPerformanceNotificationService : IPerformanceNotifica
             managerReviewId, employeeId, cycleId);
         return Task.CompletedTask;
     }
+
+    public Task NotifyCycleEventAsync(
+        string eventType, Guid cycleId, Guid employeeId, string? detail = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Performance notification SEAM] {EventType}: cycle {CycleId}, participant {EmployeeId}{Detail}. " +
+            "Real in-app/email delivery deferred (US-NTF).",
+            eventType, cycleId, employeeId, detail is null ? string.Empty : $" ({detail})");
+        return Task.CompletedTask;
+    }
 }

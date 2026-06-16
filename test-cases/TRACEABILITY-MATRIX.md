@@ -3508,7 +3508,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PRF-002) | Multi-tenant isolation (self_assessment table + attachments + auto-save + notifications) | Critical | TC-PRF-ISO-005, TC-PRF-ISO-006, TC-PRF-ISO-007, TC-PRF-ISO-008 | 4 | -- |
 | US-PRF-003 | Manager Rates Employee Performance | Must Have | TC-PRF-003-01, TC-PRF-003-02, TC-PRF-003-03, TC-PRF-003-04, TC-PRF-003-05, TC-PRF-003-06, TC-PRF-003-07, TC-PRF-003-08, TC-PRF-003-09, TC-PRF-003-10, TC-PRF-003-11, TC-PRF-003-12, TC-PRF-003-13 | 13 | 5/5 AC covered |
 | Cross-cutting (PRF-003) | Multi-tenant isolation (review table + dashboard caches + notifications + audit) | Critical | TC-PRF-ISO-009, TC-PRF-ISO-010, TC-PRF-ISO-011, TC-PRF-ISO-012 | 4 | -- |
-| **TOTAL** | | | **52 test cases** | **52** | **15/15 AC** |
+| US-PRF-004 | HR Creates and Manages Appraisal Cycles | Must Have | TC-PRF-004-01, TC-PRF-004-02, TC-PRF-004-03, TC-PRF-004-04, TC-PRF-004-05, TC-PRF-004-06, TC-PRF-004-07, TC-PRF-004-08, TC-PRF-004-09, TC-PRF-004-10, TC-PRF-004-11, TC-PRF-004-12, TC-PRF-004-13, TC-PRF-004-14, TC-PRF-004-15 | 15 | 5/5 AC covered |
+| Cross-cutting (PRF-004) | Multi-tenant isolation (cycles/phases/participants tables + Hangfire jobs + dashboard caches + notifications) | Critical | TC-PRF-ISO-013, TC-PRF-ISO-014, TC-PRF-ISO-015, TC-PRF-ISO-016 | 4 | -- |
+| **TOTAL** | | | **71 test cases** | **71** | **20/20 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -3566,6 +3568,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-010 | Review APIs reject missing/invalid/mismatched tenant context + IDOR | Security | Critical | US-PRF-003 | NFR-2, FR-1 |
 | TC-PRF-ISO-011 | Cross-tenant write block: server-derived tenant_id + foreign employee/cycle/goal rejected | Security | Critical | US-PRF-003 | NFR-2, FR-1, FR-7 |
 | TC-PRF-ISO-012 | Dashboard caches + submission notifications + audit entries tenant-scoped | Security | High | US-PRF-003 | NFR-2, FR-7 |
+| TC-PRF-004-01 | HR creates cycle (>=3 sequential non-overlapping phases + scope) -> persisted tenant-scoped + Hangfire jobs scheduled + confirmation (happy path) | E2E | Critical | US-PRF-004 | AC-1, AC-2, FR-1/2/3/5/6, BR-3 |
+| TC-PRF-004-02 | Overlapping / non-sequential / reversed / zero-duration phases rejected client+server | Functional | Critical | US-PRF-004 | AC-2, AC-5, FR-2, BR-3 |
+| TC-PRF-004-03 | Phase dates outside the cycle window rejected (incl. shrinking window under a phase) | Functional | High | US-PRF-004 | AC-2, AC-5, FR-2, BR-3 |
+| TC-PRF-004-04 | Create/edit/clone/transition/cancel by non-authorized user blocked (403/401) | Security | Critical | US-PRF-004 | AC-2, AC-5, FR-1/7/8, BR-1 |
+| TC-PRF-004-05 | Cycle dashboard: timeline + per-phase completion % + overdue counts (tenant-scoped) | Functional | High | US-PRF-004 | AC-3, FR-2, FR-3 |
+| TC-PRF-004-06 | Phase extension re-validates sequencing/non-overlap/window, reschedules Hangfire jobs, notifies affected | Integration | High | US-PRF-004 | AC-5, FR-2, FR-5, NFR-3, BR-3 |
+| TC-PRF-004-07 | Hangfire deadline reminder fires to non-completers only; tenant-scoped + retry/backoff + idempotent | Integration | High | US-PRF-004 | AC-4, FR-5, NFR-3 |
+| TC-PRF-004-08 | Status transitions Draft->Active->Paused->Active->Completed + Draft->Cancelled; invalid transitions rejected | Functional | High | US-PRF-004 | AC-2, FR-7, BR-1 |
+| TC-PRF-004-09 | Cannot delete with submitted reviews (cancel only); cancellation needs reason + notifies all | Functional | High | US-PRF-004 | AC-2, FR-7, BR-2, BR-6 |
+| TC-PRF-004-10 | Rating scale editable in Draft, locked once Active | Functional | High | US-PRF-004 | AC-1, AC-2, FR-6, FR-7, BR-5 |
+| TC-PRF-004-11 | Department scope excludes out-of-scope employee; employee not in two active same-type cycles | Functional | High | US-PRF-004 | AC-1, AC-2, FR-3, FR-4, BR-4 |
+| TC-PRF-004-12 | Clone completed cycle -> all config copied with new dates, no progress/review data | Functional | High | US-PRF-004 | AC-2, FR-6, FR-8, BR-1, BR-5 |
+| TC-PRF-004-13 | Creation with 5,000 participants <=5s; dashboard <=2s P95 | Performance | High | US-PRF-004 | NFR-1, NFR-4, AC-2, AC-3 |
+| TC-PRF-004-14 | Cycle form + timeline WCAG 2.1 AA + responsive vertical stepper at 360px | Accessibility | High | US-PRF-004 | AC-1, AC-3, S8 |
+| TC-PRF-004-15 | Boundary: min 3 phases enforced; edge-touching + adjacent + same-boundary-day phases | Functional | High | US-PRF-004 | AC-1, AC-2, FR-1, FR-2, BR-3 |
+| TC-PRF-ISO-013 | Cycles/phases/participants/dashboard in Tenant A invisible from Tenant B (cross-tenant read, incl. by direct id) | Security | Critical | US-PRF-004 | NFR-2 |
+| TC-PRF-ISO-014 | Cycle APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR | Security | Critical | US-PRF-004 | NFR-2, FR-1, FR-7 |
+| TC-PRF-ISO-015 | Cross-tenant write block: server-derived tenant_id + foreign department/employee/rating-scale rejected | Security | Critical | US-PRF-004 | NFR-2, FR-3, FR-6 |
+| TC-PRF-ISO-016 | Hangfire cycle jobs + dashboard caches + phase/cancellation notifications tenant-scoped | Security | High | US-PRF-004 | NFR-2, NFR-3, FR-5, BR-6 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 
@@ -3681,6 +3702,47 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 ---
 
+### US-PRF-004 Detailed Requirements Traceability
+
+| Requirement | Type | Test Cases | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Create-cycle form with name/period/phases/scope/rating-scale/360 fields | AC | TC-PRF-004-01, -14, -15 | Direct |
+| AC-2: Valid cycle created -> phases+participants persisted tenant-scoped, Hangfire jobs scheduled, confirmation | AC | TC-PRF-004-01, -02, -08 | Direct |
+| AC-3: Cycle dashboard -- timeline + per-phase completion stats + overdue counts | AC | TC-PRF-004-05, -13, -14 | Direct |
+| AC-4: Deadline approaching -> Hangfire reminder (in-app + email) to non-completers | AC | TC-PRF-004-07 | Direct |
+| AC-5: Edit/extend a phase -> re-validate sequencing/non-overlap, reschedule jobs, notify affected | AC | TC-PRF-004-06, -02, -03 | Direct |
+| FR-1: cycle with min 3 phases (goal-setting, assessment, publish) | FR | TC-PRF-004-01, -15 | Direct |
+| FR-2: phases sequential + non-overlapping, configurable dates | FR | TC-PRF-004-01, -02, -06, -15 | Direct |
+| FR-3: scope to all / departments / grades / custom list | FR | TC-PRF-004-01, -11 | Direct |
+| FR-4: multiple concurrent cycles (not same-type for one employee) | FR | TC-PRF-004-11 | Direct |
+| FR-5: Hangfire phase-start/reminder/close/escalation jobs | FR | TC-PRF-004-01, -06, -07, TC-PRF-ISO-016 | Direct (delivery CONDITIONAL on Notification System S25) |
+| FR-6: rating scale + weight ratio + 360 + calibration + anonymity config | FR | TC-PRF-004-01, -10, -12 | Direct (toggle config; downstream behavior owned by US-PRF-005+) |
+| FR-7: statuses Draft/Active/Paused/Completed/Cancelled | FR | TC-PRF-004-08, -09, -10 | Direct |
+| FR-8: clone an existing cycle as a template | FR | TC-PRF-004-12 | Direct |
+| BR-1: only Performance.SetGoal.All / .Publish.All create/modify cycles | BR | TC-PRF-004-04, -08, -12 | Direct |
+| BR-2: cannot delete with submitted reviews (cancel only) | BR | TC-PRF-004-09 | Direct |
+| BR-3: phase dates within the cycle window | BR | TC-PRF-004-03, -06, -15 | Direct (inclusive boundaries) |
+| BR-4: no employee in two active cycles of the same type | BR | TC-PRF-004-11 | Direct |
+| BR-5: rating scale locks on Draft->Active | BR | TC-PRF-004-10 | Direct |
+| BR-6: cancellation requires a reason + notifies all participants | BR | TC-PRF-004-09 | Direct (delivery CONDITIONAL on S25) |
+| NFR-1: cycle creation with 5,000 participants <=5s | NFR | TC-PRF-004-13 | Direct (seeded perf env) |
+| NFR-2: tenant isolation (RLS / EF query filters) | NFR | TC-PRF-ISO-013, -014, -015, -016 | Direct (EF filters; RLS extension point) |
+| NFR-3: Hangfire jobs tenant-scoped + retry/backoff (Polly) | NFR | TC-PRF-004-07, TC-PRF-ISO-016 | Direct |
+| NFR-4: dashboard loads <=2s P95 incl. aggregate stats | NFR | TC-PRF-004-05, -13 | Direct (seeded perf env; cache CONDITIONAL on S10) |
+
+### US-PRF-004 Coverage Summary
+
+| Metric | Value |
+|--------|-------|
+| Acceptance Criteria | 5/5 (AC-1..AC-5) directly covered |
+| Test Cases | 19 (TC-PRF-004-01..15 + TC-PRF-ISO-013..016) |
+| Critical Priority | 6 (TC-PRF-004-01, -02, -04 + TC-PRF-ISO-013, -014, -015) |
+| High Priority | 13 (TC-PRF-004-03, -05..-15 + TC-PRF-ISO-016) |
+| Multi-Tenant Isolation | 4 (TC-PRF-ISO-013..016) |
+| Blocked | 0 (FR-5/BR-6 notification delivery + dashboard cache CONDITIONAL; FR-6 360/calibration downstream behavior DEFERRED to US-PRF-005+; NFR-1/NFR-4 need seeded perf env -- none blocking) |
+
+---
+
 ### Cross-Module Coverage Summary
 
 | Module | User Stories | Test Cases | AC Coverage | Multi-Tenant Tests | Status |
@@ -3691,8 +3753,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
 | Payroll (US-PAY-001 through US-PAY-012) | 12 | 192 | 63/63 (100%) | 48 | PASS (module complete) |
-| Performance Management (US-PRF-001 through US-PRF-003) | 3 | 52 | 15/15 (100%) | 12 | IN PROGRESS |
-| **TOTAL** | **66** | **1290** | **340/340 (100%)** | **231** | |
+| Performance Management (US-PRF-001 through US-PRF-004) | 4 | 71 | 20/20 (100%) | 16 | IN PROGRESS |
+| **TOTAL** | **67** | **1309** | **345/345 (100%)** | **235** | |
 
 ---
 

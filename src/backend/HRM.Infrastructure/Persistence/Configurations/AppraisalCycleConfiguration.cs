@@ -5,10 +5,11 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace HRM.Infrastructure.Persistence.Configurations;
 
 /// <summary>
-/// EF Core configuration for the MINIMAL <see cref="AppraisalCycle"/> entity (US-PRF-001 unblocking;
-/// fleshed out by US-PRF-004). Maps to the "appraisal_cycle" table with snake_case naming. Tenant
-/// isolation is via the global query filter in AppDbContext + TenantInterceptor (no Postgres RLS —
-/// same as every other module).
+/// EF Core configuration for <see cref="AppraisalCycle"/>. Originally a minimal entity (US-PRF-001..003),
+/// fleshed out by US-PRF-004 into full cycle management (type, overall window, full status enum, feature
+/// toggles, cancellation reason). The legacy window columns are retained (kept in sync with phases).
+/// Maps to the "appraisal_cycle" table with snake_case naming. Tenant isolation is via the global query
+/// filter in AppDbContext + TenantInterceptor (no Postgres RLS — same as every other module).
 /// </summary>
 public sealed class AppraisalCycleConfiguration : IEntityTypeConfiguration<AppraisalCycle>
 {
@@ -23,25 +24,59 @@ public sealed class AppraisalCycleConfiguration : IEntityTypeConfiguration<Appra
             .HasMaxLength(200)
             .IsRequired();
 
+        builder.Property(c => c.Type)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(Domain.Enums.CycleType.Annual)
+            .IsRequired();
+
         builder.Property(c => c.Status)
             .HasConversion<string>()
             .HasMaxLength(20)
             .IsRequired();
 
+        // US-PRF-004: overall cycle window. Defaults to epoch for existing rows via the migration default;
+        // new cycles set them explicitly.
+        builder.Property(c => c.StartDate).IsRequired();
+        builder.Property(c => c.EndDate).IsRequired();
+
+        // Legacy phase windows (US-PRF-001/002/003) — kept in sync with the cycle_phase rows on save.
         builder.Property(c => c.GoalSettingStart).IsRequired();
         builder.Property(c => c.GoalSettingEnd).IsRequired();
-
-        // US-PRF-002: self-assessment window + scoring config. Defaults make existing rows valid:
-        // a 1-5 scale (RatingScaleMax=5) and a 30:70 self:manager ratio (SelfWeightPercent=30). The window
-        // columns default to the goal-setting window for existing rows via the migration default (epoch),
-        // but new cycles set them explicitly.
         builder.Property(c => c.SelfAssessmentStart).IsRequired();
         builder.Property(c => c.SelfAssessmentEnd).IsRequired();
+        builder.Property(c => c.ManagerReviewStart).IsRequired();
+        builder.Property(c => c.ManagerReviewEnd).IsRequired();
+
         builder.Property(c => c.RatingScaleMax).HasDefaultValue(5).IsRequired();
         builder.Property(c => c.SelfWeightPercent).HasDefaultValue(30).IsRequired();
 
+        // US-PRF-004 feature toggles (FR-6).
+        builder.Property(c => c.Is360Enabled).HasDefaultValue(false).IsRequired();
+        builder.Property(c => c.IsCalibrationEnabled).HasDefaultValue(false).IsRequired();
+        builder.Property(c => c.IsAnonymousFeedback).HasDefaultValue(false).IsRequired();
+
+        builder.Property(c => c.ParticipantScope)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(Domain.Enums.ParticipantScopeType.AllEmployees)
+            .IsRequired();
+
+        builder.Property(c => c.CancellationReason).HasMaxLength(1000);
+
         builder.Property(c => c.IsDeleted).HasDefaultValue(false).IsRequired();
 
+        builder.HasMany(c => c.Phases)
+            .WithOne(p => p.Cycle!)
+            .HasForeignKey(p => p.CycleId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.Participants)
+            .WithOne(p => p.Cycle!)
+            .HasForeignKey(p => p.CycleId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasIndex(c => new { c.TenantId, c.Status });
+        builder.HasIndex(c => new { c.TenantId, c.Type, c.Status });
     }
 }

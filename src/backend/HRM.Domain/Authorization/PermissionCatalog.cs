@@ -239,6 +239,13 @@ public static class PermissionCatalog
         /// Granted to HR Officer / HR Manager / Tenant Admin.
         /// </summary>
         public const string ReviewAll = "Performance.Review.All";
+
+        /// <summary>
+        /// US-PRF-004 (BR-1): create / edit / clone / transition / cancel appraisal cycles and publish
+        /// results. The OR-partner of <see cref="SetGoalAll"/> for cycle management. Granted to HR Officer /
+        /// HR Manager / Tenant Admin.
+        /// </summary>
+        public const string PublishAll = "Performance.Publish.All";
     }
 
     // ── Reports Module ───────────────────────────────────────────────
@@ -350,7 +357,7 @@ public static class PermissionCatalog
         // Performance
         Performance.ViewOwn, Performance.ViewTeam, Performance.ViewAll, Performance.Manage,
         Performance.SetGoalTeam, Performance.SetGoalAll, Performance.ReadSelf,
-        Performance.ReviewTeam, Performance.ReviewAll,
+        Performance.ReviewTeam, Performance.ReviewAll, Performance.PublishAll,
 
         // Reports
         Reports.View, Reports.Export,
@@ -451,7 +458,7 @@ public static class PermissionCatalog
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
-            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll,
+            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             Reports.View, Reports.Export,
             Roles.View, Roles.Manage, Roles.AssignUsers,
             Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
@@ -475,7 +482,7 @@ public static class PermissionCatalog
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Payroll.View, Payroll.Run,
             Recruitment.View, Recruitment.Manage,
-            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll,
+            Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             Reports.View, Reports.Export,
             Training.ViewAll, Training.Manage,
             Benefits.ViewAll, Benefits.Manage,
@@ -493,7 +500,7 @@ public static class PermissionCatalog
             Leave.ViewAll, Leave.ApproveAll, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Recruitment.View, Recruitment.Manage,
-            Performance.ViewAll, Performance.SetGoalAll, Performance.ReviewAll,
+            Performance.ViewAll, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             Reports.View,
             Training.ViewAll,
             Onboarding.View, Onboarding.Manage,
