@@ -368,6 +368,14 @@ try
             "performance-self-assessment-reminders",
             job => job.RunAsync(),
             "0 7 * * *"); // 07:00 UTC daily
+
+        // US-PRF-005 AC-5 / FR-8: daily 360-degree reviewer reminders for assignments still Pending while
+        // the cycle's feedback window is open. Idempotent per run + tenant-safe; dispatches via the same
+        // log-only performance notification seam until US-NTF.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.Feedback360ReminderJob>(
+            "performance-360-reviewer-reminders",
+            job => job.RunAsync(),
+            "0 8 * * *"); // 08:00 UTC daily
     }
 
     app.Run();

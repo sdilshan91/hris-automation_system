@@ -79,6 +79,30 @@ public sealed class AppraisalCycle : BaseEntity
     /// <summary>Whether peer feedback is anonymous (FR-6).</summary>
     public bool IsAnonymousFeedback { get; set; }
 
+    // ── 360 composite-score config (US-PRF-005 FR-6) ───────────────────
+    // Per-category weights for the 360 COMPOSITE score (AC-4/FR-6). They are only consulted when
+    // Is360Enabled. The four weights are expected to sum to 100; the composite/final-score math normalizes
+    // by the weight of the categories that actually have feedback, so a missing category never skews the
+    // result. Defaults: self 10 / manager 40 / peers 30 / reports 20 (the FR-6 example).
+
+    /// <summary>360 composite weight (%) for the Self perspective (US-PRF-005 FR-6). Default 10.</summary>
+    public int ThreeSixtySelfWeightPercent { get; set; } = 10;
+
+    /// <summary>360 composite weight (%) for the Manager perspective (US-PRF-005 FR-6). Default 40.</summary>
+    public int ThreeSixtyManagerWeightPercent { get; set; } = 40;
+
+    /// <summary>360 composite weight (%) for the Peer perspective (US-PRF-005 FR-6). Default 30.</summary>
+    public int ThreeSixtyPeerWeightPercent { get; set; } = 30;
+
+    /// <summary>360 composite weight (%) for the DirectReport perspective (US-PRF-005 FR-6). Default 20.</summary>
+    public int ThreeSixtyReportWeightPercent { get; set; } = 20;
+
+    /// <summary>
+    /// Minimum number of PEER reviewers required before the 360 results may be released (US-PRF-005 BR-4/FR-3).
+    /// HR is warned (not hard-blocked) when fewer peers have submitted. Default 2.
+    /// </summary>
+    public int Min360PeerReviewers { get; set; } = 2;
+
     // ── Participant scope snapshot (US-PRF-004 FR-3) ───────────────────
 
     /// <summary>How the participant set was resolved at creation (FR-3).</summary>

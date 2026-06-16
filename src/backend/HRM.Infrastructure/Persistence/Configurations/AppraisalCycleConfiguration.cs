@@ -56,6 +56,13 @@ public sealed class AppraisalCycleConfiguration : IEntityTypeConfiguration<Appra
         builder.Property(c => c.IsCalibrationEnabled).HasDefaultValue(false).IsRequired();
         builder.Property(c => c.IsAnonymousFeedback).HasDefaultValue(false).IsRequired();
 
+        // US-PRF-005: 360 composite-score per-category weights (FR-6) + min-peer threshold (BR-4/FR-3).
+        builder.Property(c => c.ThreeSixtySelfWeightPercent).HasDefaultValue(10).IsRequired();
+        builder.Property(c => c.ThreeSixtyManagerWeightPercent).HasDefaultValue(40).IsRequired();
+        builder.Property(c => c.ThreeSixtyPeerWeightPercent).HasDefaultValue(30).IsRequired();
+        builder.Property(c => c.ThreeSixtyReportWeightPercent).HasDefaultValue(20).IsRequired();
+        builder.Property(c => c.Min360PeerReviewers).HasDefaultValue(2).IsRequired();
+
         builder.Property(c => c.ParticipantScope)
             .HasConversion<string>()
             .HasMaxLength(20)

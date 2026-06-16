@@ -65,4 +65,24 @@ public interface IPerformanceNotificationService
         Guid employeeId,
         string? detail = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies an assigned 360-degree reviewer that the feedback phase has started and they have a pending
+    /// feedback form for a reviewee (US-PRF-005 AC-2). Fire-and-forget; must never throw into the request path.
+    /// </summary>
+    Task NotifyReviewerAssignedAsync(
+        Guid reviewerEmployeeId,
+        Guid revieweeEmployeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reminds a 360-degree reviewer that they have not yet submitted their feedback and the deadline is
+    /// approaching (US-PRF-005 AC-5/FR-8). Dispatched by the Hangfire reminder job. Fire-and-forget.
+    /// </summary>
+    Task NotifyReviewerReminderAsync(
+        Guid reviewerEmployeeId,
+        Guid revieweeEmployeeId,
+        Guid cycleId,
+        CancellationToken cancellationToken = default);
 }

@@ -192,6 +192,70 @@ DTO shapes (see `cycle.models.ts`):
 - Enums: `CycleStatus = Draft|Active|Paused|Completed|Cancelled`; `CycleType =
   Annual|Quarterly|Probation`; `CycleTransitionAction = Activate|Pause|Resume|Complete|Cancel`.
 
+## US-PRF-005 — 360-degree review (peers, reports, manager, self)
+
+HR/manager-side, FE-only so far (backend not yet built). Extends the `/performance`
+area. Added THREE child routes to `performance.routes.ts`:
+`/performance/feedback-360/:employeeId` (reviewer nomination + completion tracker,
+AC-1/AC-3), `/performance/feedback-360/:employeeId/results` (aggregated dashboard,
+AC-4), and `/performance/feedback-360/assignment/:assignmentId` (a single reviewer's
+feedback form, FR-4/AC-2 — STATIC `assignment` segment so it doesn't collide with the
+`:employeeId` config route). Files: `models/feedback-360.models.ts`,
+`services/feedback-360.service.ts`, `components/feedback-360-config|-form|-results/`.
+
+Key FE decisions:
+- **No chart lib** (still none). §8 radar chart is rendered as a **non-chart CSS
+  visual**: grouped horizontal bars per reviewer category for the perspective
+  comparison + per-competency average bars + per-category split chips. Documented in
+  the component header. (Consistent with US-PRF-003/004 and the no-chart-lib memory.)
+- **Anonymity (FR-5/NFR-3) is rendered defensively**: the comment author block is gated
+  on `results.anonymous`, NOT on the presence of `reviewerName`. So even if the backend
+  mistakenly leaks a name under anonymity, the FE renders "Anonymous" and never shows
+  it. The FE NEVER reconstructs identity — it renders only what the API returns. (A unit
+  test asserts a leaked name is not in the DOM.)
+- **BR-2 (self can't be a peer)** is enforced client-side (`isValidPeerNomination`)
+  AND re-validated server-side: self is filtered from the candidate pool + suggestions,
+  and `addReviewer(_, 'Peer')` toasts an error and refuses self.
+- **Composite score (FR-6)** is **display-only** off `compositeScore` — the FE never
+  computes it (depends on tenant per-category weights the server owns).
+- **PDF export (FR-7)** is a BACKEND concern: the download button is wired only when
+  `results.exportAvailable` is true; it reads the Content-Disposition filename off an
+  `HttpResponse<Blob>`. Omitted entirely if the endpoint isn't there.
+- Reviewer save is a **full-replace** of the manual Peer/DirectReport set; Self +
+  the auto-assigned Manager are server-owned (`locked`) and never sent.
+
+### ASSUMED backend contract (backend agent must build/reconcile) — US-PRF-005
+`apiBaseUrl` includes `/api/v1`. All under `/performance/feedback-360`. Tenant + acting
+user resolved server-side; `Performance.Review.All` (HR config) / reviewer ownership +
+RLS (NFR-2/NFR-3). Bare payloads (US-PLT-001 unwrap), PascalCase enum strings
+(US-PLT-003). Anonymity enforced server-side — results OMIT reviewer ids when on.
+- `GET /performance/feedback-360/employees/{employeeId}/config` → `IReviewerConfig`
+  (AC-1: auto Self+Manager, suggestedPeers/suggestedDirectReports, candidatePool,
+  per-category minimums, anonymous flag, editable gate).
+- `PUT /performance/feedback-360/employees/{employeeId}/reviewers` body
+  `ISaveReviewersRequest {reviewers:[{reviewerId,category}]}` → `IReviewerConfig`
+  (full-replace of manual Peer/DirectReport rows; Self+Manager not sent).
+- `GET /performance/feedback-360/employees/{employeeId}/tracker` → `ICompletionTracker`
+  (AC-3 per-category submitted/pending/overdue + minimum).
+- `GET /performance/feedback-360/assignments/{assignmentId}/form` → `IFeedbackForm`
+  (FR-4 competency/goal question cards + ratingScaleMax + submitted lock + anonymous).
+- `POST /performance/feedback-360/assignments/{assignmentId}/submit` body
+  `ISubmitFeedbackRequest {answers:[{questionId,rating,comment}]}` → `IFeedbackForm`
+  (AC-3; marks Completed, BR-3 one-per-reviewer-per-cycle, locks).
+- `GET /performance/feedback-360/employees/{employeeId}/results` → `IFeedback360Results`
+  (AC-4: per-competency `overallAverage`+`byCategory`, `categoryAverages`,
+  `compositeScore` FR-6, `comments` — reviewerName OMITTED when anonymous, `released`
+  BR-4, `exportAvailable`).
+- `GET /performance/feedback-360/employees/{employeeId}/results/export` (OPTIONAL) →
+  `application/pdf` (HttpResponse<Blob> + Content-Disposition filename). FR-7.
+
+Enums: `ReviewerCategory = Self|Manager|Peer|DirectReport`; `AssignmentStatus =
+Pending|Completed|Overdue`; `QuestionKind = Competency|Goal`. Like US-PRF-001..004 this
+is a thin single-file service so a route mismatch is a one-file fix. AC-2/AC-5 (in-app +
+email reviewer notifications + Hangfire deadline reminders) are BACKEND concerns — no
+FE work. NOTE: model fn `ratingBand360Classes` is renamed (vs US-PRF-003's
+`ratingBandClasses`) to avoid a barrel re-export collision.
+
 ### ⚠️ US-PRF-001 reconciliation is NOW UNBLOCKED
 US-PRF-004 lands the active-cycle/cycle-management endpoints US-PRF-001 was waiting on.
 The US-PRF-001 path mismatch (`/performance` vs `/tenant/performance`, team vs

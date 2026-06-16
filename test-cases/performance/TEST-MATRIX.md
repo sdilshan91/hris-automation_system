@@ -1,7 +1,7 @@
 ---
 module: Performance Management
-total_user_stories: 4
-total_test_cases: 71
+total_user_stories: 5
+total_test_cases: 89
 created: 2026-06-16
 updated: 2026-06-16
 status: in-progress
@@ -41,25 +41,34 @@ status: in-progress
 >
 > CONDITIONAL/DEFERRED for US-PRF-004 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7 names PostgreSQL RLS on cycles/cycle_phases/cycle_participants; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-013/015). (2) DEPENDS ON a configured rating scale (precondition) + Core HR employees/departments/grades for participant scoping -- all assumed seeded. (3) FR-5 notification DELIVERY (phase-start/close, deadline reminder, cancellation; in-app + email) CONDITIONAL on the Notification System (S25) -- in-app push + email enqueue asserted, delivery conditional (TC-PRF-004-06/-07/-09, TC-PRF-ISO-016). (4) The dashboard/aggregate cache (NFR-4, TC-PRF-004-05/-13 / TC-PRF-ISO-016) is CONDITIONAL on a cache layer (S10) -- if computed on demand it asserts tenant-filtered set-based aggregates with no shared/global key. (5) NFR-1 5,000-participant <=5s + NFR-4 dashboard <=2s P95 require a seeded performance environment (TC-PRF-004-13). (6) The FR-6 360-degree / calibration / anonymity toggles are persisted + cloned as configuration here (TC-PRF-004-01/-12); their downstream BEHAVIOR (peer feedback collection, calibration sessions) is owned by later Performance stories (US-PRF-005+) and is NOT asserted in US-PRF-004's set. (7) The same-boundary-day phase contiguity rule (TC-PRF-004-15 step 5) asserts whatever the implementation documents (inclusive ranges -> overlap-reject) is applied CONSISTENTLY; the exact rule is an implementation contract, not a gap.
 
+> US-PRF-005 (360-Degree Review: Peers, Reports, Manager, Self) is the FIFTH Performance story -- it folds multi-perspective peer/report feedback into the final score (the BR-5 deferral US-PRF-003 left open). It adds 18 test cases: 14 functional/security/perf/a11y (TC-PRF-005-01..14) + 4 dedicated multi-tenant isolation on the new `feedback_360` table + reminder jobs + results caches + notifications (TC-PRF-ISO-017..020, continuing the running ISO counter from 016). All 5 acceptance criteria of US-PRF-005 are covered.
+>
+> KEY notes: happy path (TC-PRF-005-01) HR configures a 360-enabled cycle -> Self + Manager auto-assigned, peers (same dept) + reports (org tree) auto-suggested + manually nominated (AC-1, FR-1/2) -> phase enters feedback, reviewers notified (AC-2) -> all submit competency-based feedback, marked Completed + tracker updates (AC-3) -> HR views aggregated report: per-competency averages + self/manager/peer/report radar + weighted composite (FR-6) incorporated into the final performance score (AC-4, BR-6); negatives -- employee nominated as their OWN Peer rejected client+server (BR-2, TC-PRF-005-02), a reviewer submitting twice for the same reviewee/cycle rejected via unique (tenant,cycle,reviewee,reviewer) (BR-3, TC-PRF-005-03), releasing results BELOW the minimum peer threshold warns/blocks HR (BR-4/FR-3, TC-PRF-005-04), unauthorized 360 config/release + cross-reviewer submit (IDOR) blocked 403/401 (NFR-2, TC-PRF-005-05); ANONYMITY -- with anonymity ON the results API payload contains NO reviewer_id/name/email enforced SERVER-SIDE not just UI, even in debug (FR-5/NFR-3, TC-PRF-005-06), and anonymity cannot be retroactively disabled once feedback exists (BR-5, TC-PRF-005-07); composite/final score (FR-6/BR-6, TC-PRF-005-08) data-driven weighted aggregation (self 10/mgr 40/peers 30/reports 20 -> 4.25 for the seeded set) with per-category averaging before weighting + the composite feeding the final score; Hangfire reviewer reminder to non-submitters only with a deep link, tenant-scoped + idempotent + retried (AC-5/FR-8, TC-PRF-005-09); assignment notification in-app + email with a form link to all assigned reviewers (AC-2, TC-PRF-005-10); performance -- feedback form <=400ms P95 + results+radar <=2s for 20 reviewers, no N+1 (NFR-1/NFR-4, TC-PRF-005-11); accessibility -- feedback form single-column + collapsible at 360px + WCAG 2.1 AA, charts not color-only (NFR-5, TC-PRF-005-12); PDF export -- 360 summary report exportable with branding + anonymized comments, export seam + authz/tenant-scoping asserted (FR-7, TC-PRF-005-13); boundary -- min reviewers per category (1 below vs exactly 2 peers) + radar with 3/5/10 competencies + single-vs-zero-reviewer category handling (FR-3/AC-4, TC-PRF-005-14).
+>
+> Tenant isolation (NFR-2) for US-PRF-005: TC-PRF-ISO-017 cross-tenant read of feedback_360/assignments/results/reports (Tenant B sees zero of Tenant A's, incl. by direct id), ISO-018 missing/invalid/mismatched tenant-context rejection + cross-tenant IDOR (read + write) block on the 360 APIs, ISO-019 cross-tenant write block + server-derived tenant_id (no body injection) + foreign reviewer/reviewee/cycle rejected, ISO-020 tenant-scoped Hangfire reviewer-reminder jobs + results/aggregate caches + assignment/reminder/results notifications.
+>
+> CONDITIONAL/DEFERRED for US-PRF-005 (written as conditional, not gaps): (1) same NFR-2 RLS caveat -- S7 names PostgreSQL RLS on feedback_360; isolation is enforced via EF Core global query filters + TenantInterceptor with RLS noted as an extension point (ISO-017/019). (2) DEPENDS ON US-PRF-004 (cycle with 360 toggle + feedback window), US-PRF-001 (goals/competencies), US-PRF-002/003 (self + manager perspectives), and Core HR org tree (manager + direct reports) -- all assumed seeded. (3) FR-7 PDF RENDERING is CONDITIONAL on the PDF library (QuestPDF or similar) being wired -- TC-PRF-005-13 asserts the export SEAM + report data model + authz/tenant-scoping + anonymized comments; full visual fidelity is an extension point. (4) AC-2/AC-5/FR-8 notification + reminder DELIVERY (in-app + email) CONDITIONAL on the Notification System (S25) -- in-app push + email enqueue asserted, delivery conditional (TC-PRF-005-09/-10, TC-PRF-ISO-020). (5) The results/aggregate/completion-tracker cache (NFR-4, TC-PRF-005-11 / TC-PRF-ISO-020) is CONDITIONAL on a cache layer (S10) -- if computed on demand it asserts tenant-filtered set-based aggregates with no shared/global key. (6) NFR-1 <=400ms + NFR-4 <=2s/20-reviewers require a seeded performance environment (TC-PRF-005-11). (7) The BR-4 minimum-peer-threshold OVERRIDE path + the BR-6 360-into-final-score BLENDING RULE are exercised against whatever the implementation documents (TC-PRF-005-04/-08) -- the exact override/blend formula is an implementation contract, not a gap. (8) The zero-reviewer-category renormalization rule (TC-PRF-005-08 step 5 / TC-PRF-005-14 step 6) asserts the documented behavior is applied CONSISTENTLY.
+
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total User Stories Covered | 4 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004) |
-| Total Test Cases | 71 (55 functional/security/perf/a11y + 16 dedicated multi-tenant isolation) |
+| Total User Stories Covered | 5 (US-PRF-001, US-PRF-002, US-PRF-003, US-PRF-004, US-PRF-005) |
+| Total Test Cases | 89 (69 functional/security/perf/a11y + 20 dedicated multi-tenant isolation) |
 | US-PRF-001 Test Cases | 16 (TC-PRF-001-01..12 + TC-PRF-ISO-001..004) |
 | US-PRF-002 Test Cases | 19 (TC-PRF-002-01..15 + TC-PRF-ISO-005..008) |
 | US-PRF-003 Test Cases | 17 (TC-PRF-003-01..13 + TC-PRF-ISO-009..012) |
 | US-PRF-004 Test Cases | 19 (TC-PRF-004-01..15 + TC-PRF-ISO-013..016) |
-| Critical Priority | 26 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015) |
-| High Priority | 45 (remaining functional/perf/a11y of all four stories + TC-PRF-ISO-004, -008, -012, -016) |
+| US-PRF-005 Test Cases | 18 (TC-PRF-005-01..14 + TC-PRF-ISO-017..020) |
+| Critical Priority | 32 (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019) |
+| High Priority | 57 (remaining functional/perf/a11y of all five stories + TC-PRF-ISO-004, -008, -012, -016, -020) |
 | Medium Priority | 0 |
 | Low Priority | 0 |
 | Blocked Test Cases | 0 |
-| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5 (AC-1..AC-5 each) |
+| Acceptance Criteria Coverage | US-PRF-001 5/5; US-PRF-002 5/5; US-PRF-003 5/5; US-PRF-004 5/5; US-PRF-005 5/5 (AC-1..AC-5 each) |
 | Status | All Draft |
 
-> Note: Critical-priority IDs total 26 across the four stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6); High totals 45; summing to 71.
+> Note: Critical-priority IDs total 32 across the five stories (US-PRF-001: -01/-02/-07/-08 + ISO-001/-002/-003 = 7; US-PRF-002: -01/-07/-09 + ISO-005/-006/-007 = 6; US-PRF-003: -01/-02/-07/-09 + ISO-009/-010/-011 = 7; US-PRF-004: -01/-02/-04 + ISO-013/-014/-015 = 6; US-PRF-005: -01/-05/-06 + ISO-017/-018/-019 = 6); High totals 57; summing to 89.
 
 ## User Story to Test Case Matrix
 
@@ -73,6 +82,8 @@ status: in-progress
 | Cross-cutting (PRF-003) | Multi-tenant isolation (review table + dashboard caches + notifications + audit) | TC-PRF-ISO-009, TC-PRF-ISO-010, TC-PRF-ISO-011, TC-PRF-ISO-012 | 4 |
 | US-PRF-004 | HR Creates and Manages Appraisal Cycles | TC-PRF-004-01, TC-PRF-004-02, TC-PRF-004-03, TC-PRF-004-04, TC-PRF-004-05, TC-PRF-004-06, TC-PRF-004-07, TC-PRF-004-08, TC-PRF-004-09, TC-PRF-004-10, TC-PRF-004-11, TC-PRF-004-12, TC-PRF-004-13, TC-PRF-004-14, TC-PRF-004-15 | 15 |
 | Cross-cutting (PRF-004) | Multi-tenant isolation (cycles/phases/participants tables + Hangfire jobs + dashboard caches + notifications) | TC-PRF-ISO-013, TC-PRF-ISO-014, TC-PRF-ISO-015, TC-PRF-ISO-016 | 4 |
+| US-PRF-005 | 360-Degree Review (Peers, Reports, Manager, Self) | TC-PRF-005-01, TC-PRF-005-02, TC-PRF-005-03, TC-PRF-005-04, TC-PRF-005-05, TC-PRF-005-06, TC-PRF-005-07, TC-PRF-005-08, TC-PRF-005-09, TC-PRF-005-10, TC-PRF-005-11, TC-PRF-005-12, TC-PRF-005-13, TC-PRF-005-14 | 14 |
+| Cross-cutting (PRF-005) | Multi-tenant isolation (feedback_360 table + reminder jobs + results caches + notifications) | TC-PRF-ISO-017, TC-PRF-ISO-018, TC-PRF-ISO-019, TC-PRF-ISO-020 | 4 |
 
 ## Acceptance Criteria -> Test Case Coverage (US-PRF-001)
 
@@ -200,3 +211,37 @@ status: in-progress
 | NFR-2 tenant isolation (RLS / EF query filters) | TC-PRF-ISO-013, -014, -015, -016 |
 | NFR-3 Hangfire jobs tenant-scoped + retry/backoff (Polly) | TC-PRF-004-07, TC-PRF-ISO-016 |
 | NFR-4 dashboard loads <=2s P95 incl. aggregate stats | TC-PRF-004-05, -13 |
+
+## Acceptance Criteria -> Test Case Coverage (US-PRF-005)
+
+| AC | Description | Covered By |
+|----|-------------|------------|
+| AC-1 | 360 config shows auto-suggested peers/reports + auto-assigned manager/self + manual add/remove | TC-PRF-005-01, TC-PRF-005-02, TC-PRF-005-05 |
+| AC-2 | Assigned reviewers notified (in-app + email) with a link to the competency-based feedback form | TC-PRF-005-01, TC-PRF-005-10, TC-PRF-005-12 |
+| AC-3 | Reviewer submits -> saved + status "Completed" + tracker updated; identity hidden if anonymity on | TC-PRF-005-01, TC-PRF-005-03, TC-PRF-005-06 |
+| AC-4 | Aggregated report: per-competency averages + self/manager/peer/report radar + anonymized comments | TC-PRF-005-01, TC-PRF-005-08, TC-PRF-005-14 |
+| AC-5 | Deadline approaching -> Hangfire reminder to non-submitters with a direct link | TC-PRF-005-09 |
+
+## Requirement -> Test Case Coverage (US-PRF-005) (FR / BR / NFR)
+
+| Requirement | Covered By |
+|-------------|------------|
+| FR-1 four reviewer categories (Self/Manager/Peer/Report) | TC-PRF-005-01, -02, -10 |
+| FR-2 nominate peers/reports; self+manager auto-assigned | TC-PRF-005-01, -02 |
+| FR-3 configurable minimum reviewers per category | TC-PRF-005-04, -14 |
+| FR-4 competency-based form with tenant rating scale + optional comments | TC-PRF-005-01, -10, -12 |
+| FR-5 anonymous feedback mode (identity not revealed in results) | TC-PRF-005-06, -07, -13 |
+| FR-6 weighted composite score from configurable per-category weights | TC-PRF-005-01, -08 |
+| FR-7 360 summary report exportable as PDF | TC-PRF-005-13 |
+| FR-8 Hangfire reviewer reminders at configurable intervals | TC-PRF-005-09, TC-PRF-ISO-020 |
+| BR-1 360 only when the cycle toggle is enabled | TC-PRF-005-01 (precondition) |
+| BR-2 employee cannot review themselves as a Peer | TC-PRF-005-02 |
+| BR-3 one feedback per reviewer per employee per cycle | TC-PRF-005-03 |
+| BR-4 minimum peer reviewers met before results released (else warn) | TC-PRF-005-04, -14 |
+| BR-5 anonymity cannot be retroactively disabled after submission | TC-PRF-005-06, -07 |
+| BR-6 360 composite incorporated into the final performance score | TC-PRF-005-01, -08 |
+| NFR-1 feedback form loads <=400ms P95 | TC-PRF-005-11 |
+| NFR-2 tenant isolation (RLS / EF query filters) | TC-PRF-005-05, TC-PRF-ISO-017, -018, -019, -020 |
+| NFR-3 anonymity enforced at DB/API level (no reviewer ids in payload) | TC-PRF-005-06 |
+| NFR-4 results + radar render <=2s for up to 20 reviewers | TC-PRF-005-11, -14 |
+| NFR-5 feedback form mobile-responsive (any device) | TC-PRF-005-12 |
