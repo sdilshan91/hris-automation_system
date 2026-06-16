@@ -103,7 +103,7 @@
 - [x] US-PAY-004 — Generate individual payslips *(PR #66)*
 - [x] US-PAY-005 — Employee views and downloads payslips *(PR #67)*
 - [x] US-PAY-006 — Statutory deductions configuration *(PR #68)*
-- [~] US-PAY-007 — Payroll adjustments (bonus, deductions)
+- [x] US-PAY-007 — Payroll adjustments (bonus, deductions) *(PR #69)*
 - [ ] US-PAY-008 — Payroll approval workflow
 - [ ] US-PAY-009 — Payroll reports and analytics
 - [ ] US-PAY-010 — Attendance/leave integration into payroll
