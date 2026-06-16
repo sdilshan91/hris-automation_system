@@ -28,15 +28,23 @@
 
 /**
  * Payroll run lifecycle status (§7, BR-6). Matches C# `PayrollRunStatus`.
- * Transitions: Queued -> Processing -> ReviewPending -> Approved -> Finalized;
- * any pre-Finalized status -> Cancelled.
+ * Approval transitions (US-PAY-008 BR-4):
+ *   Queued -> Processing -> ReviewPending -> AwaitingApproval -> Approved -> Finalized
+ *   AwaitingApproval -> Rejected -> ReviewPending (after corrections)
+ *   any pre-Finalized status -> Cancelled.
+ *
+ * AwaitingApproval + Rejected are added by US-PAY-008. Rejected is an OFF-PATH
+ * state (like Cancelled) — it is not a stepper node; the run returns to
+ * ReviewPending once HR corrects + re-submits (BR-3).
  */
 export type PayrollRunStatus =
   | 'Queued'
   | 'Processing'
   | 'ReviewPending'
+  | 'AwaitingApproval'
   | 'Approved'
   | 'Finalized'
+  | 'Rejected'
   | 'Cancelled';
 
 /** Tailwind badge classes per status (§8 color-coded badge). Single source of truth. */
@@ -44,8 +52,10 @@ export const RUN_STATUS_BADGE: Record<PayrollRunStatus, string> = {
   Queued: 'bg-neutral-100 text-neutral-600 ring-neutral-500/20',
   Processing: 'bg-blue-50 text-blue-700 ring-blue-600/20',
   ReviewPending: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  AwaitingApproval: 'bg-sky-50 text-sky-700 ring-sky-600/20',
   Approved: 'bg-violet-50 text-violet-700 ring-violet-600/20',
   Finalized: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  Rejected: 'bg-rose-50 text-rose-700 ring-rose-600/20',
   Cancelled: 'bg-rose-50 text-rose-700 ring-rose-600/20',
 };
 
@@ -54,20 +64,23 @@ export const RUN_STATUS_LABELS: Record<PayrollRunStatus, string> = {
   Queued: 'Queued',
   Processing: 'Processing',
   ReviewPending: 'Review pending',
+  AwaitingApproval: 'Awaiting approval',
   Approved: 'Approved',
   Finalized: 'Finalized',
+  Rejected: 'Rejected',
   Cancelled: 'Cancelled',
 };
 
 /**
- * The horizontal status stepper steps (§8): Queued > Processing > Review >
- * Approved > Finalized. Cancelled is a terminal off-path state and is shown
- * separately, not as a stepper node.
+ * The horizontal status stepper steps (§8): Review > Awaiting approval >
+ * Approved > Finalized. Queued/Processing precede these. Cancelled and Rejected
+ * are terminal/off-path states shown separately, not as stepper nodes (BR-4).
  */
 export const RUN_STEPPER: { status: PayrollRunStatus; label: string }[] = [
   { status: 'Queued', label: 'Queued' },
   { status: 'Processing', label: 'Processing' },
   { status: 'ReviewPending', label: 'Review' },
+  { status: 'AwaitingApproval', label: 'Awaiting approval' },
   { status: 'Approved', label: 'Approved' },
   { status: 'Finalized', label: 'Finalized' },
 ];

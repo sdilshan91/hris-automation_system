@@ -479,3 +479,143 @@ story's literal `Payroll.Read.Self` which isn't in the catalog — reconciled to
   disabled when `!pdfAvailable`; reuses the `downloadBlob`/`filenameFromDisposition` anchor-click
   helpers (local copy, same as payslip-list US-PAY-004). Table → stacked cards at md via
   `.row-label-mobile` + breakdown `overflow-x-auto` for 360px (AC-5).
+
+## Payroll approval workflow (US-PAY-008)
+
+Extends the EXISTING run-detail page (US-PAY-003) with an approver workflow + an
+approver queue. The `PayrollRunStatus` machine gains **AwaitingApproval** (a stepper
+node, after ReviewPending) and **Rejected** (OFF-PATH, like Cancelled — not a stepper
+node; HR corrects + re-submits, BR-3/BR-4). Both added to the union + `RUN_STATUS_BADGE`
+/`RUN_STATUS_LABELS`/`RUN_STEPPER` in `payroll-run.models.ts`. Stepper order now:
+Queued > Processing > Review > Awaiting approval > Approved > Finalized.
+
+### Frontend contract — NEW service `PayrollApprovalService` (payroll/services)
+Sibling to `PayrollRunService`; route strings live ONLY here (base
+`${apiBaseUrl}/payroll/runs`). Bare payloads (US-PLT-001), PascalCase enums
+(US-PLT-003: `ApprovalAction` = Submitted|Approved|Rejected|Returned|Escalated).
+withCredentials. **ASSUMED contract — BE was building in parallel and had NOT pinned
+payroll-approval routes in this vault (grep found leave/overtime/regularization
+approval entities but NO payroll-approval .cs when the FE was written); reconcile in
+this one file if BE differs:**
+- `POST /payroll/runs/:id/submit`   → `IPayrollRun` (AC-1, ReviewPending→AwaitingApproval; no body).
+- `POST /payroll/runs/:id/approve`  → `IPayrollRun` (AC-2; BE owns sequential multi-step AC-4 + maker-checker BR-5).
+- `POST /payroll/runs/:id/reject`  body `{ comments }` → `IPayrollRun` (AC-3, reason REQUIRED).
+- `POST /payroll/runs/:id/return`  body `{ comments }` → `IPayrollRun` (FR-9, comments REQUIRED, →ReviewPending).
+- `POST /payroll/runs/:id/finalize` → `IPayrollRun` (AC-5, locks payslips FR-8; no body).
+- `GET  /payroll/runs/:id/approval-summary` → `IApprovalSummary` (FR-4: totals +
+  totalStatutory + previousMonthTotalNet + variancePercentage + exceptions[]).
+- `GET  /payroll/runs/:id/approval-history` → `IApprovalHistoryEntry[]` (FR-7, tolerates `{data}`).
+- `GET  /payroll/runs?status=AwaitingApproval` → `IPayrollRun[]` (the queue; tolerates `{data}`).
+
+### Variance band is a PURE helper (`approval.models.ts`, §8)
+`varianceBand(pct|null)` → `decrease|normal|elevated|high`, isolated + unit-tested.
+Thresholds: ≤0 (or flat) = green/decrease; >0..5 = neutral; >5..15 = amber/elevated;
+>15 = red/high. null (no previous month) → 'normal'. `VARIANCE_BAND_CLASS` maps band →
+text colour. The run-detail `varianceBandValue`/`varianceClass`/`varianceLabel`
+computeds drive the §8 colour-coded comparison; `varianceLabel` is signed `+33.3%`.
+
+### UI decisions (US-PAY-008, §8)
+- Run-detail action bar = STICKY bottom bar (`fixed inset-x-0 bottom-0`), status-driven
+  via `@switch(status())`: "Submit for Approval" (ReviewPending), Approve/Reject/Return
+  (AwaitingApproval, gated by `auth.hasPermission('Payroll.Approve')` → `canApprove`),
+  Finalize (Approved). Reject + Return reveal a REQUIRED comments `<textarea>`
+  (`FormControl` + `Validators.required|minLength(3)`); a two-step confirm (start →
+  fill → confirm) so the reason is captured before the call. `runAction()` helper flips
+  `acting`, updates the run signal, reloads approval data, toasts, clears comments.
+- Approval review = the existing US-PAY-003 summary card EXTENDED (not a new split
+  layout component): when `approvalSummary()` loaded it adds a statutory/prev-month/
+  variance row + an amber/red note for elevated/high bands + an exceptions list
+  (Error=rose, Warning=amber). The existing embedded `app-payslip-list` is the FR-5
+  drill-down (right side on desktop; child already hides bulk ZIP on mobile).
+  `isComplete()` now includes AwaitingApproval so the card shows during review.
+- Approval history = vertical timeline at the bottom (`history()` newest-first,
+  coloured node per action, comments in quotes). `lastComment()` (first history entry
+  with comments) shows on the Rejected off-path banner.
+- "Pending Approvals" queue = NEW lazy child route `payroll/approvals` (declared BEFORE
+  `runs/:id` so it matches literally, not as a run id), `PendingApprovalsComponent` —
+  Notion card grid of AwaitingApproval runs with a header badge count; cards link to
+  `runs/:id`. Sidebar nav item "Pending Approvals" gated on `Payroll.Approve` (added to
+  main-layout `navItems`); badge count lives IN the queue page, NOT the sidebar (no
+  sidebar badge-count infra exists — kept in scope by putting the count on the page).
+- Specs: `approval.models.spec` (variance), `payroll-approval.service.spec` (all 9
+  routes + envelope), `pending-approvals.component.spec`, and the run-detail spec
+  EXTENDED (added PayrollApprovalService/AuthService/ToastrService spies to setup +
+  setupProcessing; the component now fetches history+summary in `load()`). Full FE
+  suite 2229 green.
+
+## Payroll approval workflow (US-PAY-008)
+
+Adds an approval/finalize gate on top of the US-PAY-003 run lifecycle. **No shared approval-workflow
+engine exists** — the story references "technical doc section 34" but US-ADM-007 is not built, and
+leave (US-LV-005) + attendance (US-ATT-004) each built their OWN approval-history entity + service.
+So this is a **payroll-specific** flow that MIRRORS that pattern (a `PayrollApprovalHistory` BaseEntity
++ `PayrollApprovalService`). Integrating into a future shared engine is a follow-up — replace the
+service internals, keep the controller/DTO contract.
+
+### Status machine (additive — existing US-PAY-003..007 tests stay green)
+`PayrollRunStatus` gained **`AwaitingApproval`** and **`Rejected`** (Approved/Finalized already existed),
+still enum-as-string (`HasConversion<string>()`, global `JsonStringEnumConverter`). BR-4 transitions
+(every other transition → 409 `invalid_transition`):
+- `ReviewPending --Submit--> AwaitingApproval` (AC-1).
+- `AwaitingApproval --Approve-->` advance step OR `Approved` when all steps done (AC-2/AC-4).
+- `AwaitingApproval --Reject--> Rejected` (reason ≥10 chars required, AC-3).
+- `AwaitingApproval --Return--> ReviewPending` (FR-9, comments ≥10 chars required; closes the instance).
+- `Rejected/ReviewPending --Submit--> AwaitingApproval` (BR-3 re-submit = NEW workflow instance id).
+- `Approved --Finalize--> Finalized` (AC-5, terminal BR-6). **BR-1: a direct `ReviewPending→Finalized`
+  is BLOCKED** (`approval_required` 409) — a run MUST pass ≥1 approval. Re-finalize → `already_finalized`.
+
+### Step-tracking state (added to `PayrollRun`, all nullable — additive migration)
+`CurrentWorkflowInstanceId`, `CurrentApprovalStep`, `TotalApprovalSteps` (default 1, BR-2 single-step),
+`SubmittedBy`, `SubmittedAt`, `RejectionReason`. The `payroll_approval_history` table matches the §7
+data spec (payroll_run_id, workflow_instance_id, step_number, action {Submitted|Approved|Rejected|
+Returned|Escalated} as varchar(20) literals — `PayrollApprovalAction` string constants NOT an enum so
+wire==data-spec, actor_user_id, comments, acted_at, ip_address). Migration **`Payroll_ApprovalWorkflow`**
+(`20260616031209`). FR-7 immutable: insert-only, no update/delete path.
+
+### Maker-checker (BR-5) — eligible-approver count decision
+The submitter (`SubmittedBy`) cannot Approve their own run when the tenant has **≥2 eligible approvers**;
+`<2` relaxes it (small-team exception). "Eligible approver" = **distinct ACTIVE `UserTenant` whose roles
+grant `Payroll.Approve`** (join UserTenant→UserTenantRole→RolePermission; these join tables are NOT
+BaseEntity so they're filtered explicitly by `TenantId`, not the global filter). Self-approval with ≥2
+approvers → 403 `self_approval`.
+
+### Permissions (reconciled with the catalog — `Payroll.Approve` already existed)
+- approve / reject / return → `[RequirePermission("Payroll.Approve")]`.
+- submit / finalize / both reads → `[RequirePermission("Payroll.Run")]` (HR/run-owner actions; HR and
+  approvers both hold Run). No new permission invented.
+
+### Approval summary (FR-4) — reuses stored run totals
+`GET …/approval-summary` returns the run's stored totals (employees/gross/deductions/statutory/net) +
+`previousMonthTotalNet` (= the most recent **Finalized** run in an EARLIER period for the tenant) +
+`variancePercentage` (`(net−prev)/prev*100`, 2dp; null when no baseline) + `exceptions[]` (skipped count,
+negative-net slip count, zero-processed). Tenant-scoped by the global filter (BR-8).
+
+### Notifications + IP
+Reuses the log-only `IPayrollNotificationService` seam — added `NotifyApprovalEventAsync(tenant, runId,
+eventType)`; real SignalR/email DEFERRED (US-NTF). IP (FR-7) captured from
+`HttpContext.Connection.RemoteIpAddress` in the controller and passed through (null in job/test context).
+
+### FE CONTRACT (pin — base `api/v1/payroll`, ApiResponse<T> envelope, PascalCase status strings)
+New status wire values: **`AwaitingApproval`**, **`Rejected`** (plus existing `Approved`, `Finalized`).
+- `POST runs/{runId}/submit-for-approval` body `{ totalApprovalSteps?, comments? }` → `PayrollApprovalResultDto`.
+- `POST runs/{runId}/approve`  body `{ comments? }` → result. 403 `self_approval`, 409 `invalid_transition`.
+- `POST runs/{runId}/reject`   body `{ comments }` (the reason, ≥10) → result. 400 `reason_required`.
+- `POST runs/{runId}/return`   body `{ comments }` (≥10) → result. 400 `comments_required`.
+- `POST runs/{runId}/finalize` (no body) → result. 409 `approval_required` / `already_finalized`.
+- `GET  runs/{runId}/approval-history`  → `PayrollApprovalHistoryDto[]` (newest-first): `{ id,
+  payrollRunId, workflowInstanceId, stepNumber, action, actorUserId, comments, actedAt, ipAddress }`.
+- `GET  runs/{runId}/approval-summary`  → `PayrollApprovalSummaryDto`: `{ runId, payMonth, payYear,
+  status, totalEmployees, totalGross, totalDeductions, totalStatutory, totalNet, previousMonthTotalNet,
+  variancePercentage, exceptions[] }`.
+- `PayrollApprovalResultDto` = `{ runId, status, action, workflowInstanceId, currentApprovalStep,
+  totalApprovalSteps }`.
+
+### Deferred (noted per brief; NOT built)
+- SLA auto-escalation + backup approver (FR-3); approval delegation (FR-6); the Approved-not-Finalized-
+  in-7-days reminder (BR-7) — no scheduler/tenant-config surface. The `Escalated` action constant exists
+  but is unused.
+- Real SignalR/email delivery (NFR-1) — log-only seam.
+- FR-8 payslip immutability: there is no per-slip mutable flag — the **Finalized run status IS the lock**
+  (US-PAY-005 reads + US-PAY-003 reprocess guard both already gate on Finalized). No new lock column.
+- Finalize writes no history row (not in the §7 action enum; `FinalizedAt` is the audit signal) — kept
+  the wire action set aligned to the data spec rather than inventing a "Finalized" action value.

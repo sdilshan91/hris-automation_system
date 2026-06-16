@@ -27,4 +27,18 @@ public sealed class LogOnlyPayrollNotificationService : IPayrollNotificationServ
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// US-PAY-008 AC-1: emits a structured approval-workflow log event (e.g. submitted/approved/rejected/
+    /// returned) in lieu of a real in-app/email dispatch. SignalR + email are deferred (TODO US-NTF).
+    /// </summary>
+    public Task NotifyApprovalEventAsync(
+        Guid tenantId, Guid runId, string eventType, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Notification event {EventType}: payroll run {RunId} approval event (tenant {TenantId}).",
+            eventType, runId, tenantId);
+
+        return Task.CompletedTask;
+    }
 }

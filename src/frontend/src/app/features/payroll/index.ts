@@ -42,3 +42,8 @@ export * from './services/adjustment.service';
 export { PayrollAdjustmentsComponent } from './components/payroll-adjustments/payroll-adjustments.component';
 export { AdjustmentFormComponent } from './components/adjustment-form/adjustment-form.component';
 export { AdjustmentBulkUploadComponent } from './components/adjustment-bulk-upload/adjustment-bulk-upload.component';
+
+/** US-PAY-008: Payroll approval workflow (submit / approve / reject / return / finalize). */
+export * from './models/approval.models';
+export * from './services/payroll-approval.service';
+export { PendingApprovalsComponent } from './components/pending-approvals/pending-approvals.component';
