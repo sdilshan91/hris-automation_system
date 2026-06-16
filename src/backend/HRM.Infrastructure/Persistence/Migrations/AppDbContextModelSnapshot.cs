@@ -946,10 +946,22 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("event_type");
 
+                    b.Property<Guid?>("ImpersonationSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("impersonation_session_id");
+
+                    b.Property<Guid?>("ImpersonatorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("impersonator_user_id");
+
                     b.Property<string>("IpAddress")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("ip_address");
+
+                    b.Property<bool>("IsImpersonationAction")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_impersonation_action");
 
                     b.Property<string>("ResourceId")
                         .HasMaxLength(100)
@@ -981,6 +993,9 @@ namespace HRM.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_audit_logs");
+
+                    b.HasIndex("ImpersonationSessionId")
+                        .HasDatabaseName("ix_audit_logs_impersonation_session_id");
 
                     b.HasIndex("TenantId", "CreatedAt")
                         .HasDatabaseName("ix_audit_logs_tenant_id_created_at");
@@ -2238,6 +2253,71 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_idempotency_records_tenant_key_operation");
 
                     b.ToTable("idempotency_records", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.ImpersonationSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("ActionsCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("actions_count");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("ImpersonatorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("impersonator_user_id");
+
+                    b.Property<bool>("IsReadOnly")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_read_only");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TargetTenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_tenant_id");
+
+                    b.Property<Guid>("TargetUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_impersonation_sessions");
+
+                    b.HasIndex("ImpersonatorUserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_impersonation_sessions_impersonator_user_id")
+                        .HasFilter("status = 'Active'");
+
+                    b.HasIndex("TargetTenantId", "StartedAt")
+                        .HasDatabaseName("ix_impersonation_sessions_target_tenant_id_started_at");
+
+                    b.ToTable("impersonation_sessions", (string)null);
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.Interview", b =>

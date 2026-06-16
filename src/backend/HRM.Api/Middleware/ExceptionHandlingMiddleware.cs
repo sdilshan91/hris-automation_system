@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentValidation;
+using HRM.Application.Common.Exceptions;
 using HRM.Application.DTOs;
 
 namespace HRM.Api.Middleware;
@@ -45,6 +46,16 @@ public sealed class ExceptionHandlingMiddleware
             context.Response.ContentType = "application/json";
 
             await context.Response.WriteAsJsonAsync(ApiResponse.Fail("Unauthorized."));
+        }
+        catch (ForbiddenException ex)
+        {
+            // US-ADM-003: an impersonation read-only / destructive-op block surfaces here as a clean 403.
+            _logger.LogWarning(ex, "Forbidden operation");
+
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+
+            await context.Response.WriteAsJsonAsync(ApiResponse.Fail(ex.Message, "impersonation_forbidden"));
         }
         catch (Exception ex)
         {

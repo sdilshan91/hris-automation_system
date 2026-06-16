@@ -1,7 +1,7 @@
 ---
 module: Admin Console
-total_user_stories: 2
-total_test_cases: 36
+total_user_stories: 3
+total_test_cases: 53
 created: 2026-06-16
 updated: 2026-06-16
 status: in-progress
@@ -143,10 +143,85 @@ status: in-progress
 | Functional ID range | TC-ADM-002-01 .. TC-ADM-002-18 |
 | ISO ID range | TC-ADM-ISO-005 .. TC-ADM-ISO-006 |
 
+---
+
+> US-ADM-003 (System Admin Impersonates Tenant User, With Audit) is the THIRD Admin Console story. It adds 17 test cases: 13 functional/security/accessibility (TC-ADM-003-01..13) + 3 DEFERRED placeholders (TC-ADM-003-14..16) + 1 dedicated multi-tenant isolation (TC-ADM-ISO-007, continuing the running ISO counter). All 6 acceptance criteria (AC-1..AC-6) and all 6 business rules (BR-1..BR-6) are traced.
+>
+> IMPLEMENTATION FACTS (tested as built): impersonation mints a SEPARATE JWT for the target user with claims `is_impersonation`, `imp_session_id`, `imp_actor_id`, `imp_reason`, `imp_readonly`, `imp_expires_at`; TTL hard-capped at 60 min and NOT refreshable (NFR-2). Read-only is decided at START (SystemSupport role OR Suspended tenant -> read-only) and enforced by a MediatR pipeline behavior that 403s write Commands (AC-5/AC-6/BR-1). Destructive ops (change/reset password, role/permission mutation, delete user/tenant) are 403'd even for a FULL SystemAdmin impersonation (FR-6); end-session is always allowed. A dedicated `impersonation_sessions` table (FR-4) tracks session_id/impersonator/target/reason/started/ended/expires/actions_count/status (Active/Ended/Expired); end + 60-min expiry are enforced by a per-request middleware. Both a system AuditLog ("Impersonation.Started"/"Impersonation.Ended") and tenant-scoped audit rows carry impersonator attribution (`ImpersonatorUserId`, `ImpersonationSessionId`, `IsImpersonationAction`). The FE banner (NFR-4) is a global, high-contrast, i18n-driven top bar in the main layout shown when `is_impersonation` is true, with an End Session button. BR-2 excludes system-tenant users; BR-3 one active session per impersonator (409); BR-5 excludes terminated tenants. Cross-tenant access during impersonation returns 404 (not 403), per the module convention.
+>
+> DEFERRED (status: blocked; never fabricated, honest traceability): NFR-1 audit immutability via DB-role UPDATE/DELETE revocation (TC-ADM-003-14) — deferred platform/infra, same family as the deferred Postgres RLS; today audit is append-only BY CONVENTION (insert-only app paths). Real email + in-app notification DELIVERY (AC-4/FR-5, TC-ADM-003-15) — log-only dispatch seam until US-NTF; the DISPATCH is asserted run-green in TC-ADM-003-01. NFR-5 traceId end-to-end correlation (TC-ADM-003-16) — depends on the observability/OTel stack deferred in US-ADM-002.
+
+## Coverage by Test Case (US-ADM-003)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-003-01 | Start session: token claims, Active row, dual audit, notification dispatched | E2E | Critical | AC-1, FR-1/2/4/5, BR-4 | Happy path | draft |
+| TC-ADM-003-02 | Reason validation < 10 chars rejected; stored verbatim; in notification | Functional | High | AC-1, FR-1, BR-4 | Negative / boundary | draft |
+| TC-ADM-003-03 | Read-only: SUSPENDED tenant blocks writes (403), allows reads | Security | Critical | AC-5, FR-3, BR-1 | Negative / security | draft |
+| TC-ADM-003-04 | Read-only: SystemSupport always read-only (write -> 403) | Security | Critical | AC-6, FR-3, BR-1 | Negative / security | draft |
+| TC-ADM-003-05 | Destructive ops blocked even for FULL admin impersonation (403) | Security | Critical | AC-2, FR-3/6, BR-1 | Negative / security | draft |
+| TC-ADM-003-06 | End session: Ended status, "Impersonation.Ended" audit, token rejected after | Functional | Critical | AC-3, FR-4 | Happy path / negative | draft |
+| TC-ADM-003-07 | Expiry: past 60-min ExpiresAt rejected; token not refreshable | Security | Critical | AC-3, NFR-2 | Negative / boundary | draft |
+| TC-ADM-003-08 | BR-2: cannot impersonate a system-tenant user | Security | High | BR-2 | Negative / security | draft |
+| TC-ADM-003-09 | BR-3: second concurrent session rejected (409) | Functional | High | BR-3, FR-4 | Negative | draft |
+| TC-ADM-003-10 | BR-5: terminated tenant rejected | Security | High | BR-5, Preconditions | Negative / boundary | draft |
+| TC-ADM-003-11 | Access control: only SysAdmin/SysSupport initiate; tenant user 403, unauth 401 | Security | Critical | AC-6, BR-1 | Negative / security | draft |
+| TC-ADM-003-12 | Banner: persistent, non-dismissable, un-overridable; i18n + End Session | Accessibility | High | AC-2, NFR-4, BR-6 | Accessibility / security | draft |
+| TC-ADM-003-13 | Audit attribution: actions carry impersonator id + session id (both logs) | Security | Critical | AC-2, FR-3/4 | Happy path / security | draft |
+| TC-ADM-003-14 | [DEFERRED] Audit immutability via DB-role UPDATE/DELETE revocation | Security | High | NFR-1 | Deferred placeholder | blocked |
+| TC-ADM-003-15 | [DEFERRED] Tenant-admin notification DELIVERY (email + in-app) | Integration | High | AC-4, FR-5 | Deferred placeholder | blocked |
+| TC-ADM-003-16 | [DEFERRED] traceId end-to-end correlation of impersonation events | Integration | Medium | NFR-5 | Deferred placeholder | blocked |
+| TC-ADM-ISO-007 | Tenant A impersonation cannot reach Tenant B data (404) | Security | Critical | FR-6, BR-1, Test Hints | Multi-tenant isolation | draft |
+
+## Acceptance-Criteria Coverage (US-ADM-003)
+
+| AC | Covered By | Notes |
+|----|-----------|-------|
+| AC-1 (mint time-limited imp JWT with imp claims; open tenant subdomain) | TC-ADM-003-01, -02 | Direct |
+| AC-2 (every action dual-audited w/ impersonator id; persistent banner) | TC-ADM-003-13, -12, -05 | Direct |
+| AC-3 (60-min expiry or End -> revoke, return to console, end audit) | TC-ADM-003-06, -07 | Direct |
+| AC-4 (tenant-admin notification of session start) | TC-ADM-003-01 (dispatch, real) + TC-ADM-003-15 (DEFERRED: delivery) | Dispatch real; delivery deferred to US-NTF |
+| AC-5 (suspended tenant -> read-only, no write API) | TC-ADM-003-03 | Direct |
+| AC-6 (SystemSupport -> read-only; write 403; only system roles initiate) | TC-ADM-003-04, -11 | Direct |
+
+## NFR / BR / FR Coverage (US-ADM-003)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| NFR-1 (audit immutable; DB role no UPDATE/DELETE on audit) | TC-ADM-003-14 (DEFERRED) | Append-only by convention today; DB-role revocation deferred (RLS family) |
+| NFR-2 (60-min TTL cap; not refreshable) | TC-ADM-003-07, -01 (step 3) | Direct |
+| NFR-3 (start < 2s) | -- | Not separately tested; requires perf-representative env (flagged) |
+| NFR-4 (global banner, un-overridable by tenant CSS) | TC-ADM-003-12 | Direct |
+| NFR-5 (traceId end-to-end correlation) | TC-ADM-003-16 (DEFERRED) | Depends on deferred observability stack (US-ADM-002) |
+| FR-1/FR-2 (start endpoint contract + imp JWT claims) | TC-ADM-003-01, -02 | Direct |
+| FR-3 (middleware: expiry, audit attribution, restrict destructive ops) | TC-ADM-003-05, -07, -13 | Direct |
+| FR-4 (impersonation_sessions tracking record) | TC-ADM-003-01, -06, -09, -13 | Direct |
+| FR-5 (tenant-admin notification template, email+in-app) | TC-ADM-003-01 (dispatch) + -15 (DEFERRED delivery) | Dispatch real; delivery deferred |
+| FR-6 (no destructive ops / no cross-tenant data under impersonation) | TC-ADM-003-05, TC-ADM-ISO-007 | Direct |
+| BR-1 (only SysAdmin/SysSupport; support read-only) | TC-ADM-003-04, -11, ISO-007 | Direct |
+| BR-2 (system-tenant users not impersonatable) | TC-ADM-003-08 | Direct |
+| BR-3 (one active session per impersonator) | TC-ADM-003-09 | Direct |
+| BR-4 (reason mandatory, >= 10 meaningful chars, verbatim, in notification) | TC-ADM-003-02, -01 | Direct |
+| BR-5 (terminated tenants excluded) | TC-ADM-003-10 | Direct |
+| BR-6 (banner i18n in all tenant languages) | TC-ADM-003-12 | Direct |
+
+## Summary (US-ADM-003)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ADM-003) |
+| Total test cases | 17 (13 functional/security/a11y + 3 DEFERRED + 1 isolation) |
+| AC coverage | 6/6 (AC-4 delivery portion DEFERRED; dispatch covered) |
+| BR coverage | 6/6 (BR-1..BR-6) |
+| Run-green now | 14 (TC-ADM-003-01..13 + TC-ADM-ISO-007) |
+| Deferred (status: blocked) | 3 (TC-ADM-003-14, -15, -16) |
+| Functional ID range | TC-ADM-003-01 .. TC-ADM-003-16 |
+| ISO ID range | TC-ADM-ISO-007 |
+
 ## Module Totals
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 2 (US-ADM-001, US-ADM-002) |
-| Total test cases | 36 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-006 |
+| User stories covered | 3 (US-ADM-001, US-ADM-002, US-ADM-003) |
+| Total test cases | 53 |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-007 |

@@ -77,18 +77,47 @@ describe('TenantMonitoringDetailComponent', () => {
     expect(component.isLoading()).toBeFalse();
   });
 
-  it('renders quick-action buttons as DISABLED (point to a later release)', () => {
+  it('keeps Suspend / View Audit Log DISABLED (point to a later release)', () => {
     const { fixture } = setup('System Admin');
     fixture.detectChanges();
     httpMock.expectOne(detailUrl).flush(detail);
     fixture.detectChanges();
 
     const el: HTMLElement = fixture.nativeElement;
-    const buttons = el.querySelectorAll(
-      '[data-testid="quick-actions"] button',
-    );
-    expect(buttons.length).toBeGreaterThan(0);
-    buttons.forEach((b) => expect((b as HTMLButtonElement).disabled).toBeTrue());
+    // US-ADM-004 / US-ADM-008 are not built — these stay disabled.
+    const suspend = el.querySelector('[data-testid="suspend-btn"]') as HTMLButtonElement;
+    const audit = el.querySelector('[data-testid="audit-btn"]') as HTMLButtonElement;
+    expect(suspend.disabled).toBeTrue();
+    expect(audit.disabled).toBeTrue();
+  });
+
+  it('ENABLES Impersonate for a non-terminated tenant (US-ADM-003 AC-1)', () => {
+    const { fixture, component } = setup('System Admin');
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush(detail);
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const impersonate = el.querySelector(
+      '[data-testid="impersonate-btn"]',
+    ) as HTMLButtonElement;
+    expect(impersonate.disabled).toBeFalse();
+
+    impersonate.click();
+    expect(component.impersonateOpen()).toBeTrue();
+  });
+
+  it('DISABLES Impersonate for a terminated tenant (BR-5)', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush({ ...detail, status: 'terminated' });
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const impersonate = el.querySelector(
+      '[data-testid="impersonate-btn"]',
+    ) as HTMLButtonElement;
+    expect(impersonate.disabled).toBeTrue();
   });
 
   it('shows Suspend/Impersonate for System Admin (BR-1)', () => {

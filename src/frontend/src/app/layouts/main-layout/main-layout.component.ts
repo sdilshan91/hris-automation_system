@@ -14,6 +14,7 @@ import { IUserTenant } from '../../core/auth/auth.models';
 import { TenantService } from '../../core/tenant/tenant.service';
 import { IdleTimeoutService } from '../../core/services/idle-timeout.service';
 import { IdleTimeoutWarningComponent } from '../../shared/components/idle-timeout-warning/idle-timeout-warning.component';
+import { ImpersonationBannerComponent } from '../../features/admin/impersonation/components/impersonation-banner/impersonation-banner.component';
 
 interface INavItem {
   label: string;
@@ -25,9 +26,19 @@ interface INavItem {
 @Component({
   selector: 'app-main-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, IdleTimeoutWarningComponent],
+  imports: [
+    CommonModule,
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    IdleTimeoutWarningComponent,
+    ImpersonationBannerComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <!-- US-ADM-003 NFR-4: persistent impersonation banner — a sibling of the
+         routed content (and the shell) so no routed/tenant component can hide it. -->
+    <app-impersonation-banner />
     <div class="main-layout" [class.sidebar-collapsed]="sidebarCollapsed()">
       <!-- Mobile overlay -->
       @if (mobileMenuOpen()) {

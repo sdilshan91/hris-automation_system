@@ -4064,7 +4064,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (ADM-001) | Multi-tenant isolation (tenant/users/user_tenant/seed data + EF query filters + tenant config cache) | Critical | TC-ADM-ISO-001, TC-ADM-ISO-002, TC-ADM-ISO-003, TC-ADM-ISO-004 | 4 | -- |
 | US-ADM-002 | System Admin Monitors Platform Health and Tenant Usage | Must Have | TC-ADM-002-01, TC-ADM-002-02, TC-ADM-002-03, TC-ADM-002-04, TC-ADM-002-05, TC-ADM-002-06, TC-ADM-002-07, TC-ADM-002-08, TC-ADM-002-09, TC-ADM-002-10, TC-ADM-002-11, TC-ADM-002-12, TC-ADM-002-13, TC-ADM-002-14, TC-ADM-002-15, TC-ADM-002-16, TC-ADM-002-17, TC-ADM-002-18 | 18 | 5/5 AC covered (5 TCs DEFERRED pending observability) |
 | Cross-cutting (ADM-002) | Multi-tenant isolation in monitoring (aggregate scoping + non-system context rejection) | Critical | TC-ADM-ISO-005, TC-ADM-ISO-006 | 2 | -- |
-| **TOTAL** | | | **36 test cases** | **36** | **11/11 AC** |
+| US-ADM-003 | System Admin Impersonates Tenant User (With Audit) | Must Have | TC-ADM-003-01, TC-ADM-003-02, TC-ADM-003-03, TC-ADM-003-04, TC-ADM-003-05, TC-ADM-003-06, TC-ADM-003-07, TC-ADM-003-08, TC-ADM-003-09, TC-ADM-003-10, TC-ADM-003-11, TC-ADM-003-12, TC-ADM-003-13, TC-ADM-003-14, TC-ADM-003-15, TC-ADM-003-16 | 16 | 6/6 AC + 6/6 BR covered (3 TCs DEFERRED) |
+| Cross-cutting (ADM-003) | Multi-tenant isolation under impersonation (Tenant A session cannot reach Tenant B data -> 404) | Critical | TC-ADM-ISO-007 | 1 | -- |
+| **TOTAL** | | | **53 test cases** | **53** | **17/17 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -4106,6 +4108,23 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ADM-002-18 | [DEFERRED] storage/API/email usage gauges | Functional | Medium | US-ADM-002 | AC-2, FR-2 (DEFERRED: usage counters) |
 | TC-ADM-ISO-005 | Monitoring aggregates correctly tenant-scoped; no row leakage | Security | Critical | US-ADM-002 | AC-5, BR-1, BR-2 |
 | TC-ADM-ISO-006 | Monitoring endpoints reject non-system tenant context | Security | Critical | US-ADM-002 | AC-5, BR-1 |
+| TC-ADM-003-01 | Start session: token claims, Active row, dual audit, notification dispatched | E2E | Critical | US-ADM-003 | AC-1, FR-1/2/4/5, BR-4 |
+| TC-ADM-003-02 | Reason validation < 10 chars rejected; verbatim; in notification | Functional | High | US-ADM-003 | AC-1, FR-1, BR-4 |
+| TC-ADM-003-03 | Read-only: suspended tenant blocks writes (403), allows reads | Security | Critical | US-ADM-003 | AC-5, FR-3, BR-1 |
+| TC-ADM-003-04 | Read-only: SystemSupport always read-only (write -> 403) | Security | Critical | US-ADM-003 | AC-6, FR-3, BR-1 |
+| TC-ADM-003-05 | Destructive ops blocked even for FULL admin impersonation (403) | Security | Critical | US-ADM-003 | AC-2, FR-3/6, BR-1 |
+| TC-ADM-003-06 | End session: Ended status, "Impersonation.Ended" audit, token rejected | Functional | Critical | US-ADM-003 | AC-3, FR-4 |
+| TC-ADM-003-07 | Expiry: past 60-min ExpiresAt rejected; token not refreshable | Security | Critical | US-ADM-003 | AC-3, NFR-2 |
+| TC-ADM-003-08 | BR-2: cannot impersonate a system-tenant user | Security | High | US-ADM-003 | BR-2 |
+| TC-ADM-003-09 | BR-3: second concurrent session rejected (409) | Functional | High | US-ADM-003 | BR-3, FR-4 |
+| TC-ADM-003-10 | BR-5: terminated tenant rejected | Security | High | US-ADM-003 | BR-5, Preconditions |
+| TC-ADM-003-11 | Access control: only SysAdmin/SysSupport initiate; tenant 403, unauth 401 | Security | Critical | US-ADM-003 | AC-6, BR-1 |
+| TC-ADM-003-12 | Banner: persistent, non-dismissable, un-overridable; i18n + End Session | Accessibility | High | US-ADM-003 | AC-2, NFR-4, BR-6 |
+| TC-ADM-003-13 | Audit attribution: actions carry impersonator id + session id (both logs) | Security | Critical | US-ADM-003 | AC-2, FR-3/4 |
+| TC-ADM-003-14 | [DEFERRED] Audit immutability via DB-role UPDATE/DELETE revocation | Security | High | US-ADM-003 | NFR-1 (DEFERRED: DB-role hardening, RLS family) |
+| TC-ADM-003-15 | [DEFERRED] Tenant-admin notification DELIVERY (email + in-app) | Integration | High | US-ADM-003 | AC-4, FR-5 (DEFERRED: delivery to US-NTF) |
+| TC-ADM-003-16 | [DEFERRED] traceId end-to-end correlation of impersonation events | Integration | Medium | US-ADM-003 | NFR-5 (DEFERRED: observability stack) |
+| TC-ADM-ISO-007 | Tenant A impersonation cannot reach Tenant B data (404) | Security | Critical | US-ADM-003 | FR-6, BR-1, Test Hints |
 
 ### Coverage Summary (Admin Console -- US-ADM-001)
 
@@ -4138,3 +4157,31 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | BR-1 (system roles only; support read-only) / BR-2 (no PII) | TC-ADM-002-09, ISO-006 / -10, ISO-005 | Direct |
 
 *Note (Admin Console -- US-ADM-002): second ADM story; continues the per-story-suffix functional scheme (TC-ADM-002-XX) and the running ISO counter (TC-ADM-ISO-005..006). All 5 ACs traced. PLATFORM ACCURACY: this platform has NO observability pipeline yet (no OpenTelemetry metrics, no Redis usage counters, no health-probe history). REAL/run-green metrics tested: platform-health roll-up, active tenant/user counts, tenant-status breakdown, DB/Redis health (Redis may show "not configured"), Hangfire job counts + failed drilldown, per-tenant EMPLOYEE usage gauge vs `MaxEmployees` (80%/100% boundaries per Test Hints: max=5 -> 4 emp=80% warn, 5 emp=100% breach), employee quota-breach queue (80/95/100% sorted by severity), tenant-detail operational fields (status/plan/owner/created/last-activity/Hangfire), access control (SysAdmin full / SysSupport read-only / Tenant Admin 403), PII exclusion, audit (Monitoring.Viewed + Monitoring.TenantViewed), and POLLING refresh. DEFERRED (status: blocked; expected behavior = "Not available — requires observability pipeline" placeholder, NEVER fabricated data): aggregate error-rate % + P95 latency (TC-ADM-002-14), error-rate "Attention Required" queue (TC-ADM-002-15), tenant 24h error/latency trend charts + top-errors (TC-ADM-002-16), SLA uptime % (TC-ADM-002-17), storage/API/email usage gauges (TC-ADM-002-18). NFR-2 SignalR push is deferred — AC-1's "SignalR OR polling" is satisfied by polling. STORY MISMATCH worth flagging to the caller: US-ADM-002 Preconditions/AC-1/FR-1 assume OpenTelemetry metrics are operational; they are not. The story should be split so the deferred observability metrics (error rate, latency, trends, SLA uptime, storage/API/email usage) are a follow-on once the OTel pipeline + Redis usage counters land, leaving the run-green subset above as what is implementable today.*
+
+### Coverage Summary (Admin Console -- US-ADM-003)
+
+| AC / Requirement | Covered By | Coverage |
+|------------------|-----------|----------|
+| AC-1 (mint time-limited imp JWT w/ imp claims; open tenant subdomain) | TC-ADM-003-01, -02 | Direct |
+| AC-2 (every action dual-audited w/ impersonator id; persistent banner) | TC-ADM-003-13, -12, -05 | Direct |
+| AC-3 (60-min expiry or End -> revoke; return to console; end audit) | TC-ADM-003-06, -07 | Direct |
+| AC-4 (tenant-admin notification of session start) | TC-ADM-003-01 (dispatch, real) + TC-ADM-003-15 (DEFERRED delivery) | Partial (delivery deferred to US-NTF) |
+| AC-5 (suspended tenant -> read-only) | TC-ADM-003-03 | Direct |
+| AC-6 (SystemSupport read-only; write 403; only system roles initiate) | TC-ADM-003-04, -11 | Direct |
+| NFR-1 (audit immutable; DB role no UPDATE/DELETE) | TC-ADM-003-14 | DEFERRED (append-only by convention today) |
+| NFR-2 (60-min TTL cap; not refreshable) | TC-ADM-003-07, -01 | Direct |
+| NFR-4 (global banner un-overridable by tenant CSS) | TC-ADM-003-12 | Direct |
+| NFR-5 (traceId end-to-end correlation) | TC-ADM-003-16 | DEFERRED (observability stack) |
+| FR-1/FR-2 (start contract + imp JWT claims) | TC-ADM-003-01, -02 | Direct |
+| FR-3 (middleware: expiry + audit attribution + restrict destructive ops) | TC-ADM-003-05, -07, -13 | Direct |
+| FR-4 (impersonation_sessions tracking record) | TC-ADM-003-01, -06, -09, -13 | Direct |
+| FR-5 (notification template, email+in-app) | TC-ADM-003-01 (dispatch) + -15 (DEFERRED delivery) | Partial |
+| FR-6 (no destructive ops / no cross-tenant data) | TC-ADM-003-05, TC-ADM-ISO-007 | Direct |
+| BR-1 (only SysAdmin/SysSupport; support read-only) | TC-ADM-003-04, -11, ISO-007 | Direct |
+| BR-2 (system-tenant users not impersonatable) | TC-ADM-003-08 | Direct |
+| BR-3 (one active session per impersonator) | TC-ADM-003-09 | Direct |
+| BR-4 (reason mandatory >= 10 meaningful chars, verbatim, in notification) | TC-ADM-003-02, -01 | Direct |
+| BR-5 (terminated tenants excluded) | TC-ADM-003-10 | Direct |
+| BR-6 (banner i18n in all tenant languages) | TC-ADM-003-12 | Direct |
+
+*Note (Admin Console -- US-ADM-003): third ADM story; continues the per-story-suffix functional scheme (TC-ADM-003-XX) and the running ISO counter (TC-ADM-ISO-007). All 6 ACs (AC-1..AC-6) and all 6 BRs (BR-1..BR-6) traced. IMPLEMENTATION FACTS (tested as built): impersonation mints a SEPARATE JWT for the target user with claims `is_impersonation`/`imp_session_id`/`imp_actor_id`/`imp_reason`/`imp_readonly`/`imp_expires_at`; TTL hard-capped at 60 min and NOT refreshable (NFR-2). Read-only is decided at START (SystemSupport role OR Suspended tenant) and enforced by a MediatR pipeline behavior 403'ing write Commands (AC-5/AC-6/BR-1); destructive ops (change/reset password, role/permission mutation, delete user/tenant) are 403'd even for a FULL admin impersonation (FR-6); end-session is always allowed. A dedicated `impersonation_sessions` table (FR-4) tracks session/impersonator/target/reason/started/ended/expires/actions_count/status; end + expiry enforced by a per-request middleware. Both a system AuditLog (Impersonation.Started/Ended) and tenant audit rows carry `ImpersonatorUserId`/`ImpersonationSessionId`/`IsImpersonationAction`. The FE banner (NFR-4) is a global high-contrast i18n top bar in the main layout shown when `is_impersonation` is true, with End Session. BR-2 excludes system-tenant users; BR-3 one active session per impersonator (409); BR-5 excludes terminated tenants. Cross-tenant access under impersonation returns 404 (not 403), per module convention (TC-ADM-ISO-007). DEFERRED (status: blocked; honest traceability, never fabricated): NFR-1 audit immutability via DB-role UPDATE/DELETE revocation (TC-ADM-003-14) — deferred DB hardening, same family as the deferred Postgres RLS; today audit is append-only BY CONVENTION (insert-only app paths). Real email + in-app notification DELIVERY (AC-4/FR-5, TC-ADM-003-15) — log-only dispatch seam until US-NTF; the dispatch is asserted run-green in TC-ADM-003-01. NFR-5 traceId end-to-end correlation (TC-ADM-003-16) — depends on the observability/OTel stack deferred in US-ADM-002. NFR-3 (<2s start) is not separately tested (needs a perf-representative environment).*

@@ -393,6 +393,14 @@ public static class DependencyInjection
         // Hangfire server. Real data only — metrics with no source are returned null/empty with status flags.
         services.AddScoped<IPlatformMonitoringService, PlatformMonitoringService>();
 
+        // US-ADM-003: System Admin / System Support tenant-user impersonation (with full audit). Runs in the
+        // system/admin context (IgnoreQueryFilters, explicit tenant/user-scoped reads), mints a separate
+        // impersonation JWT for the target user (60-min cap, not refreshable), tracks the cross-tenant
+        // ImpersonationSession, writes impersonator-attributed audit, and dispatches the tenant-admin
+        // notification via the log-only seam (mirrors the welcome-email seam; real delivery deferred, US-NTF).
+        services.AddScoped<IImpersonationService, ImpersonationService>();
+        services.AddScoped<IImpersonationNotificationService, LogOnlyImpersonationNotificationService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

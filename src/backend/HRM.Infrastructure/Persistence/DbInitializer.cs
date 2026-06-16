@@ -13,6 +13,8 @@ public static class DbInitializer
     private const string DefaultTenantSubdomain = "platform";
     private const string DefaultTenantName = "HRM Platform Admin";
     private const string SystemAdminRoleName = "SystemAdmin";
+    // US-ADM-003 (BR-1/AC-6): the platform read-only support role. Uses the catalog's "System Support" name.
+    private static readonly string SystemSupportRoleName = PermissionCatalog.SystemRoles.SystemSupport;
 
     public static async Task RunAsync(IServiceProvider services, CancellationToken cancellationToken = default)
     {
@@ -103,6 +105,11 @@ public static class DbInitializer
             logger.LogInformation("Seeded {Role} role with {Count} permissions for tenant {Subdomain}",
                 systemAdminRole.Name, PermissionCatalog.AllPermissions.Count, tenant.Subdomain);
         }
+
+        // US-ADM-003 (BR-1/AC-6): seed the read-only "System Support" system role in the platform tenant so
+        // read-only impersonation is a real, testable capability (it can initiate impersonation + view
+        // monitoring, but holds no destructive/provisioning permissions). Idempotent + reconciled below.
+        await SeedSystemSupportRoleAsync(db, tenant.Id, logger, ct);
 
         // Seed built-in tenant roles with their default permissions (FR-2)
         await SeedBuiltInTenantRolesAsync(db, tenant.Id, logger, ct);
@@ -314,6 +321,85 @@ public static class DbInitializer
         db.Shifts.Add(shift);
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Seeded default shift for tenant {TenantId}", tenantId);
+    }
+
+    /// <summary>
+    /// US-ADM-003 (BR-1/AC-6): seeds (and reconciles) the read-only "System Support" system role in the platform
+    /// tenant. Idempotent: created with <see cref="PermissionCatalog.SystemSupportPermissions"/> when absent;
+    /// when present, any missing default permissions are added (never removed). Also reconciles the SystemAdmin
+    /// role so the new <c>Impersonation.Initiate</c> permission reaches platforms seeded before this release.
+    /// </summary>
+    private static async Task SeedSystemSupportRoleAsync(
+        AppDbContext db, Guid platformTenantId, ILogger logger, CancellationToken ct)
+    {
+        // Reconcile SystemAdmin: it is seeded with AllPermissions, but an existing row predates the new
+        // Impersonation.Initiate permission — add any catalog permissions it is missing.
+        var systemAdmin = await db.Roles
+            .IgnoreQueryFilters()
+            .Include(r => r.RolePermissions)
+            .FirstOrDefaultAsync(r => r.TenantId == platformTenantId && r.Name == SystemAdminRoleName, ct);
+        if (systemAdmin is not null)
+        {
+            var current = systemAdmin.RolePermissions.Select(rp => rp.Permission).ToHashSet();
+            var addedAdmin = 0;
+            foreach (var perm in PermissionCatalog.AllPermissions)
+            {
+                if (current.Add(perm))
+                {
+                    systemAdmin.RolePermissions.Add(new RolePermission { RoleId = systemAdmin.Id, Permission = perm });
+                    addedAdmin++;
+                }
+            }
+            if (addedAdmin > 0)
+            {
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation("Reconciled {Count} missing permission(s) onto {Role}", addedAdmin, SystemAdminRoleName);
+            }
+        }
+
+        var support = await db.Roles
+            .IgnoreQueryFilters()
+            .Include(r => r.RolePermissions)
+            .FirstOrDefaultAsync(r => r.TenantId == platformTenantId && r.Name == SystemSupportRoleName, ct);
+
+        if (support is null)
+        {
+            support = new Role
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = platformTenantId,
+                Name = SystemSupportRoleName,
+                Description = "Read-only platform support: impersonate tenant users (read-only) + view monitoring",
+                IsBuiltIn = true,
+                CreatedAt = DateTime.UtcNow,
+            };
+            foreach (var perm in PermissionCatalog.SystemSupportPermissions)
+            {
+                support.RolePermissions.Add(new RolePermission { RoleId = support.Id, Permission = perm });
+            }
+            db.Roles.Add(support);
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Seeded {Role} role with {Count} permissions for the platform tenant",
+                SystemSupportRoleName, PermissionCatalog.SystemSupportPermissions.Count);
+            return;
+        }
+
+        // Reconcile: add any missing default permissions (never remove a bespoke grant).
+        var supportCurrent = support.RolePermissions.Select(rp => rp.Permission).ToHashSet();
+        var added = 0;
+        foreach (var perm in PermissionCatalog.SystemSupportPermissions)
+        {
+            if (supportCurrent.Add(perm))
+            {
+                support.RolePermissions.Add(new RolePermission { RoleId = support.Id, Permission = perm });
+                added++;
+            }
+        }
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Reconciled {Count} missing permission(s) onto {Role}", added, SystemSupportRoleName);
+        }
     }
 
     /// <summary>

@@ -11,6 +11,12 @@ import {
 } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideToastr } from 'ngx-toastr';
+import { HttpClient } from '@angular/common/http';
+import {
+  provideTranslateService,
+  TranslateLoader,
+} from '@ngx-translate/core';
+import { TranslateHttpLoader } from '@ngx-translate/http-loader';
 import { appRoutes } from './app.routes';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { errorInterceptor } from './core/interceptors/error.interceptor';
@@ -53,6 +59,19 @@ export const appConfig: ApplicationConfig = {
 
     // Animations (async to reduce bundle size)
     provideAnimationsAsync(),
+
+    // i18n (ngx-translate) — strings served from assets/i18n/{lang}.json.
+    // Drives the US-ADM-003 impersonation banner (BR-6) and is available app-wide.
+    provideTranslateService({
+      defaultLanguage: 'en',
+      useDefaultLang: true,
+      loader: {
+        provide: TranslateLoader,
+        useFactory: (http: HttpClient) =>
+          new TranslateHttpLoader(http, '/assets/i18n/', '.json'),
+        deps: [HttpClient],
+      },
+    }),
 
     // Toast notifications (Notion-like styling)
     provideToastr({

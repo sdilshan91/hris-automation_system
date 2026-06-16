@@ -50,6 +50,11 @@ public sealed class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
         builder.Property(a => a.TraceId)
             .HasMaxLength(100);
 
+        // ── Impersonator attribution columns (US-ADM-003 FR-3/AC-2) — nullable/additive ──
+        // ImpersonatorUserId, ImpersonationSessionId (both Guid?) and IsImpersonationAction (bool, default false)
+        // are mapped by convention (snake_case). Index supports the "who-did-what-while-impersonating" audit view.
+        builder.HasIndex(a => a.ImpersonationSessionId);
+
         // Index for tenant-scoped audit queries
         builder.HasIndex(a => new { a.TenantId, a.CreatedAt });
 

@@ -1,4 +1,13 @@
 {
+  "IMPERSONATION": {
+    "BANNER": {
+      "LABEL": "SUPPORT SESSION — Operated by platform support",
+      "REF": "(Ref: {{ref}})",
+      "READ_ONLY": "(read-only)",
+      "END": "End Session",
+      "ENDING": "Ending…"
+    }
+  },
   "COMMON": {
     "CANCEL": "Cancel",
     "SAVE": "Save",
