@@ -361,6 +361,22 @@ public static class DependencyInjection
         // materialized-view/Redis refresh (NFR-3) are documented extension points, not built here.
         services.AddScoped<IPerformanceDashboardService, PerformanceDashboardService>();
 
+        // US-PRF-010: Performance — performance-based recommendations (promotion/bonus/increment/training). HR
+        // (Performance.Publish.All) drives the full workspace/auto-generate/save/submit/budget/rule config; a
+        // manager (Performance.Review.Team) is hard-scoped to their direct reports (AC-5/NFR-5). Auto-generation
+        // applies tenant-configurable rating-threshold RULES (FR-2/BR-3 — config, not hard-coded); manual override
+        // requires a justification (FR-3); promotion needs grade+effective-date (BR-5); submit is gated by BR-1
+        // (final ratings published = cycle Completed) + BR-2 (calibration complete if enabled); the approval
+        // workflow (FR-4) reuses the leave/attendance approver-chain + per-step status approach; budget tracking
+        // is a SOFT warning (FR-8/BR-4, never a hard block). The immutable approval audit lives in append-only
+        // RecommendationEvent rows (FR-7). On final approval the BR-6 downstream-integration seam is raised via
+        // IRecommendationIntegrationService (promotions→Core HR, bonuses→Payroll, training→Training) — log-only,
+        // real cross-module wiring deferred. Compensation fields are an encryption seam (NFR-3 — no pgcrypto/PII
+        // mechanism exists, stored plain numeric, same decision as US-PRF-008). Excel export via ClosedXML (reuses
+        // the US-PRF-007 approach); PDF is a documented seam.
+        services.AddScoped<IRecommendationService, RecommendationService>();
+        services.AddScoped<IRecommendationIntegrationService, LogOnlyRecommendationIntegrationService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

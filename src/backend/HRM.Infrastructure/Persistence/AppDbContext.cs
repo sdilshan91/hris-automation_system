@@ -108,6 +108,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<GoalProgressUpdate> GoalProgressUpdates => Set<GoalProgressUpdate>();
     public DbSet<GoalProgressAttachment> GoalProgressAttachments => Set<GoalProgressAttachment>();
     public DbSet<GoalComment> GoalComments => Set<GoalComment>();
+    public DbSet<Recommendation> Recommendations => Set<Recommendation>();
+    public DbSet<RecommendationApprover> RecommendationApprovers => Set<RecommendationApprover>();
+    public DbSet<RecommendationEvent> RecommendationEvents => Set<RecommendationEvent>();
+    public DbSet<RecommendationBudget> RecommendationBudgets => Set<RecommendationBudget>();
+    public DbSet<RecommendationRule> RecommendationRules => Set<RecommendationRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -441,6 +446,26 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-009: GoalComment tenant isolation + soft-delete filter (NFR-2). Manager/HR comment thread.
         modelBuilder.Entity<GoalComment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-010: Recommendation tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<Recommendation>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-010: RecommendationApprover tenant isolation + soft-delete filter (NFR-2). Approval chain (FR-4).
+        modelBuilder.Entity<RecommendationApprover>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-010: RecommendationEvent tenant isolation + soft-delete filter (NFR-2). Immutable append-only log.
+        modelBuilder.Entity<RecommendationEvent>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-010: RecommendationBudget tenant isolation + soft-delete filter (NFR-2). Budget tracking (FR-8).
+        modelBuilder.Entity<RecommendationBudget>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-010: RecommendationRule tenant isolation + soft-delete filter (NFR-2). Auto-gen rules (FR-2).
+        modelBuilder.Entity<RecommendationRule>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

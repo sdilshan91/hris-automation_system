@@ -3520,6 +3520,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PRF-008) | Multi-tenant isolation (pip/pip_objectives/pip_checkpoints tables + Hangfire reminder/ack-timeout jobs + checkpoint attachments + escalation/audit + report artifacts) | Critical | TC-PRF-ISO-029, TC-PRF-ISO-030, TC-PRF-ISO-031, TC-PRF-ISO-032 | 4 | -- |
 | US-PRF-009 | Goal Tracking with Progress Updates | Should Have | TC-PRF-009-01, TC-PRF-009-02, TC-PRF-009-03, TC-PRF-009-04, TC-PRF-009-05, TC-PRF-009-06, TC-PRF-009-07, TC-PRF-009-08, TC-PRF-009-09, TC-PRF-009-10, TC-PRF-009-11, TC-PRF-009-12, TC-PRF-009-13, TC-PRF-009-14, TC-PRF-009-15 | 15 | 5/5 AC covered |
 | Cross-cutting (PRF-009) | Multi-tenant isolation (goal_progress_updates + goal_comments tables + stale-detection Hangfire job + attachments + caches + notifications) | Critical | TC-PRF-ISO-033, TC-PRF-ISO-034, TC-PRF-ISO-035, TC-PRF-ISO-036 | 4 | -- |
+| US-PRF-010 | Performance-Based Recommendations (Promotion, Bonus) | Could Have | TC-PRF-010-01, TC-PRF-010-02, TC-PRF-010-03, TC-PRF-010-04, TC-PRF-010-05, TC-PRF-010-06, TC-PRF-010-07, TC-PRF-010-08, TC-PRF-010-09, TC-PRF-010-10, TC-PRF-010-11, TC-PRF-010-12, TC-PRF-010-13, TC-PRF-010-14, TC-PRF-010-15 | 15 | 5/5 AC covered |
+| Cross-cutting (PRF-010) | Multi-tenant isolation (recommendation/recommendation_budget/recommendation_approver/recommendation_event/recommendation_rule tables + downstream integration events + approval notifications + export artifacts) | Critical | TC-PRF-ISO-037, TC-PRF-ISO-038, TC-PRF-ISO-039, TC-PRF-ISO-040 | 4 | -- |
 | **TOTAL** | | | **164 test cases** | **164** | **44/44 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
@@ -3690,6 +3692,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PRF-ISO-034 | Goal-tracking APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR (view/add-update/comment/drill-down) | Security | Critical | US-PRF-009 | NFR-2, FR-1, FR-3, FR-5, FR-8 |
 | TC-PRF-ISO-035 | Cross-tenant write block: server-derived tenant_id on updates/comments (no body injection) + foreign goal_id/employee_id rejected | Security | Critical | US-PRF-009 | NFR-2, FR-1, FR-8 |
 | TC-PRF-ISO-036 | Tenant-scoped stale-detection Hangfire job + nudge/update/Blocked notifications + attachment storage + goal-list/summary caches | Security | High | US-PRF-009 | NFR-2, FR-5, FR-6, FR-8, BR-3, BR-4 |
+| TC-PRF-010-01 | HR opens recommendation workspace for a completed cycle -> employees w/ final score/grade/tenure/comp/manager flags + recommendation fields; submit routes to approval (happy path) | E2E | Critical | US-PRF-010 | AC-1, AC-3, FR-1 |
+| TC-PRF-010-02 | Auto-generate from configurable rating thresholds -> correct employees flagged with correct types; suggestions only (HR reviews) | Functional | Critical | US-PRF-010 | AC-2, FR-2, BR-3 |
+| TC-PRF-010-03 | Manual override of an auto-generated recommendation -> mandatory justification enforced | Functional | High | US-PRF-010 | FR-3 |
+| TC-PRF-010-04 | Approval workflow -> submit -> routes through configured approvers -> approved/rejected | Integration | High | US-PRF-010 | FR-4, AC-3 |
+| TC-PRF-010-05 | Budget tracking -> $100k budget, $110k recommendations -> SOFT warning (not a hard block), proceed with justification | Functional | High | US-PRF-010 | FR-8, BR-4 |
+| TC-PRF-010-06 | Comparison view -> current vs recommended grade/title/compensation per employee | Functional | Medium | US-PRF-010 | FR-5 |
+| TC-PRF-010-07 | Recommendation summary -> aggregate stats: total promotions, bonus pool, increment distribution by dept, vs previous cycle | Functional | High | US-PRF-010 | AC-4, FR-6 |
+| TC-PRF-010-08 | Gates -> recommendations only after final ratings published (BR-1) + after calibration complete if enabled (BR-2); promotion requires target grade + effective date (BR-5) | Functional | High | US-PRF-010 | BR-1, BR-2, BR-5 |
+| TC-PRF-010-09 | Scope/access -> employees view NO recommendations; managers see ONLY their team; HR (Publish.All) full | Security | Critical | US-PRF-010 | AC-5, NFR-5 |
+| TC-PRF-010-10 | Downstream integration -> approved promotion -> Core HR; bonus -> Payroll; training -> Training (event raised on approval, seam) | Integration | High | US-PRF-010 | BR-6 |
+| TC-PRF-010-11 | Compensation fields encrypted at rest (pgcrypto) -- asserted at the encryption seam | Security | High | US-PRF-010 | NFR-3 |
+| TC-PRF-010-12 | Input validation + sanitization -> recommendation type enum, amounts/percentages, justification + XSS/SQLi | Security | High | US-PRF-010 | FR-1, FR-3 |
+| TC-PRF-010-13 | Export -> PDF/Excel aggregate recommendation report matches dashboard stats | Functional | Medium | US-PRF-010 | FR-6 |
+| TC-PRF-010-14 | History/trend -> two cycles of recommendations -> trend comparison correct | Functional | Medium | US-PRF-010 | FR-7, BR-7 |
+| TC-PRF-010-15 | Performance (auto-gen 5,000 employees <=10s; workspace <=2.5s P95 paginated) + accessibility/mobile WCAG 2.1 AA | Performance | High | US-PRF-010 | NFR-1, NFR-4 |
+| TC-PRF-ISO-037 | Recommendations (+budgets/approval chains/history/aggregates/compensation) in Tenant A invisible from Tenant B (cross-tenant read incl. by id) | Security | Critical | US-PRF-010 | NFR-2 |
+| TC-PRF-ISO-038 | Recommendation APIs reject missing/invalid/mismatched tenant context + cross-tenant IDOR | Security | Critical | US-PRF-010 | NFR-2 |
+| TC-PRF-ISO-039 | Cross-tenant WRITE block -- server-derived tenant_id on recommendations/budgets (no body injection) + foreign employee/cycle rejected | Security | Critical | US-PRF-010 | NFR-2 |
+| TC-PRF-ISO-040 | Tenant-scoped downstream integration events (Core HR/Payroll/Training) + approval notifications + export artifacts | Security | High | US-PRF-010 | NFR-2, BR-6 |
 
 ### US-PRF-001 Detailed Requirements Traceability
 
@@ -4022,8 +4043,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Attendance (US-ATT-001 through US-ATT-010) | 10 | 154 | 50/50 (100%) | 13 | PASS (module complete) |
 | Recruitment (US-REC-001 through US-REC-010) | 10 | 153 | 48/48 (100%) | 19 | PASS (module complete) |
 | Payroll (US-PAY-001 through US-PAY-012) | 12 | 192 | 63/63 (100%) | 48 | PASS (module complete) |
-| Performance Management (US-PRF-001 through US-PRF-009) | 9 | 164 | 44/44 (100%) | 36 | IN PROGRESS |
-| **TOTAL** | **72** | **1402** | **369/369 (100%)** | **255** | |
+| Performance Management (US-PRF-001 through US-PRF-010) | 10 | 183 | 49/49 (100%) | 40 | PASS (module complete) |
+| **TOTAL** | **73** | **1421** | **374/374 (100%)** | **259** | |
 
 ---
 

@@ -152,6 +152,37 @@ export const PERFORMANCE_ROUTES: Routes = [
       ),
   },
   {
+    // US-PRF-010 AC-4/FR-6: recommendation summary (leadership aggregate stats).
+    // STATIC 'summary' segment declared BEFORE the 'recommendations' workspace so it
+    // matches first (the workspace links to it relatively as 'summary').
+    path: 'recommendations/summary',
+    loadComponent: () =>
+      import(
+        './components/recommendation-summary/recommendation-summary.component'
+      ).then((m) => m.RecommendationSummaryComponent),
+  },
+  {
+    // US-PRF-010 AC-1/AC-2/AC-3/FR-2/FR-3/FR-5/FR-6/FR-8/§8: HR recommendation
+    // workspace (sortable/filterable paginated table, auto-generate wizard, inline
+    // edit + override, comparison cards, budget tracker, submit + status chips,
+    // export). Sensitive compensation data — HR-gated (Performance.Publish.All + RLS).
+    path: 'recommendations',
+    loadComponent: () =>
+      import(
+        './components/recommendation-workspace/recommendation-workspace.component'
+      ).then((m) => m.RecommendationWorkspaceComponent),
+  },
+  {
+    // US-PRF-010 AC-5: MANAGER "Team Recommendations" — ONLY direct reports with their
+    // final score + recommendation status. Read-only, DISTINCT from the HR workspace;
+    // the backend hard-restricts to direct reports (Performance.Read.Team + RLS).
+    path: 'team-recommendations',
+    loadComponent: () =>
+      import(
+        './components/team-recommendations/team-recommendations.component'
+      ).then((m) => m.TeamRecommendationsComponent),
+  },
+  {
     // US-PRF-007 FR-5: department drill-down (Dashboard > Department > Employee).
     // Declared BEFORE the 'dashboard' overview route so the more-specific
     // static 'departments' segment matches first.
