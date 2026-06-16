@@ -143,6 +143,11 @@ try
     });
     builder.Services.AddHangfireServer();
 
+    // US-ADM-002 FR-5: the Hangfire monitoring seam for the System Admin dashboard's cross-tenant job-queue
+    // view. Lives here alongside Hangfire; bound to IJobQueueMonitor so the Infrastructure monitoring service
+    // does not hard-depend on a running Hangfire server (it degrades to an Available=false snapshot).
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IJobQueueMonitor, HRM.Api.Monitoring.HangfireJobQueueMonitor>();
+
     // ===== Background Jobs =====
     builder.Services.AddScoped<HRM.Api.Jobs.TokenCleanupJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.SendLockoutNotificationJob>();

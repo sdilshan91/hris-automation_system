@@ -1,0 +1,432 @@
+<div class="page-container">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">Platform Monitoring</h1>
+      <p class="mt-1 text-sm text-neutral-500">
+        Platform health and per-tenant usage across the system.
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      @if (lastUpdated()) {
+        <span class="text-xs text-neutral-400" data-testid="last-updated">
+          Updated {{ lastUpdated() | date: 'mediumTime' }}
+        </span>
+      }
+      <button
+        type="button"
+        class="btn-secondary"
+        (click)="refresh()"
+        data-testid="refresh-btn"
+        aria-label="Refresh monitoring data"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1.5" aria-hidden="true">
+          <path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clip-rule="evenodd" />
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Platform Health KPIs (AC-1) ─────────────────────── -->
+  <section aria-label="Platform health" class="mb-8">
+    @if (healthLoading() && !health()) {
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        @for (i of [1, 2, 3, 4, 5, 6]; track i) {
+          <div class="card-notion animate-pulse h-24"></div>
+        }
+      </div>
+    } @else if (healthError()) {
+      <div class="card-notion text-center py-8">
+        <p class="text-sm text-red-500">{{ healthError() }}</p>
+        <button type="button" class="btn-secondary mt-3" (click)="refresh()">Retry</button>
+      </div>
+    } @else if (health(); as h) {
+      <div @fadeSlideIn class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Overall status -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Platform Status</p>
+          <span
+            class="mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
+            [class]="healthStatusClass(h.status)"
+            data-testid="health-status"
+          >
+            {{ h.status }}
+          </span>
+        </div>
+
+        <!-- Active tenants -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Active Tenants</p>
+          <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="active-tenants">
+            {{ h.activeTenants }}
+          </p>
+        </div>
+
+        <!-- Active users -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Active Users</p>
+          <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="active-users">
+            {{ h.activeUsers }}
+          </p>
+        </div>
+
+        <!-- DB health -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Database</p>
+          <span
+            class="mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
+            [class]="componentHealthClass(h.dbHealth)"
+            data-testid="db-health"
+          >
+            {{ h.dbHealth }}
+          </span>
+        </div>
+
+        <!-- Redis health -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Redis</p>
+          <span
+            class="mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+            [class]="componentHealthClass(h.redisHealth)"
+            data-testid="redis-health"
+          >
+            {{ h.redisHealth === 'notConfigured' ? 'Not configured' : h.redisHealth }}
+          </span>
+        </div>
+
+        <!-- Hangfire queue depth -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Job Queue</p>
+          <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="hangfire-queued">
+            {{ h.hangfire.queued }}
+          </p>
+          <p class="mt-0.5 text-xs text-neutral-400">
+            {{ h.hangfire.processing }} processing · {{ h.hangfire.failed }} failed
+          </p>
+        </div>
+
+        <!-- Error rate (honest placeholder when unavailable) -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Error Rate (5m)</p>
+          @if (h.metricsAvailable && h.errorRate !== null) {
+            <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="error-rate">
+              {{ h.errorRate | number: '1.2-2' }}%
+            </p>
+          } @else {
+            <p class="mt-2 text-2xl font-semibold text-neutral-300" data-testid="error-rate-na">—</p>
+            <p class="mt-0.5 text-xs text-neutral-400">Not available — requires observability pipeline</p>
+          }
+        </div>
+
+        <!-- P95 latency (honest placeholder when unavailable) -->
+        <div class="card-notion">
+          <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">P95 Latency</p>
+          @if (h.metricsAvailable && h.p95LatencyMs !== null) {
+            <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="p95-latency">
+              {{ h.p95LatencyMs | number: '1.0-0' }} ms
+            </p>
+          } @else {
+            <p class="mt-2 text-2xl font-semibold text-neutral-300" data-testid="p95-latency-na">—</p>
+            <p class="mt-0.5 text-xs text-neutral-400">Not available — requires observability pipeline</p>
+          }
+        </div>
+      </div>
+    }
+  </section>
+
+  <!-- ─── Trend charts (deferred — no chart pipeline) ─────── -->
+  <section aria-label="Trends" class="mb-8">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="card-notion">
+        <p class="text-sm font-medium text-neutral-700">Error Rate Trend (24h)</p>
+        <div class="mt-4 flex flex-col items-center justify-center h-32 text-center" data-testid="error-trend-na">
+          <p class="text-neutral-300 text-2xl">—</p>
+          <p class="mt-1 text-xs text-neutral-400">Not available — requires observability pipeline</p>
+        </div>
+      </div>
+      <div class="card-notion">
+        <p class="text-sm font-medium text-neutral-700">Latency Trend (24h)</p>
+        <div class="mt-4 flex flex-col items-center justify-center h-32 text-center" data-testid="latency-trend-na">
+          <p class="text-neutral-300 text-2xl">—</p>
+          <p class="mt-1 text-xs text-neutral-400">Not available — requires observability pipeline</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Attention Required (FR-3) ───────────────────────── -->
+  <section aria-label="Attention required" class="mb-8">
+    <div class="card-notion">
+      <div class="flex items-center gap-2 mb-3">
+        <h2 class="text-sm font-semibold text-neutral-800">Attention Required</h2>
+        <span
+          class="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-medium"
+          data-testid="attention-count"
+        >
+          {{ attentionTenants().length }}
+        </span>
+      </div>
+      @if (attentionTenants().length === 0) {
+        <p class="text-sm text-neutral-400">No tenants are at or above 80% of any plan limit.</p>
+      } @else {
+        <ul class="divide-y divide-neutral-50">
+          @for (t of attentionTenants(); track t.tenantId) {
+            <li class="flex items-center justify-between py-2.5" data-testid="attention-row">
+              <div>
+                <a
+                  [routerLink]="['/admin/monitoring/tenants', t.tenantId]"
+                  class="text-sm font-medium text-neutral-900 hover:underline"
+                >
+                  {{ t.name }}
+                </a>
+                <span class="ml-2 text-xs text-neutral-400 font-mono">{{ t.subdomain }}</span>
+              </div>
+              <div class="text-xs">
+                @if (t.employeeUsage.percent !== null) {
+                  <span
+                    class="inline-flex items-center rounded-full px-2 py-0.5 font-medium"
+                    [class]="t.employeeUsage.band === 'breached' || t.employeeUsage.band === 'red' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'"
+                  >
+                    Employees {{ t.employeeUsage.percent | number: '1.0-0' }}%
+                  </span>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+      <!-- The error-rate "Attention Required" queue (AC-3) is deferred. -->
+      <div class="mt-3 pt-3 border-t border-neutral-50">
+        <p class="text-xs text-neutral-400" data-testid="error-queue-na">
+          Error-rate attention queue: Not available — requires observability pipeline.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Tenant usage table (AC-2, FR-4) ─────────────────── -->
+  <section aria-label="Tenant usage">
+    <div class="card-notion !p-0 overflow-hidden">
+      <!-- Filters -->
+      <div class="p-4 border-b border-neutral-100 flex flex-wrap items-end gap-3">
+        <div class="flex-1 min-w-[200px]">
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="tenant-search">Search</label>
+          <input
+            id="tenant-search"
+            type="text"
+            class="input-notion w-full"
+            placeholder="Name or subdomain"
+            [value]="searchTerm()"
+            (input)="onSearchInput($any($event.target).value)"
+            (keyup.enter)="applyFilters()"
+            data-testid="search-input"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="status-filter">Status</label>
+          <select
+            id="status-filter"
+            class="input-notion"
+            [value]="statusFilter()"
+            (change)="statusFilter.set($any($event.target).value); applyFilters()"
+            data-testid="status-filter"
+          >
+            <option value="">All</option>
+            @for (s of statusOptions(); track s) {
+              <option [value]="s">{{ s }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="plan-filter">Plan</label>
+          <select
+            id="plan-filter"
+            class="input-notion"
+            [value]="planFilter()"
+            (change)="planFilter.set($any($event.target).value); applyFilters()"
+            data-testid="plan-filter"
+          >
+            <option value="">All</option>
+            @for (p of planOptions(); track p) {
+              <option [value]="p">{{ p }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="region-filter">Region</label>
+          <input
+            id="region-filter"
+            type="text"
+            class="input-notion w-28"
+            placeholder="Any"
+            [value]="regionFilter()"
+            (input)="regionFilter.set($any($event.target).value)"
+            (keyup.enter)="applyFilters()"
+            data-testid="region-filter"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="created-from">Created From</label>
+          <input
+            id="created-from"
+            type="date"
+            class="input-notion"
+            [value]="createdFrom()"
+            (change)="createdFrom.set($any($event.target).value); applyFilters()"
+            data-testid="created-from"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="created-to">Created To</label>
+          <input
+            id="created-to"
+            type="date"
+            class="input-notion"
+            [value]="createdTo()"
+            (change)="createdTo.set($any($event.target).value); applyFilters()"
+            data-testid="created-to"
+          />
+        </div>
+        <button type="button" class="btn-secondary" (click)="applyFilters()" data-testid="apply-filters">
+          Apply
+        </button>
+        <button type="button" class="btn-secondary" (click)="clearFilters()">Clear</button>
+      </div>
+
+      <!-- Loading -->
+      @if (tenantsLoading() && tenants().length === 0) {
+        <div class="p-5 space-y-3 animate-pulse">
+          @for (i of [1, 2, 3, 4, 5]; track i) {
+            <div class="h-10 bg-neutral-50 rounded"></div>
+          }
+        </div>
+      } @else if (tenantsError()) {
+        <div class="text-center py-10">
+          <p class="text-sm text-red-500">{{ tenantsError() }}</p>
+          <button type="button" class="btn-secondary mt-3" (click)="refresh()">Retry</button>
+        </div>
+      } @else if (tenants().length === 0) {
+        <div class="text-center py-10">
+          <p class="text-sm text-neutral-500">No tenants match the current filters.</p>
+        </div>
+      } @else {
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm" aria-label="Tenant usage">
+            <thead>
+              <tr class="border-b border-neutral-100 text-left text-xs uppercase tracking-wider text-neutral-400">
+                <th scope="col" class="px-5 py-3 font-medium">Tenant</th>
+                <th scope="col" class="px-5 py-3 font-medium">Status</th>
+                <th scope="col" class="px-5 py-3 font-medium">Plan</th>
+                <th scope="col" class="px-5 py-3 font-medium w-56">Employees</th>
+                <th scope="col" class="px-5 py-3 font-medium">Storage</th>
+                <th scope="col" class="px-5 py-3 font-medium">API</th>
+                <th scope="col" class="px-5 py-3 font-medium">Email</th>
+                <th scope="col" class="px-5 py-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of pagedTenants(); track t.tenantId) {
+                <tr class="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 transition-colors" data-testid="tenant-row">
+                  <td class="px-5 py-3.5">
+                    <a
+                      [routerLink]="['/admin/monitoring/tenants', t.tenantId]"
+                      class="font-medium text-neutral-900 hover:underline"
+                    >
+                      {{ t.name }}
+                    </a>
+                    <div class="text-xs text-neutral-400 font-mono">{{ t.subdomain }}</div>
+                  </td>
+                  <td class="px-5 py-3.5">
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium" [class]="tenantStatusClass(t.status)">
+                      {{ t.status }}
+                    </span>
+                  </td>
+                  <td class="px-5 py-3.5 text-neutral-600">{{ t.plan }}</td>
+
+                  <!-- Employee gauge -->
+                  <td class="px-5 py-3.5">
+                    <div class="flex items-center gap-2">
+                      <div class="flex-1 h-2 rounded-full bg-neutral-100 overflow-hidden" role="progressbar"
+                           [attr.aria-valuenow]="t.employeeUsage.percent" aria-valuemin="0" aria-valuemax="100">
+                        <div
+                          class="h-full rounded-full transition-all duration-300"
+                          [class]="bandClass(t.employeeUsage.band)"
+                          [style.width.%]="t.employeeUsage.percent ?? 0"
+                          data-testid="employee-gauge"
+                        ></div>
+                      </div>
+                      <span class="text-xs text-neutral-500 whitespace-nowrap">
+                        {{ t.employeeUsage.used }}<span class="text-neutral-300"> / {{ t.employeeUsage.limit ?? '∞' }}</span>
+                      </span>
+                    </div>
+                  </td>
+
+                  <!-- Storage / API / Email: em-dash when null -->
+                  <td class="px-5 py-3.5 text-neutral-600">
+                    @if (t.storageUsage) {
+                      {{ t.storageUsage.used | number: '1.0-1' }}<span class="text-neutral-300"> / {{ t.storageUsage.limit ?? '∞' }} GB</span>
+                    } @else {
+                      <span class="text-neutral-300" data-testid="storage-na">—</span>
+                    }
+                  </td>
+                  <td class="px-5 py-3.5 text-neutral-600">
+                    @if (t.apiUsage) {
+                      {{ t.apiUsage.used | number }}
+                    } @else {
+                      <span class="text-neutral-300" data-testid="api-na">—</span>
+                    }
+                  </td>
+                  <td class="px-5 py-3.5 text-neutral-600">
+                    @if (t.emailUsage) {
+                      {{ t.emailUsage.used | number }}
+                    } @else {
+                      <span class="text-neutral-300" data-testid="email-na">—</span>
+                    }
+                  </td>
+                  <td class="px-5 py-3.5 text-right">
+                    @if (tenantNeedsAttention(t)) {
+                      <span class="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-medium" title="At or above 80% of a plan limit">
+                        Attention
+                      </span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between px-5 py-3 border-t border-neutral-100">
+          <p class="text-xs text-neutral-400">
+            {{ tenants().length }} tenant{{ tenants().length === 1 ? '' : 's' }}
+          </p>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="btn-secondary !py-1 !px-2 text-xs"
+              [disabled]="pageIndex() === 0"
+              (click)="prevPage()"
+              data-testid="prev-page"
+            >
+              Prev
+            </button>
+            <span class="text-xs text-neutral-500">
+              Page {{ pageIndex() + 1 }} of {{ totalPages() }}
+            </span>
+            <button
+              type="button"
+              class="btn-secondary !py-1 !px-2 text-xs"
+              [disabled]="pageIndex() >= totalPages() - 1"
+              (click)="nextPage()"
+              data-testid="next-page"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+</div>

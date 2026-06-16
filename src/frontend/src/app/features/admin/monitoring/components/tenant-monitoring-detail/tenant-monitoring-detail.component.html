@@ -1,0 +1,178 @@
+<div class="page-container">
+  <!-- Back link -->
+  <a routerLink="/admin/monitoring" class="inline-flex items-center text-sm text-neutral-500 hover:text-neutral-800 transition-colors mb-4">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1" aria-hidden="true">
+      <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+    </svg>
+    Back to monitoring
+  </a>
+
+  @if (isLoading()) {
+    <div class="space-y-4">
+      <div class="card-notion animate-pulse h-24"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card-notion animate-pulse h-40"></div>
+        <div class="card-notion animate-pulse h-40"></div>
+      </div>
+    </div>
+  } @else if (errorMessage()) {
+    <div class="card-notion text-center py-12">
+      <p class="text-sm text-red-500">{{ errorMessage() }}</p>
+    </div>
+  } @else if (detail(); as d) {
+    <div @fadeSlideIn class="space-y-6">
+      <!-- Header card -->
+      <div class="card-notion">
+        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-3">
+              <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">{{ d.name }}</h1>
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium" [class]="statusClass(d.status)" data-testid="detail-status">
+                {{ d.status }}
+              </span>
+            </div>
+            <p class="mt-1 text-sm text-neutral-500 font-mono">{{ d.subdomain }}.yourhrm.com</p>
+          </div>
+
+          <!-- Quick actions (AC-4) — all disabled, point to later releases -->
+          <div class="flex flex-wrap items-center gap-2" data-testid="quick-actions">
+            @if (canManage()) {
+              <button
+                type="button"
+                class="btn-secondary opacity-50 cursor-not-allowed"
+                disabled
+                title="Available in a later release"
+                data-testid="impersonate-btn"
+              >
+                Impersonate
+              </button>
+              <button
+                type="button"
+                class="btn-secondary opacity-50 cursor-not-allowed"
+                disabled
+                title="Available in a later release"
+                data-testid="suspend-btn"
+              >
+                Suspend
+              </button>
+            }
+            <button
+              type="button"
+              class="btn-secondary opacity-50 cursor-not-allowed"
+              disabled
+              title="Available in a later release"
+              data-testid="audit-btn"
+            >
+              View Audit Log
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overview -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Tenant facts -->
+        <div class="card-notion">
+          <h2 class="text-sm font-semibold text-neutral-800 mb-3">Overview</h2>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">Plan</dt>
+              <dd class="text-neutral-900 font-medium">{{ d.plan }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">Owner</dt>
+              <dd class="text-neutral-900">{{ d.ownerEmail }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">Created</dt>
+              <dd class="text-neutral-900">{{ d.createdAt | date: 'medium' }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">Last Activity</dt>
+              <dd class="text-neutral-900">
+                @if (d.lastActivityAt) {
+                  {{ d.lastActivityAt | date: 'medium' }}
+                } @else {
+                  <span class="text-neutral-300" data-testid="last-activity-na">—</span>
+                }
+              </dd>
+            </div>
+            <div class="flex justify-between items-center">
+              <dt class="text-neutral-500">SLA Uptime</dt>
+              <dd>
+                @if (d.slaUptime !== null) {
+                  <span class="text-neutral-900 font-medium">{{ d.slaUptime | number: '1.2-2' }}%</span>
+                } @else {
+                  <span class="text-xs text-neutral-400" data-testid="sla-na">Not available — requires observability pipeline</span>
+                }
+              </dd>
+            </div>
+          </dl>
+
+          <!-- Employee gauge -->
+          <div class="mt-5">
+            <div class="flex items-center justify-between text-xs mb-1.5">
+              <span class="text-neutral-500 font-medium">Employees</span>
+              <span class="text-neutral-500">
+                {{ d.employeeUsage.used }} / {{ d.employeeUsage.limit ?? '∞' }}
+                @if (d.employeeUsage.percent !== null) {
+                  ({{ d.employeeUsage.percent | number: '1.0-0' }}%)
+                }
+              </span>
+            </div>
+            <div class="h-2.5 rounded-full bg-neutral-100 overflow-hidden" role="progressbar"
+                 [attr.aria-valuenow]="d.employeeUsage.percent" aria-valuemin="0" aria-valuemax="100">
+              <div
+                class="h-full rounded-full transition-all duration-300"
+                [class]="bandClass(d.employeeUsage.band)"
+                [style.width.%]="d.employeeUsage.percent ?? 0"
+                data-testid="detail-employee-gauge"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Background jobs (Hangfire) -->
+        <div class="card-notion">
+          <h2 class="text-sm font-semibold text-neutral-800 mb-3">Background Jobs</h2>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-lg bg-neutral-50 p-3">
+              <p class="text-xs text-neutral-400">Queued</p>
+              <p class="text-xl font-semibold text-neutral-900">{{ d.hangfire.queued }}</p>
+            </div>
+            <div class="rounded-lg bg-neutral-50 p-3">
+              <p class="text-xs text-neutral-400">Processing</p>
+              <p class="text-xl font-semibold text-neutral-900">{{ d.hangfire.processing }}</p>
+            </div>
+            <div class="rounded-lg bg-green-50 p-3">
+              <p class="text-xs text-green-600">Succeeded</p>
+              <p class="text-xl font-semibold text-green-700">{{ d.hangfire.succeeded }}</p>
+            </div>
+            <div class="rounded-lg bg-red-50 p-3">
+              <p class="text-xs text-red-600">Failed</p>
+              <p class="text-xl font-semibold text-red-700">{{ d.hangfire.failed }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trend charts (deferred) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card-notion">
+          <p class="text-sm font-medium text-neutral-700">Error Rate Trend (24h)</p>
+          <div class="mt-4 flex flex-col items-center justify-center h-32 text-center" data-testid="detail-error-trend-na">
+            <p class="text-neutral-300 text-2xl">—</p>
+            <p class="mt-1 text-xs text-neutral-400">Not available — requires observability pipeline</p>
+          </div>
+        </div>
+        <div class="card-notion">
+          <p class="text-sm font-medium text-neutral-700">Latency Trend (24h)</p>
+          <div class="mt-4 flex flex-col items-center justify-center h-32 text-center" data-testid="detail-latency-trend-na">
+            <p class="text-neutral-300 text-2xl">—</p>
+            <p class="mt-1 text-xs text-neutral-400">Not available — requires observability pipeline</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

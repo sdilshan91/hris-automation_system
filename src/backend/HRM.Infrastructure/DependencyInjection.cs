@@ -387,6 +387,12 @@ public static class DependencyInjection
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         services.AddScoped<ITenantWelcomeEmailService, LogOnlyTenantWelcomeEmailService>();
 
+        // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
+        // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
+        // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running
+        // Hangfire server. Real data only — metrics with no source are returned null/empty with status flags.
+        services.AddScoped<IPlatformMonitoringService, PlatformMonitoringService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

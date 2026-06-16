@@ -4062,7 +4062,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 |---------------|-----------------|----------|------------|----------|----------|
 | US-ADM-001 | System Admin Provisions New Tenant | Must Have | TC-ADM-001-01, TC-ADM-001-02, TC-ADM-001-03, TC-ADM-001-04, TC-ADM-001-05, TC-ADM-001-06, TC-ADM-001-07, TC-ADM-001-08, TC-ADM-001-09, TC-ADM-001-10, TC-ADM-001-11, TC-ADM-001-12 | 12 | 6/6 AC covered |
 | Cross-cutting (ADM-001) | Multi-tenant isolation (tenant/users/user_tenant/seed data + EF query filters + tenant config cache) | Critical | TC-ADM-ISO-001, TC-ADM-ISO-002, TC-ADM-ISO-003, TC-ADM-ISO-004 | 4 | -- |
-| **TOTAL** | | | **16 test cases** | **16** | **6/6 AC** |
+| US-ADM-002 | System Admin Monitors Platform Health and Tenant Usage | Must Have | TC-ADM-002-01, TC-ADM-002-02, TC-ADM-002-03, TC-ADM-002-04, TC-ADM-002-05, TC-ADM-002-06, TC-ADM-002-07, TC-ADM-002-08, TC-ADM-002-09, TC-ADM-002-10, TC-ADM-002-11, TC-ADM-002-12, TC-ADM-002-13, TC-ADM-002-14, TC-ADM-002-15, TC-ADM-002-16, TC-ADM-002-17, TC-ADM-002-18 | 18 | 5/5 AC covered (5 TCs DEFERRED pending observability) |
+| Cross-cutting (ADM-002) | Multi-tenant isolation in monitoring (aggregate scoping + non-system context rejection) | Critical | TC-ADM-ISO-005, TC-ADM-ISO-006 | 2 | -- |
+| **TOTAL** | | | **36 test cases** | **36** | **11/11 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -4084,6 +4086,26 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ADM-ISO-002 | APIs reject missing/invalid/mismatched tenant context + IDOR | Security | Critical | US-ADM-001 | AC-6, BR-1 |
 | TC-ADM-ISO-003 | EF query filter blocks reads; writes tenant-stamped (RLS deferred) | Security | Critical | US-ADM-001 | AC-6, FR-3, FR-6 |
 | TC-ADM-ISO-004 | Tenant config cache key tenant-scoped (FR-7) | Security | High | US-ADM-001 | AC-6, FR-7 |
+| TC-ADM-002-01 | Dashboard loads w/ health roll-up + aggregate counts | E2E | Critical | US-ADM-002 | AC-1, FR-1 (subset), FR-5, FR-6 |
+| TC-ADM-002-02 | Employee usage gauge 80% warning (max=5, 4 emp) | Functional | Critical | US-ADM-002 | AC-2, FR-2, FR-3 |
+| TC-ADM-002-03 | Employee usage gauge 100% breach (max=5, 5 emp) | Functional | Critical | US-ADM-002 | AC-2, FR-2, FR-3, BR-4 |
+| TC-ADM-002-04 | Quota-breach queue by severity (80/95/100% employees) | Functional | High | US-ADM-002 | AC-2, FR-3, BR-4 |
+| TC-ADM-002-05 | DB/Redis health indicators (Redis "not configured") | Functional | High | US-ADM-002 | AC-1, FR-6 |
+| TC-ADM-002-06 | Hangfire job counts surfaced + failed drilldown | Functional | High | US-ADM-002 | AC-1, FR-5 |
+| TC-ADM-002-07 | Polling refresh updates "last updated" (not SignalR) | Functional | Medium | US-ADM-002 | AC-1, FR-1 (refresh); NFR-2 SignalR deferred |
+| TC-ADM-002-08 | Tenant detail operational fields (status/plan/owner/created/activity/Hangfire) | Functional | High | US-ADM-002 | AC-4, FR-5 |
+| TC-ADM-002-09 | Access control: SysAdmin full / SysSupport read-only / Tenant Admin 403 | Security | Critical | US-ADM-002 | AC-5, BR-1 |
+| TC-ADM-002-10 | PII exclusion — aggregates only, no names/salaries | Security | Critical | US-ADM-002 | AC-5, BR-2 |
+| TC-ADM-002-11 | Audit: Monitoring.Viewed + Monitoring.TenantViewed | Security | High | US-ADM-002 | AC-5, NFR-5 |
+| TC-ADM-002-12 | Dashboard < 2.5s P95 with 100+ tenants | Performance | High | US-ADM-002 | NFR-1, NFR-3, AC-1 |
+| TC-ADM-002-13 | Dashboard WCAG 2.1 AA + responsive 1024px-4K | Accessibility | Medium | US-ADM-002 | NFR-4 |
+| TC-ADM-002-14 | [DEFERRED] error-rate % + P95 latency KPIs | Functional | High | US-ADM-002 | AC-1, FR-1 (DEFERRED: OTel pipeline) |
+| TC-ADM-002-15 | [DEFERRED] error-rate "Attention Required" queue | Functional | High | US-ADM-002 | AC-3, FR-1 (DEFERRED: OTel pipeline) |
+| TC-ADM-002-16 | [DEFERRED] tenant 24h error/latency trends + top errors | Functional | Medium | US-ADM-002 | AC-4, FR-1 (DEFERRED: OTel time-series) |
+| TC-ADM-002-17 | [DEFERRED] SLA uptime % vs plan tier | Functional | Medium | US-ADM-002 | FR-7 (DEFERRED: probe history) |
+| TC-ADM-002-18 | [DEFERRED] storage/API/email usage gauges | Functional | Medium | US-ADM-002 | AC-2, FR-2 (DEFERRED: usage counters) |
+| TC-ADM-ISO-005 | Monitoring aggregates correctly tenant-scoped; no row leakage | Security | Critical | US-ADM-002 | AC-5, BR-1, BR-2 |
+| TC-ADM-ISO-006 | Monitoring endpoints reject non-system tenant context | Security | Critical | US-ADM-002 | AC-5, BR-1 |
 
 ### Coverage Summary (Admin Console -- US-ADM-001)
 
@@ -4099,3 +4121,20 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | BR-1 (only SystemAdmin) / BR-2 (no subdomain reuse) / BR-3 (trial->status) | TC-ADM-001-08 / -03,-12 / -07 | Direct |
 
 *Note (Admin Console): US-ADM-001 establishes the Admin Console test suite (dir + TEST-MATRIX + this section), reusing the per-story-suffix functional ID scheme from Recruitment/Payroll (TC-ADM-{NNN}-XX) with a separate running ISO counter (TC-ADM-ISO-NNN) starting at 001. All 6 ACs are covered. PLATFORM ACCURACY / DEFERRED: AC-6 and FR-6 specify PostgreSQL RLS + the `app.current_tenant_id` session variable, but this codebase enforces tenant isolation via EF Core global query filters (read) + TenantInterceptor (write stamping), NOT Postgres RLS -- RLS is a deferred platform extension point. The isolation tests (TC-ADM-001-09, TC-ADM-ISO-001..004) are written against the EF mechanism in force today; the story's "raw SQL without app.current_tenant_id returns zero rows" RLS-verification hint (FR-6) is CONDITIONAL/deferred. The cross-tenant ID-injection test asserts 404 (not 403) per the story Test Hints. FR-7 Redis tenant-config cache (TC-ADM-ISO-004) is asserted as tenant-keyed; if no distributed cache layer is wired yet it asserts the equivalent always-tenant-filtered property and flags the Redis key `t:{tenantId}:config` as the target. Welcome-email DELIVERY (FR-4) is asserted against a test SMTP sink (the dispatch/enqueue is the assertion). NFR-1 (<60s/<5min) requires a performance-representative environment. STORY MISMATCH worth flagging to the caller: AC-6/FR-6 assume RLS as the active isolation layer, which contradicts the implemented EF-query-filter mechanism -- the story should be reworded so isolation is specified against query filters with RLS as future hardening.*
+
+### Coverage Summary (Admin Console -- US-ADM-002)
+
+| AC / Requirement | Covered By | Coverage |
+|------------------|-----------|----------|
+| AC-1 (health roll-up, error rate, P95, active tenants/users, DB/Redis health, Hangfire depth, auto-refresh) | TC-ADM-002-01, -05, -06, -07 (real) + TC-ADM-002-14 (DEFERRED error rate/latency) | Partial (deferred subset) |
+| AC-2 (per-tenant usage gauges; 80% warn / 100% breach) | TC-ADM-002-02, -03, -04 (employee, real) + TC-ADM-002-18 (DEFERRED storage/API/email) | Partial (deferred subset) |
+| AC-3 (error-rate "Attention Required" queue) | TC-ADM-002-15 | DEFERRED |
+| AC-4 (tenant detail: operational + trends/top errors) | TC-ADM-002-08 (real) + TC-ADM-002-16 (DEFERRED trends/top errors) | Partial (deferred subset) |
+| AC-5 (no PII; aggregates only; all access audited) | TC-ADM-002-09, -10, -11, TC-ADM-ISO-005, -006 | Direct |
+| NFR-1 (<2.5s P95, 100+ tenants) / NFR-3 (no DB impact) / NFR-4 (a11y 1024-4K) / NFR-5 (audit) | TC-ADM-002-12 / -12 / -13 / -11 | Direct |
+| NFR-2 (SignalR push <5s) | -- | DEFERRED (refresh is polling; TC-ADM-002-07) |
+| FR-5 (Hangfire cross-tenant) / FR-6 (DB/Redis health) | TC-ADM-002-06, -08 / -05 | Direct |
+| FR-7 (SLA uptime %) | TC-ADM-002-17 | DEFERRED |
+| BR-1 (system roles only; support read-only) / BR-2 (no PII) | TC-ADM-002-09, ISO-006 / -10, ISO-005 | Direct |
+
+*Note (Admin Console -- US-ADM-002): second ADM story; continues the per-story-suffix functional scheme (TC-ADM-002-XX) and the running ISO counter (TC-ADM-ISO-005..006). All 5 ACs traced. PLATFORM ACCURACY: this platform has NO observability pipeline yet (no OpenTelemetry metrics, no Redis usage counters, no health-probe history). REAL/run-green metrics tested: platform-health roll-up, active tenant/user counts, tenant-status breakdown, DB/Redis health (Redis may show "not configured"), Hangfire job counts + failed drilldown, per-tenant EMPLOYEE usage gauge vs `MaxEmployees` (80%/100% boundaries per Test Hints: max=5 -> 4 emp=80% warn, 5 emp=100% breach), employee quota-breach queue (80/95/100% sorted by severity), tenant-detail operational fields (status/plan/owner/created/last-activity/Hangfire), access control (SysAdmin full / SysSupport read-only / Tenant Admin 403), PII exclusion, audit (Monitoring.Viewed + Monitoring.TenantViewed), and POLLING refresh. DEFERRED (status: blocked; expected behavior = "Not available — requires observability pipeline" placeholder, NEVER fabricated data): aggregate error-rate % + P95 latency (TC-ADM-002-14), error-rate "Attention Required" queue (TC-ADM-002-15), tenant 24h error/latency trend charts + top-errors (TC-ADM-002-16), SLA uptime % (TC-ADM-002-17), storage/API/email usage gauges (TC-ADM-002-18). NFR-2 SignalR push is deferred — AC-1's "SignalR OR polling" is satisfied by polling. STORY MISMATCH worth flagging to the caller: US-ADM-002 Preconditions/AC-1/FR-1 assume OpenTelemetry metrics are operational; they are not. The story should be split so the deferred observability metrics (error rate, latency, trends, SLA uptime, storage/API/email usage) are a follow-on once the OTel pipeline + Redis usage counters land, leaving the run-green subset above as what is implementable today.*

@@ -282,6 +282,23 @@ public static class PermissionCatalog
         public const string Provision = "Tenant.Provision";
     }
 
+    // ── Platform Monitoring (US-ADM-002) ─────────────────────────────
+    public static class Monitoring
+    {
+        /// <summary>
+        /// US-ADM-002 (BR-1): view the System Admin platform-health + tenant-usage monitoring dashboard. A
+        /// SYSTEM-level, READ-ONLY capability (the whole story is read-only) — only the platform SystemAdmin
+        /// role (seeded with every catalog permission) holds it, and the endpoints additionally run only in the
+        /// system/admin context. Mirrors <see cref="Tenant.Provision"/>: a tenant-scoped role that nominally
+        /// held this could never reach the admin-context endpoints.
+        ///
+        /// NOTE: the story names a read-only "System Support" role. This platform seeds only a single
+        /// "SystemAdmin" system role today (DbInitializer) — there is no separate System Support role to grant.
+        /// When that role is introduced (its own US), grant it this permission for read-only monitoring access.
+        /// </summary>
+        public const string View = "Monitoring.View";
+    }
+
     // ── Audit ────────────────────────────────────────────────────────
     public static class Audit
     {
@@ -377,6 +394,9 @@ public static class PermissionCatalog
 
         // Tenant
         Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling, Tenant.Provision,
+
+        // Monitoring
+        Monitoring.View,
 
         // Audit
         Audit.View,
