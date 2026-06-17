@@ -1,7 +1,7 @@
 ---
 module: Admin Console
-total_user_stories: 5
-total_test_cases: 101
+total_user_stories: 6
+total_test_cases: 125
 created: 2026-06-16
 updated: 2026-06-17
 status: in-progress
@@ -391,10 +391,98 @@ status: in-progress
 
 ---
 
+## US-ADM-006 — Tenant Admin Configures Company Settings (Logo, Colors, Policies)
+
+> Sixth Admin Console story (second **Tenant Admin** persona, tenant-scoped). 24 test cases: 17 run-green functional/security/integration/e2e/a11y (TC-ADM-006-01..17) + 4 DEFERRED (TC-ADM-006-18..21) + 3 dedicated multi-tenant isolation (TC-ADM-ISO-014..016, continuing the running ISO counter). All 5 ACs (AC-1..AC-5), all 6 BRs (BR-1..BR-6), and all 7 FRs (FR-1..FR-7) traced.
+>
+> IMPLEMENTATION FACTS (tested as built): settings are realized as **TYPED COLUMNS on the Tenant entity** (org profile, localization, branding URLs, password policy, session policy) — NOT a separate EAV `tenant_setting` table (codebase convention). A migration adds the missing org/localization/branding columns; password/session-policy columns already existed. Org profile / localization / password policy / session policy each have a GET + PUT, all changes audited before/after (NFR-4). Operations target the CURRENT tenant via `ITenantContext` only — there is NO `tenant_id` parameter to manipulate, so settings are inherently tenant-isolated (TC-ADM-ISO-014; cross-tenant access → 404/empty). Branding upload (AC-2/NFR-2) does server-side MAGIC-BYTE + size validation (logo PNG/SVG ≤2MB, favicon ICO/PNG ≤500KB) — a `.png`-extension file with wrong magic bytes is rejected (TC-ADM-006-04); files are stored under the tenant-scoped path `{tenantId}/branding/` (BR-6, TC-ADM-006-03/-06, TC-ADM-ISO-015). Primary color is a validated hex; the FE derives complementary shades into CSS custom properties (FR-3, TC-ADM-006-07). Localization sets tenant defaults for users without a personal preference (BR-5), validated against a supported-language list (FR-4); chosen date/number/currency formats drive UI rendering (TC-ADM-006-10). Password policy is persisted (TC-ADM-006-11) and ENFORCED at the next password change/reset — min length 12 → a 10-char password is rejected (AC-4/FR-5, TC-ADM-006-12). Session policy persists idle/absolute timeout + max concurrent sessions (FR-6, TC-ADM-006-13; enforcement seam is auth middleware). BR-1 limits all writes to TenantAdmin/TenantOwner (TC-ADM-006-14); BR-3 plan-gating disables enterprise-only options in the UI AND rejects them at the API (TC-ADM-006-15).
+>
+> DEFERRED (status: blocked; honest traceability, never fabricated): real blob/object-storage persistence + signed URLs (TC-ADM-006-18) — no S3/Azure wired; validation + tenant path prefix are real, only cloud persistence is deferred. Redis config-cache invalidation (`t:{tenantId}:config`) + SignalR <60s propagation (FR-7/NFR-3, TC-ADM-006-19) — Redis/SignalR not wired; the invalidation call no-ops gracefully and propagation is next-page-load; settings are always read tenant-filtered. NFR-1 1.5s page load incl. logo preview (TC-ADM-006-20) — needs a perf-representative env. Custom CSS / white-label / login-page customization beyond logo+color (TC-ADM-006-21) — §10 Phase 2. PostgreSQL RLS DB-layer isolation named in AC-5 (TC-ADM-ISO-016) — platform implements app (`ITenantContext`) + EF (query filter/`TenantInterceptor`) layers only; RLS is a deferred extension point (same family as US-ADM-001..005 / Payroll / Leave).
+>
+> STORY MISMATCH worth flagging to the caller: (1) AC-1/AC-2/AC-3 and §7 describe settings as `tenant_setting` rows; the platform implements them as TYPED Tenant columns — the behavior (per-tenant upsert + audit) is equivalent, but the story should be reworded to match the typed-column model. (2) AC-5 names PostgreSQL RLS as the DB-layer isolation; the active mechanism is EF query filters + `ITenantContext` (RLS deferred) — reword AC-5 with RLS as future hardening. (3) Preconditions assert "File storage service is operational" and §9 lists Redis; neither blob storage nor Redis is wired today (validation/path-prefix + tenant-filtered reads are real; cloud persistence + cache push deferred).
+
+## Coverage by Test Case (US-ADM-006)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-006-01 | Org profile GET+PUT persisted, reflected, before/after audited | E2E | Critical | AC-1, FR-1, BR-1/4, NFR-4 | Happy path / isolation | draft |
+| TC-ADM-006-02 | Org profile validation — invalid/boundary rejected, no partial write | Functional | High | AC-1, FR-1, BR-4 | Negative / boundary | draft |
+| TC-ADM-006-03 | Branding valid PNG logo accepted, tenant-scoped path, URL persisted | Integration | Critical | AC-2, FR-2, BR-6, NFR-2/4 | Happy path / isolation | draft |
+| TC-ADM-006-04 | Branding wrong-magic-bytes (spoofed .png) rejected | Security | Critical | AC-2, FR-2, NFR-2 | Negative / security | draft |
+| TC-ADM-006-05 | Branding oversize + wrong-type rejected at size/type boundaries | Functional | High | AC-2, FR-2, NFR-2 | Negative / boundary | draft |
+| TC-ADM-006-06 | Favicon (ICO + PNG) accepted, tenant-scoped, URL persisted | Functional | Medium | AC-2, FR-2, BR-6, NFR-2/4 | Happy path / boundary | draft |
+| TC-ADM-006-07 | Primary color hex validated; FE derives shades into CSS vars | Functional | High | AC-2, FR-3, NFR-2/4 | Happy path / negative | draft |
+| TC-ADM-006-08 | Localization defaults persist + apply to users w/o preference | Functional | Critical | AC-3, FR-1/4, BR-2/5, NFR-4 | Happy path | draft |
+| TC-ADM-006-09 | Localization unsupported language/format/tz/currency rejected | Functional | High | AC-3, FR-4, BR-5 | Negative / boundary | draft |
+| TC-ADM-006-10 | Localization rendering — date/number/currency applied across UI | E2E | High | AC-3, FR-1/4 | Happy path | draft |
+| TC-ADM-006-11 | Password policy GET+PUT persists structured policy; audited | Functional | Critical | AC-4, FR-5, NFR-4 | Happy path / negative | draft |
+| TC-ADM-006-12 | Password policy ENFORCEMENT — 10-char rejected at next change | Security | Critical | AC-4, FR-5, Test Hints | Negative / boundary | draft |
+| TC-ADM-006-13 | Session policy GET+PUT persists timeouts + max sessions; audited | Functional | High | FR-6, NFR-4 | Happy path / negative | draft |
+| TC-ADM-006-14 | Authz — only TenantAdmin/TenantOwner write; others 403, unauth 401 | Security | Critical | AC-1..4, BR-1 | Negative / security | draft |
+| TC-ADM-006-15 | Plan-gating — enterprise-only disabled in UI + rejected by API | Functional | High | BR-3, §10 | Negative / security | draft |
+| TC-ADM-006-16 | Audit completeness sweep — every section before/after audited | Integration | High | AC-1/2/3/4, FR-1/5/6, NFR-4 | Negative / security | draft |
+| TC-ADM-006-17 | Settings UI WCAG 2.1 AA + dirty-track Save + responsive 360-4K | Accessibility | Medium | NFR-5, §8 | Accessibility | draft |
+| TC-ADM-006-18 | [DEFERRED] real blob/object-storage persistence (S3/Azure) | Integration | Medium | AC-2, FR-2, §10 | Deferred placeholder | blocked |
+| TC-ADM-006-19 | [DEFERRED] Redis config-cache invalidation + SignalR <60s propagation | Integration | Medium | FR-7, NFR-3 | Deferred placeholder | blocked |
+| TC-ADM-006-20 | [DEFERRED] settings page load < 1.5s incl. logo preview | Performance | Low | NFR-1 | Deferred placeholder | blocked |
+| TC-ADM-006-21 | [DEFERRED] custom CSS / white-label / login-page customization | Functional | Low | §10, BR-3 | Deferred placeholder | blocked |
+| TC-ADM-ISO-014 | Settings tenant-scoped via ITenantContext; cross-tenant → 404/empty | Security | Critical | AC-5, FR-1, BR-1/6, Test Hints | Multi-tenant isolation | draft |
+| TC-ADM-ISO-015 | Branding file storage tenant-scoped; B cannot reach A's path | Security | Critical | AC-2/5, FR-2, BR-6, Test Hints | Multi-tenant isolation | draft |
+| TC-ADM-ISO-016 | [DEFERRED] PostgreSQL RLS DB-layer isolation for settings | Security | Medium | AC-5 (DEFERRED: RLS) | Multi-tenant isolation | blocked |
+
+## Acceptance-Criteria Coverage (US-ADM-006)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (org profile update → typed columns, reflected, before/after audit, no cross-tenant) | TC-ADM-006-01, -02, -16, TC-ADM-ISO-014 |
+| AC-2 (branding upload tenant-scoped path + URL saved; primary color; magic-byte+size validation) | TC-ADM-006-03, -04, -05, -06, -07, TC-ADM-ISO-015 (+ -18 DEFERRED blob persistence) |
+| AC-3 (localization defaults for users w/o preference; UI renders formats; audited) | TC-ADM-006-08, -09, -10, -16 |
+| AC-4 (password policy saved + enforced at next change; existing not invalidated; audited) | TC-ADM-006-11, -12, -16 |
+| AC-5 (cross-tenant access rejected; ITenantContext-only; RLS at DB layer) | TC-ADM-ISO-014 (ITenantContext/404), TC-ADM-ISO-015 (file path) (+ TC-ADM-ISO-016 DEFERRED RLS) |
+
+## BR / FR / NFR Coverage (US-ADM-006)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| BR-1 (only TenantAdmin/TenantOwner) | TC-ADM-006-14, -01/-02 | Direct |
+| BR-2 (config hierarchy: user > tenant) | TC-ADM-006-08 | Direct (tenant default vs user preference) |
+| BR-3 (plan-constrained settings gated) | TC-ADM-006-15 | UI disable + API reject |
+| BR-4 (fiscal year start) | TC-ADM-006-01, -02 | Persisted + range-validated |
+| BR-5 (default language for users w/o preference) | TC-ADM-006-08, -09 | Direct |
+| BR-6 (tenant-scoped branding files) | TC-ADM-006-03, -06, TC-ADM-ISO-015 | Direct |
+| FR-1 (org/settings keyed by ITenantContext.TenantId) | TC-ADM-006-01, -08, TC-ADM-ISO-014 | Typed columns; tenant-keyed |
+| FR-2 (branding upload type+size; tenant path; URLs) | TC-ADM-006-03/-04/-05/-06, TC-ADM-ISO-015 (+ -18 DEFERRED signed URLs) | Validation+path real; cloud deferred |
+| FR-3 (primary color hex → derived shades / CSS vars) | TC-ADM-006-07 | Direct |
+| FR-4 (localization validated vs supported-language list) | TC-ADM-006-08, -09 | Direct |
+| FR-5 (password policy stored + enforced on every change) | TC-ADM-006-11, -12 | Direct |
+| FR-6 (session policy stored + enforced by auth middleware) | TC-ADM-006-13 | Persist+read real; enforcement seam noted |
+| FR-7 (cache invalidation for `t:{tenantId}:config`) | TC-ADM-006-19 (DEFERRED) | Redis not wired; no-ops gracefully |
+| NFR-1 (settings load < 1.5s incl. logo preview) | TC-ADM-006-20 (DEFERRED) | Needs perf env |
+| NFR-2 (server-side magic-byte + size validation) | TC-ADM-006-04, -05, -07 | Direct |
+| NFR-3 (propagate to active sessions < 60s) | TC-ADM-006-19 (DEFERRED) | SignalR not wired; next-page-load today |
+| NFR-4 (all settings changes before/after audited) | TC-ADM-006-16, -01/-03/-07/-08/-11/-13 | Direct |
+| NFR-5 (responsive 360-4K, a11y) | TC-ADM-006-17 | Direct |
+
+## Summary (US-ADM-006)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ADM-006) |
+| Total test cases | 24 (17 functional/security/integration/e2e/a11y + 4 DEFERRED + 3 isolation) |
+| AC coverage | 5/5 (AC-2/AC-5 have DEFERRED sub-parts: blob persistence, RLS) |
+| BR coverage | 6/6 (BR-1..BR-6) |
+| FR coverage | 7/7 (FR-1..FR-7; FR-7 DEFERRED) |
+| Run-green now | 20 (TC-ADM-006-01..17 + TC-ADM-ISO-014, -015) |
+| Deferred (status: blocked) | 4 (TC-ADM-006-18..21) + 1 (TC-ADM-ISO-016) |
+| Functional ID range | TC-ADM-006-01 .. TC-ADM-006-21 |
+| ISO ID range | TC-ADM-ISO-014 .. TC-ADM-ISO-016 |
+
+---
+
 ## Module Totals
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 5 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005) |
-| Total test cases | 101 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-013 |
+| User stories covered | 6 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006) |
+| Total test cases | 125 |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-016 |

@@ -15,6 +15,56 @@ public sealed class Tenant
     public string? PrimaryColor { get; set; }
     public string? ContactEmail { get; set; }
 
+    // ── Organization profile (US-ADM-006 AC-1/FR-1) ──────────────────────────
+    // Name already exists above; these are the remaining org.* settings keys realized as typed columns.
+
+    /// <summary>Registered legal/trading name (settings key org.legal_name). US-ADM-006 AC-1.</summary>
+    public string? LegalName { get; set; }
+
+    /// <summary>Company registration / incorporation number (settings key org.registration_number).</summary>
+    public string? RegistrationNumber { get; set; }
+
+    /// <summary>Free-form (or JSON) registered address (settings key org.address).</summary>
+    public string? Address { get; set; }
+
+    /// <summary>Industry/sector label (settings key org.industry).</summary>
+    public string? Industry { get; set; }
+
+    /// <summary>Company-size band, e.g. "1-10", "11-50" (settings key org.size).</summary>
+    public string? CompanySize { get; set; }
+
+    /// <summary>
+    /// Fiscal-year start month, 1-12 (settings key org.fiscal_year_start). Default 1 (January). BR-4: drives
+    /// leave accrual, payroll cycles, and reporting periods.
+    /// </summary>
+    public int FiscalYearStartMonth { get; set; } = 1;
+
+    // ── Localization defaults (US-ADM-006 AC-3/FR-4, BR-5) ────────────────────
+
+    /// <summary>Default UI language code (settings key locale.default_language). BR-5: applies to users with no personal preference.</summary>
+    public string DefaultLanguage { get; set; } = "en";
+
+    /// <summary>Default date-display format token (settings key locale.date_format), e.g. "dd MMM yyyy".</summary>
+    public string DateFormat { get; set; } = "dd MMM yyyy";
+
+    /// <summary>Default number format token (settings key locale.number_format), e.g. "1,234.56".</summary>
+    public string NumberFormat { get; set; } = "1,234.56";
+
+    /// <summary>Default IANA/Windows time-zone id (settings key locale.time_zone).</summary>
+    public string TimeZone { get; set; } = "UTC";
+
+    /// <summary>Default ISO-4217 currency code (settings key locale.currency).</summary>
+    public string Currency { get; set; } = "USD";
+
+    // ── Branding extras (US-ADM-006 AC-2/FR-2) ────────────────────────────────
+    // LogoUrl + PrimaryColor already exist above.
+
+    /// <summary>URL of the email-header logo (settings key branding.email_logo_url).</summary>
+    public string? EmailLogoUrl { get; set; }
+
+    /// <summary>URL of the browser favicon (settings key branding.favicon_url).</summary>
+    public string? FaviconUrl { get; set; }
+
     /// <summary>
     /// When the trial period ends (US-ADM-001 BR-3). Set at provisioning when the chosen plan has
     /// TrialDays &gt; 0; null for tenants created directly in Active status (TrialDays = 0).
@@ -103,6 +153,13 @@ public sealed class Tenant
     public bool RequireDigit { get; set; } = true;
     public bool RequireSpecialCharacter { get; set; } = true;
     public int PasswordHistoryCount { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum password age in days before a change is required (US-ADM-006 AC-4 / FR-5, settings key
+    /// security.password_policy.max_age). Null means passwords never expire. Enforcement of expiry at next
+    /// change is owned by the auth/onboarding flow; this column stores the configured policy.
+    /// </summary>
+    public int? PasswordMaxAgeDays { get; set; }
 
     // Navigation
     public ICollection<User> Users { get; set; } = new List<User>();

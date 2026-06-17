@@ -1,0 +1,134 @@
+/* US-ADM-006 shared section styles (Notion-inspired). Mobile-first 360px+ (NFR-5). */
+
+:host {
+  display: block;
+}
+
+.cs-section {
+  @apply rounded-xl bg-white border border-neutral-100 shadow-notion;
+}
+
+.cs-section-head {
+  @apply px-5 py-4 border-b border-neutral-50 sm:px-6 sm:py-5;
+}
+
+.cs-section-title {
+  @apply text-base font-semibold text-neutral-900 sm:text-lg;
+}
+
+.cs-section-sub {
+  @apply mt-1 text-sm text-neutral-500;
+}
+
+.cs-form {
+  @apply px-5 py-5 space-y-5 sm:px-6;
+}
+
+/* Responsive 2-col grid that collapses to 1-col on narrow screens (360px). */
+.cs-grid {
+  @apply grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2;
+}
+
+.cs-span {
+  @apply col-span-1 sm:col-span-2;
+}
+
+.cs-field {
+  @apply space-y-1.5;
+}
+
+.cs-label {
+  @apply block text-sm font-medium text-neutral-700;
+}
+
+.cs-input {
+  @apply w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm
+    text-neutral-900 shadow-sm transition-colors duration-200
+    placeholder:text-neutral-400
+    focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30;
+}
+
+.cs-hint {
+  @apply text-xs text-neutral-400;
+}
+
+.cs-error {
+  @apply text-xs text-red-600;
+}
+
+.cs-actions {
+  @apply flex justify-end pt-1;
+}
+
+.cs-divider {
+  @apply my-5 border-t border-neutral-50;
+}
+
+/* ─── Toggle switch (complexity requirements) ──────────────── */
+
+.cs-toggle-row {
+  @apply flex items-start justify-between gap-4 py-2;
+}
+
+.cs-toggle-copy {
+  @apply flex-1;
+}
+
+.cs-toggle {
+  @apply relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full
+    border-2 border-transparent transition-colors duration-200 ease-in-out;
+  background-color: theme('colors.neutral.200');
+}
+
+.cs-toggle-input {
+  @apply sr-only;
+}
+
+.cs-toggle:has(.cs-toggle-input:checked) {
+  background-color: theme('colors.brand.600');
+}
+
+.cs-toggle-input:checked + .cs-toggle-knob {
+  transform: translateX(1.25rem);
+}
+
+.cs-toggle-knob {
+  @apply pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white
+    shadow ring-0 transition duration-200 ease-in-out;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────── */
+
+.cs-btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5
+    text-sm font-medium text-white shadow-sm transition-all duration-200
+    hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.cs-btn-secondary {
+  @apply inline-flex items-center justify-center rounded-lg bg-white px-4 py-2.5
+    text-sm font-medium text-neutral-700 shadow-sm ring-1 ring-inset ring-neutral-200
+    transition-all duration-200 hover:bg-neutral-50;
+}
+
+.cs-btn-spinner {
+  @apply inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full;
+  animation: cs-spin 0.6s linear infinite;
+}
+
+/* ─── Plan-gating (BR-3) ──────────────────────────────────── */
+
+.cs-locked {
+  @apply opacity-60 pointer-events-none;
+}
+
+.cs-upgrade-badge {
+  @apply ml-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5
+    text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200;
+}
+
+@keyframes cs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

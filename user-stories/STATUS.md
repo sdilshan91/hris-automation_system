@@ -128,7 +128,7 @@
 - [x] US-ADM-003 — Impersonate tenant user with audit *(PR #87)*
 - [x] US-ADM-004 — Suspend/terminate a tenant *(PR #88)*
 - [x] US-ADM-005 — Manage users and role assignments *(PR #89)*
-- [ ] US-ADM-006 — Configure company settings
+- [~] US-ADM-006 — Configure company settings
 - [ ] US-ADM-007 — Manage approval workflows
 - [ ] US-ADM-008 — View audit logs
 - [ ] US-ADM-009 — Manage subscription plans

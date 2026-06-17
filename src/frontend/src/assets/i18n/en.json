@@ -1,4 +1,78 @@
 {
+  "admin": {
+    "companySettings": {
+      "title": "Company Settings",
+      "subtitle": "Manage your organization profile, branding, localization, and security policies.",
+      "loading": "Loading settings…",
+      "retry": "Retry",
+      "save": "Save changes",
+      "upgradePlan": "Upgrade your plan",
+      "tabs": {
+        "org": "Organization Profile",
+        "branding": "Branding",
+        "localization": "Localization",
+        "security": "Security & Policies"
+      },
+      "org": {
+        "title": "Organization Profile",
+        "subtitle": "Basic information about your company, shown across the platform.",
+        "name": "Company name",
+        "nameRequired": "Company name is required.",
+        "legalName": "Legal name",
+        "registrationNumber": "Registration number",
+        "industry": "Industry",
+        "companySize": "Company size",
+        "fiscalYearStart": "Fiscal year start month",
+        "fiscalHint": "Affects leave accrual, payroll cycles, and reporting periods.",
+        "address": "Address"
+      },
+      "branding": {
+        "title": "Branding",
+        "subtitle": "Upload your logo, email logo, and favicon, and pick a primary brand colour.",
+        "logo": "Logo",
+        "emailLogo": "Email logo",
+        "favicon": "Favicon",
+        "logoHint": "PNG or SVG, up to 2MB.",
+        "faviconHint": "ICO or PNG, up to 500KB.",
+        "dropHere": "Drag a file here or click to upload",
+        "previewTitle": "Live preview",
+        "primaryColor": "Primary brand colour",
+        "saveColor": "Save colour",
+        "invalidColor": "Enter a valid hex colour (e.g. #4f46e5).",
+        "uploaded": "Branding image uploaded."
+      },
+      "localization": {
+        "title": "Localization",
+        "subtitle": "Default formats for all users in your organization.",
+        "language": "Default language",
+        "dateFormat": "Date format",
+        "numberFormat": "Number format",
+        "currency": "Currency",
+        "timeZone": "Time zone",
+        "example": "Example"
+      },
+      "password": {
+        "title": "Password Policy",
+        "subtitle": "Rules enforced on all future password changes for your users.",
+        "minLength": "Minimum length",
+        "minLengthError": "Must be between 6 and 64 characters.",
+        "historyCount": "Password history",
+        "maxAgeDays": "Max password age (days)",
+        "maxAgeHint": "Set to 0 for passwords that never expire.",
+        "requireUppercase": "Require an uppercase letter",
+        "requireLowercase": "Require a lowercase letter",
+        "requireDigit": "Require a digit",
+        "requireSpecial": "Require a special character"
+      },
+      "session": {
+        "title": "Session Policy",
+        "subtitle": "How long sessions stay active and how many can run at once.",
+        "idleTimeout": "Idle timeout (minutes)",
+        "absoluteTimeout": "Absolute timeout (hours)",
+        "maxConcurrent": "Max concurrent sessions"
+      }
+    }
+  },
   "IMPERSONATION": {
     "BANNER": {
       "LABEL": "SUPPORT SESSION — Operated by platform support",
