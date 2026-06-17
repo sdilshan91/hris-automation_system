@@ -1,7 +1,7 @@
 ---
 module: Notifications & Audit
-total_user_stories: 2
-total_test_cases: 32
+total_user_stories: 3
+total_test_cases: 48
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -140,3 +140,69 @@ status: in-progress
 | BR-4 (custom sender requires DNS verification) | Out of scope -- tied to FR-7; flag for a deliverability story |
 | BR-5 (unresolved placeholders -> empty string, not raw text) | TC-NTF-002-07 |
 | BR-6 (max 2 language variants per template per tenant) | TC-NTF-002-06, -09 |
+
+---
+
+## US-NTF-003 -- Notification Preferences per User
+
+> US-NTF-003 (Notification Preferences per User) adds 16 test cases: 12 functional/integration/security/performance/accessibility (TC-NTF-003-01..12) + 4 multi-tenant isolation continuing the module-wide running ISO counter (TC-NTF-ISO-009..012, from US-NTF-002's 008). Functional suffix counter resets per story (TC-NTF-003-XX); the ISO counter is shared/running. All 5 acceptance criteria of US-NTF-003 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-NTF-001 family): (1) NFR-2 names PostgreSQL RLS as a tenant-isolation layer; this codebase isolates via **EF Core global query filters (read) + `TenantInterceptor` (write stamping)**, NOT Postgres RLS -- RLS is a deferred platform extension. ISO tests (TC-NTF-ISO-009..012) assert the EF mechanism in force today; the "raw SQL without app.current_tenant_id -> zero rows" RLS expectation is documented as CONDITIONAL/deferred (TC-NTF-ISO-011 step 4); cross-tenant REST ID injection asserts **404, not 403** (existence not disclosed, TC-NTF-ISO-010). (2) NFR-3 specifies a Redis preference cache (TTL 5 min) consulted at dispatch time; Redis is a deferred infra item on the dev box -- TC-NTF-003-08, TC-NTF-003-12 and TC-NTF-ISO-012 are written CONDITIONAL on Redis being wired (assert tenant+user-scoped key `notif:prefs:{tenant_id}:{user_id}` and invalidation-on-change), else assert the equivalent always-fresh, always-tenant-scoped DB lookup so behavior is correct regardless -- the NFR-1 500ms / NFR-3 thresholds are never relaxed. (3) Quiet Hours email queuing (FR-9/BR-5) runs through the outbox/Hangfire worker; TC-NTF-003-07 exercises the worker/scheduled-release path and in-app real-time bypass.
+>
+> STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) NFR-2 names Postgres RLS as an active isolation layer -- only the app (ITenantContext) + EF (query filter / TenantInterceptor) layers exist today; reword RLS as future hardening (consistent with prior modules). (b) FR-4/AC-4 mandatory categories are configured by the Tenant Admin via the Admin Console (S35.2.11) -- the configuration UI is out of scope for this per-user story; the mandatory flag is consumed here (TC-NTF-003-02) but its admin-side authoring belongs to an Admin Console story. (c) SMS channel (FR-3 "Phase 2") is out of scope; the data model accommodates it but no SMS TC is written. (d) FR-5 cascade (System < Tenant < User) is exercised via inheritance (TC-NTF-003-03) and reset (TC-NTF-003-04); tenant-default authoring is an Admin-side concern.
+
+### Coverage by Test Case (US-NTF-003)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-NTF-003-01 | Disable email for "Leave Updates" -> leave approval in-app only, no email | E2E | Critical | AC-2, FR-6/3/8, BR-6 | Happy path |
+| TC-NTF-003-02 | Mandatory "Security Alerts" toggle locked + tooltip; cannot disable (UI + API) | Functional | Critical | AC-3, AC-4, FR-4, BR-2 | Negative / security |
+| TC-NTF-003-03 | New user inherits tenant default preferences | Integration | High | AC-1, FR-5/2/4, BR-1 | Happy / boundary |
+| TC-NTF-003-04 | "Reset to Defaults" restores tenant-level defaults (+ cancel branch) | Functional | High | AC-1, FR-7/5, BR-1 | Happy / boundary |
+| TC-NTF-003-05 | Cannot disable BOTH channels for a non-mandatory category (>= 1 stays on) | Functional | High | AC-2, FR-3/6, BR-3 | Negative / boundary |
+| TC-NTF-003-06 | Invalid IANA timezone for Quiet Hours rejected; valid accepted; injection blocked | Functional | Medium | AC-2, FR-9 | Negative / boundary / security |
+| TC-NTF-003-07 | Quiet Hours queues email at 23:00 (sent after 07:00); in-app stays real-time | E2E | High | AC-2, FR-9/6, BR-5 | Happy / boundary |
+| TC-NTF-003-08 | Preference change invalidates cache; next dispatch reflects change (Redis-conditional) | Integration | High | AC-2, FR-6, NFR-3, BR-6 | Happy / boundary / performance |
+| TC-NTF-003-09 | A user cannot modify another user's preferences (current-user only; IDOR -> 404) | Security | Critical | AC-2, FR-1/8, BR-4 | Negative / security |
+| TC-NTF-003-10 | Unauthenticated / no-tenant-context preference requests rejected | Security | Critical | AC-2, AC-5, FR-8, NFR-2 | Negative / security |
+| TC-NTF-003-11 | Toggles keyboard-navigable + ARIA labels; matrix collapses to cards at 360px | Accessibility | Medium | AC-1, AC-4, NFR-5/4 | Accessibility / cross-browser |
+| TC-NTF-003-12 | Page load <= 500ms P95; dispatch lookup cheap (Redis cache, conditional) | Performance | Medium | AC-1, NFR-1/3 | Boundary / performance |
+| TC-NTF-ISO-009 | Same user's prefs in Tenant X independent from Tenant Y | Security | Critical | AC-5, NFR-2 (EF), BR-4 | Multi-tenant isolation |
+| TC-NTF-ISO-010 | Cross-tenant preference ID injection -> 404; missing tenant context rejected | Security | Critical | AC-5, FR-8, NFR-2, BR-4 | Multi-tenant isolation |
+| TC-NTF-ISO-011 | EF filter blocks cross-tenant reads; writes tenant-stamped (RLS deferred) | Security | Critical | AC-5, FR-8, NFR-2, BR-4 | Multi-tenant isolation |
+| TC-NTF-ISO-012 | Dispatch-time lookup + cache keys tenant+user scoped (Redis-conditional) | Security | High | AC-5, FR-6/8, NFR-2/3, BR-4 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-NTF-003)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (matrix: row per category, channel toggle columns) | TC-NTF-003-03, -04, -11, -12 |
+| AC-2 (disable email for Leave Updates -> in-app only, no email; persisted tenant_id+user_id) | TC-NTF-003-01, -05, -06, -07, -09, -10 |
+| AC-3 (cannot disable all channels for mandatory category -> blocking message) | TC-NTF-003-02 |
+| AC-4 (mandatory toggle greyed out with tooltip) | TC-NTF-003-02, -11 |
+| AC-5 (cross-tenant user: per-membership independent preferences) | TC-NTF-003-10, TC-NTF-ISO-009, -010, -011, -012 |
+
+### FR / NFR / BR Coverage (US-NTF-003)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (preference matrix per user, per tenant membership) | TC-NTF-003-09, TC-NTF-ISO-009 |
+| FR-2 (notification categories) | TC-NTF-003-03 |
+| FR-3 (channel toggles: In-App + Email) | TC-NTF-003-01, -05 |
+| FR-4 (enforce mandatory categories) | TC-NTF-003-02, -03 |
+| FR-5 (cascade System < Tenant < User; user overrides) | TC-NTF-003-03, -04 |
+| FR-6 (preferences applied at dispatch time) | TC-NTF-003-01, -05, -07, -08, TC-NTF-ISO-012 |
+| FR-7 ("Reset to Defaults" restores tenant defaults) | TC-NTF-003-04 |
+| FR-8 (tenant_id + user_id set on all records) | TC-NTF-003-01, -09, -10, TC-NTF-ISO-010, -011, -012 |
+| FR-9 (Quiet Hours setting in user's timezone) | TC-NTF-003-06, -07 |
+| NFR-1 (page load <= 500ms P95) | TC-NTF-003-12 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-NTF-003-10, TC-NTF-ISO-009, -010, -011, -012 |
+| NFR-3 (preference lookup cached in Redis, TTL 5 min) | TC-NTF-003-08, -12, TC-NTF-ISO-012 (Redis-conditional/deferred) |
+| NFR-4 (responsive 360px-4K) | TC-NTF-003-11 |
+| NFR-5 (WCAG 2.1 AA; toggles with ARIA labels) | TC-NTF-003-11 |
+| BR-1 (new users inherit tenant defaults) | TC-NTF-003-03, -04 |
+| BR-2 (mandatory categories cannot be disabled) | TC-NTF-003-02 |
+| BR-3 (>= 1 channel must stay enabled for non-mandatory) | TC-NTF-003-05 |
+| BR-4 (preferences per tenant membership) | TC-NTF-003-09, TC-NTF-ISO-009, -010, -011, -012 |
+| BR-5 (Quiet Hours queues email, sends after end; in-app real-time) | TC-NTF-003-07 |
+| BR-6 (changes take effect for future notifications) | TC-NTF-003-01, -08 |

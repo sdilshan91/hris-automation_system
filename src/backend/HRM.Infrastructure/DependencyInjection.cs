@@ -506,6 +506,14 @@ public static class DependencyInjection
         services.AddScoped<INotificationTemplateService, NotificationTemplateService>();
         services.AddScoped<IEmailSender, LogOnlyEmailSender>();
 
+        // US-NTF-003: per-user notification preferences. Matrix CRUD runs in the resolved request scope scoped
+        // to ICurrentUser; the dispatch-time ShouldDeliver check takes tenant+user explicitly (works from
+        // background jobs). IDistributedCache is the SAME optional Redis seam used elsewhere (TenantSettings):
+        // present → 5-min cached dispatch lookups (NFR-3), absent → straight to the DB. Redis never hard-required.
+        // Per-tenant mandatory-category configuration (FR-4 Tenant-Admin console) is deferred; the static
+        // NotificationPreferenceDefaults catalog is the tenant-default baseline (SecurityAlerts mandatory).
+        services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

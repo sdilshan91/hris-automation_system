@@ -38,6 +38,21 @@ Refer to the agent definition in [.claude/agents/team/frontend-dev.md](../../../
   US-NTF-002 added a public `insertText(text)` to it for the variable-panel
   placeholder insertion. No ngx-quill/TipTap added (kept the build+test gate lean).
 
+- **US-NTF-003 notification-preferences is PERSONAL tenant context.** Endpoints
+  are `apiBaseUrl` verbatim + `/notification-preferences` (GET matrix, PUT
+  `/{category}` body `{channelInApp,channelEmail}`, PUT `/quiet-hours`, POST
+  `/reset`) — same root style as US-NTF-001/002. Routed at
+  `/profile/notification-preferences` with NO roleGuard (personal settings; parent
+  authGuard suffices, backend scopes to identity + tenant membership BR-4). The
+  per-category PUT may 400/422 ("at least one channel" BR-3 / mandatory AC-3) — the
+  matrix component toggles OPTIMISTICALLY then reverts to the pre-toggle snapshot on
+  error. Auto-save is debounced 500ms via a `Subject` +
+  `takeUntilDestroyed(this.destroyRef)` (NOT bare `takeUntilDestroyed()` — that
+  throws NG0203 when called inside ngOnInit, only works in an injection context).
+  NOTE: the global errorInterceptor already toasts 422 messages, so the component
+  only re-toasts for 400/422 the server's own `error.message` and lets other
+  statuses fall through to the interceptor.
+
 ## i18n (ngx-translate)
 - ngx-translate (`@ngx-translate/core` v16 + `@ngx-translate/http-loader`) is an installed
   dependency and `assets/i18n/en.json` exists, but it was **dormant** until US-ADM-003: nothing

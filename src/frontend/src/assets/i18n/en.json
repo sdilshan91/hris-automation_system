@@ -1,4 +1,46 @@
 {
+  "notificationPreferences": {
+    "title": "Notification Preferences",
+    "subtitle": "Choose which events you hear about and how you're notified. Changes save automatically.",
+    "empty": "No notification categories are available.",
+    "tableCaption": "Notification categories with In-App and Email channel toggles.",
+    "saved": "Saved",
+    "minChannelError": "At least one channel must stay on for this notification.",
+    "mandatoryTooltip": "This notification is required by your organization.",
+    "columns": {
+      "category": "Category"
+    },
+    "channels": {
+      "inApp": "In-App",
+      "email": "Email"
+    },
+    "state": {
+      "on": "on",
+      "off": "off"
+    },
+    "toggleAria": "{{channel}} notifications for {{category}}, currently {{state}}",
+    "toggleAriaLocked": "{{channel}} notifications for {{category}} are required by your organization and cannot be changed",
+    "quietHours": {
+      "title": "Quiet Hours",
+      "description": "Emails sent during these hours are queued and delivered once quiet hours end. In-app notifications are always real-time.",
+      "enable": "Enable quiet hours",
+      "start": "Start time",
+      "end": "End time",
+      "timezone": "Timezone",
+      "save": "Save quiet hours"
+    },
+    "quietHoursSaved": "Quiet hours updated.",
+    "quietHoursError": "Could not save quiet hours.",
+    "reset": {
+      "button": "Reset to Defaults",
+      "title": "Reset notification preferences?",
+      "message": "This restores your organization's default notification settings. Your customizations will be lost.",
+      "cancel": "Cancel",
+      "confirm": "Reset"
+    },
+    "resetDone": "Preferences reset to defaults.",
+    "resetError": "Could not reset preferences."
+  },
   "notificationTemplates": {
     "badge": {
       "custom": "Custom",
