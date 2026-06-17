@@ -497,6 +497,15 @@ public static class DependencyInjection
         // PUSH dispatcher (INotificationService) lives in HRM.Api alongside the hub (it needs IHubContext).
         services.AddScoped<INotificationReadService, NotificationReadService>();
 
+        // US-NTF-002: email notification templates per tenant. EmailTemplateService is the RESOLUTION + RENDERING
+        // seam other modules call (override→default + language fallback, {{placeholder}} merge). NotificationTemplate
+        // Service is the tenant-admin CRUD/preview/test-email facade. IEmailSender is the new GENERIC log-only send
+        // seam (no SMTP required to start/test — mirrors IPayslipEmailSender; real delivery deferred, TODO US-NTF).
+        // The existing module-specific email seams are intentionally left untouched.
+        services.AddScoped<IEmailTemplateService, EmailTemplateService>();
+        services.AddScoped<INotificationTemplateService, NotificationTemplateService>();
+        services.AddScoped<IEmailSender, LogOnlyEmailSender>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

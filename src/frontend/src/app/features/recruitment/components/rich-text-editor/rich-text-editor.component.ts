@@ -248,6 +248,27 @@ export class RichTextEditorComponent implements ControlValueAccessor {
     this.onChange(this.currentHtml());
   }
 
+  /**
+   * Insert plain text at the current caret position (used by the US-NTF-002
+   * variable reference panel to drop a `{{placeholder}}` where the cursor is).
+   * Falls back to appending when the editor has never been focused.
+   */
+  insertText(text: string): void {
+    if (this.disabled()) {
+      return;
+    }
+    const el = this.editableRef().nativeElement;
+    el.focus();
+    // execCommand('insertText') honours the live selection/caret; it is the only
+    // zero-dependency way that keeps undo history intact across browsers.
+    const inserted = document.execCommand('insertText', false, text);
+    if (!inserted) {
+      // jsdom / browsers that no-op insertText: append as a safe fallback.
+      el.append(document.createTextNode(text));
+    }
+    this.onChange(this.currentHtml());
+  }
+
   /** Re-read the active inline formats so the toolbar reflects the caret. */
   refreshActive(): void {
     this.active.set({

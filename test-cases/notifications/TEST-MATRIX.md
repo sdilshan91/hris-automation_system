@@ -1,7 +1,7 @@
 ---
 module: Notifications & Audit
-total_user_stories: 1
-total_test_cases: 16
+total_user_stories: 2
+total_test_cases: 32
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -72,3 +72,71 @@ status: in-progress
 | BR-3 (purge beyond 1000 per user) | Out of scope for this story — retention/lifecycle concern (flag to caller) |
 | BR-4 (system-generated via Dispatcher, not direct SignalR) | Producer-side architecture, no testable UI flow here (flag to caller; cover in a Dispatcher story) |
 | BR-5 (cross-tenant group names rejected at hub) | TC-NTF-ISO-001, -002 |
+
+---
+
+## US-NTF-002 -- Email Notification Templates per Tenant
+
+> US-NTF-002 (Email Notification Templates per Tenant) adds 16 test cases: 12 functional/integration/security/performance/accessibility (TC-NTF-002-01..12) + 4 multi-tenant isolation continuing the module-wide running ISO counter (TC-NTF-ISO-005..008, from US-NTF-001's 004). Functional suffix counter resets per story (TC-NTF-002-XX); the ISO counter is shared/running. All 5 acceptance criteria of US-NTF-002 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-NTF-001 family): (1) NFR-2 / AC-5 name PostgreSQL RLS as a tenant-isolation layer; this codebase isolates via **EF Core global query filters (read) + `TenantInterceptor` (write stamping)**, NOT Postgres RLS -- RLS is a deferred platform extension. ISO tests (TC-NTF-ISO-005..008) assert the EF mechanism in force today; the "raw SQL without app.current_tenant_id -> zero rows" RLS expectation is documented as CONDITIONAL/deferred (TC-NTF-ISO-007 step 5); cross-tenant REST ID injection asserts **404, not 403** (existence not disclosed, TC-NTF-ISO-005 step 4 / TC-NTF-ISO-006). (2) Email dispatch uses the outbox pattern: template rendering happens in the **Hangfire worker**, not inline -- send-time happy-path/fallback/render-isolation TCs (TC-NTF-002-01/-02, TC-NTF-ISO-008) exercise the worker path. (3) NFR-1 (editor load <= 1s P95) and NFR-3 (template+data render <= 200ms/email) need a perf-representative environment (TC-NTF-002-12); on a dev box record indicative numbers and do NOT relax the thresholds.
+>
+> STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) NFR-2 / AC-5 name Postgres RLS as an active isolation layer -- only the app (ITenantContext) + EF (query filter / TenantInterceptor) layers exist today; reword RLS as future hardening (consistent with prior modules). (b) FR-7 (custom sender domain with SPF/DKIM setup guidance) and BR-4 (DNS verification before the custom sender is used) describe a domain-verification feature that is largely operational/DNS-dependent and not a core template-editing flow; it is NOT covered by a dedicated TC in this story and should be flagged for a separate "custom sender domain / deliverability" story (the platform cannot automate DNS, per S10). (c) Version history with diff highlighting (S8 UI/UX note) is exercised only as version-increment + before/after audit (TC-NTF-002-10, -12); the diff-rendering UI is not separately tested. (d) BR-6 variant cap is plan-configurable (default 2); TC-NTF-002-09 asserts the default-2 boundary and notes the plan-config path.
+
+### Coverage by Test Case (US-NTF-002)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-NTF-002-01 | Custom "Leave Approved" for Tenant A used; placeholders resolved at send | E2E | Critical | AC-2, AC-3, FR-1/2/10, BR-1/3 | Happy path |
+| TC-NTF-002-02 | No override -> system default used (fallback); never send without a template | Integration | Critical | AC-1, FR-6, BR-2 | Happy / boundary |
+| TC-NTF-002-03 | Live preview renders placeholders with sample data; reference panel inserts | Functional | High | AC-2, FR-3/4 | Happy path |
+| TC-NTF-002-04 | Reset to Default soft-deletes override; future emails revert + audit record | Functional | High | AC-4, FR-6/9 | Happy path |
+| TC-NTF-002-05 | Send Test Email delivers rendered template to specified address; bad addr rejected | Integration | High | FR-8, FR-2, BR-3 | Happy / negative |
+| TC-NTF-002-06 | Per-language variants (en + secondary); recipient language selects variant | Integration | High | FR-5, BR-6, BR-2 | Happy / boundary |
+| TC-NTF-002-07 | Unresolved placeholder -> empty string, not raw token; send not aborted | Functional | High | BR-5, FR-2, BR-2 | Negative / boundary |
+| TC-NTF-002-08 | Non-admin cannot view/edit/save/reset/send-test templates (authz) | Security | Critical | AC-1, AC-3, FR-1/8/9 | Negative / security |
+| TC-NTF-002-09 | Max 2 language variants per template per tenant (3rd rejected) | Functional | Medium | BR-6, FR-5 | Negative / boundary |
+| TC-NTF-002-10 | Template change audited with before/after via SaveChanges interceptor | Security | High | FR-9, NFR-6 | Security |
+| TC-NTF-002-11 | Editor WCAG 2.1 AA; keyboard-operable; responsive 360px-4K | Accessibility | Medium | NFR-5, NFR-4 | Accessibility / cross-browser |
+| TC-NTF-002-12 | List Default/Custom + version/last-modified; persist; load/render SLA | Performance | Medium | AC-1, AC-3, NFR-1/3, BR-3 | Happy / boundary / performance |
+| TC-NTF-ISO-005 | Tenant A custom template invisible/unusable to Tenant B (ID injection -> 404) | Security | Critical | AC-5, NFR-2 (EF), BR-1 | Multi-tenant isolation |
+| TC-NTF-ISO-006 | Missing tenant context rejected; cross-tenant template ID/tenant injection -> 404/ignored | Security | Critical | AC-5, FR-10/1/9, NFR-2 | Multi-tenant isolation |
+| TC-NTF-ISO-007 | EF filter blocks cross-tenant reads; writes tenant-stamped + audited (RLS deferred) | Security | Critical | AC-5, AC-3, FR-10, NFR-2/6 | Multi-tenant isolation |
+| TC-NTF-ISO-008 | Send/render pipeline selects templates strictly within recipient's tenant | Security | High | AC-5, FR-2/6/10, NFR-2 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-NTF-002)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (template list shows all event types + Default/Custom status) | TC-NTF-002-02, -08, -12 |
+| AC-2 (editor with placeholders + reference panel + live preview with sample data) | TC-NTF-002-01, -03 |
+| AC-3 (save persists tenant override with tenant_id; future emails use custom) | TC-NTF-002-01, -10, -12, TC-NTF-ISO-007 |
+| AC-4 (Reset to Default removes override, reverts to default, audit record) | TC-NTF-002-04 |
+| AC-5 (Tenant A customization invisible to Tenant B; B sees system default) | TC-NTF-ISO-005, -006, -007, -008 |
+
+### FR / NFR / BR Coverage (US-NTF-002)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (template editor: subject + HTML body + plain-text) | TC-NTF-002-01, -03, -08 |
+| FR-2 (placeholder variables resolved at send time) | TC-NTF-002-01, -05, -07, TC-NTF-ISO-008 |
+| FR-3 (variable reference panel) | TC-NTF-002-03 |
+| FR-4 (live preview with sample data) | TC-NTF-002-03 |
+| FR-5 (per-language template variants) | TC-NTF-002-06, -09 |
+| FR-6 (fall back to system default if no override) | TC-NTF-002-02, -04, TC-NTF-ISO-008 |
+| FR-7 (custom sender domain + SPF/DKIM guidance) | Out of scope for this story -- operational/DNS feature; flag for a "custom sender domain / deliverability" story |
+| FR-8 (send a test email on demand) | TC-NTF-002-05 |
+| FR-9 (log template changes in tenant audit log) | TC-NTF-002-04, -10 |
+| FR-10 (tenant_id set from session on all overrides) | TC-NTF-002-01, TC-NTF-ISO-006, -007, -008 |
+| NFR-1 (editor page load <= 1s P95) | TC-NTF-002-12 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-NTF-ISO-005, -006, -007, -008 |
+| NFR-3 (email render <= 200ms/email) | TC-NTF-002-12 |
+| NFR-4 (responsive 360px-4K) | TC-NTF-002-11 |
+| NFR-5 (WCAG 2.1 AA editor) | TC-NTF-002-11 |
+| NFR-6 (audited via SaveChanges interceptor) | TC-NTF-002-10, TC-NTF-ISO-007 |
+| BR-1 (system defaults read-only; overrides take precedence) | TC-NTF-002-01, TC-NTF-ISO-005 |
+| BR-2 (every event has a default; never send without a template) | TC-NTF-002-02, -06, -07 |
+| BR-3 (HTML + plain-text versions both present) | TC-NTF-002-01, -05, -12 |
+| BR-4 (custom sender requires DNS verification) | Out of scope -- tied to FR-7; flag for a deliverability story |
+| BR-5 (unresolved placeholders -> empty string, not raw text) | TC-NTF-002-07 |
+| BR-6 (max 2 language variants per template per tenant) | TC-NTF-002-06, -09 |

@@ -147,6 +147,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<ExitInterviewResponse> ExitInterviewResponses => Set<ExitInterviewResponse>();
     // US-NTF-001: in-app notifications (tenant-scoped, per-recipient).
     public DbSet<Notification> Notifications => Set<Notification>();
+    // US-NTF-002: email notification templates. The OVERRIDE table is tenant-scoped (global query filter); the
+    // SYSTEM-DEFAULT table is platform-level — NO tenant query filter (see SystemNotificationTemplateConfiguration).
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
+    public DbSet<SystemNotificationTemplate> SystemNotificationTemplates => Set<SystemNotificationTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -568,6 +572,12 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-NTF-001: Notification tenant isolation + soft-delete filter (AC-6/NFR-2 cross-tenant isolation).
         modelBuilder.Entity<Notification>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-NTF-002: NotificationTemplate (tenant OVERRIDE) isolation + soft-delete filter (AC-5/NFR-2). The
+        // SystemNotificationTemplate (platform default) is deliberately NOT filtered here so resolution can fall
+        // back to it from any tenant.
+        modelBuilder.Entity<NotificationTemplate>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

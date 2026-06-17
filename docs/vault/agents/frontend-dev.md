@@ -28,6 +28,16 @@ Refer to the agent definition in [.claude/agents/team/frontend-dev.md](../../../
   header; services consume bare payloads (NO ApiResponse unwrap), matching the rest
   of the FE. Nav "Settings" item → `/admin/settings` gated by `Admin.View`.
 
+- **US-NTF-002 notification-templates is TENANT context.** Email-template
+  endpoints are `apiBaseUrl` verbatim + `/notification-templates` (GET list,
+  GET/PUT/DELETE `/{eventKey}`, POST `/{eventKey}/preview`, POST
+  `/{eventKey}/test-email`) — same root style as US-NTF-001. Routed at
+  `/admin/notification-templates` gated `roleGuard(['Tenant Admin','Tenant Owner'])`.
+  The rich text editor REUSES the US-REC-001
+  `recruitment/components/rich-text-editor` (dependency-free contenteditable CVA);
+  US-NTF-002 added a public `insertText(text)` to it for the variable-panel
+  placeholder insertion. No ngx-quill/TipTap added (kept the build+test gate lean).
+
 ## i18n (ngx-translate)
 - ngx-translate (`@ngx-translate/core` v16 + `@ngx-translate/http-loader`) is an installed
   dependency and `assets/i18n/en.json` exists, but it was **dormant** until US-ADM-003: nothing
