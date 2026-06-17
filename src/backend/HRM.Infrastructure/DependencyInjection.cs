@@ -281,6 +281,21 @@ public static class DependencyInjection
         // and materialized views (FR-6) are deliberately NOT built here.
         services.AddScoped<IHrReportService, HrReportService>();
 
+        // US-RPT-004: Reports — export the generic HR/leave/attendance reports to CSV/Excel/PDF. Initiation
+        // regenerates the report (IHrReportService) to learn the row count, then routes small reports (< 1000
+        // rows, FR-5) to an INLINE render+store+complete and large ones (>= 1000 rows) to a Hangfire job
+        // (HrReportExportJob) via the OPTIONAL IHrReportExportJobScheduler (bound in HRM.Api; absent in
+        // tests → the test/job calls GenerateAsync directly). Rendering is the pure HrReportRenderer (mirrors the
+        // US-PAY-009 PayrollReportRenderer); storage reuses the existing IReportExportStorage seam; the FR-8
+        // async-complete notify uses the US-NTF-001 INotificationService seam (optional). FR-10 limits each user
+        // to 3 in-progress exports; every export is audited (FR-9). The BR-3 7-day retention purge is
+        // HrReportExportCleanupService, driven by the daily HrReportExportCleanupJob. SEPARATE from payroll
+        // (US-PAY-009) + US-ADM-010 tenant export. DEFERRED: chart-as-PNG in the PDF (no server-side chart
+        // renderer) + signed URLs/15-min expiry (FR-7 — local storage stub; the authenticated tenant+owner
+        // /download endpoint + 7-day retention satisfy AC-5).
+        services.AddScoped<IHrReportExportService, HrReportExportService>();
+        services.AddScoped<IHrReportExportCleanupService, HrReportExportCleanupService>();
+
         // US-PAY-012: Payroll — history + structured audit trail. The audit logger writes structured entries
         // into the shared audit_log table (extended additively); the history/audit-trail/export reads live in
         // PayrollAuditService. Audit export reuses the US-PAY-009 PayrollReportRenderer + IReportExportStorage.

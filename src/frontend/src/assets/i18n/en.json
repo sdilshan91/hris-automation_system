@@ -88,6 +88,39 @@
         "warn": "Between 25% and 50% remaining",
         "low": "Less than 25% remaining"
       }
+    },
+    "export": {
+      "button": "Export",
+      "exporting": "Exporting…",
+      "queuedToast": "Your {{format}} export is queued — we'll notify you when it's ready.",
+      "error": "Could not start the export. Please try again.",
+      "downloadError": "Could not download the file. The link may have expired.",
+      "historyError": "Could not load your export history.",
+      "format": {
+        "csv": "CSV",
+        "xlsx": "Excel (.xlsx)",
+        "pdf": "PDF"
+      },
+      "status": {
+        "Queued": "Queued",
+        "Processing": "Processing",
+        "Completed": "Completed",
+        "Expired": "Expired",
+        "Failed": "Failed"
+      },
+      "history": {
+        "title": "My Exports",
+        "caption": "Your recent report exports with status and download links.",
+        "empty": "You haven't exported any reports yet.",
+        "format": "Format",
+        "status": "Status",
+        "rows": "Rows",
+        "size": "Size",
+        "requestedAt": "Requested",
+        "actions": "Actions",
+        "download": "Download",
+        "downloadAria": "Download this export"
+      }
     }
   },
   "notificationPreferences": {
