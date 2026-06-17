@@ -387,6 +387,16 @@ public static class DependencyInjection
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         services.AddScoped<ITenantWelcomeEmailService, LogOnlyTenantWelcomeEmailService>();
 
+        // US-ADM-005: Tenant Admin user + role-assignment management. Runs in the NORMAL resolved-tenant
+        // context — isolation (AC-6) is the EF global query filters on UserTenant/Role/UserTenantRole/
+        // RefreshToken/UserInvitation (RLS deferred). A brand-new invitee's pending state IS the
+        // UserInvitation row (no UserTenant until acceptance, which AUTH/onboarding owns). The plan
+        // user-limit (BR-5) is enforced at invite time. Force-password-reset is the one deliberate
+        // cross-tenant write (global password → revoke tokens across all tenants by UserId). The invitation/
+        // password-reset emails use a log-only seam (mirrors the welcome-email seam; real SMTP deferred, US-NTF).
+        services.AddScoped<IUserManagementService, UserManagementService>();
+        services.AddScoped<IUserManagementNotificationService, LogOnlyUserManagementNotificationService>();
+
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
         // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running

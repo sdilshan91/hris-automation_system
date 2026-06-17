@@ -118,6 +118,99 @@
     "MESSAGE": "You don't have permission to access this page. If you think this is a mistake, please contact your administrator.",
     "GO_DASHBOARD": "Go to Dashboard"
   },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "confirm": "Confirm",
+    "close": "Close",
+    "done": "Done",
+    "retry": "Try Again",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "userManagement": {
+    "title": "Users",
+    "subtitle": "Invite people, manage roles, and control access to your workspace.",
+    "inviteUser": "Invite User",
+    "tabUsers": "Users",
+    "tabInvitations": "Pending Invitations",
+    "searchPlaceholder": "Search by name or email",
+    "filterStatus": "Filter by status",
+    "filterRole": "Filter by role",
+    "allStatuses": "All statuses",
+    "allRoles": "All roles",
+    "never": "Never",
+    "showing": "Showing {{start}}–{{end}} of {{total}}",
+    "emptyTitle": "No users found",
+    "emptyHint": "Try adjusting your search or filters, or invite a new user.",
+    "noInvitationsTitle": "No pending invitations",
+    "noInvitationsHint": "Invitations you send will appear here until they're accepted or expire.",
+    "deactivate": "Deactivate",
+    "forceReset": "Force password reset",
+    "endSessions": "End all sessions",
+    "resend": "Resend",
+    "revoke": "Revoke",
+    "status": {
+      "active": "Active",
+      "invited": "Invited",
+      "disabled": "Disabled"
+    },
+    "col": {
+      "user": "User",
+      "roles": "Roles",
+      "status": "Status",
+      "lastLogin": "Last login",
+      "actions": "Actions",
+      "email": "Email",
+      "invitedAt": "Invited",
+      "expiresAt": "Expires"
+    },
+    "invite": {
+      "title": "Invite users",
+      "subtitle": "Send invitations by email or upload a CSV for bulk invites.",
+      "tabEmail": "By email",
+      "tabCsv": "Upload CSV",
+      "emailsLabel": "Email addresses",
+      "emailPlaceholder": "name@company.com, press Enter",
+      "removeEmail": "Remove",
+      "rolesLabel": "Roles",
+      "noRoles": "No assignable roles available.",
+      "csvLabel": "CSV file",
+      "csvDrop": "Click to upload a CSV file",
+      "csvHint": "Columns: email, role (comma-separated role names)",
+      "csvParsed": "{{count}} row(s) ready to invite.",
+      "send": "Send invitations",
+      "planLimit": "User limit reached for your plan. Upgrade your plan to invite more users.",
+      "resultsSummary": "{{invited}} invited, {{errors}} error(s).",
+      "statusInvited": "Invited",
+      "statusError": "Error",
+      "inviteMore": "Invite more"
+    },
+    "editRoles": {
+      "title": "Edit roles"
+    },
+    "confirm": {
+      "deactivateTitle": "Deactivate user",
+      "deactivateBody": "Are you sure you want to deactivate",
+      "resetTitle": "Force password reset",
+      "resetBody": "Send a password-reset email and revoke all sessions for",
+      "sessionsTitle": "End all sessions",
+      "sessionsBody": "End all active sessions in this workspace for"
+    },
+    "detail": {
+      "back": "Back to users",
+      "roles": "Roles",
+      "noRoles": "No roles assigned.",
+      "linkedEmployee": "Linked employee",
+      "noEmployee": "No linked employee record.",
+      "sessions": "Active sessions",
+      "noSessions": "No active sessions.",
+      "audit": "Recent activity",
+      "noAudit": "No recent activity.",
+      "invitations": "Invitation history",
+      "noInvitations": "No invitation history."
+    }
+  },
   "auth": {
     "mfa": {
       "enroll": {

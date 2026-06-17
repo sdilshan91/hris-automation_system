@@ -210,6 +210,20 @@ export const appRoutes: Routes = [
             './features/auth/lockout/admin-user-lockout/admin-user-lockout.component'
           ).then((m) => m.AdminUserLockoutComponent),
       },
+      // ─── Admin / Users (US-ADM-005) — Tenant Admin user & role mgmt ──
+      // Tenant context (NOT the system-admin console). Lists tenant memberships,
+      // invites users, edits roles, deactivate/force-reset/end-sessions.
+      // NOTE: registered AFTER the more-specific 'admin/users/lockout' and
+      // 'admin/users/:userId/sessions' routes above so those keep priority over
+      // this feature's ':userTenantId' detail child.
+      {
+        path: 'admin/users',
+        loadChildren: () =>
+          import(
+            './features/admin/user-management/user-management.routes'
+          ).then((m) => m.USER_MANAGEMENT_ROUTES),
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+      },
       // ─── Core HR / Departments (US-CHR-004) ───────────────
       {
         path: 'departments',
