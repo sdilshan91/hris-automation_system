@@ -1,0 +1,5 @@
+/* US-NTF-003: Notification Preferences — keep Material form fields compact so the
+   Quiet Hours row sits cleanly inside the card. */
+:host ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+  display: none;
+}

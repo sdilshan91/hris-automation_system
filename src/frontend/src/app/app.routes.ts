@@ -565,6 +565,18 @@ export const appRoutes: Routes = [
           ).then((m) => m.NOTIFICATION_TEMPLATES_ROUTES),
         canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
       },
+      // ─── Profile / Notification Preferences (US-NTF-003) ──────
+      // Personal settings under the Profile area. No extra roleGuard: any
+      // authenticated user manages their OWN per-tenant-membership preferences
+      // (the parent authGuard is sufficient; the backend scopes to identity +
+      // tenant membership, BR-4). Registered as its own profile sub-path.
+      {
+        path: 'profile/notification-preferences',
+        loadChildren: () =>
+          import(
+            './features/notifications/notification-preferences.routes'
+          ).then((m) => m.NOTIFICATION_PREFERENCES_ROUTES),
+      },
       // ─── Notifications (US-NTF-001) — all authenticated users ──
       // The bell's "View All" link lands here. No extra roleGuard: notifications
       // are personal to the signed-in user (the backend scopes to identity +

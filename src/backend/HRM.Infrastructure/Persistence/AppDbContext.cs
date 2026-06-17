@@ -151,6 +151,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     // SYSTEM-DEFAULT table is platform-level — NO tenant query filter (see SystemNotificationTemplateConfiguration).
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
     public DbSet<SystemNotificationTemplate> SystemNotificationTemplates => Set<SystemNotificationTemplate>();
+    // US-NTF-003: per-user notification preferences (tenant-scoped, per-tenant-membership — BR-4/AC-5).
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -578,6 +580,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // SystemNotificationTemplate (platform default) is deliberately NOT filtered here so resolution can fall
         // back to it from any tenant.
         modelBuilder.Entity<NotificationTemplate>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-NTF-003: NotificationPreference tenant isolation + soft-delete filter (AC-5/BR-4 cross-tenant
+        // isolation — a user's preferences are independent per tenant membership).
+        modelBuilder.Entity<NotificationPreference>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

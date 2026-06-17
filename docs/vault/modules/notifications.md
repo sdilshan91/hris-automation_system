@@ -116,3 +116,59 @@ stamped. Did NOT build a new audit subsystem (US-NTF-004 owns the structured aud
 - Outbox-pattern send in a Hangfire worker (§10) — test-email sends inline; event emails render via the seam,
   their dispatch wiring into Leave/Onboarding/Payroll is follow-up.
 - Rewiring the existing module-specific email seams onto the new `IEmailSender` — left untouched (surgical).
+
+## US-NTF-003 — Notification Preferences per User
+
+### What was built (backend)
+- **Entity** `NotificationPreference : BaseEntity` (tenant-stamped + global-query-filtered). A row exists ONLY when
+  a user has customized a category — there is no pre-seeded full matrix. Fields: `UserId`, `Category`
+  (enum-as-string), `ChannelInApp`, `ChannelEmail`, `IsMandatory`, `QuietHoursStart/End` (postgres `time`),
+  `QuietHoursTimezone`. Partial unique index `(tenant_id, user_id, category) WHERE is_deleted=false`. Table
+  `notification_preference`. Migration `AddNotificationPreferences` (generated, not hand-written).
+- **Enum** `NotificationCategory` (8 values from FR-2), `HasConversion<string>()` + global JsonStringEnumConverter.
+- **Defaults catalog** `HRM.Domain.Notifications.NotificationPreferenceDefaults` — pure/static, the single source of
+  truth for the category list, display names, descriptions, default channel state, and the mandatory flag. This is
+  the bottom of the FR-5 cascade (defaults < user overrides). **Only `SecurityAlerts` is mandatory** (both channels
+  forced on, can't be disabled). Per-tenant Tenant-Admin configuration of mandatory categories (FR-4/AC-4) is
+  DEFERRED — this static set IS the tenant-default baseline.
+- **Dispatch seam** `INotificationPreferenceService` (impl in Infrastructure). Three concerns in one service:
+  matrix CRUD (request scope, scoped to `ICurrentUser`) + `ShouldDeliverAsync(tenantId, userId, category, channel)`
+  which takes tenant+user EXPLICITLY so it works from background jobs / the outbox (mirrors `INotificationService`).
+  - **Return shape** `DeliveryDecision { Kind: Deliver|Suppressed|DeferredUntilQuietHoursEnd, DeferUntilUtc }`.
+    Mandatory → always Deliver (ignores toggles AND quiet hours). Channel off → Suppressed. Email + quiet hours
+    active in the user's tz → Defer with the next-window-end UTC instant (BR-5); in-app is NEVER deferred.
+  - Quiet-hours math handles overnight windows (end ≤ start wraps midnight) via `TimeZoneInfo` + a `TimeProvider`
+    (inject a fake for deterministic tests — no Microsoft.Extensions.TimeProvider.Testing dep in the test project,
+    so a tiny `FakeTimeProvider` lives in the test file).
+- **BR enforcement at the command layer** (in the service, returns `Result` 422 — needs the category's mandatory
+  state so it can't be a pure validator): BR-2 mandatory-can't-be-disabled (`category_mandatory`), BR-3
+  non-mandatory-can't-have-both-channels-off (`both_channels_off`).
+- **Quiet hours are a per-USER setting** stored redundantly on every one of that user's preference rows (read from
+  any row). `UpdateQuietHours` writes the window to all the user's rows; if the user has no rows yet it creates a
+  single carrier row on the first non-mandatory category (keeping that category's default channel state). IANA tz
+  validated via `TimeZoneInfo.FindSystemTimeZoneById` in the service.
+- **Reset (FR-7)** HARD-deletes the user's override rows (RemoveRange) → matrix falls back to pure defaults.
+
+### Key decisions / gotchas
+- **Redis is OPTIONAL** (NFR-3) — reused the SAME `IDistributedCache?` optional-ctor-param pattern as
+  `TenantSettingsService` (memory cache always registered as fallback in DI, real Redis only when configured). The
+  dispatch lookup caches a JSON snapshot under `t:{tenantId}:u:{userId}:notif-prefs` (TTL 5 min), falls back to a
+  live DB read on miss/any cache error, and is invalidated on every preference write. Cache is never a hard dep.
+- **Controller never accepts a userId** — every endpoint operates on `ICurrentUser` only. `{category}` is a string
+  route param parsed to the enum (unknown → 404). Quiet-hours times come in as STRINGS ("HH:mm" or "HH:mm:ss")
+  parsed leniently in the controller, because System.Text.Json's `TimeOnly` binder only accepts "HH:mm:ss".
+- Routes (all `[Authorize]`, no extra permission gate — a user owns their own prefs):
+  - `GET  /api/v1/notification-preferences` → `ApiResponse<PreferenceMatrixDto>`
+  - `PUT  /api/v1/notification-preferences/{category}` body `{channelInApp, channelEmail}` → `CategoryPreferenceDto` (422 on BR-2/BR-3)
+  - `PUT  /api/v1/notification-preferences/quiet-hours` body `{enabled, start, end, timezone}` → `QuietHoursDto`
+  - `POST /api/v1/notification-preferences/reset` → `ApiResponse<PreferenceMatrixDto>`
+- **The dispatcher does NOT yet call `ShouldDeliverAsync`.** This story builds the seam + the matrix; wiring it into
+  `INotificationService.CreateAndDispatchAsync` (and the email send path / outbox to honor the DEFER signal) is
+  follow-up — same "seam built, invocation deferred" pattern as US-NTF-002. The deferred-email QUEUE itself
+  (a Hangfire-scheduled send at `DeferUntilUtc`) is not built.
+
+### Deferred (not built here)
+- FR-4 Tenant-Admin mandatory-category configuration (Admin Console) — static catalog is the baseline.
+- Wiring `ShouldDeliverAsync` into the live dispatch path + the deferred-email queue/worker (BR-5 send-after).
+- SMS channel (Phase 2 — model accommodates a 3rd channel but it's not added).
+- PostgreSQL RLS (platform-wide deferred US-PLT-002) — isolation is the EF global query filter + TenantInterceptor.
