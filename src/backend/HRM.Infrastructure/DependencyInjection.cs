@@ -178,6 +178,9 @@ public static class DependencyInjection
         // US-REC-009: Recruitment dashboard + analytics (read-only aggregation, no new entities).
         services.AddScoped<IRecruitmentDashboardService, RecruitmentDashboardService>();
 
+        // US-ONB-001: Onboarding checklist template management (create/clone/activate/list).
+        services.AddScoped<IOnboardingTemplateService, OnboardingTemplateService>();
+
         // US-PAY-001: Payroll — salary component + salary structure configuration.
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();
