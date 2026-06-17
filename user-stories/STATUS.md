@@ -132,7 +132,7 @@
 - [x] US-ADM-007 — Manage approval workflows *(PR #91)*
 - [x] US-ADM-008 — View audit logs *(PR #92)*
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
-- [ ] US-ADM-010 — Tenant data export on demand
+- [~] US-ADM-010 — Tenant data export on demand
 
 ## 9. Onboarding / Offboarding (6 stories)
 - [ ] US-ONB-001 — Create onboarding checklist template
