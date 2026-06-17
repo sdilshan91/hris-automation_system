@@ -140,6 +140,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     // US-ONB-005: offboarding / exit-clearance instances + their task instances (tenant-scoped).
     public DbSet<OffboardingInstance> OffboardingInstances => Set<OffboardingInstance>();
     public DbSet<OffboardingTaskInstance> OffboardingTaskInstances => Set<OffboardingTaskInstance>();
+    // US-ONB-006: exit-interview questionnaire templates + recorded interviews/responses (tenant-scoped).
+    public DbSet<ExitInterviewTemplate> ExitInterviewTemplates => Set<ExitInterviewTemplate>();
+    public DbSet<ExitInterviewQuestion> ExitInterviewQuestions => Set<ExitInterviewQuestion>();
+    public DbSet<ExitInterview> ExitInterviews => Set<ExitInterview>();
+    public DbSet<ExitInterviewResponse> ExitInterviewResponses => Set<ExitInterviewResponse>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -541,6 +546,22 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-ONB-005: OffboardingTaskInstance tenant isolation + soft-delete filter (AC-6/NFR-2).
         modelBuilder.Entity<OffboardingTaskInstance>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-006: ExitInterviewTemplate tenant isolation + soft-delete filter (FR-6/NFR-2/AC-5).
+        modelBuilder.Entity<ExitInterviewTemplate>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-006: ExitInterviewQuestion tenant isolation + soft-delete filter (FR-6/NFR-2/AC-5).
+        modelBuilder.Entity<ExitInterviewQuestion>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-006: ExitInterview tenant isolation + soft-delete filter (FR-6/NFR-2/AC-5).
+        modelBuilder.Entity<ExitInterview>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-006: ExitInterviewResponse tenant isolation + soft-delete filter (FR-6/NFR-2/AC-5).
+        modelBuilder.Entity<ExitInterviewResponse>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

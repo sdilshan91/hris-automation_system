@@ -419,6 +419,19 @@ public static class PermissionCatalog
         public const string Manage = "Onboarding.Manage";
     }
 
+    // ── Exit Interview (US-ONB-006) ──────────────────────────────────
+    public static class ExitInterview
+    {
+        /// <summary>
+        /// US-ONB-006 (FR-5/NFR-6/AC-4): VIEW INDIVIDUAL exit-interview detail, including free-text PII
+        /// responses, and de-anonymized analytics. A sensitive read held by HR Manager / Tenant Admin /
+        /// Tenant Owner only — NOT HR Officer (who records interviews and views only AGGREGATED analytics).
+        /// Detail access is flagged in the audit log (NFR-6). Without this permission the analytics endpoint
+        /// returns ONLY aggregates (FR-5).
+        /// </summary>
+        public const string ViewDetail = "ExitInterview.ViewDetail";
+    }
+
     /// <summary>
     /// Flat list of every permission string in the catalog.
     /// Used for validation and for populating UI permission trees.
@@ -504,6 +517,9 @@ public static class PermissionCatalog
 
         // Onboarding
         Onboarding.View, Onboarding.Manage,
+
+        // Exit Interview
+        ExitInterview.ViewDetail,
     };
 
     /// <summary>
@@ -590,6 +606,7 @@ public static class PermissionCatalog
             Training.ViewAll, Training.Manage,
             Benefits.ViewAll, Benefits.Manage,
             Onboarding.View, Onboarding.Manage,
+            ExitInterview.ViewDetail,
         },
         BuiltInRoles.HRManager => new[]
         {
@@ -610,6 +627,7 @@ public static class PermissionCatalog
             Training.ViewAll, Training.Manage,
             Benefits.ViewAll, Benefits.Manage,
             Onboarding.View, Onboarding.Manage,
+            ExitInterview.ViewDetail,
         },
         BuiltInRoles.HROfficer => new[]
         {

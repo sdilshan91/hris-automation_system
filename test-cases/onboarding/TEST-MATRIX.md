@@ -1,10 +1,10 @@
 ---
 module: Onboarding / Offboarding
-total_user_stories: 5
-total_test_cases: 79
+total_user_stories: 6
+total_test_cases: 95
 created: 2026-06-17
 updated: 2026-06-17
-status: in-progress
+status: complete
 ---
 
 # Onboarding / Offboarding -- Test Matrix
@@ -393,3 +393,93 @@ status: in-progress
 | AC coverage | 6/6 |
 | Functional ID range | TC-ONB-005-01 .. TC-ONB-005-12 |
 | ISO ID range | TC-ONB-ISO-016 .. TC-ONB-ISO-019 (shared module counter) |
+
+---
+
+## US-ONB-006 — Exit Interview Recording
+
+> US-ONB-006 (Exit Interview Recording) is the SIXTH and FINAL Onboarding story; it COMPLETES the module. It adds 16 test cases: 12 functional/security/performance/accessibility (TC-ONB-006-01..12) + 4 dedicated multi-tenant isolation continuing the shared running counter (TC-ONB-ISO-020..023). The functional suffix counter resets per story (TC-ONB-006-XX) while the ISO counter is module-wide and continues from US-ONB-005's 019. All 5 acceptance criteria of US-ONB-006 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001/002/003/004/005 family):
+> - AC-5/NFR-2 name PostgreSQL RLS; this codebase isolates via **EF Core global query filters (read) + `TenantInterceptor` (write stamping)**. ISO tests assert the EF mechanism in force today; the RLS "raw SQL without app.current_tenant_id -> zero rows" expectation is CONDITIONAL/deferred (TC-ONB-ISO-022 step 4). Cross-tenant ID injection asserts **404, not 403** (TC-ONB-ISO-021).
+> - AC-3/FR-8 describe HR notification on self-service submission via SignalR + email. Real delivery is owned by the Notifications module (US-NTF-001 in-app, US-NTF-002 email). The onboarding side of the contract is tested as a **notification INTENT row written transactionally (outbox) + Hangfire dispatch enqueued** (TC-ONB-006-02, TC-ONB-ISO-023); end-to-end SignalR/email receipt is deferred to the US-NTF test cases.
+> - NFR-1 (form load <= 500 ms P95) and NFR-3 (analytics render <= 2 s for up to 1000 interviews) require a performance-representative environment (TC-ONB-006-11); on a dev box, record indicative numbers and do NOT relax the thresholds.
+> - Analytics cache (if wired) targets `onboarding:exit-analytics:{tenant_id}` (TC-ONB-ISO-023); if no cache is wired, the equivalent always-tenant-filtered property is asserted.
+
+### Coverage by Test Case (US-ONB-006)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-ONB-006-01 | HR-conducted: record 10-question interview; responses persist w/ tenant_id + offboarding linkage; task completed; audit | E2E | Critical | AC-1, AC-2, FR-1/3/6/7 | Happy path |
+| TC-ONB-006-02 | Self-service: employee completes questionnaire; saved + linked; HR-notify outbox intent (delivery deferred) | Integration | Critical | AC-3, FR-2/8 | Happy path |
+| TC-ONB-006-03 | Duplicate exit interview per offboarding rejected | Functional | Critical | BR-1, AC-2 | Negative |
+| TC-ONB-006-04 | Immutability/versioning: edit after submit preserves original + creates new version | Functional | Critical | BR-2, FR-3/7 | Negative |
+| TC-ONB-006-05 | Analytics: 10 varied-reason interviews -> reason pie + avg ratings/category correct, tenant-scoped | Functional | High | AC-4, FR-4, BR-4 | Happy / boundary |
+| TC-ONB-006-06 | Anonymization: aggregates only; free-text hidden without ExitInterview.ViewDetail; PII access audit-flagged | Security | Critical | FR-5, NFR-6 | Negative / security |
+| TC-ONB-006-07 | Self-service deadline: after LWD / account deactivated -> access denied; HR path remains | Functional | High | BR-3 | Negative / boundary / security |
+| TC-ONB-006-08 | Boundary/negative: rating 1-5, interview_date not future, free_text<=2000, additional_comments<=5000, required answers, mode enum, conducted_by | Functional | Critical | FR-1, AC-2, data (S7) | Negative / boundary |
+| TC-ONB-006-09 | Authz: HR for record/analytics; self-service own-offboarding only; 401/403 | Security | Critical | AC-2/3/4, FR-2/5 | Negative / security |
+| TC-ONB-006-10 | XSS/SQLi free-text neutralized; offboarding_id/question_id tenant-belonging; client tenant_id ignored | Security | High | FR-6, data (S7) | Negative / security |
+| TC-ONB-006-11 | Form load <= 500 ms P95 (NFR-1); analytics render <= 2 s for 1000 interviews (NFR-3) | Performance | High | NFR-1, NFR-3 | Performance |
+| TC-ONB-006-12 | Questionnaire keyboard navigable + WCAG 2.1 AA; 360px touch-friendly rating; responsive to 4K | Accessibility | Medium | NFR-4, NFR-5 | Accessibility / cross-browser |
+| TC-ONB-ISO-020 | Tenant A cannot see Tenant B exit interviews or analytics (cross-tenant READ block) | Security | Critical | AC-5, NFR-2 (EF), BR-4 | Multi-tenant isolation |
+| TC-ONB-ISO-021 | Missing tenant context + cross-tenant exit-interview ID injection -> 404 | Security | Critical | AC-5, FR-6 | Multi-tenant isolation |
+| TC-ONB-ISO-022 | EF filter blocks reads; writes/versions/outbox/audit tenant-stamped (RLS deferred) | Security | Critical | AC-5, FR-6, NFR-2 | Multi-tenant isolation |
+| TC-ONB-ISO-023 | Exit interview analytics cache + HR-notify outbox payload tenant-scoped | Security | High | AC-5, FR-8, NFR-2 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-ONB-006)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (questionnaire opens, categorized, pre-loaded from tenant template) | TC-ONB-006-01, -12 |
+| AC-2 (responses persist against offboarding w/ tenant_id; exit-interview task -> completed) | TC-ONB-006-01, -03, -08, -09 |
+| AC-3 (self-service: same questionnaire; saved + linked; HR notified) | TC-ONB-006-02, -07, -09 |
+| AC-4 (analytics: reason pie, avg ratings/category, trends; tenant-scoped) | TC-ONB-006-05, -06, -11 |
+| AC-5 (cross-tenant isolation; Tenant B sees no Tenant A exit interview data) | TC-ONB-ISO-020, -021, -022, -023 |
+
+### FR / NFR / BR Coverage (US-ONB-006)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (configurable template: rating 1-5 / multiple choice / free text / yes-no) | TC-ONB-006-01, -08, -12 |
+| FR-2 (HR-conducted + self-service modes) | TC-ONB-006-01, -02, -09 |
+| FR-3 (link responses to offboarding record) | TC-ONB-006-01, -04, TC-ONB-ISO-022 |
+| FR-4 (aggregated analytics: distribution, averages, trends) | TC-ONB-006-05 |
+| FR-5 (anonymize individual responses unless ExitInterview.ViewDetail) | TC-ONB-006-06, -09 |
+| FR-6 (tenant_id from session on all records) | TC-ONB-006-01, -10, TC-ONB-ISO-021, -022 |
+| FR-7 (exit interview completion as audit event) | TC-ONB-006-01, -04 |
+| FR-8 (notify HR on self-service submit; SignalR delivery deferred to US-NTF) | TC-ONB-006-02, TC-ONB-ISO-023 |
+| NFR-1 (form load <= 500 ms P95) | TC-ONB-006-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-ONB-ISO-020, -021, -022, -023 |
+| NFR-3 (analytics render <= 2 s for up to 1000 interviews) | TC-ONB-006-11 |
+| NFR-4 (responsive 360px-4K) | TC-ONB-006-12 |
+| NFR-5 (WCAG 2.1 AA) | TC-ONB-006-12 |
+| NFR-6 (free-text PII access flagged in audit) | TC-ONB-006-06 |
+| BR-1 (one exit interview per offboarding instance) | TC-ONB-006-03 |
+| BR-2 (immutable after submit; edits create a new version, original preserved) | TC-ONB-006-04 |
+| BR-3 (self-service must be submitted before LWD) | TC-ONB-006-07 |
+| BR-4 (analytics show only current-tenant data) | TC-ONB-006-05, TC-ONB-ISO-020 |
+| BR-5 (retention per tenant policy; anonymized data may be kept longer for trends) | Out of scope for the recording/analytics flow; data-retention/expiry is a separate lifecycle concern (flag to caller — no retention-expiry step in this story) |
+| BR-6 (questionnaire template configurable by Tenant Admins) | Assumed via preconditions (Admin Console / template config); template-authoring itself is out of this recording story (flag to caller) |
+
+### Summary (US-ONB-006)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ONB-006) |
+| Total test cases | 16 (12 functional/security/perf/a11y + 4 isolation) |
+| AC coverage | 5/5 |
+| Functional ID range | TC-ONB-006-01 .. TC-ONB-006-12 |
+| ISO ID range | TC-ONB-ISO-020 .. TC-ONB-ISO-023 (shared module counter) |
+
+---
+
+## Module Total (Onboarding / Offboarding — COMPLETE)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 6 (US-ONB-001 .. US-ONB-006) |
+| Total test cases | 95 (72 functional/security/perf/a11y + 23 isolation TC-ONB-ISO-001..023) |
+| AC coverage | 31/31 (5+5+5+5+6+5) |
+| Functional ID scheme | TC-ONB-{NNN}-01..12 (per-story suffix) |
+| ISO ID range | TC-ONB-ISO-001 .. TC-ONB-ISO-023 (module-wide running counter) |

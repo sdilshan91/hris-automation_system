@@ -511,6 +511,35 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
         ],
       },
+      // ─── Exit Interview / Analytics (US-ONB-006) — HR-only ──
+      // The Exit Interview Summary (reason pie / category bars / trend line) shows
+      // tenant-scoped AGGREGATES only (FR-4/FR-5). HR-gated. Registered ABOVE the
+      // self-service form route so the static 'analytics' segment wins over the
+      // form's ':offboardingId' leaf.
+      {
+        path: 'exit-interview/analytics',
+        loadComponent: () =>
+          import(
+            './features/onboarding/components/exit-interview-analytics/exit-interview-analytics.component'
+          ).then((m) => m.ExitInterviewAnalyticsComponent),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
+        ],
+      },
+      // ─── Exit Interview / Questionnaire (US-ONB-006) ────────
+      // The structured questionnaire (AC-1/AC-2/AC-3). Reachable by BOTH HR
+      // (hr_conducted) and the departing employee (self_service); the mode is
+      // DERIVED from role in-component and the backend re-derives + authorizes
+      // (FR-2/FR-6). Like my-checklist/my-assets it carries NO HR roleGuard so a
+      // plain Employee can complete their own exit interview — the parent authGuard
+      // still applies and the backend scopes to the caller's identity + tenant.
+      {
+        path: 'exit-interview/:offboardingId',
+        loadComponent: () =>
+          import(
+            './features/onboarding/components/exit-interview-form/exit-interview-form.component'
+          ).then((m) => m.ExitInterviewFormComponent),
+      },
       // ─── Onboarding / Checklist Templates (US-ONB-001) ─────
       {
         path: 'onboarding',

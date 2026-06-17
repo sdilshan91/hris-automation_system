@@ -140,7 +140,7 @@
 - [x] US-ONB-003 — New hire completes onboarding tasks *(PR #97)*
 - [x] US-ONB-004 — Asset issuance tracking *(PR #98)*
 - [x] US-ONB-005 — Offboarding/exit checklist and clearance *(PR #99)*
-- [ ] US-ONB-006 — Exit interview recording
+- [~] US-ONB-006 — Exit interview recording
 
 ## 10. Notifications & Audit (5 stories)
 - [ ] US-NTF-001 — In-app notification system (SignalR)

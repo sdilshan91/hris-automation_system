@@ -4757,3 +4757,68 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | AC-6 (cross-tenant isolation; Tenant B sees no Tenant A offboarding data) | TC-ONB-ISO-016, -017, -018, -019 | EF query filter (RLS deferred) |
 
 *Note (Onboarding -- US-ONB-005): 16 TCs — 12 functional/security/perf/a11y (TC-ONB-005-01..12) + 4 multi-tenant isolation continuing the module-wide running counter (TC-ONB-ISO-016..019, from US-ONB-004's 015). Functional suffix counter resets per story (TC-ONB-005-XX); ISO counter is shared/running. All 6 ACs traced. KEY COVERAGE: full happy path initiates offboarding for a resignation_accepted employee, generates the exit checklist (HR/IT/Finance/Manager/Employee, due = LWD - offset), clears all mandatory tasks, completes -> employee "terminated", user account deactivated (cannot log in), F&F trigger dispatched to Payroll, full audit (AC-1/AC-4, FR-2/5/6/9, TC-ONB-005-01); exit-task generation verifies per-task offsets and responsible-party resolution incl. Manager via reporting_manager_id (AC-1/FR-2/3, -02); asset return flips the register to available/disposed + completes the task + before/after audit (AC-2/BR-3, -03); the clearance dashboard computes "fully cleared" only when ALL departments approve and renders correct traffic lights (AC-3/FR-4/BR-2, -04); blocked completion enumerates the exact pending MANDATORY items and performs no side effects (AC-5/BR-2, -05); completion revokes sessions so the old JWT -> 401 and is irreversible (FR-7/BR-6, -06); the BR-1 status gate blocks initiating for an active employee (-07); LWD today-or-future boundary + reason enum + notes<=2000 validated (-08). PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001/002/003/004 family): (1) AC-6/NFR-2 name PostgreSQL RLS; this platform isolates via EF Core global query filters (read) + `TenantInterceptor` (write stamping) — RLS deferred. ISO tests assert the EF mechanism in force today; "raw SQL without app.current_tenant_id -> zero rows" is CONDITIONAL/deferred (TC-ONB-ISO-018 step 4); cross-tenant ID injection asserts 404 not 403 (TC-ONB-ISO-017). (2) FR-7 session revocation specifies a Redis JWT denylist + SignalR disconnect; the Redis denylist is NOT yet wired — TC-ONB-005-06 asserts the revocation effect in force today (account deactivation makes the old JWT fail the active-account check -> 401); the denylist hit is CONDITIONAL/deferred. NFR-3 (deactivation + revocation <=30s) is measured against the deactivation effect plus any wired revocation, on a perf-representative env. (3) NFR-1 (initiation API <=1000ms P95) needs a perf-representative env (TC-ONB-005-11). (4) F&F settlement CALCULATION is owned by Payroll (BR-4); offboarding only TRIGGERS the notification (asserted tenant-stamped in TC-ONB-005-01 + TC-ONB-ISO-019); end-to-end notification delivery routes through Notifications (US-NTF-001/002) and is deferred there. STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-6/NFR-2 name Postgres RLS as an active layer — only the app (ITenantContext) + EF layers exist today; reword RLS as future hardening. (b) FR-7 Redis JWT denylist not yet wired — revocation asserted via account deactivation; recommend the denylist as a follow-up so unexpired tokens are hard-revoked regardless of active-account-check propagation timing. (c) Manager-role exit/handover tasks resolve via employee reporting_manager_id; if unset, the Manager task has no resolvable owner (same gap noted on US-ONB-002 FR-3) — recommend a clear unresolved-party warning if the story leaves it undefined. (d) BR-6 irreversibility asserted as "no reactivation path" (TC-ONB-005-06 step 5); if an admin override exists it must be flagged as a deviation from BR-6.*
+
+## Onboarding / Offboarding -- US-ONB-006 (Exit Interview Recording)
+
+### US-ONB-006 Forward Traceability (Test Case -> Requirement)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | Requirements Covered |
+|-------------|----------------|------|----------|------------|---------------------|
+| TC-ONB-006-01 | HR-conducted: record 10-question interview; responses persist w/ tenant_id + offboarding linkage; task completed; audit | E2E | Critical | US-ONB-006 | AC-1, AC-2, FR-1/3/6/7 |
+| TC-ONB-006-02 | Self-service: employee completes questionnaire; saved + linked; HR-notify outbox intent (delivery deferred) | Integration | Critical | US-ONB-006 | AC-3, FR-2/8 |
+| TC-ONB-006-03 | Duplicate exit interview per offboarding rejected | Functional | Critical | US-ONB-006 | BR-1, AC-2 |
+| TC-ONB-006-04 | Immutability/versioning: edit after submit preserves original + creates new version | Functional | Critical | US-ONB-006 | BR-2, FR-3/7 |
+| TC-ONB-006-05 | Analytics: 10 varied-reason interviews -> reason pie + avg ratings/category correct, tenant-scoped | Functional | High | US-ONB-006 | AC-4, FR-4, BR-4 |
+| TC-ONB-006-06 | Anonymization: aggregates only; free-text hidden without ExitInterview.ViewDetail; PII access audit-flagged | Security | Critical | US-ONB-006 | FR-5, NFR-6 |
+| TC-ONB-006-07 | Self-service deadline: after LWD / account deactivated -> access denied; HR path remains | Functional | High | US-ONB-006 | BR-3 |
+| TC-ONB-006-08 | Boundary/negative: rating 1-5, interview_date not future, free_text<=2000, additional_comments<=5000, required answers, mode enum, conducted_by | Functional | Critical | US-ONB-006 | FR-1, AC-2, data (S7) |
+| TC-ONB-006-09 | Authz: HR for record/analytics; self-service own-offboarding only; 401/403 | Security | Critical | US-ONB-006 | AC-2/3/4, FR-2/5 |
+| TC-ONB-006-10 | XSS/SQLi free-text neutralized; offboarding_id/question_id tenant-belonging; client tenant_id ignored | Security | High | US-ONB-006 | FR-6, data (S7) |
+| TC-ONB-006-11 | Form load <= 500 ms P95 (NFR-1); analytics render <= 2 s for 1000 interviews (NFR-3) | Performance | High | US-ONB-006 | NFR-1, NFR-3 |
+| TC-ONB-006-12 | Questionnaire keyboard navigable + WCAG 2.1 AA; 360px touch-friendly rating; responsive to 4K | Accessibility | Medium | US-ONB-006 | NFR-4, NFR-5 |
+| TC-ONB-ISO-020 | Tenant A cannot see Tenant B exit interviews or analytics (cross-tenant READ block) | Security | Critical | US-ONB-006 | AC-5, NFR-2 (EF), BR-4 |
+| TC-ONB-ISO-021 | Missing tenant context + cross-tenant exit-interview ID injection -> 404 | Security | Critical | US-ONB-006 | AC-5, FR-6 |
+| TC-ONB-ISO-022 | EF filter blocks reads; writes/versions/outbox/audit tenant-stamped (RLS deferred) | Security | Critical | US-ONB-006 | AC-5, FR-6, NFR-2 |
+| TC-ONB-ISO-023 | Exit interview analytics cache + HR-notify outbox payload tenant-scoped | Security | High | US-ONB-006 | AC-5, FR-8, NFR-2 |
+
+### US-ONB-006 Backward Traceability (Requirement -> Test Case)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| AC-1 (questionnaire opens, categorized, pre-loaded from tenant template) | TC-ONB-006-01, -12 |
+| AC-2 (responses persist against offboarding w/ tenant_id; exit-interview task -> completed) | TC-ONB-006-01, -03, -08, -09 |
+| AC-3 (self-service: same questionnaire; saved + linked; HR notified) | TC-ONB-006-02, -07, -09 |
+| AC-4 (analytics: reason pie, avg ratings/category, trends; tenant-scoped) | TC-ONB-006-05, -06, -11 |
+| AC-5 (cross-tenant isolation; Tenant B sees no Tenant A exit interview data) | TC-ONB-ISO-020, -021, -022, -023 |
+| FR-1 (configurable template: rating/multiple-choice/free-text/yes-no) | TC-ONB-006-01, -08, -12 |
+| FR-2 (HR-conducted + self-service modes) | TC-ONB-006-01, -02, -09 |
+| FR-3 (link responses to offboarding record) | TC-ONB-006-01, -04, TC-ONB-ISO-022 |
+| FR-4 (aggregated analytics) | TC-ONB-006-05 |
+| FR-5 (anonymize unless ExitInterview.ViewDetail) | TC-ONB-006-06, -09 |
+| FR-6 (tenant_id from session) | TC-ONB-006-01, -10, TC-ONB-ISO-021, -022 |
+| FR-7 (completion as audit event) | TC-ONB-006-01, -04 |
+| FR-8 (notify HR on self-service submit; delivery deferred to US-NTF) | TC-ONB-006-02, TC-ONB-ISO-023 |
+| NFR-1 (form load <= 500 ms P95) | TC-ONB-006-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-ONB-ISO-020, -021, -022, -023 |
+| NFR-3 (analytics render <= 2 s for up to 1000 interviews) | TC-ONB-006-11 |
+| NFR-4 (responsive 360px-4K) | TC-ONB-006-12 |
+| NFR-5 (WCAG 2.1 AA) | TC-ONB-006-12 |
+| NFR-6 (free-text PII access flagged in audit) | TC-ONB-006-06 |
+| BR-1 (one exit interview per offboarding instance) | TC-ONB-006-03 |
+| BR-2 (immutable after submit; edits create a new version) | TC-ONB-006-04 |
+| BR-3 (self-service before LWD) | TC-ONB-006-07 |
+| BR-4 (analytics show only current-tenant data) | TC-ONB-006-05, TC-ONB-ISO-020 |
+| BR-5 (retention per tenant policy) | Out of scope for the recording/analytics flow (flag to caller — no retention-expiry step in this story) |
+| BR-6 (template configurable by Tenant Admins) | Assumed via preconditions (Admin Console / template config) — out of this recording story (flag to caller) |
+
+### US-ONB-006 Acceptance-Criteria Coverage
+
+| AC | Covered By | Coverage |
+|----|-----------|----------|
+| AC-1 (questionnaire opens, categorized, pre-loaded from tenant template) | TC-ONB-006-01, -12 | Direct |
+| AC-2 (responses persist against offboarding w/ tenant_id; exit-interview task -> completed) | TC-ONB-006-01, -03, -08, -09 | Direct |
+| AC-3 (self-service: same questionnaire; saved + linked; HR notified) | TC-ONB-006-02, -07, -09 | Direct (HR-notify delivery deferred to US-NTF) |
+| AC-4 (analytics: reason distribution, avg ratings/category, trends; tenant-scoped) | TC-ONB-006-05, -06, -11 | Direct |
+| AC-5 (cross-tenant isolation; Tenant B sees no Tenant A exit interview data) | TC-ONB-ISO-020, -021, -022, -023 | EF query filter (RLS deferred) |
+
+*Note (Onboarding -- US-ONB-006): 16 TCs — 12 functional/security/perf/a11y (TC-ONB-006-01..12) + 4 multi-tenant isolation continuing the module-wide running counter (TC-ONB-ISO-020..023, from US-ONB-005's 019). US-ONB-006 is the SIXTH and FINAL Onboarding story and COMPLETES the module (6 stories, 95 TCs, 31/31 ACs, isolation TC-ONB-ISO-001..023). Functional suffix counter resets per story (TC-ONB-006-XX); ISO counter is shared/running. All 5 ACs traced. KEY COVERAGE: HR-conducted happy path opens the pre-loaded categorized questionnaire (rating/multiple-choice/free-text/yes-no), records all 10 answers, persists them against the offboarding record with tenant_id from session, marks the exit-interview task "completed", and audits completion (AC-1/AC-2, FR-1/3/6/7, TC-ONB-006-01); self-service path lets the still-active departing employee complete the same questionnaire, saves + links it, and writes the HR-notify INTENT to the outbox in the same transaction (AC-3, FR-2/8, -02); BR-1 blocks a second interview per offboarding (-03); BR-2 immutability creates a NEW version on edit while preserving the original (-04); analytics over 10 varied-reason interviews show a reason pie matching 40/30/20/10% and correct per-category average ratings, tenant-scoped (AC-4/FR-4/BR-4, -05); anonymization hides individual free-text from non-privileged users (aggregates only) and flags privileged free-text PII access in audit (FR-5/NFR-6, -06); the self-service window closes after LWD/account-deactivation while HR recording remains (BR-3, -07); boundary/negative covers rating 1-5, non-future interview_date, free_text<=2000, additional_comments<=5000, required answers, mode enum, conducted_by-when-hr (FR-1/AC-2/S7, -08); authz requires HR for record+analytics and limits self-service to the employee's own offboarding (AC-2/3/4, FR-2/5, -09); XSS/SQLi neutralized + foreign offboarding_id/question_id rejected + client tenant_id ignored (FR-6, -10). PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001..005 family): (1) AC-5/NFR-2 name PostgreSQL RLS; this platform isolates via EF Core global query filters (read) + `TenantInterceptor` (write stamping) — RLS deferred. ISO tests assert the EF mechanism in force today; "raw SQL without app.current_tenant_id -> zero rows" is CONDITIONAL/deferred (TC-ONB-ISO-022 step 4); cross-tenant ID injection asserts 404 not 403 (TC-ONB-ISO-021). (2) AC-3/FR-8 HR notification on self-service submit is asserted as an outbox/notification-INTENT row written transactionally + Hangfire dispatch enqueue (TC-ONB-006-02, TC-ONB-ISO-023); end-to-end SignalR (US-NTF-001) + email (US-NTF-002) receipt is deferred to the Notifications module. (3) NFR-1 (form load <=500ms P95) and NFR-3 (analytics render <=2s for up to 1000 interviews) need a perf-representative env (TC-ONB-006-11); on a dev box record indicative numbers and do NOT relax the thresholds. (4) Analytics cache (if wired) targets `onboarding:exit-analytics:{tenant_id}` (TC-ONB-ISO-023); absent a cache, the equivalent always-tenant-filtered property is asserted. STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-5/NFR-2 name Postgres RLS as an active layer — only the app (ITenantContext) + EF layers exist today; reword RLS as future hardening. (b) BR-5 data retention/expiry (incl. retaining anonymized data longer for trends) has no endpoint in this recording story — a separate retention/lifecycle concern. (c) BR-6 questionnaire-template configuration is a Tenant Admin / Admin Console master-data concern, assumed via preconditions; template-authoring itself is out of this story. (d) Anonymization depends on an `ExitInterview.ViewDetail` permission existing in the RBAC catalogue — if not yet defined, flag it so FR-5/NFR-6 are enforceable. (e) BR-2 versioning assumes a version-history model on the exit interview entity; if storage overwrites in place, that is a deviation from BR-2 to flag.*
