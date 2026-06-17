@@ -27,6 +27,8 @@ public static class DependencyInjection
         // EF Core interceptors
         services.AddScoped<AuditInterceptor>();
         services.AddScoped<TenantInterceptor>();
+        // US-NTF-004: automatic generic INSERT/UPDATE/DELETE capture for IAuditableEntity types.
+        services.AddScoped<AuditCaptureInterceptor>();
 
         // DbContext with PostgreSQL + snake_case naming
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
@@ -39,10 +41,13 @@ public static class DependencyInjection
             })
             .UseSnakeCaseNamingConvention();
 
-            // Add interceptors
+            // Add interceptors. ORDER MATTERS: tenant stamping + audit-field/UUIDv7 stamping must run BEFORE
+            // audit CAPTURE so the captured rows see the stamped TenantId and generated resource Id
+            // (US-NTF-004).
             var tenantInterceptor = serviceProvider.GetRequiredService<TenantInterceptor>();
             var auditInterceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
-            options.AddInterceptors(tenantInterceptor, auditInterceptor);
+            var auditCaptureInterceptor = serviceProvider.GetRequiredService<AuditCaptureInterceptor>();
+            options.AddInterceptors(tenantInterceptor, auditInterceptor, auditCaptureInterceptor);
         });
 
         // Register UnitOfWork
@@ -452,6 +457,11 @@ public static class DependencyInjection
         // code convention (AC-5/NFR-3); DB-role UPDATE/DELETE revocation + RLS are DEFERRED platform infra.
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IAuditLogPurgeService, AuditLogPurgeService>();
+
+        // US-NTF-004: automatic generic change-capture is wired via AuditCaptureInterceptor (see DbContext
+        // interceptors above). This registers the GDPR "right to be forgotten" anonymizer (BR-6) that redacts
+        // PII in a user's audit rows in place while preserving the append-only trail's structure.
+        services.AddScoped<IAuditAnonymizationService, AuditAnonymizationService>();
 
         // US-ADM-010: Tenant data export on demand. Initiation runs in the resolved-tenant context (Tenant Admin,
         // AC-5) OR the system/admin context with an explicit tenant id (System Admin, AC-6). The status gate

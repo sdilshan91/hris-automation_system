@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// Supports hierarchical parent-child relationships via self-referencing FK.
 /// US-CHR-004: Create and Manage Departments.
 /// </summary>
-public sealed class Department : BaseEntity
+public sealed class Department : BaseEntity, IAuditableEntity
 {
     /// <summary>
     /// Department name, unique within a tenant (FR-2, BR-1).

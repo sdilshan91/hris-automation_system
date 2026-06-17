@@ -146,7 +146,7 @@
 - [x] US-NTF-001 — In-app notification system (SignalR) *(PR #101)*
 - [x] US-NTF-002 — Email notification templates per tenant *(PR #102)*
 - [x] US-NTF-003 — Notification preferences per user *(PR #103)*
-- [ ] US-NTF-004 — Audit trail for all data changes
+- [~] US-NTF-004 — Audit trail for all data changes
 - [ ] US-NTF-005 — Audit log viewer with filters
 
 ## 11. Reports & Analytics (5 stories)

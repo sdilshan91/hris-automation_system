@@ -172,3 +172,71 @@ stamped. Did NOT build a new audit subsystem (US-NTF-004 owns the structured aud
 - Wiring `ShouldDeliverAsync` into the live dispatch path + the deferred-email queue/worker (BR-5 send-after).
 - SMS channel (Phase 2 — model accommodates a 3rd channel but it's not added).
 - PostgreSQL RLS (platform-wide deferred US-PLT-002) — isolation is the EF global query filter + TenantInterceptor.
+
+## US-NTF-004 — Audit Trail for All Data Changes (automatic generic capture)
+
+### The gap this filled (and what it did NOT duplicate)
+Substantial audit infra already existed: the SINGLE `AuditLog` table (extended additively by US-PAY-012 with
+Action/ResourceType/ResourceId/Before/After/ActorEmployeeNo/TraceId + impersonation cols), `IAuditLogService`
+(US-ADM-008 READ+EXPORT, append-only by convention), `EmployeeFieldAuditLog` (Core HR field/PII audit), and
+many EXPLICIT writers (AuthService, PayrollAuditLogger, Admin/Recruitment services). **The one missing piece was
+AUTOMATIC capture of generic INSERT/UPDATE/DELETE with before/after diffs.** That is all this story added — no
+second audit table, no duplicate service.
+
+### What was built (backend)
+- **`IAuditableEntity`** — empty OPT-IN marker in `HRM.Domain.Entities`. The capture interceptor records ONLY
+  entities implementing it. Opt-IN (not "every BaseEntity") to avoid noise AND, critically, to avoid DOUBLE
+  audit rows on entities whose service already writes its own audit trail.
+- **`AuditCaptureInterceptor : SaveChangesInterceptor`** (Infrastructure/Persistence/Interceptors) — SEPARATE
+  from the existing `AuditInterceptor` (which only stamps BaseEntity audit fields + impersonation attribution).
+  Captures in `SavingChanges(Async)` and adds `AuditLog` rows to the SAME context so they commit in the SAME
+  save (no second SaveChanges; insert resource ids are already UUIDv7-stamped by AuditInterceptor, which runs
+  first). Action = "{EntityName}.{Create|Update|Delete}". BR-2: Before null for INSERT, After null for DELETE.
+  AC-3: soft-delete (IsDeleted false→true) → "{Entity}.Delete" with before/after on the flag. BR-3: UPDATE
+  captures ONLY changed props (value-diff, robust across providers; skips CreatedAt/CreatedBy/UpdatedAt/
+  UpdatedBy noise). FR-7/FR-8 enrichment: TenantId from ITenantContext, actor from ICurrentUser, IP/UA from
+  IHttpContextAccessor, TraceId from `Activity.Current?.Id ?? http.TraceIdentifier` — same pattern as
+  PayrollAuditLogger. **Recursion is impossible**: AuditLog/EmployeeFieldAuditLog don't implement the marker.
+  Registered LAST in `options.AddInterceptors(tenant, audit, capture)` — order matters so stamped TenantId +
+  generated Id are visible at capture time.
+- **`IAuditAnonymizationService` / `AuditAnonymizationService`** (BR-6 GDPR right-to-be-forgotten) — anonymizes
+  a user's audit PII IN PLACE (the one sanctioned mutation of the append-only table): IP/UA/ActorEmployeeNo →
+  `REDACTED-{userId}`, and scrubs the user's id/email out of Before/After/Detail JSON while preserving row
+  count + structure (BR-1). Runs cross-tenant via `IgnoreQueryFilters`. **Idempotent** — Scrub masks existing
+  tokens behind a sentinel before replacing the id, else the guid embedded inside `REDACTED-{guid}` would be
+  re-redacted into `REDACTED-REDACTED-{guid}`.
+
+### Entities marked IAuditableEntity (and why each is safe)
+- **Department**, **JobTitle**, **LeaveRequest** — verified their services (`DepartmentService`/`JobTitleService`/
+  `LeaveRequestService`) write NO explicit `AuditLog`/`new AuditLog` rows (grep-confirmed), so auto-capture adds
+  no double rows. AC-3 explicitly references LeaveRequest soft-delete.
+- **Employee was deliberately NOT marked** — `EmployeeService` already writes `EmployeeFieldAuditLog` (field/PII
+  audit, US-CHR-002) with tests asserting that behavior; auto-capturing generic Employee rows risks
+  double/conflicting audit. Marking is incrementally opt-in-able later if EmployeeFieldAuditLog is reconciled.
+- The marker is additive: adding it to more entities later is a one-line change with no migration.
+
+### Coverage VERIFIED (not rebuilt)
+- **FR-3/AC-4 auth events** are already comprehensively logged by `AuthService.WriteAuditLog(WithDetail)Async`:
+  login_failure, account_locked/unlocked, all mfa_* (enroll/challenge/disabled/recovery), session
+  expired/revoked/concurrent-denied, tenant_switch, etc. NOT rebuilt — left untouched (surgical; large test
+  suite). Gap note: explicit "login_success"/"logout"/"password_change" named events aren't emitted, but
+  failures + the full security-event set ARE — not worth the regression risk to add here.
+- **FR-4/AC-2 PII-read audit** ("Employee.ReadSensitive") — Core HR concern; not part of this generic-capture
+  gap. Not added here.
+- **NFR-3 BRIN index / NFR-6 monthly partitioning** — `AddAuditLogRetentionAndIndexes` already added
+  tenant/action/resource/user composite indexes. BRIN + partitioning are pure-DB infra, DEFERRED.
+
+### Tests (14, all green; full suite 2495 pass, 0 regressions)
+`AuditCaptureInterceptorTests` (insert→after-only, update→only-changed-props, soft-delete→Delete, non-auditable
+NOT captured, no recursion, tenant+actor+IP+UA+trace enrichment) + `AuditAnonymizationServiceTests` (redact in
+place / preserve count, other users untouched, idempotent, empty-user no-op). **Gotcha:** these tests wire ONLY
+the capture interceptor (not TenantInterceptor), so seeded entities must carry `TenantId` explicitly or the
+Department/LeaveRequest `!IsDeleted && TenantId==` query filter hides them on re-read. Existing unit tests use
+`TestDbContextFactory` which wires NO interceptors, so marking entities can't break their assertions.
+
+### Deferred (not built here)
+- PostgreSQL RLS + DB-role append-only UPDATE/DELETE revocation (FR-6/AC-5/NFR-2) — platform infra, consistent
+  with US-PLT-002 RLS being inert. Append-only is code convention today.
+- Monthly partitioning (NFR-6) + BRIN index (NFR-3) — DB infra.
+- FR-9 streaming export to ELK/Splunk; NFR-5 async/outbox high-throughput capture (writes are synchronous).
+- FR-4 PII-read auditing; FR-3 login_success/logout/password_change named events.
