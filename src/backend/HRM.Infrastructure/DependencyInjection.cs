@@ -492,6 +492,11 @@ public static class DependencyInjection
         services.AddScoped<ITenantDataDeletionService, TenantDataDeletionService>();
         services.AddScoped<ITenantLifecycleNotificationService, LogOnlyTenantLifecycleNotificationService>();
 
+        // US-NTF-001: in-app notifications — read + mark-read (panel list, unread-count badge, mark-(all)-read).
+        // Runs in the resolved-tenant request scope; scoped to the calling user. The PERSIST + real-time SignalR
+        // PUSH dispatcher (INotificationService) lives in HRM.Api alongside the hub (it needs IHubContext).
+        services.AddScoped<INotificationReadService, NotificationReadService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

@@ -551,6 +551,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
         ],
       },
+      // ─── Notifications (US-NTF-001) — all authenticated users ──
+      // The bell's "View All" link lands here. No extra roleGuard: notifications
+      // are personal to the signed-in user (the backend scopes to identity +
+      // tenant); the parent authGuard is sufficient.
+      {
+        path: 'notifications',
+        loadChildren: () =>
+          import('./features/notifications/notifications.routes').then(
+            (m) => m.NOTIFICATIONS_ROUTES
+          ),
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },
