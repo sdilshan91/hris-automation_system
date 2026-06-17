@@ -14,10 +14,13 @@ import { HttpResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 
 import { PayrollReportService } from '../../services/payroll-report.service';
+import { AuthService } from '../../../../core/auth/auth.service';
 import { DepartmentService } from '../../../core-hr/departments/services/department.service';
 import { IDepartment } from '../../../core-hr/departments/models/department.models';
 import {
   IBankAdvicePreview,
+  IPayrollRunSummary,
+  IPayrollSummaryMetric,
   IReportFilters,
   IReportResult,
   IReportTypeMeta,
@@ -28,7 +31,13 @@ import {
   periodLabel,
   reportHasChart,
   reportTypeName,
+  varianceColorClass,
+  varianceDirection,
+  variancePercent,
 } from '../../models/payroll-report.models';
+
+/** The permission that gates the bank-advice "Reveal" toggle (US-RPT-003 FR-6 / NFR-3). */
+const VIEW_SENSITIVE_PERMISSION = 'Payroll.ViewSensitive';
 
 /** Export formats offered in the toolbar dropdown (FR-2). */
 const EXPORT_FORMATS: { format: ReportExportFormat; label: string }[] = [
@@ -122,6 +131,12 @@ interface IChartBar {
                   }
                 </select>
               </label>
+              <label class="block flex-1">
+                <span class="field-label">Payroll run (optional)</span>
+                <input type="text" class="field" [ngModel]="payrollRunId() ?? ''"
+                  (ngModelChange)="setPayrollRun($event)" placeholder="Latest finalized run"
+                  data-test="run-input" />
+              </label>
               <button type="button" class="btn-primary" (click)="generate()"
                 [disabled]="isLoading()" data-test="generate-btn"
                 [style.background-color]="'var(--brand-primary)'">
@@ -165,22 +180,39 @@ interface IChartBar {
             </div>
           } @else if (isBankAdvice()) {
             <!-- Bank advice preview (AC-2 / BR-2) -->
-            @if (bankAdvice(); as ba) {
+            @if (bankAdviceView(); as ba) {
               <div class="card-notion" data-test="bank-advice">
-                <div class="flex items-center justify-between mb-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <p class="text-sm text-neutral-500">
                     {{ ba.employeeCount }} employees · total
                     <span class="font-medium text-neutral-700 font-mono">{{ ba.totalNetAmount | number:'1.2-2' }}</span>
                   </p>
-                  <button type="button" class="btn-primary text-sm" (click)="downloadBankAdvice()"
-                    [disabled]="isExporting()" data-test="download-full-btn"
-                    [style.background-color]="'var(--brand-primary)'">
-                    {{ isExporting() ? 'Preparing…' : 'Download Full File' }}
-                  </button>
+                  <div class="flex items-center gap-2">
+                    <!-- US-RPT-003 FR-6: reveal toggle — only rendered with Payroll.ViewSensitive. -->
+                    @if (canRevealSensitive()) {
+                      <button type="button" class="btn-secondary text-sm inline-flex items-center gap-1.5"
+                        (click)="toggleReveal()" [disabled]="isRevealing()"
+                        [attr.aria-pressed]="isRevealed()" data-test="reveal-btn">
+                        <span aria-hidden="true">{{ isRevealed() ? '🙈' : '👁' }}</span>
+                        {{ isRevealing() ? 'Revealing…' : (isRevealed() ? 'Hide accounts' : 'Reveal accounts') }}
+                      </button>
+                    }
+                    <button type="button" class="btn-primary text-sm" (click)="downloadBankAdvice()"
+                      [disabled]="isExporting()" data-test="download-full-btn"
+                      [style.background-color]="'var(--brand-primary)'">
+                      {{ isExporting() ? 'Preparing…' : 'Download Full File' }}
+                    </button>
+                  </div>
                 </div>
-                <p class="text-xs text-amber-600 mb-3" data-test="mask-note">
-                  Account numbers are masked in this preview. The downloaded file contains full numbers.
-                </p>
+                @if (isRevealed()) {
+                  <p class="text-xs text-emerald-700 mb-3" data-test="reveal-note">
+                    Full account numbers are shown. This access has been audited.
+                  </p>
+                } @else {
+                  <p class="text-xs text-amber-600 mb-3" data-test="mask-note">
+                    Account numbers are masked in this preview. The downloaded file contains full numbers.
+                  </p>
+                }
                 @if (ba.lines.length === 0) {
                   <p class="empty-note" data-test="bank-empty">No payable employees for this period.</p>
                 } @else {
@@ -236,6 +268,73 @@ interface IChartBar {
               </div>
             }
           } @else if (report(); as r) {
+            <!-- US-RPT-003 AC-1/FR-3: KPI summary cards + MoM dual bar (Run Summary) -->
+            @if (r.summary; as s) {
+              <!-- KPI cards. On < 768px they scroll horizontally (NFR-4). -->
+              <div class="kpi-scroll mb-5" data-test="kpi-cards"
+                role="group" aria-label="Payroll summary key metrics">
+                @for (m of s.metrics; track m.key) {
+                  <div class="kpi-card" [attr.data-test]="'kpi-' + m.key">
+                    <p class="kpi-label">{{ m.label }}</p>
+                    <p class="kpi-value font-mono tabular-nums" [attr.data-test]="'kpi-value-' + m.key">
+                      {{ formatMetric(s, m) }}
+                    </p>
+                    @if (varDir(m) !== 'none') {
+                      <p class="kpi-delta" [class]="varColor(m)" [attr.data-test]="'kpi-delta-' + m.key">
+                        <span aria-hidden="true">{{ varArrow(m) }}</span>
+                        <span>{{ deltaText(m) }}</span>
+                        <span class="sr-only">{{ deltaAria(m) }}</span>
+                      </p>
+                    } @else {
+                      <p class="kpi-delta text-neutral-400" [attr.data-test]="'kpi-delta-' + m.key">
+                        No prior period
+                      </p>
+                    }
+                  </div>
+                }
+              </div>
+
+              <!-- Month-over-month dual bar chart (UI §8): current vs previous side by side. -->
+              <div class="card-notion mb-5" data-test="mom-chart">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="card-title !mb-0">Month-over-month comparison</h3>
+                  <div class="flex items-center gap-4 text-xs text-neutral-500">
+                    <span class="legend-swatch" [style.background-color]="'var(--brand-primary)'"></span>
+                    <span>{{ s.currentLabel }}</span>
+                    @if (s.previousLabel) {
+                      <span class="legend-swatch bg-neutral-300"></span>
+                      <span>{{ s.previousLabel }}</span>
+                    }
+                  </div>
+                </div>
+                <p class="sr-only" data-test="mom-alt">{{ momAltText(s) }}</p>
+                <ul class="space-y-4">
+                  @for (m of momBars(); track m.key) {
+                    <li>
+                      <div class="flex items-center justify-between text-xs mb-1.5">
+                        <span class="text-neutral-600">{{ m.label }}</span>
+                      </div>
+                      <div class="space-y-1.5">
+                        <div class="flex items-center gap-2">
+                          <div class="h-3 rounded-full transition-all duration-500"
+                            [style.width.%]="momWidth(m.current)"
+                            [style.background-color]="'var(--brand-primary)'"></div>
+                          <span class="text-xs text-neutral-500 font-mono tabular-nums">{{ m.current | number:'1.0-0' }}</span>
+                        </div>
+                        @if (m.previous !== null) {
+                          <div class="flex items-center gap-2">
+                            <div class="h-3 rounded-full bg-neutral-300 transition-all duration-500"
+                              [style.width.%]="momWidth(m.previous)"></div>
+                            <span class="text-xs text-neutral-400 font-mono tabular-nums">{{ m.previous | number:'1.0-0' }}</span>
+                          </div>
+                        }
+                      </div>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+
             <!-- Generic report: optional derived chart + table -->
             @if (sortedBars().length > 0) {
               <div class="card-notion mb-5" data-test="report-chart">
@@ -359,11 +458,26 @@ interface IChartBar {
 
     .skeleton-line { @apply rounded bg-neutral-200; animation: shimmer 1.5s ease-in-out infinite; }
     @keyframes shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* KPI cards (US-RPT-003 §8). < 768px: horizontal scroll (NFR-4). */
+    .kpi-scroll {
+      @apply flex gap-4 overflow-x-auto pb-1 md:grid md:grid-cols-2 md:overflow-visible
+        lg:grid-cols-4;
+    }
+    .kpi-card {
+      @apply min-w-[12rem] flex-shrink-0 rounded-xl bg-white border border-neutral-100
+        shadow-sm p-4 md:min-w-0;
+    }
+    .kpi-label { @apply text-xs font-medium text-neutral-400 uppercase tracking-wider; }
+    .kpi-value { @apply text-xl font-semibold text-neutral-900 mt-1.5; }
+    .kpi-delta { @apply inline-flex items-center gap-1 text-xs font-medium mt-1.5; }
+    .legend-swatch { @apply inline-block h-2.5 w-2.5 rounded-full; }
   `],
 })
 export class PayrollReportsComponent implements OnInit {
   private readonly reportService = inject(PayrollReportService);
   private readonly departmentService = inject(DepartmentService);
+  private readonly authService = inject(AuthService);
   private readonly toastr = inject(ToastrService);
 
   readonly exportFormats = EXPORT_FORMATS;
@@ -373,18 +487,42 @@ export class PayrollReportsComponent implements OnInit {
   readonly activeType = signal<PayrollReportType>('PayrollSummary');
   readonly period = signal(defaultReportPeriod());
   readonly departmentId = signal<string | null>(null);
+  readonly payrollRunId = signal<string | null>(null);
   readonly departments = signal<IDepartment[]>([]);
 
   readonly report = signal<IReportResult | null>(null);
   readonly bankAdvice = signal<IBankAdvicePreview | null>(null);
+  /** Un-masked bank-advice preview, populated only after a permitted Reveal (FR-6). */
+  readonly bankAdviceFull = signal<IBankAdvicePreview | null>(null);
   readonly isLoading = signal(false);
   readonly isExporting = signal(false);
+  readonly isRevealing = signal(false);
   readonly exportMenuOpen = signal(false);
 
   readonly isBankAdvice = computed(() => this.activeType() === 'BankAdvice');
   readonly activeName = computed(() => reportTypeName(this.activeType()));
   readonly periodText = computed(() => periodLabel(this.period()));
   readonly hasReport = computed(() => this.report() !== null);
+
+  /**
+   * US-RPT-003 FR-6 / NFR-3: whether the current user may reveal full account numbers.
+   * Reads the permission signal so the toggle appears/disappears reactively; the
+   * backend independently enforces the same check + audits the access.
+   */
+  readonly canRevealSensitive = computed(() =>
+    this.authService.permissions().includes(VIEW_SENSITIVE_PERMISSION),
+  );
+
+  /** Whether the un-masked preview is currently shown. */
+  readonly isRevealed = computed(() => this.bankAdviceFull() !== null);
+
+  /**
+   * The bank-advice preview to render: the un-masked copy when revealed, else the
+   * masked preview. Re-renders reactively on toggle.
+   */
+  readonly bankAdviceView = computed<IBankAdvicePreview | null>(
+    () => this.bankAdviceFull() ?? this.bankAdvice(),
+  );
 
   /**
    * Department-wise bars DERIVED from the report rows (the BE result is a generic
@@ -415,6 +553,24 @@ export class PayrollReportsComponent implements OnInit {
     this.sortedBars().reduce((m, b) => Math.max(m, b.value), 0),
   );
 
+  /**
+   * The metrics for the month-over-month dual bar chart (AC-1, §8). For headcount
+   * (`employeeCount`) the raw value is fine, but cost metrics dominate the scale; we
+   * render every metric's current + previous as paired bars sharing one scale below.
+   */
+  readonly momBars = computed<IPayrollSummaryMetric[]>(
+    () => this.report()?.summary?.metrics ?? [],
+  );
+
+  /** Shared max across all current + previous values for the MoM bar scale. */
+  private readonly maxMom = computed(() => {
+    let max = 0;
+    for (const m of this.momBars()) {
+      max = Math.max(max, m.current, m.previous ?? 0);
+    }
+    return max;
+  });
+
   ngOnInit(): void {
     this.reportService.listReportTypes().subscribe({
       next: (list) => {
@@ -443,6 +599,7 @@ export class PayrollReportsComponent implements OnInit {
     // Selecting a new report clears the stale preview; the user re-generates.
     this.report.set(null);
     this.bankAdvice.set(null);
+    this.bankAdviceFull.set(null);
   }
 
   setPeriod(value: string): void {
@@ -453,8 +610,17 @@ export class PayrollReportsComponent implements OnInit {
     this.departmentId.set(value);
   }
 
+  setPayrollRun(value: string): void {
+    const trimmed = value?.trim() ?? '';
+    this.payrollRunId.set(trimmed === '' ? null : trimmed);
+  }
+
   private currentFilters(): IReportFilters {
-    return { period: this.period(), departmentId: this.departmentId() };
+    return {
+      period: this.period(),
+      departmentId: this.departmentId(),
+      payrollRunId: this.payrollRunId(),
+    };
   }
 
   // ─── Generate ───────────────────────────────────────────────
@@ -467,6 +633,8 @@ export class PayrollReportsComponent implements OnInit {
     this.isLoading.set(true);
 
     if (this.isBankAdvice()) {
+      // Re-generating always returns to the masked view (FR-6).
+      this.bankAdviceFull.set(null);
       this.reportService.getBankAdvicePreview(this.currentFilters()).subscribe({
         next: (preview) => {
           this.bankAdvice.set(preview);
@@ -532,6 +700,104 @@ export class PayrollReportsComponent implements OnInit {
         this.toastr.error('Download failed.');
       },
     });
+  }
+
+  // ─── Bank advice reveal (FR-6 / NFR-3) ──────────────────────
+  /**
+   * Toggle the masked / un-masked account view. Hiding is local (just drops the full
+   * copy); revealing calls the audited backend path — guarded by the permission check
+   * so an un-permitted user never reaches it (the button isn't even rendered for them).
+   */
+  toggleReveal(): void {
+    if (this.isRevealed()) {
+      this.bankAdviceFull.set(null);
+      return;
+    }
+    if (!this.canRevealSensitive() || this.isRevealing()) {
+      return;
+    }
+    this.isRevealing.set(true);
+    this.reportService.getBankAdviceFull(this.currentFilters()).subscribe({
+      next: (full) => {
+        this.bankAdviceFull.set(full);
+        this.isRevealing.set(false);
+      },
+      error: () => {
+        this.isRevealing.set(false);
+        this.toastr.error('Failed to reveal full account numbers.');
+      },
+    });
+  }
+
+  // ─── KPI / MoM helpers (AC-1, FR-3) ─────────────────────────
+  varDir(metric: IPayrollSummaryMetric): string {
+    return varianceDirection(metric);
+  }
+
+  varColor(metric: IPayrollSummaryMetric): string {
+    return varianceColorClass(metric);
+  }
+
+  varArrow(metric: IPayrollSummaryMetric): string {
+    const dir = varianceDirection(metric);
+    if (dir === 'up') {
+      return '▲';
+    }
+    if (dir === 'down') {
+      return '▼';
+    }
+    return '—';
+  }
+
+  /** The KPI card value: a currency-prefixed money figure for costs, a plain count otherwise. */
+  formatMetric(summary: IPayrollRunSummary, metric: IPayrollSummaryMetric): string {
+    if (!metric.isCost) {
+      return `${Math.round(metric.current)}`;
+    }
+    const figure = metric.current.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return summary.currency ? `${summary.currency} ${figure}` : figure;
+  }
+
+  /** The signed delta text shown under a KPI value (absolute + percent when available). */
+  deltaText(metric: IPayrollSummaryMetric): string {
+    if (metric.variance === null) {
+      return '';
+    }
+    const sign = metric.variance > 0 ? '+' : metric.variance < 0 ? '−' : '';
+    const abs = Math.abs(metric.variance);
+    const amount = metric.isCost
+      ? abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : `${Math.round(abs)}`;
+    const pct = variancePercent(metric);
+    return pct === null ? `${sign}${amount}` : `${sign}${amount} (${sign}${Math.abs(pct)}%)`;
+  }
+
+  /** Screen-reader text describing the variance direction vs the previous period. */
+  deltaAria(metric: IPayrollSummaryMetric): string {
+    const dir = varianceDirection(metric);
+    const word = dir === 'up' ? 'increased' : dir === 'down' ? 'decreased' : 'unchanged';
+    return `${metric.label} ${word} versus the previous period`;
+  }
+
+  /** Bar width (%) for a MoM value relative to the shared scale. Min 2% for visibility. */
+  momWidth(value: number): number {
+    const max = this.maxMom();
+    if (max <= 0) {
+      return 0;
+    }
+    return Math.max(2, (Math.max(0, value) / max) * 100);
+  }
+
+  /** A11y alternative (NFR-5) describing the MoM comparison chart as text. */
+  momAltText(summary: IPayrollRunSummary): string {
+    const prev = summary.previousLabel ?? 'no prior period';
+    const parts = summary.metrics.map(
+      (m) => `${m.label}: ${Math.round(m.current)} current vs ${m.previous === null ? 'n/a' : Math.round(m.previous)} previous`,
+    );
+    return `Month-over-month comparison (${summary.currentLabel} vs ${prev}). ${parts.join('; ')}.`;
   }
 
   // ─── View helpers ───────────────────────────────────────────

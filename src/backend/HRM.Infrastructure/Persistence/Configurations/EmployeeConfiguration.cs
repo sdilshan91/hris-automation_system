@@ -79,6 +79,16 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.Location)
             .HasMaxLength(200);
 
+        // US-RPT-003 AC-4 / FR-6: bank-detail fields for the Bank Advice report (nullable until captured).
+        builder.Property(e => e.BankName)
+            .HasMaxLength(150);
+
+        builder.Property(e => e.BankBranchCode)
+            .HasMaxLength(50);
+
+        builder.Property(e => e.BankAccountNumber)
+            .HasMaxLength(50);
+
         builder.Property(e => e.IsActive)
             .HasDefaultValue(true)
             .IsRequired();

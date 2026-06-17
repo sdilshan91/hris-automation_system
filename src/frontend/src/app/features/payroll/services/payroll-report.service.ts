@@ -138,6 +138,24 @@ export class PayrollReportService {
   }
 
   /**
+   * US-RPT-003 (AC-4 / FR-6): the bank-advice preview with FULL (un-masked) account
+   * numbers for the on-screen "Reveal" toggle. This is the audited sensitive path
+   * (NFR-3) — the backend records a `PayrollReport.ViewSensitive` audit entry and only
+   * authorises callers with the `Payroll.ViewSensitive` permission, so the UI gates
+   * the toggle behind the same permission before ever calling it.
+   *
+   * Coded against `GET /payroll/reports/bank-advice/full` returning the SAME
+   * {@link IBankAdvicePreview} shape as the masked preview but with `accountNumber`
+   * un-masked.
+   */
+  getBankAdviceFull(filters: IReportFilters): Observable<IBankAdvicePreview> {
+    return this.http.get<IBankAdvicePreview>(`${this.reportsUrl}/bank-advice/full`, {
+      params: this.filterParams(filters),
+      withCredentials: true,
+    });
+  }
+
+  /**
    * Build the shared query params: split `period` (YYYY-MM) into `payMonth` +
    * `payYear`, and add `departmentId` when a department is selected. An unparseable
    * period omits both period params (the BE then defaults to the latest finalized run).
@@ -152,6 +170,10 @@ export class PayrollReportService {
     }
     if (filters.departmentId) {
       params = params.set('departmentId', filters.departmentId);
+    }
+    // US-RPT-003 FR-4: select a specific finalized run (e.g. a supplementary run).
+    if (filters.payrollRunId) {
+      params = params.set('payrollRunId', filters.payrollRunId);
     }
     return params;
   }

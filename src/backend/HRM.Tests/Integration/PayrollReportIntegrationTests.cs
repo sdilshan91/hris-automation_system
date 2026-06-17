@@ -35,6 +35,8 @@ public sealed class PayrollReportIntegrationTests
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
 
+    private readonly Guid _actor = Guid.NewGuid();
+
     private sealed class MutableTenantContext : ITenantContext
     {
         public Guid TenantId { get; set; }
@@ -52,6 +54,21 @@ public sealed class PayrollReportIntegrationTests
         public void SetSystemContext() { }
     }
 
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public Guid UserId { get; init; }
+        public string Email => "hr@t.com";
+        public Guid TenantId { get; init; }
+        public Guid UserTenantId => TenantId;
+        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Permissions => [];
+        public bool IsAuthenticated => true;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
+    }
+
     private AppDbContext Db(Guid tenantId)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
@@ -66,7 +83,10 @@ public sealed class PayrollReportIntegrationTests
         var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(_dbName).Options;
         var db = new AppDbContext(options, ctx);
-        return (db, ctx, new PayrollReportService(db, ctx, NullLogger<PayrollReportService>.Instance));
+        var audit = new PayrollAuditLogger(
+            db, ctx, new FakeCurrentUser { TenantId = tenantId, UserId = _actor },
+            NullLogger<PayrollAuditLogger>.Instance);
+        return (db, ctx, new PayrollReportService(db, ctx, audit, NullLogger<PayrollReportService>.Instance));
     }
 
     // ── Seeding ─────────────────────────────────────────────────────────────
@@ -77,7 +97,8 @@ public sealed class PayrollReportIntegrationTests
     /// </summary>
     private async Task<(Guid EmployeeId, decimal Net)> SeedFinalizedSlip(
         Guid tenantId, Guid runId, string no, decimal gross, decimal pf,
-        int month = 5, int year = 2026, Guid? departmentId = null, string deptName = "Engineering")
+        int month = 5, int year = 2026, Guid? departmentId = null, string deptName = "Engineering",
+        string? bankAccountNumber = null, string? bankName = null, string? bankBranchCode = null)
     {
         using var db = Db(tenantId);
         var deptId = departmentId ?? BaseEntity.NewUuidV7();
@@ -91,6 +112,7 @@ public sealed class PayrollReportIntegrationTests
             Email = $"{no}@t.com", DateOfJoining = new DateTime(2020, 1, 1),
             EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
             DepartmentId = deptId, JobTitleId = BaseEntity.NewUuidV7(),
+            BankAccountNumber = bankAccountNumber, BankName = bankName, BankBranchCode = bankBranchCode,
         });
 
         decimal net = gross - pf;
@@ -190,18 +212,21 @@ public sealed class PayrollReportIntegrationTests
     [Fact]
     public async Task BankAdvice_AccountMaskedInPreview_ButFullInExportFile()
     {
-        // The Employee entity has no bank columns yet (documented gap), so the account is empty in both
-        // paths. We assert the path WIRING: the preview routes through the masked path (note present) and
-        // the export routes through the full path. Both produce a file/preview without leaking.
+        // BR-2: the masked preview shows only the last 4 digits; the exported file carries the FULL number.
         var runId = BaseEntity.NewUuidV7();
         await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
-        await SeedFinalizedSlip(_tenantA, runId, "A1", 50_000m, 5_000m);
+        await SeedFinalizedSlip(_tenantA, runId, "A1", 50_000m, 5_000m,
+            bankAccountNumber: "1234567890", bankName: "Acme Bank", bankBranchCode: "BR001");
 
         var (db, _, svc) = Scope(_tenantA);
         using (db)
         {
             var preview = await svc.GetBankAdvicePreviewAsync(new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
-            preview.Value!.Note.Should().Contain("not yet captured");
+            preview.IsSuccess.Should().BeTrue();
+            preview.Value!.Masked.Should().BeTrue();
+            var line = preview.Value.Lines.Single(l => l.EmployeeNo == "A1");
+            line.AccountNumber.Should().Be("******7890"); // masked: last-4 only (BR-2)
+            line.AccountNumber.Should().NotBe("1234567890"); // full number NOT leaked in the preview
 
             var export = await svc.ExportReportAsync(
                 PayrollReportType.BankAdvice, PayrollExportFormat.Csv,
@@ -210,11 +235,138 @@ public sealed class PayrollReportIntegrationTests
             var csv = Encoding.UTF8.GetString(export.Value!.FileContent);
             csv.Should().Contain("Account Number"); // header
             csv.Should().Contain("A1");
+            csv.Should().Contain("1234567890"); // FULL account number in the exported file (BR-2)
         }
 
-        // The mask helper itself is the load-bearing BR-2 logic (unit-tested separately): a populated
-        // account masks to last-4 in preview but stays full in the file.
+        // The mask helper itself is the load-bearing BR-2 logic.
         PayrollReportService.MaskAccount("1234567890").Should().Be("******7890");
+    }
+
+    // ── US-RPT-003 AC-4/FR-6/NFR-3: bank-advice FULL (reveal) requires Payroll.ViewSensitive,
+    //    returns UNMASKED accounts, and writes a "PayrollReport.ViewSensitive" audit row ──
+
+    [Fact]
+    public async Task BankAdvice_Full_ReturnsUnmaskedAccounts_AndWritesAuditRow()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        await SeedFinalizedSlip(_tenantA, runId, "A1", 50_000m, 5_000m,
+            bankAccountNumber: "1234567890", bankName: "Acme Bank", bankBranchCode: "BR001");
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var reveal = await svc.RevealBankAdviceAsync(new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
+
+            reveal.IsSuccess.Should().BeTrue();
+            reveal.Value!.Masked.Should().BeFalse();
+            var line = reveal.Value.Lines.Single(l => l.EmployeeNo == "A1");
+            line.AccountNumber.Should().Be("1234567890"); // FULL (unmasked) account number on the reveal path
+
+            // NFR-3: every reveal writes an audit row with action EXACTLY "PayrollReport.ViewSensitive".
+            var audit = db.AuditLogs.IgnoreQueryFilters()
+                .Where(a => a.TenantId == _tenantA && a.Action == "PayrollReport.ViewSensitive")
+                .ToList();
+            audit.Should().ContainSingle();
+            audit[0].ResourceType.Should().Be("PayrollReport");
+        }
+    }
+
+    // ── US-RPT-003 AC-1/FR-3: the PayrollSummary report carries an embedded `summary` block with the
+    //    4 KPI metrics + month-over-month variance (two consecutive months → correct variance) ──
+
+    [Fact]
+    public async Task PayrollSummary_CarriesSummaryBlock_WithFourMetrics_AndMoMVariance()
+    {
+        // April (previous): one slip, gross 50000, pf 5000 => net 45000.
+        // May (current): two slips, gross 50000+30000=80000, pf 5000+3000=8000 => net 72000, 2 employees.
+        var aprRun = BaseEntity.NewUuidV7();
+        var mayRun = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, aprRun, PayrollRunStatus.Finalized, month: 4, year: 2026);
+        await SeedRun(_tenantA, mayRun, PayrollRunStatus.Finalized, month: 5, year: 2026);
+        await SeedFinalizedSlip(_tenantA, aprRun, "P1", 50_000m, 5_000m, month: 4, year: 2026);
+        await SeedFinalizedSlip(_tenantA, mayRun, "C1", 50_000m, 5_000m, month: 5, year: 2026);
+        await SeedFinalizedSlip(_tenantA, mayRun, "C2", 30_000m, 3_000m, month: 5, year: 2026);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(
+                PayrollReportType.PayrollSummary, new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
+
+            result.IsSuccess.Should().BeTrue();
+            var summary = result.Value!.Summary;
+            summary.Should().NotBeNull();
+            summary!.CurrentLabel.Should().Be("May 2026");
+            summary.PreviousLabel.Should().Be("April 2026");
+            summary.Metrics.Should().HaveCount(4);
+            summary.Metrics.Select(m => m.Key).Should().Equal("gross", "deductions", "net", "employeeCount");
+
+            // Totals == sum of the period's payslips (current = May).
+            var gross = summary.Metrics.Single(m => m.Key == "gross");
+            gross.IsCost.Should().BeTrue();
+            gross.Current.Should().Be(80_000m);
+            gross.Previous.Should().Be(50_000m);
+            gross.Variance.Should().Be(30_000m); // 80000 - 50000
+
+            var deductions = summary.Metrics.Single(m => m.Key == "deductions");
+            deductions.Current.Should().Be(8_000m);   // 5000 + 3000
+            deductions.Previous.Should().Be(5_000m);
+            deductions.Variance.Should().Be(3_000m);
+
+            var net = summary.Metrics.Single(m => m.Key == "net");
+            net.Current.Should().Be(72_000m);          // 45000 + 27000
+            net.Previous.Should().Be(45_000m);
+            net.Variance.Should().Be(27_000m);
+
+            var count = summary.Metrics.Single(m => m.Key == "employeeCount");
+            count.IsCost.Should().BeFalse();
+            count.Current.Should().Be(2m);
+            count.Previous.Should().Be(1m);
+            count.Variance.Should().Be(1m);
+        }
+    }
+
+    // ── US-RPT-003 AC-1: no prior finalized period → previousLabel + previous/variance are null ──
+
+    [Fact]
+    public async Task PayrollSummary_SummaryBlock_NullPrevious_WhenNoPriorPeriod()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        await SeedFinalizedSlip(_tenantA, runId, "A1", 50_000m, 5_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(
+                PayrollReportType.PayrollSummary, new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
+
+            result.IsSuccess.Should().BeTrue();
+            var summary = result.Value!.Summary;
+            summary.Should().NotBeNull();
+            summary!.PreviousLabel.Should().BeNull();
+            summary.Metrics.Should().OnlyContain(m => m.Previous == null && m.Variance == null);
+        }
+    }
+
+    // ── US-RPT-003: the report catalog still returns the 8 original report types (no run-summary type) ──
+
+    [Fact]
+    public void ListReportTypes_ReturnsEightTypes_WithoutRunSummary()
+    {
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var types = svc.ListReportTypes();
+            types.Should().HaveCount(8);
+            types.Select(t => t.Id).Should().BeEquivalentTo(
+            [
+                "PayrollSummary", "EmployeeRegister", "DepartmentSummary", "StatutoryDeduction",
+                "BankAdvice", "Ctc", "Variance", "YearEndTaxStatement",
+            ]);
+            types.Select(t => t.Id).Should().NotContain("PayrollRunSummary");
+        }
     }
 
     // ── FR-1g/BR-4: variance flags a >10% change ────────────────────────────

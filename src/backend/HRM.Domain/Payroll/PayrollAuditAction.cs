@@ -40,6 +40,9 @@ public static class PayrollAuditAction
     public const string PayslipPdfGenerated = "PayslipPDF.Generated";
     public const string PayslipEmailSent = "PayslipEmail.Sent";
 
+    // Reports (US-RPT-003 NFR-3): sensitive-PII reveal on a payroll report (e.g. unmasked bank account).
+    public const string PayrollReportViewSensitive = "PayrollReport.ViewSensitive";
+
     /// <summary>The set of resource-type strings used by payroll audit entries (§7 resource_type).</summary>
     public static class ResourceType
     {
@@ -50,6 +53,7 @@ public static class PayrollAuditAction
         public const string PayrollRun = "PayrollRun";
         public const string PayrollAdjustment = "PayrollAdjustment";
         public const string PayrollSlip = "PayrollSlip";
+        public const string PayrollReport = "PayrollReport";
     }
 
     /// <summary>

@@ -58,6 +58,11 @@ export interface IReportFilters {
   period: string;
   /** Department id, or null for "all departments". */
   departmentId: string | null;
+  /**
+   * US-RPT-003 FR-4: a specific payroll run id, or null to use the latest finalized
+   * run for the period (supports supplementary / multiple runs per period).
+   */
+  payrollRunId?: string | null;
 }
 
 // ─── Generic report payload (the `:reportType` GET) ───────────────
@@ -73,6 +78,11 @@ export interface IReportRow {
  * column headers + pre-formatted string rows so the FE renders a generic table
  * without hardcoding each report's shape. `totalRow` is an optional footer row and
  * `note` carries a contextual message (e.g. "showing most-recent finalized run").
+ *
+ * US-RPT-003 (AC-1, FR-3): the `summary` block is OPTIONAL and only populated for the
+ * Payroll Run Summary report. When present it drives the KPI cards + the month-over-
+ * month dual bar chart; when absent the report renders only the generic table (the
+ * US-PAY-009 behaviour is unchanged).
  */
 export interface IReportResult {
   reportType: PayrollReportType;
@@ -90,6 +100,49 @@ export interface IReportResult {
   totalCount: number;
   /** Optional contextual note shown under the table. */
   note?: string | null;
+  /** US-RPT-003 AC-1/FR-3: KPI + month-over-month summary (Payroll Run Summary only). */
+  summary?: IPayrollRunSummary | null;
+}
+
+// ─── Payroll Run Summary (US-RPT-003 AC-1 / FR-3) ─────────────────
+
+/**
+ * The KPI metric keys surfaced as summary cards (UI §8). `gross`, `deductions` and
+ * `net` are cost metrics (increase = red, decrease = green per FR-3); `employeeCount`
+ * is a headcount metric (variance shown but coloured neutrally).
+ */
+export type PayrollSummaryMetricKey = 'gross' | 'deductions' | 'net' | 'employeeCount';
+
+/**
+ * One KPI metric with its current value and the previous-period comparison (FR-3).
+ * `previous`/`variance` are null when there is no prior finalized run to compare
+ * against. `variance` is the signed delta (current − previous). `isCost` flips the
+ * colour semantics: for cost metrics an increase is bad (red).
+ */
+export interface IPayrollSummaryMetric {
+  key: PayrollSummaryMetricKey;
+  /** Display label, e.g. "Total Gross". */
+  label: string;
+  /** Current-period raw value. */
+  current: number;
+  /** Previous-period raw value, or null when no prior run exists. */
+  previous: number | null;
+  /** Signed delta (current − previous), or null when no prior run exists. */
+  variance: number | null;
+  /** True for monetary cost metrics (increase highlighted red, FR-3). */
+  isCost: boolean;
+}
+
+/**
+ * Payroll Run Summary metrics + month-over-month comparison (AC-1, FR-3). `currency`
+ * is the tenant's configured currency code (BR-2). `previousLabel`/`currentLabel` are
+ * the two period labels for the dual bar chart axis.
+ */
+export interface IPayrollRunSummary {
+  currency: string;
+  currentLabel: string;
+  previousLabel: string | null;
+  metrics: IPayrollSummaryMetric[];
 }
 
 // ─── Bank advice (BR-2 / AC-2) ────────────────────────────────────
@@ -349,4 +402,54 @@ export function seriesMax(series: IAnalyticsSeries[]): number {
 /** Round to 2 decimals (SVG coordinate noise reduction). */
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// ─── KPI variance semantics (US-RPT-003 FR-3) ─────────────────────
+
+/** Direction of a metric's month-over-month change. */
+export type VarianceDirection = 'up' | 'down' | 'flat' | 'none';
+
+/**
+ * The direction of a metric's variance: `none` when there is no prior period to
+ * compare, else `up` / `down` / `flat`. Pure + unit-tested.
+ */
+export function varianceDirection(metric: IPayrollSummaryMetric): VarianceDirection {
+  if (metric.variance === null || metric.previous === null) {
+    return 'none';
+  }
+  if (metric.variance > 0) {
+    return 'up';
+  }
+  if (metric.variance < 0) {
+    return 'down';
+  }
+  return 'flat';
+}
+
+/**
+ * The Tailwind text-colour token for a metric's variance (FR-3 highlighting). For
+ * cost metrics an increase is bad (red) and a decrease is good (green); headcount
+ * (`isCost === false`) is coloured neutrally either way. No prior period → neutral.
+ */
+export function varianceColorClass(metric: IPayrollSummaryMetric): string {
+  const dir = varianceDirection(metric);
+  if (dir === 'none' || dir === 'flat') {
+    return 'text-neutral-400';
+  }
+  if (!metric.isCost) {
+    return 'text-neutral-500';
+  }
+  // Cost metric: up = red (worse), down = green (better).
+  return dir === 'up' ? 'text-red-600' : 'text-emerald-600';
+}
+
+/**
+ * Percentage change of a metric vs the previous period, or null when there is no
+ * prior period (or the previous value is 0, where a percentage is undefined). Pure.
+ */
+export function variancePercent(metric: IPayrollSummaryMetric): number | null {
+  if (metric.variance === null || metric.previous === null || metric.previous === 0) {
+    return null;
+  }
+  return round2((metric.variance / Math.abs(metric.previous)) * 100);
 }

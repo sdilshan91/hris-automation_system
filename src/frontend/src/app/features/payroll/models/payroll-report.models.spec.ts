@@ -10,7 +10,11 @@ import {
   lineY,
   polylinePoints,
   seriesMax,
+  varianceDirection,
+  varianceColorClass,
+  variancePercent,
   IAnalyticsSeries,
+  IPayrollSummaryMetric,
 } from './payroll-report.models';
 
 /**
@@ -151,6 +155,49 @@ describe('payroll-report.models helpers', () => {
     it('returns 0 for empty input', () => {
       expect(seriesMax([])).toBe(0);
       expect(seriesMax([{ name: 'x', points: [] }])).toBe(0);
+    });
+  });
+
+  // US-RPT-003 FR-3: KPI variance semantics.
+  describe('variance helpers (FR-3)', () => {
+    const cost = (variance: number | null, previous: number | null): IPayrollSummaryMetric => ({
+      key: 'gross',
+      label: 'Total Gross',
+      current: 100,
+      previous,
+      variance,
+      isCost: true,
+    });
+
+    it('varianceDirection reports up/down/flat, and none with no prior period', () => {
+      expect(varianceDirection(cost(50, 50))).toBe('up');
+      expect(varianceDirection(cost(-50, 150))).toBe('down');
+      expect(varianceDirection(cost(0, 100))).toBe('flat');
+      expect(varianceDirection(cost(null, null))).toBe('none');
+    });
+
+    it('varianceColorClass: cost increase=red, cost decrease=green', () => {
+      expect(varianceColorClass(cost(50, 50))).toContain('red');
+      expect(varianceColorClass(cost(-50, 150))).toContain('emerald');
+    });
+
+    it('varianceColorClass: headcount change is neutral (not a cost metric)', () => {
+      const headcount: IPayrollSummaryMetric = {
+        key: 'employeeCount', label: 'Employees', current: 50, previous: 48, variance: 2, isCost: false,
+      };
+      expect(varianceColorClass(headcount)).toContain('neutral');
+    });
+
+    it('varianceColorClass: flat / no-prior is neutral', () => {
+      expect(varianceColorClass(cost(0, 100))).toContain('neutral');
+      expect(varianceColorClass(cost(null, null))).toContain('neutral');
+    });
+
+    it('variancePercent computes signed % vs the previous, null when undefined', () => {
+      expect(variancePercent(cost(50, 50))).toBe(100);
+      expect(variancePercent(cost(-25, 100))).toBe(-25);
+      expect(variancePercent(cost(50, 0))).toBeNull(); // div-by-zero
+      expect(variancePercent(cost(null, null))).toBeNull();
     });
   });
 });

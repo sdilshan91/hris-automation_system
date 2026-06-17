@@ -39,6 +39,15 @@ public interface IPayrollReportService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// US-RPT-003 AC-4/FR-6/NFR-3: the bank-advice with FULL (unmasked) account numbers. The caller MUST
+    /// already hold <c>Payroll.ViewSensitive</c> (enforced at the controller). This method WRITES an audit
+    /// record (action "PayrollReport.ViewSensitive") and persists it before returning the unmasked data.
+    /// </summary>
+    Task<Result<BankAdvicePreviewDto>> RevealBankAdviceAsync(
+        PayrollReportQueryParams queryParams,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Exports a report to CSV / Excel / PDF (FR-2, AC-4). For BankAdvice the exported file carries the
     /// FULL account number (BR-2). Returns the file bytes (synchronous; large-async is deferred).
     /// </summary>
