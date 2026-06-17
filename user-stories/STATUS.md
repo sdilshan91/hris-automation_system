@@ -136,7 +136,7 @@
 
 ## 9. Onboarding / Offboarding (6 stories)
 - [x] US-ONB-001 — Create onboarding checklist template *(PR #95)*
-- [~] US-ONB-002 — Assign onboarding checklist to new hire
+- [x] US-ONB-002 — Assign onboarding checklist to new hire *(PR #96)*
 - [ ] US-ONB-003 — New hire completes onboarding tasks
 - [ ] US-ONB-004 — Asset issuance tracking
 - [ ] US-ONB-005 — Offboarding/exit checklist and clearance
@@ -160,9 +160,9 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **88** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **US-ONB-001** (#95)
+- Done: **89** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **US-ONB-001..002** (#95–#96)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **15** — Onboarding (5), Notifications (5), Reports (5)
+- Pending: **14** — Onboarding (4), Notifications (5), Reports (5)
 - **Next module by priority: Onboarding / Offboarding (US-ONB-001..006)**
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
