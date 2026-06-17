@@ -328,7 +328,17 @@ public static class PermissionCatalog
     // ── Audit ────────────────────────────────────────────────────────
     public static class Audit
     {
+        /// <summary>
+        /// US-ADM-008 (BR-1/FR-7): VIEW the tenant audit log (list + detail). Held by Tenant Owner, Tenant
+        /// Admin, AND the read-only Auditor role.
+        /// </summary>
         public const string View = "Audit.View";
+
+        /// <summary>
+        /// US-ADM-008 (FR-7/BR-2): EXPORT the tenant audit log (CSV/JSON). Held by Tenant Owner and Tenant Admin
+        /// ONLY — the Auditor role is READ-ONLY and CANNOT export (FR-7), so it is deliberately NOT granted this.
+        /// </summary>
+        public const string Export = "Audit.Export";
     }
 
     // ── Impersonation (US-ADM-003) ───────────────────────────────────
@@ -440,7 +450,7 @@ public static class PermissionCatalog
         Monitoring.View,
 
         // Audit
-        Audit.View,
+        Audit.View, Audit.Export,
 
         // Impersonation
         Impersonation.Initiate,
@@ -537,7 +547,7 @@ public static class PermissionCatalog
             Roles.View, Roles.Manage, Roles.AssignUsers,
             Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
             Tenant.ViewWorkflows, Tenant.ManageWorkflows,
-            Audit.View,
+            Audit.View, Audit.Export,
             Notifications.ManageTemplates,
             Training.ViewAll, Training.Manage,
             Benefits.ViewAll, Benefits.Manage,

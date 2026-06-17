@@ -65,5 +65,15 @@ public sealed class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
         // filters on resource_type and orders by timestamp). NFR-3 BRIN-on-timestamp is a Postgres-specific
         // follow-up; a btree composite covers the common filter cheaply for now.
         builder.HasIndex(a => new { a.TenantId, a.ResourceType, a.CreatedAt });
+
+        // ── US-ADM-008 NFR-2: tenant-audit-log query indexes ──────────────────────────────────────────
+        // The list/export filter by tenant + (date | actor | action | resource), reverse-chronological. The
+        // existing (tenant_id, created_at) index above covers the default reverse-chronological page; these add
+        // the remaining filtered access paths the story calls out. (tenant_id, resource_type, resource_id)
+        // serves the "all events for one resource" drill-down (extends the PAY-012 resource_type index above
+        // with resource_id). Postgres applies DESC on created_at at scan time; the btree covers it either way.
+        builder.HasIndex(a => new { a.TenantId, a.UserId });
+        builder.HasIndex(a => new { a.TenantId, a.Action });
+        builder.HasIndex(a => new { a.TenantId, a.ResourceType, a.ResourceId });
     }
 }

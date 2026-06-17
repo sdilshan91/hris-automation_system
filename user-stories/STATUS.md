@@ -130,7 +130,7 @@
 - [x] US-ADM-005 — Manage users and role assignments *(PR #89)*
 - [x] US-ADM-006 — Configure company settings *(PR #90)*
 - [x] US-ADM-007 — Manage approval workflows *(PR #91)*
-- [ ] US-ADM-008 — View audit logs
+- [~] US-ADM-008 — View audit logs
 - [ ] US-ADM-009 — Manage subscription plans
 - [ ] US-ADM-010 — Tenant data export on demand
 

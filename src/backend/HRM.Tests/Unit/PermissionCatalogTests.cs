@@ -112,6 +112,26 @@ public sealed class PermissionCatalogTests
         PermissionCatalog.SystemRoles.All.Should().Contain("System Compliance");
     }
 
+    // ── US-ADM-008 (FR-7/BR-2): Auditor is READ-ONLY on the audit log — it can VIEW but NOT EXPORT ──
+
+    [Fact]
+    public void DefaultPermissionsFor_Auditor_HasAuditViewButNotExport()
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.Auditor);
+
+        perms.Should().Contain(PermissionCatalog.Audit.View);
+        perms.Should().NotContain(PermissionCatalog.Audit.Export);
+    }
+
+    [Fact]
+    public void DefaultPermissionsFor_TenantAdmin_HasBothAuditViewAndExport()
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.TenantAdmin);
+
+        perms.Should().Contain(PermissionCatalog.Audit.View);
+        perms.Should().Contain(PermissionCatalog.Audit.Export);
+    }
+
     [Fact]
     public void DefaultPermissionsFor_AllBuiltInRoles_ShouldContainOnlyValidPermissions()
     {

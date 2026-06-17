@@ -1,7 +1,7 @@
 ---
 module: Admin Console
-total_user_stories: 7
-total_test_cases: 147
+total_user_stories: 8
+total_test_cases: 172
 created: 2026-06-16
 updated: 2026-06-17
 status: in-progress
@@ -566,10 +566,99 @@ status: in-progress
 
 ---
 
+## US-ADM-008 — Tenant Admin Views Audit Logs
+
+> Eighth Admin Console story (fourth **Tenant Admin** persona, tenant-scoped — isolation runs in the resolved-tenant EF query-filter context). 25 test cases: 17 run-green functional/security/e2e/integration (TC-ADM-008-01..17) + 4 DEFERRED (TC-ADM-008-18..21) + 4 dedicated multi-tenant isolation (TC-ADM-ISO-021..024, continuing the running ISO counter; ISO-024 DEFERRED). All 5 ACs (AC-1..AC-5), all 6 BRs (BR-1..BR-6), and all 7 FRs (FR-1..FR-7) traced.
+>
+> IMPLEMENTATION FACTS (tested as built — a tenant-scoped READ feature over the EXISTING `audit_log` table; no new audit columns): LIST is paginated (default 50, max 200), reverse-chronological, filterable by date range / actor / action / resource-type / keyword with AND logic; DETAIL returns before/after JSON, IP, user agent, trace id (TC-ADM-008-01..09). Sensitive-field masking (FR-4) is a PURE `SensitiveFieldMasker` that redacts the values of `password_hash`/`mfa_secret`/`bank_account_number`/`national_id` (+ camelCase variants) to `***REDACTED***`, RECURSIVELY, applied to detail + export (TC-ADM-008-10); the visual DIFF (FR-3) is computed on the FRONTEND (TC-ADM-008-16, FE-verified). EXPORT (AC-4/BR-4) produces CSV/JSON respecting the current filters, masked, and writes a self-audit row Action="AuditLog.Export"; the SYNCHRONOUS small-export path is real (TC-ADM-008-11). The `Auditor` role is READ-ONLY and CANNOT export — export is gated to TenantAdmin/TenantOwner (FR-7, TC-ADM-008-12); read roles are TenantAdmin/TenantOwner/Auditor (BR-1, TC-ADM-008-13). Retention (FR-6/BR-5) is governed by `Tenant.AuditLogRetentionDays` (plan-governed, admin view-only — TC-ADM-008-15); `AuditLogPurgeJob` deletes rows older than the window, keeps recent (TC-ADM-008-14). Immutability (AC-5/NFR-3): no update/delete code path exists — append-only BY CODE CONVENTION today (TC-ADM-008-17). NFR-2 composite indexes added. Isolation: list/detail tenant-scoped (TC-ADM-ISO-021); cross-tenant audit_id injection -> 404 not 403 (TC-ADM-ISO-022); endpoints require tenant context + read role, export-audit row tenant-stamped (TC-ADM-ISO-023).
+>
+> DEFERRED (status: blocked; honest traceability, never fabricated): the DB-role append-only GRANT — no UPDATE/DELETE privilege on `audit_log` (AC-5/NFR-3 DB layer, TC-ADM-008-18) — deferred platform infra; today immutability is by code convention (TC-ADM-008-17). Async LARGE-export >10k via Hangfire job + emailed link (FR-5, TC-ADM-008-19) — no email/blob wired; the synchronous small-export is real (TC-ADM-008-11). BR-6 PII-READ events (TC-ADM-008-20) — no new PII-read instrumentation added; such rows surface only if a module already emits them. NFR-1 millions-of-records <2s perf (TC-ADM-008-21) — indexes added, needs a perf-representative env; correctness in -01..08. `system_audit_log` separation + PostgreSQL RLS (TC-ADM-ISO-024) — system/tenant audit separation is by context via the System Admin stories (US-ADM-002/003), and RLS is a deferred extension point (same family as US-ADM-001..007/Payroll/Leave).
+>
+> STORY MISMATCH worth flagging to the caller: (1) AC-5/NFR-3 specify a DB role with no UPDATE/DELETE grant on `audit_log` as the immutability mechanism; today immutability is by code convention (no edit/delete handler) — reword with the DB-grant as future hardening. (2) AC-4/FR-5 assume an email service + storage for the async >10k export; neither is wired — the synchronous small-export is the Phase-1 deliverable, async export follows US-NTF + object storage. (3) BR-6 assumes PII-read events are captured, but no read-side instrumentation was added — split PII-read capture into a follow-on (the audit list/detail/masking machinery will display them once emitted). (4) BR-3 names a `system_audit_log` table — system audit is the System Admin view (US-ADM-002/003), not part of this tenant console.
+
+## Coverage by Test Case (US-ADM-008)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-008-01 | List tenant-scoped, paginated (50), reverse-chron, all columns | E2E | Critical | AC-1, FR-1/2, BR-1/3 | Happy path / isolation | draft |
+| TC-ADM-008-02 | Pagination boundaries — default 50, max 200, oversize clamped | Functional | High | AC-1/2, FR-1 | Boundary / negative | draft |
+| TC-ADM-008-03 | Filter by date range (inclusive boundaries) | Functional | High | AC-2, FR-1 | Boundary / negative | draft |
+| TC-ADM-008-04 | Filter by actor | Functional | High | AC-2, FR-1 | Happy path / negative | draft |
+| TC-ADM-008-05 | Filter by action type | Functional | High | AC-2, FR-1 | Happy path / negative | draft |
+| TC-ADM-008-06 | Filter by resource type | Functional | High | AC-2, FR-1 | Happy path / negative | draft |
+| TC-ADM-008-07 | Keyword search over before/after JSON | Functional | High | AC-2, FR-1 | Happy path / negative | draft |
+| TC-ADM-008-08 | Combined filters AND logic; pagination + sort preserved | Functional | Critical | AC-2, FR-1 | Boundary / negative | draft |
+| TC-ADM-008-09 | Detail — before/after JSON, IP, user agent, trace id | Functional | Critical | AC-3, FR-2/3 | Happy path | draft |
+| TC-ADM-008-10 | Sensitive masking — bank/pwd/mfa/national-id recursive + camelCase | Security | Critical | AC-3, FR-4 | Negative / security | draft |
+| TC-ADM-008-11 | Export respects filters + masked + self-audited "AuditLog.Export" | E2E | Critical | AC-4, FR-4/5, BR-4 | Happy path / security | draft |
+| TC-ADM-008-12 | Auditor can READ but CANNOT export (403) | Security | Critical | AC-4, FR-7, BR-1/2 | Negative / security | draft |
+| TC-ADM-008-13 | Read authz — only TenantAdmin/TenantOwner/Auditor; others 403, unauth 401 | Security | Critical | AC-1, BR-1 | Negative / security | draft |
+| TC-ADM-008-14 | Retention purge deletes old, keeps recent (90-day, 91/90/today) | Integration | High | FR-6, BR-5 | Boundary / isolation | draft |
+| TC-ADM-008-15 | Retention period VIEW-ONLY (plan-governed; change rejected) | Functional | High | AC-1, BR-5 | Negative / security | draft |
+| TC-ADM-008-16 | Diff view — added/modified/removed highlighted (FE-verified) | E2E | High | AC-3, FR-3 | Happy path / a11y | draft |
+| TC-ADM-008-17 | Immutability by code convention — no update/delete API path | Security | Critical | AC-5, NFR-3 | Negative / security | draft |
+| TC-ADM-008-18 | [DEFERRED] DB-role append-only grant (no UPDATE/DELETE) | Security | High | AC-5, NFR-3 | Deferred placeholder | blocked |
+| TC-ADM-008-19 | [DEFERRED] Large export >10k via Hangfire + emailed link | Integration | Medium | AC-4, FR-5 | Deferred placeholder | blocked |
+| TC-ADM-008-20 | [DEFERRED] PII-read events logged + visible | Security | Medium | BR-6, FR-1/2 | Deferred placeholder | blocked |
+| TC-ADM-008-21 | [DEFERRED] First-page <2s at millions of records | Performance | Medium | NFR-1, NFR-2, NFR-4 | Deferred placeholder | blocked |
+| TC-ADM-ISO-021 | List/detail tenant-scoped; A cannot see B's audit rows | Security | Critical | AC-1, FR-1, BR-3 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-022 | Cross-tenant audit_id injection on detail/export -> 404 not 403 | Security | Critical | AC-1/3/4, BR-3 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-023 | Audit endpoints require tenant context + read role; export-audit stamped | Security | Critical | AC-1/4, BR-1/3 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-024 | [DEFERRED] system_audit_log separation + PostgreSQL RLS | Security | Medium | BR-3, NFR-3 (DEFERRED: RLS) | Multi-tenant isolation | blocked |
+
+## Acceptance-Criteria Coverage (US-ADM-008)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (paginated, reverse-chron, tenant-scoped list; columns; no other-tenant rows) | TC-ADM-008-01, -02, -13, -15, TC-ADM-ISO-021, -023 |
+| AC-2 (filters: date/actor/action/resource/keyword; AND logic; pagination+sort) | TC-ADM-008-03, -04, -05, -06, -07, -08 |
+| AC-3 (detail before/after + diff + IP/UA/trace; sensitive masked) | TC-ADM-008-09, -10, -16 |
+| AC-4 (export CSV/JSON, filters respected, masked, self-audited "AuditLog.Export"; large=email) | TC-ADM-008-11, -12, TC-ADM-ISO-022, -023 (+ -19 DEFERRED async large-export) |
+| AC-5 (audit append-only; modify/delete rejected; DB role lacks UPDATE/DELETE) | TC-ADM-008-17 (code convention, real) + TC-ADM-008-18 (DEFERRED DB-role grant) |
+
+## BR / FR / NFR Coverage (US-ADM-008)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| BR-1 (only TenantAdmin/TenantOwner/Auditor view) | TC-ADM-008-13, -12, TC-ADM-ISO-023 | Direct |
+| BR-2 (Auditor read-only — cannot modify/export) | TC-ADM-008-12 | Direct |
+| BR-3 (records strictly tenant-scoped; system_audit_log = System Admin only) | TC-ADM-ISO-021, -022, -023 (+ -024 DEFERRED system/RLS) | App+EF real; RLS/system separation deferred |
+| BR-4 (exports themselves audited "AuditLog.Export") | TC-ADM-008-11, TC-ADM-ISO-023 | Direct |
+| BR-5 (retention plan-dependent; Tenant Admin views but cannot change) | TC-ADM-008-15, -14 | Direct |
+| BR-6 (PII-read events logged + visible) | TC-ADM-008-20 (DEFERRED) | No new read instrumentation; surfaces if a module emits |
+| FR-1 (list: tenant filter, pagination 50/200, sort, all filters) | TC-ADM-008-01..08, TC-ADM-ISO-021 | Direct |
+| FR-2 (record fields incl. before/after/ip/ua/trace) | TC-ADM-008-09, -01 | Direct |
+| FR-3 (visual diff between before/after — FE-computed) | TC-ADM-008-16 | FE-verified |
+| FR-4 (sensitive fields masked `***REDACTED***`, recursive + camelCase) | TC-ADM-008-10, -11 | Direct |
+| FR-5 (export respects filters; >10k -> Hangfire + emailed link) | TC-ADM-008-11 (sync) + -19 (DEFERRED async) | Sync real; async deferred |
+| FR-6 (retention purge by AuditLogRetentionDays; purge logged) | TC-ADM-008-14 | Direct (purge audit to system context) |
+| FR-7 (Auditor read-only, cannot export/other admin) | TC-ADM-008-12 | Direct |
+| NFR-1 (<2s first page at scale) | TC-ADM-008-21 (DEFERRED) | Needs perf env; correctness -01..08 |
+| NFR-2 (composite indexes) | TC-ADM-008-21 (DEFERRED perf) | Indexes added; perf validation deferred |
+| NFR-3 (immutable; DB role no UPDATE/DELETE) | TC-ADM-008-17 (code convention) + -18 (DEFERRED DB grant) | Convention real; DB grant deferred |
+| NFR-4 (audit queries don't slow writes) | TC-ADM-008-21 (DEFERRED step 4) | Needs perf env |
+| NFR-5 (responsive UI 360px-4K) | TC-ADM-008-16 (FE-verified) | FE-verified |
+
+## Summary (US-ADM-008)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ADM-008) |
+| Total test cases | 25 (17 functional/security/e2e/integration + 4 DEFERRED + 4 isolation, 1 of which DEFERRED) |
+| AC coverage | 5/5 (AC-4/AC-5 have DEFERRED sub-parts: async large-export, DB-role grant) |
+| BR coverage | 6/6 (BR-1..BR-6; BR-6 PII-read deferred) |
+| FR coverage | 7/7 (FR-1..FR-7; FR-5 async deferred) |
+| Run-green now | 20 (TC-ADM-008-01..17 + TC-ADM-ISO-021, -022, -023) |
+| Deferred (status: blocked) | 5 (TC-ADM-008-18, -19, -20, -21 + TC-ADM-ISO-024) |
+| Functional ID range | TC-ADM-008-01 .. TC-ADM-008-21 |
+| ISO ID range | TC-ADM-ISO-021 .. TC-ADM-ISO-024 |
+
+---
+
 ## Module Totals
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 7 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006, US-ADM-007) |
-| Total test cases | 147 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-020 |
+| User stories covered | 8 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006, US-ADM-007, US-ADM-008) |
+| Total test cases | 172 |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-024 |
