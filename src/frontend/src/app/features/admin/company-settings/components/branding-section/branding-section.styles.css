@@ -1,0 +1,152 @@
+/* US-ADM-006 Branding section — upload zones, live preview, colour picker. */
+
+.upload-grid {
+  @apply grid grid-cols-1 gap-4 sm:grid-cols-3;
+}
+
+.upload-block {
+  @apply space-y-1.5;
+}
+
+.dropzone {
+  @apply relative mt-1 flex h-28 cursor-pointer items-center justify-center
+    overflow-hidden rounded-xl border-2 border-dashed border-neutral-200 bg-neutral-50
+    transition-colors duration-200
+    hover:border-brand-300 hover:bg-brand-50/40
+    focus:outline-none focus:ring-2 focus:ring-brand-500/40;
+}
+
+.dropzone.dragging {
+  @apply border-brand-500 bg-brand-50;
+}
+
+.dropzone.uploading {
+  @apply opacity-70;
+}
+
+.dropzone-preview {
+  @apply max-h-20 max-w-[80%] object-contain;
+}
+
+.dropzone-empty {
+  @apply px-3 text-center text-xs text-neutral-400;
+}
+
+.dropzone-spinner {
+  @apply absolute right-2 top-2 border-brand-300 border-t-brand-600;
+}
+
+/* ─── Live preview ─────────────────────────────────────────── */
+
+.preview-block {
+  @apply space-y-2;
+}
+
+.preview-grid {
+  @apply grid grid-cols-1 gap-3 sm:grid-cols-3;
+}
+
+.mock {
+  @apply rounded-xl border border-neutral-100 bg-white p-3 shadow-sm;
+}
+
+.mock-sidebar {
+  @apply space-y-2;
+}
+
+.mock-sidebar-top {
+  @apply flex items-center gap-2;
+}
+
+.mock-logo {
+  @apply h-6 w-6 rounded-md object-contain;
+}
+
+.mock-logo-fallback {
+  @apply flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold text-white;
+  background: var(--cs-preview-primary);
+}
+
+.mock-sidebar-name {
+  @apply text-xs font-semibold text-neutral-800;
+}
+
+.mock-nav-item {
+  @apply rounded-md px-2 py-1 text-xs text-neutral-500;
+}
+
+.mock-nav-item.active {
+  background: var(--cs-preview-light);
+  color: var(--cs-preview-dark);
+  @apply font-medium;
+}
+
+.mock-login {
+  @apply flex flex-col items-center justify-center gap-2 py-2;
+}
+
+.mock-login-logo {
+  @apply mb-1 h-7 max-w-[70%] object-contain;
+}
+
+.mock-cta {
+  @apply rounded-lg px-4 py-1.5 text-xs font-medium;
+  background: var(--cs-preview-primary);
+  color: var(--cs-preview-contrast);
+}
+
+.mock-cta.sm {
+  @apply px-3 py-1 text-[11px];
+}
+
+.mock-link {
+  @apply text-xs;
+  color: var(--cs-preview-primary);
+}
+
+.mock-email {
+  @apply space-y-2;
+}
+
+.mock-email-header {
+  @apply flex items-center justify-center rounded-md py-2;
+  background: var(--cs-preview-light);
+}
+
+.mock-email-logo {
+  @apply h-6 max-w-[60%] object-contain;
+}
+
+.mock-email-body {
+  @apply text-center text-xs text-neutral-600;
+}
+
+/* ─── Colour picker ────────────────────────────────────────── */
+
+.color-block {
+  @apply space-y-2;
+}
+
+.color-head {
+  @apply flex items-center;
+}
+
+.color-row {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.color-swatch-input {
+  @apply h-10 w-12 cursor-pointer rounded-lg border border-neutral-200 bg-white p-1;
+}
+
+.color-hex {
+  @apply w-32;
+}
+
+.shade-row {
+  @apply flex items-center gap-1.5;
+}
+
+.shade {
+  @apply h-7 w-7 rounded-md border border-neutral-200;
+}

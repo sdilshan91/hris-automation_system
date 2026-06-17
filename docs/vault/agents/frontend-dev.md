@@ -20,6 +20,13 @@ Refer to the agent definition in [.claude/agents/team/frontend-dev.md](../../../
   impersonation lives at `/api/v1/system/impersonation` — i.e. UNDER `/v1/system`, so its
   service uses `environment.apiBaseUrl` verbatim + `/system/...`. Don't assume all System Admin
   endpoints share one root; check per story.
+- **US-ADM-005/006 are TENANT-context, not system.** US-ADM-005 user-mgmt uses
+  `apiBaseUrl` verbatim + `/users` (+ `/invitations`). US-ADM-006 company-settings
+  uses `apiBaseUrl` verbatim + `/tenant/settings` (PUT sub-paths: `/org-profile`,
+  `/localization`, `/password-policy`, `/session-policy`, `/primary-color`; POST
+  multipart `/branding/upload`). Both carry `withCredentials` + the tenantInterceptor
+  header; services consume bare payloads (NO ApiResponse unwrap), matching the rest
+  of the FE. Nav "Settings" item → `/admin/settings` gated by `Admin.View`.
 
 ## i18n (ngx-translate)
 - ngx-translate (`@ngx-translate/core` v16 + `@ngx-translate/http-loader`) is an installed

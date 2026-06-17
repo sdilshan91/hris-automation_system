@@ -1,0 +1,86 @@
+namespace HRM.Application.Features.TenantSettings.DTOs;
+
+// ── Read model (GET settings) — US-ADM-006 FR-1 ──────────────────────────────
+
+/// <summary>Full company-settings snapshot for the current tenant (US-ADM-006 GET settings).</summary>
+public sealed record TenantSettingsDto(
+    OrgProfileDto OrgProfile,
+    BrandingDto Branding,
+    LocalizationDto Localization,
+    PasswordPolicyDto PasswordPolicy,
+    SessionPolicyDto SessionPolicy);
+
+public sealed record OrgProfileDto(
+    string Name,
+    string? LegalName,
+    string? RegistrationNumber,
+    string? Address,
+    string? Industry,
+    string? CompanySize,
+    int FiscalYearStartMonth);
+
+public sealed record BrandingDto(
+    string? LogoUrl,
+    string? EmailLogoUrl,
+    string? FaviconUrl,
+    string? PrimaryColor);
+
+public sealed record LocalizationDto(
+    string DefaultLanguage,
+    string DateFormat,
+    string NumberFormat,
+    string TimeZone,
+    string Currency);
+
+public sealed record PasswordPolicyDto(
+    int MinLength,
+    bool RequireUppercase,
+    bool RequireLowercase,
+    bool RequireDigit,
+    bool RequireSpecialCharacter,
+    int HistoryCount,
+    int? MaxAgeDays);
+
+public sealed record SessionPolicyDto(
+    int IdleTimeoutMinutes,
+    int AbsoluteTimeoutHours,
+    int MaxConcurrentSessions,
+    string ConcurrentSessionStrategy);
+
+// ── Update request bodies ────────────────────────────────────────────────────
+
+public sealed record UpdateOrgProfileRequest(
+    string Name,
+    string? LegalName,
+    string? RegistrationNumber,
+    string? Address,
+    string? Industry,
+    string? CompanySize,
+    int FiscalYearStartMonth);
+
+public sealed record UpdateLocalizationRequest(
+    string DefaultLanguage,
+    string DateFormat,
+    string NumberFormat,
+    string TimeZone,
+    string Currency);
+
+public sealed record UpdatePasswordPolicyRequest(
+    int MinLength,
+    bool RequireUppercase,
+    bool RequireLowercase,
+    bool RequireDigit,
+    bool RequireSpecialCharacter,
+    int HistoryCount,
+    int? MaxAgeDays);
+
+public sealed record UpdateSessionPolicyRequest(
+    int IdleTimeoutMinutes,
+    int AbsoluteTimeoutHours,
+    int MaxConcurrentSessions,
+    string? ConcurrentSessionStrategy);
+
+public sealed record UpdatePrimaryColorRequest(string PrimaryColor);
+
+/// <summary>Result of a branding upload: the stored, tenant-scoped URL the FE renders (US-ADM-006 AC-2).</summary>
+public sealed record BrandingUploadResultDto(string AssetKind, string Url);

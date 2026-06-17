@@ -224,6 +224,18 @@ export const appRoutes: Routes = [
           ).then((m) => m.USER_MANAGEMENT_ROUTES),
         canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
       },
+      // ─── Admin / Company Settings (US-ADM-006) — Tenant Admin ──
+      // Tenant context (NOT the system-admin console). Org profile, branding,
+      // localization, password + session policy. Only Tenant Admin / Tenant
+      // Owner may modify company settings (BR-1).
+      {
+        path: 'admin/settings',
+        loadChildren: () =>
+          import(
+            './features/admin/company-settings/company-settings.routes'
+          ).then((m) => m.COMPANY_SETTINGS_ROUTES),
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+      },
       // ─── Core HR / Departments (US-CHR-004) ───────────────
       {
         path: 'departments',

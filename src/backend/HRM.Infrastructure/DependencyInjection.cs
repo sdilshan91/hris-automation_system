@@ -397,6 +397,12 @@ public static class DependencyInjection
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IUserManagementNotificationService, LogOnlyUserManagementNotificationService>();
 
+        // US-ADM-006: Tenant-Admin company settings (org profile, branding, localization, password/session
+        // policy). Operates only on the CURRENT tenant via ITenantContext (AC-5). Reuses the existing
+        // IFileStorage abstraction for branding uploads; IDistributedCache is optional (FR-7 cache eviction
+        // no-ops when Redis is not wired). Branding magic-byte + size validation is a pure, unit-tested helper.
+        services.AddScoped<ITenantSettingsService, TenantSettingsService>();
+
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
         // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running
