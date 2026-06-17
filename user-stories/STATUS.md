@@ -134,13 +134,13 @@
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
 - [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
 
-## 9. Onboarding / Offboarding (6 stories)
+## 9. Onboarding / Offboarding (6 stories) — COMPLETE ✅
 - [x] US-ONB-001 — Create onboarding checklist template *(PR #95)*
 - [x] US-ONB-002 — Assign onboarding checklist to new hire *(PR #96)*
 - [x] US-ONB-003 — New hire completes onboarding tasks *(PR #97)*
 - [x] US-ONB-004 — Asset issuance tracking *(PR #98)*
 - [x] US-ONB-005 — Offboarding/exit checklist and clearance *(PR #99)*
-- [~] US-ONB-006 — Exit interview recording
+- [x] US-ONB-006 — Exit interview recording *(PR #100)*
 
 ## 10. Notifications & Audit (5 stories)
 - [ ] US-NTF-001 — In-app notification system (SignalR)
@@ -160,11 +160,10 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **92** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **US-ONB-001..005** (#95–#99)
+- Done: **93** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **11** — Onboarding (1), Notifications (5), Reports (5)
-- **Next module by priority: Onboarding / Offboarding (US-ONB-001..006)**
-- **Next module by priority: Performance Management (US-PRF-001..010)**
+- Pending: **10** — Notifications (5), Reports (5)
+- **Next module by priority: Notifications & Audit (US-NTF-001..005)**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
