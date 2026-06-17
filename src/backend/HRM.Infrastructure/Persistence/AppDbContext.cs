@@ -128,6 +128,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
     // US-ADM-010: tenant data-export requests (tenant-scoped).
     public DbSet<ExportRequest> ExportRequests => Set<ExportRequest>();
+    // US-ONB-001: Onboarding checklist templates + their tasks (tenant-scoped).
+    public DbSet<OnboardingChecklistTemplate> OnboardingChecklistTemplates => Set<OnboardingChecklistTemplate>();
+    public DbSet<OnboardingTemplateTask> OnboardingTemplateTasks => Set<OnboardingTemplateTask>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -497,6 +500,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-ADM-010: ExportRequest tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
         modelBuilder.Entity<ExportRequest>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-001: OnboardingChecklistTemplate tenant isolation + soft-delete filter (AC-5/BR-5).
+        modelBuilder.Entity<OnboardingChecklistTemplate>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-001: OnboardingTemplateTask tenant isolation + soft-delete filter (AC-5).
+        modelBuilder.Entity<OnboardingTemplateTask>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

@@ -472,6 +472,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer', 'Manager']),
         ],
       },
+      // ─── Onboarding / Checklist Templates (US-ONB-001) ─────
+      {
+        path: 'onboarding',
+        loadChildren: () =>
+          import('./features/onboarding/onboarding.routes').then(
+            (m) => m.ONBOARDING_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
+        ],
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },
