@@ -1,7 +1,7 @@
 ---
 module: Onboarding / Offboarding
-total_user_stories: 3
-total_test_cases: 47
+total_user_stories: 4
+total_test_cases: 63
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -231,3 +231,82 @@ status: in-progress
 | AC coverage | 5/5 |
 | Functional ID range | TC-ONB-003-01 .. TC-ONB-003-12 |
 | ISO ID range | TC-ONB-ISO-008 .. TC-ONB-ISO-011 (shared module counter) |
+
+---
+
+## US-ONB-004 — Asset Issuance Tracking During Onboarding
+
+> US-ONB-004 adds 16 test cases: 12 functional/security/performance/accessibility (TC-ONB-004-01..12) + 4 dedicated multi-tenant isolation continuing the shared running counter (TC-ONB-ISO-012..015). The functional suffix counter resets per story (TC-ONB-004-XX) while the ISO counter is module-wide and continues from US-ONB-003's 011. All 5 acceptance criteria of US-ONB-004 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001/002/003 family):
+> - AC-5/NFR-2 name PostgreSQL RLS; this codebase isolates via **EF Core global query filters (read) + `TenantInterceptor` (write stamping)**. ISO tests assert the EF mechanism in force today; the RLS "raw SQL without app.current_tenant_id -> zero rows" expectation is CONDITIONAL/deferred (TC-ONB-ISO-014 step 4). Cross-tenant ID injection asserts **404, not 403** (TC-ONB-ISO-013).
+> - NFR-4 (acknowledgment uploads scanned for malware) is asserted at the SEAM level — TC-ONB-004-06 step 5 exercises the scan hook with an EICAR test file; live ClamAV integration is CONDITIONAL/deferred (same family as TC-ONB-003-05; flag to caller if not wired).
+> - Document storage key `{tenantId}/onboarding/{employeeId}/assets/{assetId}/{filename}` is the tenant-isolated contract under test (TC-ONB-004-06, TC-ONB-ISO-015); any asset lookup cache targets `onboarding:assets:{tenant_id}:{employee_id}` (TC-ONB-ISO-015) if wired.
+> - NFR-1 (issuance API <= 600 ms P95) requires a performance-representative environment (TC-ONB-004-11); on a dev box, record indicative numbers and do NOT relax the threshold.
+>
+> STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (1) AC-5/NFR-2 name PostgreSQL RLS as an active isolation layer — only the app (ITenantContext) + EF (query filter / TenantInterceptor) layers exist today; reword RLS as future hardening. (2) BR-4 (returned asset reverts to available/disposed) and BR-5 (asset register soft delete) describe lifecycle states beyond this issuance story — return/soft-delete have NO endpoint in the issuance flow; the "available" gate (FR-3, TC-ONB-004-05) exercises non-available statuses as inputs, but the return/disposal/soft-delete transitions belong to a later offboarding/asset-lifecycle story. (3) BR-2 (asset types configurable per tenant via Tenant Admin master data) is assumed satisfied via preconditions; type-configuration itself is an Admin Console concern. (4) AC-2/FR-2 "Asset Management module (lite)" register fields are assumed present; full lifecycle (depreciation/maintenance) is explicitly out of Phase-1 scope per S10.
+
+### Coverage by Test Case (US-ONB-004)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-ONB-004-01 | Issue laptop + ID card; both linked, status assigned, task completed, audit before/after | E2E | Critical | AC-1, AC-2, FR-1/2/4/8 | Happy path |
+| TC-ONB-004-02 | Bulk: 3 assets in one submission persisted in a SINGLE transaction (atomic rollback) | Integration | Critical | AC-1, AC-2, FR-5, NFR-5 | Happy / boundary |
+| TC-ONB-004-03 | Double-assignment rejected — current-holder message shown | Functional | Critical | AC-3, BR-1, FR-3/4 | Negative |
+| TC-ONB-004-04 | Unique asset_tag (and serial if provided) per tenant — duplicate rejected | Functional | Critical | BR-3, FR-2 | Negative / boundary |
+| TC-ONB-004-05 | Available-status gate — cannot issue non-"available" asset | Functional | Critical | FR-3, FR-4, BR-1/4 | Negative / boundary |
+| TC-ONB-004-06 | Acknowledgment upload at tenant path; >10MB/bad MIME rejected; malware-scan seam | Integration | Critical | FR-6, NFR-4 | Negative / boundary / security |
+| TC-ONB-004-07 | issue_date cannot be in the future (today inclusive, past ok) | Functional | High | FR-1, data: issue_date | Negative / boundary |
+| TC-ONB-004-08 | Employee self-service assets/me read-only; cannot issue/modify | Security | Critical | AC-4, BR-6 | Negative / security |
+| TC-ONB-004-09 | Onboarding.Manage required to issue; 401/403 deny, no record | Security | Critical | FR-1/4, BR-6 | Negative / security |
+| TC-ONB-004-10 | XSS/SQLi in free-text neutralized; client tenant_id ignored (session wins) | Security | High | FR-7, data: notes 500 | Negative / boundary / security |
+| TC-ONB-004-11 | Issuance API <= 600 ms P95 | Performance | High | NFR-1, NFR-5 | Performance |
+| TC-ONB-004-12 | Issuance form keyboard navigable + 360px mobile + WCAG 2.1 AA | Accessibility | Medium | NFR-3 | Accessibility / cross-browser |
+| TC-ONB-ISO-012 | Tenant A cannot see Tenant B assets/issuances (cross-tenant READ block) | Security | Critical | AC-5, NFR-2 (EF) | Multi-tenant isolation |
+| TC-ONB-ISO-013 | Missing tenant context + cross-tenant asset ID injection -> 404 | Security | Critical | AC-5, FR-7 | Multi-tenant isolation |
+| TC-ONB-ISO-014 | EF filter blocks reads; writes tenant-stamped; uniqueness per tenant (RLS deferred) | Security | Critical | AC-5, FR-7, NFR-2/5, BR-3 | Multi-tenant isolation |
+| TC-ONB-ISO-015 | Acknowledgment storage keys + asset lookup cache tenant-scoped | Security | High | AC-5, NFR-2/4 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-ONB-004)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (issuance form: type/tag/serial/condition/issue date; multiple assets per session) | TC-ONB-004-01, -02, -07, -12 |
+| AC-2 (save: asset linked, status->assigned, task->completed, audit before/after) | TC-ONB-004-01, -02 |
+| AC-3 (already-assigned asset -> current-holder rejection message) | TC-ONB-004-03 |
+| AC-4 (employee profile "Assets" tab lists own assets: type/serial/issue date/condition) | TC-ONB-004-08 |
+| AC-5 (cross-tenant isolation; no Tenant A assets visible to Tenant B) | TC-ONB-ISO-012, -013, -014, -015 |
+
+### FR / NFR / BR Coverage (US-ONB-004)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (issuance form linked to asset_issuance task) | TC-ONB-004-01, -07, -09, -12 |
+| FR-2 (asset register fields) | TC-ONB-004-01, -04 |
+| FR-3 (validate "available" before issuance) | TC-ONB-004-03, -05 |
+| FR-4 (set "assigned" + link employee on issuance) | TC-ONB-004-01, -03, -05, -09 |
+| FR-5 (bulk issuance, multiple assets one submission) | TC-ONB-004-02 |
+| FR-6 (attach acknowledgment document) | TC-ONB-004-06 |
+| FR-7 (tenant_id from session on all asset records) | TC-ONB-004-10, TC-ONB-ISO-013, -014 |
+| FR-8 (issuance audited with before/after state) | TC-ONB-004-01 |
+| NFR-1 (issuance API <= 600 ms P95) | TC-ONB-004-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-ONB-ISO-012, -013, -014, -015 |
+| NFR-3 (responsive 360px-4K) | TC-ONB-004-12 |
+| NFR-4 (acknowledgment <= 10 MB + malware-scanned) | TC-ONB-004-06, TC-ONB-ISO-015 |
+| NFR-5 (atomic: status update + linkage in single transaction) | TC-ONB-004-02, -11, TC-ONB-ISO-014 |
+| BR-1 (asset assigned to only one employee at a time) | TC-ONB-004-03, -05 |
+| BR-2 (asset types configurable per tenant) | Assumed via preconditions (Admin Console master data) — TC-ONB-004-01 uses configured types; type-config itself out of this story (flag to caller) |
+| BR-3 (asset_tag/serial unique per tenant) | TC-ONB-004-04, TC-ONB-ISO-014 |
+| BR-4 (returned asset -> available/disposed) | Partial: TC-ONB-004-05 exercises "returned"/"disposed" as non-issuable inputs; the return/disposal TRANSITION has no endpoint in this issuance story (flag to caller — offboarding/lifecycle story) |
+| BR-5 (asset register soft delete) | Out of scope for the issuance flow; no delete endpoint here (flag to caller — separate lifecycle story) |
+| BR-6 (employee self-service view read-only) | TC-ONB-004-08, -09 |
+
+### Summary (US-ONB-004)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ONB-004) |
+| Total test cases | 16 (12 functional/security/perf/a11y + 4 isolation) |
+| AC coverage | 5/5 |
+| Functional ID range | TC-ONB-004-01 .. TC-ONB-004-12 |
+| ISO ID range | TC-ONB-ISO-012 .. TC-ONB-ISO-015 (shared module counter) |

@@ -135,6 +135,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<OnboardingChecklistInstance> OnboardingChecklistInstances => Set<OnboardingChecklistInstance>();
     public DbSet<OnboardingTaskInstance> OnboardingTaskInstances => Set<OnboardingTaskInstance>();
     public DbSet<OnboardingNotificationOutbox> OnboardingNotificationOutbox => Set<OnboardingNotificationOutbox>();
+    // US-ONB-004: lite asset register for issuance tracking (tenant-scoped).
+    public DbSet<Asset> Assets => Set<Asset>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -520,6 +522,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-ONB-002: OnboardingTaskInstance tenant isolation + soft-delete filter (AC-4 soft-delete, NFR-2).
         modelBuilder.Entity<OnboardingTaskInstance>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-004: Asset register tenant isolation + soft-delete filter (BR-5 soft-delete, AC-5/NFR-2).
+        modelBuilder.Entity<Asset>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-ONB-002: OnboardingNotificationOutbox tenant isolation + soft-delete filter (NFR-2/NFR-3).

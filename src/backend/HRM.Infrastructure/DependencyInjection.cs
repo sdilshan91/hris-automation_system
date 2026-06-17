@@ -186,6 +186,9 @@ public static class DependencyInjection
         // notification dispatch uses the outbox pattern (NFR-3) drained by OnboardingNotificationDispatchJob.
         services.AddScoped<IOnboardingChecklistService, OnboardingChecklistService>();
 
+        // US-ONB-004: lite asset register + issuance tracking (reuses IFileStorage + IVirusScanner seams).
+        services.AddScoped<IAssetService, AssetService>();
+
         // US-PAY-001: Payroll — salary component + salary structure configuration.
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();
