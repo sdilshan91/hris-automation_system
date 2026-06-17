@@ -23,6 +23,8 @@ describe('TenantMonitoringDetailComponent', () => {
   // US-ADM-009 AC-5: the plan-overrides child (rendered for System Admin only)
   // loads the tenant's overrides on init.
   const overridesUrl = `${environment.apiBaseUrl}/system/tenants/t-1/plan-overrides`;
+  // US-ADM-010 AC-6: the export dialog's panel loads history from the system path.
+  const exportUrl = `${environment.apiBaseUrl}/system/tenants/t-1/exports`;
 
   const detail: ITenantMonitoringDetail = {
     tenantId: 't-1',
@@ -86,6 +88,9 @@ describe('TenantMonitoringDetailComponent', () => {
     // once it renders. Flush any such pending request so verify() stays clean —
     // it is exercised explicitly in its own component spec.
     httpMock.match(overridesUrl).forEach((r) => r.flush([]));
+    // US-ADM-010: if a test opened the export dialog, its panel fires a history
+    // GET — flush any such pending request so verify() stays clean.
+    httpMock.match(exportUrl).forEach((r) => r.flush([]));
     httpMock.verify();
     TestBed.resetTestingModule();
   });
@@ -232,6 +237,41 @@ describe('TenantMonitoringDetailComponent', () => {
 
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="history-list"]')).not.toBeNull();
+  });
+
+  it('opens the System-Admin export dialog targeting this tenant (US-ADM-010 AC-6)', () => {
+    const { fixture, component } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad();
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const exportBtn = el.querySelector(
+      '[data-testid="export-btn"]',
+    ) as HTMLButtonElement;
+    expect(exportBtn).not.toBeNull();
+    expect(exportBtn.disabled).toBeFalse();
+
+    exportBtn.click();
+    expect(component.exportOpen()).toBeTrue();
+    fixture.detectChanges();
+
+    // The dialog renders and its panel loads history from the SYSTEM export path.
+    expect(el.querySelector('[data-testid="system-export-dialog"]')).not.toBeNull();
+    httpMock.expectOne(exportUrl).flush([]);
+  });
+
+  it('DISABLES the export action for a terminated tenant (US-ADM-010)', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad({ status: 'terminated' });
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const exportBtn = el.querySelector(
+      '[data-testid="export-btn"]',
+    ) as HTMLButtonElement;
+    expect(exportBtn.disabled).toBeTrue();
   });
 
   it('shows "Not available" placeholders for null SLA / trends', () => {

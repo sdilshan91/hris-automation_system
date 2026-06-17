@@ -277,6 +277,20 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'Tenant Owner', 'Auditor']),
         ],
       },
+      // ─── Admin / Data Export (US-ADM-010) — Tenant Admin ──
+      // Tenant context (Data Management > Export). On-demand full/partial data
+      // export (GDPR portability) with format prefs, a history list, and a
+      // progress indicator. Tenant Admin / Tenant Owner only (BR-1). The
+      // System-Admin persona reaches the same flow via the tenant-detail
+      // "Export Data" dialog (AC-6), targeting the system path.
+      {
+        path: 'admin/data-export',
+        loadChildren: () =>
+          import('./features/admin/data-export/data-export.routes').then(
+            (m) => m.DATA_EXPORT_ROUTES
+          ),
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+      },
       // ─── Core HR / Departments (US-CHR-004) ───────────────
       {
         path: 'departments',

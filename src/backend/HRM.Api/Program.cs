@@ -223,6 +223,13 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.TenantTerminationReminderJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.ITenantDeletionScheduler, HRM.Api.Jobs.HangfireTenantDeletionScheduler>();
 
+    // US-ADM-010 AC-1/AC-2/FR-7: tenant data-export generation job + the Hangfire-backed scheduler seam (bound to
+    // IExportJobScheduler so the Infrastructure export service can enqueue by interface), and the hourly
+    // export-retention cleanup job (expires bundles past their 72h window + deletes their files).
+    builder.Services.AddScoped<HRM.Api.Jobs.DataExportGenerationJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IExportJobScheduler, HRM.Api.Jobs.HangfireExportJobScheduler>();
+    builder.Services.AddScoped<HRM.Api.Jobs.ExportCleanupJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -335,6 +342,13 @@ try
             "audit-log-retention-purge",
             job => job.RunAsync(),
             "0 4 * * *"); // 04:00 UTC daily
+
+        // US-ADM-010 FR-7: hourly export-retention cleanup — expires export bundles past their 72h download
+        // window and deletes their files (cross-tenant; runs in system context).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.ExportCleanupJob>(
+            "data-export-cleanup",
+            job => job.RunAsync(),
+            Cron.Hourly);
 
         // US-LV-002 FR-5 / AC-5: Leave entitlement accrual processing (daily at 00:30 UTC)
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.LeaveAccrualJob>(

@@ -51,6 +51,22 @@
                 Impersonate
               </button>
 
+              <!-- US-ADM-010 AC-6: System-Admin "Export Data". System Admin may
+                   export any tenant except a fully terminated one (BR-2 allows
+                   export on a suspended tenant's behalf). -->
+              <button
+                type="button"
+                class="btn-secondary"
+                [disabled]="d.status === 'terminated'"
+                [class.opacity-50]="d.status === 'terminated'"
+                [class.cursor-not-allowed]="d.status === 'terminated'"
+                [title]="d.status === 'terminated' ? 'Terminated tenants have no data to export' : 'Export this tenant\'s data'"
+                (click)="openExport()"
+                data-testid="export-btn"
+              >
+                Export Data
+              </button>
+
               <!-- US-ADM-004: lifecycle actions, gated by current status (BR-1). -->
               @if (showReactivate()) {
                 <button
@@ -254,6 +270,16 @@
         [employeeCount]="d.employeeUsage.used"
         (terminated)="onLifecycleResult($event)"
         (cancelled)="closeLifecycle()"
+      />
+    }
+
+    <!-- US-ADM-010 AC-6: System-Admin "Export Data" dialog (same export flow,
+         targeting this tenant via the system path). -->
+    @if (exportOpen()) {
+      <app-system-export-dialog
+        [tenantId]="d.tenantId"
+        [tenantName]="d.name"
+        (cancelled)="closeExport()"
       />
     }
 
