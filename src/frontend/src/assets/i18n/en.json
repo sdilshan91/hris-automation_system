@@ -1,4 +1,10 @@
 {
+  "dashboard": {
+    "refresh": "Refresh",
+    "retry": "Try again",
+    "loadError": "We couldn't load your dashboard. Please try again.",
+    "empty": "No widgets to show yet."
+  },
   "reports": {
     "catalog": {
       "title": "HR Reports",
