@@ -181,6 +181,11 @@ public static class DependencyInjection
         // US-ONB-001: Onboarding checklist template management (create/clone/activate/list).
         services.AddScoped<IOnboardingTemplateService, OnboardingTemplateService>();
 
+        // US-ONB-002: Onboarding checklist assignment (assign/applicable-templates/get/modify). Takes an
+        // OPTIONAL IBackgroundJobClient (Hangfire) so it never requires real Hangfire storage in tests/dev;
+        // notification dispatch uses the outbox pattern (NFR-3) drained by OnboardingNotificationDispatchJob.
+        services.AddScoped<IOnboardingChecklistService, OnboardingChecklistService>();
+
         // US-PAY-001: Payroll — salary component + salary structure configuration.
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();

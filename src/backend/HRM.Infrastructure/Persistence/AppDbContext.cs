@@ -131,6 +131,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     // US-ONB-001: Onboarding checklist templates + their tasks (tenant-scoped).
     public DbSet<OnboardingChecklistTemplate> OnboardingChecklistTemplates => Set<OnboardingChecklistTemplate>();
     public DbSet<OnboardingTemplateTask> OnboardingTemplateTasks => Set<OnboardingTemplateTask>();
+    // US-ONB-002: Assigned checklist instances, their task instances + the notification outbox (tenant-scoped).
+    public DbSet<OnboardingChecklistInstance> OnboardingChecklistInstances => Set<OnboardingChecklistInstance>();
+    public DbSet<OnboardingTaskInstance> OnboardingTaskInstances => Set<OnboardingTaskInstance>();
+    public DbSet<OnboardingNotificationOutbox> OnboardingNotificationOutbox => Set<OnboardingNotificationOutbox>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -508,6 +512,18 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-ONB-001: OnboardingTemplateTask tenant isolation + soft-delete filter (AC-5).
         modelBuilder.Entity<OnboardingTemplateTask>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-002: OnboardingChecklistInstance tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<OnboardingChecklistInstance>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-002: OnboardingTaskInstance tenant isolation + soft-delete filter (AC-4 soft-delete, NFR-2).
+        modelBuilder.Entity<OnboardingTaskInstance>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ONB-002: OnboardingNotificationOutbox tenant isolation + soft-delete filter (NFR-2/NFR-3).
+        modelBuilder.Entity<OnboardingNotificationOutbox>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
