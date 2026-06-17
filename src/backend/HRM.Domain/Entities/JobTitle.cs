@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// Supports optional salary grade linking and soft-delete.
 /// US-CHR-005: Create and Manage Job Titles and Positions.
 /// </summary>
-public sealed class JobTitle : BaseEntity
+public sealed class JobTitle : BaseEntity, IAuditableEntity
 {
     /// <summary>
     /// Job title name, unique within a tenant (FR-2, BR-1).

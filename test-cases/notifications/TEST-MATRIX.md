@@ -1,7 +1,7 @@
 ---
 module: Notifications & Audit
-total_user_stories: 3
-total_test_cases: 48
+total_user_stories: 4
+total_test_cases: 64
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -206,3 +206,70 @@ status: in-progress
 | BR-4 (preferences per tenant membership) | TC-NTF-003-09, TC-NTF-ISO-009, -010, -011, -012 |
 | BR-5 (Quiet Hours queues email, sends after end; in-app real-time) | TC-NTF-003-07 |
 | BR-6 (changes take effect for future notifications) | TC-NTF-003-01, -08 |
+
+---
+
+## US-NTF-004 -- Audit Trail for All Data Changes
+
+> US-NTF-004 (Audit Trail for All Data Changes) is a BACKEND/INFRASTRUCTURE story -- automatic audit capture via the EF Core `SaveChangesInterceptor` plus dedicated writers for read/auth/export events. There is NO new user-facing creation UI (the Audit Log Viewer is US-NTF-005, partly built in US-ADM-008); these TCs target the CAPTURE behavior, enrichment, immutability, and tenant isolation -- not UI. It adds 16 test cases: 12 functional/integration/security/performance (TC-NTF-004-01..12) + 4 multi-tenant isolation continuing the module-wide running ISO counter (TC-NTF-ISO-013..016, from US-NTF-003's 012). Functional suffix counter resets per story (TC-NTF-004-XX); the ISO counter is shared/running. All 5 acceptance criteria of US-NTF-004 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-NTF-001 family): (1) AC-5 / NFR-2 name PostgreSQL RLS as the audit isolation layer and the preconditions name an INSERT-only DB role (FR-6). This platform isolates via **EF Core global query filters (read) + the audit/Tenant interceptors (write stamping)**, NOT Postgres RLS, and the append-only DB-role grant is NOT yet provisioned -- both are deferred hardening. ISO tests (TC-NTF-ISO-013..016) assert the EF mechanism in force today; the "raw SQL without app.tenant_id -> zero rows" RLS expectation (TC-NTF-ISO-015 step 5) and the "app DB role cannot UPDATE/DELETE audit_log" grant (TC-NTF-004-08 step 4) are documented as CONDITIONAL/deferred. Cross-tenant audit-row ID access asserts **404, not 403** (existence not disclosed, TC-NTF-ISO-014). Immutability is asserted at the APPLICATION layer today (no endpoint/code path mutates audit rows). (2) BR-4 system-level audit (`system_audit_log` visible only to System Admins): if the current implementation uses a single audit table with a system/tenant discriminator rather than a separate table, TC-NTF-004-11 step 5 records that single-table reality and treats the dedicated table as a deferred refinement -- the tenant query path must still exclude system-level rows from a tenant admin. (3) NFR-1 (<=50ms/save overhead) and NFR-5 (bulk non-blocking) need a perf-representative environment (TC-NTF-004-09); on a dev box record indicative numbers and do NOT relax the 50ms threshold.
+>
+> STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-5 / NFR-2 name Postgres RLS and the preconditions name an INSERT-only DB role as ACTIVE controls -- neither exists today (EF query filter + interceptor stamping + "no mutating endpoint" are the controls in force); reword RLS + DB-role append-only as future hardening (consistent with prior modules). (b) The SaveChangesInterceptor captures only writes that flow through EF `SaveChanges`/`SaveChangesAsync`; raw SQL / Dapper writes BYPASS it and must be audited manually (S10 assumption) -- exercised + flagged in TC-NTF-004-12. (c) FR-9 (streaming export to ELK/Splunk) and NFR-6 (month/tenant-range partitioning, Phase 2) are deferred/Phase-2 -- noted in TC-NTF-004-12 step 6, not separately tested. (d) The Audit Log Viewer UI is US-NTF-005 -- not covered here.
+
+### Coverage by Test Case (US-NTF-004)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-NTF-004-01 | INSERT audit -> "{Entity}.Create"; after-JSON populated, before null | Integration | Critical | AC-1, FR-1/2, BR-2 | Happy path |
+| TC-NTF-004-02 | UPDATE audit -> before old / after new; ONLY changed fields captured; no-op = no row | Integration | Critical | AC-1, FR-1/2, BR-3 | Happy / boundary |
+| TC-NTF-004-03 | Soft-delete (is_deleted false->true) -> "{Entity}.Delete" before/after on flag | Integration | High | AC-3, FR-1, BR-2 | Happy / boundary |
+| TC-NTF-004-04 | Auth events (login success/failure, logout, password change, MFA) -> rows w/ IP/UA/status | Integration | Critical | AC-4, FR-3/7 | Happy / negative / security |
+| TC-NTF-004-05 | PII read -> "{Entity}.ReadSensitive" naming accessed fields; values NOT stored | Security | Critical | AC-2, FR-4/7 | Happy / boundary / security |
+| TC-NTF-004-06 | Data export (CSV/Excel/PDF) -> audit row w/ params + row count | Integration | High | FR-5, FR-7/8, AC-1 | Happy / boundary / security |
+| TC-NTF-004-07 | Enrichment -> row carries IP, user agent, trace id, session tenant_id; spoof ignored | Integration | High | AC-1, FR-2/7/8 | Happy / negative / security |
+| TC-NTF-004-08 | Append-only -> app cannot UPDATE/DELETE an audit row (DB-role grant CONDITIONAL/deferred) | Security | Critical | AC-1, FR-6, BR-1 | Negative / security |
+| TC-NTF-004-09 | Performance -> payroll 500 emp: <=50ms/save overhead P95, non-blocking, no rows dropped | Performance | High | AC-1, NFR-1/5, NFR-3 | Boundary / performance |
+| TC-NTF-004-10 | GDPR RTBF -> PII replaced with "REDACTED-{id}", audit structure preserved + self-audited | Security | High | BR-6, BR-1, AC-1 | Happy / boundary / security |
+| TC-NTF-004-11 | System-level actions audited separately; tenant admin cannot see them (single-table CONDITIONAL) | Security | High | AC-5, BR-4 | Negative / security / isolation |
+| TC-NTF-004-12 | Capture boundaries -> raw-SQL/Dapper bypass; BRIN time-range query; per-plan retention + purge | Integration | Medium | FR-1, NFR-3/4, BR-5 | Negative / boundary / performance |
+| TC-NTF-ISO-013 | Tenant A admin sees ONLY Tenant A audit rows; Tenant B invisible | Security | Critical | AC-5, NFR-2 (EF) | Multi-tenant isolation |
+| TC-NTF-ISO-014 | Cross-tenant audit-row ID access -> 404 (not 403); missing tenant context rejected | Security | Critical | AC-5, NFR-2, FR-8 | Multi-tenant isolation |
+| TC-NTF-ISO-015 | EF filter blocks cross-tenant reads; interceptor stamps tenant_id on writes (RLS deferred) | Security | Critical | AC-5, NFR-2, FR-8 | Multi-tenant isolation |
+| TC-NTF-ISO-016 | All capture paths (write/PII/auth/export/RTBF) stamp correct tenant_id; no concurrent bleed | Security | High | AC-5, AC-2/4, NFR-2/5, FR-3/4/5/8, BR-6 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-NTF-004)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (auto audit on save: timestamp/actor/action/resource/before/after/IP/UA/trace; tenant_id from session) | TC-NTF-004-01, -02, -07, -08, -09, -10 |
+| AC-2 (PII read -> "ReadSensitive" naming accessed fields + accessor + trace id) | TC-NTF-004-05, TC-NTF-ISO-016 |
+| AC-3 (soft-delete -> "{Entity}.Delete" before is_deleted:false / after is_deleted:true) | TC-NTF-004-03 |
+| AC-4 (auth event -> auth-specific action, actor, IP, UA, success/failure status) | TC-NTF-004-04, TC-NTF-ISO-016 |
+| AC-5 (Tenant A admin sees only Tenant A audit rows; Tenant B invisible) | TC-NTF-004-11, TC-NTF-ISO-013, -014, -015, -016 |
+
+### FR / NFR / BR Coverage (US-NTF-004)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (auto-capture INSERT/UPDATE/DELETE via SaveChangesInterceptor) | TC-NTF-004-01, -02, -03, -12 |
+| FR-2 (record fields: actor/action/resource/before/after/IP/UA/trace/tenant) | TC-NTF-004-01, -02, -07 |
+| FR-3 (audit auth events: login/logout/password/MFA/refresh/lockout) | TC-NTF-004-04, TC-NTF-ISO-016 |
+| FR-4 (audit PII reads: bank account, national ID, salary) | TC-NTF-004-05, TC-NTF-ISO-016 |
+| FR-5 (audit data exports incl. params + row count) | TC-NTF-004-06, TC-NTF-ISO-016 |
+| FR-6 (audit_log append-only; app DB role lacks UPDATE/DELETE) | TC-NTF-004-08 (DB-role grant CONDITIONAL/deferred; app-layer immutability asserted today) |
+| FR-7 (enrich w/ IP, user agent, trace id) | TC-NTF-004-04, -05, -06, -07 |
+| FR-8 (tenant_id from authenticated session on every record) | TC-NTF-004-07, TC-NTF-ISO-014, -015, -016 |
+| FR-9 (streaming export to ELK/Splunk) | Deferred/Phase-2 -- noted TC-NTF-004-12 step 6 (flag to caller; not separately tested) |
+| NFR-1 (audit overhead <= 50ms/save P95) | TC-NTF-004-09 |
+| NFR-2 (audit isolated by tenant; RLS deferred -> EF filters) | TC-NTF-004-11, TC-NTF-ISO-013, -014, -015, -016 |
+| NFR-3 (BRIN index on timestamp for time-range queries) | TC-NTF-004-09, -12 |
+| NFR-4 (configurable retention: 90d/365d/7y per plan) | TC-NTF-004-12 |
+| NFR-5 (high-throughput bulk without blocking the business transaction) | TC-NTF-004-09, TC-NTF-ISO-016 |
+| NFR-6 (partition by month/tenant-range, Phase 2) | Deferred/Phase-2 -- noted TC-NTF-004-12 step 6 (flag to caller) |
+| BR-1 (audit records immutable; cannot be modified/deleted via the app) | TC-NTF-004-08, -10 |
+| BR-2 (before null for INSERT; after null for DELETE) | TC-NTF-004-01, -03 |
+| BR-3 (only changed fields captured in before/after) | TC-NTF-004-02 |
+| BR-4 (system-level actions in separate system_audit_log, System-Admin-only) | TC-NTF-004-11 (single-table discriminator CONDITIONAL; flag to caller) |
+| BR-5 (retention purge via Hangfire; archive to cold storage first) | TC-NTF-004-12 |
+| BR-6 (GDPR RTBF anonymizes PII -> "REDACTED-{id}", preserves structure) | TC-NTF-004-10, TC-NTF-ISO-016 |
