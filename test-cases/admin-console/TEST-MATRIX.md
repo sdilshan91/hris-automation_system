@@ -1,7 +1,7 @@
 ---
 module: Admin Console
-total_user_stories: 8
-total_test_cases: 172
+total_user_stories: 9
+total_test_cases: 193
 created: 2026-06-16
 updated: 2026-06-17
 status: in-progress
@@ -655,10 +655,96 @@ status: in-progress
 
 ---
 
+## US-ADM-009 — System Admin Manages Subscription Plans
+
+> Ninth Admin Console story (back to the **System Admin** persona, system context at `admin.yourhrm.com`). 21 test cases: 13 run-green functional/security/integration/e2e (TC-ADM-009-01..13) + 5 DEFERRED (TC-ADM-009-14..18) + 3 dedicated multi-tenant isolation (TC-ADM-ISO-025..027, continuing the running ISO counter; -027 DEFERRED). All 5 ACs (AC-1..AC-5), all 7 BRs (BR-1..BR-7), all 7 FRs (FR-1..FR-7) traced.
+>
+> IMPLEMENTATION FACTS (tested as built): the existing system-level `SubscriptionPlan` entity (from US-ADM-001) is EXTENDED to the full FR-2 schema (numeric limits, `enabled_modules` jsonb, `feature_flags` jsonb, prices, currency, sla_tier, audit_log_retention_days, trial_days); a NEW `plan_limit_override` table (tenant_id, limit_key, value, expires_at) is added; a migration carries both. Full CRUD from the System Admin context: LIST shows all plans + active-tenant-count per plan + sort by name/price/tenant-count (AC-1/FR-5, TC-ADM-009-01); CREATE persists the full schema + makes the plan assignable + audits (AC-2, -02); code is unique + lowercase-alnum-hyphen format + immutable after creation (FR-3/BR-5, -03/-04/-05); `enabled_modules` validated against the canonical 13-module list with CoreHR always enabled (FR-6, -06); UPDATE reads limits LIVE so existing tenants benefit immediately + before/after audit (AC-3, -07); ARCHIVE sets is_active=false, excludes from provisioning, existing tenants unaffected (AC-4, -08); DELETE guarded — rejected if any tenant (incl. terminated/retained) references the plan, archive-only (FR-7, -09). The pure `PlanLimitResolver` (FR-4) resolves a non-expired override > plan field, NULL = unlimited (BR-3), expired override ignored (AC-5, -10). Provisioning derives `tenant.EnabledModules` + `MaxEmployees` from the chosen plan (-11). AUTHZ: only SystemAdmin writes; SystemSupport/Billing read-only; tenant admins cannot view/modify (BR-1/NFR-5, -12). All ops audited to the system audit log with before/after (NFR-3, -13). ISOLATION: plans are system-only — tenant context cannot read/write them (TC-ADM-ISO-025); `plan_limit_override` is tenant-scoped — an override for Tenant X applies only to X (TC-ADM-ISO-026).
+>
+> DEFERRED (status: blocked; honest traceability, never fabricated): runtime per-endpoint + Angular-route MODULE GATING that actually blocks a disabled module's API/route across all controllers (BR-6/FR-6 runtime portion, TC-ADM-009-14) — `enabled_modules` is stored + `tenant.EnabledModules` derived (run-green -06/-11), but platform-wide runtime enforcement is a large cross-cutting concern. Redis plan cache + <60s `t:{tenantId}:config` propagation (NFR-1/NFR-4, TC-ADM-009-15) — Redis not wired; limits are read LIVE so propagation is IMMEDIATE today (no stale cache). BR-4 downgrade-doesn't-retroactively-block existing data (TC-ADM-009-16) — preservation half is inherent; the new-creation-block half depends on each module's create-time limit check (the EMPLOYEE limit via `Tenant.MaxEmployees` IS enforced today; storage/API/email/roles/fields/workflows/integrations/sessions are conditional on the owning module adding the check). Billing/Stripe + self-serve plan changes + coupons/proration (§10 Phase-2, TC-ADM-009-17). NFR-2 UI <1.5s perf (TC-ADM-009-18 — needs perf env; correctness in -01). PostgreSQL RLS DB-layer isolation for plan_limit_override (TC-ADM-ISO-027 — same RLS-deferred family as US-ADM-001..008/Payroll/Leave).
+>
+> STORY MISMATCH worth flagging to the caller: (1) BR-6/FR-6 + §9 assume a working module-gating layer (Angular route guards + ASP.NET Core authorization policies) that gates every module's routes/APIs per tenant — only the entitlement STORAGE + DERIVATION exists today; reword so runtime gating is a follow-on cross-cutting story. (2) NFR-1/NFR-4 + §9 assume Redis is wired for plan-config caching + <60s propagation — Redis is not wired; the live-read path already makes AC-3 propagation immediate, so the Redis/60s contract is a future optimization, not a correctness gap. (3) §10 already scopes billing/self-serve/coupons/proration as Phase-2 (correctly), so AC-1's price columns are definitional only in Phase-1.
+
+## Coverage by Test Case (US-ADM-009)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-009-01 | Plan list: all fields + active-tenant-count + sort name/price/count | E2E | Critical | AC-1, FR-1/5, BR-2 | Happy path / boundary | draft |
+| TC-ADM-009-02 | Create plan with full FR-2 schema — persisted, assignable, audited | E2E | Critical | AC-2, FR-1/2/6, NFR-3 | Happy path | draft |
+| TC-ADM-009-03 | Unique-code rejection (incl. archived-code reuse) | Functional | Critical | FR-3, BR-5 | Negative / boundary | draft |
+| TC-ADM-009-04 | Code format — lowercase alphanumeric + hyphens only | Functional | High | FR-3 | Negative / boundary | draft |
+| TC-ADM-009-05 | Code immutability — update cannot change code | Functional | High | FR-3, BR-5 | Negative | draft |
+| TC-ADM-009-06 | enabled_modules validated vs canonical list; CoreHR always on | Functional | High | FR-6, BR-6 | Negative / boundary | draft |
+| TC-ADM-009-07 | Edit propagation — limits read live, tenants benefit immediately; before/after audit | Integration | Critical | AC-3, FR-1/2, NFR-3 | Happy path / boundary | draft |
+| TC-ADM-009-08 | Archive — is_active=false, excluded from provisioning, existing unaffected, audited | Integration | Critical | AC-4, FR-1/7, NFR-3 | Happy path / negative | draft |
+| TC-ADM-009-09 | Delete guard — referenced plan (incl. terminated) rejected, archive-only | Functional | Critical | FR-7 | Negative / boundary | draft |
+| TC-ADM-009-10 | PlanLimitResolver — override > plan; NULL=unlimited; expiry falls back; audited | Functional | Critical | AC-5, FR-4, BR-3, NFR-3 | Happy / negative / boundary | draft |
+| TC-ADM-009-11 | Provisioning inherits plan — tenant.EnabledModules + MaxEmployees derived | Integration | Critical | FR-2/6, US-ADM-001 dep | Happy path | draft |
+| TC-ADM-009-12 | Authz — SystemAdmin writes; SystemSupport/Billing read-only; tenant admins excluded | Security | Critical | BR-1, NFR-5, FR-1 | Negative / security / isolation | draft |
+| TC-ADM-009-13 | Audit completeness sweep — create/edit/archive/delete-attempt/override | Integration | High | NFR-3, AC-2/3/4/5 | Negative / security | draft |
+| TC-ADM-009-14 | [DEFERRED] Runtime module gating — disabled module API + Angular route blocked | Integration | High | BR-6, FR-6 (runtime) | Deferred placeholder | blocked |
+| TC-ADM-009-15 | [DEFERRED] Redis plan cache + <60s `t:{tenantId}:config` propagation | Integration | Medium | NFR-1/4, AC-3 | Deferred placeholder | blocked |
+| TC-ADM-009-16 | [DEFERRED/CONDITIONAL] Downgrade not retroactive; over-limit new creations blocked | Integration | High | BR-4 | Deferred / conditional | blocked |
+| TC-ADM-009-17 | [DEFERRED] Billing/Stripe + self-serve + coupons/proration (Phase 2) | Integration | Low | §10, BR-2 | Deferred placeholder | blocked |
+| TC-ADM-009-18 | [DEFERRED] Plan management UI loads <= 1.5s | Performance | Medium | NFR-2 | Deferred placeholder | blocked |
+| TC-ADM-ISO-025 | Plans system-only — tenant context cannot read/write; context injection rejected | Security | Critical | FR-1, BR-1, NFR-5 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-026 | PlanLimitOverride tenant-scoped — Tenant X override applies only to X | Security | Critical | AC-5, FR-4 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-027 | [DEFERRED] PostgreSQL RLS DB-layer isolation for plan_limit_override | Security | Medium | FR-4 (DB hardening) | Deferred placeholder | blocked |
+
+## Acceptance-Criteria Coverage (US-ADM-009)
+
+| AC | Covered By | Notes |
+|----|-----------|-------|
+| AC-1 (plan list: code/name/price/currency/tenant-count/public/active + sortable) | TC-ADM-009-01 (+ -18 DEFERRED perf) | Direct |
+| AC-2 (create full schema; assignable; audited) | TC-ADM-009-02, -06 | Direct |
+| AC-3 (edit; existing tenants benefit immediately via live read; before/after audit) | TC-ADM-009-07 (+ -15 DEFERRED Redis/60s; immediate via live read) | Direct |
+| AC-4 (archive; is_active=false; excluded from provisioning; existing unaffected; logged) | TC-ADM-009-08 | Direct |
+| AC-5 (custom plan + per-tenant override; override > plan; audited) | TC-ADM-009-10, TC-ADM-ISO-026 (+ -027 DEFERRED RLS) | Direct |
+
+## BR / FR / NFR Coverage (US-ADM-009)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| BR-1 (only SystemAdmin writes; SystemSupport/Billing read-only) | TC-ADM-009-12, TC-ADM-ISO-025 | Direct |
+| BR-2 (is_public pricing-page eligibility — Phase-2 self-serve) | TC-ADM-009-01 (surfaced) + -17 (DEFERRED self-serve) | Flag surfaced; self-serve deferred |
+| BR-3 (NULL = unlimited) | TC-ADM-009-10 | Direct |
+| BR-4 (lowering a limit not retroactive; over-limit new creations blocked) | TC-ADM-009-16 (DEFERRED/CONDITIONAL) | Employee dim real (-07); others module-conditional |
+| BR-5 (code not reusable, even archived; immutable) | TC-ADM-009-03, -05 | Direct |
+| BR-6 (enabled_modules gate Angular modules + API endpoints) | TC-ADM-009-06 (storage/validation) + -14 (DEFERRED runtime gating) | Storage real; runtime gating deferred |
+| BR-7 (plan changes don't affect in-flight operations) | TC-ADM-009-07 (live-read consistency); in-flight payroll-run continuity is module-owned | Live-read consistent; in-flight pinning is owning-module |
+| FR-1 (CRUD from system admin context) | TC-ADM-009-01/-02/-07/-08/-09, TC-ADM-ISO-025 | Direct |
+| FR-2 (full schema exposed/persisted) | TC-ADM-009-02 | Direct |
+| FR-3 (code unique + lowercase-alnum-hyphen + immutable) | TC-ADM-009-03, -04, -05 | Direct |
+| FR-4 (plan_limit_override table + resolution order) | TC-ADM-009-10, TC-ADM-ISO-026 (+ -027 DEFERRED RLS) | Direct |
+| FR-5 (active-tenant-count per plan) | TC-ADM-009-01 | Direct |
+| FR-6 (enabled_modules canonical list; CoreHR always on) | TC-ADM-009-06, -11 (+ -14 DEFERRED runtime gating) | Validation real; gating deferred |
+| FR-7 (no delete if referenced; archive only) | TC-ADM-009-09 | Direct |
+| NFR-1 (<60s propagation via cache invalidation) | TC-ADM-009-15 (DEFERRED) | Immediate via live read; Redis/60s deferred |
+| NFR-2 (UI <= 1.5s) | TC-ADM-009-18 (DEFERRED) | Needs perf env; correctness -01 |
+| NFR-3 (all ops audited with full before/after) | TC-ADM-009-13, -02/-07/-08/-10 | Direct |
+| NFR-4 (plan data cached in Redis, invalidated on update) | TC-ADM-009-15 (DEFERRED) | Redis not wired; live read today |
+| NFR-5 (system-console-only; tenant admins cannot view/modify) | TC-ADM-009-12, TC-ADM-ISO-025 | Direct |
+
+## Summary (US-ADM-009)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ADM-009) |
+| Total test cases | 21 (13 functional/security/integration/e2e + 5 DEFERRED + 3 isolation, 1 of which DEFERRED) |
+| AC coverage | 5/5 (AC-1/3/5 have DEFERRED sub-parts: perf, Redis/60s, RLS) |
+| BR coverage | 7/7 (BR-1..BR-7; BR-4 conditional, BR-6 runtime gating deferred) |
+| FR coverage | 7/7 (FR-1..FR-7; FR-6 runtime gating deferred) |
+| Run-green now | 15 (TC-ADM-009-01..13 + TC-ADM-ISO-025, -026) |
+| Deferred (status: blocked) | 6 (TC-ADM-009-14, -15, -16, -17, -18 + TC-ADM-ISO-027) |
+| Functional ID range | TC-ADM-009-01 .. TC-ADM-009-18 |
+| ISO ID range | TC-ADM-ISO-025 .. TC-ADM-ISO-027 |
+
+---
+
 ## Module Totals
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 8 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006, US-ADM-007, US-ADM-008) |
-| Total test cases | 172 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-024 |
+| User stories covered | 9 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006, US-ADM-007, US-ADM-008, US-ADM-009) |
+| Total test cases | 193 |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-027 |

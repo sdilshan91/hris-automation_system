@@ -1,0 +1,137 @@
+<div class="page-container">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">
+        {{ 'admin.plans.list.title' | translate }}
+      </h1>
+      <p class="mt-1 text-sm text-neutral-500">
+        {{ 'admin.plans.list.subtitle' | translate }}
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a routerLink="compare" class="btn-secondary" data-testid="compare-link">
+        {{ 'admin.plans.list.compare' | translate }}
+      </a>
+      <a routerLink="new" class="btn-primary" data-testid="create-link">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1.5" aria-hidden="true">
+          <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+        </svg>
+        {{ 'admin.plans.list.create' | translate }}
+      </a>
+    </div>
+  </div>
+
+  <!-- Sort controls -->
+  @if (!isLoading() && !errorMessage() && plans().length > 0) {
+    <div class="flex flex-wrap items-center gap-2 mb-4 text-sm">
+      <span class="text-neutral-400">{{ 'admin.plans.list.sortBy' | translate }}</span>
+      @for (opt of [
+        { key: 'name', label: ('admin.plans.list.sortName' | translate) },
+        { key: 'price', label: ('admin.plans.list.sortPrice' | translate) },
+        { key: 'tenants', label: ('admin.plans.list.sortTenants' | translate) }
+      ]; track opt.key) {
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors"
+          [class]="sortKey() === opt.key ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
+          (click)="setSort($any(opt.key))"
+          [attr.data-testid]="'sort-' + opt.key"
+          [attr.aria-pressed]="sortKey() === opt.key"
+        >
+          {{ opt.label }}
+          @if (sortKey() === opt.key) {
+            <span aria-hidden="true">{{ sortAsc() ? '↑' : '↓' }}</span>
+          }
+        </button>
+      }
+    </div>
+  }
+
+  <!-- Loading skeleton -->
+  @if (isLoading()) {
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      @for (i of [1, 2, 3]; track i) {
+        <div class="card-notion animate-pulse h-44"></div>
+      }
+    </div>
+  }
+
+  <!-- Error -->
+  @if (!isLoading() && errorMessage()) {
+    <div class="card-notion text-center py-12">
+      <p class="text-sm text-red-500">{{ errorMessage() }}</p>
+      <button type="button" class="btn-secondary mt-4" (click)="load()">
+        {{ 'common.retry' | translate }}
+      </button>
+    </div>
+  }
+
+  <!-- Empty -->
+  @if (!isLoading() && !errorMessage() && plans().length === 0) {
+    <div class="card-notion text-center py-12">
+      <p class="text-sm text-neutral-500">{{ 'admin.plans.list.empty' | translate }}</p>
+      <a routerLink="new" class="btn-primary mt-4 inline-flex">
+        {{ 'admin.plans.list.createFirst' | translate }}
+      </a>
+    </div>
+  }
+
+  <!-- Plan cards -->
+  @if (!isLoading() && !errorMessage() && plans().length > 0) {
+    <div @fadeSlideIn class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="plan-grid">
+      @for (p of sortedPlans(); track p.id) {
+        <a
+          [routerLink]="[p.id]"
+          class="card-notion block hover:shadow-md transition-shadow"
+          data-testid="plan-card"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h2 class="text-base font-semibold text-neutral-900" data-testid="plan-name">{{ p.name }}</h2>
+              <p class="text-xs text-neutral-400 font-mono mt-0.5">{{ p.code }}</p>
+            </div>
+            <div class="flex flex-col items-end gap-1">
+              <span
+                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                [class]="p.isActive ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500'"
+                data-testid="plan-status-badge"
+              >
+                {{ (p.isActive ? 'admin.plans.status.active' : 'admin.plans.status.archived') | translate }}
+              </span>
+              <span
+                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                [class]="p.isPublic ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'"
+                data-testid="plan-visibility-badge"
+              >
+                {{ (p.isPublic ? 'admin.plans.visibility.public' : 'admin.plans.visibility.private') | translate }}
+              </span>
+            </div>
+          </div>
+
+          <div class="mt-4 flex items-baseline gap-1">
+            <span class="text-2xl font-semibold text-neutral-900" data-testid="plan-price">
+              {{ p.priceMonthly === null ? '—' : (p.priceMonthly | number) }}
+            </span>
+            <span class="text-sm text-neutral-400">{{ p.currency }} / {{ 'admin.plans.list.month' | translate }}</span>
+          </div>
+          @if (p.priceYearly !== null) {
+            <p class="text-xs text-neutral-400 mt-0.5">
+              {{ p.priceYearly | number }} {{ p.currency }} / {{ 'admin.plans.list.year' | translate }}
+            </p>
+          }
+
+          <div class="mt-4 pt-3 border-t border-neutral-100 flex items-center gap-2 text-sm text-neutral-500">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+              <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+            </svg>
+            <span data-testid="plan-tenant-count">
+              {{ p.activeTenantCount }}
+              {{ (p.activeTenantCount === 1 ? 'admin.plans.list.tenant' : 'admin.plans.list.tenants') | translate }}
+            </span>
+          </div>
+        </a>
+      }
+    </div>
+  }
+</div>

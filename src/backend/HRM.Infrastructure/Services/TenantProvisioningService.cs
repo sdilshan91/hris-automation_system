@@ -114,7 +114,10 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
             BillingEmail = ownerEmail,
             ContactEmail = ownerEmail,
             MaxEmployees = plan.MaxEmployees,
-            EnabledModules = PermissionCatalog.ByModule.Keys.OrderBy(m => m).ToList(),
+            // US-ADM-009 (FR-6 / test hint): inherit the chosen plan's enabled modules. CoreHR is always on. A
+            // legacy plan with no configured modules falls back to all canonical modules so existing provisioning
+            // behaviour is preserved.
+            EnabledModules = DeriveTenantModules(plan),
             CreatedAt = now,
         };
         _db.Tenants.Add(tenant);
@@ -277,6 +280,20 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
             .ToListAsync(cancellationToken);
 
         return Result.Success<IReadOnlyList<SubscriptionPlanDto>>(plans);
+    }
+
+    /// <summary>
+    /// US-ADM-009 (FR-6): the tenant's enabled modules are derived from the chosen plan. CoreHR is always
+    /// enabled; the result is deduped and kept in canonical order. A legacy plan with no configured modules
+    /// falls back to the full canonical list so existing provisioning behaviour is preserved.
+    /// </summary>
+    private static List<string> DeriveTenantModules(SubscriptionPlan plan)
+    {
+        if (plan.EnabledModules is null || plan.EnabledModules.Count == 0)
+            return PlanModules.All.ToList();
+
+        var enabled = new HashSet<string>(plan.EnabledModules) { PlanModules.CoreHr };
+        return PlanModules.All.Where(enabled.Contains).ToList();
     }
 
     // ── Seeding helpers (reuse PermissionCatalog + the DbInitializer conventions) ──

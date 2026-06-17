@@ -387,6 +387,16 @@ public static class DependencyInjection
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         services.AddScoped<ITenantWelcomeEmailService, LogOnlyTenantWelcomeEmailService>();
 
+        // US-ADM-009: System Admin subscription-plan management. Runs in the system/admin context — plans and
+        // per-tenant limit overrides are platform tables (no tenant query filter). The code is unique + immutable
+        // (FR-3/BR-5), archive sets IsActive=false (AC-4), delete is refused when any tenant references the plan
+        // (FR-7/BR-5), and every write is audited. Limits are read live from the plan at runtime so a plan edit
+        // benefits existing tenants immediately (AC-3) — the Redis plan cache / 60s propagation (NFR-1/NFR-4) is
+        // DEFERRED (not wired). The runtime per-endpoint MODULE-GATING enforcement (BR-6/FR-6) is also DEFERRED —
+        // this story stores enabled_modules + derives Tenant.EnabledModules at provisioning, but no middleware
+        // 403s a disabled module's API yet.
+        services.AddScoped<ISubscriptionPlanService, SubscriptionPlanService>();
+
         // US-ADM-005: Tenant Admin user + role-assignment management. Runs in the NORMAL resolved-tenant
         // context — isolation (AC-6) is the EF global query filters on UserTenant/Role/UserTenantRole/
         // RefreshToken/UserInvitation (RLS deferred). A brand-new invitee's pending state IS the

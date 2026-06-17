@@ -211,6 +211,12 @@
         </div>
       </div>
 
+      <!-- US-ADM-009 AC-5: per-tenant plan limit overrides ("Custom Limits").
+           System Admin only (BR-1) — System Support is read-only. -->
+      @if (canManage()) {
+        <app-plan-overrides-section [tenantId]="d.tenantId" />
+      }
+
       <!-- US-ADM-004: lifecycle history timeline. -->
       <app-lifecycle-history-timeline
         [events]="history()"

@@ -308,6 +308,24 @@ public static class PermissionCatalog
         public const string ManageWorkflows = "Tenant.ManageWorkflows";
     }
 
+    // ── Subscription Plans (US-ADM-009) ──────────────────────────────
+    public static class Plan
+    {
+        /// <summary>
+        /// US-ADM-009 (BR-1): VIEW subscription plans + per-tenant limit overrides. A SYSTEM-level read held by the
+        /// platform SystemAdmin role (seeded with every catalog permission) AND the read-only System Support role.
+        /// The endpoints additionally run only in the system/admin context.
+        /// </summary>
+        public const string View = "Plan.View";
+
+        /// <summary>
+        /// US-ADM-009 (BR-1): CREATE / UPDATE / ARCHIVE / DELETE subscription plans and manage per-tenant limit
+        /// overrides. SYSTEM-level, held by the platform SystemAdmin role ONLY (System Support is read-only and is
+        /// NOT granted this). System-context only.
+        /// </summary>
+        public const string Manage = "Plan.Manage";
+    }
+
     // ── Platform Monitoring (US-ADM-002) ─────────────────────────────
     public static class Monitoring
     {
@@ -445,6 +463,9 @@ public static class PermissionCatalog
         // Tenant
         Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling, Tenant.Provision,
         Tenant.Lifecycle, Tenant.ViewLifecycle, Tenant.ViewWorkflows, Tenant.ManageWorkflows,
+
+        // Subscription Plans
+        Plan.View, Plan.Manage,
 
         // Monitoring
         Monitoring.View,
@@ -645,5 +666,6 @@ public static class PermissionCatalog
         Impersonation.Initiate,
         Monitoring.View,
         Tenant.ViewLifecycle, // US-ADM-004 BR-7: view lifecycle history, but NOT Tenant.Lifecycle (cannot transition).
+        Plan.View,            // US-ADM-009 BR-1: read-only access to plans; NOT Plan.Manage (cannot create/edit/archive/delete).
     };
 }

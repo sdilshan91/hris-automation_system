@@ -138,6 +138,19 @@ export const appRoutes: Routes = [
           ),
         canActivate: [roleGuard(['System Admin', 'System Support'])],
       },
+      // ─── Admin / Plans (US-ADM-009) — System Admin Console ──
+      // Platform/system context (admin.yourhrm.com). Only the System Admin role
+      // may create/edit/archive subscription plans (BR-1); tenant roles cannot
+      // view or modify them. Per-tenant limit overrides (AC-5) live on the
+      // US-ADM-002 tenant-monitoring detail, not here.
+      {
+        path: 'admin/plans',
+        loadChildren: () =>
+          import('./features/admin/plans/plans.routes').then(
+            (m) => m.PLANS_ROUTES
+          ),
+        canActivate: [roleGuard(['System Admin'])],
+      },
       // ─── Admin / Roles (US-AUTH-006) ──────────────────────
       {
         path: 'admin/roles',
