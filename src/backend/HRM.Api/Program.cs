@@ -78,6 +78,20 @@ try
             {
                 Log.Warning("JWT authentication failed: {Error}", context.Exception.Message);
                 return Task.CompletedTask;
+            },
+            // US-NTF-001 AC-1/FR-1: SignalR sends the JWT via the query string (?access_token=…) because
+            // browsers cannot set the Authorization header on a WebSocket handshake. Read it for the
+            // notifications hub path only, so normal HTTP endpoints continue to require the header.
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    path.StartsWithSegments("/hubs/notifications"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
             }
         };
     });
@@ -98,6 +112,43 @@ try
     });
 
     builder.Services.AddHttpContextAccessor();
+
+    // ===== SignalR (US-NTF-001: real-time in-app notifications) =====
+    // The notification hub is mapped at /hubs/notifications below. The Redis backplane (FR-10, multi-instance
+    // scale-out) is OPTIONAL: it is only added when a Redis connection string is configured. Without it the
+    // default in-memory backplane is used, so the app starts and all tests pass WITHOUT Redis running.
+    var signalRBuilder = builder.Services.AddSignalR(options =>
+    {
+        // US-PLT-003 parity: serialize enums as strings over SignalR too, matching the controller JSON config.
+        options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    });
+    signalRBuilder.AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
+
+    var signalRRedis = builder.Configuration.GetConnectionString("Redis")
+        ?? builder.Configuration["Redis:ConnectionString"];
+    if (!string.IsNullOrWhiteSpace(signalRRedis))
+    {
+        signalRBuilder.AddStackExchangeRedis(signalRRedis, options =>
+        {
+            options.Configuration.ChannelPrefix =
+                StackExchange.Redis.RedisChannel.Literal(builder.Configuration["Redis:InstanceName"] ?? "hrm:signalr:");
+        });
+        Log.Information("SignalR Redis backplane enabled.");
+    }
+    else
+    {
+        Log.Information("SignalR using in-memory backplane (no Redis connection string configured).");
+    }
+
+    // US-NTF-001 FR-3/FR-4: the persist-then-push notification dispatcher. Lives here (not Infrastructure)
+    // because it needs IHubContext<NotificationHub>. Other modules call INotificationService to raise a
+    // real-time notification; the read/mark side (INotificationReadService) is registered in Infrastructure.
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.INotificationService,
+        HRM.Api.Notifications.SignalRNotificationService>();
 
     // ===== Swagger =====
     builder.Services.AddEndpointsApiExplorer();
@@ -308,6 +359,10 @@ try
     app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
     app.MapControllers();
+
+    // US-NTF-001 AC-1: real-time in-app notification hub. JWT-authenticated; the token arrives via the
+    // ?access_token= query string (handled in JwtBearerEvents.OnMessageReceived above).
+    app.MapHub<HRM.Api.Hubs.NotificationHub>("/hubs/notifications");
 
     // Hangfire dashboard (dev only)
     if (app.Environment.IsDevelopment())

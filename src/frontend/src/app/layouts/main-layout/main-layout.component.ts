@@ -15,6 +15,7 @@ import { TenantService } from '../../core/tenant/tenant.service';
 import { IdleTimeoutService } from '../../core/services/idle-timeout.service';
 import { IdleTimeoutWarningComponent } from '../../shared/components/idle-timeout-warning/idle-timeout-warning.component';
 import { ImpersonationBannerComponent } from '../../features/admin/impersonation/components/impersonation-banner/impersonation-banner.component';
+import { NotificationBellComponent } from '../../features/notifications/components/notification-bell/notification-bell.component';
 
 interface INavItem {
   label: string;
@@ -35,6 +36,7 @@ interface INavItem {
     RouterLinkActive,
     IdleTimeoutWarningComponent,
     ImpersonationBannerComponent,
+    NotificationBellComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -357,6 +359,9 @@ interface INavItem {
 
           <!-- Top bar right actions -->
           <div class="topbar-actions">
+            <!-- US-NTF-001: real-time notification bell + panel -->
+            <app-notification-bell />
+
             <!-- Mobile logout -->
             <button
               class="logout-btn-mobile lg:hidden"

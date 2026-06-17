@@ -145,6 +145,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<ExitInterviewQuestion> ExitInterviewQuestions => Set<ExitInterviewQuestion>();
     public DbSet<ExitInterview> ExitInterviews => Set<ExitInterview>();
     public DbSet<ExitInterviewResponse> ExitInterviewResponses => Set<ExitInterviewResponse>();
+    // US-NTF-001: in-app notifications (tenant-scoped, per-recipient).
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -562,6 +564,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-ONB-006: ExitInterviewResponse tenant isolation + soft-delete filter (FR-6/NFR-2/AC-5).
         modelBuilder.Entity<ExitInterviewResponse>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-NTF-001: Notification tenant isolation + soft-delete filter (AC-6/NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<Notification>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

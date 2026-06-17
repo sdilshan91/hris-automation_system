@@ -1,4 +1,20 @@
 {
+  "notifications": {
+    "bell": {
+      "ariaLabel": "Notifications"
+    },
+    "panel": {
+      "title": "Notifications",
+      "markAllRead": "Mark all as read",
+      "viewAll": "View all",
+      "empty": "You're all caught up."
+    },
+    "page": {
+      "title": "Notifications",
+      "loadMore": "Load more",
+      "loading": "Loading…"
+    }
+  },
   "admin": {
     "plans": {
       "status": {
