@@ -272,6 +272,15 @@ public static class DependencyInjection
         // setup via the pure PayrollReportRenderer; no new export infra is introduced.
         services.AddScoped<IPayrollReportService, PayrollReportService>();
 
+        // US-RPT-001: Reports — pre-built HR reports (Headcount, Turnover, Demographics, Joiners & Leavers,
+        // Department Distribution, Employment Type Breakdown). Pure read/aggregation over the existing
+        // employee / department / location / employment_history tables (NO new entity / migration),
+        // tenant-scoped via the EF global query filter (AC-5). IDistributedCache is the SAME optional Redis
+        // seam used elsewhere (TenantSettings / NotificationPreferences): present → cached results
+        // (FR-5, 10-min TTL, FR-8 refresh bypass), absent/in-memory → straight compute. Export (US-RPT-004)
+        // and materialized views (FR-6) are deliberately NOT built here.
+        services.AddScoped<IHrReportService, HrReportService>();
+
         // US-PAY-012: Payroll — history + structured audit trail. The audit logger writes structured entries
         // into the shared audit_log table (extended additively); the history/audit-trail/export reads live in
         // PayrollAuditService. Audit export reuses the US-PAY-009 PayrollReportRenderer + IReportExportStorage.

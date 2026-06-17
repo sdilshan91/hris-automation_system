@@ -291,6 +291,23 @@ export const appRoutes: Routes = [
           ),
         canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
       },
+      // ─── Reports & Analytics / Pre-Built HR Reports (US-RPT-001) ──
+      // Tenant context. HR Officers (Reports.View) browse a catalog of six
+      // pre-built reports (headcount / turnover / demographics / joiners-
+      // leavers / department-distribution / employment-type) and render any of
+      // them through a single generic viewer with charts + a data-table
+      // alternative. Tenant isolation is enforced server-side (AC-5). The
+      // feature also self-guards each route with permissionGuard(['Reports.View']).
+      {
+        path: 'reports',
+        loadChildren: () =>
+          import('./features/reports/reports.routes').then(
+            (m) => m.REPORTS_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager', 'Manager']),
+        ],
+      },
       // ─── Core HR / Departments (US-CHR-004) ───────────────
       {
         path: 'departments',
