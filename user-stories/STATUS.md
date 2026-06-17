@@ -150,7 +150,7 @@
 - [x] US-NTF-005 — Audit log viewer with filters *(PR #105)*
 
 ## 11. Reports & Analytics (5 stories)
-- [ ] US-RPT-001 — Pre-built HR reports
+- [~] US-RPT-001 — Pre-built HR reports
 - [ ] US-RPT-002 — Leave and attendance reports
 - [ ] US-RPT-003 — Payroll reports and summaries
 - [ ] US-RPT-004 — Export reports to CSV/PDF/Excel
