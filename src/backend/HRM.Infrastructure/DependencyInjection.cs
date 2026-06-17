@@ -403,6 +403,16 @@ public static class DependencyInjection
         // no-ops when Redis is not wired). Branding magic-byte + size validation is a pure, unit-tested helper.
         services.AddScoped<ITenantSettingsService, TenantSettingsService>();
 
+        // US-ADM-007: Tenant-Admin approval-workflow DEFINITION management (+ the pure WorkflowEvaluator in
+        // HRM.Domain). Runs in the NORMAL resolved-tenant context — isolation (BR-7) is the EF global query
+        // filter on WorkflowDefinition/WorkflowStep (RLS deferred). Versioning (FR-3: edit-active → new version,
+        // prior retained), the one-active-per-type auto-archive (BR-2), the plan limit vs Tenant.MaxWorkflows
+        // (FR-4/AC-4), and before/after audit (NFR-4) live in the service. The RUNTIME engine (live request
+        // routing through these definitions, per-request WorkflowInstance/StepInstance, SLA Hangfire timers +
+        // escalation/BR-4, live delegation/AC-5, Redis cache/NFR-2) is DEFERRED — only the pure condition/parallel
+        // EVALUATION (WorkflowEvaluator) is built+tested here, not its invocation from live request flows.
+        services.AddScoped<IWorkflowService, WorkflowService>();
+
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
         // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running

@@ -1,0 +1,498 @@
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+  <!-- Breadcrumb / header -->
+  <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <a
+        routerLink="/admin/workflows"
+        class="mb-2 inline-flex items-center gap-1 text-sm font-medium text-gray-500 transition-colors hover:text-gray-800"
+      >
+        <span aria-hidden="true">←</span>
+        {{ 'admin.workflows.editor.back' | translate }}
+      </a>
+      <h1 class="text-2xl font-semibold tracking-tight text-gray-900">
+        {{
+          (isEdit()
+            ? 'admin.workflows.editor.editTitle'
+            : 'admin.workflows.editor.createTitle'
+          ) | translate
+        }}
+      </h1>
+    </div>
+
+    <div class="flex items-center gap-2">
+      @if (isEdit()) {
+        <span
+          class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+          data-testid="version-indicator"
+        >
+          {{ 'admin.workflows.editor.version' | translate }} v{{ version() }}
+        </span>
+      }
+      <button
+        type="button"
+        (click)="togglePreview()"
+        class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50"
+        data-testid="toggle-preview"
+      >
+        {{
+          (showPreview()
+            ? 'admin.workflows.editor.hidePreview'
+            : 'admin.workflows.editor.preview'
+          ) | translate
+        }}
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="rounded-xl border border-gray-100 bg-white p-10 text-center text-gray-500 shadow-sm">
+      {{ 'admin.workflows.editor.loading' | translate }}
+    </div>
+  } @else {
+    <!-- New-version warning (AC-3) -->
+    @if (willCreateNewVersion()) {
+      <div
+        class="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+        role="status"
+        data-testid="new-version-warning"
+      >
+        <span aria-hidden="true">⚠</span>
+        <span>{{ 'admin.workflows.editor.newVersionWarning' | translate }}</span>
+      </div>
+    }
+
+    <!-- Definition meta -->
+    <section class="mb-6 rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div class="grid gap-5 sm:grid-cols-2">
+        <div>
+          <label for="wf-name" class="mb-1.5 block text-sm font-medium text-gray-700">
+            {{ 'admin.workflows.editor.nameLabel' | translate }}
+          </label>
+          <input
+            id="wf-name"
+            type="text"
+            [ngModel]="name()"
+            (ngModelChange)="name.set($event)"
+            class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm transition-colors focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            [attr.placeholder]="'admin.workflows.editor.namePlaceholder' | translate"
+          />
+        </div>
+        <div>
+          <label for="wf-entity" class="mb-1.5 block text-sm font-medium text-gray-700">
+            {{ 'admin.workflows.editor.entityTypeLabel' | translate }}
+          </label>
+          <select
+            id="wf-entity"
+            [ngModel]="entityType()"
+            (ngModelChange)="entityType.set($event)"
+            [disabled]="isEdit()"
+            class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm shadow-sm transition-colors focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-gray-50 disabled:text-gray-500"
+          >
+            @for (et of entityTypes; track et) {
+              <option [value]="et">
+                {{ 'admin.workflows.entityType.' + et | translate }}
+              </option>
+            }
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Preview (AC §8) -->
+    @if (showPreview()) {
+      <section
+        class="mb-6 rounded-xl border border-gray-100 bg-gradient-to-b from-gray-50 to-white p-6 shadow-sm"
+        data-testid="preview-panel"
+      >
+        <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">
+          {{ 'admin.workflows.editor.previewTitle' | translate }}
+        </h2>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="rounded-lg bg-green-100 px-3 py-2 text-xs font-medium text-green-800">
+            {{ 'admin.workflows.editor.previewStart' | translate }}
+          </div>
+          @for (step of steps(); track step.uid; let i = $index) {
+            <span class="text-gray-300" aria-hidden="true">→</span>
+            <div
+              class="rounded-lg border px-3 py-2 text-xs shadow-sm"
+              [class.border-indigo-200]="!step.isParallel"
+              [class.bg-white]="!step.isParallel"
+              [class.border-purple-200]="step.isParallel"
+              [class.bg-purple-50]="step.isParallel"
+            >
+              <div class="font-semibold text-gray-800">
+                {{ i + 1 }}. {{ approverLabel(step) }}
+              </div>
+              <div class="mt-0.5 flex flex-wrap gap-1 text-[10px] text-gray-500">
+                <span>{{ step.slaHours }}h</span>
+                @if (step.isParallel) {
+                  <span class="text-purple-600">• {{ 'admin.workflows.editor.previewParallel' | translate }}</span>
+                }
+                @if (step.conditionEnabled) {
+                  <span class="text-amber-600">• {{ 'admin.workflows.editor.previewConditional' | translate }}</span>
+                }
+              </div>
+            </div>
+          }
+          <span class="text-gray-300" aria-hidden="true">→</span>
+          <div class="rounded-lg bg-gray-200 px-3 py-2 text-xs font-medium text-gray-700">
+            {{ 'admin.workflows.editor.previewEnd' | translate }}
+          </div>
+        </div>
+      </section>
+    }
+
+    <!-- Steps -->
+    <section class="mb-6">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          {{ 'admin.workflows.editor.stepsTitle' | translate }}
+        </h2>
+      </div>
+
+      @if (steps().length === 0) {
+        <div class="rounded-xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+          {{ 'admin.workflows.editor.noSteps' | translate }}
+        </div>
+      }
+
+      <div
+        cdkDropList
+        (cdkDropListDropped)="dropStep($event)"
+        class="flex flex-col gap-3"
+        data-testid="step-list"
+      >
+        @for (step of steps(); track trackByUid($index, step); let i = $index) {
+          <div
+            cdkDrag
+            class="rounded-xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md"
+            data-testid="step-card"
+          >
+            <!-- Card header -->
+            <div class="flex items-center gap-3 p-4">
+              <button
+                type="button"
+                cdkDragHandle
+                class="cursor-grab text-gray-300 transition-colors hover:text-gray-500"
+                [attr.aria-label]="'admin.workflows.editor.dragHandle' | translate"
+                data-testid="drag-handle"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M7 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM7 10a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM6 17a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM15 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM14 11a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM15 16a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/>
+                </svg>
+              </button>
+              <span
+                class="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white"
+                data-testid="step-number"
+              >
+                {{ i + 1 }}
+              </span>
+              <span class="flex-1 text-sm font-medium text-gray-800">
+                {{ approverLabel(step) }}
+                @if (step.isParallel) {
+                  <span class="ml-2 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                    {{ 'admin.workflows.editor.parallelBadge' | translate }}
+                  </span>
+                }
+              </span>
+              <button
+                type="button"
+                (click)="toggleExpand(step.uid)"
+                class="rounded p-1 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600"
+                [attr.aria-expanded]="step.expanded"
+                [attr.aria-label]="'admin.workflows.editor.toggleStep' | translate"
+              >
+                {{ step.expanded ? '▾' : '▸' }}
+              </button>
+              <button
+                type="button"
+                (click)="removeStep(step.uid)"
+                class="rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                [attr.aria-label]="'admin.workflows.editor.removeStep' | translate"
+                data-testid="remove-step"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4Z" clip-rule="evenodd"/>
+                </svg>
+              </button>
+            </div>
+
+            @if (step.expanded) {
+              <div class="border-t border-gray-100 p-4">
+                <!-- Approver + SLA -->
+                <div class="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <label class="mb-1.5 block text-xs font-medium text-gray-600">
+                      {{ 'admin.workflows.editor.approverType' | translate }}
+                    </label>
+                    <select
+                      [ngModel]="step.approverType"
+                      (ngModelChange)="setApproverType(step.uid, $event)"
+                      class="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      data-testid="approver-type"
+                    >
+                      @for (at of approverTypes; track at) {
+                        <option [value]="at">
+                          {{ 'admin.workflows.approverType.' + at | translate }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+
+                  @if (needsIdentifier(step.approverType)) {
+                    <div>
+                      <label class="mb-1.5 block text-xs font-medium text-gray-600">
+                        {{ 'admin.workflows.editor.approver' | translate }}
+                      </label>
+                      <select
+                        [ngModel]="step.approverIdentifier"
+                        (ngModelChange)="setApproverIdentifier(step.uid, $event)"
+                        class="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        data-testid="approver-identifier"
+                      >
+                        <option value="">{{ 'admin.workflows.editor.selectApprover' | translate }}</option>
+                        @if (step.approverType === 'Role') {
+                          @for (r of roles(); track r.id) {
+                            <option [value]="r.id">{{ r.name }}</option>
+                          }
+                        } @else {
+                          @for (u of users(); track u.id) {
+                            <option [value]="u.id">{{ u.displayName }}</option>
+                          }
+                        }
+                      </select>
+                    </div>
+                  }
+
+                  <div>
+                    <label class="mb-1.5 block text-xs font-medium text-gray-600">
+                      {{ 'admin.workflows.editor.sla' | translate }}
+                    </label>
+                    <div class="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        [ngModel]="step.slaHours"
+                        (ngModelChange)="setSlaHours(step.uid, $event)"
+                        class="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        data-testid="sla-hours"
+                      />
+                      <span class="text-xs text-gray-500">{{ 'admin.workflows.editor.hours' | translate }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Parallel toggle + multi-approver (BR-3) -->
+                <div class="mt-4 border-t border-gray-50 pt-4">
+                  <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      [ngModel]="step.isParallel"
+                      (ngModelChange)="toggleParallel(step.uid, $event)"
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+                      data-testid="parallel-toggle"
+                    />
+                    {{ 'admin.workflows.editor.parallel' | translate }}
+                  </label>
+                  @if (step.isParallel) {
+                    <div class="mt-3 space-y-2 pl-6" data-testid="parallel-section">
+                      <p class="text-xs text-gray-500">{{ 'admin.workflows.editor.parallelHint' | translate }}</p>
+                      @for (pa of step.parallelApproverIdentifiers; track $index; let pi = $index) {
+                        <div class="flex items-center gap-2">
+                          <select
+                            [ngModel]="pa"
+                            (ngModelChange)="setParallelApprover(step.uid, pi, $event)"
+                            class="flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            data-testid="parallel-approver"
+                          >
+                            <option value="">{{ 'admin.workflows.editor.selectApprover' | translate }}</option>
+                            @for (u of users(); track u.id) {
+                              <option [value]="u.id">{{ u.displayName }}</option>
+                            }
+                          </select>
+                          <button
+                            type="button"
+                            (click)="removeParallelApprover(step.uid, pi)"
+                            class="rounded p-1 text-gray-400 hover:text-red-600"
+                            [attr.aria-label]="'admin.workflows.editor.removeApprover' | translate"
+                          >✕</button>
+                        </div>
+                      }
+                      <button
+                        type="button"
+                        (click)="addParallelApprover(step.uid)"
+                        class="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                        data-testid="add-parallel-approver"
+                      >
+                        + {{ 'admin.workflows.editor.addApprover' | translate }}
+                      </button>
+                    </div>
+                  }
+                </div>
+
+                <!-- Condition builder (expandable) -->
+                <div class="mt-4 border-t border-gray-50 pt-4">
+                  <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      [ngModel]="step.conditionEnabled"
+                      (ngModelChange)="toggleCondition(step.uid, $event)"
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+                      data-testid="condition-toggle"
+                    />
+                    {{ 'admin.workflows.editor.condition' | translate }}
+                  </label>
+                  @if (step.conditionEnabled) {
+                    <div class="mt-3 grid gap-2 pl-6 sm:grid-cols-3" data-testid="condition-section">
+                      <input
+                        type="text"
+                        [ngModel]="step.conditionField"
+                        (ngModelChange)="setConditionField(step.uid, $event)"
+                        [attr.placeholder]="'admin.workflows.editor.conditionField' | translate"
+                        class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        data-testid="condition-field"
+                      />
+                      <select
+                        [ngModel]="step.conditionOperator"
+                        (ngModelChange)="setConditionOperator(step.uid, $event)"
+                        class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        data-testid="condition-operator"
+                      >
+                        @for (op of operators; track op) {
+                          <option [value]="op">{{ op }}</option>
+                        }
+                      </select>
+                      <input
+                        type="text"
+                        [ngModel]="step.conditionValue"
+                        (ngModelChange)="setConditionValue(step.uid, $event)"
+                        [attr.placeholder]="'admin.workflows.editor.conditionValue' | translate"
+                        class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        data-testid="condition-value"
+                      />
+                    </div>
+                  }
+                </div>
+
+                <!-- Escalation (expandable, BR-4) -->
+                <div class="mt-4 border-t border-gray-50 pt-4">
+                  <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      [ngModel]="step.escalationEnabled"
+                      (ngModelChange)="toggleEscalation(step.uid, $event)"
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+                      data-testid="escalation-toggle"
+                    />
+                    {{ 'admin.workflows.editor.escalation' | translate }}
+                  </label>
+                  @if (step.escalationEnabled) {
+                    <div class="mt-3 grid gap-2 pl-6 sm:grid-cols-2" data-testid="escalation-section">
+                      <select
+                        [ngModel]="step.escalationApproverType"
+                        (ngModelChange)="setEscalationApproverType(step.uid, $event)"
+                        class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        data-testid="escalation-type"
+                      >
+                        @for (at of approverTypes; track at) {
+                          <option [value]="at">{{ 'admin.workflows.approverType.' + at | translate }}</option>
+                        }
+                      </select>
+                      @if (needsIdentifier(step.escalationApproverType)) {
+                        <select
+                          [ngModel]="step.escalationApproverIdentifier"
+                          (ngModelChange)="setEscalationApproverIdentifier(step.uid, $event)"
+                          class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                          data-testid="escalation-identifier"
+                        >
+                          <option value="">{{ 'admin.workflows.editor.selectApprover' | translate }}</option>
+                          @if (step.escalationApproverType === 'Role') {
+                            @for (r of roles(); track r.id) {
+                              <option [value]="r.id">{{ r.name }}</option>
+                            }
+                          } @else {
+                            @for (u of users(); track u.id) {
+                              <option [value]="u.id">{{ u.displayName }}</option>
+                            }
+                          }
+                        </select>
+                      }
+                    </div>
+                  }
+                </div>
+
+                <!-- Delegation (AC-5) -->
+                <div class="mt-4 border-t border-gray-50 pt-4">
+                  <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      [ngModel]="step.delegationEnabled"
+                      (ngModelChange)="toggleDelegation(step.uid, $event)"
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-400"
+                      data-testid="delegation-toggle"
+                    />
+                    {{ 'admin.workflows.editor.delegation' | translate }}
+                  </label>
+                  @if (step.delegationEnabled) {
+                    <div class="mt-3 pl-6" data-testid="delegation-section">
+                      <label class="mb-1.5 block text-xs font-medium text-gray-600">
+                        {{ 'admin.workflows.editor.backupApprover' | translate }}
+                      </label>
+                      <select
+                        [ngModel]="step.delegationBackupUserId"
+                        (ngModelChange)="setDelegationBackup(step.uid, $event)"
+                        class="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 sm:max-w-xs"
+                        data-testid="delegation-backup"
+                      >
+                        <option value="">{{ 'admin.workflows.editor.selectApprover' | translate }}</option>
+                        @for (u of users(); track u.id) {
+                          <option [value]="u.id">{{ u.displayName }}</option>
+                        }
+                      </select>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <button
+        type="button"
+        (click)="addStep()"
+        class="mt-3 w-full rounded-xl border border-dashed border-gray-300 bg-white py-3 text-sm font-medium text-gray-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+        data-testid="add-step"
+      >
+        + {{ 'admin.workflows.editor.addStep' | translate }}
+      </button>
+    </section>
+
+    <!-- Actions -->
+    <div class="flex items-center justify-end gap-3">
+      <button
+        type="button"
+        (click)="cancel()"
+        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+      >
+        {{ 'admin.workflows.editor.cancel' | translate }}
+      </button>
+      <button
+        type="button"
+        (click)="save()"
+        [disabled]="!canSave() || saving()"
+        class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+        data-testid="save-workflow"
+      >
+        {{
+          (saving()
+            ? 'admin.workflows.editor.saving'
+            : isEdit()
+              ? 'admin.workflows.editor.saveNewVersion'
+              : 'admin.workflows.editor.saveCreate'
+          ) | translate
+        }}
+      </button>
+    </div>
+  }
+</div>

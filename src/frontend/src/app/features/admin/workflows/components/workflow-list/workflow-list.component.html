@@ -1,0 +1,176 @@
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+  <!-- Header -->
+  <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight text-gray-900">
+        {{ 'admin.workflows.list.title' | translate }}
+      </h1>
+      <p class="mt-1 text-sm text-gray-500">
+        {{ 'admin.workflows.list.subtitle' | translate }}
+      </p>
+    </div>
+    <button
+      type="button"
+      (click)="createWorkflow()"
+      class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
+      data-testid="create-workflow"
+    >
+      <span aria-hidden="true">+</span>
+      {{ 'admin.workflows.list.create' | translate }}
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="rounded-xl border border-gray-100 bg-white p-10 text-center text-gray-500 shadow-sm">
+      {{ 'admin.workflows.list.loading' | translate }}
+    </div>
+  } @else if (error()) {
+    <div class="rounded-xl border border-red-100 bg-red-50 p-8 text-center" data-testid="list-error">
+      <p class="text-sm text-red-700">{{ 'admin.workflows.list.loadError' | translate }}</p>
+      <button
+        type="button"
+        (click)="load()"
+        class="mt-3 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-50"
+      >
+        {{ 'admin.workflows.list.retry' | translate }}
+      </button>
+    </div>
+  } @else if (groups().length === 0) {
+    <div class="rounded-xl border border-dashed border-gray-200 bg-white p-12 text-center" data-testid="empty-state">
+      <p class="text-sm text-gray-500">{{ 'admin.workflows.list.empty' | translate }}</p>
+    </div>
+  } @else {
+    <!-- Grouped by request type (AC-1) -->
+    <div class="space-y-8">
+      @for (group of groups(); track group.entityType) {
+        <section data-testid="entity-group">
+          <h2 class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            {{ 'admin.workflows.entityType.' + group.entityType | translate }}
+          </h2>
+          <div class="grid gap-3 sm:grid-cols-2">
+            @for (wf of group.workflows; track wf.id) {
+              <div
+                class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                data-testid="workflow-card"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    (click)="editWorkflow(wf)"
+                    class="flex-1 text-left"
+                    data-testid="workflow-edit"
+                  >
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="text-sm font-semibold text-gray-900">{{ wf.name }}</span>
+                      @if (wf.isDefault) {
+                        <span
+                          class="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700"
+                          data-testid="default-badge"
+                        >
+                          {{ 'admin.workflows.list.default' | translate }}
+                        </span>
+                      }
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                      <span
+                        class="rounded-full px-2 py-0.5 font-medium"
+                        [class]="statusBadgeClass(wf.status)"
+                        data-testid="status-badge"
+                      >
+                        {{ 'admin.workflows.status.' + wf.status | translate }}
+                      </span>
+                      <span>{{ wf.stepCount }} {{ 'admin.workflows.list.steps' | translate }}</span>
+                      <span aria-hidden="true">•</span>
+                      <span>v{{ wf.version }}</span>
+                      <span aria-hidden="true">•</span>
+                      <span>{{ wf.updatedAt | date: 'mediumDate' }}</span>
+                    </div>
+                  </button>
+                </div>
+
+                <!-- Row actions -->
+                <div class="mt-3 flex items-center gap-3 border-t border-gray-50 pt-3 text-xs font-medium">
+                  <button
+                    type="button"
+                    (click)="editWorkflow(wf)"
+                    class="text-indigo-600 transition-colors hover:text-indigo-800"
+                  >
+                    {{ 'admin.workflows.list.edit' | translate }}
+                  </button>
+                  @if (wf.status === 'Archived') {
+                    <button
+                      type="button"
+                      (click)="requestRestore(wf)"
+                      class="text-green-600 transition-colors hover:text-green-800"
+                      data-testid="restore-action"
+                    >
+                      {{ 'admin.workflows.list.restore' | translate }}
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      (click)="requestArchive(wf)"
+                      class="text-gray-500 transition-colors hover:text-gray-700"
+                      data-testid="archive-action"
+                    >
+                      {{ 'admin.workflows.list.archive' | translate }}
+                    </button>
+                  }
+                  <button
+                    type="button"
+                    (click)="requestDelete(wf)"
+                    class="ml-auto text-red-500 transition-colors hover:text-red-700"
+                    data-testid="delete-action"
+                  >
+                    {{ 'admin.workflows.list.delete' | translate }}
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        </section>
+      }
+    </div>
+  }
+</div>
+
+<!-- Confirm dialog (FR-6, BR-6) -->
+@if (pendingAction(); as action) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    role="dialog"
+    aria-modal="true"
+    data-testid="confirm-dialog"
+  >
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+      <h3 class="text-base font-semibold text-gray-900">
+        {{ 'admin.workflows.confirm.' + action.kind + '.title' | translate }}
+      </h3>
+      <p class="mt-2 text-sm text-gray-600">
+        {{ 'admin.workflows.confirm.' + action.kind + '.message' | translate: { name: action.workflow.name } }}
+      </p>
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          (click)="cancelAction()"
+          class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        >
+          {{ 'admin.workflows.confirm.cancel' | translate }}
+        </button>
+        <button
+          type="button"
+          (click)="confirmAction()"
+          [disabled]="busy()"
+          class="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+          [class.bg-red-600]="action.kind === 'delete'"
+          [class.hover:bg-red-700]="action.kind === 'delete'"
+          [class.bg-indigo-600]="action.kind !== 'delete'"
+          [class.hover:bg-indigo-700]="action.kind !== 'delete'"
+          data-testid="confirm-button"
+        >
+          {{ 'admin.workflows.confirm.' + action.kind + '.confirm' | translate }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
