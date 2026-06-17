@@ -4068,7 +4068,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (ADM-003) | Multi-tenant isolation under impersonation (Tenant A session cannot reach Tenant B data -> 404) | Critical | TC-ADM-ISO-007 | 1 | -- |
 | US-ADM-004 | System Admin Suspends or Terminates a Tenant | Must Have | TC-ADM-004-01, TC-ADM-004-02, TC-ADM-004-03, TC-ADM-004-04, TC-ADM-004-05, TC-ADM-004-06, TC-ADM-004-07, TC-ADM-004-08, TC-ADM-004-09, TC-ADM-004-10, TC-ADM-004-11, TC-ADM-004-12, TC-ADM-004-13, TC-ADM-004-14, TC-ADM-004-15, TC-ADM-004-16, TC-ADM-004-17, TC-ADM-004-18, TC-ADM-004-19, TC-ADM-004-20, TC-ADM-004-21 | 21 | 6/6 AC + 7/7 BR + 7/7 FR covered (4 TCs DEFERRED) |
 | Cross-cutting (ADM-004) | Multi-tenant isolation in lifecycle (Tenant A deletion leaves Tenant B untouched; lifecycle endpoints require system context, cross-tenant injection -> 404) | Critical | TC-ADM-ISO-008, TC-ADM-ISO-009 | 2 | -- |
-| **TOTAL** | | | **76 test cases** | **76** | **23/23 AC** |
+| US-ADM-005 | Tenant Admin Manages Users and Role Assignments | Must Have | TC-ADM-005-01, TC-ADM-005-02, TC-ADM-005-03, TC-ADM-005-04, TC-ADM-005-05, TC-ADM-005-06, TC-ADM-005-07, TC-ADM-005-08, TC-ADM-005-09, TC-ADM-005-10, TC-ADM-005-11, TC-ADM-005-12, TC-ADM-005-13, TC-ADM-005-14, TC-ADM-005-15, TC-ADM-005-16, TC-ADM-005-17, TC-ADM-005-18, TC-ADM-005-19, TC-ADM-005-20, TC-ADM-005-21 | 21 | 6/6 AC + 7/7 BR + 6/6 FR covered (3 TCs DEFERRED) |
+| Cross-cutting (ADM-005) | Multi-tenant isolation in user management (tenant-scoped list/detail, cross-tenant param injection -> 404, tenant-context+authz required, token-revocation scoping correct) | Critical | TC-ADM-ISO-010, TC-ADM-ISO-011, TC-ADM-ISO-012, TC-ADM-ISO-013 | 4 | -- |
+| **TOTAL** | | | **101 test cases** | **101** | **29/29 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -4150,6 +4152,31 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ADM-004-21 | [DEFERRED] 50k-record deletion within 10 min | Performance | Medium | US-ADM-004 | NFR-2 (DEFERRED: perf env) |
 | TC-ADM-ISO-008 | Deleting Tenant A leaves Tenant B unaffected | Security | Critical | US-ADM-004 | AC-4, FR-3, Test Hints |
 | TC-ADM-ISO-009 | Lifecycle endpoints require system context; cross-tenant injection -> 404 | Security | Critical | US-ADM-004 | BR-7, FR-1/2/5/6/7 |
+| TC-ADM-005-01 | User list paginated, tenant-scoped, all columns | E2E | Critical | US-ADM-005 | AC-1, FR-1, BR-1 |
+| TC-ADM-005-02 | Search (name/email) + filter (status, role) | Functional | High | US-ADM-005 | AC-1, FR-1 |
+| TC-ADM-005-03 | Pagination boundaries (default 20, max 100) | Functional | Medium | US-ADM-005 | AC-1, FR-1 |
+| TC-ADM-005-04 | Invite NEW global user: user+invited membership+72h token+dispatch | E2E | Critical | US-ADM-005 | AC-2, FR-2, BR-1/5 |
+| TC-ADM-005-05 | Invite EXISTING global user: no duplicate, new membership only | Functional | High | US-ADM-005 | AC-2, FR-2, BR-1 |
+| TC-ADM-005-06 | Plan limit enforced at invite time (5 ok, 6th rejected) | Functional | Critical | US-ADM-005 | AC-2, BR-5 |
+| TC-ADM-005-07 | Bulk CSV 5 valid + 2 invalid -> per-row | Functional | High | US-ADM-005 | AC-2, FR-2/3, BR-7 |
+| TC-ADM-005-08 | Role edit Manager+HR Officer; assigned_at/by; before/after audit | Functional | Critical | US-ADM-005 | AC-3, FR-4, BR-7 |
+| TC-ADM-005-09 | BR-2: cannot remove TenantOwner | Security | Critical | US-ADM-005 | AC-3, BR-2 |
+| TC-ADM-005-10 | BR-4: built-in roles assignable not editable/deletable | Functional | High | US-ADM-005 | AC-3, BR-4, §10 |
+| TC-ADM-005-11 | Deactivate: disabled + this-tenant tokens revoked + audit | E2E | Critical | US-ADM-005 | AC-4, FR-1, NFR-2 |
+| TC-ADM-005-12 | Deactivation isolation: A disable leaves B login intact | Security | Critical | US-ADM-005 | AC-4, BR-1 |
+| TC-ADM-005-13 | BR-3: cannot self-deactivate | Security | Critical | US-ADM-005 | AC-4, BR-3 |
+| TC-ADM-005-14 | Force password reset: ALL-tenant token revoke + null PwdChangedAt | Security | Critical | US-ADM-005 | AC-5, NFR-2 |
+| TC-ADM-005-15 | End All Sessions: current-tenant tokens only | Security | High | US-ADM-005 | AC-4, FR-5 |
+| TC-ADM-005-16 | Invitation expiry 72h + resend new token (+ revoke) | Functional | High | US-ADM-005 | AC-2, BR-6 |
+| TC-ADM-005-17 | Audit completeness sweep (actor/action/before-after/IP/ts) | Integration | High | US-ADM-005 | AC-2/3/4/5, FR-4/5, NFR-2 |
+| TC-ADM-005-18 | JWT valid until expiry; next refresh new roles; detail view | Functional | High | US-ADM-005 | AC-3, FR-4/6 |
+| TC-ADM-005-19 | [DEFERRED] real invitation/reset email DELIVERY | Integration | High | US-ADM-005 | AC-2/5, NFR-3 (DEFERRED: US-NTF) |
+| TC-ADM-005-20 | [DEFERRED] list <= 1.5s @ 5,000 users | Performance | Medium | US-ADM-005 | AC-1, FR-1, NFR-1 (DEFERRED: perf env) |
+| TC-ADM-005-21 | [DEFERRED] Postgres RLS isolation layer | Security | Medium | US-ADM-005 | AC-6, NFR-5 (DEFERRED: RLS) |
+| TC-ADM-ISO-010 | User list tenant-scoped (EF query-filter READ block) | Security | Critical | US-ADM-005 | AC-1/6, FR-1, BR-1 |
+| TC-ADM-ISO-011 | Cross-tenant param manipulation -> 404 not 403 | Security | Critical | US-ADM-005 | AC-6, BR-1 |
+| TC-ADM-ISO-012 | Mutating endpoints require tenant context + TenantAdmin authz; writes stamped | Security | Critical | US-ADM-005 | AC-6, FR-1/2/4, BR-1 |
+| TC-ADM-ISO-013 | Token-revocation scoping: deactivate/end-sessions tenant-only vs force-reset global | Security | Critical | US-ADM-005 | AC-4/5, FR-5, BR-1 |
 
 ### Coverage Summary (Admin Console -- US-ADM-001)
 
@@ -4242,3 +4269,34 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | NFR-5 (no-paste typed confirmation) | TC-ADM-004-17 | FE-verified |
 
 *Note (Admin Console -- US-ADM-004): fourth ADM story; continues the per-story-suffix functional scheme (TC-ADM-004-XX) and the running ISO counter (TC-ADM-ISO-008..009). All 6 ACs (AC-1..AC-6), all 7 BRs (BR-1..BR-7), and all 7 FRs (FR-1..FR-7) traced. IMPLEMENTATION FACTS (tested as built): tenant gains `SuspendedAt`/`SuspendedReason`/`TerminationScheduledAt`; transitions enforce BR-1's allowed-state matrix, invalid transitions rejected 409/400 (TC-ADM-004-12). SUSPEND -> `Suspended`, revokes all tenant refresh tokens (BR-5), lifecycle 'suspended' + system audit, log-only notification; suspended-tenant API -> HTTP 451 for tenant users except Tenant Admin; suspended login allows only Tenant Admin/Owner (AC-2). TERMINATE -> `Terminating`, `TerminationScheduledAt = now + graceDays` (7-90, default 30, BR-4), schedules data-deletion job + 14/7/1d reminder jobs, lifecycle 'termination_initiated'; Terminating is read-only (writes -> 403, BR-6). DATA-DELETION job (AC-4) hard-deletes per-tenant data, retains the tenant row as `Terminated` with PII redacted, retains audit logs, transactional/atomic (NFR-4), tenant-isolated (TC-ADM-ISO-008). REACTIVATE (AC-5): Suspended -> Active, fields cleared, 'reactivated'. RESTORE (AC-6): Terminating -> prior state, scheduled_at cleared, scheduled jobs de-queued, 'restored'. BR-2: system tenant immune; BR-3: Terminated not restorable; BR-7: only SystemAdmin transitions, SystemSupport view-only. Typed-subdomain confirmation (FR-4) + no-paste (NFR-5) are FRONTEND (TC-ADM-004-17, FE-verified). DEFERRED (status: blocked; honest traceability, never fabricated): lifecycle/reminder email DELIVERY (TC-ADM-004-18) — log-only dispatch seam until US-NTF; dispatch/scheduling asserted run-green in TC-ADM-004-01/-06/-10. File-storage (blob) deletion (TC-ADM-004-19) — §10 requires deleting documents/resumes/payslips but no blob storage is wired; relational hard-delete covered run-green in TC-ADM-004-09. NFR-3 maintenance-window scheduling (TC-ADM-004-20) — no window config; deletion fires at grace expiry. NFR-2 50k-record/10-min perf (TC-ADM-004-21) — needs a perf-representative environment; correctness covered by TC-ADM-004-09. STORY MISMATCH worth flagging to the caller: the story Preconditions assert "the notification system is operational for lifecycle emails" and §10 requires file-storage deletion — neither is wired today, so AC-1/AC-3/AC-5 email DELIVERY and AC-4 blob deletion are partial (dispatch + DB-deletion real, delivery + blob deferred); recommend the story note these as Phase-1 dispatch-only with delivery/blob following US-NTF + object-storage integration.*
+
+### Coverage Summary (Admin Console -- US-ADM-005)
+
+| AC / Requirement | Covered By | Coverage |
+|------------------|-----------|----------|
+| AC-1 (paginated/searchable/filterable tenant-scoped list, all columns) | TC-ADM-005-01, -02, -03, TC-ADM-ISO-010 (+ -20 DEFERRED perf) | Direct (perf deferred) |
+| AC-2 (invite single/bulk: 72h token, find-or-create, plan limit, pending tab) | TC-ADM-005-04, -05, -06, -07, -16 (+ -19 DEFERRED delivery) | Dispatch real; email delivery deferred |
+| AC-3 (edit roles: user_tenant_role updated, before/after audit, JWT valid until refresh) | TC-ADM-005-08, -09, -10, -18 | Direct |
+| AC-4 (deactivate: disabled + this-tenant token revoke + isolation + audit) | TC-ADM-005-11, -12, -13, -15, TC-ADM-ISO-013 | Direct |
+| AC-5 (force password reset: ALL-tenant token revoke + null PwdChangedAt + email + audit) | TC-ADM-005-14, TC-ADM-ISO-013 (+ -19 DEFERRED delivery) | Token revoke real; email delivery deferred |
+| AC-6 (cross-tenant param manipulation rejected -> 404 not 403) | TC-ADM-ISO-010, -011, -012 (+ -21 DEFERRED RLS layer) | App+EF real; RLS deferred |
+| BR-1 (own-tenant only) | TC-ADM-005-05/-12, TC-ADM-ISO-010/-011/-012/-013 | Direct |
+| BR-2 (cannot remove TenantOwner) | TC-ADM-005-09 | Direct |
+| BR-3 (no self-deactivation) | TC-ADM-005-13 | Direct |
+| BR-4 (built-in roles assignable not editable) | TC-ADM-005-10 | Direct |
+| BR-5 (plan limit at invite time vs MaxEmployees) | TC-ADM-005-06 | Direct |
+| BR-6 (72h expiry; resend new token) | TC-ADM-005-16 | Direct |
+| BR-7 (multiple roles per user) | TC-ADM-005-08, -07 | Direct |
+| FR-1 (list: join + tenant filter + pagination/search/filter) | TC-ADM-005-01/-02/-03, TC-ADM-ISO-010 | Direct |
+| FR-2 (invite: existence/membership/limit checks + invitation + dispatch) | TC-ADM-005-04/-05/-06/-07 | Direct (delivery deferred -19) |
+| FR-3 (bulk CSV per-row validation) | TC-ADM-005-07 | Direct |
+| FR-4 (role assignment: assigned_at/by) | TC-ADM-005-08, -18 | Direct |
+| FR-5 (end all sessions: current tenant only) | TC-ADM-005-15, TC-ADM-ISO-013 | Direct |
+| FR-6 (user detail: profile/roles/employee/audit/sessions/invitations) | TC-ADM-005-18 | Direct |
+| NFR-1 (list <= 1.5s @ 5,000 users) | TC-ADM-005-20 | DEFERRED (perf env); correctness in -01..03 |
+| NFR-2 (all actions audited: actor/action/before-after/IP/ts) | TC-ADM-005-17 (sweep) + -04/-08/-11/-14/-15 | Direct |
+| NFR-3 (email dispatch <= 30s) | TC-ADM-005-04/-14 (dispatch) + -19 (DEFERRED delivery) | Dispatch real; delivery deferred |
+| NFR-4 (mobile responsive 360-4K) | FE-verified during FE story | FE-verified |
+| NFR-5 (three-layer isolation incl. Postgres RLS) | TC-ADM-ISO-010/-012 (app+EF) + -21 (DEFERRED RLS) | App+EF real; RLS deferred |
+
+*Note (Admin Console -- US-ADM-005): fifth ADM story and the FIRST Tenant Admin persona (tenant-scoped — isolation runs in the resolved-tenant EF query-filter context, NOT system context). Continues the per-story-suffix functional scheme (TC-ADM-005-XX) and the running ISO counter (TC-ADM-ISO-010..013). All 6 ACs, all 7 BRs, and all 6 FRs traced. IMPLEMENTATION FACTS (tested as built): the `users` table is global; user management = `user_tenant` memberships + `user_tenant_role` within the tenant; new `user_invitation` entity (Invited/Accepted/Expired/Revoked, 72h HASHED token). List joins user_tenant x users x user_tenant_role filtered by ITenantContext.TenantId, paginated (default 20/max 100), searchable (name/email), filterable (status/role) (TC-ADM-005-01..03). Invite is find-or-create-global — existing global user gets a NEW membership, no duplicate user (TC-ADM-005-05) — with plan limit enforced AT INVITE TIME vs Tenant.MaxEmployees (BR-5, TC-ADM-005-06); bulk CSV validates per-row, valid rows succeed while invalid rows error (FR-3, TC-ADM-005-07). Role edit REPLACES the set with assigned_at/by + before/after audit (TC-ADM-005-08); BR-2 blocks removing TenantOwner (-09); BR-4 built-in roles assignable-not-editable (-10); BR-7 multiple roles. Deactivate -> membership Disabled + revoke THIS-tenant refresh tokens + audit (-11), BR-3 no self-deactivation (-13); isolation: Tenant A deactivation leaves Tenant B membership/login intact (-12, TC-ADM-ISO-013). Force password reset -> revoke ALL refresh tokens ACROSS tenants (global credential) + null password_changed_at + reset email + audit (-14); End-all-sessions -> revoke CURRENT-tenant tokens only (FR-5, -15) — token-revocation scoping per action verified in TC-ADM-ISO-013. Invitation expiry 72h; Resend issues a NEW token invalidating the old (BR-6, -16). AC-3 token lifecycle: current JWT valid until expiry, next refresh reflects new roles; user-detail aggregates profile/roles/employee/audit/sessions/invitations (FR-6, -18). All mutating actions audited with full NFR-2 envelope (-17 sweep). Cross-tenant param manipulation (user_tenant_id/invitation_id/body tenant_id) -> **404 not 403** (existence non-disclosure) for read AND every mutation (TC-ADM-ISO-011); list/detail tenant-scoped via EF query filters (TC-ADM-ISO-010); missing/invalid tenant context + non-admin/unauth rejected, writes TenantInterceptor-stamped (TC-ADM-ISO-012). DEFERRED (status: blocked; honest traceability, never fabricated): real invitation/reset email DELIVERY (TC-ADM-005-19) — log-only until US-NTF; the dispatch seam IS asserted run-green in TC-ADM-005-04/-14. NFR-1 5,000-user/1.5s list perf (TC-ADM-005-20) — needs a perf-representative env; correctness in -01..03. Postgres RLS layer (TC-ADM-005-21) — platform implements only app (ITenantContext) + EF (query filter/TenantInterceptor) isolation; RLS is a deferred extension point (same family as US-ADM-001..004/Payroll/Leave). Custom roles / auto-assign / SCIM are §10 Phase-2, out of scope (touched negatively in -10). STORY MISMATCH worth flagging to the caller: AC-6/NFR-5 name PostgreSQL RLS as an ACTIVE isolation layer, which contradicts the implemented EF-query-filter mechanism — reword so isolation is specified against EF query filters + TenantInterceptor with RLS as future hardening (NFR-5's "three layers" is two today).*

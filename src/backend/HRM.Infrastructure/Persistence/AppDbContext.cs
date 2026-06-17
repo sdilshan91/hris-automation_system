@@ -30,6 +30,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<UserTenantRole> UserTenantRoles => Set<UserTenantRole>();
+    public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -136,6 +137,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         modelBuilder.Entity<RefreshToken>()
             .HasQueryFilter(rt => !_tenantContext.IsResolved || rt.TenantId == _tenantContext.TenantId);
+
+        // US-ADM-005: UserInvitation tenant isolation + soft-delete filter (AC-6 cross-tenant isolation).
+        modelBuilder.Entity<UserInvitation>()
+            .HasQueryFilter(i => !i.IsDeleted && (!_tenantContext.IsResolved || i.TenantId == _tenantContext.TenantId));
 
         modelBuilder.Entity<Tenant>()
             .HasQueryFilter(t => !t.IsDeleted);

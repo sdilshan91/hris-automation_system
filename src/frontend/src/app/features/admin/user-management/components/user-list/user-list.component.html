@@ -1,0 +1,434 @@
+<div class="page-container">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight">
+        {{ 'userManagement.title' | translate }}
+      </h1>
+      <p class="mt-1 text-sm text-neutral-500">
+        {{ 'userManagement.subtitle' | translate }}
+      </p>
+    </div>
+    <button class="btn-primary" data-testid="open-invite" (click)="openInvite()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1.5">
+        <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+      </svg>
+      {{ 'userManagement.inviteUser' | translate }}
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 border-b border-neutral-100 mb-5" role="tablist">
+    <button
+      type="button"
+      role="tab"
+      class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+      [class.border-brand-600]="activeTab() === 'users'"
+      [class.text-brand-700]="activeTab() === 'users'"
+      [class.border-transparent]="activeTab() !== 'users'"
+      [class.text-neutral-500]="activeTab() !== 'users'"
+      [attr.aria-selected]="activeTab() === 'users'"
+      data-testid="tab-users"
+      (click)="selectTab('users')"
+    >
+      {{ 'userManagement.tabUsers' | translate }}
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+      [class.border-brand-600]="activeTab() === 'invitations'"
+      [class.text-brand-700]="activeTab() === 'invitations'"
+      [class.border-transparent]="activeTab() !== 'invitations'"
+      [class.text-neutral-500]="activeTab() !== 'invitations'"
+      [attr.aria-selected]="activeTab() === 'invitations'"
+      data-testid="tab-invitations"
+      (click)="selectTab('invitations')"
+    >
+      {{ 'userManagement.tabInvitations' | translate }}
+    </button>
+  </div>
+
+  <!-- ════════════ USERS TAB ════════════ -->
+  @if (activeTab() === 'users') {
+    <!-- Search + filters -->
+    <div class="flex flex-col sm:flex-row gap-3 mb-5">
+      <div class="relative flex-1">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2">
+          <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd" />
+        </svg>
+        <input
+          type="search"
+          class="w-full rounded-lg border border-neutral-200 pl-9 pr-3 py-2 text-sm placeholder:text-neutral-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+          [placeholder]="'userManagement.searchPlaceholder' | translate"
+          [attr.aria-label]="'userManagement.searchPlaceholder' | translate"
+          data-testid="user-search"
+          (input)="onSearchInput($any($event.target).value)"
+        />
+      </div>
+
+      <select
+        class="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-700 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+        [attr.aria-label]="'userManagement.filterStatus' | translate"
+        data-testid="status-filter"
+        [ngModel]="statusFilter()"
+        (ngModelChange)="onStatusChange($event)"
+      >
+        <option value="">{{ 'userManagement.allStatuses' | translate }}</option>
+        <option value="active">{{ 'userManagement.status.active' | translate }}</option>
+        <option value="invited">{{ 'userManagement.status.invited' | translate }}</option>
+        <option value="disabled">{{ 'userManagement.status.disabled' | translate }}</option>
+      </select>
+
+      <select
+        class="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-700 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+        [attr.aria-label]="'userManagement.filterRole' | translate"
+        data-testid="role-filter"
+        [ngModel]="roleFilter()"
+        (ngModelChange)="onRoleChange($event)"
+      >
+        <option value="">{{ 'userManagement.allRoles' | translate }}</option>
+        @for (role of roles(); track role.id) {
+          <option [value]="role.id">{{ role.name }}</option>
+        }
+      </select>
+    </div>
+
+    <!-- Loading -->
+    @if (loading()) {
+      <div class="card-notion overflow-hidden p-0">
+        @for (i of [1,2,3,4,5]; track i) {
+          <div class="flex items-center gap-4 px-4 py-4 border-b border-neutral-50 animate-pulse">
+            <div class="w-9 h-9 rounded-full bg-neutral-100"></div>
+            <div class="flex-1 space-y-2">
+              <div class="h-3.5 bg-neutral-100 rounded w-1/4"></div>
+              <div class="h-3 bg-neutral-50 rounded w-1/3"></div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Error -->
+    @if (!loading() && error()) {
+      <div class="card-notion text-center py-12">
+        <p class="text-sm text-neutral-600">{{ error() }}</p>
+        <button class="btn-secondary mt-4" (click)="loadUsers()">
+          {{ 'common.retry' | translate }}
+        </button>
+      </div>
+    }
+
+    <!-- Empty -->
+    @if (!loading() && !error() && users().length === 0) {
+      <div class="card-notion text-center py-12" data-testid="users-empty">
+        <div class="w-12 h-12 rounded-full bg-neutral-50 flex items-center justify-center mx-auto mb-3">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-6 h-6 text-neutral-400">
+            <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
+          </svg>
+        </div>
+        <p class="text-sm text-neutral-600 mb-1">{{ 'userManagement.emptyTitle' | translate }}</p>
+        <p class="text-xs text-neutral-400">{{ 'userManagement.emptyHint' | translate }}</p>
+      </div>
+    }
+
+    <!-- Table -->
+    @if (!loading() && !error() && users().length > 0) {
+      <div class="card-notion overflow-hidden p-0" @fadeIn>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm" data-testid="users-table">
+            <thead>
+              <tr class="text-left text-xs font-medium text-neutral-400 uppercase tracking-wider border-b border-neutral-100">
+                <th class="px-4 py-3 font-medium">{{ 'userManagement.col.user' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden md:table-cell">{{ 'userManagement.col.roles' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden sm:table-cell">{{ 'userManagement.col.status' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden lg:table-cell">{{ 'userManagement.col.lastLogin' | translate }}</th>
+                <th class="px-4 py-3 font-medium text-right">{{ 'userManagement.col.actions' | translate }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-neutral-50">
+              @for (user of users(); track user.userTenantId) {
+                <tr class="hover:bg-neutral-50/60 transition-colors" data-testid="user-row">
+                  <!-- User -->
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div class="w-9 h-9 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center flex-shrink-0">
+                        {{ initials(user.displayName) }}
+                      </div>
+                      <div class="min-w-0">
+                        <a
+                          [routerLink]="['/admin/users', user.userTenantId]"
+                          class="block font-medium text-neutral-800 truncate hover:text-brand-700"
+                        >{{ user.displayName }}</a>
+                        <span class="block text-xs text-neutral-400 truncate">{{ user.email }}</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- Roles -->
+                  <td class="px-4 py-3 hidden md:table-cell">
+                    <div class="flex flex-wrap gap-1">
+                      @for (r of user.roles; track r.id) {
+                        <span class="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600 text-xs font-medium">{{ r.name }}</span>
+                      } @empty {
+                        <span class="text-xs text-neutral-300">—</span>
+                      }
+                    </div>
+                  </td>
+
+                  <!-- Status -->
+                  <td class="px-4 py-3 hidden sm:table-cell">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium" [ngClass]="statusClass(user.status)">
+                      {{ ('userManagement.status.' + user.status) | translate }}
+                    </span>
+                  </td>
+
+                  <!-- Last login -->
+                  <td class="px-4 py-3 hidden lg:table-cell text-neutral-500 text-xs">
+                    {{ user.lastLoginAt ? (user.lastLoginAt | date: 'short') : ('userManagement.never' | translate) }}
+                  </td>
+
+                  <!-- Actions -->
+                  <td class="px-4 py-3 text-right whitespace-nowrap">
+                    <div class="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        class="action-btn"
+                        [attr.data-testid]="'edit-roles-' + user.userTenantId"
+                        [title]="'userManagement.editRoles.title' | translate"
+                        [attr.aria-label]="('userManagement.editRoles.title' | translate) + ' ' + user.displayName"
+                        (click)="openEditRoles(user)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                          <path d="M2.695 14.763l-1.262 3.154a.5.5 0 0 0 .65.65l3.155-1.262a4 4 0 0 0 1.343-.885L17.5 5.5a2.121 2.121 0 0 0-3-3L3.58 13.42a4 4 0 0 0-.885 1.343Z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="action-btn"
+                        [title]="'userManagement.forceReset' | translate"
+                        [attr.aria-label]="('userManagement.forceReset' | translate) + ' ' + user.displayName"
+                        (click)="askForceReset(user)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                          <path fill-rule="evenodd" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7A1.5 1.5 0 0 0 3 8.5v5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 11.5 7V4.5A3.5 3.5 0 0 0 8 1Zm2 6V4.5a2 2 0 1 0-4 0V7h4Z" clip-rule="evenodd" transform="translate(2,2)" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="action-btn"
+                        [title]="'userManagement.endSessions' | translate"
+                        [attr.aria-label]="('userManagement.endSessions' | translate) + ' ' + user.displayName"
+                        (click)="askEndSessions(user)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                          <path d="M10 1a.75.75 0 0 1 .75.75v6.5a.75.75 0 0 1-1.5 0v-6.5A.75.75 0 0 1 10 1Z" />
+                          <path d="M5.404 4.343a.75.75 0 0 1 0 1.06 5.5 5.5 0 1 0 9.192 0 .75.75 0 1 1 1.06-1.06 7 7 0 1 1-11.313 0 .75.75 0 0 1 1.06 0Z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="action-btn action-btn-danger"
+                        [attr.data-testid]="'deactivate-' + user.userTenantId"
+                        [disabled]="user.status === 'disabled'"
+                        [title]="'userManagement.deactivate' | translate"
+                        [attr.aria-label]="('userManagement.deactivate' | translate) + ' ' + user.displayName"
+                        (click)="askDeactivate(user)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM7.28 7.28a.75.75 0 0 1 1.06 0L10 8.94l1.66-1.66a.75.75 0 1 1 1.06 1.06L11.06 10l1.66 1.66a.75.75 0 1 1-1.06 1.06L10 11.06l-1.66 1.66a.75.75 0 0 1-1.06-1.06L8.94 10 7.28 8.34a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between px-4 py-3 border-t border-neutral-100">
+          <p class="text-xs text-neutral-500" data-testid="pagination-range">
+            {{ 'userManagement.showing' | translate: { start: rangeStart(), end: rangeEnd(), total: total() } }}
+          </p>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="page-btn"
+              data-testid="prev-page"
+              [disabled]="page() <= 1"
+              (click)="prevPage()"
+            >
+              {{ 'common.previous' | translate }}
+            </button>
+            <span class="text-xs text-neutral-500">{{ page() }} / {{ totalPages() }}</span>
+            <button
+              type="button"
+              class="page-btn"
+              data-testid="next-page"
+              [disabled]="page() >= totalPages()"
+              (click)="nextPage()"
+            >
+              {{ 'common.next' | translate }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- ════════════ INVITATIONS TAB ════════════ -->
+  @if (activeTab() === 'invitations') {
+    @if (invitationsLoading()) {
+      <div class="card-notion animate-pulse h-40"></div>
+    } @else if (invitationsError()) {
+      <div class="card-notion text-center py-12">
+        <p class="text-sm text-neutral-600">{{ invitationsError() }}</p>
+        <button class="btn-secondary mt-4" (click)="loadInvitations()">
+          {{ 'common.retry' | translate }}
+        </button>
+      </div>
+    } @else if (invitations().length === 0) {
+      <div class="card-notion text-center py-12" data-testid="invitations-empty">
+        <p class="text-sm text-neutral-600 mb-1">{{ 'userManagement.noInvitationsTitle' | translate }}</p>
+        <p class="text-xs text-neutral-400">{{ 'userManagement.noInvitationsHint' | translate }}</p>
+      </div>
+    } @else {
+      <div class="card-notion overflow-hidden p-0" @fadeIn>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm" data-testid="invitations-table">
+            <thead>
+              <tr class="text-left text-xs font-medium text-neutral-400 uppercase tracking-wider border-b border-neutral-100">
+                <th class="px-4 py-3 font-medium">{{ 'userManagement.col.email' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden sm:table-cell">{{ 'userManagement.col.roles' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden md:table-cell">{{ 'userManagement.col.invitedAt' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden md:table-cell">{{ 'userManagement.col.expiresAt' | translate }}</th>
+                <th class="px-4 py-3 font-medium hidden sm:table-cell">{{ 'userManagement.col.status' | translate }}</th>
+                <th class="px-4 py-3 font-medium text-right">{{ 'userManagement.col.actions' | translate }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-neutral-50">
+              @for (inv of invitations(); track inv.id) {
+                <tr class="hover:bg-neutral-50/60 transition-colors" data-testid="invitation-row">
+                  <td class="px-4 py-3 font-medium text-neutral-800">{{ inv.email }}</td>
+                  <td class="px-4 py-3 hidden sm:table-cell">
+                    <div class="flex flex-wrap gap-1">
+                      @for (r of inv.roles; track r.id) {
+                        <span class="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600 text-xs font-medium">{{ r.name }}</span>
+                      }
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 hidden md:table-cell text-neutral-500 text-xs">{{ inv.invitedAt | date: 'short' }}</td>
+                  <td class="px-4 py-3 hidden md:table-cell text-neutral-500 text-xs">{{ inv.expiresAt | date: 'short' }}</td>
+                  <td class="px-4 py-3 hidden sm:table-cell">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">{{ inv.status }}</span>
+                  </td>
+                  <td class="px-4 py-3 text-right whitespace-nowrap">
+                    <button
+                      type="button"
+                      class="text-xs font-medium text-brand-700 hover:text-brand-900 mr-3"
+                      [attr.data-testid]="'resend-' + inv.id"
+                      (click)="resendInvitation(inv)"
+                    >
+                      {{ 'userManagement.resend' | translate }}
+                    </button>
+                    <button
+                      type="button"
+                      class="text-xs font-medium text-red-600 hover:text-red-800"
+                      [attr.data-testid]="'revoke-' + inv.id"
+                      (click)="revokeInvitation(inv)"
+                    >
+                      {{ 'userManagement.revoke' | translate }}
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+  }
+</div>
+
+<!-- ════════════ Invite modal ════════════ -->
+@if (showInvite()) {
+  <app-invite-users-modal
+    [roles]="roles()"
+    (close)="closeInvite()"
+    (done)="onInviteDone()"
+  />
+}
+
+<!-- ════════════ Edit-roles panel ════════════ -->
+@if (editTarget(); as target) {
+  <app-edit-roles-panel
+    [user]="target"
+    [roles]="roles()"
+    (close)="closeEditRoles()"
+    (saved)="onRolesSaved()"
+  />
+}
+
+<!-- ════════════ Confirm dialog ════════════ -->
+@if (confirmAction(); as action) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4"
+    (click)="cancelConfirm()"
+    (keydown.escape)="cancelConfirm()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="confirm-title"
+  >
+    <div class="w-full max-w-md rounded-xl bg-white shadow-xl p-6" (click)="$event.stopPropagation()">
+      <h3 id="confirm-title" class="text-lg font-semibold text-neutral-900 mb-2">
+        @switch (action.kind) {
+          @case ('deactivate') { {{ 'userManagement.confirm.deactivateTitle' | translate }} }
+          @case ('force-reset') { {{ 'userManagement.confirm.resetTitle' | translate }} }
+          @case ('end-sessions') { {{ 'userManagement.confirm.sessionsTitle' | translate }} }
+        }
+      </h3>
+      <p class="text-sm text-neutral-600">
+        @switch (action.kind) {
+          @case ('deactivate') {
+            {{ 'userManagement.confirm.deactivateBody' | translate }}
+            <strong class="text-neutral-900">{{ action.user.displayName }}</strong>?
+          }
+          @case ('force-reset') {
+            {{ 'userManagement.confirm.resetBody' | translate }}
+            <strong class="text-neutral-900">{{ action.user.displayName }}</strong>?
+          }
+          @case ('end-sessions') {
+            {{ 'userManagement.confirm.sessionsBody' | translate }}
+            <strong class="text-neutral-900">{{ action.user.displayName }}</strong>?
+          }
+        }
+      </p>
+      <div class="flex justify-end gap-3 mt-6">
+        <button type="button" class="btn-secondary" (click)="cancelConfirm()">
+          {{ 'common.cancel' | translate }}
+        </button>
+        <button
+          type="button"
+          data-testid="confirm-action"
+          class="inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          [class.bg-red-600]="action.kind === 'deactivate'"
+          [class.hover:bg-red-700]="action.kind === 'deactivate'"
+          [class.bg-brand-600]="action.kind !== 'deactivate'"
+          [class.hover:bg-brand-700]="action.kind !== 'deactivate'"
+          [disabled]="confirmBusy()"
+          (click)="confirm()"
+        >
+          @if (confirmBusy()) {
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+          }
+          {{ 'common.confirm' | translate }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
