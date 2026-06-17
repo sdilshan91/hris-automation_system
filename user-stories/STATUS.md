@@ -135,7 +135,7 @@
 - [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
 
 ## 9. Onboarding / Offboarding (6 stories)
-- [ ] US-ONB-001 — Create onboarding checklist template
+- [~] US-ONB-001 — Create onboarding checklist template
 - [ ] US-ONB-002 — Assign onboarding checklist to new hire
 - [ ] US-ONB-003 — New hire completes onboarding tasks
 - [ ] US-ONB-004 — Asset issuance tracking
