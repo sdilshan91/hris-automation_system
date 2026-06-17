@@ -131,7 +131,7 @@
 - [x] US-ADM-006 — Configure company settings *(PR #90)*
 - [x] US-ADM-007 — Manage approval workflows *(PR #91)*
 - [x] US-ADM-008 — View audit logs *(PR #92)*
-- [~] US-ADM-009 — Manage subscription plans
+- [x] US-ADM-009 — Manage subscription plans *(PR #93)*
 - [ ] US-ADM-010 — Tenant data export on demand
 
 ## 9. Onboarding / Offboarding (6 stories)
@@ -160,10 +160,10 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **85** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001..008** (#85–#92)
+- Done: **86** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001..009** (#85–#93)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **18** — Admin Console (2: US-ADM-009..010), Onboarding (6), Notifications (5), Reports (5)
-- **Next module by priority: Admin Console (US-ADM-009..010)**
+- Pending: **17** — Admin Console (1: US-ADM-010), Onboarding (6), Notifications (5), Reports (5)
+- **Next module by priority: Admin Console (US-ADM-010)**
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
 ## Module → directory map
