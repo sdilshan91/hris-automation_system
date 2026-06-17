@@ -12,7 +12,12 @@ namespace HRM.Application.Features.Payroll.DTOs;
 /// </summary>
 public enum PayrollReportType
 {
-    /// <summary>FR-1a: period totals + department-wise breakdown.</summary>
+    /// <summary>
+    /// FR-1a: period totals + department-wise breakdown. US-RPT-003 AC-1/FR-3: this report's result
+    /// ADDITIONALLY carries an embedded <see cref="PayrollReportResult.Summary"/> block (period TOTALS —
+    /// gross, deductions, net, employee count — with a month-over-month comparison vs the previous finalized
+    /// period) that drives the FE KPI cards + dual-bar chart. The department-breakdown table is unchanged.
+    /// </summary>
     PayrollSummary,
     /// <summary>FR-1b: all employees with component-wise breakdown for a period.</summary>
     EmployeeRegister,
@@ -73,6 +78,25 @@ public sealed record PayrollReportQueryParams
     public string? EmploymentType { get; init; }
     /// <summary>Free-text employee search (matches name or employee number, case-insensitive).</summary>
     public string? EmployeeSearch { get; init; }
+
+    // ── US-RPT-003 FR-2/FR-4: additional filters ────────────────────────────────
+
+    /// <summary>
+    /// US-RPT-003 FR-4: a SPECIFIC finalized payroll run (e.g. a supplementary run for the period). When set
+    /// the report reads only this run's slips; when omitted, ALL finalized runs for the resolved period are
+    /// included (defaults to the latest finalized period via the period resolver).
+    /// </summary>
+    public Guid? PayrollRunId { get; init; }
+
+    /// <summary>US-RPT-003 FR-2: filter to a single work location (Employee.LocationId).</summary>
+    public Guid? LocationId { get; init; }
+
+    /// <summary>
+    /// US-RPT-003 FR-2: filter by pay grade. No PayGrade entity is modelled on the employee yet, so this
+    /// matches the free-text <see cref="HRM.Domain.Entities.Employee.Location"/>-style fields where present;
+    /// when no pay-grade field exists it is accepted but has no effect (documented). Optional.
+    /// </summary>
+    public string? PayGrade { get; init; }
 }
 
 /// <summary>
@@ -99,6 +123,13 @@ public sealed record PayrollReportResult
     public int TotalCount { get; init; }
     /// <summary>Optional note (e.g. a documented stub / deferral, or the bank-fields gap). Null otherwise.</summary>
     public string? Note { get; init; }
+    /// <summary>
+    /// US-RPT-003 AC-1/FR-3: OPTIONAL KPI + month-over-month summary block. Populated ONLY for the
+    /// <see cref="PayrollReportType.PayrollSummary"/> report; null for every other report type (the FE
+    /// treats it as optional). Drives the KPI cards + the MoM dual-bar chart on top of the existing
+    /// department-breakdown table.
+    /// </summary>
+    public PayrollReportSummaryDto? Summary { get; init; }
 }
 
 /// <summary>
@@ -141,6 +172,46 @@ public sealed record PayrollAnalyticsResult
 }
 
 /// <summary>
+/// US-RPT-003 AC-1/FR-3: the EMBEDDED Payroll Run Summary block carried on the
+/// <see cref="PayrollReportResult.Summary"/> of the PayrollSummary report — period TOTALS (gross,
+/// deductions, net, employee count) with a month-over-month comparison vs the previous finalized period.
+/// Drives the FE KPI cards (with up/down arrows) and the dual-bar comparison chart. The shape matches the
+/// FE <c>IPayrollRunSummary</c> contract exactly (System.Text.Json camelCase serialization).
+/// </summary>
+public sealed record PayrollReportSummaryDto
+{
+    /// <summary>BR-2: the tenant's configured ISO-4217 currency code (e.g. "USD").</summary>
+    public string Currency { get; init; } = string.Empty;
+    /// <summary>The current period label, e.g. "May 2026".</summary>
+    public string CurrentLabel { get; init; } = string.Empty;
+    /// <summary>The previous period label, e.g. "April 2026"; null when there is no prior finalized run.</summary>
+    public string? PreviousLabel { get; init; }
+    /// <summary>The four headline metrics (gross / deductions / net / employeeCount) with MoM variance.</summary>
+    public IReadOnlyList<PayrollSummaryMetricDto> Metrics { get; init; } = [];
+}
+
+/// <summary>
+/// US-RPT-003 AC-1/FR-3: one headline summary metric with its current + previous value and the signed
+/// variance (current − previous). Matches the FE <c>IPayrollSummaryMetric</c> contract. <see cref="Previous"/>
+/// and <see cref="Variance"/> are null when there is no prior finalized period to compare against.
+/// </summary>
+public sealed record PayrollSummaryMetricDto
+{
+    /// <summary>Stable camelCase key: gross / deductions / net / employeeCount.</summary>
+    public string Key { get; init; } = string.Empty;
+    /// <summary>Human-readable label, e.g. "Total Gross".</summary>
+    public string Label { get; init; } = string.Empty;
+    /// <summary>Current-period value (money amount, or the employee count for the count metric).</summary>
+    public decimal Current { get; init; }
+    /// <summary>Previous-period value; null when there is no previous period.</summary>
+    public decimal? Previous { get; init; }
+    /// <summary>Signed variance (current − previous); null when there is no previous period.</summary>
+    public decimal? Variance { get; init; }
+    /// <summary>True for the three money cost metrics (gross/deductions/net); false for employeeCount.</summary>
+    public bool IsCost { get; init; }
+}
+
+/// <summary>
 /// One bank-advice line (US-PAY-009 FR-1e / AC-2 / §7). The JSON preview returns the account number
 /// MASKED (last 4 only, BR-2); the exported file (CSV/Excel/PDF) carries the FULL account number.
 /// </summary>
@@ -167,7 +238,12 @@ public sealed record BankAdvicePreviewDto
     public IReadOnlyList<BankAdviceLineDto> Lines { get; init; } = [];
     public int EmployeeCount { get; init; }
     public decimal TotalNetAmount { get; init; }
-    /// <summary>Documents the bank-fields gap (the Employee entity has no bank columns yet). Null when fields exist.</summary>
+    /// <summary>
+    /// US-RPT-003 FR-6: true when account numbers in <see cref="Lines"/> are MASKED (last-4 only, the
+    /// default). False only on the audited Payroll.ViewSensitive reveal path, where the full number is served.
+    /// </summary>
+    public bool Masked { get; init; } = true;
+    /// <summary>Optional note (e.g. the audited-reveal note). Null otherwise.</summary>
     public string? Note { get; init; }
 }
 

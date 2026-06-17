@@ -59,6 +59,7 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
       { key: 'Payroll.Approve', label: 'Approve payroll', description: 'Approve payroll runs for disbursement' },
       { key: 'Payroll.Configure', label: 'Configure payroll', description: 'Manage salary structures, components, and tax rules' },
       { key: 'Payroll.Export', label: 'Export payroll', description: 'Export payroll data and reports' },
+      { key: 'Payroll.ViewSensitive', label: 'View sensitive payroll data', description: 'Reveal masked bank account numbers and salary PII (audited)' },
     ],
   },
   {

@@ -108,6 +108,29 @@ public sealed class PayrollReportsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/payroll/reports/bank-advice/full
+    /// US-RPT-003 AC-4/FR-6/NFR-3: the bank-advice with FULL (unmasked) account numbers. Returns the SAME
+    /// shape as the masked <c>bank-advice/preview</c> (un-masked account numbers). Gated by the dedicated
+    /// <c>Payroll.ViewSensitive</c> permission (held by Tenant Owner / Tenant Admin / HR Manager — NOT HR
+    /// Officer). Every call writes an audit record (action "PayrollReport.ViewSensitive"). Same query filters
+    /// as the masked preview.
+    /// </summary>
+    [HttpGet("reports/bank-advice/full")]
+    [RequirePermission("Payroll.ViewSensitive")]
+    [ProducesResponseType(typeof(ApiResponse<BankAdvicePreviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevealBankAdvice(
+        [FromQuery] PayrollReportQueryParams queryParams,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RevealBankAdviceQuery(queryParams), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<BankAdvicePreviewDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/payroll/reports/{reportType}/export?format=csv|xlsx|pdf
     /// Exports a report to a downloadable file (FR-2, AC-4). For BankAdvice the file carries FULL account
     /// numbers (BR-2). Synchronous — the async-large export path is a documented follow-up.

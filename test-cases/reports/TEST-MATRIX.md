@@ -1,7 +1,7 @@
 ---
 module: Reports & Analytics
-total_user_stories: 2
-total_test_cases: 32
+total_user_stories: 3
+total_test_cases: 48
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -204,3 +204,101 @@ status: in-progress
 | BR-4 (absenteeism excludes approved leave; counts only unauthorized) | TC-RPT-002-03, -04 |
 | BR-5 (reports respect tenant leave-year start: calendar or custom fiscal) | TC-RPT-002-01, -02, -10 |
 | BR-6 (terminated employees included in historical reports, excluded from current balance) | TC-RPT-002-10 |
+
+---
+
+## US-RPT-003 -- Payroll Reports & Summaries
+
+> US-RPT-003 (Payroll Run Summary w/ MoM comparison, Department-wise Salary Distribution, Statutory
+> Deductions monthly+YTD, Bank Advice w/ PII masking+reveal, Cost-to-Company) EXTENDS the existing
+> payroll-reports surface (US-PAY-009, endpoints under `/api/v1/payroll/reports` +
+> `PayrollReportsController`), NOT the generic `/api/v1/reports` surface. It adds 16 test cases: 12
+> functional/security/performance/accessibility (TC-RPT-003-01..12) + 4 multi-tenant isolation
+> (TC-RPT-ISO-009..012, continuing the running ISO counter from US-RPT-002's ISO-008). All 5
+> acceptance criteria of US-RPT-003 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried forward from US-RPT-001/002 and prior modules):
+> (1) AC-5 / NFR-2 specify PostgreSQL RLS, but this codebase isolates via **EF Core global query
+> filters (read) + `TenantInterceptor` (write stamping) + `TenantResolutionMiddleware` -> scoped
+> `ITenantContext`**, NOT Postgres RLS -- RLS is deferred defense-in-depth. ISO tests
+> (TC-RPT-ISO-009..012) assert the EF mechanism in force today; the raw-SQL/RLS expectation is
+> CONDITIONAL/deferred (TC-RPT-ISO-011 step 5); cross-tenant resource-ID injection (run_id/dept_id)
+> asserts **404, not 403** (TC-RPT-003-10, TC-RPT-ISO-010). (2) FR-7 Redis report cache (key
+> `t:{tenantId}:payroll-report:{type}:{paramsHash}`, TTL **15 min**) + repeat access: Redis is
+> deferred dev-box infra -- TC-RPT-003-11 and TC-RPT-ISO-012 are CONDITIONAL (assert tenant-prefixed
+> key shape + 15-min TTL + cache-hit on repeat + Refresh/invalidation), else assert
+> identical-on-repeat + tenant-prefixed key derivation; the NFR-1 5s threshold is never relaxed to
+> compensate for an absent cache. (3) NFR-1 (<5s P95 @ 5,000 emp) and NFR-6 (read replicas if
+> configured) need a perf-representative environment (TC-RPT-003-11); on a dev box record indicative
+> numbers and do NOT relax thresholds.
+>
+> STORY MISMATCH / SCOPE NOTES worth flagging to the caller:
+> (a) `Payroll.ViewSensitive` is a NEW permission introduced by this story. `PermissionCatalog.cs`
+> today defines only `Payroll.View / .View.Own / .Run / .Approve / .Configure / .Export`, and EVERY
+> current payroll-report endpoint (list, generate, analytics, bank-advice preview, export) is gated on
+> `Payroll.Export`. The reveal/full-account behavior (TC-RPT-003-06/-07) requires the new permission
+> to be ADDED to the catalog and the reveal endpoint + audit hook wired -- permission-granularity gap
+> flagged. (b) Today bank-advice masking is split across endpoints: the `/reports/bank-advice/preview`
+> endpoint masks (last 4) and the `/reports/{reportType}/export` (BankAdvice) endpoint emits FULL
+> accounts -- both currently behind `Payroll.Export` only. US-RPT-003 adds an IN-UI reveal toggle +
+> the new permission + the audit action; the existing full-export path must be re-gated behind
+> `Payroll.ViewSensitive` to satisfy FR-6/NFR-3. (c) Audit action **"PayrollReport.ViewSensitive"**
+> (NFR-3) is a NEW audit action (depends on US-NTF-004 audit trail); tests assert the EXACT string.
+> (d) US-RPT-004 export is a separate story; export format/mechanics referenced as a dependency
+> (TC-RPT-003-07 asserts the affordance + tenant format BR-4, not the full export engine).
+
+### Coverage by Test Case (US-RPT-003)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-RPT-003-01 | Payroll Run Summary Mar 2026; gross/statutory-vs-voluntary/net/count = sum of payslips | E2E | Critical | AC-1, FR-1/2/5/8, BR-1/2 | Happy path |
+| TC-RPT-003-02 | Run Summary MoM comparison; variance increase=red / decrease=green | Functional | Critical | AC-1, FR-3/5, BR-1/2 | Happy / boundary |
+| TC-RPT-003-03 | Department-wise Salary Distribution stacked bar (basic/HRA/allowances) + per-dept totals & counts | Functional | Critical | AC-2, FR-1/2/5, BR-1/2 | Happy path |
+| TC-RPT-003-04 | Statutory Deductions monthly + YTD cumulative (BR-5); match payslip deductions | Functional | Critical | AC-3, FR-1/2, BR-1/3/5 | Happy / boundary |
+| TC-RPT-003-05 | Bank Advice account masked by default (last 4); name/bank/account/IFSC/net columns | Security | Critical | AC-4, FR-1/4/6, BR-1/2/4, NFR-3 | Happy / security |
+| TC-RPT-003-06 | Bank Advice reveal needs Payroll.ViewSensitive; audit action "PayrollReport.ViewSensitive" (exact) | Security | Critical | AC-4, FR-6, NFR-3 | Negative / security |
+| TC-RPT-003-07 | Bank Advice export in tenant format (CSV/text); full accounts permission-gated + audited | Functional | High | AC-4, FR-1/6, BR-2/4, NFR-3 | Happy / negative / security |
+| TC-RPT-003-08 | Cost-to-Company includes employer contributions on top of gross (BR-6) | Functional | High | AC-1, FR-1/2/5, BR-1/2/6 | Happy / boundary |
+| TC-RPT-003-09 | Draft run excluded (BR-1); multiple runs per period selectable; default=latest (FR-4) | Functional | Critical | AC-1, AC-4, FR-1/4, BR-1 | Negative / boundary |
+| TC-RPT-003-10 | Invalid report_type / period format; out-of-tenant dept/run -> not-found; 0/single/full-year boundaries | Functional | High | AC-1, AC-3, AC-5, FR-1/2/4, BR-1/5 | Negative / boundary / security |
+| TC-RPT-003-11 | Generation P95 <5s @5,000 emp; Redis cache tenant-prefixed TTL 15min + repeat (conditional) | Performance | High | AC-1/2/3, FR-7, NFR-1/6 | Boundary / performance |
+| TC-RPT-003-12 | Charts alt text + table; variance not color-only; keyboard; responsive 360px-4K KPI/table scroll | Accessibility | Medium | AC-1/2/3/4, FR-3/5/6, NFR-4/5 | Accessibility / cross-browser |
+| TC-RPT-ISO-009 | Payroll reports Tenant A vs B show only own salary data; no leakage | Security | Critical | AC-5, FR-8, NFR-2/3, BR-1 | Multi-tenant isolation |
+| TC-RPT-ISO-010 | No-tenant-context rejected; cross-tenant run/dept ID injection -> 404 (not 403); spoofed tenant_id ignored | Security | Critical | AC-5, FR-2/8, NFR-2 | Multi-tenant isolation |
+| TC-RPT-ISO-011 | EF filter constrains every payroll aggregation path (slip/detail/adjustment/views); RLS deferred | Security | Critical | AC-5, FR-8, NFR-2/6 | Multi-tenant isolation |
+| TC-RPT-ISO-012 | Payroll report cache keys tenant-prefixed; no cross-tenant collision (Redis-conditional) | Security | High | AC-5, FR-7/8, NFR-2 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-RPT-003)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (Payroll Run Summary: total gross, deductions statutory-vs-voluntary, total net, employee count, MoM comparison chart + variance) | TC-RPT-003-01, -02, -08, -09, -10, -11, -12 |
+| AC-2 (Department-wise Salary Distribution: stacked bar by component + per-dept totals/counts table) | TC-RPT-003-03, -11, -12 |
+| AC-3 (Statutory Deductions: per-type monthly totals + YTD cumulative; downloadable) | TC-RPT-003-04, -10, -11, -12 |
+| AC-4 (Bank Advice: name/bank/account/IFSC/net; masked default + permission-gated reveal; export in tenant format) | TC-RPT-003-05, -06, -07, -09, -12 |
+| AC-5 (Tenant A vs B -- no cross-tenant payroll-data leakage; RLS + EF filters) | TC-RPT-003-10, TC-RPT-ISO-009, -010, -011, -012 |
+
+### FR / NFR / BR Coverage (US-RPT-003)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (payroll reports: Run Summary, Dept Salary Distribution, Statutory, Bank Advice, CTC, ...) | TC-RPT-003-01, -03, -04, -05, -08 |
+| FR-2 (filters: payroll period, department, location, pay grade, employment type) | TC-RPT-003-01, -03, -08, -10 |
+| FR-3 (MoM comparison with variance highlighting: increase red / decrease green) | TC-RPT-003-02, -12 |
+| FR-4 (multiple runs per period; select specific run; default latest) | TC-RPT-003-09, -10 |
+| FR-5 (Chart.js/ngx-charts + data-table toggle) | TC-RPT-003-01, -02, -03, -08, -11, -12 |
+| FR-6 (mask account numbers default last-4; Reveal toggle requires Payroll.ViewSensitive) | TC-RPT-003-05, -06, -07, -12 |
+| FR-7 (Redis cache, TTL 15 min, tenant-prefixed key) | TC-RPT-003-11, TC-RPT-ISO-012 (Redis-conditional) |
+| FR-8 (scope all payroll data by tenant_id from session) | TC-RPT-003-01, TC-RPT-ISO-009, -010, -011, -012 |
+| NFR-1 (generation <= 5s P95 @ 5,000 emp) | TC-RPT-003-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-RPT-003-10, TC-RPT-ISO-009, -010, -011, -012 |
+| NFR-3 (bank account/salary PII; access audited, action "PayrollReport.ViewSensitive") | TC-RPT-003-05, -06, -07, TC-RPT-ISO-009 |
+| NFR-4 (responsive 360px-4K; KPI cards scroll, tables scroll, charts stack) | TC-RPT-003-12 |
+| NFR-5 (WCAG 2.1 AA; variance not color-only; chart alt/table alternative) | TC-RPT-003-12 |
+| NFR-6 (read replicas if configured) | TC-RPT-003-11, TC-RPT-ISO-011 (infra-conditional) |
+| BR-1 (only finalized runs in reports; drafts excluded) | TC-RPT-003-01, -04, -08, -09, TC-RPT-ISO-009 |
+| BR-2 (tenant currency symbol/decimal formatting) | TC-RPT-003-01, -02, -03, -08 |
+| BR-3 (statutory categories per tenant jurisdiction) | TC-RPT-003-04 |
+| BR-4 (bank advice follows tenant-configured format) | TC-RPT-003-05, -07 |
+| BR-5 (year-end/statutory aggregates over tenant fiscal year) | TC-RPT-003-04, -10 |
+| BR-6 (Cost-to-Company includes employer contributions in addition to gross) | TC-RPT-003-08 |

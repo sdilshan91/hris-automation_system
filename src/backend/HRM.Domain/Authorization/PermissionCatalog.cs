@@ -188,6 +188,18 @@ public static class PermissionCatalog
         public const string Approve = "Payroll.Approve";
         public const string Configure = "Payroll.Configure";
         public const string Export = "Payroll.Export";
+
+        /// <summary>
+        /// US-RPT-003 (FR-6/NFR-3): REVEAL unmasked PII on payroll reports — specifically the full bank
+        /// account number on the Bank Advice report (the default everywhere is masked, last-4 only).
+        /// A sensitive read. Held by Tenant Owner / Tenant Admin / HR Manager ONLY — deliberately NOT HR
+        /// Officer (who generates/exports reports via Payroll.Export but is not trusted with unmasked PII),
+        /// mirroring the <see cref="ExitInterview.ViewDetail"/> precedent (sensitive detail = HR Manager /
+        /// Tenant Admin / Tenant Owner). Every reveal is audited (action "PayrollReport.ViewSensitive",
+        /// NFR-3). DbInitializer reconciles built-in role permissions on startup so existing tenants pick
+        /// this up.
+        /// </summary>
+        public const string ViewSensitive = "Payroll.ViewSensitive";
     }
 
     // ── Recruitment Module ───────────────────────────────────────────
@@ -473,7 +485,7 @@ public static class PermissionCatalog
         Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
 
         // Payroll
-        Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
+        Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive,
 
         // Recruitment
         Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
@@ -594,7 +606,7 @@ public static class PermissionCatalog
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
-            Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export,
+            Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             Reports.View, Reports.Export,
@@ -620,7 +632,7 @@ public static class PermissionCatalog
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
-            Payroll.View, Payroll.Run,
+            Payroll.View, Payroll.Run, Payroll.ViewSensitive,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             Reports.View, Reports.Export,

@@ -215,4 +215,45 @@ describe('PayrollReportService', () => {
     expect(req.request.params.get('format')).toBe('xlsx');
     req.flush(new Blob(['x']));
   });
+
+  // US-RPT-003 FR-6 / NFR-3: the un-masked reveal path.
+  it('getBankAdviceFull GETs /reports/bank-advice/full with un-masked lines', () => {
+    const full: IBankAdvicePreview = {
+      payMonth: 5,
+      payYear: 2026,
+      employeeCount: 1,
+      totalNetAmount: 5000,
+      lines: [
+        {
+          employeeNo: 'EMP001',
+          employeeName: 'Alex HR',
+          bankName: 'Acme Bank',
+          branchCode: 'AC001',
+          accountNumber: '1234566789',
+          netAmount: 5000,
+          narration: 'Salary May 2026',
+        },
+      ],
+    };
+    let result: IBankAdvicePreview | undefined;
+    service.getBankAdviceFull(filters).subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne((r) => r.url === `${reportsUrl}/bank-advice/full`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('payMonth')).toBe('5');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(full);
+
+    expect(result?.lines[0].accountNumber).toBe('1234566789');
+  });
+
+  // US-RPT-003 FR-4: a specific run id is forwarded as the payrollRunId param.
+  it('forwards payrollRunId when a specific run is selected', () => {
+    service
+      .getReport('PayrollSummary', { period: '2026-05', departmentId: null, payrollRunId: 'run-9' })
+      .subscribe();
+    const req = httpMock.expectOne((r) => r.url === `${reportsUrl}/PayrollSummary`);
+    expect(req.request.params.get('payrollRunId')).toBe('run-9');
+    req.flush({});
+  });
 });

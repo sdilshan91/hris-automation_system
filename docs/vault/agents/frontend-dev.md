@@ -53,6 +53,26 @@ Refer to the agent definition in [.claude/agents/team/frontend-dev.md](../../../
   only re-toasts for 400/422 the server's own `error.message` and lets other
   statuses fall through to the interceptor.
 
+- **US-RPT-003 EXTENDED the US-PAY-009 payroll-reports surface** (no parallel
+  feature). Contract shapes the FE coded against (reconcile with BE):
+  - `IReportResult.summary?` (OPTIONAL, only Payroll Run Summary) — `{ currency,
+    currentLabel, previousLabel|null, metrics: [{ key:'gross'|'deductions'|'net'|
+    'employeeCount', label, current, previous|null, variance|null, isCost }] }`.
+    Drives KPI cards + the MoM dual-bar chart (derived FE-side from `metrics`, no
+    extra chart endpoint). `isCost` flips FR-3 colour: cost increase = red, decrease
+    = green; headcount = neutral. Absent `summary` → only the generic table renders
+    (US-PAY-009 behaviour preserved).
+  - Reveal toggle (FR-6/NFR-3) calls `GET /payroll/reports/bank-advice/full` →
+    SAME `IBankAdvicePreview` shape but un-masked `accountNumber`. Gated by the FE
+    `Payroll.ViewSensitive` permission (added to the role permission-catalog) read
+    off `AuthService.permissions()` — button isn't rendered without it; BE
+    independently authorises + audits. Hiding is local (drops the full copy, no
+    re-call); re-generating re-masks.
+  - `IReportFilters.payrollRunId?` (FR-4) → forwarded as the `payrollRunId` query
+    param when set; null = latest finalized run.
+  - Adding `AuthService` to PayrollReportsComponent broke every TestBed in its spec
+    (expected) — provide an `authStub = { permissions: signal<string[]>([]) }`.
+
 ## i18n (ngx-translate)
 - ngx-translate (`@ngx-translate/core` v16 + `@ngx-translate/http-loader`) is an installed
   dependency and `assets/i18n/en.json` exists, but it was **dormant** until US-ADM-003: nothing

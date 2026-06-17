@@ -50,6 +50,23 @@ public sealed class GetBankAdvicePreviewQueryHandler
 }
 
 /// <summary>
+/// US-RPT-003 AC-4/FR-6/NFR-3: the bank-advice with FULL (unmasked) account numbers. The caller must hold
+/// Payroll.ViewSensitive (enforced at the controller); the handler writes an audited reveal record.
+/// </summary>
+public sealed record RevealBankAdviceQuery(
+    PayrollReportQueryParams QueryParams) : IRequest<Result<BankAdvicePreviewDto>>;
+
+public sealed class RevealBankAdviceQueryHandler
+    : IRequestHandler<RevealBankAdviceQuery, Result<BankAdvicePreviewDto>>
+{
+    private readonly IPayrollReportService _service;
+    public RevealBankAdviceQueryHandler(IPayrollReportService service) => _service = service;
+
+    public Task<Result<BankAdvicePreviewDto>> Handle(RevealBankAdviceQuery request, CancellationToken cancellationToken)
+        => _service.RevealBankAdviceAsync(request.QueryParams, cancellationToken);
+}
+
+/// <summary>
 /// Exports a payroll report to CSV / Excel / PDF (US-PAY-009 FR-2/AC-4). For BankAdvice the file carries
 /// FULL account numbers (BR-2). Synchronous (large-async export is a documented follow-up).
 /// </summary>

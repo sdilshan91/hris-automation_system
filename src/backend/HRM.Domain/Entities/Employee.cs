@@ -123,6 +123,24 @@ public sealed class Employee : BaseEntity
     /// </summary>
     public bool IsActive { get; set; } = true;
 
+    // ── Bank details (US-RPT-003 AC-4 / FR-6) ──────────────────────────────────
+    // Minimal additive fields so the Bank Advice report + masking/reveal/audit are real and testable.
+    // Bank-detail CAPTURE (employee bank CRUD/UI) is out of scope for US-RPT-003 — these are nullable and
+    // populated elsewhere. Account number is PII: masked (last-4) by default on reports; the full value is
+    // served only via the audited, Payroll.ViewSensitive-gated reveal path (NFR-3).
+
+    /// <summary>Bank name for salary disbursement (US-RPT-003 AC-4). Nullable until captured.</summary>
+    public string? BankName { get; set; }
+
+    /// <summary>Bank branch / routing code — holds IFSC (India) or SWIFT/BIC (US-RPT-003 AC-4). Nullable until captured.</summary>
+    public string? BankBranchCode { get; set; }
+
+    /// <summary>
+    /// Bank account number for salary disbursement (US-RPT-003 AC-4). PII — MASKED (last-4) by default on
+    /// reports; full value served only via the audited Payroll.ViewSensitive reveal path. Nullable until captured.
+    /// </summary>
+    public string? BankAccountNumber { get; set; }
+
     /// <summary>
     /// PostgreSQL xmin system column, used as an optimistic concurrency token (US-CHR-002 FR-4).
     /// EF Core maps this via UseXminAsConcurrencyToken(). The property is populated on read

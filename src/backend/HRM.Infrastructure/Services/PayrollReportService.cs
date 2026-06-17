@@ -4,6 +4,7 @@ using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,7 @@ public sealed class PayrollReportService : IPayrollReportService
 {
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
+    private readonly IPayrollAuditLogger _auditLogger;
     private readonly ILogger<PayrollReportService> _logger;
 
     private const int TrendMonths = 12;
@@ -39,10 +41,12 @@ public sealed class PayrollReportService : IPayrollReportService
     public PayrollReportService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
+        IPayrollAuditLogger auditLogger,
         ILogger<PayrollReportService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
+        _auditLogger = auditLogger;
         _logger = logger;
     }
 
@@ -95,8 +99,8 @@ public sealed class PayrollReportService : IPayrollReportService
 
         return reportType switch
         {
-            PayrollReportType.PayrollSummary => await BuildPayrollSummaryAsync(month, year, qp, ct),
-            PayrollReportType.DepartmentSummary => await BuildPayrollSummaryAsync(month, year, qp, ct),
+            PayrollReportType.PayrollSummary => await BuildPayrollSummaryAsync(month, year, qp, includeSummaryBlock: true, ct),
+            PayrollReportType.DepartmentSummary => await BuildPayrollSummaryAsync(month, year, qp, includeSummaryBlock: false, ct),
             PayrollReportType.EmployeeRegister => await BuildEmployeeRegisterAsync(month, year, qp, ct),
             PayrollReportType.StatutoryDeduction => await BuildStatutoryReportAsync(month, year, qp, ct),
             PayrollReportType.Ctc => await BuildCtcReportAsync(qp, month, year, ct),
@@ -125,8 +129,94 @@ public sealed class PayrollReportService : IPayrollReportService
             Lines = lines,
             EmployeeCount = lines.Count,
             TotalNetAmount = lines.Sum(l => l.NetAmount),
-            Note = BankFieldsGapNote,
+            Masked = true,
+            Note = "Account numbers are masked (last 4 only). Use the reveal endpoint (requires Payroll.ViewSensitive) "
+                 + "to view full numbers — every reveal is audited (PayrollReport.ViewSensitive).",
         });
+    }
+
+    public async Task<Result<BankAdvicePreviewDto>> RevealBankAdviceAsync(
+        PayrollReportQueryParams qp, CancellationToken ct = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<BankAdvicePreviewDto>.Failure("Tenant context is not resolved.", 400);
+
+        var (month, year, periodError) = await ResolvePeriodAsync(qp, ct);
+        if (periodError is not null)
+            return Result<BankAdvicePreviewDto>.Failure(periodError, 404);
+
+        // FULL (unmasked) account numbers — this is the sensitive-PII path. Audit BEFORE returning (NFR-3).
+        var lines = await BuildBankAdviceLinesAsync(month, year, qp, masked: false, ct);
+
+        await _auditLogger.LogAndSaveAsync(
+            action: PayrollAuditAction.PayrollReportViewSensitive,
+            resourceType: PayrollAuditAction.ResourceType.PayrollReport,
+            resourceId: PayrollReportType.BankAdvice.ToString(),
+            before: null,
+            after: new { reportType = PayrollReportType.BankAdvice.ToString(), payMonth = month, payYear = year, employeeCount = lines.Count },
+            cancellationToken: ct);
+
+        return Result<BankAdvicePreviewDto>.Success(new BankAdvicePreviewDto
+        {
+            PayMonth = month,
+            PayYear = year,
+            Lines = lines,
+            EmployeeCount = lines.Count,
+            TotalNetAmount = lines.Sum(l => l.NetAmount),
+            Masked = false,
+            Note = "Full (unmasked) bank account numbers — this access was recorded in the audit log (PayrollReport.ViewSensitive).",
+        });
+    }
+
+    /// <summary>
+    /// US-RPT-003 AC-1/FR-3: builds the embedded Payroll Run Summary block — period TOTALS (gross, total
+    /// deductions, net, employee count) with a month-over-month comparison vs the previous finalized period.
+    /// Returned on the <see cref="PayrollReportResult.Summary"/> of the PayrollSummary report only. The four
+    /// metric keys are EXACTLY gross / deductions / net / employeeCount (matching the FE contract); previous
+    /// and variance are null when there is no prior finalized period.
+    /// </summary>
+    private async Task<PayrollReportSummaryDto> BuildRunSummaryBlockAsync(
+        int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
+    {
+        // Current-period totals.
+        var current = await ComputePeriodTotalsAsync(month, year, qp, ct);
+
+        // Previous finalized period (handles January roll-back). Compared only if it actually has finalized slips.
+        int prevMonth = month == 1 ? 12 : month - 1;
+        int prevYear = month == 1 ? year - 1 : year;
+        var previousQp = qp with { PayMonth = prevMonth, PayYear = prevYear, PayrollRunId = null };
+        var previous = await ComputePeriodTotalsAsync(prevMonth, prevYear, previousQp, ct);
+        bool hasPrevious = previous.EmployeeCount > 0;
+
+        var currency = await ResolveTenantCurrencyAsync(ct);
+
+        var metrics = new List<PayrollSummaryMetricDto>
+        {
+            BuildMetric("gross", "Total Gross", current.Gross, previous.Gross, hasPrevious, isCost: true),
+            BuildMetric("deductions", "Total Deductions", current.TotalDeductions, previous.TotalDeductions, hasPrevious, isCost: true),
+            BuildMetric("net", "Total Net Pay", current.Net, previous.Net, hasPrevious, isCost: true),
+            BuildMetric("employeeCount", "Employees", current.EmployeeCount, previous.EmployeeCount, hasPrevious, isCost: false),
+        };
+
+        return new PayrollReportSummaryDto
+        {
+            Currency = currency,
+            CurrentLabel = $"{MonthName(month)} {year}",
+            PreviousLabel = hasPrevious ? $"{MonthName(prevMonth)} {prevYear}" : null,
+            Metrics = metrics,
+        };
+    }
+
+    /// <summary>BR-2: the tenant's configured ISO-4217 currency code (Tenant.Currency). Tenant is the tenant
+    /// root (not a BaseEntity), so it is not subject to the global query filter — scope by id explicitly.</summary>
+    private async Task<string> ResolveTenantCurrencyAsync(CancellationToken ct)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var currency = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.Currency)
+            .FirstOrDefaultAsync(ct);
+        return string.IsNullOrWhiteSpace(currency) ? "USD" : currency;
     }
 
     public async Task<Result<PayrollReportExportResult>> ExportReportAsync(
@@ -174,7 +264,7 @@ public sealed class PayrollReportService : IPayrollReportService
     /// Total Other Deductions, Total Net.
     /// </summary>
     private async Task<Result<PayrollReportResult>> BuildPayrollSummaryAsync(
-        int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
+        int month, int year, PayrollReportQueryParams qp, bool includeSummaryBlock, CancellationToken ct)
     {
         var columns = new List<string>
         {
@@ -233,14 +323,72 @@ public sealed class PayrollReportService : IPayrollReportService
             ],
         };
 
+        // US-RPT-003 AC-1/FR-3: the PayrollSummary report ADDITIONALLY carries the KPI + MoM summary block.
+        // DepartmentSummary reuses this builder but does NOT embed it (FE treats it as optional).
+        var summary = includeSummaryBlock
+            ? await BuildRunSummaryBlockAsync(month, year, qp, ct)
+            : null;
+
         return Result<PayrollReportResult>.Success(new PayrollReportResult
         {
             ReportType = PayrollReportType.PayrollSummary.ToString(),
             Title = $"Payroll Summary — {MonthName(month)} {year}",
             PayMonth = month, PayYear = year,
             Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
+            Summary = summary,
         });
     }
+
+    /// <summary>
+    /// US-RPT-003 AC-1: period TOTALS — gross, statutory deductions, voluntary (non-statutory) deductions,
+    /// total deductions, net, and the employee count — across the period's finalized slips. Deductions are
+    /// split on ComponentType: Statutory vs Deduction (voluntary). Reuses the existing slip query + detail
+    /// load + ComponentBreakdown; does NOT re-query slips from scratch.
+    /// </summary>
+    private async Task<PeriodTotals> ComputePeriodTotalsAsync(
+        int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
+    {
+        var slips = await ScopedSlipsForPeriodAsync(month, year, qp, ct);
+        if (slips.Count == 0)
+            return new PeriodTotals();
+
+        var detailsBySlip = await DetailsBySlipAsync(slips, ct);
+
+        decimal gross = 0m, statutory = 0m, voluntary = 0m, net = 0m;
+        foreach (var slip in slips)
+        {
+            var comp = ComponentBreakdown.From(detailsBySlip.GetValueOrDefault(slip.Id, []));
+            gross += slip.GrossEarnings;
+            statutory += comp.Statutory;
+            voluntary += comp.OtherDeductions;
+            net += slip.NetSalary;
+        }
+
+        return new PeriodTotals
+        {
+            EmployeeCount = slips.Count,
+            Gross = gross,
+            Statutory = statutory,
+            Voluntary = voluntary,
+            Net = net,
+        };
+    }
+
+    /// <summary>
+    /// US-RPT-003 AC-1/FR-3: one summary metric. <paramref name="variance"/> = current − previous; both
+    /// previous and variance are null when there is no prior finalized period (FE hides the comparison).
+    /// </summary>
+    private static PayrollSummaryMetricDto BuildMetric(
+        string key, string label, decimal current, decimal previous, bool hasPrevious, bool isCost) =>
+        new()
+        {
+            Key = key,
+            Label = label,
+            Current = current,
+            Previous = hasPrevious ? previous : null,
+            Variance = hasPrevious ? current - previous : null,
+            IsCost = isCost,
+        };
 
     /// <summary>
     /// FR-1b: every employee with their component-wise breakdown for the period — one row per employee,
@@ -303,38 +451,74 @@ public sealed class PayrollReportService : IPayrollReportService
     }
 
     /// <summary>
-    /// FR-1d: statutory deduction summary — one row per statutory component (e.g. Income Tax, EPF, ETF)
-    /// with the employee count and total deducted, plus a grand-total row.
+    /// FR-1d / US-RPT-003 AC-3: statutory deduction summary — one row per statutory component (e.g. Income
+    /// Tax, EPF, ETF) with the employee count, the MONTHLY total for the selected period, AND the
+    /// YEAR-TO-DATE cumulative total across the fiscal year up to and including the period (BR-5), plus a
+    /// grand-total row. Print/export-friendly for submission to statutory authorities.
+    ///
+    /// <para>FISCAL-YEAR ASSUMPTION: no per-tenant fiscal-year-start config is modelled (BR-3 says it is a
+    /// tenant config), so the fiscal year is taken as the CALENDAR year (January .. selected month) of the
+    /// selected <paramref name="year"/>. When a fiscal-year-start config lands, change the YTD window's lower
+    /// bound. The YTD column reuses <see cref="FinalizedSlipsQuery"/> + the same employee-side filters.</para>
     /// </summary>
     private async Task<Result<PayrollReportResult>> BuildStatutoryReportAsync(
         int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
     {
-        var columns = new List<string> { "Statutory Component", "Employee Count", "Total Amount" };
+        var columns = new List<string> { "Statutory Component", "Employee Count", "Monthly Total", "Year-to-Date Total" };
 
+        // Monthly (selected-period) statutory lines.
         var slips = await ScopedSlipsForPeriodAsync(month, year, qp, ct);
         var detailsBySlip = await DetailsBySlipAsync(slips, ct);
-
-        var statutoryLines = detailsBySlip.Values
+        var monthlyByComponent = detailsBySlip.Values
             .SelectMany(d => d)
             .Where(d => IsStatutory(d.ComponentType))
-            .ToList();
-
-        var byComponent = statutoryLines
             .GroupBy(d => d.ComponentName)
-            .Select(g => new { Name = g.Key, Count = g.Select(x => x.PayrollSlipId).Distinct().Count(), Total = g.Sum(x => x.Amount) })
-            .OrderByDescending(x => x.Total)
+            .ToDictionary(
+                g => g.Key,
+                g => (Count: g.Select(x => x.PayrollSlipId).Distinct().Count(), Total: g.Sum(x => x.Amount)),
+                StringComparer.OrdinalIgnoreCase);
+
+        // Year-to-date (January .. selected month, same fiscal year) statutory lines.
+        var ytdSlips = await ScopedSlipsForFiscalYtdAsync(month, year, qp, ct);
+        var ytdDetailsBySlip = await DetailsBySlipAsync(ytdSlips, ct);
+        var ytdByComponent = ytdDetailsBySlip.Values
+            .SelectMany(d => d)
+            .Where(d => IsStatutory(d.ComponentType))
+            .GroupBy(d => d.ComponentName)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount), StringComparer.OrdinalIgnoreCase);
+
+        // Union of component names (a component may appear in YTD but not the selected month, and vice-versa).
+        var componentNames = monthlyByComponent.Keys
+            .Union(ytdByComponent.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(name => ytdByComponent.GetValueOrDefault(name, 0m))
             .ToList();
 
-        var rows = byComponent
-            .Select(x => new PayrollReportRow
+        var rows = componentNames
+            .Select(name =>
             {
-                Cells = [x.Name, x.Count.ToString(CultureInfo.InvariantCulture), Money(x.Total)],
+                var monthly = monthlyByComponent.GetValueOrDefault(name);
+                var ytd = ytdByComponent.GetValueOrDefault(name, 0m);
+                return new PayrollReportRow
+                {
+                    Cells =
+                    [
+                        name,
+                        monthly.Count.ToString(CultureInfo.InvariantCulture),
+                        Money(monthly.Total),
+                        Money(ytd),
+                    ],
+                };
             })
             .ToList();
 
         var totalRow = new PayrollReportRow
         {
-            Cells = ["TOTAL", string.Empty, Money(byComponent.Sum(x => x.Total))],
+            Cells =
+            [
+                "TOTAL", string.Empty,
+                Money(monthlyByComponent.Values.Sum(v => v.Total)),
+                Money(ytdByComponent.Values.Sum()),
+            ],
         };
 
         return Result<PayrollReportResult>.Success(new PayrollReportResult
@@ -343,13 +527,50 @@ public sealed class PayrollReportService : IPayrollReportService
             Title = $"Statutory Deduction Report — {MonthName(month)} {year}",
             PayMonth = month, PayYear = year,
             Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
+            Note = "Year-to-Date is cumulative from January to the selected month of the same calendar year "
+                 + "(fiscal-year-start config is a documented follow-up, BR-3/BR-5).",
         });
     }
 
     /// <summary>
-    /// FR-1h: current CTC of all employees. CTC = sum of the employee's CURRENT (today within the validity
-    /// window) EARNING-side employee_salary_component annual amounts. Reimbursements/deductions excluded
-    /// (mirrors the US-PAY-002 CTC-tolerance rule: only EARNING components count toward CTC).
+    /// US-RPT-003 AC-3/BR-5: the finalized slips from January to the selected month (inclusive) of the same
+    /// fiscal (calendar) year, with the same employee-side filters applied. A specific PayrollRunId filter is
+    /// intentionally NOT applied here (YTD spans every finalized run in the window).
+    /// </summary>
+    private async Task<List<PayrollSlip>> ScopedSlipsForFiscalYtdAsync(
+        int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
+    {
+        var slips = await FinalizedSlipsQuery()
+            .Where(s => s.PayYear == year && s.PayMonth >= 1 && s.PayMonth <= month)
+            .ToListAsync(ct);
+
+        if (slips.Count == 0)
+            return slips;
+
+        bool hasEmployeeFilter = qp.DepartmentId is not null || qp.JobTitleId is not null
+            || qp.LocationId is not null
+            || !string.IsNullOrWhiteSpace(qp.EmploymentType) || !string.IsNullOrWhiteSpace(qp.EmployeeSearch);
+        if (!hasEmployeeFilter)
+            return slips;
+
+        var allowedEmployeeIds = (await ScopedEmployeesQuery(qp).Select(e => e.Id).ToListAsync(ct)).ToHashSet();
+        return slips.Where(s => allowedEmployeeIds.Contains(s.EmployeeId)).ToList();
+    }
+
+    /// <summary>
+    /// FR-1h / US-RPT-003 BR-6: current Cost-to-Company of all employees. CTC = the employee's gross
+    /// (EARNING-side) annual pay PLUS EMPLOYER CONTRIBUTIONS (pension / insurance) on top of gross.
+    /// Columns: Monthly Gross, Annual Gross, Employer Contributions (annual), Annual CTC (= annual gross +
+    /// employer contributions).
+    ///
+    /// <para>EMPLOYER-CONTRIBUTION ASSUMPTION (documented per the story brief): no dedicated
+    /// employer-contribution component type/flag is modelled — SalaryComponentType has only Earning /
+    /// Deduction / Statutory / Reimbursement, and statutory items are employee-side. So the employer
+    /// contribution is APPROXIMATED as a 1:1 employer match of the employee's CURRENT STATUTORY components
+    /// (the common EPF/pension-matching convention). When a real employer-contribution component (or rate)
+    /// lands, swap this estimate for the modelled value. The estimate is labelled "(est.)" so it is never
+    /// mistaken for a configured figure.</para>
+    ///
     /// The period filter does not gate this report (it is a "current" snapshot), but the resolved period is
     /// echoed for the file name.
     /// </summary>
@@ -358,7 +579,8 @@ public sealed class PayrollReportService : IPayrollReportService
     {
         var columns = new List<string>
         {
-            "Employee No", "Employee", "Department", "Monthly CTC", "Annual CTC",
+            "Employee No", "Employee", "Department", "Monthly Gross", "Annual Gross",
+            "Employer Contributions (est.)", "Annual CTC",
         };
 
         var employees = await ScopedEmployeesQuery(qp).ToListAsync(ct);
@@ -375,12 +597,11 @@ public sealed class PayrollReportService : IPayrollReportService
         var employeeIds = employees.Select(e => e.Id).ToList();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Current EARNING-side components per employee (component classification via SalaryComponent.Type).
-        var earningComponentIds = await _dbContext.SalaryComponents.AsNoTracking()
-            .Where(c => c.Type == SalaryComponentType.Earning)
-            .Select(c => c.Id)
-            .ToListAsync(ct);
-        var earningSet = earningComponentIds.ToHashSet();
+        // Classify current components by their SalaryComponent.Type.
+        var componentTypeById = (await _dbContext.SalaryComponents.AsNoTracking()
+                .Select(c => new { c.Id, c.Type })
+                .ToListAsync(ct))
+            .ToDictionary(c => c.Id, c => c.Type);
 
         var rawComponents = await _dbContext.EmployeeSalaryComponents.AsNoTracking()
             .Where(c => employeeIds.Contains(c.EmployeeId)
@@ -389,17 +610,26 @@ public sealed class PayrollReportService : IPayrollReportService
             .Select(c => new { c.EmployeeId, c.SalaryComponentId, c.AnnualAmount, c.MonthlyAmount })
             .ToListAsync(ct);
 
-        var annualByEmp = rawComponents
-            .Where(c => earningSet.Contains(c.SalaryComponentId))
+        // Earning-side gross.
+        var grossByEmp = rawComponents
+            .Where(c => componentTypeById.GetValueOrDefault(c.SalaryComponentId) == SalaryComponentType.Earning)
             .GroupBy(c => c.EmployeeId)
             .ToDictionary(g => g.Key, g => (Annual: g.Sum(x => x.AnnualAmount), Monthly: g.Sum(x => x.MonthlyAmount)));
+
+        // BR-6: employer contributions, estimated as a 1:1 match of the employee's statutory components.
+        var employerContribByEmp = rawComponents
+            .Where(c => componentTypeById.GetValueOrDefault(c.SalaryComponentId) == SalaryComponentType.Statutory)
+            .GroupBy(c => c.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.AnnualAmount));
 
         var deptNames = await DepartmentNamesAsync(employees, ct);
 
         var rows = employees
             .Select(e =>
             {
-                var ctc = annualByEmp.GetValueOrDefault(e.Id);
+                var gross = grossByEmp.GetValueOrDefault(e.Id);
+                var employer = employerContribByEmp.GetValueOrDefault(e.Id, 0m);
+                var annualCtc = gross.Annual + employer;
                 return new PayrollReportRow
                 {
                     Cells =
@@ -407,18 +637,24 @@ public sealed class PayrollReportService : IPayrollReportService
                         e.EmployeeNo,
                         $"{e.FirstName} {e.LastName}".Trim(),
                         deptNames.GetValueOrDefault(e.DepartmentId, string.Empty),
-                        Money(ctc.Monthly), Money(ctc.Annual),
+                        Money(gross.Monthly), Money(gross.Annual),
+                        Money(employer), Money(annualCtc),
                     ],
                 };
             })
             .ToList();
+
+        decimal totalMonthlyGross = grossByEmp.Sum(x => x.Value.Monthly);
+        decimal totalAnnualGross = grossByEmp.Sum(x => x.Value.Annual);
+        decimal totalEmployer = employerContribByEmp.Sum(x => x.Value);
 
         var totalRow = new PayrollReportRow
         {
             Cells =
             [
                 "TOTAL", string.Empty, string.Empty,
-                Money(annualByEmp.Sum(x => x.Value.Monthly)), Money(annualByEmp.Sum(x => x.Value.Annual)),
+                Money(totalMonthlyGross), Money(totalAnnualGross),
+                Money(totalEmployer), Money(totalAnnualGross + totalEmployer),
             ],
         };
 
@@ -428,6 +664,9 @@ public sealed class PayrollReportService : IPayrollReportService
             Title = $"CTC Report — as of {DateTime.UtcNow:dd MMM yyyy}",
             PayMonth = month, PayYear = year,
             Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
+            Note = "Annual CTC = annual gross + employer contributions (BR-6). Employer contributions are "
+                 + "ESTIMATED as a 1:1 match of statutory components (no employer-contribution component is "
+                 + "modelled yet) — labelled '(est.)'.",
         });
     }
 
@@ -548,14 +787,17 @@ public sealed class PayrollReportService : IPayrollReportService
             Title = $"Bank Advice — {MonthName(month)} {year}",
             PayMonth = month, PayYear = year,
             Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
-            Note = BankFieldsGapNote,
+            Note = masked
+                ? "Account numbers are masked (last 4 only); the exported file carries full numbers (BR-2)."
+                : null,
         });
     }
 
     /// <summary>
-    /// Builds the per-employee bank-advice lines for a finalized period. The Employee entity has no bank
-    /// columns (documented gap), so Bank Name / Branch Code / Account Number are emitted EMPTY (or a masked
-    /// placeholder) until those fields land; net amount + narration are fully derived from the slip.
+    /// Builds the per-employee bank-advice lines for a finalized period (US-RPT-003 AC-4). Bank Name /
+    /// Branch Code (IFSC/SWIFT) / Account Number are read from the Employee entity. The account number is
+    /// MASKED (last-4 only, FR-6) when <paramref name="masked"/>; FULL only on the audited reveal/export
+    /// path. Net amount + narration are derived from the slip.
     /// </summary>
     private async Task<IReadOnlyList<BankAdviceLineDto>> BuildBankAdviceLinesAsync(
         int month, int year, PayrollReportQueryParams qp, bool masked, CancellationToken ct)
@@ -568,15 +810,13 @@ public sealed class PayrollReportService : IPayrollReportService
             .Select(slip =>
             {
                 empById.TryGetValue(slip.EmployeeId, out var emp);
-                // Bank fields are not on the Employee entity yet (gap). Account is empty; masking is a no-op
-                // on an empty value but the path is exercised for when the columns land.
-                string account = string.Empty;
+                string account = emp?.BankAccountNumber ?? string.Empty;
                 return new BankAdviceLineDto
                 {
                     EmployeeNo = emp?.EmployeeNo ?? string.Empty,
                     EmployeeName = emp is null ? string.Empty : $"{emp.FirstName} {emp.LastName}".Trim(),
-                    BankName = string.Empty,
-                    BranchCode = string.Empty,
+                    BankName = emp?.BankName ?? string.Empty,
+                    BranchCode = emp?.BankBranchCode ?? string.Empty,
                     AccountNumber = masked ? MaskAccount(account) : account,
                     NetAmount = slip.NetSalary,
                     Narration = narration,
@@ -673,7 +913,14 @@ public sealed class PayrollReportService : IPayrollReportService
         };
     }
 
-    /// <summary>Department cost distribution — total net per department for the period (pie/bar).</summary>
+    /// <summary>
+    /// US-RPT-003 AC-2: department-wise salary distribution as a STACKED bar — per department, broken down by
+    /// earnings components (Basic vs HRA/Allowances). Returns Categories = department names with two series
+    /// ("Basic", "Allowances") so the FE renders a stacked bar; <see cref="PayrollAnalyticsResult.Points"/>
+    /// also carries the per-department TOTAL salary cost (net) for a simple pie/table. Reuses
+    /// DepartmentLookupsAsync + ComponentBreakdown. (Single-series net-per-department is preserved in Points
+    /// for back-compat with the existing FE.)
+    /// </summary>
     private async Task<PayrollAnalyticsResult> BuildDepartmentCostDistributionAsync(PayrollReportQueryParams qp, CancellationToken ct)
     {
         var (month, year, error) = await ResolvePeriodAsync(qp, ct);
@@ -682,20 +929,42 @@ public sealed class PayrollReportService : IPayrollReportService
 
         var slips = await ScopedSlipsForPeriodAsync(month, year, qp, ct);
         var (deptNameById, deptIdByEmployee) = await DepartmentLookupsAsync(slips, ct);
+        var detailsBySlip = await DetailsBySlipAsync(slips, ct);
 
-        var points = slips
-            .GroupBy(s =>
-            {
-                var deptId = deptIdByEmployee.GetValueOrDefault(s.EmployeeId);
-                return deptId is { } d ? deptNameById.GetValueOrDefault(d, "(Unassigned)") : "(Unassigned)";
-            })
-            .Select(g => new PayrollChartPoint { Label = g.Key, Value = g.Sum(s => s.NetSalary) })
-            .OrderByDescending(p => p.Value)
+        string DeptOf(Guid empId)
+        {
+            var deptId = deptIdByEmployee.GetValueOrDefault(empId);
+            return deptId is { } d ? deptNameById.GetValueOrDefault(d, "(Unassigned)") : "(Unassigned)";
+        }
+
+        // Per-department accumulation of basic / allowances / net.
+        var byDept = new Dictionary<string, (decimal Basic, decimal Allowances, decimal Net)>();
+        foreach (var slip in slips)
+        {
+            var dept = DeptOf(slip.EmployeeId);
+            var comp = ComponentBreakdown.From(detailsBySlip.GetValueOrDefault(slip.Id, []));
+            var acc = byDept.GetValueOrDefault(dept);
+            byDept[dept] = (acc.Basic + comp.Basic, acc.Allowances + comp.Allowances, acc.Net + slip.NetSalary);
+        }
+
+        // Order departments by total net (descending) for a stable, meaningful axis.
+        var orderedDepts = byDept.OrderByDescending(kv => kv.Value.Net).Select(kv => kv.Key).ToList();
+
+        var points = orderedDepts
+            .Select(d => new PayrollChartPoint { Label = d, Value = byDept[d].Net })
             .ToList();
+
+        var series = new List<PayrollChartSeries>
+        {
+            new() { Name = "Basic", Points = orderedDepts.Select(d => new PayrollChartPoint { Label = d, Value = byDept[d].Basic }).ToList() },
+            new() { Name = "Allowances", Points = orderedDepts.Select(d => new PayrollChartPoint { Label = d, Value = byDept[d].Allowances }).ToList() },
+        };
 
         return new PayrollAnalyticsResult
         {
             ChartType = PayrollAnalyticsChartType.DepartmentCostDistribution.ToString(),
+            Categories = orderedDepts,
+            Series = series,
             Points = points,
         };
     }
@@ -747,15 +1016,21 @@ public sealed class PayrollReportService : IPayrollReportService
     private async Task<List<PayrollSlip>> ScopedSlipsForPeriodAsync(
         int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
     {
-        var slips = await FinalizedSlipsQuery()
-            .Where(s => s.PayMonth == month && s.PayYear == year)
-            .ToListAsync(ct);
+        var query = FinalizedSlipsQuery()
+            .Where(s => s.PayMonth == month && s.PayYear == year);
+
+        // FR-4: a specific finalized run (e.g. a supplementary run); else all finalized runs for the period.
+        if (qp.PayrollRunId is { } runId)
+            query = query.Where(s => s.PayrollRunId == runId);
+
+        var slips = await query.ToListAsync(ct);
 
         if (slips.Count == 0)
             return slips;
 
         // Apply employee-side filters by restricting to the matching employee set.
         bool hasEmployeeFilter = qp.DepartmentId is not null || qp.JobTitleId is not null
+            || qp.LocationId is not null
             || !string.IsNullOrWhiteSpace(qp.EmploymentType) || !string.IsNullOrWhiteSpace(qp.EmployeeSearch);
         if (!hasEmployeeFilter)
             return slips;
@@ -777,6 +1052,8 @@ public sealed class PayrollReportService : IPayrollReportService
             query = query.Where(e => e.DepartmentId == deptId);
         if (qp.JobTitleId is { } jobId)
             query = query.Where(e => e.JobTitleId == jobId);
+        if (qp.LocationId is { } locId)
+            query = query.Where(e => e.LocationId == locId);
         if (TryParseEmploymentType(qp.EmploymentType, out var empType))
             query = query.Where(e => e.EmploymentType == empType);
         if (!string.IsNullOrWhiteSpace(qp.EmployeeSearch))
@@ -864,6 +1141,18 @@ public sealed class PayrollReportService : IPayrollReportService
         if (qp.PayMonth is { } m && qp.PayYear is { } y)
             return (m, y, null);
 
+        // FR-4: when a specific run is requested without an explicit period, resolve the period from the run.
+        if (qp.PayrollRunId is { } runId)
+        {
+            var run = await _dbContext.PayrollRuns.AsNoTracking()
+                .Where(r => r.Id == runId && r.Status == PayrollRunStatus.Finalized)
+                .Select(r => new { r.PayMonth, r.PayYear })
+                .FirstOrDefaultAsync(ct);
+            if (run is null)
+                return (0, 0, "The requested payroll run does not exist or is not finalized.");
+            return (qp.PayMonth ?? run.PayMonth, qp.PayYear ?? run.PayYear, null);
+        }
+
         var latest = await _dbContext.PayrollRuns.AsNoTracking()
             .Where(r => r.Status == PayrollRunStatus.Finalized)
             .OrderByDescending(r => r.PayYear).ThenByDescending(r => r.PayMonth)
@@ -879,12 +1168,6 @@ public sealed class PayrollReportService : IPayrollReportService
     // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
-
-    /// <summary>Documents that the Employee entity has no bank columns yet (FR-1e gap).</summary>
-    private const string BankFieldsGapNote =
-        "Bank Name / Branch Code / Account Number are not yet captured on the employee record. "
-        + "TODO(US-PAY-009 bank-fields): add bank-detail columns (bank_name, branch_code, account_number, "
-        + "encrypted at rest) to the Employee entity and populate these columns. Net amount + narration are derived.";
 
     /// <summary>BR-2: mask all but the last 4 digits of an account number.</summary>
     public static string MaskAccount(string account)
@@ -928,6 +1211,18 @@ public sealed class PayrollReportService : IPayrollReportService
     private static string MonthName(int month) => month is >= 1 and <= 12 ? MonthNames[month] : month.ToString(CultureInfo.InvariantCulture);
 
     // ── Per-slip component breakdown for the summary report ──────────────────
+
+    /// <summary>US-RPT-003 AC-1: rolled-up period totals for the run summary.</summary>
+    private readonly record struct PeriodTotals
+    {
+        public int EmployeeCount { get; init; }
+        public decimal Gross { get; init; }
+        public decimal Statutory { get; init; }
+        public decimal Voluntary { get; init; }
+        public decimal Net { get; init; }
+        /// <summary>Statutory + voluntary deductions (the full deduction side).</summary>
+        public decimal TotalDeductions => Statutory + Voluntary;
+    }
 
     private struct DeptAccumulator
     {
