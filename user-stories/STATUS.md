@@ -143,7 +143,7 @@
 - [x] US-ONB-006 — Exit interview recording *(PR #100)*
 
 ## 10. Notifications & Audit (5 stories)
-- [ ] US-NTF-001 — In-app notification system (SignalR)
+- [~] US-NTF-001 — In-app notification system (SignalR)
 - [ ] US-NTF-002 — Email notification templates per tenant
 - [ ] US-NTF-003 — Notification preferences per user
 - [ ] US-NTF-004 — Audit trail for all data changes
