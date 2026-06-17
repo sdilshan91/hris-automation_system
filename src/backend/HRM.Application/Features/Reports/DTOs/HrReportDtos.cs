@@ -20,6 +20,25 @@ public enum HrReportType
     DepartmentDistribution,
     /// <summary>"employment-type-breakdown" — FR-1: active headcount by employment type (FullTime / PartTime / Contract / Intern).</summary>
     EmploymentTypeBreakdown,
+
+    // ── US-RPT-002: Leave & Attendance reports ──────────────────────────────
+    // Leave reports (leave-utilization / leave-balance / absenteeism-trends) reuse the US-LV-012
+    // LeaveReportService computations verbatim (BR-1 balance, utilization, absenteeism) — mapped into
+    // this generic envelope. Attendance reports aggregate the US-ATT-007 attendance_monthly_summary
+    // materialized table (no recompute). All are role-scoped (AC-4) and tenant-scoped (AC-5).
+
+    /// <summary>"leave-utilization" — AC-1: consumption vs entitlement per leave type, per-department utilization, top consumers.</summary>
+    LeaveUtilization,
+    /// <summary>"leave-balance" — AC-2/BR-1: per-employee per-leave-type current balance with color-band hints (&gt;50 green / 25-50 yellow / &lt;25 red).</summary>
+    LeaveBalance,
+    /// <summary>"attendance-summary" — AC-3/FR-4: attendance rate, absenteeism rate, late/early counts, overtime hours by department.</summary>
+    AttendanceSummary,
+    /// <summary>"absenteeism-trends" — AC-1/BR-4: unplanned-absence (LOP) trend, highest-absenteeism employees.</summary>
+    AbsenteeismTrends,
+    /// <summary>"overtime-report" — BR-3: overtime hours (beyond shift standard) by department + per-employee.</summary>
+    OvertimeReport,
+    /// <summary>"late-arrival-report" — FR-1: late-arrival counts (clock-in past shift start + grace) by department + per-employee.</summary>
+    LateArrivalReport,
 }
 
 /// <summary>
@@ -28,14 +47,27 @@ public enum HrReportType
 /// </summary>
 public static class HrReportTypeKey
 {
-    private static readonly IReadOnlyList<(HrReportType Type, string Key, string Title, string Icon)> Map =
+    // Catalog grouping keys (US-RPT-002 §8). These MUST match the FE i18n heading keys byte-for-byte:
+    //   reports.catalog.groups.hr               = "HR Reports"
+    //   reports.catalog.groups.leave-attendance = "Leave & Attendance"
+    private const string CatHr = "hr";
+    private const string CatLeaveAttendance = "leave-attendance";
+
+    private static readonly IReadOnlyList<(HrReportType Type, string Key, string Title, string Icon, string Category)> Map =
     [
-        (HrReportType.HeadcountSummary,        "headcount",                 "Headcount Summary",        "groups"),
-        (HrReportType.EmployeeTurnover,        "turnover",                  "Employee Turnover",        "trending_down"),
-        (HrReportType.Demographics,            "demographics",              "Demographics",             "diversity_3"),
-        (HrReportType.JoinersAndLeavers,       "joiners-leavers",           "Joiners & Leavers",        "swap_horiz"),
-        (HrReportType.DepartmentDistribution,  "department-distribution",   "Department Distribution",  "apartment"),
-        (HrReportType.EmploymentTypeBreakdown, "employment-type-breakdown", "Employment Type Breakdown", "badge"),
+        (HrReportType.HeadcountSummary,        "headcount",                 "Headcount Summary",        "groups",                 CatHr),
+        (HrReportType.EmployeeTurnover,        "turnover",                  "Employee Turnover",        "trending_down",          CatHr),
+        (HrReportType.Demographics,            "demographics",              "Demographics",             "diversity_3",            CatHr),
+        (HrReportType.JoinersAndLeavers,       "joiners-leavers",           "Joiners & Leavers",        "swap_horiz",             CatHr),
+        (HrReportType.DepartmentDistribution,  "department-distribution",   "Department Distribution",  "apartment",              CatHr),
+        (HrReportType.EmploymentTypeBreakdown, "employment-type-breakdown", "Employment Type Breakdown", "badge",                 CatHr),
+        // US-RPT-002 — Leave & Attendance reports (kebab keys + category are byte-for-byte FE contract).
+        (HrReportType.LeaveUtilization,        "leave-utilization",         "Leave Utilization",        "event_available",        CatLeaveAttendance),
+        (HrReportType.LeaveBalance,            "leave-balance",             "Leave Balance",            "account_balance_wallet", CatLeaveAttendance),
+        (HrReportType.AttendanceSummary,       "attendance-summary",        "Attendance Summary",       "fact_check",             CatLeaveAttendance),
+        (HrReportType.AbsenteeismTrends,       "absenteeism-trends",        "Absenteeism Trends",       "trending_down",          CatLeaveAttendance),
+        (HrReportType.OvertimeReport,          "overtime-report",           "Overtime Report",          "more_time",              CatLeaveAttendance),
+        (HrReportType.LateArrivalReport,       "late-arrival-report",       "Late Arrival Report",      "schedule",               CatLeaveAttendance),
     ];
 
     /// <summary>The kebab key for a report type (the value emitted in catalog + metadata).</summary>
@@ -68,7 +100,7 @@ public static class HrReportTypeKey
 
     /// <summary>The catalog descriptors (kebab key + icon) for every report type.</summary>
     public static IReadOnlyList<HrReportDescriptorDto> Catalog() =>
-        Map.Select(m => new HrReportDescriptorDto { Type = m.Key, Icon = m.Icon }).ToList();
+        Map.Select(m => new HrReportDescriptorDto { Type = m.Key, Icon = m.Icon, Category = m.Category }).ToList();
 }
 
 /// <summary>
@@ -96,6 +128,18 @@ public sealed record HrReportQueryParams
 
     /// <summary>Restrict to these statuses (Active / Probation / Inactive / Terminated / Suspended). Empty = all.</summary>
     public IReadOnlyList<string> EmployeeStatuses { get; init; } = [];
+
+    // ── US-RPT-002 additive filters (§7) — ignored by the US-RPT-001 reports ────────────────────
+    // Added additively so existing RPT-001 reports (which never read these) keep their exact behaviour.
+
+    /// <summary>Restrict leave/attendance reports to a single employee (§7). Null = no filter.</summary>
+    public Guid? EmployeeId { get; init; }
+
+    /// <summary>Restrict leave reports to these leave types (§7). Empty = all.</summary>
+    public IReadOnlyList<Guid> LeaveTypeIds { get; init; } = [];
+
+    /// <summary>Restrict attendance reports to these shifts (§7). Empty = all. (Reserved — see service notes.)</summary>
+    public IReadOnlyList<Guid> ShiftIds { get; init; } = [];
 }
 
 /// <summary>A single labelled data point in a chart series (chart-library-agnostic).</summary>
@@ -146,6 +190,11 @@ public sealed record HrAppliedFilters
     public IReadOnlyList<Guid> LocationIds { get; init; } = [];
     public IReadOnlyList<string> EmploymentTypes { get; init; } = [];
     public IReadOnlyList<string> EmployeeStatuses { get; init; } = [];
+
+    // ── US-RPT-002 additive echoes (only populated by the leave/attendance reports) ─────────────
+    public Guid? EmployeeId { get; init; }
+    public IReadOnlyList<Guid> LeaveTypeIds { get; init; } = [];
+    public IReadOnlyList<Guid> ShiftIds { get; init; } = [];
 }
 
 /// <summary>Report metadata block (US-RPT-001 §7): type/title/timestamp + applied filters + KPI summary + cache flag.</summary>
@@ -178,6 +227,15 @@ public sealed record HrReportTable
 {
     public IReadOnlyList<string> Columns { get; init; } = [];
     public IReadOnlyList<object?[]> Rows { get; init; } = [];
+
+    /// <summary>
+    /// US-RPT-002 AC-2 optional per-cell colour bands, aligned to <see cref="Rows"/> by [rowIndex][colIndex]
+    /// (same number of rows; each inner array aligned to <see cref="Columns"/>). Each value is exactly
+    /// "ok" | "warn" | "low" (FE: ok→green / warn→yellow / low→red) or <c>null</c> for a plainly-rendered
+    /// cell. Null/absent for every report that carries no bands so the FE viewer degrades gracefully — DO
+    /// NOT emit an empty matrix (it would break the FE's row/column alignment).
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<string?>>? CellBands { get; init; }
 }
 
 /// <summary>
@@ -202,4 +260,11 @@ public sealed record HrReportDescriptorDto
 
     /// <summary>A Material icon token for the FE card grid.</summary>
     public string Icon { get; init; } = string.Empty;
+
+    /// <summary>
+    /// US-RPT-002 §8 optional grouping key. The FE groups catalog cards into sections using the i18n heading
+    /// key <c>reports.catalog.groups.&lt;category&gt;</c>. Exactly one of "hr" | "leave-attendance"
+    /// (byte-for-byte the FE i18n keys); when absent the catalog falls back to a single ungrouped grid.
+    /// </summary>
+    public string? Category { get; init; }
 }

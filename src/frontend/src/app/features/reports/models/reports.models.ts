@@ -18,14 +18,34 @@
 
 // ─── Catalog (AC-1) ───────────────────────────────────────────────────────
 
-/** Stable keys for the six pre-built reports (FR-1). */
+/**
+ * Stable keys for the pre-built reports (FR-1). The first six are the US-RPT-001
+ * HR reports; the next six are the US-RPT-002 leave & attendance reports. The
+ * catalog is server-driven — these keys must match the backend's report keys
+ * byte-for-byte so the FE can derive the i18n title/description keys from `type`.
+ */
 export type ReportType =
+  // ── US-RPT-001 HR reports ──
   | 'headcount'
   | 'turnover'
   | 'demographics'
   | 'joiners-leavers'
   | 'department-distribution'
-  | 'employment-type-breakdown';
+  | 'employment-type-breakdown'
+  // ── US-RPT-002 leave & attendance reports ──
+  | 'leave-utilization'
+  | 'leave-balance'
+  | 'attendance-summary'
+  | 'absenteeism-trends'
+  | 'overtime-report'
+  | 'late-arrival-report';
+
+/**
+ * Optional grouping for catalog cards (US-RPT-002 §8). Server may tag a report
+ * with a `category` so the catalog can render light section groups (e.g.
+ * "Leave & Attendance" vs "HR Reports"); absent → a single ungrouped grid.
+ */
+export type ReportCategory = string;
 
 /**
  * The raw catalog item as sent by the backend (`GET /api/v1/reports`). The
@@ -36,6 +56,13 @@ export interface IReportCatalogServerItem {
   type: ReportType;
   /** Material icon token, e.g. 'groups', 'trending_down', 'diversity_3'. */
   icon: string;
+  /**
+   * Optional grouping key for the catalog UI (US-RPT-002 §8), e.g.
+   * 'leave-attendance' or 'hr'. When present the catalog renders one section
+   * per category; when absent (or all items share none) it falls back to a
+   * single grid. The FE derives the section heading i18n key from this value.
+   */
+  category?: ReportCategory;
 }
 
 /**
@@ -51,6 +78,8 @@ export interface IReportCatalogItem {
   descriptionKey: string;
   /** Material icon token rendered directly by <mat-icon>. */
   icon: string;
+  /** Optional grouping key echoed from the server (US-RPT-002 §8). */
+  category?: ReportCategory;
 }
 
 // ─── Filters (FR-2 / §7) ────────────────────────────────────────────────────
@@ -68,6 +97,18 @@ export interface IReportFilters {
   employmentTypes: string[];
   /** Valid status values, e.g. 'active'. */
   employeeStatuses: string[];
+  /**
+   * US-RPT-002 FR-2: leave & attendance report filters. All optional and
+   * additive — the backend's HrReportQueryParams ignores those that don't apply
+   * to a given report type, so they are always safe to send. HR reports that
+   * predate US-RPT-002 simply leave these empty/null.
+   */
+  /** Single employee focus (FR-2 employee search). */
+  employeeId: string | null;
+  /** Leave-type ids to scope leave reports (FR-2). */
+  leaveTypeIds: string[];
+  /** Shift ids to scope attendance reports (FR-2). */
+  shiftIds: string[];
 }
 
 /** Build an empty filter set (all-inclusive — server applies defaults). */
@@ -79,6 +120,9 @@ export function emptyReportFilters(): IReportFilters {
     locationIds: [],
     employmentTypes: [],
     employeeStatuses: [],
+    employeeId: null,
+    leaveTypeIds: [],
+    shiftIds: [],
   };
 }
 
@@ -120,10 +164,27 @@ export interface IReportSeries {
   points: IChartDataPoint[];
 }
 
+/**
+ * US-RPT-002 AC-2: leave-balance color band. The backend computes the
+ * remaining-percentage band per cell so the FE colors generically without
+ * hardcoding the threshold logic per report type:
+ *   ok   → green  (> 50% remaining)
+ *   warn → yellow (25–50%)
+ *   low  → red    (< 25%)
+ */
+export type BalanceBand = 'ok' | 'warn' | 'low';
+
 /** Tabular block — the WCAG data-table alternative to the charts (NFR-5). */
 export interface IReportTable {
   columns: string[];
   rows: ReportCell[][];
+  /**
+   * US-RPT-002 AC-2: optional per-cell color bands aligned to {@link rows}
+   * (same row/column indices). Present only for reports that carry band data
+   * (e.g. Leave Balance); a `null` entry means "no band — render plainly".
+   * Absent entirely for every other report, so the viewer degrades gracefully.
+   */
+  cellBands?: (BalanceBand | null)[][];
 }
 
 export type ReportCell = string | number | null;

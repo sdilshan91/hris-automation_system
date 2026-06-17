@@ -10,6 +10,7 @@
 // ============================================================================
 
 using FluentAssertions;
+using HRM.Application.Features.Reports.DTOs;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Services;
 
@@ -17,6 +18,35 @@ namespace HRM.Tests.Unit;
 
 public sealed class HrReportServiceTests
 {
+    // ── US-RPT-002 §8: catalog category grouping ────────────────────────────
+    // Each descriptor carries the FE grouping key: the six US-RPT-001 HR reports → "hr"; the six
+    // US-RPT-002 leave/attendance reports → "leave-attendance". The strings must match the FE i18n
+    // heading keys (reports.catalog.groups.<category>) byte-for-byte.
+
+    [Theory]
+    [InlineData("headcount", "hr")]
+    [InlineData("turnover", "hr")]
+    [InlineData("demographics", "hr")]
+    [InlineData("joiners-leavers", "hr")]
+    [InlineData("department-distribution", "hr")]
+    [InlineData("employment-type-breakdown", "hr")]
+    [InlineData("leave-utilization", "leave-attendance")]
+    [InlineData("leave-balance", "leave-attendance")]
+    [InlineData("attendance-summary", "leave-attendance")]
+    [InlineData("absenteeism-trends", "leave-attendance")]
+    [InlineData("overtime-report", "leave-attendance")]
+    [InlineData("late-arrival-report", "leave-attendance")]
+    public void Catalog_TagsEachReport_WithItsCategory(string type, string expectedCategory)
+    {
+        var descriptor = HrReportTypeKey.Catalog().Single(d => d.Type == type);
+        descriptor.Category.Should().Be(expectedCategory);
+    }
+
+    [Fact]
+    public void Catalog_TagsEveryDescriptor_WithExactlyHrOrLeaveAttendance()
+        => HrReportTypeKey.Catalog().Should()
+            .OnlyContain(d => d.Category == "hr" || d.Category == "leave-attendance");
+
     // ── BR-4: active classification ─────────────────────────────────────────
 
     [Theory]

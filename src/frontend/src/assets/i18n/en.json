@@ -29,6 +29,35 @@
       "employment-type-breakdown": {
         "title": "Employment Type Breakdown",
         "description": "Workforce composition by full-time, part-time, contract, and intern."
+      },
+      "leave-utilization": {
+        "title": "Leave Utilization",
+        "description": "Total leave days by type, average utilization per department, top consumers, and leave type distribution."
+      },
+      "leave-balance": {
+        "title": "Leave Balance",
+        "description": "Current balance per leave type for each employee, color-coded by remaining entitlement."
+      },
+      "attendance-summary": {
+        "title": "Attendance Summary",
+        "description": "Working days, average attendance rate, late arrivals, early departures, overtime, and absenteeism by department."
+      },
+      "absenteeism-trends": {
+        "title": "Absenteeism Trends",
+        "description": "Unauthorized absence rate over time and per department to spot attendance issues early."
+      },
+      "overtime-report": {
+        "title": "Overtime Report",
+        "description": "Overtime hours worked beyond standard shift hours, by employee and department."
+      },
+      "late-arrival-report": {
+        "title": "Late Arrival Report",
+        "description": "Late clock-ins against shift start times, by employee and department."
+      },
+      "groups": {
+        "leave-attendance": "Leave & Attendance",
+        "hr": "HR Reports",
+        "other": "Other Reports"
       }
     },
     "viewer": {
@@ -45,11 +74,20 @@
       "locations": "Locations",
       "employmentType": "Employment type",
       "status": "Status",
+      "employee": "Employee",
+      "leaveTypes": "Leave types",
+      "shifts": "Shifts",
+      "employeePlaceholder": "Employee id",
       "commaSeparated": "Comma-separated ids",
       "apply": "Apply",
       "clear": "Clear",
       "retry": "Try again",
-      "tableAlternativeHint": "Switch to Table view for a screen-reader-friendly version of this data."
+      "tableAlternativeHint": "Switch to Table view for a screen-reader-friendly version of this data.",
+      "band": {
+        "ok": "More than 50% remaining",
+        "warn": "Between 25% and 50% remaining",
+        "low": "Less than 25% remaining"
+      }
     }
   },
   "notificationPreferences": {
