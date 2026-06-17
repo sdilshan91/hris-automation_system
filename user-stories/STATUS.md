@@ -153,7 +153,7 @@
 - [x] US-RPT-001 — Pre-built HR reports
 - [x] US-RPT-002 — Leave and attendance reports
 - [x] US-RPT-003 — Payroll reports and summaries
-- [ ] US-RPT-004 — Export reports to CSV/PDF/Excel
+- [~] US-RPT-004 — Export reports to CSV/PDF/Excel
 - [ ] US-RPT-005 — Dashboard with KPI widgets
 
 ---
