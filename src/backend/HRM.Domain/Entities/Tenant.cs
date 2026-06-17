@@ -169,6 +169,15 @@ public sealed class Tenant
     /// </summary>
     public int? PasswordMaxAgeDays { get; set; }
 
+    /// <summary>
+    /// US-ADM-008 (FR-6/BR-5): number of days audit-log rows are retained before the
+    /// <c>AuditLogPurgeJob</c> deletes them. PLAN-GOVERNED — surfaced READ-ONLY to the Tenant Admin
+    /// (they can VIEW but not change it, BR-5). Default 90 (Starter plan); Business=365, Enterprise=2555 etc.
+    /// TODO(subscription): derive from the plan tier once a proper Subscription/Plan entity exists; for now a
+    /// plain int on the tenant mirroring the other Max*/policy columns.
+    /// </summary>
+    public int AuditLogRetentionDays { get; set; } = 90;
+
     // Navigation
     public ICollection<User> Users { get; set; } = new List<User>();
     public ICollection<Role> Roles { get; set; } = new List<Role>();

@@ -1,0 +1,168 @@
+<!-- Backdrop -->
+<div
+  class="fixed inset-0 z-40 bg-neutral-900/30 backdrop-blur-sm"
+  (click)="close()"
+  aria-hidden="true"
+></div>
+
+<!-- Slide-in panel wrapper (right) -->
+<div
+  class="pointer-events-none fixed inset-0 z-50 flex justify-end"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="audit-detail-title"
+>
+  <section
+    @slideIn
+    class="pointer-events-auto flex h-full w-full max-w-xl flex-col bg-white shadow-2xl ring-1 ring-neutral-200 sm:w-[34rem]"
+  >
+    <!-- Header -->
+    <header
+      class="flex items-start justify-between gap-4 border-b border-neutral-100 px-6 py-4"
+    >
+      <div class="min-w-0">
+        <h2
+          id="audit-detail-title"
+          class="truncate text-base font-semibold text-neutral-900"
+        >
+          {{ record().action }}
+        </h2>
+        <p class="mt-0.5 text-xs text-neutral-500">
+          {{ record().timestamp | date: 'medium' }}
+        </p>
+      </div>
+      <button
+        type="button"
+        (click)="close()"
+        [attr.aria-label]="'common.close' | translate"
+        class="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          class="h-5 w-5"
+          aria-hidden="true"
+        >
+          <path
+            d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"
+          />
+        </svg>
+      </button>
+    </header>
+
+    <!-- Body -->
+    <div class="flex-1 overflow-y-auto px-6 py-5">
+      <!-- Metadata grid -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <div class="meta-label">{{ 'audit.detail.actor' | translate }}</div>
+          <div class="meta-value">{{ record().actorName }}</div>
+          <div class="text-xs text-neutral-500">{{ record().actorEmail }}</div>
+        </div>
+        <div>
+          <div class="meta-label">{{ 'audit.detail.resource' | translate }}</div>
+          <div class="meta-value">{{ record().resourceType }}</div>
+          @if (record().resourceId) {
+            <div class="font-mono text-xs text-neutral-500">
+              {{ record().resourceId }}
+            </div>
+          }
+        </div>
+        <div>
+          <div class="meta-label">{{ 'audit.detail.ip' | translate }}</div>
+          <div class="meta-value font-mono">{{ record().ipAddress || '—' }}</div>
+        </div>
+        <div>
+          <div class="meta-label">{{ 'audit.detail.traceId' | translate }}</div>
+          <div class="meta-value font-mono">{{ record().traceId || '—' }}</div>
+        </div>
+        <div class="col-span-2">
+          <div class="meta-label">{{ 'audit.detail.userAgent' | translate }}</div>
+          <div class="meta-value">{{ record().userAgent || '—' }}</div>
+        </div>
+        @if (record().summary) {
+          <div class="col-span-2">
+            <div class="meta-label">{{ 'audit.detail.summary' | translate }}</div>
+            <div class="meta-value">{{ record().summary }}</div>
+          </div>
+        }
+      </div>
+
+      <!-- Diff -->
+      <div class="mt-6">
+        <h3
+          class="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400"
+        >
+          {{ 'audit.detail.changes' | translate }}
+        </h3>
+
+        @if (!hasChanges()) {
+          <p
+            class="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-500"
+          >
+            {{ 'audit.detail.noChanges' | translate }}
+          </p>
+        } @else {
+          <!-- Legend -->
+          <div class="mb-3 flex flex-wrap gap-3 text-xs text-neutral-500">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-emerald-400"></span>
+              {{ 'audit.diff.added' | translate }}
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-red-400"></span>
+              {{ 'audit.diff.removed' | translate }}
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-amber-400"></span>
+              {{ 'audit.diff.modified' | translate }}
+            </span>
+          </div>
+
+          <ul class="space-y-2">
+            @for (entry of diff(); track entry.key) {
+              @if (entry.changeType !== 'unchanged') {
+                <li
+                  class="rounded-lg border px-3 py-2"
+                  [class]="rowClass(entry.changeType)"
+                  data-testid="diff-row"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-mono text-xs font-medium text-neutral-700">
+                      {{ entry.key }}
+                    </span>
+                    <span
+                      class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
+                      [class]="badgeClass(entry.changeType)"
+                    >
+                      {{ 'audit.diff.' + entry.changeType | translate }}
+                    </span>
+                  </div>
+                  <div class="mt-1.5 space-y-1 text-xs">
+                    @if (entry.oldVal !== null) {
+                      <div class="flex gap-1.5">
+                        <span class="shrink-0 text-red-500">−</span>
+                        <span class="break-all font-mono text-neutral-700"
+                          >{{ entry.oldVal || '∅' }}</span
+                        >
+                      </div>
+                    }
+                    @if (entry.newVal !== null) {
+                      <div class="flex gap-1.5">
+                        <span class="shrink-0 text-emerald-600">+</span>
+                        <span class="break-all font-mono text-neutral-700"
+                          >{{ entry.newVal || '∅' }}</span
+                        >
+                      </div>
+                    }
+                  </div>
+                </li>
+              }
+            }
+          </ul>
+        }
+      </div>
+    </div>
+  </section>
+</div>

@@ -413,6 +413,15 @@ public static class DependencyInjection
         // EVALUATION (WorkflowEvaluator) is built+tested here, not its invocation from live request flows.
         services.AddScoped<IWorkflowService, WorkflowService>();
 
+        // US-ADM-008: Tenant-Admin audit-log READ + EXPORT. Runs in the normal resolved-tenant context but
+        // filters audit_logs EXPLICITLY by ITenantContext.TenantId (that table has NO global query filter; its
+        // TenantId is nullable and shared with system rows). Masks sensitive values on read (FR-4), audits the
+        // export action itself (BR-4), and surfaces the read-only plan retention window (BR-5). The retention
+        // PURGE (FR-6) is a separate cross-tenant service driven by AuditLogPurgeJob (Hangfire). Append-only by
+        // code convention (AC-5/NFR-3); DB-role UPDATE/DELETE revocation + RLS are DEFERRED platform infra.
+        services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<IAuditLogPurgeService, AuditLogPurgeService>();
+
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
         // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running

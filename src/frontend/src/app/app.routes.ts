@@ -249,6 +249,21 @@ export const appRoutes: Routes = [
           ),
         canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
       },
+      // ─── Admin / Audit Log (US-ADM-008) — Tenant Admin ──
+      // Tenant context (NOT the system-admin console; that is system_audit_log,
+      // BR-3). Read-only viewer of tenant-scoped audit records with filters,
+      // visual JSON diff, and filtered CSV/JSON export. Tenant Admin / Tenant
+      // Owner / Auditor may view (BR-1); the Auditor role is read-only (FR-7).
+      {
+        path: 'admin/audit-log',
+        loadChildren: () =>
+          import('./features/admin/audit-log/audit-log.routes').then(
+            (m) => m.AUDIT_LOG_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'Tenant Owner', 'Auditor']),
+        ],
+      },
       // ─── Core HR / Departments (US-CHR-004) ───────────────
       {
         path: 'departments',

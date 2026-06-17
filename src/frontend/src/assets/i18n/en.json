@@ -307,6 +307,69 @@
     "previous": "Previous",
     "next": "Next"
   },
+  "audit": {
+    "title": "Audit Log",
+    "subtitle": "A tamper-proof record of every significant action in your workspace.",
+    "retention": "Records retained for {{days}} days per your plan.",
+    "col": {
+      "timestamp": "Timestamp",
+      "user": "User",
+      "action": "Action",
+      "resource": "Resource",
+      "ip": "IP Address",
+      "summary": "Summary"
+    },
+    "filters": {
+      "search": "Search",
+      "searchPlaceholder": "Search the change summary…",
+      "from": "From",
+      "to": "To",
+      "actor": "User",
+      "allActors": "All users",
+      "action": "Action",
+      "allActions": "All actions",
+      "resource": "Resource",
+      "allResources": "All resources",
+      "clear": "Clear filters"
+    },
+    "pagination": {
+      "range": "Showing {{start}}–{{end}} of {{total}}",
+      "page": "Page {{page}} of {{total}}"
+    },
+    "empty": {
+      "title": "No audit records found",
+      "subtitle": "Try adjusting your filters or date range."
+    },
+    "list": {
+      "loadError": "Failed to load audit records. Please try again."
+    },
+    "detail": {
+      "actor": "Performed by",
+      "resource": "Resource",
+      "ip": "IP Address",
+      "traceId": "Trace ID",
+      "userAgent": "User Agent",
+      "summary": "Summary",
+      "changes": "Changes",
+      "noChanges": "This event recorded no field-level changes.",
+      "loadError": "Failed to load the audit record details."
+    },
+    "diff": {
+      "added": "Added",
+      "removed": "Removed",
+      "modified": "Modified"
+    },
+    "export": {
+      "button": "Export",
+      "title": "Export audit log",
+      "subtitle": "{{count}} record(s) will be exported with your current filters applied.",
+      "format": "Format",
+      "confirm": "Export",
+      "success": "Your audit log export has started downloading.",
+      "error": "The export failed. Please try again.",
+      "readOnly": "Your role has read-only access and cannot export the audit log."
+    }
+  },
   "userManagement": {
     "title": "Users",
     "subtitle": "Invite people, manage roles, and control access to your workspace.",

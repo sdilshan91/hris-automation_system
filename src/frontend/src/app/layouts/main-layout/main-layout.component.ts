@@ -768,6 +768,13 @@ export class MainLayoutComponent implements OnInit {
       permission: 'Admin.View',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H6v2h4V8a1 1 0 0 1 1-1h.5a1 1 0 0 1 0-2H11a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.5a1 1 0 0 0 0 2H13a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h-4a1 1 0 0 1-1-1V7H4a1 1 0 0 1-1-1V3Z"/></svg>`,
     },
+    {
+      // US-ADM-008: Tenant Admin audit-log viewer (read-only; Auditor also allowed).
+      label: 'Audit Log',
+      route: '/admin/audit-log',
+      permission: 'Admin.View',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/></svg>`,
+    },
   ];
 
   ngOnInit(): void {

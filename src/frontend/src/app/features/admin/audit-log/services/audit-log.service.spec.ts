@@ -1,0 +1,158 @@
+import { TestBed } from '@angular/core/testing';
+import {
+  HttpTestingController,
+  provideHttpClientTesting,
+} from '@angular/common/http/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { AuditLogService } from './audit-log.service';
+import {
+  IAuditLogDetail,
+  IAuditLogPage,
+} from '../models/audit-log.models';
+import { environment } from '../../../../../environments/environment';
+
+describe('AuditLogService', () => {
+  let service: AuditLogService;
+  let httpMock: HttpTestingController;
+
+  const baseUrl = `${environment.apiBaseUrl}/tenant/audit-log`;
+  const usersUrl = `${environment.apiBaseUrl}/users`;
+
+  const mockPage: IAuditLogPage = {
+    items: [
+      {
+        id: 'a-1',
+        timestamp: '2026-06-16T10:00:00Z',
+        actorName: 'Jane Doe',
+        actorEmail: 'jane@acme.com',
+        action: 'Employee.Create',
+        resourceType: 'Employee',
+        resourceId: 'e-1',
+        ipAddress: '10.0.0.1',
+        summary: 'Created employee John',
+      },
+    ],
+    totalCount: 1,
+    page: 1,
+    pageSize: 50,
+    retentionDays: 365,
+  };
+
+  const mockDetail: IAuditLogDetail = {
+    ...mockPage.items[0],
+    userAgent: 'Mozilla/5.0',
+    traceId: 'trace-123',
+    before: null,
+    after: '{"name":"John"}',
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(AuditLogService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('lists with pagination params', () => {
+    service
+      .getAuditLog({ page: 2, pageSize: 50 })
+      .subscribe((res) => expect(res).toEqual(mockPage));
+
+    const req = httpMock.expectOne(
+      (r) => r.url === baseUrl && r.method === 'GET'
+    );
+    expect(req.request.params.get('page')).toBe('2');
+    expect(req.request.params.get('pageSize')).toBe('50');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(mockPage);
+  });
+
+  it('passes every filter as a query param', () => {
+    service
+      .getAuditLog({
+        page: 1,
+        pageSize: 50,
+        startDate: '2026-06-01',
+        endDate: '2026-06-30',
+        actorUserId: 'u-1',
+        action: 'Leave.Approve',
+        resourceType: 'LeaveRequest',
+        search: 'john',
+      })
+      .subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    const p = req.request.params;
+    expect(p.get('startDate')).toBe('2026-06-01');
+    expect(p.get('endDate')).toBe('2026-06-30');
+    expect(p.get('actorUserId')).toBe('u-1');
+    expect(p.get('action')).toBe('Leave.Approve');
+    expect(p.get('resourceType')).toBe('LeaveRequest');
+    expect(p.get('search')).toBe('john');
+    req.flush(mockPage);
+  });
+
+  it('omits empty filters from the query', () => {
+    service
+      .getAuditLog({ page: 1, pageSize: 50, action: '', search: undefined })
+      .subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.has('action')).toBeFalse();
+    expect(req.request.params.has('search')).toBeFalse();
+    req.flush(mockPage);
+  });
+
+  it('fetches a single record detail', () => {
+    service
+      .getAuditDetail('a-1')
+      .subscribe((res) => expect(res).toEqual(mockDetail));
+
+    const req = httpMock.expectOne(`${baseUrl}/a-1`);
+    expect(req.request.method).toBe('GET');
+    req.flush(mockDetail);
+  });
+
+  it('exports with the chosen format and current filters as a blob', () => {
+    const blob = new Blob(['data'], { type: 'text/csv' });
+    service
+      .exportAuditLog({ action: 'Employee.Create', search: 'john' }, 'csv')
+      .subscribe((resp) => expect(resp.body).toBe(blob));
+
+    const req = httpMock.expectOne(
+      (r) => r.url === `${baseUrl}/export` && r.method === 'GET'
+    );
+    expect(req.request.params.get('format')).toBe('csv');
+    expect(req.request.params.get('action')).toBe('Employee.Create');
+    expect(req.request.params.get('search')).toBe('john');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(blob);
+  });
+
+  it('exports JSON format', () => {
+    service.exportAuditLog({}, 'json').subscribe();
+    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/export`);
+    expect(req.request.params.get('format')).toBe('json');
+    req.flush(new Blob(['[]']));
+  });
+
+  it('derives actor options from the reused US-ADM-005 user list', () => {
+    service.getActorOptions().subscribe((opts) => {
+      expect(opts).toEqual([
+        { id: 'ut-1', displayName: 'Jane Doe', email: 'jane@acme.com' },
+      ]);
+    });
+
+    const req = httpMock.expectOne((r) => r.url === usersUrl);
+    expect(req.request.params.get('pageSize')).toBe('200');
+    expect(req.request.params.get('status')).toBe('active');
+    req.flush({
+      items: [
+        { userTenantId: 'ut-1', displayName: 'Jane Doe', email: 'jane@acme.com' },
+      ],
+    });
+  });
+});

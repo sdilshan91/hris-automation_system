@@ -86,6 +86,11 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasMaxLength(20)
             .HasDefaultValue("revoke_oldest");
 
+        // US-ADM-008 FR-6/BR-5: plan-governed audit-log retention window. DB default 90 (Starter) so existing
+        // tenant rows backfill to a sane window rather than 0 (which the purge service treats as 90 anyway).
+        builder.Property(t => t.AuditLogRetentionDays)
+            .HasDefaultValue(90);
+
         // MfaRequiredRoles stored as jsonb column with value converter and comparer
         builder.Property(t => t.MfaRequiredRoles)
             .HasColumnType("jsonb")

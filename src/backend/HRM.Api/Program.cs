@@ -157,6 +157,7 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.SendLockoutNotificationJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ApplyFutureDatedStatusChangesJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProbationReminderJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.AuditLogPurgeJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.BulkEmployeeImportJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.LeaveAccrualJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.HolidayRecurrenceJob>();
@@ -327,6 +328,13 @@ try
             "probation-end-reminders",
             job => job.RunAsync(),
             "0 8 * * *"); // 08:00 UTC daily
+
+        // US-ADM-008 FR-6 / BR-5: Audit-log retention purge — deletes audit rows older than each tenant's
+        // plan-governed AuditLogRetentionDays window and logs the purge (daily at 04:00 UTC).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.AuditLogPurgeJob>(
+            "audit-log-retention-purge",
+            job => job.RunAsync(),
+            "0 4 * * *"); // 04:00 UTC daily
 
         // US-LV-002 FR-5 / AC-5: Leave entitlement accrual processing (daily at 00:30 UTC)
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.LeaveAccrualJob>(
