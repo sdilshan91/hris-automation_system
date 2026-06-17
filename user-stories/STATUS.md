@@ -143,7 +143,7 @@
 - [x] US-ONB-006 — Exit interview recording *(PR #100)*
 
 ## 10. Notifications & Audit (5 stories)
-- [~] US-NTF-001 — In-app notification system (SignalR)
+- [x] US-NTF-001 — In-app notification system (SignalR) *(PR #101)*
 - [ ] US-NTF-002 — Email notification templates per tenant
 - [ ] US-NTF-003 — Notification preferences per user
 - [ ] US-NTF-004 — Audit trail for all data changes
@@ -160,9 +160,9 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **93** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100)
+- Done: **94** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100), **US-NTF-001** (#101)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **10** — Notifications (5), Reports (5)
+- Pending: **9** — Notifications (4), Reports (5)
 - **Next module by priority: Notifications & Audit (US-NTF-001..005)**
 
 ## Module → directory map
