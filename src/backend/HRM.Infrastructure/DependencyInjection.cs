@@ -401,6 +401,18 @@ public static class DependencyInjection
         services.AddScoped<IImpersonationService, ImpersonationService>();
         services.AddScoped<IImpersonationNotificationService, LogOnlyImpersonationNotificationService>();
 
+        // US-ADM-004: System Admin tenant lifecycle (suspend / terminate / reactivate / restore + history).
+        // Runs in the system/admin context (IgnoreQueryFilters, explicit tenant-id scoping). Each transition
+        // validates the BR-1 matrix (pure TenantLifecycleTransitions), refuses the system tenant (BR-2), revokes
+        // refresh tokens on suspend (BR-5), and writes a lifecycle event + system audit atomically (FR-7/NFR-4).
+        // ITenantDeletionScheduler (the Hangfire seam) is OPTIONAL and registered in HRM.Api, so the service never
+        // hard-depends on running Hangfire storage (absent in tests → scheduling is skipped). Notifications use the
+        // log-only seam (real delivery deferred, US-NTF). The data-deletion service is provider-aware: ExecuteDelete
+        // + a transaction on relational, load+RemoveRange on InMemory — only the target tenant's rows are touched.
+        services.AddScoped<ITenantLifecycleService, TenantLifecycleService>();
+        services.AddScoped<ITenantDataDeletionService, TenantDataDeletionService>();
+        services.AddScoped<ITenantLifecycleNotificationService, LogOnlyTenantLifecycleNotificationService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

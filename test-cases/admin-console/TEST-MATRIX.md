@@ -1,9 +1,9 @@
 ---
 module: Admin Console
-total_user_stories: 3
-total_test_cases: 53
+total_user_stories: 4
+total_test_cases: 76
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-17
 status: in-progress
 ---
 
@@ -218,10 +218,97 @@ status: in-progress
 | Functional ID range | TC-ADM-003-01 .. TC-ADM-003-16 |
 | ISO ID range | TC-ADM-ISO-007 |
 
+---
+
+> US-ADM-004 (System Admin Suspends or Terminates a Tenant) is the FOURTH Admin Console story. It adds 23 test cases: 17 functional/security/e2e/a11y (TC-ADM-004-01..17) + 4 DEFERRED placeholders (TC-ADM-004-18..21) + 2 dedicated multi-tenant isolation (TC-ADM-ISO-008..009, continuing the running ISO counter). All 6 acceptance criteria (AC-1..AC-6), all 7 business rules (BR-1..BR-7), and all 7 functional requirements (FR-1..FR-7) are traced.
+>
+> IMPLEMENTATION FACTS (tested as built): the tenant gains `SuspendedAt`/`SuspendedReason`/`TerminationScheduledAt`. Transitions enforce BR-1's allowed-state matrix; invalid transitions are rejected with 409/400 (TC-ADM-004-12). SUSPEND -> `Suspended`, revokes all tenant refresh tokens (BR-5), writes lifecycle `'suspended'` + system audit, dispatches a log-only notification; suspended-tenant API returns HTTP 451 to tenant users except Tenant Admin, and suspended login allows only Tenant Admin/Owner (AC-2). TERMINATE -> `Terminating`, `TerminationScheduledAt = now + graceDays` (7-90, default 30, BR-4), schedules the data-deletion job + 14/7/1d reminder jobs, lifecycle `'termination_initiated'`; Terminating is read-only (writes -> 403, BR-6). The DATA-DELETION job (AC-4) hard-deletes per-tenant data, retains the tenant row as `Terminated` with PII redacted, retains audit logs, is tenant-isolated (Tenant B untouched). REACTIVATE (AC-5): Suspended -> Active, fields cleared, `'reactivated'`. RESTORE (AC-6): Terminating -> prior state, `TerminationScheduledAt` cleared, scheduled jobs de-queued, `'restored'`. BR-2: system tenant cannot be suspended/terminated. BR-3: Terminated cannot be restored. BR-7: only SystemAdmin transitions; SystemSupport views lifecycle history only. Typed-subdomain confirmation (FR-4) + no-paste (NFR-5) are frontend (TC-ADM-004-17, FE-verified).
+>
+> DEFERRED (status: blocked; never fabricated, honest traceability): real email DELIVERY of lifecycle/reminder notifications (TC-ADM-004-18) — log-only dispatch seam until US-NTF; the DISPATCH/SCHEDULING is asserted run-green in TC-ADM-004-01/-06/-10. File-storage (blob) deletion (TC-ADM-004-19) — §10 requires deleting documents/resumes/payslips but no blob storage is wired; the relational hard-delete is covered run-green in TC-ADM-004-09. NFR-3 maintenance-window scheduling (TC-ADM-004-20) — no window config today; deletion fires at grace expiry. NFR-2 50k-record/10-min perf (TC-ADM-004-21) — needs a perf-representative environment; correctness covered by TC-ADM-004-09.
+
+## Coverage by Test Case (US-ADM-004)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-004-01 | Suspend active tenant: status, fields, tokens revoked, 451, lifecycle+audit, notification dispatched | E2E | Critical | AC-1, FR-1/7, BR-1/5 | Happy path | draft |
+| TC-ADM-004-02 | Suspend past_due tenant (alt valid source) | Functional | High | AC-1, FR-1/7, BR-1/5 | Boundary | draft |
+| TC-ADM-004-03 | Suspension reason 10-500 boundary; <10/empty/>500 rejected | Functional | High | AC-1, FR-1 | Negative / boundary | draft |
+| TC-ADM-004-04 | Login during suspension: Tenant Admin allowed (read-only); others blocked | Security | Critical | AC-2 | Negative / security | draft |
+| TC-ADM-004-05 | Suspended API -> 451 for tenant users; Tenant Admin exempt | Security | Critical | AC-1, AC-2 | Negative / security | draft |
+| TC-ADM-004-06 | Terminate active tenant: Terminating, scheduled_at, deletion+reminder jobs, lifecycle | E2E | Critical | AC-3, FR-2/7, BR-1/4 | Happy path | draft |
+| TC-ADM-004-07 | Terminate from past_due and suspended (alt valid sources) | Functional | High | AC-3, FR-2/7, BR-1 | Boundary | draft |
+| TC-ADM-004-08 | Terminating read-only: writes 403, reads + export OK | Security | Critical | AC-3, BR-6 | Negative / security | draft |
+| TC-ADM-004-09 | Data deletion: hard-delete, tenant retained Terminated + PII redacted, audit retained, atomic | Integration | Critical | AC-4, FR-3/7, NFR-4 | Negative / security | draft |
+| TC-ADM-004-10 | Reactivate suspended -> active, fields cleared, login normal, lifecycle 'reactivated' | Functional | Critical | AC-5, FR-5/7, BR-1 | Happy path | draft |
+| TC-ADM-004-11 | Restore terminating -> prior, scheduled_at cleared, jobs de-queued, 'restored' | Functional | Critical | AC-6, FR-6/7, BR-1 | Happy path | draft |
+| TC-ADM-004-12 | Full transition matrix — invalid transitions 409/400, no state change | Functional | Critical | AC-1/3/5/6, BR-1/3 | Negative / boundary | draft |
+| TC-ADM-004-13 | BR-3: terminated tenant cannot be restored | Functional | High | BR-3 | Negative / boundary | draft |
+| TC-ADM-004-14 | BR-2: system tenant cannot be suspended/terminated | Security | Critical | BR-2 | Negative / security | draft |
+| TC-ADM-004-15 | BR-7: only SystemAdmin transitions; SystemSupport view-only; tenant 403; unauth 401 | Security | Critical | BR-7, FR-1/2/5/6 | Negative / security | draft |
+| TC-ADM-004-16 | Grace boundaries: 7/90 accepted; <7/>90 rejected; default 30 | Functional | High | AC-3, FR-2, BR-4 | Negative / boundary | draft |
+| TC-ADM-004-17 | Typed-subdomain confirmation blocks mismatch; paste prevented (FE-verified) | E2E | High | AC-3, FR-4, NFR-5 | Negative / security | draft |
+| TC-ADM-004-18 | [DEFERRED] lifecycle/reminder email DELIVERY | Integration | High | AC-1/3/5, FR-1/2 | Deferred placeholder | blocked |
+| TC-ADM-004-19 | [DEFERRED] file-storage (blob) deletion | Integration | Medium | AC-4, FR-3, §10 | Deferred placeholder | blocked |
+| TC-ADM-004-20 | [DEFERRED] maintenance-window deletion scheduling | Integration | Medium | NFR-3 | Deferred placeholder | blocked |
+| TC-ADM-004-21 | [DEFERRED] 50k-record deletion within 10 min | Performance | Medium | NFR-2 | Deferred placeholder | blocked |
+| TC-ADM-ISO-008 | Deleting Tenant A leaves Tenant B unaffected | Security | Critical | AC-4, FR-3, Test Hints | Multi-tenant isolation | draft |
+| TC-ADM-ISO-009 | Lifecycle endpoints require system context; cross-tenant injection -> 404 | Security | Critical | BR-7, FR-1/2/5/6/7 | Multi-tenant isolation | draft |
+
+## Acceptance-Criteria Coverage (US-ADM-004)
+
+| AC | Covered By | Notes |
+|----|-----------|-------|
+| AC-1 (suspend: status, suspended_at/reason, sessions revoked, 451, lifecycle 'suspended', notification) | TC-ADM-004-01, -02, -03, -05 (+ TC-ADM-004-18 DEFERRED delivery) | Dispatch real; email delivery deferred |
+| AC-2 (suspended login: only Tenant Admin; read-only notice; others blocked) | TC-ADM-004-04, -05 | Direct |
+| AC-3 (terminate: Terminating, scheduled_at, read-only+export, reminders, lifecycle 'termination_initiated') | TC-ADM-004-06, -07, -08, -16, -17 (+ -18 DEFERRED reminder delivery) | Scheduling real; delivery deferred |
+| AC-4 (deletion: hard-delete, tenant retained Terminated + PII redacted, audit retained, lifecycle 'terminated') | TC-ADM-004-09, TC-ADM-ISO-008 (+ -19/-20/-21 DEFERRED blob/window/perf) | DB deletion real; blob/window/perf deferred |
+| AC-5 (reactivate: active, fields cleared, jobs resumed, login normal, lifecycle 'reactivated') | TC-ADM-004-10 | Direct |
+| AC-6 (restore: prior state, scheduled_at cleared, jobs de-queued, lifecycle 'restored') | TC-ADM-004-11 | Direct |
+
+## BR / FR / NFR Coverage (US-ADM-004)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| BR-1 (allowed-state transition matrix) | TC-ADM-004-01/-02/-06/-07/-10/-11 (valid) + TC-ADM-004-12 (invalid) | Full matrix |
+| BR-2 (system tenant immune) | TC-ADM-004-14 | Direct |
+| BR-3 (terminated not restorable) | TC-ADM-004-13, -12 | Direct |
+| BR-4 (grace 7-90, default 30) | TC-ADM-004-16, -06 | Direct |
+| BR-5 (suspension revokes refresh tokens; data/config preserved) | TC-ADM-004-01, -02 | Direct |
+| BR-6 (Terminating read-only; writes 403) | TC-ADM-004-08, -06 | Direct |
+| BR-7 (only SystemAdmin; SystemSupport view-only) | TC-ADM-004-15, TC-ADM-ISO-009 | Direct |
+| FR-1 (suspend endpoint: token revoke + notifications) | TC-ADM-004-01, -03 | Direct (delivery deferred -18) |
+| FR-2 (terminate endpoint: schedule deletion + reminder jobs) | TC-ADM-004-06, -16 | Direct (delivery deferred -18) |
+| FR-3 (deletion job: dependency order, transactional, tenant retained + PII redact) | TC-ADM-004-09, TC-ADM-ISO-008 | DB real; blob deferred -19 |
+| FR-4 (typed-subdomain confirmation) | TC-ADM-004-17 | FE-verified |
+| FR-5 (reactivation reverses suspension; resume jobs) | TC-ADM-004-10 | Direct |
+| FR-6 (restoration reverses termination; remove scheduled jobs) | TC-ADM-004-11 | Direct |
+| FR-7 (every transition writes lifecycle_event + system_audit_log) | TC-ADM-004-01/-06/-09/-10/-11 | Direct |
+| NFR-1 (suspension effective < 30s) | TC-ADM-004-01 (functional) | Effect verified; sub-30s timing needs perf env (flagged) |
+| NFR-2 (deletion < 10 min @ 50k) | TC-ADM-004-21 (DEFERRED) | Needs perf env |
+| NFR-3 (deletion in maintenance window) | TC-ADM-004-20 (DEFERRED) | No window config today |
+| NFR-4 (atomic transitions, no partial state) | TC-ADM-004-09 (step 7) | Direct |
+| NFR-5 (no-paste typed confirmation) | TC-ADM-004-17 | FE-verified |
+
+## Summary (US-ADM-004)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ADM-004) |
+| Total test cases | 23 (17 functional/security/e2e/a11y + 4 DEFERRED + 2 isolation) |
+| AC coverage | 6/6 (AC-1/3/4 have DEFERRED sub-parts: email delivery, blob deletion, window/perf) |
+| BR coverage | 7/7 (BR-1..BR-7) |
+| FR coverage | 7/7 (FR-1..FR-7) |
+| Run-green now | 19 (TC-ADM-004-01..17 + TC-ADM-ISO-008, -009) |
+| Deferred (status: blocked) | 4 (TC-ADM-004-18, -19, -20, -21) |
+| Functional ID range | TC-ADM-004-01 .. TC-ADM-004-21 |
+| ISO ID range | TC-ADM-ISO-008 .. TC-ADM-ISO-009 |
+
+---
+
 ## Module Totals
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 3 (US-ADM-001, US-ADM-002, US-ADM-003) |
-| Total test cases | 53 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-007 |
+| User stories covered | 4 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004) |
+| Total test cases | 76 |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-009 |

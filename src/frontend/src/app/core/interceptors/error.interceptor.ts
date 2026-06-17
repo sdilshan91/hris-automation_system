@@ -29,6 +29,14 @@ export const errorInterceptor: HttpInterceptorFn = (
         return throwError(() => error);
       }
 
+      // US-ADM-004 AC-2: a suspended tenant's API returns HTTP 451 for blocked
+      // tenant users. Route them to the read-only suspension notice page (mirrors
+      // how the tenantAvailabilityGuard routes to /tenant-suspended on resolution).
+      if (error.status === 451) {
+        router.navigate(['/tenant-suspended']);
+        return throwError(() => error);
+      }
+
       switch (error.status) {
         case 0:
           toastr.error(

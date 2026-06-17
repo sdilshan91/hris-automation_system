@@ -72,6 +72,12 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.BillingEmail)
             .HasMaxLength(150);
 
+        // US-ADM-004: lifecycle suspend/terminate fields.
+        builder.Property(t => t.SuspendedAt);
+        builder.Property(t => t.SuspendedReason)
+            .HasMaxLength(500);
+        builder.Property(t => t.TerminationScheduledAt);
+
         builder.Property(t => t.MfaPolicy)
             .HasMaxLength(20)
             .HasDefaultValue("off");

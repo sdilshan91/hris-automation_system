@@ -3,6 +3,7 @@ using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Auth.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -167,7 +168,8 @@ public sealed class AuthService : IAuthService
             return Result<LoginResponse>.Failure("Tenant not found.", 404);
         }
 
-        if (currentTenant.Status is TenantStatus.Suspended or TenantStatus.Terminated)
+        // US-ADM-004 AC-4: a Terminated tenant is unavailable to everyone (data is being / has been deleted).
+        if (currentTenant.Status == TenantStatus.Terminated)
         {
             return Result<LoginResponse>.Failure(
                 "This workspace is currently unavailable. Please contact support.", 403);
@@ -187,6 +189,20 @@ public sealed class AuthService : IAuthService
         {
             return Result<LoginResponse>.Failure(
                 "You do not have an active membership in this organization.", 403);
+        }
+
+        // US-ADM-004 AC-2: on a SUSPENDED tenant only Tenant Owner / Tenant Admin users may authenticate (to
+        // reach the read-only suspension notice + request data export). All other users are blocked.
+        if (currentTenant.Status == TenantStatus.Suspended)
+        {
+            var isTenantAdminOrOwner = userTenant.UserTenantRoles.Any(utr =>
+                utr.Role.Name == PermissionCatalog.BuiltInRoles.TenantOwner
+                || utr.Role.Name == PermissionCatalog.BuiltInRoles.TenantAdmin);
+            if (!isTenantAdminOrOwner)
+            {
+                return Result<LoginResponse>.Failure(
+                    "Your organization's account has been suspended. Please contact your administrator.", 403);
+            }
         }
 
         // 5b. Policy-driven forced-enrollment check (AC-1, FR-7, BR-5)

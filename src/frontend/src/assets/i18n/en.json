@@ -15,10 +15,55 @@
     "CREATE": "Create",
     "EDIT": "Edit",
     "BACK": "Back",
+    "CONTINUE": "Continue",
     "SEARCH": "Search",
     "LOADING": "Loading...",
     "TRY_AGAIN": "Try Again",
     "NO_RESULTS": "No results found."
+  },
+  "LIFECYCLE": {
+    "REASON_LABEL": "Reason",
+    "REASON_PLACEHOLDER": "Provide a reason for this action (min 10 characters).",
+    "SUSPEND": {
+      "TITLE": "Suspend tenant",
+      "SUBTITLE": "You are about to suspend {{name}}.",
+      "WARNING": "This will immediately block all tenant users from accessing the platform.",
+      "ACK": "I understand this immediately blocks all tenant users and revokes their sessions.",
+      "SUBMIT": "Suspend",
+      "SUBMITTING": "Suspending…"
+    },
+    "TERMINATE": {
+      "TITLE": "Terminate tenant",
+      "STEP_LABEL": "Step {{step}} of 3",
+      "GRACE_LABEL": "Grace period (days)",
+      "GRACE_HINT": "Between {{min}} and {{max}} days. After this period all tenant data is permanently deleted.",
+      "TENANT": "Tenant",
+      "SUBDOMAIN": "Subdomain",
+      "PLAN": "Plan",
+      "EMPLOYEES": "Employees",
+      "GRACE_PERIOD": "Grace period",
+      "DAYS": "days",
+      "WARNING": "All tenant data will be permanently deleted after the grace period. This cannot be undone once the deletion runs.",
+      "TYPE_PROMPT": "To confirm, type the tenant subdomain exactly:",
+      "SUBMIT": "Terminate",
+      "SUBMITTING": "Terminating…"
+    },
+    "REACTIVATE": {
+      "TITLE": "Reactivate tenant",
+      "SUBTITLE": "Restore normal access for {{name}}. Users will be able to log in again.",
+      "SUBMIT": "Reactivate",
+      "SUBMITTING": "Reactivating…"
+    },
+    "RESTORE": {
+      "TITLE": "Restore tenant",
+      "SUBTITLE": "Cancel the scheduled termination for {{name}} and de-queue the data deletion job.",
+      "SUBMIT": "Restore",
+      "SUBMITTING": "Restoring…"
+    },
+    "HISTORY": {
+      "TITLE": "Lifecycle History",
+      "EMPTY": "No lifecycle events recorded yet."
+    }
   },
   "ROLES": {
     "TITLE": "Roles",

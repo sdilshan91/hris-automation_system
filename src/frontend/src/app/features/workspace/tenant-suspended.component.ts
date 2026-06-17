@@ -20,6 +20,22 @@ import { TenantService } from '../../core/tenant/tenant.service';
           {{ suspensionMessage() }}
         </p>
         <a class="support-link" href="mailto:support@yourhrm.com">Contact support</a>
+
+        <!-- US-ADM-004 AC-2: data-export request placeholder. The full
+             self-service export flow is US-ADM-010; here we surface the entry
+             point only (disabled) so suspended tenants know it exists. -->
+        <p class="export-note" data-testid="data-export-note">
+          Need a copy of your data?
+          <button
+            type="button"
+            class="export-link"
+            disabled
+            title="Available soon — contact support to request an export"
+            data-testid="data-export-btn"
+          >
+            Request data export
+          </button>
+        </p>
       </section>
     </main>
   `,
@@ -55,6 +71,14 @@ import { TenantService } from '../../core/tenant/tenant.service';
     .support-link {
       @apply mt-6 inline-flex items-center justify-center rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white no-underline transition-colors hover:bg-brand-700;
     }
+
+    .export-note {
+      @apply mt-6 text-xs text-neutral-400;
+    }
+
+    .export-link {
+      @apply ml-1 font-medium text-neutral-500 underline underline-offset-2 cursor-not-allowed disabled:opacity-60;
+    }
   `],
 })
 export class TenantSuspendedComponent {
@@ -71,9 +95,10 @@ export class TenantSuspendedComponent {
   }
 
   suspensionMessage(): string {
+    // AC-2: prefer the stored suspension reason; otherwise the standard notice.
     return (
       this.tenant().suspensionReason ||
-      'Login is currently unavailable for this workspace.'
+      'Your organization\'s account has been suspended. Please contact your administrator.'
     );
   }
 }

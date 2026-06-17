@@ -1,0 +1,209 @@
+<div
+  @backdrop
+  class="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-900/40 p-4"
+  (click)="cancel()"
+>
+  <div
+    @pop
+    class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="terminate-title"
+    (click)="$event.stopPropagation()"
+    data-testid="terminate-dialog"
+  >
+    <div class="flex items-start gap-3">
+      <span
+        class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-700"
+        aria-hidden="true"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
+          <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clip-rule="evenodd" />
+        </svg>
+      </span>
+      <div class="min-w-0">
+        <h2 id="terminate-title" class="text-base font-semibold text-neutral-900">
+          {{ 'LIFECYCLE.TERMINATE.TITLE' | translate }}
+        </h2>
+        <p class="mt-1 text-sm text-neutral-500">
+          {{ 'LIFECYCLE.TERMINATE.STEP_LABEL' | translate: { step: step() } }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Step 1: reason + grace period -->
+    @if (step() === 1) {
+      <div class="mt-5 space-y-4" data-testid="terminate-step-1">
+        <div>
+          <div class="mb-1 flex items-center justify-between">
+            <label for="terminate-reason" class="block text-sm font-medium text-neutral-700">
+              {{ 'LIFECYCLE.REASON_LABEL' | translate }} <span class="text-red-500">*</span>
+            </label>
+            <span
+              class="text-xs"
+              [class.text-neutral-400]="reasonValid()"
+              [class.text-red-500]="!reasonValid()"
+              data-testid="reason-counter"
+            >
+              {{ reasonLength() }} / {{ REASON_MAX }}
+            </span>
+          </div>
+          <textarea
+            id="terminate-reason"
+            rows="3"
+            class="field resize-none"
+            [attr.maxlength]="REASON_MAX"
+            [attr.aria-invalid]="!reasonValid()"
+            [placeholder]="'LIFECYCLE.REASON_PLACEHOLDER' | translate"
+            [(ngModel)]="reason"
+            (ngModelChange)="onInput()"
+            data-testid="reason-input"
+          ></textarea>
+        </div>
+
+        <div>
+          <label for="grace-days" class="mb-1 block text-sm font-medium text-neutral-700">
+            {{ 'LIFECYCLE.TERMINATE.GRACE_LABEL' | translate }} <span class="text-red-500">*</span>
+          </label>
+          <input
+            id="grace-days"
+            type="number"
+            class="field"
+            [min]="GRACE_MIN"
+            [max]="GRACE_MAX"
+            [attr.aria-invalid]="!graceValid()"
+            [(ngModel)]="graceDays"
+            (ngModelChange)="onInput()"
+            data-testid="grace-input"
+          />
+          <p
+            class="mt-1 text-xs"
+            [class.text-neutral-400]="graceValid()"
+            [class.text-red-500]="!graceValid()"
+            data-testid="grace-hint"
+          >
+            {{ 'LIFECYCLE.TERMINATE.GRACE_HINT' | translate: { min: GRACE_MIN, max: GRACE_MAX } }}
+          </p>
+        </div>
+      </div>
+    }
+
+    <!-- Step 2: impact summary -->
+    @if (step() === 2) {
+      <div class="mt-5 space-y-4" data-testid="terminate-step-2">
+        <div class="rounded-lg border border-neutral-100 bg-neutral-50 p-4">
+          <dl class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">{{ 'LIFECYCLE.TERMINATE.TENANT' | translate }}</dt>
+              <dd class="font-medium text-neutral-900">{{ tenantName() }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">{{ 'LIFECYCLE.TERMINATE.SUBDOMAIN' | translate }}</dt>
+              <dd class="font-mono text-neutral-900">{{ subdomain() }}.yourhrm.com</dd>
+            </div>
+            @if (plan()) {
+              <div class="flex justify-between">
+                <dt class="text-neutral-500">{{ 'LIFECYCLE.TERMINATE.PLAN' | translate }}</dt>
+                <dd class="text-neutral-900">{{ plan() }}</dd>
+              </div>
+            }
+            @if (employeeCount() !== null) {
+              <div class="flex justify-between">
+                <dt class="text-neutral-500">{{ 'LIFECYCLE.TERMINATE.EMPLOYEES' | translate }}</dt>
+                <dd class="text-neutral-900">{{ employeeCount() }}</dd>
+              </div>
+            }
+            <div class="flex justify-between">
+              <dt class="text-neutral-500">{{ 'LIFECYCLE.TERMINATE.GRACE_PERIOD' | translate }}</dt>
+              <dd class="text-neutral-900">{{ graceDays }} {{ 'LIFECYCLE.TERMINATE.DAYS' | translate }}</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="rounded-lg bg-red-50 px-4 py-3" data-testid="terminate-warning">
+          <p class="text-sm font-medium text-red-700">
+            {{ 'LIFECYCLE.TERMINATE.WARNING' | translate }}
+          </p>
+        </div>
+      </div>
+    }
+
+    <!-- Step 3: typed-subdomain confirmation -->
+    @if (step() === 3) {
+      <div class="mt-5 space-y-4" data-testid="terminate-step-3">
+        <p class="text-sm text-neutral-600">
+          {{ 'LIFECYCLE.TERMINATE.TYPE_PROMPT' | translate }}
+          <span class="font-mono font-semibold text-neutral-900">{{ subdomain() }}</span>
+        </p>
+        <input
+          type="text"
+          class="field font-mono"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          [attr.aria-invalid]="!subdomainMatches()"
+          [placeholder]="subdomain()"
+          [(ngModel)]="confirmSubdomain"
+          (ngModelChange)="onInput()"
+          (paste)="blockPaste($event)"
+          (drop)="blockPaste($event)"
+          data-testid="confirm-subdomain-input"
+        />
+        @if (submitError()) {
+          <p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" data-testid="submit-error">
+            {{ submitError() }}
+          </p>
+        }
+      </div>
+    }
+
+    <!-- Footer -->
+    <div class="mt-6 flex items-center justify-between gap-2">
+      <button
+        type="button"
+        class="rounded-lg px-3 py-2 text-sm font-medium text-neutral-500 transition hover:bg-neutral-100 disabled:invisible"
+        [disabled]="step() === 1"
+        (click)="back()"
+        data-testid="back-btn"
+      >
+        {{ 'COMMON.BACK' | translate }}
+      </button>
+
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="rounded-lg px-4 py-2 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100"
+          (click)="cancel()"
+          data-testid="cancel-btn"
+        >
+          {{ 'COMMON.CANCEL' | translate }}
+        </button>
+
+        @if (step() < 3) {
+          <button
+            type="button"
+            class="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="step() === 1 && !step1Valid()"
+            (click)="next()"
+            data-testid="next-btn"
+          >
+            {{ 'COMMON.CONTINUE' | translate }}
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="!canSubmit()"
+            (click)="confirm()"
+            data-testid="confirm-btn"
+          >
+            @if (submitting()) {
+              {{ 'LIFECYCLE.TERMINATE.SUBMITTING' | translate }}
+            } @else {
+              {{ 'LIFECYCLE.TERMINATE.SUBMIT' | translate }}
+            }
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+</div>

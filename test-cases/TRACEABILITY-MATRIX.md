@@ -4066,7 +4066,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (ADM-002) | Multi-tenant isolation in monitoring (aggregate scoping + non-system context rejection) | Critical | TC-ADM-ISO-005, TC-ADM-ISO-006 | 2 | -- |
 | US-ADM-003 | System Admin Impersonates Tenant User (With Audit) | Must Have | TC-ADM-003-01, TC-ADM-003-02, TC-ADM-003-03, TC-ADM-003-04, TC-ADM-003-05, TC-ADM-003-06, TC-ADM-003-07, TC-ADM-003-08, TC-ADM-003-09, TC-ADM-003-10, TC-ADM-003-11, TC-ADM-003-12, TC-ADM-003-13, TC-ADM-003-14, TC-ADM-003-15, TC-ADM-003-16 | 16 | 6/6 AC + 6/6 BR covered (3 TCs DEFERRED) |
 | Cross-cutting (ADM-003) | Multi-tenant isolation under impersonation (Tenant A session cannot reach Tenant B data -> 404) | Critical | TC-ADM-ISO-007 | 1 | -- |
-| **TOTAL** | | | **53 test cases** | **53** | **17/17 AC** |
+| US-ADM-004 | System Admin Suspends or Terminates a Tenant | Must Have | TC-ADM-004-01, TC-ADM-004-02, TC-ADM-004-03, TC-ADM-004-04, TC-ADM-004-05, TC-ADM-004-06, TC-ADM-004-07, TC-ADM-004-08, TC-ADM-004-09, TC-ADM-004-10, TC-ADM-004-11, TC-ADM-004-12, TC-ADM-004-13, TC-ADM-004-14, TC-ADM-004-15, TC-ADM-004-16, TC-ADM-004-17, TC-ADM-004-18, TC-ADM-004-19, TC-ADM-004-20, TC-ADM-004-21 | 21 | 6/6 AC + 7/7 BR + 7/7 FR covered (4 TCs DEFERRED) |
+| Cross-cutting (ADM-004) | Multi-tenant isolation in lifecycle (Tenant A deletion leaves Tenant B untouched; lifecycle endpoints require system context, cross-tenant injection -> 404) | Critical | TC-ADM-ISO-008, TC-ADM-ISO-009 | 2 | -- |
+| **TOTAL** | | | **76 test cases** | **76** | **23/23 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -4125,6 +4127,29 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ADM-003-15 | [DEFERRED] Tenant-admin notification DELIVERY (email + in-app) | Integration | High | US-ADM-003 | AC-4, FR-5 (DEFERRED: delivery to US-NTF) |
 | TC-ADM-003-16 | [DEFERRED] traceId end-to-end correlation of impersonation events | Integration | Medium | US-ADM-003 | NFR-5 (DEFERRED: observability stack) |
 | TC-ADM-ISO-007 | Tenant A impersonation cannot reach Tenant B data (404) | Security | Critical | US-ADM-003 | FR-6, BR-1, Test Hints |
+| TC-ADM-004-01 | Suspend active tenant: status, fields, tokens revoked, 451, lifecycle+audit, notification dispatched | E2E | Critical | US-ADM-004 | AC-1, FR-1/7, BR-1/5 |
+| TC-ADM-004-02 | Suspend past_due tenant (alt valid source) | Functional | High | US-ADM-004 | AC-1, FR-1/7, BR-1/5 |
+| TC-ADM-004-03 | Suspension reason 10-500 boundary; <10/empty/>500 rejected | Functional | High | US-ADM-004 | AC-1, FR-1 |
+| TC-ADM-004-04 | Login during suspension: Tenant Admin allowed (read-only); others blocked | Security | Critical | US-ADM-004 | AC-2 |
+| TC-ADM-004-05 | Suspended API -> 451 for tenant users; Tenant Admin exempt | Security | Critical | US-ADM-004 | AC-1, AC-2 |
+| TC-ADM-004-06 | Terminate active tenant: Terminating, scheduled_at, deletion+reminder jobs, lifecycle | E2E | Critical | US-ADM-004 | AC-3, FR-2/7, BR-1/4 |
+| TC-ADM-004-07 | Terminate from past_due and suspended (alt valid sources) | Functional | High | US-ADM-004 | AC-3, FR-2/7, BR-1 |
+| TC-ADM-004-08 | Terminating read-only: writes 403, reads + export OK | Security | Critical | US-ADM-004 | AC-3, BR-6 |
+| TC-ADM-004-09 | Data deletion: hard-delete, tenant retained Terminated + PII redacted, audit retained, atomic | Integration | Critical | US-ADM-004 | AC-4, FR-3/7, NFR-4 |
+| TC-ADM-004-10 | Reactivate suspended -> active, fields cleared, login normal, 'reactivated' | Functional | Critical | US-ADM-004 | AC-5, FR-5/7, BR-1 |
+| TC-ADM-004-11 | Restore terminating -> prior, scheduled_at cleared, jobs de-queued, 'restored' | Functional | Critical | US-ADM-004 | AC-6, FR-6/7, BR-1 |
+| TC-ADM-004-12 | Full transition matrix — invalid transitions 409/400, no state change | Functional | Critical | US-ADM-004 | AC-1/3/5/6, BR-1/3 |
+| TC-ADM-004-13 | BR-3: terminated tenant cannot be restored | Functional | High | US-ADM-004 | BR-3 |
+| TC-ADM-004-14 | BR-2: system tenant cannot be suspended/terminated | Security | Critical | US-ADM-004 | BR-2 |
+| TC-ADM-004-15 | BR-7: only SystemAdmin transitions; SystemSupport view-only; tenant 403; unauth 401 | Security | Critical | US-ADM-004 | BR-7, FR-1/2/5/6 |
+| TC-ADM-004-16 | Grace boundaries: 7/90 accepted; <7/>90 rejected; default 30 | Functional | High | US-ADM-004 | AC-3, FR-2, BR-4 |
+| TC-ADM-004-17 | Typed-subdomain confirmation blocks mismatch; paste prevented (FE-verified) | E2E | High | US-ADM-004 | AC-3, FR-4, NFR-5 |
+| TC-ADM-004-18 | [DEFERRED] lifecycle/reminder email DELIVERY | Integration | High | US-ADM-004 | AC-1/3/5, FR-1/2 (DEFERRED: delivery to US-NTF) |
+| TC-ADM-004-19 | [DEFERRED] file-storage (blob) deletion | Integration | Medium | US-ADM-004 | AC-4, FR-3, §10 (DEFERRED: no blob storage wired) |
+| TC-ADM-004-20 | [DEFERRED] maintenance-window deletion scheduling | Integration | Medium | US-ADM-004 | NFR-3 (DEFERRED: no window config) |
+| TC-ADM-004-21 | [DEFERRED] 50k-record deletion within 10 min | Performance | Medium | US-ADM-004 | NFR-2 (DEFERRED: perf env) |
+| TC-ADM-ISO-008 | Deleting Tenant A leaves Tenant B unaffected | Security | Critical | US-ADM-004 | AC-4, FR-3, Test Hints |
+| TC-ADM-ISO-009 | Lifecycle endpoints require system context; cross-tenant injection -> 404 | Security | Critical | US-ADM-004 | BR-7, FR-1/2/5/6/7 |
 
 ### Coverage Summary (Admin Console -- US-ADM-001)
 
@@ -4185,3 +4210,35 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | BR-6 (banner i18n in all tenant languages) | TC-ADM-003-12 | Direct |
 
 *Note (Admin Console -- US-ADM-003): third ADM story; continues the per-story-suffix functional scheme (TC-ADM-003-XX) and the running ISO counter (TC-ADM-ISO-007). All 6 ACs (AC-1..AC-6) and all 6 BRs (BR-1..BR-6) traced. IMPLEMENTATION FACTS (tested as built): impersonation mints a SEPARATE JWT for the target user with claims `is_impersonation`/`imp_session_id`/`imp_actor_id`/`imp_reason`/`imp_readonly`/`imp_expires_at`; TTL hard-capped at 60 min and NOT refreshable (NFR-2). Read-only is decided at START (SystemSupport role OR Suspended tenant) and enforced by a MediatR pipeline behavior 403'ing write Commands (AC-5/AC-6/BR-1); destructive ops (change/reset password, role/permission mutation, delete user/tenant) are 403'd even for a FULL admin impersonation (FR-6); end-session is always allowed. A dedicated `impersonation_sessions` table (FR-4) tracks session/impersonator/target/reason/started/ended/expires/actions_count/status; end + expiry enforced by a per-request middleware. Both a system AuditLog (Impersonation.Started/Ended) and tenant audit rows carry `ImpersonatorUserId`/`ImpersonationSessionId`/`IsImpersonationAction`. The FE banner (NFR-4) is a global high-contrast i18n top bar in the main layout shown when `is_impersonation` is true, with End Session. BR-2 excludes system-tenant users; BR-3 one active session per impersonator (409); BR-5 excludes terminated tenants. Cross-tenant access under impersonation returns 404 (not 403), per module convention (TC-ADM-ISO-007). DEFERRED (status: blocked; honest traceability, never fabricated): NFR-1 audit immutability via DB-role UPDATE/DELETE revocation (TC-ADM-003-14) — deferred DB hardening, same family as the deferred Postgres RLS; today audit is append-only BY CONVENTION (insert-only app paths). Real email + in-app notification DELIVERY (AC-4/FR-5, TC-ADM-003-15) — log-only dispatch seam until US-NTF; the dispatch is asserted run-green in TC-ADM-003-01. NFR-5 traceId end-to-end correlation (TC-ADM-003-16) — depends on the observability/OTel stack deferred in US-ADM-002. NFR-3 (<2s start) is not separately tested (needs a perf-representative environment).*
+
+### Coverage Summary (Admin Console -- US-ADM-004)
+
+| AC / Requirement | Covered By | Coverage |
+|------------------|-----------|----------|
+| AC-1 (suspend: status, suspended_at/reason, sessions revoked, 451, lifecycle 'suspended', notification) | TC-ADM-004-01, -02, -03, -05 (+ -18 DEFERRED delivery) | Dispatch real; email delivery deferred |
+| AC-2 (suspended login: only Tenant Admin; read-only notice; others blocked) | TC-ADM-004-04, -05 | Direct |
+| AC-3 (terminate: Terminating, scheduled_at, read-only+export, reminders, 'termination_initiated') | TC-ADM-004-06, -07, -08, -16, -17 (+ -18 DEFERRED reminder delivery) | Scheduling real; delivery deferred |
+| AC-4 (deletion: hard-delete, tenant retained Terminated + PII redacted, audit retained, 'terminated') | TC-ADM-004-09, TC-ADM-ISO-008 (+ -19/-20/-21 DEFERRED blob/window/perf) | DB deletion real; blob/window/perf deferred |
+| AC-5 (reactivate: active, fields cleared, jobs resumed, login normal, 'reactivated') | TC-ADM-004-10 | Direct |
+| AC-6 (restore: prior state, scheduled_at cleared, jobs de-queued, 'restored') | TC-ADM-004-11 | Direct |
+| BR-1 (allowed-state transition matrix) | TC-ADM-004-01/-02/-06/-07/-10/-11 (valid) + -12 (invalid) | Full matrix |
+| BR-2 (system tenant immune) | TC-ADM-004-14 | Direct |
+| BR-3 (terminated not restorable) | TC-ADM-004-13, -12 | Direct |
+| BR-4 (grace 7-90, default 30) | TC-ADM-004-16, -06 | Direct |
+| BR-5 (suspension revokes refresh tokens; data/config preserved) | TC-ADM-004-01, -02 | Direct |
+| BR-6 (Terminating read-only; writes 403) | TC-ADM-004-08, -06 | Direct |
+| BR-7 (only SystemAdmin; SystemSupport view-only) | TC-ADM-004-15, TC-ADM-ISO-009 | Direct |
+| FR-1 (suspend endpoint: token revoke + notifications) | TC-ADM-004-01, -03 (+ -18 DEFERRED delivery) | Direct |
+| FR-2 (terminate endpoint: schedule deletion + reminder jobs) | TC-ADM-004-06, -16 (+ -18 DEFERRED delivery) | Direct |
+| FR-3 (deletion job: dependency order, transactional, tenant retained + PII redact) | TC-ADM-004-09, TC-ADM-ISO-008 (+ -19 DEFERRED blob) | DB real; blob deferred |
+| FR-4 (typed-subdomain confirmation) | TC-ADM-004-17 | FE-verified |
+| FR-5 (reactivation reverses suspension; resume jobs) | TC-ADM-004-10 | Direct |
+| FR-6 (restoration reverses termination; remove scheduled jobs) | TC-ADM-004-11 | Direct |
+| FR-7 (every transition writes lifecycle_event + system_audit_log) | TC-ADM-004-01/-06/-09/-10/-11 | Direct |
+| NFR-1 (suspension effective < 30s) | TC-ADM-004-01 | Effect verified; sub-30s timing needs perf env |
+| NFR-2 (deletion < 10 min @ 50k) | TC-ADM-004-21 | DEFERRED (perf env) |
+| NFR-3 (deletion in maintenance window) | TC-ADM-004-20 | DEFERRED (no window config) |
+| NFR-4 (atomic transitions, no partial state) | TC-ADM-004-09 | Direct |
+| NFR-5 (no-paste typed confirmation) | TC-ADM-004-17 | FE-verified |
+
+*Note (Admin Console -- US-ADM-004): fourth ADM story; continues the per-story-suffix functional scheme (TC-ADM-004-XX) and the running ISO counter (TC-ADM-ISO-008..009). All 6 ACs (AC-1..AC-6), all 7 BRs (BR-1..BR-7), and all 7 FRs (FR-1..FR-7) traced. IMPLEMENTATION FACTS (tested as built): tenant gains `SuspendedAt`/`SuspendedReason`/`TerminationScheduledAt`; transitions enforce BR-1's allowed-state matrix, invalid transitions rejected 409/400 (TC-ADM-004-12). SUSPEND -> `Suspended`, revokes all tenant refresh tokens (BR-5), lifecycle 'suspended' + system audit, log-only notification; suspended-tenant API -> HTTP 451 for tenant users except Tenant Admin; suspended login allows only Tenant Admin/Owner (AC-2). TERMINATE -> `Terminating`, `TerminationScheduledAt = now + graceDays` (7-90, default 30, BR-4), schedules data-deletion job + 14/7/1d reminder jobs, lifecycle 'termination_initiated'; Terminating is read-only (writes -> 403, BR-6). DATA-DELETION job (AC-4) hard-deletes per-tenant data, retains the tenant row as `Terminated` with PII redacted, retains audit logs, transactional/atomic (NFR-4), tenant-isolated (TC-ADM-ISO-008). REACTIVATE (AC-5): Suspended -> Active, fields cleared, 'reactivated'. RESTORE (AC-6): Terminating -> prior state, scheduled_at cleared, scheduled jobs de-queued, 'restored'. BR-2: system tenant immune; BR-3: Terminated not restorable; BR-7: only SystemAdmin transitions, SystemSupport view-only. Typed-subdomain confirmation (FR-4) + no-paste (NFR-5) are FRONTEND (TC-ADM-004-17, FE-verified). DEFERRED (status: blocked; honest traceability, never fabricated): lifecycle/reminder email DELIVERY (TC-ADM-004-18) — log-only dispatch seam until US-NTF; dispatch/scheduling asserted run-green in TC-ADM-004-01/-06/-10. File-storage (blob) deletion (TC-ADM-004-19) — §10 requires deleting documents/resumes/payslips but no blob storage is wired; relational hard-delete covered run-green in TC-ADM-004-09. NFR-3 maintenance-window scheduling (TC-ADM-004-20) — no window config; deletion fires at grace expiry. NFR-2 50k-record/10-min perf (TC-ADM-004-21) — needs a perf-representative environment; correctness covered by TC-ADM-004-09. STORY MISMATCH worth flagging to the caller: the story Preconditions assert "the notification system is operational for lifecycle emails" and §10 requires file-storage deletion — neither is wired today, so AC-1/AC-3/AC-5 email DELIVERY and AC-4 blob deletion are partial (dispatch + DB-deletion real, delivery + blob deferred); recommend the story note these as Phase-1 dispatch-only with delivery/blob following US-NTF + object-storage integration.*
