@@ -58,3 +58,61 @@ Domain rules, decisions, and gotchas for the Notifications module. See also [[ba
 - BR-2 (archive >90d to cold storage) + BR-3 (purge >1000/user) Hangfire jobs — not built.
 - NFR-5 polling fallback + reconnection are FE concerns.
 - Email channel = US-NTF-002.
+
+## US-NTF-002 — Email Notification Templates per Tenant
+
+### The tenant_id-null problem and how it was resolved (KEY decision)
+The story models a "system default" template as a row with NULL `tenant_id`. That fights the platform's tenancy
+machinery: `BaseEntity` auto-stamps `TenantId` (TenantInterceptor) and the global query filter forces
+`TenantId == current` — so a NULL-tenant default would be HIDDEN from every resolved tenant. **Resolution: two
+separate tables.**
+- `SystemNotificationTemplate` — a PLAIN class (NOT `BaseEntity`, no `TenantId` column at all), platform-level,
+  **no global query filter** (same pattern as `subscription_plans` / `PlanLimitOverride`). One row per
+  (event_key, language). Seeded by DbInitializer. This is the readable-from-anywhere baseline.
+- `NotificationTemplate : BaseEntity` — the tenant OVERRIDE table, fully tenant-scoped (global query filter kept
+  intact, AC-5). Partial unique index `(tenant_id, event_key, language) WHERE is_deleted = false`.
+This keeps the tenant filter on overrides untouched AND lets resolution fall back to the shared defaults.
+
+### Event catalog (the registry)
+`HRM.Domain.Notifications.NotificationEventCatalog` — pure/static. One `NotificationEventDefinition` per event:
+EventKey, EventName, Placeholders[] (FR-3 reference panel), SampleData dict (FR-4 live preview), and the seeded
+DefaultSubject/Html/Text. Seeded events: `leave_approved`, `onboarding_welcome`, `payslip_published`,
+`password_reset`. **This is the single source of truth** for AC-1's list, AC-2's variable panel/preview, AND the
+DbInitializer seed. Add a new email event HERE and it flows through everything; DbInitializer reseeds it on next start.
+
+### Three seams (deliberately split)
+1. `IEmailSender` (NEW generic send seam) + `LogOnlyEmailSender` default. **There was NO generic email abstraction
+   before** — only module-specific log-only seams (`IPayslipEmailSender`, `ITenantWelcomeEmailService`), all
+   marked `TODO(US-NTF)`. This story adds the first generic one. I did **NOT** rewire the existing module seams
+   onto it (surgical) — that's follow-up. Log-only, never throws, no SMTP required to start/test.
+2. `IEmailTemplateService` (impl `EmailTemplateService`) — the RESOLVE + RENDER seam **other modules call** to turn
+   an event+data into a ready email. Resolve precedence: active tenant override → system default (requested lang)
+   → system default ("en", BR-2/FR-6) → catalog's compiled default (covers an unseeded DB; a known event NEVER
+   returns null/404). Render delegates to the pure `TemplateRenderer`.
+3. `INotificationTemplateService` (impl `NotificationTemplateService`) — the tenant-admin CRUD/preview/test-email
+   facade behind the controller.
+
+### Rendering (BR-5)
+`HRM.Domain.Notifications.TemplateRenderer` — pure `{{dotted.path}}` substitution over a nested
+`Dictionary<string,object?>`. **Unresolved = empty string** (unknown leaf, null value, OR a path that walks into a
+non-dictionary, OR a path that stops on a dictionary). Never emits raw `{{...}}`. Identical in preview and at send.
+
+### Authz / routes
+Gated with the **existing** `Tenant.ViewSettings` (reads) / `Tenant.ManageSettings` (writes) permissions — same
+gate as the company-settings console (US-ADM-006); both are held by Tenant Admin + Tenant Owner. No new permission.
+Routes under `/api/v1/notification-templates` (GET list, GET/{eventKey}, PUT/{eventKey}, DELETE/{eventKey}=reset,
+POST/{eventKey}/preview, POST/{eventKey}/test-email). language is a `?language=` query param (default "en").
+
+### Audit
+Relies on the existing `AuditInterceptor` (FR-9/NFR-6) — override saves/resets are `BaseEntity` writes that get
+stamped. Did NOT build a new audit subsystem (US-NTF-004 owns the structured audit trail).
+
+### Deferred (not built here)
+- FR-7 custom sender domain + SPF/DKIM verification (BR-4) — sender always the platform default; `FromAddress` is
+  carried on `EmailMessage` but unused by the log-only sender.
+- BR-6 max-2-language-variants-per-plan cap — not enforced (no per-event language cap yet; the model supports any
+  language, only "en" defaults are seeded).
+- Real SMTP/transactional delivery — log-only (TODO US-NTF, same as every other email seam).
+- Outbox-pattern send in a Hangfire worker (§10) — test-email sends inline; event emails render via the seam,
+  their dispatch wiring into Leave/Onboarding/Payroll is follow-up.
+- Rewiring the existing module-specific email seams onto the new `IEmailSender` — left untouched (surgical).

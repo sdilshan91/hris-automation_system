@@ -1,5 +1,6 @@
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
+using HRM.Domain.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,9 @@ public static class DbInitializer
     {
         // US-ADM-001: seed the default subscription plans tenant provisioning selects from.
         await SeedSubscriptionPlansAsync(db, logger, ct);
+
+        // US-NTF-002: seed the platform system-default email templates for every catalog event (BR-2).
+        await SeedSystemNotificationTemplatesAsync(db, logger, ct);
 
         var defaultEnabledModules = PermissionCatalog.ByModule.Keys.OrderBy(module => module).ToList();
         var tenant = await db.Tenants
@@ -217,6 +221,48 @@ public static class DbInitializer
         {
             await db.SaveChangesAsync(ct);
             logger.LogInformation("Seeded {Count} default subscription plan(s)", added);
+        }
+    }
+
+    /// <summary>
+    /// US-NTF-002 BR-2: seed the platform system-default email template for every catalog event in the default
+    /// language ("en"), so every event always has a baseline tenants can fall back to / override. Idempotent —
+    /// keyed by (event_key, language) and only inserted when absent. These rows live in the NON-tenant-scoped
+    /// system_notification_template table; managed by System Admins (story §10).
+    /// </summary>
+    private static async Task SeedSystemNotificationTemplatesAsync(AppDbContext db, ILogger logger, CancellationToken ct)
+    {
+        var lang = NotificationEventCatalog.DefaultLanguage;
+
+        var existing = (await db.SystemNotificationTemplates
+                .Where(t => t.Language == lang)
+                .Select(t => t.EventKey)
+                .ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = 0;
+        foreach (var def in NotificationEventCatalog.All)
+        {
+            if (existing.Contains(def.EventKey))
+                continue;
+
+            db.SystemNotificationTemplates.Add(new SystemNotificationTemplate
+            {
+                Id = BaseEntity.NewUuidV7(),
+                EventKey = def.EventKey,
+                Language = lang,
+                Subject = def.DefaultSubject,
+                BodyHtml = def.DefaultBodyHtml,
+                BodyText = def.DefaultBodyText,
+                CreatedAt = DateTime.UtcNow,
+            });
+            added++;
+        }
+
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Seeded {Count} system notification template(s)", added);
         }
     }
 

@@ -1,0 +1,308 @@
+<section class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+  <!-- Header / actions -->
+  <header class="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div class="min-w-0">
+      <a
+        routerLink="/admin/notification-templates"
+        class="text-sm text-neutral-500 transition hover:text-neutral-800"
+      >
+        &larr; {{ 'notificationTemplates.editor.back' | translate }}
+      </a>
+      <h1 class="mt-1 truncate text-2xl font-semibold text-neutral-900">
+        {{ svc.currentTemplate()?.eventName || eventKey }}
+      </h1>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        class="rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+        (click)="openTestModal()"
+      >
+        {{ 'notificationTemplates.editor.sendTest' | translate }}
+      </button>
+      <button
+        type="button"
+        class="rounded-lg px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 disabled:opacity-40"
+        [disabled]="!svc.currentTemplate()?.isCustom"
+        (click)="openResetConfirm()"
+      >
+        {{ 'notificationTemplates.editor.reset' | translate }}
+      </button>
+      <button
+        type="button"
+        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+        [disabled]="svc.saving()"
+        (click)="save()"
+      >
+        @if (svc.saving()) {
+          {{ 'notificationTemplates.editor.saving' | translate }}
+        } @else {
+          {{ 'notificationTemplates.editor.save' | translate }}
+        }
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile tab toggle (< 768px) -->
+  <div
+    class="mb-4 flex gap-1 rounded-lg bg-neutral-100 p-1 md:hidden"
+    role="tablist"
+    [attr.aria-label]="'notificationTemplates.editor.tabsAria' | translate"
+  >
+    @for (tab of ['editor', 'preview', 'variables']; track tab) {
+      <button
+        type="button"
+        role="tab"
+        [attr.aria-selected]="mobileTab() === tab"
+        class="flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition"
+        [class.bg-white]="mobileTab() === tab"
+        [class.shadow-sm]="mobileTab() === tab"
+        [class.text-neutral-900]="mobileTab() === tab"
+        [class.text-neutral-500]="mobileTab() !== tab"
+        (click)="mobileTab.set($any(tab))"
+      >
+        {{ 'notificationTemplates.editor.tab.' + tab | translate }}
+      </button>
+    }
+  </div>
+
+  @if (svc.loadingTemplate()) {
+    <div class="h-64 animate-pulse rounded-xl bg-neutral-50" aria-hidden="true"></div>
+  } @else {
+    <div class="grid gap-5 md:grid-cols-2">
+      <!-- ── Editor pane ─────────────────────────────────── -->
+      <form
+        [formGroup]="form"
+        class="space-y-4"
+        [class.hidden]="mobileTab() !== 'editor'"
+        [class.md:block]="true"
+        novalidate
+      >
+        <div>
+          <label
+            for="subject"
+            class="mb-1 block text-sm font-medium text-neutral-700"
+          >
+            {{ 'notificationTemplates.editor.subject' | translate }}
+          </label>
+          <input
+            id="subject"
+            type="text"
+            formControlName="subject"
+            maxlength="200"
+            class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            (focus)="trackFocus('subject')"
+            (input)="schedulePreview()"
+          />
+          @if (form.controls.subject.touched && form.controls.subject.invalid) {
+            <p class="mt-1 text-xs text-rose-600">
+              {{ 'notificationTemplates.editor.subjectRequired' | translate }}
+            </p>
+          }
+        </div>
+
+        <div>
+          <label class="mb-1 block text-sm font-medium text-neutral-700">
+            {{ 'notificationTemplates.editor.bodyHtml' | translate }}
+          </label>
+          <app-rich-text-editor
+            formControlName="bodyHtml"
+            [ariaLabel]="'notificationTemplates.editor.bodyHtml' | translate"
+            (focusin)="trackFocus('bodyHtml')"
+            (input)="schedulePreview()"
+          ></app-rich-text-editor>
+          @if (form.controls.bodyHtml.touched && form.controls.bodyHtml.invalid) {
+            <p class="mt-1 text-xs text-rose-600">
+              {{ 'notificationTemplates.editor.bodyHtmlRequired' | translate }}
+            </p>
+          }
+        </div>
+
+        <div>
+          <label
+            for="bodyText"
+            class="mb-1 block text-sm font-medium text-neutral-700"
+          >
+            {{ 'notificationTemplates.editor.bodyText' | translate }}
+          </label>
+          <textarea
+            id="bodyText"
+            formControlName="bodyText"
+            rows="5"
+            class="w-full rounded-lg border border-neutral-200 px-3 py-2 font-mono text-xs shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            (focus)="trackFocus('bodyText')"
+            (input)="schedulePreview()"
+          ></textarea>
+          @if (form.controls.bodyText.touched && form.controls.bodyText.invalid) {
+            <p class="mt-1 text-xs text-rose-600">
+              {{ 'notificationTemplates.editor.bodyTextRequired' | translate }}
+            </p>
+          }
+        </div>
+
+        <!-- Variable reference (FR-3) — inline on desktop, own mobile tab -->
+        <div
+          class="rounded-xl border border-neutral-200 bg-neutral-50/60 p-3"
+          [class.hidden]="mobileTab() !== 'variables'"
+          [class.md:block]="true"
+        >
+          <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            {{ 'notificationTemplates.editor.variables' | translate }}
+          </h2>
+          @if (placeholders.length === 0) {
+            <p class="text-xs text-neutral-400">
+              {{ 'notificationTemplates.editor.noVariables' | translate }}
+            </p>
+          } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (p of placeholders; track p) {
+                <button
+                  type="button"
+                  class="rounded-md border border-neutral-200 bg-white px-2 py-1 font-mono text-xs text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                  (click)="insertPlaceholder(p)"
+                >
+                  {{ '{{' }}{{ p }}{{ '}}' }}
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </form>
+
+      <!-- ── Live preview pane (FR-4) ────────────────────── -->
+      <div
+        class="space-y-2"
+        [class.hidden]="mobileTab() !== 'preview'"
+        [class.md:block]="true"
+      >
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-medium text-neutral-700">
+            {{ 'notificationTemplates.editor.preview' | translate }}
+          </h2>
+          @if (previewing()) {
+            <span class="text-xs text-neutral-400">
+              {{ 'notificationTemplates.editor.rendering' | translate }}
+            </span>
+          }
+        </div>
+
+        <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+          <div class="border-b border-neutral-100 bg-neutral-50 px-4 py-2">
+            <p class="text-xs text-neutral-400">
+              {{ 'notificationTemplates.editor.previewSubject' | translate }}
+            </p>
+            <p class="text-sm font-medium text-neutral-900">
+              {{ preview()?.subject || '—' }}
+            </p>
+          </div>
+          <!-- Angular sanitizes [innerHTML]; no bypassSecurityTrust (NFR-5). -->
+          <div
+            class="prose prose-sm max-w-none px-4 py-3"
+            [innerHTML]="preview()?.bodyHtml"
+          ></div>
+        </div>
+      </div>
+    </div>
+  }
+</section>
+
+<!-- ── Reset-to-default confirm dialog (AC-4) ─────────────── -->
+@if (showResetConfirm()) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="'notificationTemplates.reset.title' | translate"
+  >
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+      <h2 class="text-lg font-semibold text-neutral-900">
+        {{ 'notificationTemplates.reset.title' | translate }}
+      </h2>
+      <p class="mt-2 text-sm text-neutral-500">
+        {{ 'notificationTemplates.reset.message' | translate }}
+      </p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100"
+          (click)="cancelReset()"
+        >
+          {{ 'notificationTemplates.reset.cancel' | translate }}
+        </button>
+        <button
+          type="button"
+          class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
+          [disabled]="svc.saving()"
+          (click)="confirmReset()"
+        >
+          {{ 'notificationTemplates.reset.confirm' | translate }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Send-test-email modal (FR-8) ───────────────────────── -->
+@if (showTestModal()) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="'notificationTemplates.test.title' | translate"
+  >
+    <form
+      [formGroup]="testForm"
+      class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+      (ngSubmit)="sendTest()"
+      novalidate
+    >
+      <h2 class="text-lg font-semibold text-neutral-900">
+        {{ 'notificationTemplates.test.title' | translate }}
+      </h2>
+      <p class="mt-1 text-sm text-neutral-500">
+        {{ 'notificationTemplates.test.message' | translate }}
+      </p>
+      <label
+        for="recipientEmail"
+        class="mt-4 mb-1 block text-sm font-medium text-neutral-700"
+      >
+        {{ 'notificationTemplates.test.recipient' | translate }}
+      </label>
+      <input
+        id="recipientEmail"
+        type="email"
+        formControlName="recipientEmail"
+        class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+      />
+      @if (
+        testForm.controls.recipientEmail.touched &&
+        testForm.controls.recipientEmail.invalid
+      ) {
+        <p class="mt-1 text-xs text-rose-600">
+          {{ 'notificationTemplates.test.invalidEmail' | translate }}
+        </p>
+      }
+      <div class="mt-5 flex justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-lg px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100"
+          (click)="cancelTest()"
+        >
+          {{ 'notificationTemplates.test.cancel' | translate }}
+        </button>
+        <button
+          type="submit"
+          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          [disabled]="sendingTest()"
+        >
+          @if (sendingTest()) {
+            {{ 'notificationTemplates.test.sending' | translate }}
+          } @else {
+            {{ 'notificationTemplates.test.send' | translate }}
+          }
+        </button>
+      </div>
+    </form>
+  </div>
+}

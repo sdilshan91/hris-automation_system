@@ -1,4 +1,63 @@
 {
+  "notificationTemplates": {
+    "badge": {
+      "custom": "Custom",
+      "default": "Default"
+    },
+    "list": {
+      "title": "Email Templates",
+      "subtitle": "Customize the emails your team sends for each HR event.",
+      "empty": "No notification templates are available.",
+      "editAria": "Edit template",
+      "modified": "Updated",
+      "neverModified": "System default"
+    },
+    "editor": {
+      "back": "Back to templates",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Template saved.",
+      "saveError": "Could not save the template.",
+      "reset": "Reset to Default",
+      "resetDone": "Template reset to the system default.",
+      "resetError": "Could not reset the template.",
+      "sendTest": "Send Test Email",
+      "subject": "Subject line",
+      "subjectRequired": "A subject line is required.",
+      "bodyHtml": "HTML body",
+      "bodyHtmlRequired": "An HTML body is required.",
+      "bodyText": "Plain-text body",
+      "bodyTextRequired": "A plain-text body is required.",
+      "variables": "Variables",
+      "noVariables": "No variables available for this event.",
+      "preview": "Live preview",
+      "previewSubject": "Subject",
+      "rendering": "Rendering…",
+      "tabsAria": "Editor view",
+      "tab": {
+        "editor": "Editor",
+        "preview": "Preview",
+        "variables": "Variables"
+      },
+      "testSent": "Test email sent.",
+      "testError": "Could not send the test email."
+    },
+    "reset": {
+      "title": "Reset to default?",
+      "message": "This removes your customization and reverts future emails to the system default. This cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Reset"
+    },
+    "test": {
+      "title": "Send a test email",
+      "message": "We'll render this template with sample data and email it to the address below.",
+      "recipient": "Recipient email",
+      "invalidEmail": "Enter a valid email address.",
+      "cancel": "Cancel",
+      "send": "Send",
+      "sending": "Sending…"
+    }
+  },
   "notifications": {
     "bell": {
       "ariaLabel": "Notifications"

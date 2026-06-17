@@ -551,6 +551,20 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
         ],
       },
+      // ─── Admin / Notification Templates (US-NTF-002) — Tenant Admin ──
+      // Tenant context (Settings > Notifications & Email > Templates). Tenant
+      // Admins customise per-event email templates (subject / HTML / plain-text)
+      // with a live preview; overrides are tenant-scoped server-side (AC-3/AC-5).
+      // Only Tenant Admin / Tenant Owner may edit templates (BR-1), matching the
+      // sibling US-ADM-006 company-settings gate.
+      {
+        path: 'admin/notification-templates',
+        loadChildren: () =>
+          import(
+            './features/notifications/notification-templates.routes'
+          ).then((m) => m.NOTIFICATION_TEMPLATES_ROUTES),
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+      },
       // ─── Notifications (US-NTF-001) — all authenticated users ──
       // The bell's "View All" link lands here. No extra roleGuard: notifications
       // are personal to the signed-in user (the backend scopes to identity +
