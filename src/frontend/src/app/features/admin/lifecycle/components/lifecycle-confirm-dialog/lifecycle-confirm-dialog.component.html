@@ -1,0 +1,64 @@
+<div
+  @backdrop
+  class="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-900/40 p-4"
+  (click)="cancel()"
+>
+  <div
+    @pop
+    class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="lifecycle-confirm-title"
+    (click)="$event.stopPropagation()"
+    data-testid="lifecycle-confirm-dialog"
+  >
+    <div class="flex items-start gap-3">
+      <span
+        class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-green-100 text-green-700"
+        aria-hidden="true"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
+          <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+        </svg>
+      </span>
+      <div class="min-w-0">
+        <h2 id="lifecycle-confirm-title" class="text-base font-semibold text-neutral-900">
+          {{ keyPrefix() + '.TITLE' | translate }}
+        </h2>
+        <p class="mt-1 text-sm text-neutral-500">
+          {{ keyPrefix() + '.SUBTITLE' | translate: { name: tenantName() } }}
+        </p>
+      </div>
+    </div>
+
+    @if (submitError()) {
+      <p class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" data-testid="submit-error">
+        {{ submitError() }}
+      </p>
+    }
+
+    <div class="mt-6 flex justify-end gap-2">
+      <button
+        type="button"
+        class="rounded-lg px-4 py-2 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100"
+        (click)="cancel()"
+        data-testid="cancel-btn"
+      >
+        {{ 'COMMON.CANCEL' | translate }}
+      </button>
+      <button
+        type="button"
+        class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="submitting()"
+        (click)="confirm()"
+        data-testid="confirm-btn"
+      >
+        @if (submitting()) {
+          {{ keyPrefix() + '.SUBMITTING' | translate }}
+        } @else {
+          {{ keyPrefix() + '.SUBMIT' | translate }}
+        }
+      </button>
+    </div>
+  </div>
+</div>

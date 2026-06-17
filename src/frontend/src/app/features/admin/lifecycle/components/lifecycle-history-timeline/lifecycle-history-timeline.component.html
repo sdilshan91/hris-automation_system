@@ -1,0 +1,39 @@
+<div class="card-notion">
+  <h2 class="mb-4 text-sm font-semibold text-neutral-800">
+    {{ 'LIFECYCLE.HISTORY.TITLE' | translate }}
+  </h2>
+
+  @if (loading()) {
+    <div class="space-y-3" data-testid="history-loading">
+      <div class="h-10 animate-pulse rounded-lg bg-neutral-100"></div>
+      <div class="h-10 animate-pulse rounded-lg bg-neutral-100"></div>
+    </div>
+  } @else if (events().length === 0) {
+    <p class="text-sm text-neutral-400" data-testid="history-empty">
+      {{ 'LIFECYCLE.HISTORY.EMPTY' | translate }}
+    </p>
+  } @else {
+    <ol class="relative space-y-5" data-testid="history-list">
+      @for (event of events(); track event.id) {
+        <li class="flex gap-3">
+          <span
+            class="mt-1 flex h-2.5 w-2.5 flex-shrink-0 rounded-full"
+            [class]="dotClass(event.eventType)"
+            aria-hidden="true"
+          ></span>
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-neutral-900">
+              {{ eventLabel(event.eventType) }}
+            </p>
+            @if (reasonOf(event); as reason) {
+              <p class="mt-0.5 text-sm text-neutral-500">{{ reason }}</p>
+            }
+            <p class="mt-0.5 text-xs text-neutral-400">
+              {{ event.createdAt | date: 'medium' }} · {{ event.createdBy }}
+            </p>
+          </div>
+        </li>
+      }
+    </ol>
+  }
+</div>

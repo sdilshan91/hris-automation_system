@@ -280,6 +280,20 @@ public static class PermissionCatalog
         /// permission can never reach them.
         /// </summary>
         public const string Provision = "Tenant.Provision";
+
+        /// <summary>
+        /// US-ADM-004 (BR-7): suspend / terminate / reactivate / restore a tenant from the System Admin
+        /// Console. A SYSTEM-level, DESTRUCTIVE capability — only the platform SystemAdmin role (seeded with
+        /// every catalog permission) holds it; System Support does NOT. The endpoints additionally run only in
+        /// the system/admin context, so a tenant-scoped role that nominally held this could never reach them.
+        /// </summary>
+        public const string Lifecycle = "Tenant.Lifecycle";
+
+        /// <summary>
+        /// US-ADM-004 (BR-7): VIEW a tenant's lifecycle-event history. Held by SystemAdmin AND the read-only
+        /// System Support role (which can view history but cannot initiate transitions). System-context only.
+        /// </summary>
+        public const string ViewLifecycle = "Tenant.ViewLifecycle";
     }
 
     // ── Platform Monitoring (US-ADM-002) ─────────────────────────────
@@ -408,6 +422,7 @@ public static class PermissionCatalog
 
         // Tenant
         Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling, Tenant.Provision,
+        Tenant.Lifecycle, Tenant.ViewLifecycle,
 
         // Monitoring
         Monitoring.View,
@@ -606,5 +621,6 @@ public static class PermissionCatalog
     {
         Impersonation.Initiate,
         Monitoring.View,
+        Tenant.ViewLifecycle, // US-ADM-004 BR-7: view lifecycle history, but NOT Tenant.Lifecycle (cannot transition).
     };
 }

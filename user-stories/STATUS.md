@@ -126,7 +126,7 @@
 - [x] US-ADM-001 — System Admin provisions new tenant *(PR #85)*
 - [x] US-ADM-002 — Monitor platform health and usage *(PR #86)*
 - [x] US-ADM-003 — Impersonate tenant user with audit *(PR #87)*
-- [ ] US-ADM-004 — Suspend/terminate a tenant
+- [~] US-ADM-004 — Suspend/terminate a tenant
 - [ ] US-ADM-005 — Manage users and role assignments
 - [ ] US-ADM-006 — Configure company settings
 - [ ] US-ADM-007 — Manage approval workflows

@@ -6,6 +6,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { provideTranslateService } from '@ngx-translate/core';
 import { TenantMonitoringDetailComponent } from './tenant-monitoring-detail.component';
 import { AuthService } from '../../../../../core/auth/auth.service';
 import { environment } from '../../../../../../environments/environment';
@@ -16,6 +17,8 @@ describe('TenantMonitoringDetailComponent', () => {
 
   const root = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin/monitoring`;
   const detailUrl = `${root}/tenants/t-1`;
+  // US-ADM-004: lifecycle history is loaded alongside the detail.
+  const historyUrl = `${environment.apiBaseUrl}/system/tenants/t-1/lifecycle/history`;
 
   const detail: ITenantMonitoringDetail = {
     tenantId: 't-1',
@@ -49,6 +52,7 @@ describe('TenantMonitoringDetailComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideAnimationsAsync(),
+        provideTranslateService(),
         { provide: AuthService, useValue: authStub },
         {
           provide: ActivatedRoute,
@@ -63,6 +67,15 @@ describe('TenantMonitoringDetailComponent', () => {
     return { fixture, component };
   }
 
+  /**
+   * Flush both the detail GET and the lifecycle-history GET that the component
+   * issues on init. `d` overrides the tenant detail; history defaults to empty.
+   */
+  function flushLoad(d: Partial<ITenantMonitoringDetail> = {}): void {
+    httpMock.expectOne(detailUrl).flush({ ...detail, ...d });
+    httpMock.expectOne(historyUrl).flush([]);
+  }
+
   afterEach(() => {
     httpMock.verify();
     TestBed.resetTestingModule();
@@ -71,30 +84,86 @@ describe('TenantMonitoringDetailComponent', () => {
   it('loads the tenant detail on init (AC-4)', () => {
     const { fixture, component } = setup('System Admin');
     fixture.detectChanges();
-    httpMock.expectOne(detailUrl).flush(detail);
+    flushLoad();
 
     expect(component.detail()?.name).toBe('Acme');
     expect(component.isLoading()).toBeFalse();
   });
 
-  it('keeps Suspend / View Audit Log DISABLED (point to a later release)', () => {
+  it('shows Suspend + Terminate for an active tenant, keeps Audit disabled (US-ADM-004 BR-1)', () => {
     const { fixture } = setup('System Admin');
     fixture.detectChanges();
-    httpMock.expectOne(detailUrl).flush(detail);
+    flushLoad();
     fixture.detectChanges();
 
     const el: HTMLElement = fixture.nativeElement;
-    // US-ADM-004 / US-ADM-008 are not built — these stay disabled.
     const suspend = el.querySelector('[data-testid="suspend-btn"]') as HTMLButtonElement;
+    const terminate = el.querySelector('[data-testid="terminate-btn"]') as HTMLButtonElement;
     const audit = el.querySelector('[data-testid="audit-btn"]') as HTMLButtonElement;
-    expect(suspend.disabled).toBeTrue();
+
+    // Active → Suspend and Terminate are now wired and enabled.
+    expect(suspend).not.toBeNull();
+    expect(suspend.disabled).toBeFalse();
+    expect(terminate).not.toBeNull();
+    // Reactivate / Restore do not apply to an active tenant.
+    expect(el.querySelector('[data-testid="reactivate-btn"]')).toBeNull();
+    expect(el.querySelector('[data-testid="restore-btn"]')).toBeNull();
+    // View Audit Log (US-ADM-008) is still a later release — stays disabled.
     expect(audit.disabled).toBeTrue();
+  });
+
+  it('shows Reactivate + Terminate for a suspended tenant (AC-5)', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad({ status: 'suspended' });
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="reactivate-btn"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="terminate-btn"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="suspend-btn"]')).toBeNull();
+  });
+
+  it('shows Restore for a terminating tenant (AC-6)', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad({ status: 'terminating' });
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="restore-btn"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="suspend-btn"]')).toBeNull();
+    expect(el.querySelector('[data-testid="terminate-btn"]')).toBeNull();
+  });
+
+  it('shows NO lifecycle actions for a terminated tenant (BR-3)', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad({ status: 'terminated' });
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="suspend-btn"]')).toBeNull();
+    expect(el.querySelector('[data-testid="terminate-btn"]')).toBeNull();
+    expect(el.querySelector('[data-testid="reactivate-btn"]')).toBeNull();
+    expect(el.querySelector('[data-testid="restore-btn"]')).toBeNull();
+  });
+
+  it('opens the suspend modal when Suspend is clicked', () => {
+    const { fixture, component } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad();
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    (el.querySelector('[data-testid="suspend-btn"]') as HTMLButtonElement).click();
+    expect(component.suspendOpen()).toBeTrue();
   });
 
   it('ENABLES Impersonate for a non-terminated tenant (US-ADM-003 AC-1)', () => {
     const { fixture, component } = setup('System Admin');
     fixture.detectChanges();
-    httpMock.expectOne(detailUrl).flush(detail);
+    flushLoad();
     fixture.detectChanges();
 
     const el: HTMLElement = fixture.nativeElement;
@@ -110,7 +179,7 @@ describe('TenantMonitoringDetailComponent', () => {
   it('DISABLES Impersonate for a terminated tenant (BR-5)', () => {
     const { fixture } = setup('System Admin');
     fixture.detectChanges();
-    httpMock.expectOne(detailUrl).flush({ ...detail, status: 'terminated' });
+    flushLoad({ status: 'terminated' });
     fixture.detectChanges();
 
     const el: HTMLElement = fixture.nativeElement;
@@ -120,38 +189,46 @@ describe('TenantMonitoringDetailComponent', () => {
     expect(impersonate.disabled).toBeTrue();
   });
 
-  it('shows Suspend/Impersonate for System Admin (BR-1)', () => {
-    const { fixture } = setup('System Admin');
-    fixture.detectChanges();
-    httpMock.expectOne(detailUrl).flush(detail);
-    fixture.detectChanges();
-
-    const el: HTMLElement = fixture.nativeElement;
-    expect(el.querySelector('[data-testid="suspend-btn"]')).not.toBeNull();
-    expect(el.querySelector('[data-testid="impersonate-btn"]')).not.toBeNull();
-    // View Audit Log is visible to all roles.
-    expect(el.querySelector('[data-testid="audit-btn"]')).not.toBeNull();
-  });
-
-  it('HIDES Suspend/Impersonate for System Support (BR-1 read-only)', () => {
+  it('HIDES lifecycle + impersonate actions for System Support (BR-7 read-only)', () => {
     const { fixture, component } = setup('System Support');
     fixture.detectChanges();
-    httpMock.expectOne(detailUrl).flush(detail);
+    flushLoad();
     fixture.detectChanges();
 
     expect(component.canManage()).toBeFalse();
 
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="suspend-btn"]')).toBeNull();
+    expect(el.querySelector('[data-testid="terminate-btn"]')).toBeNull();
     expect(el.querySelector('[data-testid="impersonate-btn"]')).toBeNull();
     // But the read-only View Audit Log button still renders (disabled).
     expect(el.querySelector('[data-testid="audit-btn"]')).not.toBeNull();
   });
 
-  it('shows "Not available" placeholders for null SLA / trends', () => {
+  it('renders the lifecycle history timeline (US-ADM-004)', () => {
     const { fixture } = setup('System Admin');
     fixture.detectChanges();
     httpMock.expectOne(detailUrl).flush(detail);
+    httpMock.expectOne(historyUrl).flush([
+      {
+        id: 'e-1',
+        tenantId: 't-1',
+        eventType: 'suspended',
+        detailJson: '{"reason":"Payment failure"}',
+        createdAt: '2026-06-17T10:00:00Z',
+        createdBy: 'admin@yourhrm.com',
+      },
+    ]);
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="history-list"]')).not.toBeNull();
+  });
+
+  it('shows "Not available" placeholders for null SLA / trends', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad();
     fixture.detectChanges();
 
     const el: HTMLElement = fixture.nativeElement;

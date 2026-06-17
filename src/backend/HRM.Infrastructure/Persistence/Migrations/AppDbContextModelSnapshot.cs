@@ -5839,6 +5839,19 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(63)")
                         .HasColumnName("subdomain");
 
+                    b.Property<DateTime?>("SuspendedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("suspended_at");
+
+                    b.Property<string>("SuspendedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("suspended_reason");
+
+                    b.Property<DateTime?>("TerminationScheduledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("termination_scheduled_at");
+
                     b.Property<DateTime?>("TrialEndsAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("trial_ends_at");
@@ -5901,6 +5914,46 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_tenant_lifecycle_events_tenant_id");
 
                     b.ToTable("tenant_lifecycle_events", (string)null);
+                });
+
+            modelBuilder.Entity("HRM.Domain.Entities.TenantScheduledJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("JobId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("job_id");
+
+                    b.Property<string>("JobType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("job_type");
+
+                    b.Property<DateTime>("ScheduledFor")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_for");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tenant_scheduled_jobs");
+
+                    b.HasIndex("TenantId")
+                        .HasDatabaseName("ix_tenant_scheduled_jobs_tenant_id");
+
+                    b.ToTable("tenant_scheduled_jobs", (string)null);
                 });
 
             modelBuilder.Entity("HRM.Domain.Entities.User", b =>

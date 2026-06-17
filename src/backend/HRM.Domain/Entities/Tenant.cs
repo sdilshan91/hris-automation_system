@@ -31,6 +31,26 @@ public sealed class Tenant
     public DateTime? UpdatedAt { get; set; }
     public bool IsDeleted { get; set; }
 
+    // ── Lifecycle: suspend / terminate (US-ADM-004) ──────────────────────────
+
+    /// <summary>
+    /// When the tenant was suspended (US-ADM-004 AC-1/FR-1). Set on Suspend, cleared on Reactivate. Null when
+    /// the tenant is not (and has never been) suspended.
+    /// </summary>
+    public DateTime? SuspendedAt { get; set; }
+
+    /// <summary>
+    /// The System-Admin-supplied reason a tenant was suspended (US-ADM-004 AC-1/FR-1, 10-500 chars). Surfaced
+    /// on the read-only suspension notice (AC-2). Cleared on Reactivate.
+    /// </summary>
+    public string? SuspendedReason { get; set; }
+
+    /// <summary>
+    /// When the scheduled hard-deletion fires for a tenant in <see cref="TenantStatus.Terminating"/>
+    /// (US-ADM-004 AC-3/FR-2) — set to now + grace period on Terminate, cleared on Restore. Null otherwise.
+    /// </summary>
+    public DateTime? TerminationScheduledAt { get; set; }
+
     // Session policy settings
     public int MaxConcurrentSessions { get; set; } = 5;
     public string ConcurrentSessionStrategy { get; set; } = "revoke_oldest"; // "deny_new" | "revoke_oldest"

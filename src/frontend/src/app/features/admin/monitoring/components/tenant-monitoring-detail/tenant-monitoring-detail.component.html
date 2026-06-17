@@ -34,7 +34,7 @@
             <p class="mt-1 text-sm text-neutral-500 font-mono">{{ d.subdomain }}.yourhrm.com</p>
           </div>
 
-          <!-- Quick actions (AC-4) — all disabled, point to later releases -->
+          <!-- Quick actions (AC-4) — US-ADM-003 impersonation + US-ADM-004 lifecycle. -->
           <div class="flex flex-wrap items-center gap-2" data-testid="quick-actions">
             @if (canManage()) {
               <!-- US-ADM-003 AC-1: enabled (terminated tenants can't be impersonated). -->
@@ -50,15 +50,48 @@
               >
                 Impersonate
               </button>
-              <button
-                type="button"
-                class="btn-secondary opacity-50 cursor-not-allowed"
-                disabled
-                title="Available in a later release"
-                data-testid="suspend-btn"
-              >
-                Suspend
-              </button>
+
+              <!-- US-ADM-004: lifecycle actions, gated by current status (BR-1). -->
+              @if (showReactivate()) {
+                <button
+                  type="button"
+                  class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-green-700"
+                  (click)="openReactivate()"
+                  data-testid="reactivate-btn"
+                >
+                  {{ 'LIFECYCLE.REACTIVATE.SUBMIT' | translate }}
+                </button>
+              }
+              @if (showRestore()) {
+                <button
+                  type="button"
+                  class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-green-700"
+                  (click)="openRestore()"
+                  data-testid="restore-btn"
+                >
+                  {{ 'LIFECYCLE.RESTORE.SUBMIT' | translate }}
+                </button>
+              }
+              @if (showSuspend()) {
+                <button
+                  type="button"
+                  class="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm transition hover:bg-red-50"
+                  (click)="openSuspend()"
+                  data-testid="suspend-btn"
+                >
+                  {{ 'LIFECYCLE.SUSPEND.SUBMIT' | translate }}
+                </button>
+              }
+              @if (showTerminate()) {
+                <button
+                  type="button"
+                  class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-red-700"
+                  (click)="openTerminate()"
+                  data-testid="terminate-btn"
+                >
+                  {{ 'LIFECYCLE.TERMINATE.SUBMIT' | translate }}
+                </button>
+              }
             }
             <button
               type="button"
@@ -177,6 +210,12 @@
           </div>
         </div>
       </div>
+
+      <!-- US-ADM-004: lifecycle history timeline. -->
+      <app-lifecycle-history-timeline
+        [events]="history()"
+        [loading]="historyLoading()"
+      />
     </div>
 
     <!-- US-ADM-003 AC-1: impersonation confirmation modal. -->
@@ -186,6 +225,40 @@
         [tenantName]="d.name"
         (started)="onImpersonationStarted($event)"
         (cancelled)="closeImpersonate()"
+      />
+    }
+
+    <!-- US-ADM-004 AC-1: suspend confirmation modal. -->
+    @if (suspendOpen()) {
+      <app-suspend-tenant-dialog
+        [tenantId]="d.tenantId"
+        [tenantName]="d.name"
+        (suspended)="onLifecycleResult($event)"
+        (cancelled)="closeLifecycle()"
+      />
+    }
+
+    <!-- US-ADM-004 AC-3: terminate multi-step modal. -->
+    @if (terminateOpen()) {
+      <app-terminate-tenant-dialog
+        [tenantId]="d.tenantId"
+        [tenantName]="d.name"
+        [subdomain]="d.subdomain"
+        [plan]="d.plan"
+        [employeeCount]="d.employeeUsage.used"
+        (terminated)="onLifecycleResult($event)"
+        (cancelled)="closeLifecycle()"
+      />
+    }
+
+    <!-- US-ADM-004 AC-5/AC-6: reactivate / restore confirmation modal. -->
+    @if (confirmAction(); as action) {
+      <app-lifecycle-confirm-dialog
+        [tenantId]="d.tenantId"
+        [tenantName]="d.name"
+        [action]="action"
+        (confirmed)="onLifecycleResult($event)"
+        (cancelled)="closeLifecycle()"
       />
     }
   }

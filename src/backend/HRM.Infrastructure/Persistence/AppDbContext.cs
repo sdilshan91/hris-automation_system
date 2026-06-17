@@ -23,6 +23,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
     public DbSet<TenantLifecycleEvent> TenantLifecycleEvents => Set<TenantLifecycleEvent>();
+    // US-ADM-004: system-level, cross-tenant — NO tenant query filter (see TenantScheduledJobConfiguration).
+    public DbSet<TenantScheduledJob> TenantScheduledJobs => Set<TenantScheduledJob>();
     public DbSet<User> Users => Set<User>();
     public DbSet<UserTenant> UserTenants => Set<UserTenant>();
     public DbSet<Role> Roles => Set<Role>();

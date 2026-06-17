@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { TranslateModule } from '@ngx-translate/core';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { PlatformMonitoringService } from '../../services/platform-monitoring.service';
 import { AuthService } from '../../../../../core/auth/auth.service';
@@ -17,6 +18,23 @@ import {
 } from '../../models/monitoring.models';
 import { ImpersonateDialogComponent } from '../../../impersonation/components/impersonate-dialog/impersonate-dialog.component';
 import { IStartImpersonationResponse } from '../../../impersonation/models/impersonation.models';
+import { TenantLifecycleService } from '../../../lifecycle/services/tenant-lifecycle.service';
+import { SuspendTenantDialogComponent } from '../../../lifecycle/components/suspend-tenant-dialog/suspend-tenant-dialog.component';
+import { TerminateTenantDialogComponent } from '../../../lifecycle/components/terminate-tenant-dialog/terminate-tenant-dialog.component';
+import {
+  LifecycleConfirmDialogComponent,
+  LifecycleConfirmAction,
+} from '../../../lifecycle/components/lifecycle-confirm-dialog/lifecycle-confirm-dialog.component';
+import { LifecycleHistoryTimelineComponent } from '../../../lifecycle/components/lifecycle-history-timeline/lifecycle-history-timeline.component';
+import {
+  ITenantLifecycleEvent,
+  ITenantLifecycleResult,
+  canReactivate,
+  canRestore,
+  canSuspend,
+  canTerminate,
+  lifecycleStatusClass,
+} from '../../../lifecycle/models/lifecycle.models';
 
 /**
  * US-ADM-002 AC-4: System Admin tenant monitoring detail.
@@ -26,16 +44,26 @@ import { IStartImpersonationResponse } from '../../../impersonation/models/imper
  * uptime are rendered as honest "Not available" placeholders when the BE
  * returns null (no observability pipeline yet).
  *
- * Quick actions (Impersonate / Suspend / View Audit Log) target US-ADM-003/004/008
- * which are not built — they render DISABLED with an "Available in a later
- * release" tooltip and are NOT wired to any route. Suspend/Impersonate are
- * additionally gated so they only appear for System Admin, never System Support
- * (BR-1).
+ * US-ADM-004: lifecycle quick-actions (Suspend / Terminate / Reactivate /
+ * Restore) are now wired here, gated by the tenant's current status. Suspend/
+ * Terminate/Reactivate/Restore are System-Admin only (BR-7) — System Support is
+ * read-only. A color-coded status badge plus a lifecycle history timeline (GET
+ * .../lifecycle/history) render below. The Impersonate (US-ADM-003) and View
+ * Audit Log buttons are unchanged.
  */
 @Component({
   selector: 'app-tenant-monitoring-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, ImpersonateDialogComponent],
+  imports: [
+    CommonModule,
+    RouterLink,
+    TranslateModule,
+    ImpersonateDialogComponent,
+    SuspendTenantDialogComponent,
+    TerminateTenantDialogComponent,
+    LifecycleConfirmDialogComponent,
+    LifecycleHistoryTimelineComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeSlideIn', [
@@ -49,6 +77,7 @@ import { IStartImpersonationResponse } from '../../../impersonation/models/imper
 })
 export class TenantMonitoringDetailComponent implements OnInit {
   private readonly service = inject(PlatformMonitoringService);
+  private readonly lifecycle = inject(TenantLifecycleService);
   private readonly route = inject(ActivatedRoute);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
@@ -60,14 +89,42 @@ export class TenantMonitoringDetailComponent implements OnInit {
   /** US-ADM-003 AC-1: whether the impersonation confirmation modal is open. */
   readonly impersonateOpen = signal(false);
 
+  /** US-ADM-004: which lifecycle modal (if any) is open. */
+  readonly suspendOpen = signal(false);
+  readonly terminateOpen = signal(false);
+  /** Non-destructive confirm modal — null when closed, else the action. */
+  readonly confirmAction = signal<LifecycleConfirmAction | null>(null);
+
+  /** US-ADM-004: lifecycle history timeline state. */
+  readonly history = signal<ITenantLifecycleEvent[]>([]);
+  readonly historyLoading = signal(true);
+
   readonly bandClass = bandClass;
+  readonly lifecycleStatusClass = lifecycleStatusClass;
 
   /**
-   * BR-1: privileged quick actions (Suspend / Impersonate) are visible only to
-   * System Admin, not System Support (read-only). Read straight from the auth
-   * service's role claim.
+   * BR-7: privileged quick actions (Suspend / Terminate / Reactivate / Restore /
+   * Impersonate) are visible only to System Admin, not System Support (read-only).
    */
   readonly canManage = computed(() => this.auth.hasRole('System Admin'));
+
+  // Status-gated lifecycle action availability (BR-1).
+  readonly showSuspend = computed(() => {
+    const d = this.detail();
+    return !!d && this.canManage() && canSuspend(d.status);
+  });
+  readonly showTerminate = computed(() => {
+    const d = this.detail();
+    return !!d && this.canManage() && canTerminate(d.status);
+  });
+  readonly showReactivate = computed(() => {
+    const d = this.detail();
+    return !!d && this.canManage() && canReactivate(d.status);
+  });
+  readonly showRestore = computed(() => {
+    const d = this.detail();
+    return !!d && this.canManage() && canRestore(d.status);
+  });
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
@@ -90,6 +147,23 @@ export class TenantMonitoringDetailComponent implements OnInit {
       error: () => {
         this.errorMessage.set('Failed to load tenant detail.');
         this.isLoading.set(false);
+      },
+    });
+    this.loadHistory(id);
+  }
+
+  /** US-ADM-004: load the lifecycle history timeline. */
+  loadHistory(id: string): void {
+    this.historyLoading.set(true);
+    this.lifecycle.getHistory(id).subscribe({
+      next: (events) => {
+        this.history.set(events);
+        this.historyLoading.set(false);
+      },
+      error: () => {
+        // History is supplementary; fail quietly to an empty timeline.
+        this.history.set([]);
+        this.historyLoading.set(false);
       },
     });
   }
@@ -116,19 +190,45 @@ export class TenantMonitoringDetailComponent implements OnInit {
     this.router.navigate(['/dashboard']);
   }
 
-  /** Status badge colour. */
-  statusClass(status: string): string {
-    switch ((status || '').toLowerCase()) {
-      case 'active':
-        return 'bg-green-50 text-green-700';
-      case 'trial':
-        return 'bg-blue-50 text-blue-700';
-      case 'suspended':
-        return 'bg-amber-50 text-amber-700';
-      case 'terminated':
-        return 'bg-red-50 text-red-700';
-      default:
-        return 'bg-neutral-100 text-neutral-600';
+  // ─── Lifecycle (US-ADM-004) ─────────────────────────────────
+
+  openSuspend(): void {
+    this.suspendOpen.set(true);
+  }
+
+  openTerminate(): void {
+    this.terminateOpen.set(true);
+  }
+
+  openReactivate(): void {
+    this.confirmAction.set('reactivate');
+  }
+
+  openRestore(): void {
+    this.confirmAction.set('restore');
+  }
+
+  closeLifecycle(): void {
+    this.suspendOpen.set(false);
+    this.terminateOpen.set(false);
+    this.confirmAction.set(null);
+  }
+
+  /**
+   * A lifecycle transition succeeded — close the modal, reflect the new status
+   * locally, and refresh the detail + history from the backend.
+   */
+  onLifecycleResult(result: ITenantLifecycleResult): void {
+    this.closeLifecycle();
+    const current = this.detail();
+    if (current) {
+      this.detail.set({ ...current, status: result.status });
     }
+    this.load(result.tenantId);
+  }
+
+  /** Status badge colour (color-coded — AC / UI notes). */
+  statusClass(status: string): string {
+    return lifecycleStatusClass(status);
   }
 }

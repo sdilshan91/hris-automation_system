@@ -214,6 +214,14 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.SendPayslipEmailsJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayslipDistributionJobScheduler, HRM.Api.Jobs.HangfirePayslipDistributionJobScheduler>();
 
+    // US-ADM-004 FR-2/FR-3/FR-6: tenant data-deletion + reminder jobs + the Hangfire-backed scheduler seam
+    // (bound to ITenantDeletionScheduler so the Infrastructure lifecycle service can schedule/cancel by
+    // interface). The deletion job is scheduled at TerminationScheduledAt; reminders at 14d/7d/1d before;
+    // Restore de-queues them. Jobs restore the tenant context before running and are idempotent.
+    builder.Services.AddScoped<HRM.Api.Jobs.TenantDeletionJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.TenantTerminationReminderJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.ITenantDeletionScheduler, HRM.Api.Jobs.HangfireTenantDeletionScheduler>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -269,6 +277,11 @@ try
     // resolved ICurrentUser), before controllers — rejects 401 once the session is ended/expired and best-effort
     // counts mutating actions. No-op for non-impersonated traffic.
     app.UseMiddleware<ImpersonationEnforcementMiddleware>();
+
+    // US-ADM-004 (AC-1/AC-2/BR-6): enforce a resolved tenant's lifecycle status. Suspended ⇒ HTTP 451 for
+    // tenant users (Tenant Owner/Admin exempt for the read-only notice + export); Terminating ⇒ read-only
+    // (writes 403). System/admin context is exempt. After auth (needs ICurrentUser roles), before controllers.
+    app.UseMiddleware<TenantStatusEnforcementMiddleware>();
 
     // Session activity tracking — debounced last_active_at update (US-AUTH-009 FR-4)
     app.UseMiddleware<SessionActivityMiddleware>();
