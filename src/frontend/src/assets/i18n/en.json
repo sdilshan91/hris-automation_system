@@ -527,10 +527,15 @@
       "to": "To",
       "actor": "User",
       "allActors": "All users",
+      "actorSearch": "Search by name or email…",
+      "clearActor": "Clear selected user",
       "action": "Action",
       "allActions": "All actions",
       "resource": "Resource",
       "allResources": "All resources",
+      "selectAll": "Select all",
+      "selectedCount": "{{count}} selected",
+      "noOptions": "No options available",
       "clear": "Clear filters"
     },
     "pagination": {

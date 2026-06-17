@@ -30,7 +30,13 @@ public sealed class AuditLogController : ControllerBase
 
     /// <summary>
     /// GET /api/v1/tenant/audit-logs — paginated, reverse-chronological, filterable audit list (AC-1/AC-2/FR-1).
-    /// Filters (all optional, AND semantics): startDate, endDate, actorUserId, action, resourceType, search.
+    /// Filters (all optional, AND across filter types): startDate, endDate, actorUserId, action, resourceType,
+    /// search. US-NTF-005 FR-2 adds the repeatable multi-select params <c>actions</c> and <c>resourceTypes</c>
+    /// (IN-list, OR within a group); the singular <c>action</c>/<c>resourceType</c> still work (back-compat) and
+    /// are folded into their group.
+    ///
+    /// <para>SIDE EFFECT (US-NTF-005 FR-9/BR-5): viewing the list writes ONE Action="AuditLog.View" meta-audit
+    /// row recording the actor + tenant + request IP/UA/trace + applied filters.</para>
     /// </summary>
     [HttpGet]
     [RequirePermission("Audit.View")]
@@ -44,16 +50,55 @@ public sealed class AuditLogController : ControllerBase
         [FromQuery] string? action = null,
         [FromQuery] string? resourceType = null,
         [FromQuery] string? search = null,
+        [FromQuery] string[]? actions = null,
+        [FromQuery] string[]? resourceTypes = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
-            new ListAuditLogsQuery(page, pageSize, startDate, endDate, actorUserId, action, resourceType, search),
+            new ListAuditLogsQuery(
+                page, pageSize, startDate, endDate, actorUserId, action, resourceType, search,
+                actions, resourceTypes),
             cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
         return Ok(ApiResponse<AuditLogPageDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/audit-logs/actors?search={q} — US-NTF-005 FR-2: distinct actors (user id + name +
+    /// email) that appear in THIS tenant's audit log, matching the type-ahead query, capped at 20. Tenant-scoped.
+    /// </summary>
+    [HttpGet("actors")]
+    [RequirePermission("Audit.View")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<AuditLogActorDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Actors(
+        [FromQuery] string? search = null,
+        [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new SearchAuditLogActorsQuery(search, limit), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<AuditLogActorDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/audit-logs/filter-options — US-NTF-005 FR-2: distinct action names + resource types
+    /// present in THIS tenant's audit log, to populate the multi-select filter dropdowns. Tenant-scoped.
+    /// </summary>
+    [HttpGet("filter-options")]
+    [RequirePermission("Audit.View")]
+    [ProducesResponseType(typeof(ApiResponse<AuditLogFilterOptionsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> FilterOptions(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetAuditLogFilterOptionsQuery(), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AuditLogFilterOptionsDto>.Ok(result.Value!));
     }
 
     /// <summary>

@@ -372,5 +372,216 @@ public sealed class AuditLogServiceTests
         result.StatusCode.Should().Be(400);
     }
 
+    // ── US-NTF-005 FR-9 / BR-5: meta-audit on view ────────────────────────────
+
+    [Fact]
+    public async Task List_WritesAuditLogViewMetaAuditRow()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update");
+
+        var result = await Service(_tenantA).ListAsync(EmptyFilter(), 1, 50);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = Db(_tenantA);
+        var viewRows = db.AuditLogs
+            .Where(a => a.TenantId == _tenantA && a.Action == "AuditLog.View")
+            .ToList();
+        viewRows.Should().HaveCount(1);
+        viewRows[0].UserId.Should().Be(_actorUser);
+        viewRows[0].ResourceType.Should().Be("AuditLog");
+        viewRows[0].EventType.Should().Be("AuditLog.View");
+    }
+
+    [Fact]
+    public async Task List_MetaAuditRow_DoesNotRecurse_OneRowPerRequest()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update");
+
+        // Two separate list requests → exactly two view rows (one each), never a recursive cascade.
+        await Service(_tenantA).ListAsync(EmptyFilter(), 1, 50);
+        await Service(_tenantA).ListAsync(EmptyFilter(), 1, 50);
+
+        using var db = Db(_tenantA);
+        db.AuditLogs.Count(a => a.TenantId == _tenantA && a.Action == "AuditLog.View").Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Get_DoesNotWriteMetaAuditRow()
+    {
+        await SeedTenantsAndUsersAsync();
+        var id = BaseEntity.NewUuidV7();
+        using (var db = Db(_tenantA))
+        {
+            db.AuditLogs.Add(new AuditLog
+            {
+                Id = id, TenantId = _tenantA, UserId = _actorUser,
+                EventType = "Employee.Update", Action = "Employee.Update", CreatedAt = Base,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await Service(_tenantA).GetAsync(id);
+
+        using var verify = Db(_tenantA);
+        verify.AuditLogs.Any(a => a.Action == "AuditLog.View").Should().BeFalse();
+    }
+
+    // ── US-NTF-005 FR-2: multi-select filters (IN-list) + single-value back-compat ──
+
+    [Fact]
+    public async Task List_MultiSelectActions_MatchesAnyInList()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update", resourceType: "Employee");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, action: "Leave.Approve", resourceType: "Leave");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(2), _actorUser, action: "Payroll.Run", resourceType: "Payroll");
+
+        var filter = EmptyFilter() with { Actions = new[] { "Employee.Update", "Leave.Approve" } };
+        var result = await Service(_tenantA).ListAsync(filter, 1, 50);
+
+        result.Value!.Items.Select(i => i.Action)
+            .Should().BeEquivalentTo(new[] { "Employee.Update", "Leave.Approve" });
+    }
+
+    [Fact]
+    public async Task List_MultiSelectResourceTypes_MatchesAnyInList()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update", resourceType: "Employee");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, action: "Leave.Approve", resourceType: "Leave");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(2), _actorUser, action: "Payroll.Run", resourceType: "Payroll");
+
+        var filter = EmptyFilter() with { ResourceTypes = new[] { "Employee", "Payroll" } };
+        var result = await Service(_tenantA).ListAsync(filter, 1, 50);
+
+        result.Value!.Items.Select(i => i.ResourceType)
+            .Should().BeEquivalentTo(new[] { "Employee", "Payroll" });
+    }
+
+    [Fact]
+    public async Task List_SingleValueActionStillWorks_BackCompat()
+    {
+        // US-ADM-008 back-compat: the singular Action param continues to filter as before.
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, action: "Leave.Approve");
+
+        var result = await Service(_tenantA).ListAsync(EmptyFilter() with { Action = "Employee.Update" }, 1, 50);
+
+        result.Value!.Items.Should().ContainSingle().Which.Action.Should().Be("Employee.Update");
+    }
+
+    [Fact]
+    public async Task List_SingleAndMultiActionCombine_AsOneOrGroup()
+    {
+        // The singular value is folded into the multi-select group (OR within the action group).
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, action: "Leave.Approve");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(2), _actorUser, action: "Payroll.Run");
+
+        var filter = EmptyFilter() with { Action = "Employee.Update", Actions = new[] { "Leave.Approve" } };
+        var result = await Service(_tenantA).ListAsync(filter, 1, 50);
+
+        result.Value!.Items.Select(i => i.Action)
+            .Should().BeEquivalentTo(new[] { "Employee.Update", "Leave.Approve" });
+    }
+
+    [Fact]
+    public async Task List_MultiActionAndResourceType_CombineWithAnd()
+    {
+        // AND across filter types: action group AND resource-type group.
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update", resourceType: "Employee");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, action: "Employee.Update", resourceType: "Leave");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(2), _actorUser, action: "Leave.Approve", resourceType: "Employee");
+
+        var filter = EmptyFilter() with
+        {
+            Actions = new[] { "Employee.Update" },
+            ResourceTypes = new[] { "Employee" },
+        };
+        var result = await Service(_tenantA).ListAsync(filter, 1, 50);
+
+        var item = result.Value!.Items.Should().ContainSingle().Subject;
+        item.Action.Should().Be("Employee.Update");
+        item.ResourceType.Should().Be("Employee");
+    }
+
+    // ── US-NTF-005 FR-2: keyword search across before/after (verify existing behavior) ──
+
+    [Fact]
+    public async Task List_KeywordSearch_MatchesBeforeAndAfterJson()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, before: "{\"title\":\"Engineer\"}", after: "{\"title\":\"Architect\"}");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, after: "{\"title\":\"Manager\"}");
+
+        var svc = Service(_tenantA);
+
+        // matches the BEFORE content
+        (await svc.ListAsync(EmptyFilter() with { SearchQuery = "Engineer" }, 1, 50)).Value!.Items.Should().HaveCount(1);
+        // matches the AFTER content
+        (await svc.ListAsync(EmptyFilter() with { SearchQuery = "Architect" }, 1, 50)).Value!.Items.Should().HaveCount(1);
+        (await svc.ListAsync(EmptyFilter() with { SearchQuery = "Manager" }, 1, 50)).Value!.Items.Should().HaveCount(1);
+    }
+
+    // ── US-NTF-005 FR-2: actor autocomplete ───────────────────────────────────
+
+    [Fact]
+    public async Task SearchActors_ReturnsTenantScopedDistinctActors()
+    {
+        await SeedTenantsAndUsersAsync();
+        // _actorUser appears twice in tenant A; _otherActor only in tenant B.
+        await AddAuditAsync(_tenantA, Base, _actorUser);
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser);
+        await AddAuditAsync(_tenantB, Base, _otherActor);
+
+        var result = await Service(_tenantA).SearchActorsAsync(null, 20);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { UserId = _actorUser, Name = "Actor A", Email = "actor@a.com" });
+    }
+
+    [Fact]
+    public async Task SearchActors_FiltersByNameOrEmail()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser);            // Actor A / actor@a.com
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _otherActor); // Other A / other@a.com
+
+        var svc = Service(_tenantA);
+
+        (await svc.SearchActorsAsync("Actor", 20)).Value!.Should().ContainSingle()
+            .Which.UserId.Should().Be(_actorUser);
+        (await svc.SearchActorsAsync("other@", 20)).Value!.Should().ContainSingle()
+            .Which.UserId.Should().Be(_otherActor);
+        (await svc.SearchActorsAsync("nobody", 20)).Value!.Should().BeEmpty();
+    }
+
+    // ── US-NTF-005 FR-2: filter options ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetFilterOptions_ReturnsTenantScopedDistinctActionsAndResourceTypes()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser, action: "Employee.Update", resourceType: "Employee");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(1), _actorUser, action: "Employee.Update", resourceType: "Employee");
+        await AddAuditAsync(_tenantA, Base.AddMinutes(2), _actorUser, action: "Leave.Approve", resourceType: "Leave");
+        await AddAuditAsync(_tenantB, Base, _otherActor, action: "B.Only", resourceType: "BResource");
+
+        var result = await Service(_tenantA).GetFilterOptionsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Actions.Should().BeEquivalentTo(new[] { "Employee.Update", "Leave.Approve" });
+        result.Value.ResourceTypes.Should().BeEquivalentTo(new[] { "Employee", "Leave" });
+        result.Value.Actions.Should().NotContain("B.Only");
+        result.Value.ResourceTypes.Should().NotContain("BResource");
+    }
+
     private static AuditLogFilter EmptyFilter() => new(null, null, null, null, null, null);
 }

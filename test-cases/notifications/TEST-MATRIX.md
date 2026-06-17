@@ -1,7 +1,7 @@
 ---
 module: Notifications & Audit
-total_user_stories: 4
-total_test_cases: 64
+total_user_stories: 5
+total_test_cases: 80
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -273,3 +273,106 @@ status: in-progress
 | BR-4 (system-level actions in separate system_audit_log, System-Admin-only) | TC-NTF-004-11 (single-table discriminator CONDITIONAL; flag to caller) |
 | BR-5 (retention purge via Hangfire; archive to cold storage first) | TC-NTF-004-12 |
 | BR-6 (GDPR RTBF anonymizes PII -> "REDACTED-{id}", preserves structure) | TC-NTF-004-10, TC-NTF-ISO-016 |
+
+---
+
+## US-NTF-005 -- Audit Log Viewer with Filters for Admins
+
+> US-NTF-005 (Audit Log Viewer with Filters) adds the admin-facing audit log UI. The CORE viewer
+> (paginated list, basic filters, before/after detail diff, export, tenant isolation, masking,
+> read-only/authorization, immutability) was already built and tested under **US-ADM-008**
+> (`test-cases/admin-console/TC-ADM-008-01..21`). To avoid duplication, this story's TCs focus on the
+> US-NTF-005 **DELTAS** and **re-affirm** the headline ACs + isolation, referencing US-ADM-008 for the
+> base behavior. It adds 16 test cases: 12 functional/integration/security/performance/accessibility
+> (TC-NTF-005-01..12) + 4 multi-tenant isolation continuing the module-wide running ISO counter
+> (TC-NTF-ISO-017..020, from US-NTF-004's 016). Functional suffix counter resets per story
+> (TC-NTF-005-XX); the ISO counter is shared/running. All 5 acceptance criteria of US-NTF-005 are covered.
+>
+> NEW vs US-ADM-008 (the deltas exercised here): (a) meta-audit on view -- viewing the list writes an
+> "AuditLog.View" record (FR-9/BR-5, TC-NTF-005-09); (b) multi-select action & resource-type filters
+> with OR-within-group / AND-across-groups semantics + "Select All" (FR-2, TC-NTF-005-03); (c) actor
+> autocomplete type-ahead by name/email, tenant-scoped (FR-2, TC-NTF-005-04, TC-NTF-ISO-018); (d)
+> keyword search matching content INSIDE before/after JSONB (FR-2, TC-NTF-005-05); (e) URL-based,
+> bookmarkable/shareable filter state (FR-3, TC-NTF-005-02, TC-NTF-ISO-020).
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-NTF-001 / US-ADM-008 family): (1) AC-5 / NFR-3
+> name PostgreSQL RLS as the isolation layer; this platform isolates via **EF Core global query filters
+> (read) + the audit/Tenant interceptors (write stamping)**, NOT Postgres RLS -- RLS is deferred
+> defense-in-depth. ISO tests (TC-NTF-ISO-017..020) assert the EF mechanism in force today; the
+> "raw SQL without app.current_tenant_id -> zero rows" RLS expectation is CONDITIONAL/deferred
+> (TC-NTF-ISO-017 step 7, TC-NTF-ISO-020 step 5); cross-tenant audit-row ID access asserts **404,
+> not 403** (TC-NTF-ISO-019). (2) AC-4 / FR-5 / NFR-6 async export (Hangfire job + in-app notification
+> + 15-min signed download URL) is **DEFERRED** -- synchronous, filter-honoring CSV/JSON-Lines export
+> is the path in force today (TC-NTF-005-07; async path = US-ADM-008 TC-ADM-008-19 [DEFERRED]).
+> (3) FR-6 **keyset/cursor pagination** is **DEFERRED** -- offset pagination at 50/page is in force
+> today; "next" works and page_size is capped at 100 (TC-NTF-005-10). (4) NFR-1 (<2s first page) /
+> NFR-2 (<=3s filtered, up to 10M rows) / NFR-7 (BRIN on timestamp + GIN on JSONB) need a
+> perf-representative environment -- on a dev box record indicative numbers and do NOT relax the SLAs
+> (TC-NTF-005-12; large-dataset first page = US-ADM-008 TC-ADM-008-21 [DEFERRED]).
+>
+> STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-5 / NFR-3 name Postgres RLS as an
+> ACTIVE isolation layer -- only the app (ITenantContext) + EF (query filter / interceptor) layers
+> exist today; reword RLS as future hardening (consistent with prior modules). (b) AC-4 describes the
+> async Hangfire export + signed URL as the export mechanism -- only synchronous export is in force
+> today; the async path is deferred. (c) FR-6 mandates keyset pagination "not OFFSET" -- offset is in
+> force today; keyset is deferred. (d) AC-3 trace-id "link to the observability platform" assumes an
+> observability target/URL is configured; the link rendering is asserted (TC-NTF-005-06), the external
+> platform integration is environment-dependent.
+
+### Coverage by Test Case (US-NTF-005)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-NTF-005-01 | Paginated table newest-first, required columns, first page < 2s (re-affirm) | E2E | Critical | AC-1, FR-1/7, NFR-1 | Happy / boundary / performance |
+| TC-NTF-005-02 | Combined date+action+actor AND semantics; result count; URL bookmarkable | E2E | Critical | AC-2, FR-2/3/7 | Happy / boundary |
+| TC-NTF-005-03 | Multi-select action & resource type -- OR within group, AND across groups + Select All | Functional | High | AC-2, FR-2 | Happy / boundary |
+| TC-NTF-005-04 | Actor autocomplete type-ahead returns tenant-scoped name/email matches | Integration | High | AC-2, FR-2 | Happy / negative / security |
+| TC-NTF-005-05 | Keyword search matches content inside before/after JSONB | Integration | High | AC-2, FR-2, NFR-7 | Happy / negative / boundary |
+| TC-NTF-005-06 | Detail panel diff highlights changed fields; full UA + trace-id observability link | Functional | High | AC-3, FR-4 | Happy path |
+| TC-NTF-005-07 | Export honors filters (CSV/JSON Lines) -- sync today; async+signed URL DEFERRED | Integration | High | AC-4, FR-5, NFR-6, BR-4 | Happy / boundary / security |
+| TC-NTF-005-08 | Permission: only Audit.View read; Auditor cannot export; no write/delete via UI | Security | Critical | AC-1, AC-4, FR-8/5, BR-1/2/6 | Negative / security |
+| TC-NTF-005-09 | Meta-audit -- viewing the list creates an "AuditLog.View" record | Integration | Critical | FR-9, BR-5 (supports AC-1) | Happy / boundary / security |
+| TC-NTF-005-10 | Pagination 50/page + next works; keyset (FR-6) DEFERRED (offset today) | Functional | High | AC-1, FR-6 | Happy / boundary / performance |
+| TC-NTF-005-11 | Table+filters keyboard-navigable + ARIA; responsive card list at 360px | Accessibility | Medium | NFR-5, NFR-4, FR-1/2 | Accessibility / cross-browser |
+| TC-NTF-005-12 | First page <2s + filtered <=3s P95 on large dataset (multi-select + JSONB keyword) | Performance | High | AC-1, AC-2, NFR-1/2/7 | Boundary / performance |
+| TC-NTF-ISO-017 | Tenant A admin sees ONLY Tenant A rows across all filters/pages; meta-audit scoped | Security | Critical | AC-5, NFR-3 (EF), BR-5 | Multi-tenant isolation |
+| TC-NTF-ISO-018 | Actor autocomplete + filter tenant-scoped; cross-tenant actor_user_id -> zero rows | Security | Critical | AC-5, AC-2, FR-2/3, NFR-3 | Multi-tenant isolation |
+| TC-NTF-ISO-019 | Cross-tenant audit-row ID access -> 404 (not 403); missing tenant context rejected | Security | Critical | AC-5, AC-3, FR-4/5, NFR-3 | Multi-tenant isolation |
+| TC-NTF-ISO-020 | EF filter constrains all viewer query paths; URL filter state cannot widen scope | Security | High | AC-5, FR-2/3/4/5/9, NFR-3 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-NTF-005)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (paginated table, newest first, required columns, first page < 2s, only authorized admins) | TC-NTF-005-01, -08, -10, -12 |
+| AC-2 (combined filters refresh; URL bookmarkable; result count shown) | TC-NTF-005-02, -03, -04, -05, -12 |
+| AC-3 (detail panel: before/after diff highlighted, full UA, trace id + observability link) | TC-NTF-005-06, TC-NTF-ISO-019 |
+| AC-4 (export filtered records; async Hangfire + signed URL DEFERRED -> sync export today) | TC-NTF-005-07, -08 |
+| AC-5 (Tenant A admin sees only Tenant A rows; Tenant B invisible; RLS deferred -> EF filter) | TC-NTF-ISO-017, -018, -019, -020 |
+
+### FR / NFR / BR Coverage (US-NTF-005)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (paginated/sortable table with required columns) | TC-NTF-005-01, -11 (base: US-ADM-008 TC-ADM-008-01) |
+| FR-2 (date/actor-autocomplete/action-multi/resource-multi/keyword filters) | TC-NTF-005-02, -03, -04, -05, TC-NTF-ISO-018 |
+| FR-3 (URL-based, bookmarkable/shareable filter state) | TC-NTF-005-02, -03, -04, TC-NTF-ISO-020 |
+| FR-4 (detail view with before/after visual diff) | TC-NTF-005-06 (base: US-ADM-008 TC-ADM-008-09/-16) |
+| FR-5 (export CSV / JSON Lines; async via Hangfire) | TC-NTF-005-07 (async DEFERRED -- US-ADM-008 TC-ADM-008-19) |
+| FR-6 (50/page server-side; keyset not OFFSET) | TC-NTF-005-10 (keyset DEFERRED -- offset in force; base: US-ADM-008 TC-ADM-008-02) |
+| FR-7 (summary bar: total count + retention period) | TC-NTF-005-01, -02 (base: US-ADM-008 TC-ADM-008-15) |
+| FR-8 (restrict to Audit.Read/Audit.View: Tenant Admin/Owner/Auditor) | TC-NTF-005-08 (base: US-ADM-008 TC-ADM-008-12/-13) |
+| FR-9 (meta-audit: log audit-log access itself) | TC-NTF-005-09, TC-NTF-ISO-020 |
+| NFR-1 (first page <= 2s P95) | TC-NTF-005-01, -12 |
+| NFR-2 (filtered <= 3s P95 up to 10M rows/tenant) | TC-NTF-005-05, -12 |
+| NFR-3 (tenant isolation; RLS deferred -> EF filters) | TC-NTF-ISO-017, -018, -019, -020 |
+| NFR-4 (responsive 360px-4K, card list on mobile) | TC-NTF-005-11 |
+| NFR-5 (WCAG 2.1 AA: keyboard nav, screen-reader data cells) | TC-NTF-005-11 |
+| NFR-6 (export signed URLs, 15-min expiry) | TC-NTF-005-07 (DEFERRED with the async export path) |
+| NFR-7 (BRIN on timestamp + GIN on JSONB leveraged) | TC-NTF-005-05, -12 (infra-conditional) |
+| BR-1 (only Audit.Read can access) | TC-NTF-005-08 |
+| BR-2 (read-only viewer; no modify/delete via UI) | TC-NTF-005-06, -08 (base: US-ADM-008 TC-ADM-008-17) |
+| BR-3 (respect retention window) | Base coverage: US-ADM-008 TC-ADM-008-14/-15 (retention purge + view-only retention) |
+| BR-4 (export limited to 100,000 records) | TC-NTF-005-07 |
+| BR-5 (viewing creates "AuditLog.View" meta-audit record) | TC-NTF-005-09, TC-NTF-ISO-017 |
+| BR-6 (Auditor role read-only; cannot perform writes) | TC-NTF-005-08 (base: US-ADM-008 TC-ADM-008-12) |

@@ -29,6 +29,20 @@ public interface IAuditLogService
     Task<Result<AuditLogDetailDto>> GetAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// US-NTF-005 FR-2: distinct actors (user id + name + email) that appear in THIS tenant's audit log and
+    /// match <paramref name="search"/> (matched against name/email), capped at <paramref name="limit"/>. Powers
+    /// the actor type-ahead. Tenant-scoped.
+    /// </summary>
+    Task<Result<IReadOnlyList<AuditLogActorDto>>> SearchActorsAsync(
+        string? search, int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// US-NTF-005 FR-2: the distinct action names + resource types present in THIS tenant's audit log, to
+    /// populate the multi-select filter dropdowns. Tenant-scoped.
+    /// </summary>
+    Task<Result<AuditLogFilterOptionsDto>> GetFilterOptionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// AC-4/BR-4/FR-5: export the SAME-filtered records as CSV or JSON (masked). The export action itself writes
     /// an AuditLog row with Action="AuditLog.Export" (BR-4). The synchronous small-dataset path is fully
     /// implemented; for datasets above the large-export threshold the async Hangfire+email path is DEFERRED, so

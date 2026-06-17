@@ -9,11 +9,16 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse, HttpResponse } from '@angular/common/http';
+import { ActivatedRoute, Router, Params } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ToastrService } from 'ngx-toastr';
 import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import {
+  debounceTime,
+  distinctUntilChanged,
+  switchMap,
+} from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuthService } from '../../../../../core/auth/auth.service';
 import { AuditLogService } from '../../services/audit-log.service';
@@ -29,14 +34,22 @@ import { AuditDetailPanelComponent } from '../audit-detail-panel/audit-detail-pa
 import { ExportDialogComponent } from '../export-dialog/export-dialog.component';
 
 /**
- * US-ADM-008: Tenant Admin audit-log viewer (AC-1..AC-4).
+ * US-ADM-008 + US-NTF-005: Tenant Admin audit-log viewer (AC-1..AC-4).
  *
  * Full-width data table of tenant-scoped audit records (reverse-chronological,
- * paginated 50), a combinable AND filter bar (date range, actor autocomplete,
- * action / resource-type dropdowns, keyword search), a right slide-in detail
- * panel with a color-coded JSON diff, and a filtered CSV/JSON export with a
- * confirmation dialog. Auditors (FR-7) get a clear read-only message if the
- * export endpoint returns 403.
+ * paginated 50), a combinable AND filter bar (date range, actor type-ahead,
+ * MULTI-select action / resource-type dropdowns with "Select All", keyword
+ * search), a right slide-in detail panel with a color-coded JSON diff, and a
+ * filtered CSV/JSON export with a confirmation dialog. Auditors (FR-7) get a
+ * clear read-only message if the export endpoint returns 403.
+ *
+ * US-NTF-005 deltas (additive):
+ *  - FR-2 multi-select Action / Resource-Type dropdowns (checkboxes + Select
+ *    All), populated from `GET /filter-options` (falls back to row-derived
+ *    options when empty), serialized as repeated `actions=`/`resourceTypes=`.
+ *  - FR-2 actor type-ahead (debounced 300ms) backed by `GET /actors?search=`.
+ *  - FR-3 URL-based filter state: all applied filters + page live in the route
+ *    query params (bookmarkable / shareable) and are restored on load.
  */
 @Component({
   selector: 'app-audit-log-list',
@@ -77,6 +90,8 @@ export class AuditLogListComponent implements OnInit {
   private readonly service = inject(AuditLogService);
   private readonly toastr = inject(ToastrService);
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   readonly pageSize = 50;
 
@@ -88,19 +103,36 @@ export class AuditLogListComponent implements OnInit {
   readonly loading = signal(true);
   readonly error = signal('');
 
-  // ─── Filters (AC-2) ──────────────────────────────────────
+  // ─── Filters (AC-2 / FR-2) ───────────────────────────────
   readonly startDate = signal('');
   readonly endDate = signal('');
+  /** Selected actor id + its display label (for the type-ahead input). */
   readonly actorFilter = signal('');
-  readonly actionFilter = signal('');
-  readonly resourceFilter = signal('');
+  readonly actorLabel = signal('');
+  /** Multi-select action / resource-type values (US-NTF-005 / FR-2). */
+  readonly selectedActions = signal<string[]>([]);
+  readonly selectedResources = signal<string[]>([]);
   readonly searchTerm = signal('');
 
   // ─── Filter option sources ───────────────────────────────
-  readonly actors = signal<IActorOption[]>([]);
-  /** Distinct action / resource-type values derived from loaded rows. */
+  /**
+   * Distinct action / resource-type values. Seeded from `GET /filter-options`
+   * (FR-2) and topped up with any values seen in loaded rows so the dropdown
+   * never hides a value present in the current page.
+   */
   readonly actionOptions = signal<string[]>([]);
   readonly resourceOptions = signal<string[]>([]);
+
+  // ─── Action / Resource dropdown open state ───────────────
+  readonly actionMenuOpen = signal(false);
+  readonly resourceMenuOpen = signal(false);
+
+  // ─── Actor type-ahead (FR-2) ─────────────────────────────
+  readonly actorResults = signal<IActorOption[]>([]);
+  readonly actorMenuOpen = signal(false);
+  readonly actorSearching = signal(false);
+  /** Active option index for keyboard navigation of the actor list. */
+  readonly actorActiveIndex = signal(-1);
 
   // ─── Detail panel (AC-3) ─────────────────────────────────
   readonly detail = signal<IAuditLogDetail | null>(null);
@@ -124,6 +156,7 @@ export class AuditLogListComponent implements OnInit {
   );
 
   private readonly search$ = new Subject<string>();
+  private readonly actorSearch$ = new Subject<string>();
 
   constructor() {
     this.search$
@@ -131,13 +164,77 @@ export class AuditLogListComponent implements OnInit {
       .subscribe((term) => {
         this.searchTerm.set(term);
         this.page.set(1);
+        this.syncUrl();
         this.loadEntries();
+      });
+
+    // Actor type-ahead (FR-2): debounce 300ms, switchMap to cancel stale calls.
+    this.actorSearch$
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((q) => {
+          this.actorSearching.set(true);
+          return this.service.searchActors(q);
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe({
+        next: (results) => {
+          this.actorResults.set(results);
+          this.actorActiveIndex.set(-1);
+          this.actorMenuOpen.set(true);
+          this.actorSearching.set(false);
+        },
+        error: () => {
+          this.actorResults.set([]);
+          this.actorSearching.set(false);
+        },
       });
   }
 
   ngOnInit(): void {
-    this.loadActors();
+    this.restoreFromUrl();
+    this.loadFilterOptions();
     this.loadEntries();
+  }
+
+  // ─── URL filter state (FR-3) ─────────────────────────────
+
+  /** Restore applied filters + page from the route query params on load. */
+  private restoreFromUrl(): void {
+    const q = this.route.snapshot.queryParamMap;
+    this.startDate.set(q.get('startDate') ?? '');
+    this.endDate.set(q.get('endDate') ?? '');
+    this.actorFilter.set(q.get('actorUserId') ?? '');
+    this.actorLabel.set(q.get('actorLabel') ?? '');
+    this.selectedActions.set(q.getAll('actions') ?? []);
+    this.selectedResources.set(q.getAll('resourceTypes') ?? []);
+    this.searchTerm.set(q.get('search') ?? '');
+    const pageRaw = Number(q.get('page'));
+    this.page.set(Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1);
+  }
+
+  /** Reflect the current filter + page state into the URL (bookmarkable). */
+  private syncUrl(): void {
+    const queryParams: Params = {
+      startDate: this.startDate() || null,
+      endDate: this.endDate() || null,
+      actorUserId: this.actorFilter() || null,
+      actorLabel: this.actorLabel() || null,
+      actions: this.selectedActions().length ? this.selectedActions() : null,
+      resourceTypes: this.selectedResources().length
+        ? this.selectedResources()
+        : null,
+      search: this.searchTerm() || null,
+      page: this.page() > 1 ? this.page() : null,
+    };
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   // ─── Data loading ────────────────────────────────────────
@@ -147,8 +244,10 @@ export class AuditLogListComponent implements OnInit {
       startDate: this.startDate() || undefined,
       endDate: this.endDate() || undefined,
       actorUserId: this.actorFilter() || undefined,
-      action: this.actionFilter() || undefined,
-      resourceType: this.resourceFilter() || undefined,
+      actions: this.selectedActions().length ? this.selectedActions() : undefined,
+      resourceTypes: this.selectedResources().length
+        ? this.selectedResources()
+        : undefined,
       search: this.searchTerm() || undefined,
     };
   }
@@ -176,10 +275,29 @@ export class AuditLogListComponent implements OnInit {
     });
   }
 
-  private loadActors(): void {
-    this.service.getActorOptions().subscribe({
-      next: (actors) => this.actors.set(actors),
-      error: () => this.actors.set([]),
+  /**
+   * Seed the multi-select dropdowns from the dedicated filter-options endpoint
+   * (FR-2). Degrades gracefully: on empty/error the lists stay row-derived.
+   */
+  private loadFilterOptions(): void {
+    this.service.getFilterOptions().subscribe({
+      next: (opts) => {
+        if (opts?.actions?.length) {
+          this.actionOptions.set(
+            Array.from(new Set([...this.actionOptions(), ...opts.actions])).sort()
+          );
+        }
+        if (opts?.resourceTypes?.length) {
+          this.resourceOptions.set(
+            Array.from(
+              new Set([...this.resourceOptions(), ...opts.resourceTypes])
+            ).sort()
+          );
+        }
+      },
+      error: () => {
+        /* Fall back to row-derived options (mergeDistinctOptions). */
+      },
     });
   }
 
@@ -207,6 +325,7 @@ export class AuditLogListComponent implements OnInit {
 
   applyFilterChange(): void {
     this.page.set(1);
+    this.syncUrl();
     this.loadEntries();
   }
 
@@ -220,27 +339,159 @@ export class AuditLogListComponent implements OnInit {
     this.applyFilterChange();
   }
 
-  onActorChange(value: string): void {
-    this.actorFilter.set(value);
+  // ─── Action multi-select (FR-2) ──────────────────────────
+
+  toggleActionMenu(): void {
+    this.actionMenuOpen.update((v) => !v);
+    this.resourceMenuOpen.set(false);
+  }
+
+  isActionSelected(action: string): boolean {
+    return this.selectedActions().includes(action);
+  }
+
+  toggleAction(action: string): void {
+    const next = this.isActionSelected(action)
+      ? this.selectedActions().filter((a) => a !== action)
+      : [...this.selectedActions(), action];
+    this.selectedActions.set(next);
     this.applyFilterChange();
   }
 
-  onActionChange(value: string): void {
-    this.actionFilter.set(value);
+  /** "Select All" — selects every visible option, or clears if all selected. */
+  toggleAllActions(): void {
+    const all = this.actionOptions();
+    this.selectedActions.set(
+      this.selectedActions().length === all.length ? [] : [...all]
+    );
     this.applyFilterChange();
   }
 
-  onResourceChange(value: string): void {
-    this.resourceFilter.set(value);
+  readonly allActionsSelected = computed(
+    () =>
+      this.actionOptions().length > 0 &&
+      this.selectedActions().length === this.actionOptions().length
+  );
+
+  // ─── Resource multi-select (FR-2) ────────────────────────
+
+  toggleResourceMenu(): void {
+    this.resourceMenuOpen.update((v) => !v);
+    this.actionMenuOpen.set(false);
+  }
+
+  isResourceSelected(resource: string): boolean {
+    return this.selectedResources().includes(resource);
+  }
+
+  toggleResource(resource: string): void {
+    const next = this.isResourceSelected(resource)
+      ? this.selectedResources().filter((r) => r !== resource)
+      : [...this.selectedResources(), resource];
+    this.selectedResources.set(next);
     this.applyFilterChange();
+  }
+
+  toggleAllResources(): void {
+    const all = this.resourceOptions();
+    this.selectedResources.set(
+      this.selectedResources().length === all.length ? [] : [...all]
+    );
+    this.applyFilterChange();
+  }
+
+  readonly allResourcesSelected = computed(
+    () =>
+      this.resourceOptions().length > 0 &&
+      this.selectedResources().length === this.resourceOptions().length
+  );
+
+  // ─── Actor type-ahead (FR-2) ─────────────────────────────
+
+  onActorInput(value: string): void {
+    this.actorLabel.set(value);
+    if (!value?.trim()) {
+      // Cleared input → clear the selection too.
+      this.actorResults.set([]);
+      this.actorMenuOpen.set(false);
+      if (this.actorFilter()) {
+        this.actorFilter.set('');
+        this.applyFilterChange();
+      }
+      return;
+    }
+    if (value.trim().length < 2) {
+      this.actorResults.set([]);
+      this.actorMenuOpen.set(false);
+      return;
+    }
+    this.actorSearch$.next(value.trim());
+  }
+
+  selectActor(option: IActorOption): void {
+    this.actorFilter.set(option.id);
+    this.actorLabel.set(`${option.displayName} (${option.email})`);
+    this.actorMenuOpen.set(false);
+    this.actorResults.set([]);
+    this.actorActiveIndex.set(-1);
+    this.applyFilterChange();
+  }
+
+  clearActor(): void {
+    this.actorFilter.set('');
+    this.actorLabel.set('');
+    this.actorResults.set([]);
+    this.actorMenuOpen.set(false);
+    this.applyFilterChange();
+  }
+
+  /** Keyboard navigation for the actor listbox (NFR-5 a11y). */
+  onActorKeydown(event: KeyboardEvent): void {
+    const results = this.actorResults();
+    if (!this.actorMenuOpen() || results.length === 0) {
+      return;
+    }
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        this.actorActiveIndex.set(
+          Math.min(this.actorActiveIndex() + 1, results.length - 1)
+        );
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        this.actorActiveIndex.set(Math.max(this.actorActiveIndex() - 1, 0));
+        break;
+      case 'Enter': {
+        const idx = this.actorActiveIndex();
+        if (idx >= 0 && idx < results.length) {
+          event.preventDefault();
+          this.selectActor(results[idx]);
+        }
+        break;
+      }
+      case 'Escape':
+        this.actorMenuOpen.set(false);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Close any open dropdown when focus/click moves elsewhere. */
+  closeMenus(): void {
+    this.actionMenuOpen.set(false);
+    this.resourceMenuOpen.set(false);
+    this.actorMenuOpen.set(false);
   }
 
   clearFilters(): void {
     this.startDate.set('');
     this.endDate.set('');
     this.actorFilter.set('');
-    this.actionFilter.set('');
-    this.resourceFilter.set('');
+    this.actorLabel.set('');
+    this.selectedActions.set([]);
+    this.selectedResources.set([]);
     this.searchTerm.set('');
     this.applyFilterChange();
   }
@@ -250,8 +501,8 @@ export class AuditLogListComponent implements OnInit {
       !!this.startDate() ||
       !!this.endDate() ||
       !!this.actorFilter() ||
-      !!this.actionFilter() ||
-      !!this.resourceFilter() ||
+      this.selectedActions().length > 0 ||
+      this.selectedResources().length > 0 ||
       !!this.searchTerm()
   );
 
@@ -260,6 +511,7 @@ export class AuditLogListComponent implements OnInit {
   prevPage(): void {
     if (this.page() > 1) {
       this.page.update((p) => p - 1);
+      this.syncUrl();
       this.loadEntries();
     }
   }
@@ -267,6 +519,7 @@ export class AuditLogListComponent implements OnInit {
   nextPage(): void {
     if (this.page() < this.totalPages()) {
       this.page.update((p) => p + 1);
+      this.syncUrl();
       this.loadEntries();
     }
   }

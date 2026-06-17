@@ -240,3 +240,52 @@ Department/LeaveRequest `!IsDeleted && TenantId==` query filter hides them on re
 - Monthly partitioning (NFR-6) + BRIN index (NFR-3) — DB infra.
 - FR-9 streaming export to ELK/Splunk; NFR-5 async/outbox high-throughput capture (writes are synchronous).
 - FR-4 PII-read auditing; FR-3 login_success/logout/password_change named events.
+
+## US-NTF-005 — Audit Log Viewer with Filters (mostly reused US-ADM-008)
+
+### What already existed and was REUSED (NOT rebuilt)
+US-ADM-008 already shipped the whole base viewer under `/api/v1/tenant/audit-logs`: `AuditLogController`
+(List + Get + GET/POST Export, gated `Audit.View`/`Audit.Export`), `AuditLogService` (explicit
+`ITenantContext` scope — `audit_logs` has NO global query filter), `AuditLogFilter`/`AuditLogPageDto`
+(`TotalCount`+`RetentionDays`)/`AuditLogDetailDto` (masked before/after + UA + traceId), CSV/JSON
+`AuditLogExporter`, `SensitiveFieldMasker`, the BR-4 "AuditLog.Export" self-audit, and the retention purge.
+US-NTF-005 added ONLY genuine deltas, all additive — no shape changes to existing DTOs.
+
+### Deltas built
+- **Meta-audit on view (FR-9/BR-5):** `ListAsync` now writes ONE `Action="AuditLog.View"` row per LIST request
+  (NOT on Get — verified by a test) via a new private `WriteViewAuditAsync` (actor + tenant + IP/UA/trace from an
+  OPTIONAL `IHttpContextAccessor` ctor param, same pattern as `PayrollAuditLogger`). It's a plain insert — never
+  goes through ListAsync, so it cannot recurse. Best-effort: wrapped in try/catch + LogWarning so a meta-audit
+  write failure never fails the user's read.
+- **KEY decision — meta-audit rows are EXCLUDED from the default list/export.** `BuildFilteredQuery` drops
+  `Action=="AuditLog.View"` rows UNLESS the caller explicitly filters for that action. Rationale: a viewer that
+  lists its own view-events is self-referential noise (every page load inflates the next load's count) AND it
+  keeps US-ADM-008's exact-count test assertions intact (they never request "AuditLog.View"). The rows are still
+  persisted, tenant-scoped, and forensically queryable when explicitly asked for. This was the fix for the 2
+  US-ADM-008 tests that broke when the view-row first started polluting the shared in-memory DB.
+- **Multi-select filters (FR-2):** `AuditLogFilter` gained optional `Actions`/`ResourceTypes` arrays (positional
+  params with `= null` defaults so the 6-arg `EmptyFilter()` + handlers still compile). Controller `List` gained
+  repeatable `actions`/`resourceTypes` query params. `CombineValues(single, many)` folds the back-compat singular
+  value into the multi-select group → OR within a group, AND across groups. Singular `action`/`resourceType`
+  unchanged.
+- **Actor autocomplete (FR-2):** `GET /api/v1/tenant/audit-logs/actors?search={q}&limit=` (gated `Audit.View`) →
+  distinct actors (userId+name+email) appearing in THIS tenant's audit log, name/email type-ahead, capped 20.
+  Distinct actor ids from `audit_logs` (explicit tenant scope) then resolved against the GLOBAL users table.
+- **Filter options (FR-2, optional):** `GET /api/v1/tenant/audit-logs/filter-options` (gated `Audit.View`) →
+  distinct `actions` + `resourceTypes` for the tenant, to populate the dropdowns.
+- **Keyword across before/after (FR-2):** ALREADY covered by US-ADM-008's `SearchQuery` (matches Before/After/
+  Detail case-sensitive contains). Left as-is; added a test asserting before AND after both match.
+
+### Deferred (documented, consistent with US-ADM-008's own deferrals)
+- Keyset/cursor pagination (FR-6) — kept OFFSET page/pageSize; a perf-only refactor on a dev DB is pure
+  regression risk.
+- Async Hangfire export + signed-URL object storage + 15-min expiry (AC-4/FR-5/NFR-6) — needs File & Doc Mgmt
+  (S26) object storage not present; synchronous export already works (returns the file inline with a `Deferred`
+  flag). NOTE: US-NTF-001 in-app notifications now exist, enabling a future "export ready" notification.
+- PostgreSQL RLS (NFR-3), 10M-row perf (NFR-2), BRIN/GIN index tuning (NFR-7) — platform/DB infra (US-PLT-002).
+
+### Tests (12 new in `AuditLogServiceTests`, full suite 2507 pass / 0 fail / 0 skip)
+view-row-written-on-List, NOT-on-Get, one-row-per-request-no-recurse, multi-action IN, multi-resourceType IN,
+single-value back-compat, single+multi fold into one OR group, action AND resourceType cross-group, keyword
+matches before+after, actor autocomplete tenant-scoped+distinct, actor name/email filter, filter-options
+tenant-scoped distinct. Reused the existing InMemory + seeded-timestamp pattern (no Testcontainers).

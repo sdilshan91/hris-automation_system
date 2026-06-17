@@ -6,10 +6,12 @@ import { environment } from '../../../../../environments/environment';
 import {
   AuditExportFormat,
   IActorOption,
+  IActorSearchResult,
   IAuditLogDetail,
   IAuditLogFilters,
   IAuditLogListParams,
   IAuditLogPage,
+  IFilterOptions,
 } from '../models/audit-log.models';
 
 /**
@@ -43,7 +45,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class AuditLogService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/audit-log`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/audit-logs`;
   private readonly usersUrl = `${environment.apiBaseUrl}/users`;
 
   /** Paginated, filterable, reverse-chronological audit-log page (AC-1, AC-2). */
@@ -89,9 +91,50 @@ export class AuditLogService {
   }
 
   /**
+   * Debounced actor type-ahead search (US-NTF-005 / FR-2). Hits the dedicated
+   * `GET /tenant/audit-log/actors?search=` endpoint and maps the `{ userId,
+   * name, email }` results to the uniform `IActorOption` shape used by the
+   * picker. Debouncing lives in the component (300ms, FR-2).
+   */
+  searchActors(search: string): Observable<IActorOption[]> {
+    let params = new HttpParams();
+    if (search?.trim()) {
+      params = params.set('search', search.trim());
+    }
+    return this.http
+      .get<IActorSearchResult[]>(`${this.baseUrl}/actors`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(
+        map((res) =>
+          (res ?? []).map((a) => ({
+            id: a.userId,
+            displayName: a.name,
+            email: a.email,
+          }))
+        )
+      );
+  }
+
+  /**
+   * Distinct Action / Resource-Type values for the multi-select dropdowns
+   * (US-NTF-005 / FR-2): `GET /tenant/audit-log/filter-options`. Degrades to
+   * empty arrays so the component can fall back to row-derived options.
+   */
+  getFilterOptions(): Observable<IFilterOptions> {
+    return this.http.get<IFilterOptions>(`${this.baseUrl}/filter-options`, {
+      withCredentials: true,
+    });
+  }
+
+  /**
    * Actor options for the actor autocomplete (AC-2). Reuses the US-ADM-005 user
    * list — requests a large page of active users and projects to the minimal
    * option shape the picker needs.
+   *
+   * @deprecated US-NTF-005 replaced the eager actor preload with the debounced
+   * `searchActors()` type-ahead; retained for backward compatibility.
    */
   getActorOptions(): Observable<IActorOption[]> {
     return this.http
@@ -130,6 +173,17 @@ export class AuditLogService {
     }
     if (filters.resourceType) {
       next = next.set('resourceType', filters.resourceType);
+    }
+    // Multi-select (US-NTF-005 / FR-2): repeated params `actions=a&actions=b`.
+    for (const a of filters.actions ?? []) {
+      if (a) {
+        next = next.append('actions', a);
+      }
+    }
+    for (const r of filters.resourceTypes ?? []) {
+      if (r) {
+        next = next.append('resourceTypes', r);
+      }
     }
     if (filters.search) {
       next = next.set('search', filters.search);
