@@ -35,6 +35,15 @@ export const ONBOARDING_ROUTES: Routes = [
       ).then((m) => m.ChecklistAssignmentComponent),
   },
   {
+    // US-ONB-004: HR issues assets to a specific new hire (routed input()).
+    // Optional ?taskInstanceId= links it to the originating checklist task (FR-1).
+    path: 'assets/issue/:employeeId',
+    loadComponent: () =>
+      import('./components/asset-issuance/asset-issuance.component').then(
+        (m) => m.AssetIssuanceComponent,
+      ),
+  },
+  {
     // US-ONB-003: the logged-in new hire's own checklist (FR-1). No role guard —
     // any authenticated employee with an assigned checklist self-serves here; the
     // backend scopes to the caller's identity + tenant.

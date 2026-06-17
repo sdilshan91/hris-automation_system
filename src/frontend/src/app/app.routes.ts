@@ -484,6 +484,17 @@ export const appRoutes: Routes = [
             './features/onboarding/components/my-checklist/my-checklist.component'
           ).then((m) => m.MyChecklistComponent),
       },
+      // US-ONB-004: the employee's own assigned assets — READ-ONLY self-service
+      // (AC-4 / BR-6). Same rationale as my-checklist: reachable by a plain
+      // Employee, so it sits ABOVE the HR-only 'onboarding' block with NO HR
+      // roleGuard; the backend scopes to the caller's identity + tenant.
+      {
+        path: 'onboarding/my-assets',
+        loadComponent: () =>
+          import(
+            './features/onboarding/components/my-assets/my-assets.component'
+          ).then((m) => m.MyAssetsComponent),
+      },
       // ─── Onboarding / Checklist Templates (US-ONB-001) ─────
       {
         path: 'onboarding',
