@@ -19,11 +19,12 @@
  * red/orange row highlight, and gates the BR-3 override action (only
  * `system_generated` entries can be converted).
  */
+// Wire values match the C# enum member names (PascalCase) per US-PLT-003.
 export type LopSource =
-  | 'employee_request'
-  | 'system_generated'
-  | 'hr_assigned'
-  | 'compulsory';
+  | 'EmployeeRequest'
+  | 'SystemGenerated'
+  | 'HrAssigned'
+  | 'Compulsory';
 
 /** Filter selection for the LOP list — the four sources plus "all". */
 export type LopSourceFilter = LopSource | 'all';
@@ -128,19 +129,19 @@ export interface ILopErrorResponse {
 
 /** Human-readable label for each LOP source (filter chips + row meta). */
 export const LOP_SOURCE_LABELS: Record<LopSource, string> = {
-  employee_request: 'Employee-requested',
-  system_generated: 'Auto-generated',
-  hr_assigned: 'HR-assigned',
-  compulsory: 'Compulsory',
+  EmployeeRequest: 'Employee-requested',
+  SystemGenerated: 'Auto-generated',
+  HrAssigned: 'HR-assigned',
+  Compulsory: 'Compulsory',
 };
 
 /** Filter chip options, in display order, including the "all" pill. */
 export const LOP_SOURCE_FILTERS: { value: LopSourceFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'system_generated', label: 'Auto-generated' },
-  { value: 'hr_assigned', label: 'HR-assigned' },
-  { value: 'employee_request', label: 'Employee-requested' },
-  { value: 'compulsory', label: 'Compulsory' },
+  { value: 'SystemGenerated', label: 'Auto-generated' },
+  { value: 'HrAssigned', label: 'HR-assigned' },
+  { value: 'EmployeeRequest', label: 'Employee-requested' },
+  { value: 'Compulsory', label: 'Compulsory' },
 ];
 
 /** Display label for a source value. */
@@ -154,14 +155,14 @@ export function lopSourceLabel(source: LopSource): string {
  * Color is never the sole indicator — the source label is always shown too (NFR a11y).
  */
 export function lopRowClasses(source: LopSource): string {
-  return source === 'system_generated'
+  return source === 'SystemGenerated'
     ? 'bg-red-50/60 border-l-4 border-red-400'
     : 'bg-orange-50/60 border-l-4 border-orange-400';
 }
 
 /** Badge classes for the source pill (matches the row accent). */
 export function lopSourceBadgeClasses(source: LopSource): string {
-  return source === 'system_generated'
+  return source === 'SystemGenerated'
     ? 'bg-red-100 text-red-700 ring-red-200'
     : 'bg-orange-100 text-orange-700 ring-orange-200';
 }
@@ -171,7 +172,7 @@ export function lopSourceBadgeClasses(source: LopSource): string {
  * when the payroll period is not locked (BR-5/NFR-3).
  */
 export function canOverrideLop(entry: Pick<ILopEntry, 'source' | 'payrollLocked'>): boolean {
-  return entry.source === 'system_generated' && entry.payrollLocked !== true;
+  return entry.source === 'SystemGenerated' && entry.payrollLocked !== true;
 }
 
 /** Filter a list of entries by the selected source ('all' returns everything). */

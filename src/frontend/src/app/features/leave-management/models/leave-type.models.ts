@@ -14,11 +14,14 @@
  *     createdAt, updatedAt (ISO 8601 strings).
  */
 
+// Wire values match the C# enum member names (PascalCase) per US-PLT-003.
+// Display labels stay human-readable.
+
 /** Accrual frequency options per FR-2 */
-export type AccrualFrequency = 'monthly' | 'quarterly' | 'yearly' | 'upfront';
+export type AccrualFrequency = 'Monthly' | 'Quarterly' | 'Yearly' | 'Upfront';
 
 /** Gender applicability options per FR-2 */
-export type GenderApplicability = 'all' | 'male' | 'female';
+export type GenderApplicability = 'All' | 'Male' | 'Female';
 
 /** Leave type entity returned by the API */
 export interface ILeaveType {
@@ -88,17 +91,17 @@ export interface ILeaveTypeErrorResponse {
 
 /** Accrual frequency display labels */
 export const ACCRUAL_FREQUENCY_OPTIONS: { value: AccrualFrequency; label: string }[] = [
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'quarterly', label: 'Quarterly' },
-  { value: 'yearly', label: 'Yearly' },
-  { value: 'upfront', label: 'Upfront' },
+  { value: 'Monthly', label: 'Monthly' },
+  { value: 'Quarterly', label: 'Quarterly' },
+  { value: 'Yearly', label: 'Yearly' },
+  { value: 'Upfront', label: 'Upfront' },
 ];
 
 /** Gender applicability display labels */
 export const GENDER_OPTIONS: { value: GenderApplicability; label: string }[] = [
-  { value: 'all', label: 'All Employees' },
-  { value: 'male', label: 'Male Only' },
-  { value: 'female', label: 'Female Only' },
+  { value: 'All', label: 'All Employees' },
+  { value: 'Male', label: 'Male Only' },
+  { value: 'Female', label: 'Female Only' },
 ];
 
 /** Default color palette for leave type color picker */

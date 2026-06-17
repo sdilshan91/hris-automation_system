@@ -22,6 +22,7 @@ import {
   ILookupItem,
   IBulkEntitlementRequest,
   EMPLOYMENT_TYPE_OPTIONS,
+  entitlementEmploymentTypeLabel,
   PRIORITY_HELP_TEXT,
 } from '../../models/leave-entitlement.models';
 import { EntitlementRuleFormComponent } from '../entitlement-rule-form/entitlement-rule-form.component';
@@ -215,7 +216,7 @@ import { EntitlementRuleFormComponent } from '../entitlement-rule-form/entitleme
                   <td class="py-3 px-3 font-medium text-neutral-900">{{ rule.leaveTypeName }}</td>
                   <td class="py-3 px-3 text-neutral-600">{{ rule.departmentName || 'All' }}</td>
                   <td class="py-3 px-3 text-neutral-600">{{ rule.jobTitleName || 'All' }}</td>
-                  <td class="py-3 px-3 text-neutral-600">{{ rule.employmentType || 'All' }}</td>
+                  <td class="py-3 px-3 text-neutral-600">{{ rule.employmentType ? employmentTypeLabel(rule.employmentType) : 'All' }}</td>
                   <td class="py-3 px-3 text-neutral-600">{{ formatTenure(rule) }}</td>
                   <td class="py-3 px-3 text-center">
                     @if (editingCellRuleId() === rule.ruleId) {
@@ -300,7 +301,7 @@ import { EntitlementRuleFormComponent } from '../entitlement-rule-form/entitleme
                   <div class="text-xs text-neutral-500 space-y-0.5">
                     <p>Dept: {{ rule.departmentName || 'All' }}</p>
                     <p>Title: {{ rule.jobTitleName || 'All' }}</p>
-                    <p>Type: {{ rule.employmentType || 'All' }}</p>
+                    <p>Type: {{ rule.employmentType ? employmentTypeLabel(rule.employmentType) : 'All' }}</p>
                     @if (rule.tenureMinMonths !== null || rule.tenureMaxMonths !== null) {
                       <p>Tenure: {{ formatTenure(rule) }}</p>
                     }
@@ -516,6 +517,11 @@ export class EntitlementRulesComponent implements OnInit, OnDestroy {
 
   readonly priorityHelpText = PRIORITY_HELP_TEXT;
   readonly employmentTypeOptions = EMPLOYMENT_TYPE_OPTIONS;
+
+  /** Pretty display label for an employment-type wire value (template helper). */
+  employmentTypeLabel(value: string | null | undefined): string {
+    return entitlementEmploymentTypeLabel(value);
+  }
 
   // Bulk form fields
   bulkLeaveTypeId = '';

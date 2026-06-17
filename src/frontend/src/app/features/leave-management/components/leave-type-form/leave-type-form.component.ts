@@ -681,7 +681,7 @@ export class LeaveTypeFormComponent implements OnInit {
       color: [lt?.color ?? '#2563eb', [Validators.required]],
       description: [lt?.description ?? ''],
       annualEntitlement: [lt?.annualEntitlement ?? 0, [Validators.required, Validators.min(0)]],
-      accrualFrequency: [lt?.accrualFrequency ?? 'yearly', [Validators.required]],
+      accrualFrequency: [lt?.accrualFrequency ?? 'Yearly', [Validators.required]],
       carryForwardLimit: [lt?.carryForwardLimit ?? 0, [Validators.min(0)]],
       carryForwardExpiryMonths: [lt?.carryForwardExpiryMonths ?? 0, [Validators.min(0)]],
       probationEligible: [lt?.probationEligible ?? false],
@@ -691,7 +691,7 @@ export class LeaveTypeFormComponent implements OnInit {
       maxEncashDays: [lt?.maxEncashDays ?? null],
       halfDayAllowed: [lt?.halfDayAllowed ?? true],
       hourlyAllowed: [lt?.hourlyAllowed ?? false],
-      gender: [lt?.gender ?? 'all'],
+      gender: [lt?.gender ?? 'All'],
       maxConsecutiveDays: [lt?.maxConsecutiveDays ?? null],
       negativeBalanceAllowed: [lt?.negativeBalanceAllowed ?? false],
       negativeBalanceLimit: [lt?.negativeBalanceLimit ?? null],
@@ -701,7 +701,7 @@ export class LeaveTypeFormComponent implements OnInit {
     if (lt) {
       if (
         lt.probationEligible || lt.encashable || !lt.halfDayAllowed ||
-        lt.hourlyAllowed || lt.gender !== 'all' ||
+        lt.hourlyAllowed || lt.gender !== 'All' ||
         lt.maxConsecutiveDays != null || lt.negativeBalanceAllowed
       ) {
         this.advancedExpanded.set(true);

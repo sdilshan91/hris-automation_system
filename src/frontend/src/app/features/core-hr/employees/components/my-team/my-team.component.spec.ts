@@ -24,7 +24,7 @@ describe('MyTeamComponent', () => {
       lastName: 'Smith',
       jobTitleName: 'QA Engineer',
       departmentName: 'Engineering',
-      status: 'active',
+      status: 'Active',
       profilePhotoUrl: null,
       email: 'jane@company.com',
       employeeNo: 'EMP-0002',
@@ -35,7 +35,7 @@ describe('MyTeamComponent', () => {
       lastName: 'Johnson',
       jobTitleName: 'Designer',
       departmentName: 'Design',
-      status: 'probation',
+      status: 'Probation',
       profilePhotoUrl: null,
       email: 'bob@company.com',
       employeeNo: 'EMP-0003',
@@ -145,9 +145,9 @@ describe('MyTeamComponent', () => {
     fixture.detectChanges();
     flushDirectReports();
 
-    expect(component.getStatusClasses('active')).toContain('green');
-    expect(component.getStatusClasses('probation')).toContain('amber');
-    expect(component.getStatusClasses('terminated')).toContain('red');
+    expect(component.getStatusClasses('Active')).toContain('green');
+    expect(component.getStatusClasses('Probation')).toContain('amber');
+    expect(component.getStatusClasses('Terminated')).toContain('red');
   });
 
   it('should display correct count of direct reports', fakeAsync(() => {

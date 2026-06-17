@@ -57,7 +57,7 @@ describe('ConversionService (US-REC-010)', () => {
     jobTitleId: 'jt1',
     departmentId: 'd1',
     reportingManagerId: 'm1',
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     workLocationId: 'loc1',
     dateOfJoining: '2026-08-01',
     salaryAmount: 120000,

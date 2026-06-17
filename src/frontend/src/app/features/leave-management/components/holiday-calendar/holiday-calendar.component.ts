@@ -133,7 +133,7 @@ export class HolidayCalendarComponent implements OnInit, OnDestroy {
   readonly form: FormGroup = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(100)]],
     date: ['', [Validators.required]],
-    type: ['public' as HolidayType, [Validators.required]],
+    type: ['Public' as HolidayType, [Validators.required]],
     locationId: [''],
     description: [''],
     isRecurring: [false],
@@ -301,7 +301,7 @@ export class HolidayCalendarComponent implements OnInit, OnDestroy {
     this.form.reset({
       name: '',
       date: prefillDate ?? '',
-      type: 'public',
+      type: 'Public',
       locationId: this.locationFilter() || '',
       description: '',
       isRecurring: false,

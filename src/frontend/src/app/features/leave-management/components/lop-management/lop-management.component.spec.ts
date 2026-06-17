@@ -28,7 +28,7 @@ describe('LopManagementComponent', () => {
     employeeName: 'Jane Doe',
     date: '2026-07-06',
     days: 1,
-    source: 'system_generated',
+    source: 'SystemGenerated',
     status: 'System-Generated',
     reason: 'No clock-in',
   };
@@ -36,7 +36,7 @@ describe('LopManagementComponent', () => {
     ...sysEntry,
     leaveRequestId: 'lr-2',
     employeeName: 'John Roe',
-    source: 'hr_assigned',
+    source: 'HrAssigned',
     status: 'HR-Assigned',
   };
 
@@ -48,7 +48,7 @@ describe('LopManagementComponent', () => {
     color: '#16a34a',
     description: null,
     annualEntitlement: 7,
-    accrualFrequency: 'upfront',
+    accrualFrequency: 'Upfront',
     carryForwardLimit: 0,
     carryForwardExpiryMonths: 0,
     probationEligible: true,
@@ -58,7 +58,7 @@ describe('LopManagementComponent', () => {
     maxEncashDays: null,
     halfDayAllowed: true,
     hourlyAllowed: false,
-    gender: 'all',
+    gender: 'All',
     maxConsecutiveDays: null,
     negativeBalanceAllowed: false,
     negativeBalanceLimit: null,
@@ -83,8 +83,8 @@ describe('LopManagementComponent', () => {
     departmentName: 'Eng',
     jobTitleId: 'j-1',
     jobTitleName: 'Dev',
-    employmentType: 'Full-Time',
-    status: 'active',
+    employmentType: 'FullTime',
+    status: 'Active',
     profilePhotoUrl: null,
     customFields: null,
     isActive: true,
@@ -157,7 +157,7 @@ describe('LopManagementComponent', () => {
 
   it('filters entries by source', () => {
     fixture.detectChanges();
-    component.setFilter('hr_assigned');
+    component.setFilter('HrAssigned');
     expect(component.filteredEntries().length).toBe(1);
     expect(component.filteredEntries()[0].leaveRequestId).toBe('lr-2');
     component.setFilter('all');

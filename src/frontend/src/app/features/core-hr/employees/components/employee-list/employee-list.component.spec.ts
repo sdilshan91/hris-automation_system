@@ -49,8 +49,8 @@ describe('EmployeeListComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Software Engineer',
-    employmentType: 'Full-Time',
-    status: 'active',
+    employmentType: 'FullTime',
+    status: 'Active',
     profilePhotoUrl: null,
     customFields: null,
     isActive: true,
@@ -252,14 +252,14 @@ describe('EmployeeListComponent', () => {
 
     // Set filters
     component.filterDepartments.set(['Engineering']);
-    component.filterStatuses.set(['active']);
+    component.filterStatuses.set(['Active']);
     component.applyFilters();
 
     const req = httpMock.expectOne(
       (r) =>
         r.url === baseUrl &&
         r.params.get('departments') === 'Engineering' &&
-        r.params.get('statuses') === 'active'
+        r.params.get('statuses') === 'Active'
     );
     req.flush(buildPaginatedResponse([mockEmployee], 1));
 
@@ -269,7 +269,7 @@ describe('EmployeeListComponent', () => {
     expect(chips[0].category).toBe('Department');
     expect(chips[0].label).toBe('Engineering');
     expect(chips[1].category).toBe('Status');
-    expect(chips[1].label).toBe('active');
+    expect(chips[1].label).toBe('Active');
   });
 
   it('should remove a filter chip and reload', () => {
@@ -302,7 +302,7 @@ describe('EmployeeListComponent', () => {
     flushInitialLoad();
 
     component.filterDepartments.set(['Engineering']);
-    component.filterStatuses.set(['active']);
+    component.filterStatuses.set(['Active']);
     component.filterLocation.set('NYC');
     component.clearFilters();
 
@@ -325,7 +325,7 @@ describe('EmployeeListComponent', () => {
     component.filterDepartments.set(['Engineering']);
     expect(component.activeFilterCount()).toBe(1);
 
-    component.filterStatuses.set(['active']);
+    component.filterStatuses.set(['Active']);
     expect(component.activeFilterCount()).toBe(2);
 
     component.filterLocation.set('NYC');
@@ -683,7 +683,7 @@ describe('EmployeeListComponent', () => {
     const searchReq = httpMock.expectOne(
       (r) => r.url === baseUrl &&
         r.params.get('search') === 'Al' &&
-        r.params.get('statuses') === 'active'
+        r.params.get('statuses') === 'Active'
     );
     searchReq.flush({
       data: [{ ...mockEmployee, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],

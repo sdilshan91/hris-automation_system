@@ -10,14 +10,23 @@
  */
 
 // ─── Employment type (reuse from employee models but keep local for decoupling) ─
-export type EntitlementEmploymentType = 'Full-Time' | 'Part-Time' | 'Contract' | 'Intern';
+// Wire values match the C# enum member names (PascalCase) per US-PLT-003; labels stay pretty.
+export type EntitlementEmploymentType = 'FullTime' | 'PartTime' | 'Contract' | 'Intern';
 
 export const EMPLOYMENT_TYPE_OPTIONS: { value: EntitlementEmploymentType; label: string }[] = [
-  { value: 'Full-Time', label: 'Full-Time' },
-  { value: 'Part-Time', label: 'Part-Time' },
+  { value: 'FullTime', label: 'Full-Time' },
+  { value: 'PartTime', label: 'Part-Time' },
   { value: 'Contract', label: 'Contract' },
   { value: 'Intern', label: 'Intern' },
 ];
+
+/** Pretty display label for an employment-type wire value (e.g. 'FullTime' → 'Full-Time'). */
+export function entitlementEmploymentTypeLabel(
+  value: EntitlementEmploymentType | string | null | undefined
+): string {
+  if (!value) return '';
+  return EMPLOYMENT_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? String(value);
+}
 
 // ─── Entitlement Rule ────────────────────────────────────────
 

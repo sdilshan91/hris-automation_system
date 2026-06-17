@@ -353,8 +353,8 @@ type ConversionStep = 'loading' | 'form' | 'confirm' | 'success';
                       class="inp sel"
                     >
                       <option [ngValue]="''">Select type</option>
-                      @for (et of employmentTypeOptions; track et) {
-                        <option [ngValue]="et">{{ et }}</option>
+                      @for (et of employmentTypeOptions; track et.value) {
+                        <option [ngValue]="et.value">{{ et.label }}</option>
                       }
                     </select>
                     @if (err('employmentType')) {
@@ -775,7 +775,7 @@ export class ConversionFormComponent {
    */
   readonly converted = output<IConvertResult>();
 
-  readonly employmentTypeOptions: EmploymentType[] = EMPLOYMENT_TYPE_OPTIONS;
+  readonly employmentTypeOptions = EMPLOYMENT_TYPE_OPTIONS;
 
   readonly step = signal<ConversionStep>('loading');
   readonly prefill = signal<IConversionPrefill | null>(null);

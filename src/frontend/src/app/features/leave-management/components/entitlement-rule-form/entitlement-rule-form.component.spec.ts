@@ -30,7 +30,7 @@ describe('EntitlementRuleFormComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: null,
     jobTitleName: null,
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     tenureMinMonths: 12,
     tenureMaxMonths: 60,
     entitlementDays: 25,
@@ -115,7 +115,7 @@ describe('EntitlementRuleFormComponent', () => {
         leaveTypeId: 'lt-1',
         departmentId: 'dept-1',
         jobTitleId: '',
-        employmentType: 'Full-Time',
+        employmentType: 'FullTime',
         tenureMinMonths: 12,
         tenureMaxMonths: 60,
         entitlementDays: 25,
@@ -130,7 +130,7 @@ describe('EntitlementRuleFormComponent', () => {
         leaveTypeId: 'lt-1',
         departmentId: 'dept-1',
         jobTitleId: null,
-        employmentType: 'Full-Time',
+        employmentType: 'FullTime',
         entitlementDays: 25,
         priority: 5,
         effectiveFrom: '2026-01-01',
@@ -155,7 +155,7 @@ describe('EntitlementRuleFormComponent', () => {
     it('should populate form with existing rule data', () => {
       expect(component.form.value.leaveTypeId).toBe('lt-1');
       expect(component.form.value.departmentId).toBe('dept-1');
-      expect(component.form.value.employmentType).toBe('Full-Time');
+      expect(component.form.value.employmentType).toBe('FullTime');
       expect(component.form.value.entitlementDays).toBe(25);
       expect(component.form.value.priority).toBe(5);
       expect(component.form.value.effectiveFrom).toBe('2026-01-01');

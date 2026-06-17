@@ -315,8 +315,8 @@ import {
                       class="input-notion select-input"
                     >
                       <option [ngValue]="null">Select gender</option>
-                      @for (g of genderOptions; track g) {
-                        <option [ngValue]="g">{{ g }}</option>
+                      @for (g of genderOptions; track g.value) {
+                        <option [ngValue]="g.value">{{ g.label }}</option>
                       }
                     </select>
                   </div>
@@ -554,8 +554,8 @@ import {
                       class="input-notion select-input"
                     >
                       <option [ngValue]="''">Select type</option>
-                      @for (et of employmentTypeOptions; track et) {
-                        <option [ngValue]="et">{{ et }}</option>
+                      @for (et of employmentTypeOptions; track et.value) {
+                        <option [ngValue]="et.value">{{ et.label }}</option>
                       }
                     </select>
                     @if (showError('employmentType')) {
@@ -575,8 +575,8 @@ import {
                       formControlName="status"
                       class="input-notion select-input"
                     >
-                      <option value="active">Active</option>
-                      <option value="probation">Probation</option>
+                      <option value="Active">Active</option>
+                      <option value="Probation">Probation</option>
                     </select>
                     <p class="field-hint">Default: Active (BR-3)</p>
                   </div>
@@ -1141,8 +1141,8 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   // ─── Readonly data ────────────────────────────────────────
 
   readonly wizardSteps: IWizardStep[] = WIZARD_STEPS;
-  readonly genderOptions: EmployeeGender[] = GENDER_OPTIONS;
-  readonly employmentTypeOptions: EmploymentType[] = EMPLOYMENT_TYPE_OPTIONS;
+  readonly genderOptions = GENDER_OPTIONS;
+  readonly employmentTypeOptions = EMPLOYMENT_TYPE_OPTIONS;
 
   // ─── Signals ──────────────────────────────────────────────
 
@@ -1221,7 +1221,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       departmentId: ['', [Validators.required]],
       jobTitleId: ['', [Validators.required]],
       employmentType: ['' as EmploymentType | '', [Validators.required]],
-      status: ['active'],
+      status: ['Active'],
 
       // Step 4: Education (optional repeater)
       education: this.fb.array([]),
@@ -1544,7 +1544,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       departmentId: formValue.departmentId,
       jobTitleId: formValue.jobTitleId,
       employmentType: formValue.employmentType,
-      status: formValue.status || 'active',
+      status: formValue.status || 'Active',
       address: formValue.address?.trim() || null,
       city: formValue.city?.trim() || null,
       state: formValue.state?.trim() || null,

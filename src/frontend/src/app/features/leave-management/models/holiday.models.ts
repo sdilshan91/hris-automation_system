@@ -11,8 +11,8 @@
  * Color coding (§8): public = blue, restricted = orange, optional = green.
  */
 
-/** Holiday type per FR-2. */
-export type HolidayType = 'public' | 'restricted' | 'optional';
+/** Holiday type per FR-2. Wire values match the C# enum members (PascalCase) per US-PLT-003. */
+export type HolidayType = 'Public' | 'Restricted' | 'Optional';
 
 /** Holiday entity returned by the API. */
 export interface IHoliday {
@@ -87,19 +87,19 @@ export const HOLIDAY_TYPE_OPTIONS: {
   badgeClasses: string;
 }[] = [
   {
-    value: 'public',
+    value: 'Public',
     label: 'Public',
     hex: '#2563eb', // blue
     badgeClasses: 'bg-blue-50 text-blue-700 ring-blue-600/20',
   },
   {
-    value: 'restricted',
+    value: 'Restricted',
     label: 'Restricted',
     hex: '#ea580c', // orange
     badgeClasses: 'bg-orange-50 text-orange-700 ring-orange-600/20',
   },
   {
-    value: 'optional',
+    value: 'Optional',
     label: 'Optional',
     hex: '#16a34a', // green
     badgeClasses: 'bg-green-50 text-green-700 ring-green-600/20',
@@ -239,6 +239,11 @@ export function parseHolidayCsv(
   existingHolidays: IHoliday[]
 ): IHolidayImportPreview {
   const validTypes: string[] = HOLIDAY_TYPE_OPTIONS.map((o) => o.value);
+  // Case-insensitive lookup so user-typed CSV values ('public') normalize to the
+  // canonical PascalCase wire value ('Public') used everywhere else (US-PLT-003).
+  const typeByLower = new Map<string, HolidayType>(
+    HOLIDAY_TYPE_OPTIONS.map((o) => [o.value.toLowerCase(), o.value])
+  );
   const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
 
   const existingKeys = new Set(
@@ -268,7 +273,10 @@ export function parseHolidayCsv(
     const cells = splitCsvLine(lines[i]);
     const name = (cells[0] ?? '').trim();
     const date = (cells[1] ?? '').trim();
-    const type = (cells[2] ?? '').trim().toLowerCase();
+    const rawType = (cells[2] ?? '').trim();
+    // Normalize to the canonical PascalCase wire value when recognized; otherwise
+    // keep the raw text so the "invalid type" error message echoes what the user typed.
+    const type = typeByLower.get(rawType.toLowerCase()) ?? rawType;
     const errors: string[] = [];
 
     if (!name) {

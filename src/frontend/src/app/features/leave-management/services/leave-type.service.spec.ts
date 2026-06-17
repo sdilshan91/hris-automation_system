@@ -28,7 +28,7 @@ describe('LeaveTypeService', () => {
     color: '#2563eb',
     description: 'Paid annual leave',
     annualEntitlement: 20,
-    accrualFrequency: 'monthly',
+    accrualFrequency: 'Monthly',
     carryForwardLimit: 5,
     carryForwardExpiryMonths: 3,
     probationEligible: false,
@@ -38,7 +38,7 @@ describe('LeaveTypeService', () => {
     maxEncashDays: 10,
     halfDayAllowed: true,
     hourlyAllowed: false,
-    gender: 'all',
+    gender: 'All',
     maxConsecutiveDays: 15,
     negativeBalanceAllowed: false,
     negativeBalanceLimit: null,
@@ -129,7 +129,7 @@ describe('LeaveTypeService', () => {
         code: 'CL',
         color: '#16a34a',
         annualEntitlement: 5,
-        accrualFrequency: 'upfront',
+        accrualFrequency: 'Upfront',
         carryForwardLimit: 0,
         carryForwardExpiryMonths: 0,
         probationEligible: false,
@@ -137,7 +137,7 @@ describe('LeaveTypeService', () => {
         encashable: false,
         halfDayAllowed: true,
         hourlyAllowed: false,
-        gender: 'all',
+        gender: 'All',
         negativeBalanceAllowed: false,
       };
 
@@ -166,7 +166,7 @@ describe('LeaveTypeService', () => {
         code: 'AL',
         color: '#2563eb',
         annualEntitlement: 25,
-        accrualFrequency: 'monthly',
+        accrualFrequency: 'Monthly',
         carryForwardLimit: 10,
         carryForwardExpiryMonths: 6,
         probationEligible: false,
@@ -174,7 +174,7 @@ describe('LeaveTypeService', () => {
         encashable: true,
         halfDayAllowed: true,
         hourlyAllowed: false,
-        gender: 'all',
+        gender: 'All',
         negativeBalanceAllowed: false,
       };
 

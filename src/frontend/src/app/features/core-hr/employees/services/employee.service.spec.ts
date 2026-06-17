@@ -38,8 +38,8 @@ describe('EmployeeService', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Software Engineer',
-    employmentType: 'Full-Time',
-    status: 'active',
+    employmentType: 'FullTime',
+    status: 'Active',
     profilePhotoUrl: null,
     customFields: null,
     isActive: true,
@@ -140,8 +140,8 @@ describe('EmployeeService', () => {
     it('should send multi-select filters as comma-separated values', () => {
       const params: IEmployeeDirectoryParams = {
         departments: ['Engineering', 'Sales'],
-        statuses: ['active', 'probation'],
-        employmentTypes: ['Full-Time', 'Contract'],
+        statuses: ['Active', 'Probation'],
+        employmentTypes: ['FullTime', 'Contract'],
         page: 1,
         pageSize: 20,
       };
@@ -152,8 +152,8 @@ describe('EmployeeService', () => {
         (r) =>
           r.url === baseUrl &&
           r.params.get('departments') === 'Engineering,Sales' &&
-          r.params.get('statuses') === 'active,probation' &&
-          r.params.get('employmentTypes') === 'Full-Time,Contract'
+          r.params.get('statuses') === 'Active,Probation' &&
+          r.params.get('employmentTypes') === 'FullTime,Contract'
       );
       req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
     });
@@ -296,7 +296,7 @@ describe('EmployeeService', () => {
       dateOfJoining: '2026-07-01',
       departmentId: 'dept-1',
       jobTitleId: 'jt-1',
-      employmentType: 'Full-Time',
+      employmentType: 'FullTime',
     };
 
     it('should create an employee with JSON when no photo is provided', () => {
@@ -390,7 +390,7 @@ describe('EmployeeService', () => {
   describe('changeStatus (US-CHR-009)', () => {
     it('should POST status change with Idempotency-Key header', () => {
       const request = {
-        newStatus: 'suspended' as const,
+        newStatus: 'Suspended' as const,
         effectiveDate: '2026-06-15',
         reason: 'Pending investigation',
       };
@@ -404,15 +404,15 @@ describe('EmployeeService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.withCredentials).toBeTrue();
       expect(req.request.headers.get('Idempotency-Key')).toBe('test-uuid-1234');
-      expect(req.request.body.newStatus).toBe('suspended');
+      expect(req.request.body.newStatus).toBe('Suspended');
       expect(req.request.body.effectiveDate).toBe('2026-06-15');
       expect(req.request.body.reason).toBe('Pending investigation');
-      req.flush({ profile: { ...mockEmployee, status: 'suspended' } });
+      req.flush({ profile: { ...mockEmployee, status: 'Suspended' } });
     });
 
     it('should handle 400 error for invalid transition', () => {
       const request = {
-        newStatus: 'probation' as const,
+        newStatus: 'Probation' as const,
         effectiveDate: '2026-06-15',
         reason: 'Attempting invalid transition',
       };
@@ -523,7 +523,7 @@ describe('EmployeeService', () => {
           lastName: 'Smith',
           jobTitleName: 'QA',
           departmentName: 'Engineering',
-          status: 'active',
+          status: 'Active',
           profilePhotoUrl: null,
           email: 'jane@test.com',
           employeeNo: 'EMP-0002',
@@ -579,7 +579,7 @@ describe('EmployeeService', () => {
         (r) =>
           r.url === baseUrl &&
           r.params.get('search') === 'John' &&
-          r.params.get('statuses') === 'active' &&
+          r.params.get('statuses') === 'Active' &&
           r.params.get('pageSize') === '10'
       );
       expect(req.request.method).toBe('GET');
