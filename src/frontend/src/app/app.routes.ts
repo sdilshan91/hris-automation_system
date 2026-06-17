@@ -495,6 +495,22 @@ export const appRoutes: Routes = [
             './features/onboarding/components/my-assets/my-assets.component'
           ).then((m) => m.MyAssetsComponent),
       },
+      // ─── Offboarding / Exit Clearance (US-ONB-005) ─────────
+      // Tenant context. HR initiates offboarding (offboarding/initiate/:employeeId)
+      // and works the clearance dashboard (offboarding/:offboardingId). Sits as its
+      // own top-level path so the :offboardingId leaf does not collide with the
+      // onboarding path space below. Department-head clearance actions are
+      // authorized server-side per task; the route guard scopes by HR role.
+      {
+        path: 'offboarding',
+        loadChildren: () =>
+          import('./features/onboarding/offboarding.routes').then(
+            (m) => m.OFFBOARDING_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
+        ],
+      },
       // ─── Onboarding / Checklist Templates (US-ONB-001) ─────
       {
         path: 'onboarding',
