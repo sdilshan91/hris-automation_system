@@ -26,5 +26,13 @@ export const ONBOARDING_ROUTES: Routes = [
         (m) => m.TemplateBuilderComponent,
       ),
   },
+  {
+    // US-ONB-002: assign a checklist to a specific new hire (routed input()).
+    path: 'assign/:employeeId',
+    loadComponent: () =>
+      import(
+        './components/checklist-assignment/checklist-assignment.component'
+      ).then((m) => m.ChecklistAssignmentComponent),
+  },
   { path: '', redirectTo: 'templates', pathMatch: 'full' },
 ];

@@ -175,6 +175,13 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.LeaveReportExportJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.ILeaveReportExportJob, HRM.Api.Jobs.LeaveReportExportJob>();
 
+    // US-ONB-002 NFR-3: onboarding notification-outbox dispatch worker (drains pending intent rows and
+    // delivers via INotificationDispatcher). Bound to the interface so the assignment service can enqueue
+    // it by interface. The dispatcher is log-only until the Notifications module (US-NTF-001/002) lands.
+    builder.Services.AddScoped<HRM.Api.Jobs.OnboardingNotificationDispatchJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOnboardingNotificationDispatchJob, HRM.Api.Jobs.OnboardingNotificationDispatchJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.INotificationDispatcher, HRM.Api.Notifications.LoggingNotificationDispatcher>();
+
     // US-ATT-007: monthly attendance summary jobs (daily refresh + monthly finalize) and the large-export
     // background job (bound to the interface so the Infrastructure service can enqueue it by interface).
     builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryDailyJob>();

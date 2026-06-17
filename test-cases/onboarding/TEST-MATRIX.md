@@ -1,7 +1,7 @@
 ---
 module: Onboarding / Offboarding
-total_user_stories: 1
-total_test_cases: 16
+total_user_stories: 2
+total_test_cases: 31
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -78,3 +78,78 @@ status: in-progress
 | AC coverage | 5/5 |
 | Functional ID range | TC-ONB-001-01 .. TC-ONB-001-12 |
 | ISO ID range | TC-ONB-ISO-001 .. TC-ONB-ISO-004 |
+
+---
+
+## US-ONB-002 — Assign Onboarding Checklist to New Hire
+
+> US-ONB-002 adds 15 test cases: 12 functional/security/performance/accessibility (TC-ONB-002-01..12) + 3 dedicated multi-tenant isolation continuing the shared running counter (TC-ONB-ISO-005..007). The functional suffix counter resets per story (TC-ONB-002-XX) while the ISO counter is module-wide and continues from US-ONB-001's 004. All 5 acceptance criteria of US-ONB-002 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from US-ONB-001):
+> - NFR-2 names PostgreSQL RLS; this codebase isolates via **EF Core global query filters (read) + `TenantInterceptor` (write stamping)**. ISO tests assert the EF mechanism in force today; the RLS "raw SQL returns zero rows" expectation is CONDITIONAL/deferred (TC-ONB-ISO-007 step 4). Cross-tenant ID injection asserts **404, not 403** (TC-ONB-ISO-006).
+> - AC-2/AC-5 describe end-user notification delivery via SignalR + email. Real delivery is owned by the Notifications module (US-NTF-001 in-app, US-NTF-002 email). The onboarding side of the contract is tested as **outbox intent rows written transactionally (NFR-3) + Hangfire dispatch job enqueued** (TC-ONB-002-06); end-to-end SignalR/email receipt is deferred to the US-NTF test cases.
+> - NFR-1 (assignment API <= 1000 ms P95) requires a performance-representative environment (TC-ONB-002-11); on a dev box, record indicative numbers and do NOT relax the threshold.
+> - NFR-5 idempotency is asserted as "retry within the same session yields the same checklist, no duplicates" (TC-ONB-002-08); if no idempotency key/mechanism is wired yet, flag to caller.
+
+### Coverage by Test Case (US-ONB-002)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-ONB-002-01 | Assign 5-task template; 5 instances, due=join+offset, pending, tenant_id | E2E | Critical | AC-1, AC-2, FR-1/2/3/7/8, BR-2 | Happy path |
+| TC-ONB-002-02 | Auto-filter by dept/job title + universal; deactivated excluded | Functional | High | AC-1, FR-1, BR-1 | Happy / boundary |
+| TC-ONB-002-03 | Duplicate assignment replace/merge prompt; one active checklist | Functional | Critical | AC-3, BR-2, FR-2 | Happy / negative |
+| TC-ONB-002-04 | Modify after assign: add ad-hoc, re-date, soft-delete; mandatory protected | Functional | High | AC-4, FR-5/6/8, BR-3 | Happy / negative |
+| TC-ONB-002-05 | Responsible-party resolution Manager/HR/IT/Employee | Functional | High | AC-2, FR-3, FR-7 | Happy path |
+| TC-ONB-002-06 | Notification dispatch via OUTBOX (Manager+IT) — intent rows + Hangfire | Integration | High | AC-2, AC-5, FR-4, NFR-3 | Happy path |
+| TC-ONB-002-07 | Past joining date -> due dates from today | Functional | High | AC-2, FR-2, BR-4 | Boundary |
+| TC-ONB-002-08 | Negative/boundary: inactive template, missing employee/template, idempotent retry | Functional | Critical | AC-1, AC-2, FR-2/7, NFR-5, BR-1 | Negative / boundary |
+| TC-ONB-002-09 | Onboarding.Manage required; 401/403 deny, no create/modify | Security | Critical | AC-1, AC-2, AC-4, FR-3/5/7 | Negative / security |
+| TC-ONB-002-10 | XSS/SQLi in ad-hoc task free-text neutralized | Security | High | AC-2, AC-4, FR-5 | Negative / security |
+| TC-ONB-002-11 | Assignment API <= 1000 ms P95 | Performance | High | AC-2, NFR-1, NFR-3 | Performance |
+| TC-ONB-002-12 | Keyboard-navigable + responsive 360px-4K assignment UI | Accessibility | Medium | AC-1, AC-2, AC-3, FR-1/6, NFR-4 | Accessibility / cross-browser |
+| TC-ONB-ISO-005 | Tenant A cannot see Tenant B assignments (cross-tenant READ block) | Security | Critical | AC-2, NFR-2 (EF) | Multi-tenant isolation |
+| TC-ONB-ISO-006 | Missing tenant context + cross-tenant ID injection -> 404 | Security | Critical | AC-2, FR-7 | Multi-tenant isolation |
+| TC-ONB-ISO-007 | EF query filter blocks reads; writes+outbox tenant-stamped (RLS deferred) | Security | Critical | AC-2, AC-5, FR-3/7, NFR-2/3 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-ONB-002)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (filtered template list shown for the employee) | TC-ONB-002-01, -02, -08, -09, -12 |
+| AC-2 (task instances created: due date, pending, responsible party; notifications sent) | TC-ONB-002-01, -05, -06, -07, -08, -09, -10, -11, -12, TC-ONB-ISO-005, -006, -007 |
+| AC-3 (already-has-checklist warning with replace/merge) | TC-ONB-002-03, -12 |
+| AC-4 (add/remove tasks after assignment; soft-delete; audit) | TC-ONB-002-04, -09, -10 |
+| AC-5 (Manager + IT notifications dispatched) | TC-ONB-002-06, TC-ONB-ISO-007 |
+
+### FR / NFR / BR Coverage (US-ONB-002)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (auto-filter templates by dept/job title) | TC-ONB-002-01, -02, -12 |
+| FR-2 (create instances; due = date_of_joining + offset) | TC-ONB-002-01, -03, -07, -08 |
+| FR-3 (resolve responsible parties Manager/HR/IT/Employee) | TC-ONB-002-01, -05, -09, TC-ONB-ISO-007 |
+| FR-4 (dispatch notifications via SignalR + email/Hangfire) | TC-ONB-002-06 |
+| FR-5 (add ad-hoc tasks) | TC-ONB-002-04, -09, -10 |
+| FR-6 (modify due dates after assignment) | TC-ONB-002-04, -12 |
+| FR-7 (tenant_id from session on all instances) | TC-ONB-002-01, -05, -08, -09, TC-ONB-ISO-006, -007 |
+| FR-8 (assignment tracked as audit event) | TC-ONB-002-01, -04 |
+| NFR-1 (assignment API <= 1000 ms P95) | TC-ONB-002-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-ONB-ISO-005, -006, -007 |
+| NFR-3 (notification outbox pattern, transactional) | TC-ONB-002-06, -11, TC-ONB-ISO-007 |
+| NFR-4 (responsive 360px-4K + WCAG 2.1 AA) | TC-ONB-002-12 |
+| NFR-5 (idempotent retry within session) | TC-ONB-002-08 |
+| BR-1 (only active templates assignable) | TC-ONB-002-02, -08 |
+| BR-2 (at most one active checklist; replace = new version) | TC-ONB-002-01, -03 |
+| BR-3 (mandatory tasks cannot be removed) | TC-ONB-002-04 |
+| BR-4 (past joining date -> due dates from today) | TC-ONB-002-07 |
+| BR-5 (Employee-role tasks visible only after user account linked) | Out of scope for the assignment flow; depends on account-linking (flag to caller — no account-linking step in this story) |
+
+### Summary (US-ONB-002)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ONB-002) |
+| Total test cases | 15 (12 functional/security/perf/a11y + 3 isolation) |
+| AC coverage | 5/5 |
+| Functional ID range | TC-ONB-002-01 .. TC-ONB-002-12 |
+| ISO ID range | TC-ONB-ISO-005 .. TC-ONB-ISO-007 (shared module counter) |
