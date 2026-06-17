@@ -1,3 +1,5 @@
+using HRM.Domain.Enums;
+
 namespace HRM.Domain.Entities;
 
 /// <summary>
@@ -6,11 +8,20 @@ namespace HRM.Domain.Entities;
 /// (this codebase enforces tenant isolation with EF query filters, not Postgres RLS — same as every
 /// other module). Holds an ordered set of <see cref="OnboardingTemplateTask"/> children grouped by
 /// free-text category. Maps to the "onboarding_checklist_template" table.
+///
+/// US-ONB-005 FR-1: the same entity also backs OFFBOARDING templates — discriminated by
+/// <see cref="Kind"/> — so the builder, EF config, and tenant isolation are reused (DRY).
 /// </summary>
 public sealed class OnboardingChecklistTemplate : BaseEntity
 {
     /// <summary>Template name (AC-1, required, min 3 / max 200). Unique per tenant (BR-1).</summary>
     public string TemplateName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// US-ONB-005 FR-1: discriminates onboarding vs offboarding templates. Defaults to
+    /// <see cref="ChecklistKind.Onboarding"/> so every pre-existing template keeps its meaning.
+    /// </summary>
+    public ChecklistKind Kind { get; set; } = ChecklistKind.Onboarding;
 
     /// <summary>Optional free-text description (max 2000).</summary>
     public string? Description { get; set; }

@@ -4694,3 +4694,66 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | AC-5 (cross-tenant isolation; no Tenant A assets visible to Tenant B) | TC-ONB-ISO-012, -013, -014, -015 | EF query filter (RLS deferred) |
 
 *Note (Onboarding -- US-ONB-004): 16 TCs — 12 functional/security/perf/a11y (TC-ONB-004-01..12) + 4 multi-tenant isolation continuing the module-wide running counter (TC-ONB-ISO-012..015, from US-ONB-003's 011). Functional suffix counter resets per story (TC-ONB-004-XX); ISO counter is shared/running. All 5 ACs traced. KEY COVERAGE: happy path issues laptop + ID card in one session -> both linked/assigned, onboarding task completed, before/after audit (TC-ONB-004-01); bulk 3-asset submission is asserted ATOMIC in a single transaction with full rollback on mid-batch failure (FR-5/NFR-5, TC-ONB-004-02); double-assignment returns the exact current-holder message (AC-3/BR-1, -03); asset_tag + serial uniqueness is per tenant (BR-3, -04 + TC-ONB-ISO-014); the "available"-status gate blocks issuing assigned/returned/disposed assets server-side (FR-3, -05); acknowledgment upload stores a signed PDF at the tenant-first key `{tenantId}/onboarding/{employeeId}/assets/{assetId}/{filename}`, rejects >10MB/bad-MIME, and exercises the malware-scan seam (FR-6/NFR-4, -06); future issue_date rejected with today inclusive (-07); employee assets/me view is read-only and the employee cannot issue/modify (AC-4/BR-6, -08); issuance requires Onboarding.Manage with 401/403 deny (-09). PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001/002/003 family): (1) AC-5/NFR-2 name PostgreSQL RLS; this platform isolates via EF Core global query filters (read) + `TenantInterceptor` (write stamping) — RLS deferred. ISO tests assert the EF mechanism in force today; "raw SQL without app.current_tenant_id -> zero rows" is CONDITIONAL/deferred (TC-ONB-ISO-014 step 4); cross-tenant ID injection asserts 404 not 403 (TC-ONB-ISO-013). (2) NFR-4 malware scanning is asserted at the SEAM level (TC-ONB-004-06 step 5, EICAR test file); live ClamAV is CONDITIONAL/deferred (same family as TC-ONB-003-05; flag to caller if not wired). (3) NFR-1 (issuance API <=600ms P95) needs a perf-representative env (TC-ONB-004-11). STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-5/NFR-2 name Postgres RLS as an active layer — only the app (ITenantContext) + EF layers exist today; reword RLS as future hardening. (b) BR-4 (returned asset reverts to available/disposed) and BR-5 (asset register soft delete) describe lifecycle transitions with NO endpoint in this issuance story — TC-ONB-004-05 only exercises returned/disposed as non-issuable INPUTS to the "available" gate; the return/disposal/soft-delete transitions belong to a later offboarding/asset-lifecycle story (not covered by a TC here). (c) BR-2 (asset types configurable per tenant via Tenant Admin master data) is assumed satisfied via preconditions; type configuration itself is an Admin Console concern. (d) AC-2/FR-2 "Asset Management module (lite)" register is assumed present; full lifecycle (depreciation/maintenance) is explicitly out of Phase-1 scope per S10.*
+
+---
+
+## Onboarding / Offboarding -- US-ONB-005 (Offboarding / Exit Checklist and Clearance)
+
+### US-ONB-005 Forward Traceability (Test Case -> Requirement)
+
+| Test Case | Title | Type | Priority | User Story | ACs / Reqs Covered |
+|-----------|-------|------|----------|-----------|--------------------|
+| TC-ONB-005-01 | Full happy path: initiate -> clear all -> complete; terminated + account deactivated + F&F trigger + audit | E2E | Critical | US-ONB-005 | AC-1, AC-4, FR-2/5/6/9, BR-5/6 |
+| TC-ONB-005-02 | Exit task generation for HR/IT/Finance/Manager/Employee; due = LWD - offset | Functional | Critical | US-ONB-005 | AC-1, FR-2/3, FR-8 |
+| TC-ONB-005-03 | Asset return -> register Available/Disposed; task complete; before/after audit | Integration | Critical | US-ONB-005 | AC-2, BR-3, FR-3/9 |
+| TC-ONB-005-04 | Clearance dashboard: 4 depts, approve 2 / pending 2 -> not fully cleared; traffic lights | Functional | High | US-ONB-005 | AC-3, FR-4, BR-2 |
+| TC-ONB-005-05 | Blocked completion: pending mandatory tasks -> block with explicit pending list | Functional | Critical | US-ONB-005 | AC-5, BR-2 |
+| TC-ONB-005-06 | Completion effects: old JWT -> 401 (deactivation; Redis denylist deferred); irreversible | Integration | Critical | US-ONB-005 | FR-7, FR-5, BR-6 |
+| TC-ONB-005-07 | BR-1 status gate: cannot initiate for active employee; only accepted statuses | Functional | Critical | US-ONB-005 | BR-1, AC-1 |
+| TC-ONB-005-08 | LWD today-or-future boundary; reason enum; notes <= 2000; employee must exist | Functional | High | US-ONB-005 | AC-1, data (LWD/reason/notes) |
+| TC-ONB-005-09 | Authz: HR required for initiate/clearance/complete; 401/403; XSS/SQLi neutralized | Security | Critical | US-ONB-005 | AC-1/3/4, FR-5/9 |
+| TC-ONB-005-10 | Audit: each clearance decision + final completion logged, attributable, tenant-scoped | Integration | High | US-ONB-005 | FR-9, AC-2/3/4 |
+| TC-ONB-005-11 | Initiation API <= 1000 ms P95 (NFR-1); deactivation + revocation <= 30 s (NFR-3) | Performance | High | US-ONB-005 | NFR-1, NFR-3 |
+| TC-ONB-005-12 | Clearance dashboard keyboard navigable + WCAG 2.1 AA; 360px Kanban -> accordion | Accessibility | Medium | US-ONB-005 | AC-3, AC-4, NFR-4/5 |
+| TC-ONB-ISO-016 | Tenant A cannot see Tenant B offboarding records (cross-tenant READ block) | Security | Critical | US-ONB-005 | AC-6, NFR-2 (EF) |
+| TC-ONB-ISO-017 | Missing tenant context + cross-tenant offboarding ID injection -> 404 | Security | Critical | US-ONB-005 | AC-6, FR-8 |
+| TC-ONB-ISO-018 | EF filter blocks reads; writes/clearance/audit tenant-stamped (RLS deferred) | Security | Critical | US-ONB-005 | AC-6, FR-8, NFR-2 |
+| TC-ONB-ISO-019 | Offboarding lookup cache + F&F notification payload tenant-scoped | Security | High | US-ONB-005 | AC-6, FR-6/8, NFR-2 |
+
+### US-ONB-005 Backward Traceability (Requirement -> Test Case)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (offboarding checklist templates per tenant) | TC-ONB-005-01, -02 |
+| FR-2 (auto-generate exit tasks; due = LWD - offset_days) | TC-ONB-005-01, -02 |
+| FR-3 (built-in clearance categories IT/Finance/Admin/Manager) | TC-ONB-005-02, -03, -04 |
+| FR-4 (clearance dashboard with green/red/yellow indicators) | TC-ONB-005-04, -12 |
+| FR-5 (deactivate user account on completion) | TC-ONB-005-01, -06, -09, -11 |
+| FR-6 (trigger F&F settlement notification to Payroll) | TC-ONB-005-01, TC-ONB-ISO-019 |
+| FR-7 (revoke active sessions; SignalR + Redis denylist) | TC-ONB-005-06, -11 (denylist deferred -> deactivation in force) |
+| FR-8 (tenant_id from session on all offboarding records) | TC-ONB-005-02, TC-ONB-ISO-017, -018, -019 |
+| FR-9 (record all offboarding actions in tenant audit log) | TC-ONB-005-01, -03, -09, -10 |
+| NFR-1 (initiation API <= 1000 ms P95) | TC-ONB-005-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-ONB-ISO-016, -017, -018, -019 |
+| NFR-3 (deactivation + revocation <= 30 s of completion) | TC-ONB-005-06, -11 |
+| NFR-4 (clearance dashboard responsive 360px-4K) | TC-ONB-005-12 |
+| NFR-5 (WCAG 2.1 AA) | TC-ONB-005-12 |
+| BR-1 (initiate only for resignation_accepted/terminated/contract_ended) | TC-ONB-005-07 |
+| BR-2 (all mandatory clearances approved before completion) | TC-ONB-005-04, -05 |
+| BR-3 (asset-return tasks auto-update asset register) | TC-ONB-005-03 |
+| BR-4 (F&F calc owned by Payroll; offboarding only triggers) | TC-ONB-005-01, TC-ONB-ISO-019 (trigger only; calc out of scope) |
+| BR-5 (data retained; only account deactivated) | TC-ONB-005-01 |
+| BR-6 (completion irreversible; no reactivation) | TC-ONB-005-06 |
+
+### US-ONB-005 Acceptance-Criteria Coverage
+
+| AC | Covered By | Coverage |
+|----|-----------|----------|
+| AC-1 (initiate -> exit checklist for HR/IT/Finance/Manager/Employee; due = LWD - offset) | TC-ONB-005-01, -02, -07, -08, -09, -11 | Direct |
+| AC-2 (asset return -> register Available/Disposed; task complete; audit) | TC-ONB-005-03, -10 | Direct |
+| AC-3 (clearance dashboard; fully cleared only when all depts approved; traffic lights) | TC-ONB-005-04, -09, -10, -12 | Direct |
+| AC-4 (complete -> terminated + account deactivated + F&F trigger to Payroll) | TC-ONB-005-01, -06, -09, -10, -11, -12 | Direct |
+| AC-5 (block completion with pending mandatory tasks; list pending items) | TC-ONB-005-05 | Direct |
+| AC-6 (cross-tenant isolation; Tenant B sees no Tenant A offboarding data) | TC-ONB-ISO-016, -017, -018, -019 | EF query filter (RLS deferred) |
+
+*Note (Onboarding -- US-ONB-005): 16 TCs — 12 functional/security/perf/a11y (TC-ONB-005-01..12) + 4 multi-tenant isolation continuing the module-wide running counter (TC-ONB-ISO-016..019, from US-ONB-004's 015). Functional suffix counter resets per story (TC-ONB-005-XX); ISO counter is shared/running. All 6 ACs traced. KEY COVERAGE: full happy path initiates offboarding for a resignation_accepted employee, generates the exit checklist (HR/IT/Finance/Manager/Employee, due = LWD - offset), clears all mandatory tasks, completes -> employee "terminated", user account deactivated (cannot log in), F&F trigger dispatched to Payroll, full audit (AC-1/AC-4, FR-2/5/6/9, TC-ONB-005-01); exit-task generation verifies per-task offsets and responsible-party resolution incl. Manager via reporting_manager_id (AC-1/FR-2/3, -02); asset return flips the register to available/disposed + completes the task + before/after audit (AC-2/BR-3, -03); the clearance dashboard computes "fully cleared" only when ALL departments approve and renders correct traffic lights (AC-3/FR-4/BR-2, -04); blocked completion enumerates the exact pending MANDATORY items and performs no side effects (AC-5/BR-2, -05); completion revokes sessions so the old JWT -> 401 and is irreversible (FR-7/BR-6, -06); the BR-1 status gate blocks initiating for an active employee (-07); LWD today-or-future boundary + reason enum + notes<=2000 validated (-08). PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001/002/003/004 family): (1) AC-6/NFR-2 name PostgreSQL RLS; this platform isolates via EF Core global query filters (read) + `TenantInterceptor` (write stamping) — RLS deferred. ISO tests assert the EF mechanism in force today; "raw SQL without app.current_tenant_id -> zero rows" is CONDITIONAL/deferred (TC-ONB-ISO-018 step 4); cross-tenant ID injection asserts 404 not 403 (TC-ONB-ISO-017). (2) FR-7 session revocation specifies a Redis JWT denylist + SignalR disconnect; the Redis denylist is NOT yet wired — TC-ONB-005-06 asserts the revocation effect in force today (account deactivation makes the old JWT fail the active-account check -> 401); the denylist hit is CONDITIONAL/deferred. NFR-3 (deactivation + revocation <=30s) is measured against the deactivation effect plus any wired revocation, on a perf-representative env. (3) NFR-1 (initiation API <=1000ms P95) needs a perf-representative env (TC-ONB-005-11). (4) F&F settlement CALCULATION is owned by Payroll (BR-4); offboarding only TRIGGERS the notification (asserted tenant-stamped in TC-ONB-005-01 + TC-ONB-ISO-019); end-to-end notification delivery routes through Notifications (US-NTF-001/002) and is deferred there. STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-6/NFR-2 name Postgres RLS as an active layer — only the app (ITenantContext) + EF layers exist today; reword RLS as future hardening. (b) FR-7 Redis JWT denylist not yet wired — revocation asserted via account deactivation; recommend the denylist as a follow-up so unexpired tokens are hard-revoked regardless of active-account-check propagation timing. (c) Manager-role exit/handover tasks resolve via employee reporting_manager_id; if unset, the Manager task has no resolvable owner (same gap noted on US-ONB-002 FR-3) — recommend a clear unresolved-party warning if the story leaves it undefined. (d) BR-6 irreversibility asserted as "no reactivation path" (TC-ONB-005-06 step 5); if an admin override exists it must be flagged as a deviation from BR-6.*

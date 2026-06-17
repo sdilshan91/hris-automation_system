@@ -189,6 +189,12 @@ public static class DependencyInjection
         // US-ONB-004: lite asset register + issuance tracking (reuses IFileStorage + IVirusScanner seams).
         services.AddScoped<IAssetService, AssetService>();
 
+        // US-ONB-005: offboarding / exit clearance. Reuses IAuthService (refresh-token revocation) + the
+        // ISessionRevoker (FR-7 Redis denylist seam, no-op) + IPayrollFnFIntegration (FR-6 F&F trigger seam).
+        services.AddScoped<IOffboardingService, OffboardingService>();
+        services.AddScoped<ISessionRevoker, NoOpSessionRevoker>();
+        services.AddScoped<IPayrollFnFIntegration, LogOnlyPayrollFnFIntegration>();
+
         // US-PAY-001: Payroll — salary component + salary structure configuration.
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();

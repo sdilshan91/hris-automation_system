@@ -26,6 +26,13 @@ public sealed class OnboardingChecklistTemplateConfiguration : IEntityTypeConfig
         builder.Property(t => t.Description)
             .HasMaxLength(2000);
 
+        // US-ONB-005 FR-1: onboarding vs offboarding discriminator, stored as a string (default Onboarding).
+        builder.Property(t => t.Kind)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(HRM.Domain.Enums.ChecklistKind.Onboarding)
+            .IsRequired();
+
         // FR-4: scoping arrays. Empty = universal. uuid[] on Postgres; the InMemory test provider stores
         // the List<Guid> directly.
         builder.Property(t => t.ApplicableDepartments)
