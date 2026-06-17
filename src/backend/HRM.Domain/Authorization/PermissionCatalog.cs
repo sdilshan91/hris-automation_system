@@ -294,6 +294,18 @@ public static class PermissionCatalog
         /// System Support role (which can view history but cannot initiate transitions). System-context only.
         /// </summary>
         public const string ViewLifecycle = "Tenant.ViewLifecycle";
+
+        /// <summary>
+        /// US-ADM-007 (BR-1): VIEW the current tenant's approval-workflow definitions. Held by Tenant Admin and
+        /// Tenant Owner. A tenant-scoped read.
+        /// </summary>
+        public const string ViewWorkflows = "Tenant.ViewWorkflows";
+
+        /// <summary>
+        /// US-ADM-007 (BR-1): CREATE / EDIT / ARCHIVE / RESTORE / DELETE approval-workflow definitions for the
+        /// current tenant. Held by Tenant Admin and Tenant Owner only (BR-1).
+        /// </summary>
+        public const string ManageWorkflows = "Tenant.ManageWorkflows";
     }
 
     // ── Platform Monitoring (US-ADM-002) ─────────────────────────────
@@ -422,7 +434,7 @@ public static class PermissionCatalog
 
         // Tenant
         Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling, Tenant.Provision,
-        Tenant.Lifecycle, Tenant.ViewLifecycle,
+        Tenant.Lifecycle, Tenant.ViewLifecycle, Tenant.ViewWorkflows, Tenant.ManageWorkflows,
 
         // Monitoring
         Monitoring.View,
@@ -524,6 +536,7 @@ public static class PermissionCatalog
             Reports.View, Reports.Export,
             Roles.View, Roles.Manage, Roles.AssignUsers,
             Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
+            Tenant.ViewWorkflows, Tenant.ManageWorkflows,
             Audit.View,
             Notifications.ManageTemplates,
             Training.ViewAll, Training.Manage,

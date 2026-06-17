@@ -1,7 +1,7 @@
 ---
 module: Admin Console
-total_user_stories: 6
-total_test_cases: 125
+total_user_stories: 7
+total_test_cases: 147
 created: 2026-06-16
 updated: 2026-06-17
 status: in-progress
@@ -479,10 +479,97 @@ status: in-progress
 
 ---
 
+## US-ADM-007 — Tenant Admin Manages Approval Workflows
+
+> Seventh Admin Console story (third **Tenant Admin** persona, tenant-scoped). 22 test cases: 15 run-green functional/security/e2e (TC-ADM-007-01..15) + 3 DEFERRED (TC-ADM-007-16/-17/-18) + 4 dedicated multi-tenant isolation (TC-ADM-ISO-017..020, continuing the running ISO counter; ISO-020 DEFERRED). All 5 ACs (AC-1..AC-5), all 7 BRs (BR-1..BR-7), and all 7 FRs (FR-1..FR-7) traced.
+>
+> IMPLEMENTATION FACTS (tested as built — DEFINITION-MANAGEMENT layer + a PURE evaluator): this story builds the workflow DEFINITION layer — new tenant-scoped `WorkflowDefinition` + `WorkflowStep` entities (EF query-filter read isolation + `TenantInterceptor` write stamping) — plus CRUD, versioning, plan-limit, step/condition/escalation/delegation CONFIG, and audit. List is grouped by entity type, tenant-scoped, with a `Default` flag on seeded workflows (AC-1, TC-ADM-007-01). Create requires >=1 step + valid approver refs + positive SLA (FR-5, TC-ADM-007-06/-07/-08); a 3-step Leave workflow with conditions/SLAs/escalation persists at version=1 and is audited (AC-2, TC-ADM-007-02). BR-2: one active workflow per entity type — creating a new active one auto-archives the previous (TC-ADM-007-03). Edit creates a NEW VERSION (v2) with the prior version retained (AC-3, TC-ADM-007-04). Plan limit via `Tenant.MaxWorkflows` returns the EXACT message "You have reached the maximum number of workflows ({limit}) for your plan. Please upgrade or archive an existing workflow." (AC-4/FR-4, TC-ADM-007-05). Archive/restore works and archived workflows do NOT count toward the plan limit (FR-6, TC-ADM-007-09). Delete is guarded by BR-6 — allowed only with no in-flight instances (none exist yet; guard verified, TC-ADM-007-10). BR-1 limits all writes to TenantAdmin/TenantOwner (TC-ADM-007-11). A PURE, unit-tested `WorkflowEvaluator` is run-green: BR-5 conditional skip — a 3-day request skips a `>5` step, a 10-day includes it (TC-ADM-007-12); BR-3 parallel — a parallel step needs ALL approvers (TC-ADM-007-13); each `{field,operator,value}` operator (>, <, >=, <=, ==, !=) with strict/inclusive boundaries (TC-ADM-007-14). AC-5 delegation CONFIG (enabled + valid backup approver) is stored + audited (run-green, TC-ADM-007-15). Cross-tenant list/read returns empty/404 (BR-7, TC-ADM-ISO-017); cross-tenant ID injection on mutating endpoints -> 404 not 403 (TC-ADM-ISO-018); writes require tenant context + TenantAdmin authz and are tenant-stamped (TC-ADM-ISO-019).
+>
+> DEFERRED (status: blocked; honest traceability, never fabricated): the RUNTIME ENGINE is NOT built — Leave/Attendance/etc. do not yet route live requests through these definitions. AC-5 LIVE delegation routing of a submitted request (config stored+testable; runtime routing deferred — TC-ADM-007-16). BR-4 SLA-breach auto-escalation FIRING at runtime (escalation config stored at definition time in TC-ADM-007-02; the live SLA-timer firing + notification is deferred — TC-ADM-007-17). NFR-2 Redis workflow-definition cache (`t:{tenantId}:workflows:{entityType}`) + NFR-1 editor <2s + NFR-3 evaluation <100ms (TC-ADM-007-18) — Redis not wired; perf needs a representative env. PostgreSQL RLS DB-layer isolation (TC-ADM-ISO-020) — platform uses app (`ITenantContext`) + EF (query filter/`TenantInterceptor`) layers only; RLS is a deferred extension point (same family as US-ADM-001..006/Payroll/Leave). IMPORTANT distinction: the condition/parallel EVALUATION is a pure, fully-tested function (run-green); only its LIVE INVOCATION from submitted-request flows is deferred. The Test Hints requiring live request processing ("conditional step skipped for a submitted request", "parallel approval gating a submitted request", "delegation routing a submitted request", "let the SLA timer expire") have their DEFINITION/evaluator side run-green and their LIVE-request side deferred to the runtime engine.
+>
+> STORY MISMATCH worth flagging to the caller: the story (Description, AC-2/AC-3/AC-5, FR-3, BR-3/4/5/6, §7 "Workflow instance / step instance" tables, Dependencies) assumes a working runtime workflow ENGINE that routes live requests, fires SLA timers, and creates per-request instances — none of which is built. The implementable Phase-1 subset is the DEFINITION-management layer + the pure evaluator; the story should be SPLIT so the runtime engine (instance/step-instance creation, SLA-timer escalation, live delegation/conditional/parallel routing, cross-module integration with Leave/Attendance) is a follow-on. Leave (TC-LV-097) and Attendance (TC-ATT-044) already mark their multi-level-approval ACs CONDITIONAL on US-ADM-007 — those remain conditional on this follow-on runtime engine, not satisfied by the definition layer alone. AC-5 / NFR-2 also assume Redis; not wired (deferred).
+
+## Coverage by Test Case (US-ADM-007)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-007-01 | Workflow list grouped by entity type, tenant-scoped, Default flag | E2E | Critical | AC-1, FR-1/7, BR-7 | Happy path / isolation | draft |
+| TC-ADM-007-02 | Create 3-step Leave workflow w/ conditions/SLAs/escalation; v1; audited | E2E | Critical | AC-2, FR-1/2, BR-1, NFR-4 | Happy path | draft |
+| TC-ADM-007-03 | BR-2 auto-archive previous active workflow for same entity type | Functional | Critical | AC-2, FR-1, BR-2, NFR-4 | Boundary | draft |
+| TC-ADM-007-04 | Edit creates NEW VERSION (v2); prior version retained; before/after audited | Functional | Critical | AC-3, FR-3, NFR-4 | Boundary | draft |
+| TC-ADM-007-05 | Plan limit (MaxWorkflows) blocks create — exact upgrade message | Functional | Critical | AC-4, FR-4, BR-2 | Negative / boundary | draft |
+| TC-ADM-007-06 | FR-5 — zero-step workflow rejected | Functional | High | AC-2, FR-5 | Negative / boundary | draft |
+| TC-ADM-007-07 | FR-5 — invalid/foreign approver reference rejected | Functional | High | AC-2, FR-5/7, BR-7 | Negative / isolation | draft |
+| TC-ADM-007-08 | FR-5 — non-positive SLA rejected; SLA=1 accepted | Functional | High | AC-2, FR-5/2 | Negative / boundary | draft |
+| TC-ADM-007-09 | Archive/restore; archived don't count toward plan limit | Functional | High | AC-1/4, FR-6/4, NFR-4 | Boundary | draft |
+| TC-ADM-007-10 | BR-6 delete guard — delete only with no in-flight instances | Functional | High | FR-6, BR-6, NFR-4 | Boundary / negative | draft |
+| TC-ADM-007-11 | BR-1 authz — only TenantAdmin/TenantOwner write; others 403, unauth 401 | Security | Critical | AC-2/3/4, BR-1, FR-7 | Negative / security | draft |
+| TC-ADM-007-12 | Evaluator — BR-5 conditional skip/include (3-day skips >5; 10-day includes) | Functional | Critical | AC-2, FR-2, BR-5 | Boundary | draft |
+| TC-ADM-007-13 | Evaluator — BR-3 parallel step requires ALL approvers | Functional | Critical | FR-2, BR-3 | Boundary / negative | draft |
+| TC-ADM-007-14 | Evaluator — each operator (>, <, >=, <=, ==, !=) strict/inclusive | Functional | High | FR-2, BR-5, §10.2 | Boundary / negative | draft |
+| TC-ADM-007-15 | AC-5 delegation CONFIG stored + audited (live routing deferred) | Functional | High | AC-5, FR-2/5, NFR-4 | Happy path / negative | draft |
+| TC-ADM-007-16 | [DEFERRED] AC-5 LIVE delegation routing for a submitted request | Integration | High | AC-5 (LIVE) | Deferred placeholder | blocked |
+| TC-ADM-007-17 | [DEFERRED] BR-4 SLA-breach auto-escalation fires at runtime | Integration | High | BR-4 (LIVE), AC-2 | Deferred placeholder | blocked |
+| TC-ADM-007-18 | [DEFERRED] Redis workflow cache + editor/eval perf | Performance | Medium | NFR-1/2/3 | Deferred placeholder | blocked |
+| TC-ADM-ISO-017 | BR-7 list/read tenant-scoped; A cannot see B's workflows | Security | Critical | AC-1, FR-7, BR-7 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-018 | Cross-tenant ID injection on mutating endpoints -> 404 not 403 | Security | Critical | AC-3/4, FR-3/6/7, BR-7 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-019 | Mutating endpoints require tenant context + TenantAdmin; writes stamped | Security | Critical | AC-2/3, FR-7/1, BR-1/7 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-020 | [DEFERRED] PostgreSQL RLS DB-layer isolation for workflows | Security | Medium | FR-7, BR-7 (DEFERRED: RLS) | Multi-tenant isolation | blocked |
+
+## Acceptance-Criteria Coverage (US-ADM-007)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (list grouped by request type, tenant-scoped, name/steps/status/last-modified, Default flag, editable) | TC-ADM-007-01, -09, TC-ADM-ISO-017 |
+| AC-2 (create workflow: steps + conditions + SLAs + escalation; v1; all new requests use it; audited) | TC-ADM-007-02, -03, -06, -07, -08 (+ -12/-14 evaluator for the conditional clause; live "all new requests use it" deferred via -16/-17) |
+| AC-3 (edit -> new version v2; in-flight keep v1; before/after audited) | TC-ADM-007-04 (definition/versioning real; in-flight pinning deferred-runtime) |
+| AC-4 (plan-limit exceeded -> exact message; create blocked) | TC-ADM-007-05 (+ -09 archived-excluded interplay) |
+| AC-5 (delegation: config + LIVE routing to backup when primary on leave; recorded on instance) | TC-ADM-007-15 (CONFIG, real) + TC-ADM-007-16 (DEFERRED LIVE routing) |
+
+## BR / FR / NFR Coverage (US-ADM-007)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| BR-1 (only TenantAdmin/TenantOwner create/edit) | TC-ADM-007-11, TC-ADM-ISO-019 | Direct |
+| BR-2 (one active per entity type; new active auto-archives previous) | TC-ADM-007-03, -05 | Direct |
+| BR-3 (parallel step needs all approvers) | TC-ADM-007-13 | Evaluator (pure); live gating deferred -16/-17 |
+| BR-4 (SLA breach -> escalation target, else notify Tenant Admin) | TC-ADM-007-02 (config) + TC-ADM-007-17 (DEFERRED firing) | Config real; runtime firing deferred |
+| BR-5 (conditional steps evaluated; unmet -> skipped) | TC-ADM-007-12, -14 | Evaluator (pure); live-request skip deferred |
+| BR-6 (delete only with no in-flight instances) | TC-ADM-007-10 | Guard verified; positive in-flight trigger runtime-deferred |
+| BR-7 (entirely tenant-scoped; A invisible to B) | TC-ADM-ISO-017, -018, -019 (+ -020 DEFERRED RLS) | Direct (app+EF) |
+| FR-1 (definition shape incl. version; created_by/at) | TC-ADM-007-02, -01 | Direct |
+| FR-2 (step fields: order/approver/sla/escalation/condition/is_parallel) | TC-ADM-007-02, -12, -13, -14, -15 | Direct |
+| FR-3 (versioning; in-flight retain version) | TC-ADM-007-04 | Definition real; in-flight pinning deferred-runtime |
+| FR-4 (MaxWorkflows checked before create) | TC-ADM-007-05, -09 | Direct |
+| FR-5 (>=1 step, valid approver refs, positive SLA) | TC-ADM-007-06, -07, -08, -15 | Direct |
+| FR-6 (archive/restore; archived excluded from plan limit; delete vs archive) | TC-ADM-007-09, -10 | Direct |
+| FR-7 (tenant-scoped via ITenantContext) | TC-ADM-007-01, -07, TC-ADM-ISO-017/-018/-019 (+ -020 DEFERRED RLS) | Direct |
+| NFR-1 (editor < 2s) | TC-ADM-007-18 (DEFERRED) | Needs perf env |
+| NFR-2 (Redis cache + invalidation) | TC-ADM-007-18 (DEFERRED) | Redis not wired |
+| NFR-3 (evaluation < 100ms) | TC-ADM-007-18 (DEFERRED) | Correctness covered -12/-13/-14; timing needs perf env |
+| NFR-4 (all management actions audited) | TC-ADM-007-02, -03, -04, -09, -15 | Direct (per-action audit) |
+| NFR-5 (editor responsive on tablet 768px) | (FE-verified during FE story; not separately scripted) | FE-verified |
+
+## Summary (US-ADM-007)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ADM-007) |
+| Total test cases | 22 (15 functional/security/e2e + 3 DEFERRED + 4 isolation, 1 of which DEFERRED) |
+| AC coverage | 5/5 (AC-2/AC-3/AC-5 have DEFERRED runtime sub-parts; definition+evaluator side run-green) |
+| BR coverage | 7/7 (BR-1..BR-7; BR-3/4/5/6 live-request side deferred, definition/evaluator side run-green) |
+| FR coverage | 7/7 (FR-1..FR-7) |
+| Run-green now | 18 (TC-ADM-007-01..15 + TC-ADM-ISO-017, -018, -019) |
+| Deferred (status: blocked) | 4 (TC-ADM-007-16, -17, -18 + TC-ADM-ISO-020) |
+| Functional ID range | TC-ADM-007-01 .. TC-ADM-007-18 |
+| ISO ID range | TC-ADM-ISO-017 .. TC-ADM-ISO-020 |
+
+---
+
 ## Module Totals
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 6 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006) |
-| Total test cases | 125 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-016 |
+| User stories covered | 7 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006, US-ADM-007) |
+| Total test cases | 147 |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-020 |

@@ -120,6 +120,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<RecommendationEvent> RecommendationEvents => Set<RecommendationEvent>();
     public DbSet<RecommendationBudget> RecommendationBudgets => Set<RecommendationBudget>();
     public DbSet<RecommendationRule> RecommendationRules => Set<RecommendationRule>();
+    // US-ADM-007: Approval-workflow definitions + steps (tenant-scoped).
+    public DbSet<WorkflowDefinition> WorkflowDefinitions => Set<WorkflowDefinition>();
+    public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -477,6 +480,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-PRF-010: RecommendationRule tenant isolation + soft-delete filter (NFR-2). Auto-gen rules (FR-2).
         modelBuilder.Entity<RecommendationRule>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ADM-007: WorkflowDefinition tenant isolation + soft-delete filter (BR-7 cross-tenant isolation).
+        modelBuilder.Entity<WorkflowDefinition>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ADM-007: WorkflowStep tenant isolation + soft-delete filter (BR-7).
+        modelBuilder.Entity<WorkflowStep>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

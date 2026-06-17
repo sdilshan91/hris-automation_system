@@ -130,6 +130,14 @@ public sealed class Tenant
     public int? MaxCustomFields { get; set; }
 
     /// <summary>
+    /// Maximum number of ACTIVE (non-archived) approval-workflow definitions allowed for this tenant's plan
+    /// (US-ADM-007 FR-4/AC-4). Null means unlimited. A dedicated plan-limit column was added (mirroring
+    /// <see cref="MaxEmployees"/>/<see cref="MaxCustomFields"/>) rather than reusing those, because they cap a
+    /// different resource. TODO(subscription): move all Max* limits to a proper Subscription/Plan entity.
+    /// </summary>
+    public int? MaxWorkflows { get; set; }
+
+    /// <summary>
     /// Number of days a goal may go without a progress update before the daily stale-goal sweep nudges the
     /// employee and flags the goal "Needs Attention" for the manager (US-PRF-009 AC-5/FR-6/BR-4). Default 14.
     /// Setting it to 0 DISABLES nudge notifications for the tenant (BR-4). TODO(admin-console): surface this in

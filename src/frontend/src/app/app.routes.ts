@@ -236,6 +236,19 @@ export const appRoutes: Routes = [
           ).then((m) => m.COMPANY_SETTINGS_ROUTES),
         canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
       },
+      // ─── Admin / Approval Workflows (US-ADM-007) — Tenant Admin ──
+      // Tenant context (NOT the system-admin console). Configures approval
+      // workflow DEFINITIONS (steps / approvers / SLA / conditions / escalation
+      // / delegation) per request type. Runtime engine is backend-deferred.
+      // Only Tenant Admin / Tenant Owner may manage workflows (BR-1).
+      {
+        path: 'admin/workflows',
+        loadChildren: () =>
+          import('./features/admin/workflows/workflows.routes').then(
+            (m) => m.WORKFLOWS_ROUTES
+          ),
+        canActivate: [roleGuard(['Tenant Admin', 'Tenant Owner'])],
+      },
       // ─── Core HR / Departments (US-CHR-004) ───────────────
       {
         path: 'departments',

@@ -1,5 +1,110 @@
 {
   "admin": {
+    "workflows": {
+      "entityType": {
+        "Leave": "Leave",
+        "Attendance": "Attendance",
+        "Expense": "Expense",
+        "Offer": "Offer",
+        "SalaryRevision": "Salary Revision"
+      },
+      "status": {
+        "Active": "Active",
+        "Draft": "Draft",
+        "Archived": "Archived"
+      },
+      "approverType": {
+        "LineManager": "Direct Manager",
+        "Role": "Role",
+        "NamedUser": "Specific User",
+        "DepartmentHead": "Department Head"
+      },
+      "list": {
+        "title": "Approval Workflows",
+        "subtitle": "Configure how requests are approved across your organization.",
+        "create": "New workflow",
+        "loading": "Loading workflows…",
+        "loadError": "We couldn't load your workflows.",
+        "retry": "Retry",
+        "empty": "No workflows configured yet. Create your first one to get started.",
+        "default": "Default",
+        "steps": "steps",
+        "edit": "Edit",
+        "archive": "Archive",
+        "restore": "Restore",
+        "delete": "Delete",
+        "archived": "Workflow archived.",
+        "restored": "Workflow restored.",
+        "deleted": "Workflow deleted.",
+        "actionError": "The action could not be completed."
+      },
+      "confirm": {
+        "cancel": "Cancel",
+        "archive": {
+          "title": "Archive workflow?",
+          "message": "\"{{name}}\" will no longer apply to new requests. You can restore it later. Archived workflows don't count toward your plan limit.",
+          "confirm": "Archive"
+        },
+        "restore": {
+          "title": "Restore workflow?",
+          "message": "\"{{name}}\" will become active again and apply to new requests of its type.",
+          "confirm": "Restore"
+        },
+        "delete": {
+          "title": "Delete workflow?",
+          "message": "\"{{name}}\" will be permanently deleted. This can only be done when there are no in-flight requests using it.",
+          "confirm": "Delete"
+        }
+      },
+      "editor": {
+        "back": "Back to workflows",
+        "createTitle": "New workflow",
+        "editTitle": "Edit workflow",
+        "loading": "Loading workflow…",
+        "loadError": "We couldn't load this workflow.",
+        "version": "Version",
+        "newVersionWarning": "Editing an active workflow creates a new version. In-flight requests continue on their current version; new requests use the new one.",
+        "nameLabel": "Workflow name",
+        "namePlaceholder": "e.g. Standard Leave Approval",
+        "entityTypeLabel": "Request type",
+        "preview": "Preview",
+        "hidePreview": "Hide preview",
+        "previewTitle": "Workflow preview",
+        "previewStart": "Request submitted",
+        "previewEnd": "Approved",
+        "previewParallel": "Parallel",
+        "previewConditional": "Conditional",
+        "stepsTitle": "Approval steps",
+        "noSteps": "Add at least one approval step.",
+        "dragHandle": "Drag to reorder step",
+        "toggleStep": "Toggle step details",
+        "removeStep": "Remove step",
+        "approverType": "Approver type",
+        "approver": "Approver",
+        "selectApprover": "Select…",
+        "sla": "SLA",
+        "hours": "hours",
+        "parallel": "Parallel approval (all approvers must approve)",
+        "parallelBadge": "Parallel",
+        "parallelHint": "Add the approvers who must all sign off at this step.",
+        "addApprover": "Add approver",
+        "removeApprover": "Remove approver",
+        "condition": "Only run this step when a condition is met",
+        "conditionField": "Field (e.g. days_requested)",
+        "conditionValue": "Value",
+        "escalation": "Escalate on SLA breach",
+        "delegation": "Delegate to a backup when the approver is on leave",
+        "backupApprover": "Backup approver",
+        "addStep": "Add step",
+        "cancel": "Cancel",
+        "saveCreate": "Create workflow",
+        "saveNewVersion": "Save as new version",
+        "saving": "Saving…",
+        "created": "Workflow created.",
+        "updated": "New version saved.",
+        "saveError": "The workflow could not be saved."
+      }
+    },
     "companySettings": {
       "title": "Company Settings",
       "subtitle": "Manage your organization profile, branding, localization, and security policies.",
