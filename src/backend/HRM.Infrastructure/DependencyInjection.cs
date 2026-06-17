@@ -195,6 +195,10 @@ public static class DependencyInjection
         services.AddScoped<ISessionRevoker, NoOpSessionRevoker>();
         services.AddScoped<IPayrollFnFIntegration, LogOnlyPayrollFnFIntegration>();
 
+        // US-ONB-006: exit-interview recording + analytics. Reuses the onboarding notification outbox (FR-8)
+        // and the offboarding instance/task link (FR-3/AC-2). Anonymized analytics (FR-5).
+        services.AddScoped<IExitInterviewService, ExitInterviewService>();
+
         // US-PAY-001: Payroll — salary component + salary structure configuration.
         services.AddScoped<ISalaryComponentService, SalaryComponentService>();
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();
