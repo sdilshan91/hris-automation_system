@@ -131,7 +131,7 @@
 - [x] US-ADM-006 — Configure company settings *(PR #90)*
 - [x] US-ADM-007 — Manage approval workflows *(PR #91)*
 - [x] US-ADM-008 — View audit logs *(PR #92)*
-- [ ] US-ADM-009 — Manage subscription plans
+- [~] US-ADM-009 — Manage subscription plans
 - [ ] US-ADM-010 — Tenant data export on demand
 
 ## 9. Onboarding / Offboarding (6 stories)

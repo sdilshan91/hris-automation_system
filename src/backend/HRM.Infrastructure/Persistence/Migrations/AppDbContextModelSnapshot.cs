@@ -4567,6 +4567,49 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.ToTable("payslip_email_log", (string)null);
                 });
 
+            modelBuilder.Entity("HRM.Domain.Entities.PlanLimitOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("LimitKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("limit_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long?>("Value")
+                        .HasColumnType("bigint")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_plan_limit_overrides");
+
+                    b.HasIndex("TenantId", "LimitKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_plan_limit_overrides_tenant_id_limit_key");
+
+                    b.ToTable("plan_limit_overrides", (string)null);
+                });
+
             modelBuilder.Entity("HRM.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5584,6 +5627,12 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int>("AuditLogRetentionDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(90)
+                        .HasColumnName("audit_log_retention_days");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -5594,15 +5643,72 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("USD")
+                        .HasColumnName("currency");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("EnabledModules")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("enabled_modules")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<string>("FeatureFlags")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("feature_flags")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<bool>("IsPublic")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_public");
+
+                    b.Property<int?>("MaxApiCallsPerMonth")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_api_calls_per_month");
+
+                    b.Property<int?>("MaxCustomFieldsPerEntity")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_custom_fields_per_entity");
+
+                    b.Property<int?>("MaxCustomRoles")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_custom_roles");
+
+                    b.Property<int?>("MaxEmailSendsPerMonth")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_email_sends_per_month");
+
                     b.Property<int?>("MaxEmployees")
                         .HasColumnType("integer")
                         .HasColumnName("max_employees");
+
+                    b.Property<int?>("MaxStorageGb")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_storage_gb");
+
+                    b.Property<int?>("MaxWorkflows")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_workflows");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -5614,9 +5720,27 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(12,2)")
                         .HasColumnName("price_monthly");
 
+                    b.Property<decimal>("PriceYearly")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("price_yearly");
+
+                    b.Property<string>("SlaTier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("standard")
+                        .HasColumnName("sla_tier");
+
                     b.Property<int>("TrialDays")
                         .HasColumnType("integer")
                         .HasColumnName("trial_days");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.HasKey("Id")
                         .HasName("pk_subscription_plans");

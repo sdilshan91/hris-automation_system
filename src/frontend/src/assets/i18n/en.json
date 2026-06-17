@@ -1,5 +1,86 @@
 {
   "admin": {
+    "plans": {
+      "status": {
+        "active": "Active",
+        "archived": "Archived"
+      },
+      "visibility": {
+        "public": "Public",
+        "private": "Private"
+      },
+      "sla": {
+        "standard": "Standard",
+        "business": "Business",
+        "enterprise": "Enterprise"
+      },
+      "list": {
+        "title": "Subscription Plans",
+        "subtitle": "Pricing, entitlements, modules and usage limits offered to tenants.",
+        "create": "Create plan",
+        "createFirst": "Create your first plan",
+        "compare": "Compare",
+        "empty": "No subscription plans have been created yet.",
+        "sortBy": "Sort by",
+        "sortName": "Name",
+        "sortPrice": "Price",
+        "sortTenants": "Tenant count",
+        "month": "mo",
+        "year": "yr",
+        "tenant": "tenant",
+        "tenants": "tenants"
+      },
+      "editor": {
+        "back": "Back to plans",
+        "createTitle": "Create plan",
+        "editTitle": "Edit plan",
+        "general": "General",
+        "code": "Code",
+        "codeHint": "Unique slug — lowercase letters, numbers and hyphens.",
+        "codeImmutable": "The code cannot be changed once a plan is created.",
+        "codeInvalid": "Use lowercase letters, numbers and hyphens only.",
+        "name": "Name",
+        "description": "Description",
+        "priceMonthly": "Price / month",
+        "priceYearly": "Price / year",
+        "currency": "Currency",
+        "isPublic": "Public (appears on pricing page)",
+        "isActive": "Active",
+        "limits": "Limits",
+        "limitsHint": "Toggle “Unlimited” to remove a cap. An unlimited limit is stored as no value.",
+        "unlimited": "Unlimited",
+        "modules": "Modules",
+        "modulesHint": "Which feature modules tenants on this plan can access. Core HR is always enabled.",
+        "always": "Always",
+        "flags": "Feature flags",
+        "slaTrial": "SLA & Trial",
+        "slaTier": "SLA tier",
+        "trialDays": "Trial days",
+        "archive": "Archive",
+        "delete": "Delete",
+        "archiveConfirmTitle": "Archive this plan?",
+        "archiveConfirmText": "Archived plans are no longer offered when provisioning new tenants. Existing tenants are unaffected.",
+        "deleteConfirmTitle": "Delete this plan?",
+        "deleteConfirmText": "This permanently removes the plan.",
+        "deleteWarning": "Plans referenced by any tenant cannot be deleted — archive them instead."
+      },
+      "overrides": {
+        "title": "Custom Limits",
+        "subtitle": "Per-tenant limit overrides. Applied at runtime before the plan’s own limits.",
+        "empty": "No custom limits configured for this tenant.",
+        "limit": "Limit",
+        "selectLimit": "Select a limit…",
+        "value": "Value",
+        "expiry": "Expires (optional)",
+        "expires": "Expires",
+        "add": "Add override"
+      },
+      "compare": {
+        "title": "Plan Comparison",
+        "subtitle": "Limits, modules and feature flags across all plans.",
+        "feature": "Feature"
+      }
+    },
     "workflows": {
       "entityType": {
         "Leave": "Leave",
@@ -300,10 +381,13 @@
   "common": {
     "cancel": "Cancel",
     "save": "Save",
+    "saving": "Saving…",
     "confirm": "Confirm",
     "close": "Close",
     "done": "Done",
     "retry": "Try Again",
+    "remove": "Remove",
+    "add": "Add",
     "previous": "Previous",
     "next": "Next"
   },

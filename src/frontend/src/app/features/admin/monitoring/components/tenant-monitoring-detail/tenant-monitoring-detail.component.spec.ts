@@ -6,6 +6,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { provideToastr } from 'ngx-toastr';
 import { provideTranslateService } from '@ngx-translate/core';
 import { TenantMonitoringDetailComponent } from './tenant-monitoring-detail.component';
 import { AuthService } from '../../../../../core/auth/auth.service';
@@ -19,6 +20,9 @@ describe('TenantMonitoringDetailComponent', () => {
   const detailUrl = `${root}/tenants/t-1`;
   // US-ADM-004: lifecycle history is loaded alongside the detail.
   const historyUrl = `${environment.apiBaseUrl}/system/tenants/t-1/lifecycle/history`;
+  // US-ADM-009 AC-5: the plan-overrides child (rendered for System Admin only)
+  // loads the tenant's overrides on init.
+  const overridesUrl = `${environment.apiBaseUrl}/system/tenants/t-1/plan-overrides`;
 
   const detail: ITenantMonitoringDetail = {
     tenantId: 't-1',
@@ -53,6 +57,7 @@ describe('TenantMonitoringDetailComponent', () => {
         provideHttpClientTesting(),
         provideAnimationsAsync(),
         provideTranslateService(),
+        provideToastr(),
         { provide: AuthService, useValue: authStub },
         {
           provide: ActivatedRoute,
@@ -77,6 +82,10 @@ describe('TenantMonitoringDetailComponent', () => {
   }
 
   afterEach(() => {
+    // US-ADM-009: the plan-overrides child (System Admin only) fires its own GET
+    // once it renders. Flush any such pending request so verify() stays clean —
+    // it is exercised explicitly in its own component spec.
+    httpMock.match(overridesUrl).forEach((r) => r.flush([]));
     httpMock.verify();
     TestBed.resetTestingModule();
   });

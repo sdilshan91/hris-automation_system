@@ -1,0 +1,101 @@
+<div class="page-container">
+  <a routerLink="/admin/plans" class="inline-flex items-center text-sm text-neutral-500 hover:text-neutral-800 transition-colors mb-4">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 mr-1" aria-hidden="true">
+      <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+    </svg>
+    {{ 'admin.plans.editor.back' | translate }}
+  </a>
+
+  <h1 class="text-2xl font-semibold text-neutral-900 tracking-tight mb-1">{{ 'admin.plans.compare.title' | translate }}</h1>
+  <p class="text-sm text-neutral-500 mb-6">{{ 'admin.plans.compare.subtitle' | translate }}</p>
+
+  @if (isLoading()) {
+    <div class="card-notion animate-pulse h-64"></div>
+  } @else if (errorMessage()) {
+    <div class="card-notion text-center py-12">
+      <p class="text-sm text-red-500">{{ errorMessage() }}</p>
+    </div>
+  } @else if (plans().length === 0) {
+    <div class="card-notion text-center py-12">
+      <p class="text-sm text-neutral-500">{{ 'admin.plans.list.empty' | translate }}</p>
+    </div>
+  } @else {
+    <div class="card-notion !p-0 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm" data-testid="comparison-table" [attr.aria-label]="'admin.plans.compare.title' | translate">
+          <thead>
+            <tr class="border-b border-neutral-100 text-left">
+              <th scope="col" class="px-5 py-3 font-medium text-neutral-400 sticky left-0 bg-white">{{ 'admin.plans.compare.feature' | translate }}</th>
+              @for (p of plans(); track p.id) {
+                <th scope="col" class="px-5 py-3 font-semibold text-neutral-900 whitespace-nowrap">
+                  {{ p.name }}
+                  <span class="block text-xs font-normal text-neutral-400">
+                    {{ p.priceMonthly === null ? '—' : (p.priceMonthly | number) }} {{ p.currency }}
+                  </span>
+                </th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Limits -->
+            <tr class="bg-neutral-50">
+              <th [attr.colspan]="plans().length + 1" scope="colgroup" class="px-5 py-2 text-left text-xs uppercase tracking-wide text-neutral-400">
+                {{ 'admin.plans.editor.limits' | translate }}
+              </th>
+            </tr>
+            @for (f of limitFields; track f.controlName) {
+              <tr class="border-b border-neutral-50">
+                <th scope="row" class="px-5 py-2.5 font-normal text-neutral-600 sticky left-0 bg-white">{{ f.label }}</th>
+                @for (p of plans(); track p.id) {
+                  <td class="px-5 py-2.5 text-neutral-900">{{ limitDisplay(limitValue(p, f.controlName)) }}</td>
+                }
+              </tr>
+            }
+
+            <!-- Modules -->
+            <tr class="bg-neutral-50">
+              <th [attr.colspan]="plans().length + 1" scope="colgroup" class="px-5 py-2 text-left text-xs uppercase tracking-wide text-neutral-400">
+                {{ 'admin.plans.editor.modules' | translate }}
+              </th>
+            </tr>
+            @for (m of modules; track m.key) {
+              <tr class="border-b border-neutral-50">
+                <th scope="row" class="px-5 py-2.5 font-normal text-neutral-600 sticky left-0 bg-white">{{ m.label }}</th>
+                @for (p of plans(); track p.id) {
+                  <td class="px-5 py-2.5">
+                    @if (hasModule(p, m.key)) {
+                      <span class="text-green-600" aria-label="included">✓</span>
+                    } @else {
+                      <span class="text-neutral-300" aria-label="not included">—</span>
+                    }
+                  </td>
+                }
+              </tr>
+            }
+
+            <!-- Feature flags -->
+            <tr class="bg-neutral-50">
+              <th [attr.colspan]="plans().length + 1" scope="colgroup" class="px-5 py-2 text-left text-xs uppercase tracking-wide text-neutral-400">
+                {{ 'admin.plans.editor.flags' | translate }}
+              </th>
+            </tr>
+            @for (ff of featureFlagFields; track ff.key) {
+              <tr class="border-b border-neutral-50 last:border-0">
+                <th scope="row" class="px-5 py-2.5 font-normal text-neutral-600 sticky left-0 bg-white">{{ ff.label }}</th>
+                @for (p of plans(); track p.id) {
+                  <td class="px-5 py-2.5">
+                    @if (hasFlag(p, ff.key)) {
+                      <span class="text-green-600" aria-label="enabled">✓</span>
+                    } @else {
+                      <span class="text-neutral-300" aria-label="disabled">—</span>
+                    }
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>

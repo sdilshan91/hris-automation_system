@@ -231,6 +231,48 @@ public sealed class TenantProvisioningIntegrationTests
         (await db.Tenants.IgnoreQueryFilters().AnyAsync(t => t.Subdomain == "acme")).Should().BeFalse();
     }
 
+    // ── US-ADM-009 (FR-6): tenant inherits the chosen plan's enabled modules ─
+
+    [Fact]
+    public async Task Provision_InheritsPlanEnabledModules_ExcludingUnselectedModule()
+    {
+        // Seed a plan whose EnabledModules deliberately EXCLUDES Recruitment (CoreHR + Leave + Payroll only).
+        var planId = Guid.NewGuid();
+        await using (var seed = Db())
+        {
+            seed.SubscriptionPlans.Add(new SubscriptionPlan
+            {
+                Id = planId,
+                Name = "Lean",
+                Code = $"lean-{Guid.NewGuid():N}".Substring(0, 12),
+                PriceMonthly = 49m,
+                TrialDays = 0,
+                MaxEmployees = 25,
+                IsActive = true,
+                EnabledModules = new List<string>
+                {
+                    HRM.Domain.Authorization.PlanModules.CoreHr,
+                    HRM.Domain.Authorization.PlanModules.Leave,
+                    HRM.Domain.Authorization.PlanModules.Payroll,
+                },
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var (service, _) = Service();
+        var result = await service.ProvisionAsync(Input(planId));
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+        tenant.EnabledModules.Should().Contain(HRM.Domain.Authorization.PlanModules.CoreHr);
+        tenant.EnabledModules.Should().Contain(HRM.Domain.Authorization.PlanModules.Leave);
+        tenant.EnabledModules.Should().Contain(HRM.Domain.Authorization.PlanModules.Payroll);
+        tenant.EnabledModules.Should().NotContain(HRM.Domain.Authorization.PlanModules.Recruitment);
+        tenant.MaxEmployees.Should().Be(25); // also inherited from the plan
+    }
+
     // ── §7: default master data seeded for the new tenant ───────────────────
 
     [Fact]

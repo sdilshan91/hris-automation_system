@@ -22,6 +22,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
+    // US-ADM-009: system-level, cross-tenant plan-limit overrides — NO tenant query filter
+    // (see PlanLimitOverrideConfiguration); managed only from the system-admin console.
+    public DbSet<PlanLimitOverride> PlanLimitOverrides => Set<PlanLimitOverride>();
     public DbSet<TenantLifecycleEvent> TenantLifecycleEvents => Set<TenantLifecycleEvent>();
     // US-ADM-004: system-level, cross-tenant — NO tenant query filter (see TenantScheduledJobConfiguration).
     public DbSet<TenantScheduledJob> TenantScheduledJobs => Set<TenantScheduledJob>();

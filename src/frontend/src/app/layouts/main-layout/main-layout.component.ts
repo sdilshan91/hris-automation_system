@@ -21,6 +21,8 @@ interface INavItem {
   icon: string;
   route: string;
   permission?: string;
+  /** US-ADM-009: System-Admin-console items gate on role, not a tenant permission. */
+  role?: string;
 }
 
 @Component({
@@ -183,7 +185,10 @@ interface INavItem {
         <!-- Navigation items -->
         <nav class="sidebar-nav">
           @for (item of navItems; track item.route) {
-            @if (!item.permission || authService.hasPermission(item.permission)) {
+            @if (
+              (!item.permission || authService.hasPermission(item.permission)) &&
+              (!item.role || authService.hasRole(item.role))
+            ) {
               <a
                 [routerLink]="item.route"
                 routerLinkActive="nav-active"
@@ -774,6 +779,13 @@ export class MainLayoutComponent implements OnInit {
       route: '/admin/audit-log',
       permission: 'Admin.View',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
+      // US-ADM-009: System Admin Console subscription plans (role-gated, not permission).
+      label: 'Plans',
+      route: '/admin/plans',
+      role: 'System Admin',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M1 4.25C1 3.56 1.56 3 2.25 3h15.5c.69 0 1.25.56 1.25 1.25v2.5C19 7.44 18.44 8 17.75 8H2.25C1.56 8 1 7.44 1 6.75v-2.5ZM1 11.25c0-.69.56-1.25 1.25-1.25h15.5c.69 0 1.25.56 1.25 1.25v4.5c0 .69-.56 1.25-1.25 1.25H2.25C1.56 17 1 16.44 1 15.75v-4.5Zm4 1a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5H5Z"/></svg>`,
     },
   ];
 

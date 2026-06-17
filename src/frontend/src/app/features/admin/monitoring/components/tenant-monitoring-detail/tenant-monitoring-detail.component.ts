@@ -26,6 +26,7 @@ import {
   LifecycleConfirmAction,
 } from '../../../lifecycle/components/lifecycle-confirm-dialog/lifecycle-confirm-dialog.component';
 import { LifecycleHistoryTimelineComponent } from '../../../lifecycle/components/lifecycle-history-timeline/lifecycle-history-timeline.component';
+import { PlanOverridesSectionComponent } from '../../../plans/components/plan-overrides-section/plan-overrides-section.component';
 import {
   ITenantLifecycleEvent,
   ITenantLifecycleResult,
@@ -63,6 +64,7 @@ import {
     TerminateTenantDialogComponent,
     LifecycleConfirmDialogComponent,
     LifecycleHistoryTimelineComponent,
+    PlanOverridesSectionComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [

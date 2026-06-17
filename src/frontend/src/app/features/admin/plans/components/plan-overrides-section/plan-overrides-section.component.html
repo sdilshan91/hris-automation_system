@@ -1,0 +1,73 @@
+<div class="card-notion" data-testid="overrides-section">
+  <div class="mb-3">
+    <h2 class="text-sm font-semibold text-neutral-800">{{ 'admin.plans.overrides.title' | translate }}</h2>
+    <p class="text-xs text-neutral-400 mt-0.5">{{ 'admin.plans.overrides.subtitle' | translate }}</p>
+  </div>
+
+  @if (isLoading()) {
+    <div class="animate-pulse space-y-2">
+      <div class="h-9 rounded bg-neutral-50"></div>
+      <div class="h-9 rounded bg-neutral-50"></div>
+    </div>
+  } @else {
+    <!-- Existing overrides -->
+    @if (overrides().length === 0) {
+      <p class="text-sm text-neutral-400 py-2" data-testid="overrides-empty">
+        {{ 'admin.plans.overrides.empty' | translate }}
+      </p>
+    } @else {
+      <ul class="divide-y divide-neutral-100" data-testid="overrides-list">
+        @for (o of overrides(); track o.limitKey) {
+          <li class="flex items-center justify-between py-2.5 text-sm" data-testid="override-row">
+            <div>
+              <span class="font-medium text-neutral-800">{{ labelFor(o.limitKey) }}</span>
+              <span class="ml-2 text-neutral-900">{{ limitDisplay(o.value) }}</span>
+              @if (o.expiresAt) {
+                <span class="ml-2 text-xs text-amber-600">
+                  {{ 'admin.plans.overrides.expires' | translate }} {{ o.expiresAt | date: 'mediumDate' }}
+                </span>
+              }
+            </div>
+            <button
+              type="button"
+              class="text-xs text-red-500 hover:text-red-700 transition-colors"
+              [disabled]="isSaving()"
+              (click)="remove(o.limitKey)"
+              [attr.data-testid]="'override-remove-' + o.limitKey"
+            >
+              {{ 'common.remove' | translate }}
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
+    <!-- Add override -->
+    @if (availableKeys().length > 0) {
+      <form [formGroup]="addForm" (ngSubmit)="add()" class="mt-4 pt-3 border-t border-neutral-100 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+        <div class="sm:col-span-1">
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="ov-key">{{ 'admin.plans.overrides.limit' | translate }}</label>
+          <select id="ov-key" formControlName="limitKey" class="input-notion" data-testid="override-key">
+            <option value="" disabled>{{ 'admin.plans.overrides.selectLimit' | translate }}</option>
+            @for (f of availableKeys(); track f.limitKey) {
+              <option [value]="f.limitKey">{{ f.label }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="ov-value">{{ 'admin.plans.overrides.value' | translate }}</label>
+          <input id="ov-value" type="number" min="0" formControlName="value" class="input-notion" data-testid="override-value" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-500 mb-1" for="ov-expiry">{{ 'admin.plans.overrides.expiry' | translate }}</label>
+          <input id="ov-expiry" type="date" formControlName="expiresAt" class="input-notion" data-testid="override-expiry" />
+        </div>
+        <div>
+          <button type="submit" class="btn-primary w-full" [disabled]="isSaving()" data-testid="override-add">
+            {{ 'common.add' | translate }}
+          </button>
+        </div>
+      </form>
+    }
+  }
+</div>
