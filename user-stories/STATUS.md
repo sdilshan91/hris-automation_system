@@ -129,7 +129,7 @@
 - [x] US-ADM-004 — Suspend/terminate a tenant *(PR #88)*
 - [x] US-ADM-005 — Manage users and role assignments *(PR #89)*
 - [x] US-ADM-006 — Configure company settings *(PR #90)*
-- [~] US-ADM-007 — Manage approval workflows
+- [x] US-ADM-007 — Manage approval workflows *(PR #91)*
 - [ ] US-ADM-008 — View audit logs
 - [ ] US-ADM-009 — Manage subscription plans
 - [ ] US-ADM-010 — Tenant data export on demand
@@ -160,10 +160,10 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **83** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001..006** (#85–#90)
+- Done: **84** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001..007** (#85–#91)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **20** — Admin Console (4: US-ADM-007..010), Onboarding (6), Notifications (5), Reports (5)
-- **Next module by priority: Admin Console (US-ADM-007..010)**
+- Pending: **19** — Admin Console (3: US-ADM-008..010), Onboarding (6), Notifications (5), Reports (5)
+- **Next module by priority: Admin Console (US-ADM-008..010)**
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
 ## Module → directory map
