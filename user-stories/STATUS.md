@@ -139,7 +139,7 @@
 - [x] US-ONB-002 — Assign onboarding checklist to new hire *(PR #96)*
 - [x] US-ONB-003 — New hire completes onboarding tasks *(PR #97)*
 - [x] US-ONB-004 — Asset issuance tracking *(PR #98)*
-- [ ] US-ONB-005 — Offboarding/exit checklist and clearance
+- [~] US-ONB-005 — Offboarding/exit checklist and clearance
 - [ ] US-ONB-006 — Exit interview recording
 
 ## 10. Notifications & Audit (5 stories)
