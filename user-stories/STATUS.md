@@ -122,7 +122,7 @@
 - [x] US-PRF-009 — Goal tracking with progress updates *(PR #83)*
 - [x] US-PRF-010 — Performance-based recommendations *(PR #84)*
 
-## 8. Admin Console (10 stories)
+## 8. Admin Console (10 stories) — COMPLETE ✅
 - [x] US-ADM-001 — System Admin provisions new tenant *(PR #85)*
 - [x] US-ADM-002 — Monitor platform health and usage *(PR #86)*
 - [x] US-ADM-003 — Impersonate tenant user with audit *(PR #87)*
@@ -132,7 +132,7 @@
 - [x] US-ADM-007 — Manage approval workflows *(PR #91)*
 - [x] US-ADM-008 — View audit logs *(PR #92)*
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
-- [~] US-ADM-010 — Tenant data export on demand
+- [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
 
 ## 9. Onboarding / Offboarding (6 stories)
 - [ ] US-ONB-001 — Create onboarding checklist template
@@ -160,10 +160,10 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **86** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **US-ADM-001..009** (#85–#93)
+- Done: **87** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **17** — Admin Console (1: US-ADM-010), Onboarding (6), Notifications (5), Reports (5)
-- **Next module by priority: Admin Console (US-ADM-010)**
+- Pending: **16** — Onboarding (6), Notifications (5), Reports (5)
+- **Next module by priority: Onboarding / Offboarding (US-ONB-001..006)**
 - **Next module by priority: Performance Management (US-PRF-001..010)**
 
 ## Module → directory map
