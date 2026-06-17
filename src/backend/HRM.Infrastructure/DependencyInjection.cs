@@ -296,6 +296,19 @@ public static class DependencyInjection
         services.AddScoped<IHrReportExportService, HrReportExportService>();
         services.AddScoped<IHrReportExportCleanupService, HrReportExportCleanupService>();
 
+        // US-RPT-005: Reports — role-based KPI dashboard. A THIN COMPOSITION layer over the existing
+        // per-module services (IHrReportService, IVacancyService, ILeaveRequestService, ILeaveDashboardService,
+        // IAttendanceDashboardService, IOnboardingChecklistService, IHolidayService, IAppraisalCycleService,
+        // IMyPayslipService) + direct tenant-scoped Employee/Onboarding/AttendanceSummary reads for the
+        // team-size / birthdays / recent-joiners / counts. It RECOMPUTES nothing and adds NO new entity /
+        // migration. The role (hr / manager / employee) is derived SERVER-SIDE from ICurrentUser (BR-1 / FR-8).
+        // IDistributedCache is the SAME optional Redis seam used elsewhere: present → per-widget cache
+        // (FR-4, ~3-min TTL, refresh=true bypass), absent/in-memory → straight compute. The optional
+        // collaborators are resolved by the container when registered; constructor-optional so tests can wire a
+        // subset. DEFERRED: BR-5 module-enablement gating (no per-tenant enablement flag wired) — all modules
+        // assumed on; the general US-NTF pending-actions/forms queue (not persisted) — onboarding tasks only.
+        services.AddScoped<IDashboardService, DashboardService>();
+
         // US-PAY-012: Payroll — history + structured audit trail. The audit logger writes structured entries
         // into the shared audit_log table (extended additively); the history/audit-trail/export reads live in
         // PayrollAuditService. Audit export reuses the US-PAY-009 PayrollReportRenderer + IReportExportStorage.

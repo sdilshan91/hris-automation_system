@@ -5013,9 +5013,15 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 | User Story ID | User Story Title | Priority | Test Cases | TC Count | Coverage |
 |---------------|-----------------|----------|------------|----------|----------|
-| US-RPT-001 | Pre-Built HR Reports (Headcount, Turnover, Demographics) | Must Have | TC-RPT-001-01, TC-RPT-001-02, TC-RPT-001-03, TC-RPT-001-04, TC-RPT-001-05, TC-RPT-001-06, TC-RPT-001-07, TC-RPT-001-08, TC-RPT-001-09, TC-RPT-001-10, TC-RPT-001-11, TC-RPT-001-12 | 12 | 5/5 AC covered |
-| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-RPT-ISO-001, TC-RPT-ISO-002, TC-RPT-ISO-003, TC-RPT-ISO-004 | 4 | -- |
-| **TOTAL** | | | **16 test cases** | **16** | **5/5 AC** |
+| US-RPT-001 | Pre-Built HR Reports (Headcount, Turnover, Demographics) | Must Have | TC-RPT-001-01 .. TC-RPT-001-12 | 12 | 5/5 AC covered |
+| US-RPT-002 | Leave & Attendance Reports | Must Have | TC-RPT-002-01 .. TC-RPT-002-12 | 12 | 5/5 AC covered |
+| US-RPT-003 | Payroll Reports & Summaries | Must Have | TC-RPT-003-01 .. TC-RPT-003-12 | 12 | 5/5 AC covered |
+| US-RPT-004 | Export Reports to CSV / PDF / Excel | Must Have | TC-RPT-004-01 .. TC-RPT-004-12 | 12 | 5/5 AC covered |
+| US-RPT-005 | Dashboard with KPI Widgets | Should Have | TC-RPT-005-01 .. TC-RPT-005-12 | 12 | 5/5 AC covered |
+| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-RPT-ISO-001 .. TC-RPT-ISO-020 | 20 | -- |
+| **TOTAL** | **5 stories (Reports module COMPLETE)** | | **80 test cases** | **80** | **25/25 AC** |
+
+> Per-story detail (US-RPT-001..005) -- including each story's Test-Case -> Requirement mapping and AC-coverage tables -- follows in the `### US-RPT-NNN` sub-sections below. US-RPT-005 is the FINAL story; the Reports & Analytics module is now COMPLETE: 5 stories, 80 test cases (60 functional/integration/security/performance/accessibility + 20 multi-tenant isolation), 25/25 acceptance criteria covered.
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -5178,6 +5184,52 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | AC-5 (tenant-scoped download -> Tenant B 403; tenant-isolated storage; signed-URL expiry DEFERRED) | TC-RPT-004-06, -10, TC-RPT-ISO-013, -014, -015, -016 | EF query filter + interceptor + ITenantContext + tenant-pathed storage (signed URL/15-min expiry + Postgres RLS deferred) |
 
 *Note (Reports -- US-RPT-004): Adds export to the GENERIC `/api/v1/reports` surface (forward-looking; the generic reports export engine is to-be-built). Continues per-story-suffix functional scheme (TC-RPT-{NNN}-XX) + running ISO counter, now TC-RPT-ISO-016. DEFERRED / CONDITIONAL (flag to caller -- never relax a threshold to compensate): (1) Charts-as-images in PDF (AC-3/FR-4, server-side chart-to-PNG via SkiaSharp/headless) is DEFERRED -- TC-RPT-004-03 step 6 is CONDITIONAL; the PDF title+filters+data-tables+pagination+tenant-name footer (BR-5) are in-scope and binding, the chart-image step records pending if not wired and does NOT fail the case. (2) Cryptographic signed URLs + 15-min expiry (FR-7/NFR-4) are DEFERRED; what IS implemented is an AUTHENTICATED tenant-scoped /exports/{exportId}/download endpoint + BR-3 7-day retention purge -- TC-RPT-004-06 asserts the tenant-403 + retention behavior that exists, the signed-URL/16-min-410 steps are CONDITIONAL. (3) PostgreSQL RLS (NFR-7) is deferred defense-in-depth -- ISO TCs assert EF global query filters + TenantInterceptor + ITenantContext; cross-tenant exportId injection asserts 404 not 403 (TC-RPT-ISO-014); the raw-SQL RLS expectation is CONDITIONAL (TC-RPT-ISO-016 step 6). (4) FR-9 audit action string is asserted verbatim against the implementation constant (e.g. Report.Export) -- confirm the exact value, do not accept a lowercased variant (consistent with US-RPT-003 PayrollReport.ViewSensitive). (5) BR-1 View.Team/.All scope split still depends on scoped permission variants not yet exposed (same gap flagged in US-RPT-001/002); Reports.Export exists in the catalog -- TC-RPT-ISO-015 asserts the export reuses the report view's CURRENT scoping and flags the gap rather than relaxing it. (6) NFR-1 (<2s sync CSV) / NFR-2 (<60s async @50k) require a perf-representative environment (TC-RPT-004-11); on a dev box record indicative numbers, never relax thresholds.*
+
+
+---
+
+### US-RPT-005 -- Dashboard with KPI Widgets
+
+> US-RPT-005 (role-based KPI dashboard: HR / Manager / Employee) is the FINAL Reports & Analytics story. Contract: a single server-driven endpoint `GET /api/v1/dashboard/widgets?refresh=` -> `{role:"hr"|"manager"|"employee", greetingName, generatedAt, widgets:[...]}`; `role` is DERIVED SERVER-SIDE. Each widget is `{widgetKey, label, value, previousValue, trendDirection, trendPercentage, trendIsPositive, miniChart{type: sparkline|donut|progress}, items[], linkUrl, linkFilters}`. `DashboardService` COMPOSES the existing per-module services (Core HR, Leave, Attendance, Recruitment, Onboarding). Redis cache TTL ~3 min keyed `t:{tenantId}:dashboard:{role}:{userId}:{widgetKey}`. Adds 16 TCs: 12 functional/integration/security/performance/accessibility (TC-RPT-005-01..12) + 4 multi-tenant isolation (TC-RPT-ISO-017..020, continuing the running ISO counter from US-RPT-004's -016). All 5 ACs traced.
+
+#### US-RPT-005 User-Story -> Test-Case Mapping
+
+| User Story | Title | Priority | Test Cases | Count | AC Coverage |
+|-----------|-------|----------|-----------|-------|-------------|
+| US-RPT-005 | Dashboard with KPI Widgets | Should Have | TC-RPT-005-01, TC-RPT-005-02, TC-RPT-005-03, TC-RPT-005-04, TC-RPT-005-05, TC-RPT-005-06, TC-RPT-005-07, TC-RPT-005-08, TC-RPT-005-09, TC-RPT-005-10, TC-RPT-005-11, TC-RPT-005-12, TC-RPT-ISO-017, TC-RPT-ISO-018, TC-RPT-ISO-019, TC-RPT-ISO-020 | 16 | 5/5 AC covered |
+
+#### US-RPT-005 Test-Case -> Requirement Mapping
+
+| Test Case | Title | Type | Priority | User Story | Requirements |
+|-----------|-------|------|----------|-----------|--------------|
+| TC-RPT-005-01 | HR dashboard full widget set + correct values (50 emp / 5 pending leave / 3 open pos); each widget value+trend+miniChart | E2E | Critical | US-RPT-005 | AC-1, FR-1/2/3, BR-1 |
+| TC-RPT-005-02 | Manager dashboard team-scoped to 8 direct reports (ReportsToEmployeeId); pending approvals + quick actions | E2E | Critical | US-RPT-005 | AC-2, FR-1/7, BR-1/3/6 |
+| TC-RPT-005-03 | Employee dashboard personal widgets (leave-balance donut, attendance progress, onboarding, holidays, payslips link, pending-actions) | E2E | Critical | US-RPT-005 | AC-3, FR-1/2/7, BR-1 |
+| TC-RPT-005-04 | Click-through to module page with pre-applied filter via linkUrl+linkFilters (pending-leave -> /leave/requests?status=Pending) | E2E | High | US-RPT-005 | AC-4, FR-5 |
+| TC-RPT-005-05 | Trend = current vs same-length prior period; trendIsPositive semantics (headcount-up=green/+; turnover-up=red/-) | Functional | High | US-RPT-005 | AC-1, FR-2, BR-2 |
+| TC-RPT-005-06 | Role derived server-side; role-based widget visibility; tampered ?role= ignored | Security | Critical | US-RPT-005 | AC-1/2/3, FR-1/8, BR-1 |
+| TC-RPT-005-07 | Pending Approvals counts only items assigned to logged-in user (not all tenant-pending) | Functional | High | US-RPT-005 | AC-2, FR-7, BR-3 |
+| TC-RPT-005-08 | Upcoming birthdays/anniversaries within next 7 days (BR-4); Quick Actions top 5 (BR-6) | Functional | High | US-RPT-005 | AC-1/2, FR-6/7, BR-4/6 |
+| TC-RPT-005-09 | Unauthenticated -> 401; role with no data -> empty/zero-state widgets (not error) | Security | Critical | US-RPT-005 | AC-1/2/3, FR-8 |
+| TC-RPT-005-10 | Module-enablement hides widgets (BR-5) -- DEFERRED/CONDITIONAL, assume-all-on | Functional | Medium | US-RPT-005 | BR-5 (deferred), AC-1/3 |
+| TC-RPT-005-11 | Dashboard <=2s P95 (NFR-1); widget <500ms (NFR-2); Redis cache TTL 2-5min + refresh bypass (FR-4); auto/manual refresh (FR-9) | Performance | High | US-RPT-005 | AC-1, FR-4/9, NFR-1/2/6 |
+| TC-RPT-005-12 | A11y ARIA landmarks + SR metric values (NFR-5); responsive 1/2/4-col grid at 360/768/1280/1920px (NFR-4) | Accessibility | Medium | US-RPT-005 | AC-1/2/3, FR-2, NFR-4/5 |
+| TC-RPT-ISO-017 | Dashboards independent across tenants; A vs B show only own data; no leakage | Security | Critical | US-RPT-005 | AC-5, FR-8, BR-1 |
+| TC-RPT-ISO-018 | No-tenant-context rejected; cross-tenant ID injection -> 404 (not 403); spoofed tenant_id ignored | Security | Critical | US-RPT-005 | AC-5, FR-8, NFR-3 |
+| TC-RPT-ISO-019 | EF filter constrains every per-module composition path DashboardService aggregates; RLS deferred | Security | Critical | US-RPT-005 | AC-5, FR-8, NFR-3 |
+| TC-RPT-ISO-020 | Cache keys tenant+role+user scoped (t:{tenantId}:dashboard:{role}:{userId}:{widgetKey}); no cross-tenant/user collision (Redis-conditional) | Security | High | US-RPT-005 | AC-5, FR-4/8 |
+
+#### US-RPT-005 Acceptance-Criteria Coverage
+
+| AC | Covered By | Mechanism |
+|----|-----------|-----------|
+| AC-1 (HR dashboard widget set; each card value+trend+mini chart) | TC-RPT-005-01, -05, -06, -08, -09, -11, -12 | Direct |
+| AC-2 (Manager dashboard: team-scoped widgets, pending approvals, Quick Actions) | TC-RPT-005-02, -06, -07, -08, -09, -12 | Direct (team scope via ReportsToEmployeeId direct-reports filter) |
+| AC-3 (Employee dashboard: leave-balance donut, attendance progress, onboarding, holidays, payslips link, pending actions) | TC-RPT-005-03, -06, -09, -12 | Direct |
+| AC-4 (KPI widget click-through to module page with pre-applied filter) | TC-RPT-005-04 | Direct (linkUrl + linkFilters) |
+| AC-5 (Tenant A vs B independent; cache keys tenant+user scoped; RLS + EF filters) | TC-RPT-005-06, TC-RPT-ISO-017, -018, -019, -020 | EF query filter + interceptor + ITenantContext + tenant+role+user cache key (Postgres RLS deferred; cross-tenant -> 404) |
+
+*Note (Reports -- US-RPT-005): FINAL story of the Reports & Analytics module -- module coverage is now COMPLETE (5 stories, 80 TCs = 60 functional + 20 ISO, 25/25 AC). Continues per-story-suffix functional scheme (TC-RPT-{NNN}-XX) + running ISO counter, now TC-RPT-ISO-020. DEFERRED / CONDITIONAL (flag to caller -- never relax a threshold to compensate): (1) Module-enablement (BR-5): no per-tenant module flag exists today -- TC-RPT-005-10 runs an assume-all-on baseline (all role-appropriate widgets present); the disable-and-hide steps are PENDING and do NOT fail the case. (2) Redis cache (FR-4) + auto-refresh (FR-9): Redis is deferred dev-box infra -- TC-RPT-005-11 and TC-RPT-ISO-020 are CONDITIONAL (assert the tenant+role+user key shape t:{tenantId}:dashboard:{role}:{userId}:{widgetKey}, TTL 2-5min, refresh=true bypass), else assert identical-on-repeat + refresh-re-queries + intended key derivation; the NFR-1 2s / NFR-2 500ms thresholds are NEVER relaxed. (3) PostgreSQL RLS (AC-5/NFR-3) is deferred defense-in-depth -- ISO TCs assert EF global query filters + TenantInterceptor + ITenantContext; cross-tenant ID injection asserts 404 not 403 (TC-RPT-ISO-018); raw-SQL RLS expectation CONDITIONAL (TC-RPT-ISO-019 step 7). STORY MISMATCH / SCOPE NOTES: (a) Backend forward-looking -- the unified DashboardService + /api/v1/dashboard/widgets endpoint is to-be-built, composing existing per-module services. (b) AC-5/NFR-3 name Postgres RLS as active; only app (ITenantContext) + EF (query filter / TenantInterceptor) layers exist -- RLS reworded as future hardening (consistent across US-RPT-001..004). (c) Manager team-scope (AC-2) and BR-3 pending-approvals use the ReportsToEmployeeId direct-reports relationship + assigned-approver, not the (still-missing) Reports.View.Team/.View.All scoped permission variants flagged in US-RPT-001/002. (d) trendIsPositive (BR-2) encodes business meaning not arithmetic sign: headcount-up=positive/green, turnover-up=negative/red (TC-RPT-005-05). (e) Employee pending_actions / Manager Quick-Actions item queues may not all be wired -- TC-RPT-005-03/-08 assert the widget contract + windowing/limits and treat an empty queue as a valid zero-state (TC-RPT-005-09), not a failure.*
 
 
 ---
