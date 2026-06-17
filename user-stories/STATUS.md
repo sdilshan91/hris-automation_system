@@ -137,7 +137,7 @@
 ## 9. Onboarding / Offboarding (6 stories)
 - [x] US-ONB-001 — Create onboarding checklist template *(PR #95)*
 - [x] US-ONB-002 — Assign onboarding checklist to new hire *(PR #96)*
-- [ ] US-ONB-003 — New hire completes onboarding tasks
+- [~] US-ONB-003 — New hire completes onboarding tasks
 - [ ] US-ONB-004 — Asset issuance tracking
 - [ ] US-ONB-005 — Offboarding/exit checklist and clearance
 - [ ] US-ONB-006 — Exit interview recording

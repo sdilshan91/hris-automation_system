@@ -58,7 +58,17 @@ public sealed class OnboardingChecklistServiceTests
     private AppDbContext Db() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private OnboardingChecklistService Service() =>
-        new(Db(), _tenantContext, _user, Substitute.For<ILogger<OnboardingChecklistService>>());
+        new(Db(), _tenantContext, _user, Substitute.For<IFileStorage>(),
+            CleanScanner(), Substitute.For<ILogger<OnboardingChecklistService>>());
+
+    /// <summary>An IVirusScanner substitute that reports every file clean (US-ONB-003 NFR-3 seam).</summary>
+    private static IVirusScanner CleanScanner()
+    {
+        var scanner = Substitute.For<IVirusScanner>();
+        scanner.ScanAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(VirusScanResult.Clean());
+        return scanner;
+    }
 
     /// <summary>Seeds a manager + a new hire (joining in the future) in the tenant.</summary>
     private void SeedEmployees(DateTime? joining = null)
@@ -377,8 +387,8 @@ public sealed class OnboardingChecklistServiceTests
         ctxB.TenantId.Returns(Guid.NewGuid());
         ctxB.IsResolved.Returns(true);
         var svcB = new OnboardingChecklistService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _user,
-            Substitute.For<ILogger<OnboardingChecklistService>>());
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _user, Substitute.For<IFileStorage>(),
+            CleanScanner(), Substitute.For<ILogger<OnboardingChecklistService>>());
 
         var read = await svcB.GetInstanceAsync(instance.Id);
 
@@ -392,8 +402,8 @@ public sealed class OnboardingChecklistServiceTests
         var ctx = Substitute.For<ITenantContext>();
         ctx.IsResolved.Returns(false);
         var svc = new OnboardingChecklistService(
-            TestDbContextFactory.Create(ctx, _dbName), ctx, _user,
-            Substitute.For<ILogger<OnboardingChecklistService>>());
+            TestDbContextFactory.Create(ctx, _dbName), ctx, _user, Substitute.For<IFileStorage>(),
+            CleanScanner(), Substitute.For<ILogger<OnboardingChecklistService>>());
 
         var result = await svc.AssignAsync(Assign(Guid.NewGuid()));
 

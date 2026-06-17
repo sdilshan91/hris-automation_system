@@ -13,6 +13,12 @@ import {
   IAssignedChecklist,
   IChecklistPreview,
 } from '../models/onboarding-checklist.models';
+import { HttpEventType } from '@angular/common/http';
+import {
+  ICompleteTaskResponse,
+  IMyChecklist,
+  IOnboardingProgress,
+} from '../models/my-onboarding.models';
 
 describe('OnboardingChecklistService', () => {
   let service: OnboardingChecklistService;
@@ -245,5 +251,131 @@ describe('OnboardingChecklistService', () => {
     expect(OnboardingChecklistService.parseErrorMessage(plain)).toContain(
       'unexpected',
     );
+  });
+
+  // ─── US-ONB-003: "me" checklist + completion ───────────────
+
+  const myChecklist = (over: Partial<IMyChecklist> = {}): IMyChecklist => ({
+    checklistInstanceId: 'ci-9',
+    status: 'in_progress',
+    progressPercent: 50,
+    totalTasks: 4,
+    completedTasks: 2,
+    pendingTasks: 2,
+    overdueTasks: 0,
+    categories: [
+      {
+        category: 'Documentation',
+        tasks: [
+          {
+            taskInstanceId: 'ti-1',
+            title: 'Submit ID proof',
+            description: null,
+            category: 'Documentation',
+            responsibleRole: 'Employee',
+            dueDate: '2026-07-01',
+            status: 'pending',
+            isMandatory: true,
+            requiresDocument: true,
+            completedAt: null,
+            completedBy: null,
+            comment: null,
+            attachmentUrl: null,
+          },
+        ],
+      },
+    ],
+    ...over,
+  });
+
+  const progressBody = (over: Partial<IOnboardingProgress> = {}): IOnboardingProgress => ({
+    progressPercent: 50,
+    totalTasks: 4,
+    completedTasks: 2,
+    pendingTasks: 2,
+    overdueTasks: 0,
+    ...over,
+  });
+
+  it('getMyChecklist GETs /me with credentials and returns grouped categories (FR-1)', () => {
+    let result: IMyChecklist | undefined;
+    service.getMyChecklist().subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${base}/me`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(myChecklist());
+
+    expect(result!.categories[0].category).toBe('Documentation');
+    expect(result!.progressPercent).toBe(50);
+  });
+
+  it('getMyProgress GETs /me/progress (AC-1 widget)', () => {
+    let result: IOnboardingProgress | undefined;
+    service.getMyProgress().subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${base}/me/progress`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(progressBody({ overdueTasks: 1 }));
+
+    expect(result!.overdueTasks).toBe(1);
+  });
+
+  it('completeTask without a file POSTs a JSON comment body (FR-2)', () => {
+    let result: ICompleteTaskResponse | undefined;
+    service
+      .completeTask('ti-1', { comment: 'Done it' })
+      .subscribe((event) => {
+        if (event.type === HttpEventType.Response) result = event.body!;
+      });
+
+    const req = httpMock.expectOne(`${base}/tasks/ti-1/complete`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    expect(req.request.body).toEqual({ comment: 'Done it' });
+    expect(req.request.body instanceof FormData).toBeFalse();
+
+    req.flush({
+      task: myChecklist().categories[0].tasks[0],
+      progress: progressBody({ progressPercent: 75, completedTasks: 3, pendingTasks: 1 }),
+    });
+    expect(result!.progress.progressPercent).toBe(75);
+  });
+
+  it('completeTask with a file POSTs multipart with the "attachment" field + reports progress (AC-4)', () => {
+    const file = new File(['x'], 'id.pdf', { type: 'application/pdf' });
+    Object.defineProperty(file, 'size', { value: 2048 });
+
+    let pct: number = -1;
+    let result: ICompleteTaskResponse | undefined;
+    service
+      .completeTask('ti-1', { comment: 'attached', file })
+      .subscribe((event) => {
+        if (event.type === HttpEventType.UploadProgress) {
+          pct = event.total ? Math.round((event.loaded / event.total) * 100) : 0;
+        } else if (event.type === HttpEventType.Response) {
+          result = event.body!;
+        }
+      });
+
+    const req = httpMock.expectOne(`${base}/tasks/ti-1/complete`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body instanceof FormData).toBeTrue();
+    const fd = req.request.body as FormData;
+    const sent = fd.get('attachment') as File;
+    expect(sent.name).toBe('id.pdf');
+    expect(sent.type).toBe('application/pdf');
+    expect(fd.get('comment')).toBe('attached');
+    expect(req.request.reportProgress).toBeTrue();
+
+    req.event({ type: HttpEventType.UploadProgress, loaded: 1024, total: 2048 });
+    expect(pct).toBe(50);
+
+    req.flush({
+      task: myChecklist().categories[0].tasks[0],
+      progress: progressBody({ progressPercent: 75 }),
+    });
+    expect(result!.progress.progressPercent).toBe(75);
   });
 });

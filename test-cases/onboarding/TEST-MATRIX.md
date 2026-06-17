@@ -1,7 +1,7 @@
 ---
 module: Onboarding / Offboarding
-total_user_stories: 2
-total_test_cases: 31
+total_user_stories: 3
+total_test_cases: 47
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -153,3 +153,81 @@ status: in-progress
 | AC coverage | 5/5 |
 | Functional ID range | TC-ONB-002-01 .. TC-ONB-002-12 |
 | ISO ID range | TC-ONB-ISO-005 .. TC-ONB-ISO-007 (shared module counter) |
+
+---
+
+## US-ONB-003 — New Hire Completes Onboarding Tasks
+
+> US-ONB-003 adds 16 test cases: 12 functional/security/performance/accessibility (TC-ONB-003-01..12) + 4 dedicated multi-tenant isolation continuing the shared running counter (TC-ONB-ISO-008..011). The functional suffix counter resets per story (TC-ONB-003-XX) while the ISO counter is module-wide and continues from US-ONB-002's 007. All 5 acceptance criteria of US-ONB-003 are covered.
+>
+> PLATFORM ACCURACY / DEFERRED (carried from the US-ONB-001/002 family):
+> - NFR-2 names PostgreSQL RLS; this codebase isolates via **EF Core global query filters (read) + `TenantInterceptor` (write stamping)**. ISO tests assert the EF mechanism in force today; the RLS "raw SQL returns zero rows" expectation is CONDITIONAL/deferred (TC-ONB-ISO-010 step 4). Cross-tenant ID injection asserts **404, not 403** (TC-ONB-ISO-009).
+> - AC-3/AC-4/AC-5 describe end-user notification delivery via SignalR + email. Real delivery is owned by the Notifications module (US-NTF-001 in-app, US-NTF-002 email). The onboarding side of the contract is tested as **notification intent rows (outbox) raised on completion / overdue detection + Hangfire job execution** (TC-ONB-003-01, -04, -09); end-to-end SignalR/email receipt is deferred to the US-NTF test cases.
+> - NFR-3 (ClamAV malware scan before persistence) is asserted at the SEAM level — TC-ONB-003-05 step 4 exercises the scan hook with an EICAR test file; live ClamAV integration is CONDITIONAL/deferred (flag to caller if not wired).
+> - NFR-1 (checklist load API <= 500 ms P95) requires a performance-representative environment (TC-ONB-003-11); on a dev box, record indicative numbers and do NOT relax the threshold.
+> - Document storage path `{tenantId}/onboarding/{employeeId}/{taskId}/{filename}` (AC-4) is the contract under test; progress cache, if wired, targets `onboarding:progress:{tenant_id}:{employee_id}` (TC-ONB-ISO-011).
+
+### Coverage by Test Case (US-ONB-003)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-ONB-003-01 | Complete 3 of 5 tasks -> 60%; completion timestamp+actor; HR intent; audit | E2E | Critical | AC-1, AC-3, FR-2/4/8 | Happy path |
+| TC-ONB-003-02 | Dashboard widget: %/pending/completed/overdue + checklist link (own tasks only) | Functional | High | AC-1, FR-1/4 | Happy / boundary |
+| TC-ONB-003-03 | Checklist grouped by category; status chips; overdue red highlight | Functional | High | AC-2, AC-5, FR-1 | Happy / boundary |
+| TC-ONB-003-04 | Upload valid PDF stored at tenant path; task completed w/ file ref; HR notified | Integration | Critical | AC-4, FR-3/8, NFR-6 | Happy path |
+| TC-ONB-003-05 | Upload >10MB rejected; bad MIME rejected; malware-scan seam (ClamAV deferred) | Security | Critical | AC-4, FR-3, NFR-3/6 | Negative / boundary / security |
+| TC-ONB-003-06 | Role restriction: employee cannot complete IT/Manager/HR task | Security | Critical | AC-2, FR-7, BR-1 | Negative / security |
+| TC-ONB-003-07 | Employee cannot revert a completed task (HR-only reopen) | Functional | High | AC-3, BR-3 | Negative / security |
+| TC-ONB-003-08 | Mandatory gating: optional done, one mandatory left -> not fully complete | Functional | Critical | AC-3, FR-4, BR-2 | Negative / boundary |
+| TC-ONB-003-09 | Overdue Hangfire job -> overdue + outbox to employee/HR/manager (once/day) | Integration | High | AC-5, FR-6, BR-4 | Happy / boundary |
+| TC-ONB-003-10 | Self-service authz: act only on own tasks; 401 unauth; XSS/SQLi neutralized | Security | Critical | AC-2, AC-3, FR-1/2/7 | Negative / security |
+| TC-ONB-003-11 | Checklist load API <= 500 ms P95 | Performance | High | AC-1, AC-2, NFR-1 | Performance |
+| TC-ONB-003-12 | Keyboard nav + screen-reader status announcements + 360px mobile upload | Accessibility | Medium | AC-1, AC-2, NFR-4/5 | Accessibility / cross-browser |
+| TC-ONB-ISO-008 | Tenant A cannot see Tenant B tasks/progress/docs (cross-tenant READ block) | Security | Critical | AC-1, AC-2, NFR-2 (EF) | Multi-tenant isolation |
+| TC-ONB-ISO-009 | Missing tenant context + cross-tenant ID injection -> 404 | Security | Critical | AC-2, AC-3, FR-7, NFR-2 | Multi-tenant isolation |
+| TC-ONB-ISO-010 | EF filter blocks reads; completions/uploads/outbox tenant-stamped (RLS deferred) | Security | Critical | AC-3, AC-5, FR-7/8, NFR-2 | Multi-tenant isolation |
+| TC-ONB-ISO-011 | Progress cache + document storage keys tenant-scoped | Security | High | AC-4, FR-4, NFR-2/6 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-ONB-003)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (dashboard "Onboarding Progress" widget: %/pending/completed/overdue + link) | TC-ONB-003-01, -02, -11, -12, TC-ONB-ISO-008 |
+| AC-2 (checklist grouped by category; fields + status + responsible party; overdue red) | TC-ONB-003-03, -06, -10, -11, -12, TC-ONB-ISO-008, -009 |
+| AC-3 (mark complete: status/timestamp/actor recorded; progress updates; HR notified) | TC-ONB-003-01, -07, -08, -10, TC-ONB-ISO-009, -010 |
+| AC-4 (document upload stored at tenant path; task completed w/ file ref; HR notified) | TC-ONB-003-04, -05, TC-ONB-ISO-011 |
+| AC-5 (overdue red highlight; automated overdue notification to employee/HR/manager) | TC-ONB-003-03, -09, TC-ONB-ISO-010 |
+
+### FR / NFR / BR Coverage (US-ONB-003)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (personalized checklist; only own assigned tasks) | TC-ONB-003-02, -03, -10, TC-ONB-ISO-008 |
+| FR-2 (mark own tasks complete w/ optional comment) | TC-ONB-003-01, -10 |
+| FR-3 (file upload with MIME + size validation) | TC-ONB-003-04, -05 |
+| FR-4 (overall progress percentage completed/total) | TC-ONB-003-01, -02, -08, -11, TC-ONB-ISO-011 |
+| FR-5 (real-time SignalR notify HR + manager on completion) | TC-ONB-003-01, -04 (outbox intent; delivery deferred to US-NTF-001/002) |
+| FR-6 (daily Hangfire job detects overdue; notifies employee/HR/manager) | TC-ONB-003-09 |
+| FR-7 (prevent completing tasks assigned to other roles) | TC-ONB-003-06, -10, TC-ONB-ISO-009, -010 |
+| FR-8 (log task completion in tenant audit log) | TC-ONB-003-01, -04, TC-ONB-ISO-010 |
+| NFR-1 (checklist load API <= 500 ms P95) | TC-ONB-003-11 |
+| NFR-2 (tenant isolation; RLS deferred -> EF filters) | TC-ONB-ISO-008, -009, -010, -011 |
+| NFR-3 (uploads malware-scanned via ClamAV before persistence) | TC-ONB-003-05 (seam; live ClamAV deferred) |
+| NFR-4 (responsive 360px-4K, mobile-first) | TC-ONB-003-12 |
+| NFR-5 (WCAG 2.1 AA) | TC-ONB-003-12 |
+| NFR-6 (uploads limited to 10 MB, configurable) | TC-ONB-003-04, -05, TC-ONB-ISO-011 |
+| BR-1 (employee completes only Employee-role tasks; others read-only) | TC-ONB-003-06 |
+| BR-2 (mandatory tasks done before "fully complete") | TC-ONB-003-08 |
+| BR-3 (completed task not revertible by employee; HR-only reopen) | TC-ONB-003-07 |
+| BR-4 (overdue notifications once/day at tenant-configurable time) | TC-ONB-003-09 |
+| BR-5 (document retention = employment + tenant policy) | Out of scope for the task-completion flow; retention/lifecycle is a separate concern (flag to caller — no retention-expiry step in this story) |
+
+### Summary (US-ONB-003)
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 1 (US-ONB-003) |
+| Total test cases | 16 (12 functional/security/perf/a11y + 4 isolation) |
+| AC coverage | 5/5 |
+| Functional ID range | TC-ONB-003-01 .. TC-ONB-003-12 |
+| ISO ID range | TC-ONB-ISO-008 .. TC-ONB-ISO-011 (shared module counter) |

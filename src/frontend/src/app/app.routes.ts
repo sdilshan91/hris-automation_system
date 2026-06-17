@@ -472,6 +472,18 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer', 'Manager']),
         ],
       },
+      // ─── Onboarding: new-hire self-service (US-ONB-003) ────
+      // The employee's own checklist must be reachable by a plain Employee, so it
+      // sits ABOVE the HR-only 'onboarding' block and carries NO HR roleGuard
+      // (authGuard from the parent still applies; the backend scopes to the
+      // caller's identity + tenant). FR-1.
+      {
+        path: 'onboarding/my-checklist',
+        loadComponent: () =>
+          import(
+            './features/onboarding/components/my-checklist/my-checklist.component'
+          ).then((m) => m.MyChecklistComponent),
+      },
       // ─── Onboarding / Checklist Templates (US-ONB-001) ─────
       {
         path: 'onboarding',
