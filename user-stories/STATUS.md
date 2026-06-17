@@ -142,12 +142,12 @@
 - [x] US-ONB-005 — Offboarding/exit checklist and clearance *(PR #99)*
 - [x] US-ONB-006 — Exit interview recording *(PR #100)*
 
-## 10. Notifications & Audit (5 stories)
+## 10. Notifications & Audit (5 stories) — COMPLETE ✅
 - [x] US-NTF-001 — In-app notification system (SignalR) *(PR #101)*
 - [x] US-NTF-002 — Email notification templates per tenant *(PR #102)*
 - [x] US-NTF-003 — Notification preferences per user *(PR #103)*
 - [x] US-NTF-004 — Audit trail for all data changes *(PR #104)*
-- [~] US-NTF-005 — Audit log viewer with filters
+- [x] US-NTF-005 — Audit log viewer with filters *(PR #105)*
 
 ## 11. Reports & Analytics (5 stories)
 - [ ] US-RPT-001 — Pre-built HR reports
@@ -160,10 +160,10 @@
 
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **97** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100), **US-NTF-001..004** (#101–#104)
+- Done: **98** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100), **Notifications & Audit US-NTF-001..005 COMPLETE** (#101–#105)
 - In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
-- Pending: **6** — Notifications (1), Reports (5)
-- **Next module by priority: Notifications & Audit (US-NTF-001..005)**
+- Pending: **5** — Reports (5)
+- **Next module by priority: Reports & Analytics (US-RPT-001..005)**
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
