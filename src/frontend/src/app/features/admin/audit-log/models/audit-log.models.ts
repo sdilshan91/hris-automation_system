@@ -67,10 +67,27 @@ export interface IAuditLogFilters {
   endDate?: string;
   /** Actor user id to filter by. */
   actorUserId?: string;
-  /** Exact action key. */
+  /**
+   * Exact action key (single-select, kept for backward compatibility — the
+   * export dialog & older callers still rely on it). Prefer `actions` for the
+   * multi-select filter (US-NTF-005 / FR-2).
+   */
   action?: string;
-  /** Exact resource type. */
+  /**
+   * Exact resource type (single-select, kept for backward compatibility).
+   * Prefer `resourceTypes` for the multi-select filter (US-NTF-005 / FR-2).
+   */
   resourceType?: string;
+  /**
+   * Multi-select action keys (US-NTF-005 / FR-2). Serialized as repeated
+   * `actions=a&actions=b` query params alongside (or instead of) `action`.
+   */
+  actions?: string[];
+  /**
+   * Multi-select resource types (US-NTF-005 / FR-2). Serialized as repeated
+   * `resourceTypes=r&resourceTypes=s` query params.
+   */
+  resourceTypes?: string[];
   /** Free-text keyword search over the change summary / JSON (FR-1). */
   search?: string;
 }
@@ -86,6 +103,29 @@ export interface IActorOption {
   id: string;
   displayName: string;
   email: string;
+}
+
+/**
+ * A single actor match from the dedicated actor search endpoint
+ * (US-NTF-005 / FR-2): `GET /tenant/audit-log/actors?search=`. The backend
+ * returns `{ userId, name, email }`; the component maps this to the uniform
+ * `IActorOption` shape used by the picker.
+ */
+export interface IActorSearchResult {
+  userId: string;
+  name: string;
+  email: string;
+}
+
+/**
+ * Distinct filter option lists for the multi-select Action / Resource Type
+ * dropdowns (US-NTF-005 / FR-2): `GET /tenant/audit-log/filter-options`.
+ * Empty arrays degrade gracefully — the component falls back to options
+ * derived from the loaded rows.
+ */
+export interface IFilterOptions {
+  actions: string[];
+  resourceTypes: string[];
 }
 
 // ─── JSON diff helper (AC-3 / FR-3) ──────────────────────────

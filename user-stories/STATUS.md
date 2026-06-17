@@ -147,7 +147,7 @@
 - [x] US-NTF-002 — Email notification templates per tenant *(PR #102)*
 - [x] US-NTF-003 — Notification preferences per user *(PR #103)*
 - [x] US-NTF-004 — Audit trail for all data changes *(PR #104)*
-- [ ] US-NTF-005 — Audit log viewer with filters
+- [~] US-NTF-005 — Audit log viewer with filters
 
 ## 11. Reports & Analytics (5 stories)
 - [ ] US-RPT-001 — Pre-built HR reports

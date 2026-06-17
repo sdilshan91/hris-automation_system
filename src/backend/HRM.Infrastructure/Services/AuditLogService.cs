@@ -4,6 +4,7 @@ using HRM.Application.Features.AuditLog;
 using HRM.Application.Features.AuditLog.DTOs;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -32,21 +33,30 @@ public sealed class AuditLogService : IAuditLogService
     private const int DefaultPageSize = 50;
     private const int MaxPageSize = 200;
 
+    /// <summary>US-NTF-005 FR-2: cap on the actor type-ahead result set.</summary>
+    private const int ActorSearchMaxLimit = 20;
+
+    /// <summary>US-NTF-005 FR-9/BR-5: the meta-audit action name written when the audit log is viewed.</summary>
+    private const string MetaAuditViewAction = "AuditLog.View";
+
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<AuditLogService> _logger;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public AuditLogService(
         AppDbContext db,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        ILogger<AuditLogService> logger)
+        ILogger<AuditLogService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _db = db;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     // ── List (AC-1/AC-2/FR-1) ──────────────────────────────────────────────────
@@ -78,6 +88,11 @@ public sealed class AuditLogService : IAuditLogService
         var retentionDays = await GetRetentionDaysAsync(cancellationToken);
 
         var items = rows.Select(r => ToListItem(r, actors)).ToList();
+
+        // US-NTF-005 FR-9/BR-5: viewing the audit log is itself an audited event (meta-audit). ONE row per LIST
+        // request (not per Get) so it can't spam. This is a plain AuditLog INSERT (Action="AuditLog.View") — it
+        // does NOT go through ListAsync, so it can never recurse / trigger another view-audit.
+        await WriteViewAuditAsync(filter, page, pageSize, total, cancellationToken);
 
         return Result<AuditLogPageDto>.Success(
             new AuditLogPageDto(items, page, pageSize, total, retentionDays));
@@ -182,17 +197,17 @@ public sealed class AuditLogService : IAuditLogService
         if (filter.ActorUserId is { } actorId)
             query = query.Where(a => a.UserId == actorId);
 
-        if (!string.IsNullOrWhiteSpace(filter.Action))
-        {
-            var action = filter.Action.Trim();
-            query = query.Where(a => a.Action == action || a.EventType == action);
-        }
+        // US-NTF-005 FR-2: multi-select action filter (IN-list, OR within the group). Back-compat: the singular
+        // filter.Action is folded in as one more OR-member, so US-ADM-008 single-value callers/tests still work.
+        var actions = CombineValues(filter.Action, filter.Actions);
+        if (actions.Count > 0)
+            query = query.Where(a =>
+                (a.Action != null && actions.Contains(a.Action)) || actions.Contains(a.EventType));
 
-        if (!string.IsNullOrWhiteSpace(filter.ResourceType))
-        {
-            var resourceType = filter.ResourceType.Trim();
-            query = query.Where(a => a.ResourceType == resourceType);
-        }
+        // US-NTF-005 FR-2: multi-select resource-type filter (IN-list). Singular filter.ResourceType folded in.
+        var resourceTypes = CombineValues(filter.ResourceType, filter.ResourceTypes);
+        if (resourceTypes.Count > 0)
+            query = query.Where(a => a.ResourceType != null && resourceTypes.Contains(a.ResourceType));
 
         if (!string.IsNullOrWhiteSpace(filter.SearchQuery))
         {
@@ -203,10 +218,111 @@ public sealed class AuditLogService : IAuditLogService
                 (a.Detail != null && a.Detail.Contains(q)));
         }
 
+        // US-NTF-005 FR-9/BR-5: the AuditLog.View meta-audit rows (written on every list view) are accountability
+        // records, NOT operational audit events. Exclude them from the default list/export so the viewer doesn't
+        // become self-referential noise (every page load would otherwise inflate the next load's counts). They are
+        // still persisted + tenant-scoped + directly queryable WHEN the caller explicitly asks for them via the
+        // action filter (so a forensic "who viewed the audit log" query still works). This also keeps US-ADM-008's
+        // exact-count assertions intact (those callers never request "AuditLog.View").
+        if (!actions.Contains(MetaAuditViewAction))
+            query = query.Where(a => a.Action != MetaAuditViewAction && a.EventType != MetaAuditViewAction);
+
         return query;
     }
 
+    // ── Actor autocomplete (US-NTF-005 FR-2) ──────────────────────────────────
+
+    public async Task<Result<IReadOnlyList<AuditLogActorDto>>> SearchActorsAsync(
+        string? search, int limit, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<AuditLogActorDto>>.Failure("No tenant context.", 400);
+
+        limit = limit is <= 0 or > ActorSearchMaxLimit ? ActorSearchMaxLimit : limit;
+        var tenantId = _tenantContext.TenantId;
+
+        // Distinct actor user ids that appear in THIS tenant's audit log (explicit tenant scope, FR-1).
+        var actorIds = await _db.AuditLogs
+            .AsNoTracking()
+            .Where(a => a.TenantId == tenantId && a.UserId != null)
+            .Select(a => a.UserId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (actorIds.Count == 0)
+            return Result<IReadOnlyList<AuditLogActorDto>>.Success(Array.Empty<AuditLogActorDto>());
+
+        // Resolve name/email from the global users table, applying the type-ahead match server-side.
+        var usersQuery = _db.Users
+            .AsNoTracking()
+            .Where(u => actorIds.Contains(u.Id));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var q = search.Trim();
+            usersQuery = usersQuery.Where(u =>
+                (u.DisplayName != null && u.DisplayName.Contains(q)) ||
+                (u.Email != null && u.Email.Contains(q)));
+        }
+
+        var actors = await usersQuery
+            .OrderBy(u => u.DisplayName)
+            .Take(limit)
+            .Select(u => new AuditLogActorDto(u.Id, u.DisplayName, u.Email))
+            .ToListAsync(cancellationToken);
+
+        return Result<IReadOnlyList<AuditLogActorDto>>.Success(actors);
+    }
+
+    // ── Filter options (US-NTF-005 FR-2) ──────────────────────────────────────
+
+    public async Task<Result<AuditLogFilterOptionsDto>> GetFilterOptionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<AuditLogFilterOptionsDto>.Failure("No tenant context.", 400);
+
+        var tenantId = _tenantContext.TenantId;
+        var scoped = _db.AuditLogs.AsNoTracking().Where(a => a.TenantId == tenantId);
+
+        // Prefer the structured Action, falling back to the legacy EventType, mirroring the list/detail behavior.
+        var actions = await scoped
+            .Select(a => a.Action ?? a.EventType)
+            .Where(v => v != null && v != "")
+            .Distinct()
+            .OrderBy(v => v)
+            .ToListAsync(cancellationToken);
+
+        var resourceTypes = await scoped
+            .Where(a => a.ResourceType != null && a.ResourceType != "")
+            .Select(a => a.ResourceType!)
+            .Distinct()
+            .OrderBy(v => v)
+            .ToListAsync(cancellationToken);
+
+        return Result<AuditLogFilterOptionsDto>.Success(
+            new AuditLogFilterOptionsDto(actions!, resourceTypes));
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// US-NTF-005 FR-2: folds the back-compat singular value and the new multi-select array into one distinct,
+    /// trimmed, non-empty list for IN-list filtering. Returns an empty list when neither is supplied.
+    /// </summary>
+    private static List<string> CombineValues(string? single, IReadOnlyList<string>? many)
+    {
+        var values = new List<string>();
+        if (!string.IsNullOrWhiteSpace(single))
+            values.Add(single.Trim());
+        if (many is not null)
+        {
+            foreach (var v in many)
+                if (!string.IsNullOrWhiteSpace(v))
+                    values.Add(v.Trim());
+        }
+        return values.Distinct(StringComparer.Ordinal).ToList();
+    }
 
     private static int NormalizePageSize(int pageSize)
     {
@@ -284,6 +400,60 @@ public sealed class AuditLogService : IAuditLogService
 
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max] + "…";
+
+    /// <summary>
+    /// US-NTF-005 FR-9/BR-5: write the AuditLog.View meta-audit row for a LIST request, recording the actor,
+    /// tenant, request IP/UA/trace, and the filters that were applied. Best-effort: a failure to write the
+    /// meta-audit row must never fail the user's read (the page result is already computed). One row per request;
+    /// this is a plain insert so it can never recurse into ListAsync.
+    /// </summary>
+    private async Task WriteViewAuditAsync(
+        AuditLogFilter filter, int page, int pageSize, int total, CancellationToken cancellationToken)
+    {
+        var http = _httpContextAccessor?.HttpContext;
+
+        var actions = CombineValues(filter.Action, filter.Actions);
+        var resourceTypes = CombineValues(filter.ResourceType, filter.ResourceTypes);
+
+        var detail =
+            $"page={page}; pageSize={pageSize}; results={total}; " +
+            $"start={filter.StartDate:O}; end={filter.EndDate:O}; actor={filter.ActorUserId}; " +
+            $"actions=[{string.Join(',', actions)}]; resourceTypes=[{string.Join(',', resourceTypes)}]; " +
+            $"search={filter.SearchQuery}";
+
+        try
+        {
+            _db.AuditLogs.Add(new AuditLog
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+                EventType = MetaAuditViewAction,
+                Action = MetaAuditViewAction,
+                ResourceType = "AuditLog",
+                Detail = detail,
+                IpAddress = http?.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = UserAgentOf(http),
+                TraceId = http?.TraceIdentifier,
+                CreatedAt = DateTime.UtcNow,
+            });
+
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Never let the meta-audit failure surface as a failed audit-log view.
+            _logger.LogWarning(ex, "Failed to write AuditLog.View meta-audit row for tenant {TenantId}.",
+                _tenantContext.TenantId);
+        }
+    }
+
+    private static string? UserAgentOf(HttpContext? http)
+    {
+        if (http is null) return null;
+        var ua = http.Request.Headers.UserAgent.ToString();
+        return string.IsNullOrWhiteSpace(ua) ? null : (ua.Length <= 500 ? ua : ua[..500]);
+    }
 
     /// <summary>BR-4: write the AuditLog.Export audit row, recording the filters + format + record count.</summary>
     private async Task WriteExportAuditAsync(

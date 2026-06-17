@@ -1,5 +1,10 @@
 import { TestBed, ComponentFixture, fakeAsync, tick } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import {
+  ActivatedRoute,
+  Router,
+  convertToParamMap,
+  provideRouter,
+} from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import {
   HttpTestingController,
@@ -22,8 +27,9 @@ describe('AuditLogListComponent', () => {
   let httpMock: HttpTestingController;
   let toastr: jasmine.SpyObj<ToastrService>;
 
-  const baseUrl = `${environment.apiBaseUrl}/tenant/audit-log`;
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/audit-logs`;
+  const filterOptionsUrl = `${baseUrl}/filter-options`;
+  const actorsUrl = `${baseUrl}/actors`;
 
   const page1: IAuditLogPage = {
     items: [
@@ -94,12 +100,59 @@ describe('AuditLogListComponent', () => {
     httpMock = TestBed.inject(HttpTestingController);
   }
 
-  /** Flush the initial actor-options + list requests that fire on init. */
-  function flushInit(response: IAuditLogPage = page1): void {
+  /**
+   * Like `configure`, but seeds the route's query params so `restoreFromUrl`
+   * (FR-3) hydrates the filter signals on init. Does NOT call detectChanges.
+   */
+  function configureWithParams(params: Record<string, string | string[]>): void {
+    toastr = jasmine.createSpyObj<ToastrService>('ToastrService', [
+      'success',
+      'error',
+      'warning',
+    ]);
+
+    TestBed.configureTestingModule({
+      imports: [AuditLogListComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideAnimationsAsync(),
+        provideToastr(),
+        provideTranslateService(),
+        { provide: ToastrService, useValue: toastr },
+        {
+          provide: AuthService,
+          useValue: { hasRole: () => false },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: convertToParamMap(params) },
+          },
+        },
+      ],
+    });
+
+    fixture = TestBed.createComponent(AuditLogListComponent);
+    component = fixture.componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+  }
+
+  /**
+   * Flush the initial filter-options + list requests that fire on init.
+   * US-NTF-005 replaced the eager actor preload (`/users`) with the
+   * `/filter-options` call + the on-demand `/actors` type-ahead.
+   */
+  function flushInit(
+    response: IAuditLogPage = page1,
+    options: { actions: string[]; resourceTypes: string[] } = {
+      actions: [],
+      resourceTypes: [],
+    }
+  ): void {
     fixture.detectChanges();
-    httpMock
-      .expectOne((r) => r.url === usersUrl)
-      .flush({ items: [{ userTenantId: 'ut-1', displayName: 'Jane Doe', email: 'jane@acme.com' }] });
+    httpMock.expectOne((r) => r.url === filterOptionsUrl).flush(options);
     httpMock
       .expectOne((r) => r.url === baseUrl && r.method === 'GET')
       .flush(response);
@@ -153,14 +206,51 @@ describe('AuditLogListComponent', () => {
     expect(component.detail()?.after).toBe('{"name":"Jane"}');
   });
 
-  it('applies the action filter to the next list query', () => {
+  it('applies the multi-select action filter to the next list query (FR-2)', () => {
     configure();
     flushInit();
 
-    component.onActionChange('Leave.Approve');
+    component.toggleAction('Leave.Approve');
     const req = httpMock.expectOne((r) => r.url === baseUrl && r.method === 'GET');
-    expect(req.request.params.get('action')).toBe('Leave.Approve');
+    expect(req.request.params.getAll('actions')).toEqual(['Leave.Approve']);
     expect(req.request.params.get('page')).toBe('1');
+    req.flush(page1);
+  });
+
+  it('selects multiple actions and sends them as repeated params (FR-2)', () => {
+    configure();
+    flushInit();
+
+    component.toggleAction('Leave.Approve');
+    httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
+
+    component.toggleAction('Employee.Create');
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.getAll('actions')).toEqual([
+      'Leave.Approve',
+      'Employee.Create',
+    ]);
+    req.flush(page1);
+  });
+
+  it('"Select All" actions selects every option, then clears on re-toggle (FR-2)', () => {
+    configure();
+    flushInit();
+    // actionOptions derived from rows: ['Employee.Create', 'Leave.Approve'].
+
+    component.toggleAllActions();
+    let req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.getAll('actions')).toEqual([
+      'Employee.Create',
+      'Leave.Approve',
+    ]);
+    expect(component.allActionsSelected()).toBeTrue();
+    req.flush(page1);
+
+    component.toggleAllActions();
+    req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.has('actions')).toBeFalse();
+    expect(component.selectedActions().length).toBe(0);
     req.flush(page1);
   });
 
@@ -168,12 +258,12 @@ describe('AuditLogListComponent', () => {
     configure();
     flushInit();
 
-    component.onResourceChange('Employee');
+    component.toggleResource('Employee');
     httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
 
     component.onStartDateChange('2026-06-01');
     const req = httpMock.expectOne((r) => r.url === baseUrl);
-    expect(req.request.params.get('resourceType')).toBe('Employee');
+    expect(req.request.params.getAll('resourceTypes')).toEqual(['Employee']);
     expect(req.request.params.get('startDate')).toBe('2026-06-01');
     req.flush(page1);
   });
@@ -193,14 +283,14 @@ describe('AuditLogListComponent', () => {
     configure();
     flushInit();
 
-    component.onActionChange('Leave.Approve');
+    component.toggleAction('Leave.Approve');
     httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
 
     component.nextPage();
     const req = httpMock.expectOne((r) => r.url === baseUrl);
     expect(req.request.params.get('page')).toBe('2');
     // Filter still applied on the new page.
-    expect(req.request.params.get('action')).toBe('Leave.Approve');
+    expect(req.request.params.getAll('actions')).toEqual(['Leave.Approve']);
     req.flush(page1);
   });
 
@@ -212,10 +302,15 @@ describe('AuditLogListComponent', () => {
     httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
     expect(component.page()).toBe(2);
 
-    component.onActorChange('ut-1');
+    component.selectActor({
+      id: 'ut-1',
+      displayName: 'Jane Doe',
+      email: 'jane@acme.com',
+    });
     const req = httpMock.expectOne((r) => r.url === baseUrl);
     expect(component.page()).toBe(1);
     expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('actorUserId')).toBe('ut-1');
     req.flush(page1);
   });
 
@@ -238,7 +333,7 @@ describe('AuditLogListComponent', () => {
     configure();
     flushInit();
 
-    component.onActionChange('Employee.Create');
+    component.toggleAction('Employee.Create');
     httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
 
     component.openExport();
@@ -246,7 +341,7 @@ describe('AuditLogListComponent', () => {
 
     const req = httpMock.expectOne((r) => r.url === `${baseUrl}/export`);
     expect(req.request.params.get('format')).toBe('csv');
-    expect(req.request.params.get('action')).toBe('Employee.Create');
+    expect(req.request.params.getAll('actions')).toEqual(['Employee.Create']);
     expect(req.request.responseType).toBe('blob');
     req.flush(new Blob(['data'], { type: 'text/csv' }));
 
@@ -274,5 +369,126 @@ describe('AuditLogListComponent', () => {
     configure(true);
     flushInit();
     expect(component.isAuditor()).toBeTrue();
+  });
+
+  // ─── US-NTF-005 deltas ─────────────────────────────────
+
+  it('seeds the multi-select options from /filter-options (FR-2)', () => {
+    configure();
+    flushInit(page1, {
+      actions: ['Auth.Login', 'Employee.Delete'],
+      resourceTypes: ['Session'],
+    });
+    // Options merge the endpoint values with the row-derived ones, sorted.
+    expect(component.actionOptions()).toEqual([
+      'Auth.Login',
+      'Employee.Create',
+      'Employee.Delete',
+      'Leave.Approve',
+    ]);
+    expect(component.resourceOptions()).toContain('Session');
+  });
+
+  it('falls back to row-derived options when /filter-options is empty (FR-2)', () => {
+    configure();
+    flushInit(); // empty options by default
+    expect(component.actionOptions()).toEqual([
+      'Employee.Create',
+      'Leave.Approve',
+    ]);
+  });
+
+  it('actor type-ahead queries /actors (debounced) and selects a result (FR-2)', fakeAsync(() => {
+    configure();
+    flushInit();
+
+    component.onActorInput('jan');
+    tick(300);
+    const req = httpMock.expectOne((r) => r.url === actorsUrl);
+    expect(req.request.params.get('search')).toBe('jan');
+    req.flush([{ userId: 'u-7', name: 'Jane Doe', email: 'jane@acme.com' }]);
+
+    expect(component.actorResults().length).toBe(1);
+    expect(component.actorMenuOpen()).toBeTrue();
+
+    component.selectActor(component.actorResults()[0]);
+    expect(component.actorFilter()).toBe('u-7');
+    expect(component.actorMenuOpen()).toBeFalse();
+
+    // Selection triggers a list reload carrying actorUserId.
+    const listReq = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(listReq.request.params.get('actorUserId')).toBe('u-7');
+    listReq.flush(page1);
+  }));
+
+  it('does not query /actors for a sub-2-char term (FR-2)', fakeAsync(() => {
+    configure();
+    flushInit();
+
+    component.onActorInput('j');
+    tick(300);
+    httpMock.expectNone((r) => r.url === actorsUrl);
+    expect(component.actorMenuOpen()).toBeFalse();
+  }));
+
+  it('clearing the actor input clears the selection and reloads', fakeAsync(() => {
+    configure();
+    flushInit();
+
+    component.onActorInput('jane');
+    tick(300);
+    httpMock
+      .expectOne((r) => r.url === actorsUrl)
+      .flush([{ userId: 'u-7', name: 'Jane Doe', email: 'jane@acme.com' }]);
+    component.selectActor(component.actorResults()[0]);
+    httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
+
+    component.onActorInput('');
+    expect(component.actorFilter()).toBe('');
+    httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
+  }));
+
+  it('syncs applied filters into the URL query params (FR-3)', () => {
+    configure();
+    flushInit();
+    const router = TestBed.inject(Router);
+    const navSpy = spyOn(router, 'navigate').and.callThrough();
+
+    component.toggleAction('Leave.Approve');
+    httpMock.expectOne((r) => r.url === baseUrl).flush(page1);
+
+    expect(navSpy).toHaveBeenCalled();
+    const queryParams = (navSpy.calls.mostRecent().args[1] as { queryParams: Record<string, unknown> })
+      .queryParams;
+    expect(queryParams['actions']).toEqual(['Leave.Approve']);
+  });
+
+  it('restores filters from the URL on load (FR-3)', () => {
+    configureWithParams({
+      actions: ['Employee.Create'],
+      resourceTypes: ['Employee'],
+      actorUserId: 'u-9',
+      actorLabel: 'Jane (jane@acme.com)',
+      search: 'john',
+      startDate: '2026-06-01',
+      page: '3',
+    });
+    fixture.detectChanges();
+    httpMock.expectOne((r) => r.url === filterOptionsUrl).flush({
+      actions: [],
+      resourceTypes: [],
+    });
+    const listReq = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(listReq.request.params.getAll('actions')).toEqual(['Employee.Create']);
+    expect(listReq.request.params.getAll('resourceTypes')).toEqual(['Employee']);
+    expect(listReq.request.params.get('actorUserId')).toBe('u-9');
+    expect(listReq.request.params.get('search')).toBe('john');
+    expect(listReq.request.params.get('startDate')).toBe('2026-06-01');
+    expect(listReq.request.params.get('page')).toBe('3');
+    listReq.flush(page1);
+
+    expect(component.selectedActions()).toEqual(['Employee.Create']);
+    expect(component.actorLabel()).toBe('Jane (jane@acme.com)');
+    expect(component.page()).toBe(3);
   });
 });

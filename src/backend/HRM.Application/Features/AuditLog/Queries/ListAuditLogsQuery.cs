@@ -14,7 +14,11 @@ public sealed record ListAuditLogsQuery(
     Guid? ActorUserId,
     string? Action,
     string? ResourceType,
-    string? SearchQuery
+    string? SearchQuery,
+    // US-NTF-005 FR-2: optional multi-select action/resource-type filters (IN-list). Additive — the singular
+    // Action/ResourceType above still work and are folded into the same group by the service.
+    IReadOnlyList<string>? Actions = null,
+    IReadOnlyList<string>? ResourceTypes = null
 ) : IRequest<Result<AuditLogPageDto>>;
 
 public sealed class ListAuditLogsQueryHandler
@@ -28,6 +32,7 @@ public sealed class ListAuditLogsQueryHandler
         => _service.ListAsync(
             new AuditLogFilter(
                 request.StartDate, request.EndDate, request.ActorUserId,
-                request.Action, request.ResourceType, request.SearchQuery),
+                request.Action, request.ResourceType, request.SearchQuery,
+                request.Actions, request.ResourceTypes),
             request.Page, request.PageSize, cancellationToken);
 }

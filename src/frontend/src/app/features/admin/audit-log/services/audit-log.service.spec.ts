@@ -15,7 +15,7 @@ describe('AuditLogService', () => {
   let service: AuditLogService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/tenant/audit-log`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/audit-logs`;
   const usersUrl = `${environment.apiBaseUrl}/users`;
 
   const mockPage: IAuditLogPage = {
@@ -137,6 +137,77 @@ describe('AuditLogService', () => {
     const req = httpMock.expectOne((r) => r.url === `${baseUrl}/export`);
     expect(req.request.params.get('format')).toBe('json');
     req.flush(new Blob(['[]']));
+  });
+
+  // ─── US-NTF-005 deltas ─────────────────────────────────
+
+  it('serializes multi-select actions/resourceTypes as repeated params (FR-2)', () => {
+    service
+      .getAuditLog({
+        page: 1,
+        pageSize: 50,
+        actions: ['Employee.Create', 'Leave.Approve'],
+        resourceTypes: ['Employee', 'LeaveRequest'],
+      })
+      .subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.getAll('actions')).toEqual([
+      'Employee.Create',
+      'Leave.Approve',
+    ]);
+    expect(req.request.params.getAll('resourceTypes')).toEqual([
+      'Employee',
+      'LeaveRequest',
+    ]);
+    req.flush(mockPage);
+  });
+
+  it('omits empty multi-select arrays from the query (FR-2)', () => {
+    service
+      .getAuditLog({ page: 1, pageSize: 50, actions: [], resourceTypes: [] })
+      .subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.has('actions')).toBeFalse();
+    expect(req.request.params.has('resourceTypes')).toBeFalse();
+    req.flush(mockPage);
+  });
+
+  it('searches actors via the dedicated endpoint and maps the shape (FR-2)', () => {
+    service.searchActors('jan').subscribe((opts) => {
+      expect(opts).toEqual([
+        { id: 'u-7', displayName: 'Jane Doe', email: 'jane@acme.com' },
+      ]);
+    });
+
+    const req = httpMock.expectOne(
+      (r) => r.url === `${baseUrl}/actors` && r.method === 'GET'
+    );
+    expect(req.request.params.get('search')).toBe('jan');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush([{ userId: 'u-7', name: 'Jane Doe', email: 'jane@acme.com' }]);
+  });
+
+  it('omits a blank actor search term', () => {
+    service.searchActors('   ').subscribe();
+    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/actors`);
+    expect(req.request.params.has('search')).toBeFalse();
+    req.flush([]);
+  });
+
+  it('fetches multi-select filter options (FR-2)', () => {
+    const opts = {
+      actions: ['Employee.Create', 'Leave.Approve'],
+      resourceTypes: ['Employee', 'LeaveRequest'],
+    };
+    service.getFilterOptions().subscribe((res) => expect(res).toEqual(opts));
+
+    const req = httpMock.expectOne(
+      (r) => r.url === `${baseUrl}/filter-options` && r.method === 'GET'
+    );
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(opts);
   });
 
   it('derives actor options from the reused US-ADM-005 user list', () => {
