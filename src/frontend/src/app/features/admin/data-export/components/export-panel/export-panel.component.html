@@ -1,0 +1,260 @@
+<div class="space-y-6" @fadeIn>
+  <!-- ─── Scope selection (AC-1, §8) ─────────────────────── -->
+  <section class="card-notion">
+    <h2 class="text-sm font-semibold text-neutral-800">
+      {{ 'dataExport.scope.title' | translate }}
+    </h2>
+    <p class="mt-1 text-xs text-neutral-500">
+      {{ 'dataExport.scope.subtitle' | translate }}
+    </p>
+
+    <!-- Full export toggle -->
+    <fieldset class="mt-4 space-y-2" role="radiogroup" [attr.aria-label]="'dataExport.scope.title' | translate">
+      <label
+        class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors"
+        [class.border-indigo-300]="fullExport()"
+        [class.bg-indigo-50]="fullExport()"
+        [class.border-neutral-200]="!fullExport()"
+      >
+        <input
+          type="radio"
+          name="exportScope"
+          class="mt-0.5 h-4 w-4 accent-indigo-600"
+          [checked]="fullExport()"
+          (change)="setFullExport(true)"
+          data-testid="scope-full"
+        />
+        <span>
+          <span class="block text-sm font-medium text-neutral-900">{{ 'dataExport.scope.full' | translate }}</span>
+          <span class="block text-xs text-neutral-500">{{ 'dataExport.scope.fullHint' | translate }}</span>
+        </span>
+      </label>
+
+      <label
+        class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors"
+        [class.border-indigo-300]="!fullExport()"
+        [class.bg-indigo-50]="!fullExport()"
+        [class.border-neutral-200]="fullExport()"
+      >
+        <input
+          type="radio"
+          name="exportScope"
+          class="mt-0.5 h-4 w-4 accent-indigo-600"
+          [checked]="!fullExport()"
+          (change)="setFullExport(false)"
+          data-testid="scope-partial"
+        />
+        <span>
+          <span class="block text-sm font-medium text-neutral-900">{{ 'dataExport.scope.partial' | translate }}</span>
+          <span class="block text-xs text-neutral-500">{{ 'dataExport.scope.partialHint' | translate }}</span>
+        </span>
+      </label>
+    </fieldset>
+
+    <!-- Entity checkboxes (only when partial) -->
+    @if (!fullExport()) {
+      <div class="mt-5" @fadeIn data-testid="entity-picker">
+        <div class="mb-3 flex items-center justify-between">
+          <span class="text-xs font-medium text-neutral-500">
+            {{ selected().size }} {{ 'dataExport.entities.selected' | translate }}
+          </span>
+          <div class="flex gap-2">
+            <button type="button" class="text-xs font-medium text-indigo-600 hover:underline" (click)="selectAll()" data-testid="select-all">
+              {{ 'dataExport.entities.selectAll' | translate }}
+            </button>
+            <span class="text-neutral-300">·</span>
+            <button type="button" class="text-xs font-medium text-neutral-500 hover:underline" (click)="clearSelection()" data-testid="clear-selection">
+              {{ 'dataExport.entities.clear' | translate }}
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-5">
+          @for (group of catalogue; track group.module) {
+            <div>
+              <!-- Module header with subtle divider (§8) -->
+              <div class="flex items-center gap-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-neutral-400">{{ group.module }}</h3>
+                <span class="h-px flex-1 bg-neutral-100"></span>
+              </div>
+              <div class="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                @for (entity of group.entities; track entity.code) {
+                  <label class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-50">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 rounded accent-indigo-600"
+                      [checked]="isSelected(entity.code)"
+                      (change)="toggleEntity(entity.code)"
+                      [attr.data-testid]="'entity-' + entity.code"
+                    />
+                    <span class="text-sm text-neutral-700">{{ entity.label }}</span>
+                  </label>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  </section>
+
+  <!-- ─── Format preferences (FR-1) ──────────────────────── -->
+  <section class="card-notion">
+    <h2 class="text-sm font-semibold text-neutral-800">
+      {{ 'dataExport.format.title' | translate }}
+    </h2>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <label class="block">
+        <span class="mb-1 block text-xs font-medium text-neutral-500">{{ 'dataExport.format.delimiter' | translate }}</span>
+        <select
+          class="pref-select w-full"
+          [ngModel]="delimiter()"
+          (ngModelChange)="delimiter.set($event)"
+          data-testid="delimiter-select"
+        >
+          <option value=",">{{ 'dataExport.format.delimiterComma' | translate }}</option>
+          <option value=";">{{ 'dataExport.format.delimiterSemicolon' | translate }}</option>
+          <option value="&#9;">{{ 'dataExport.format.delimiterTab' | translate }}</option>
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-xs font-medium text-neutral-500">{{ 'dataExport.format.dateFormat' | translate }}</span>
+        <select
+          class="pref-select w-full"
+          [ngModel]="dateFormat()"
+          (ngModelChange)="dateFormat.set($event)"
+          data-testid="dateformat-select"
+        >
+          <option value="ISO">{{ 'dataExport.format.dateIso' | translate }}</option>
+          <option value="US">{{ 'dataExport.format.dateUs' | translate }}</option>
+          <option value="EU">{{ 'dataExport.format.dateEu' | translate }}</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="mt-5 flex items-center justify-end">
+      <button
+        type="button"
+        class="btn-primary inline-flex items-center gap-2"
+        [disabled]="!canStart()"
+        [class.opacity-50]="!canStart()"
+        [class.cursor-not-allowed]="!canStart()"
+        (click)="startExport()"
+        data-testid="start-export"
+      >
+        @if (submitting()) {
+          <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"></path>
+          </svg>
+        }
+        {{ 'dataExport.start.button' | translate }}
+      </button>
+    </div>
+  </section>
+
+  <!-- ─── Progress indicator (§8) ────────────────────────── -->
+  @if (activeExport(); as active) {
+    <section class="card-notion border-indigo-100 bg-indigo-50/40" @fadeIn data-testid="progress-indicator">
+      <div class="flex items-center gap-3">
+        <svg class="h-5 w-5 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"></path>
+        </svg>
+        <div>
+          <p class="text-sm font-medium text-neutral-800">
+            {{ 'dataExport.progress.' + active.status | translate }}
+          </p>
+          <p class="text-xs text-neutral-500">{{ 'dataExport.progress.hint' | translate }}</p>
+        </div>
+      </div>
+      <!-- Stepper: queued → processing → complete -->
+      <div class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-indigo-100" role="progressbar"
+           [attr.aria-valuetext]="active.status">
+        <div class="progress-bar" [style.width.%]="active.status === 'Queued' ? 25 : 65"></div>
+      </div>
+    </section>
+  }
+
+  <!-- ─── Export history (§8) ────────────────────────────── -->
+  <section class="card-notion">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-neutral-800">
+        {{ 'dataExport.history.title' | translate }}
+      </h2>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-neutral-600 ring-1 ring-inset ring-neutral-200 transition-colors hover:bg-neutral-50 disabled:opacity-40"
+        (click)="loadHistory()"
+        [disabled]="historyLoading()"
+        data-testid="refresh-history"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clip-rule="evenodd" />
+        </svg>
+        {{ 'dataExport.history.refresh' | translate }}
+      </button>
+    </div>
+
+    @if (historyLoading()) {
+      <div class="space-y-2">
+        <div class="h-12 animate-pulse rounded-lg bg-neutral-100"></div>
+        <div class="h-12 animate-pulse rounded-lg bg-neutral-100"></div>
+      </div>
+    } @else if (history().length === 0) {
+      <div class="py-10 text-center" data-testid="history-empty">
+        <p class="text-sm text-neutral-400">{{ 'dataExport.history.empty' | translate }}</p>
+      </div>
+    } @else {
+      <!-- Card list (responsive — NFR-5: stacks on mobile) -->
+      <ul class="divide-y divide-neutral-100" data-testid="history-list">
+        @for (record of history(); track record.id) {
+          <li class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-medium text-neutral-800">{{ record.scope }}</span>
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                  [class]="exportStatusClass(record.status)"
+                  [attr.data-testid]="'status-' + record.id"
+                >
+                  {{ 'dataExport.status.' + record.status | translate }}
+                </span>
+              </div>
+              <p class="mt-0.5 text-xs text-neutral-500">
+                {{ record.requestedAt | date: 'medium' }}
+                @if (record.fileSizeBytes !== null) {
+                  · {{ formatFileSize(record.fileSizeBytes) }}
+                }
+                @if (record.expiresAt && record.status === 'Completed') {
+                  · {{ 'dataExport.history.expires' | translate }} {{ record.expiresAt | date: 'short' }}
+                }
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+              [class.bg-indigo-600]="canDownload(record)"
+              [class.text-white]="canDownload(record)"
+              [class.hover:bg-indigo-700]="canDownload(record)"
+              [class.bg-neutral-100]="!canDownload(record)"
+              [class.text-neutral-400]="!canDownload(record)"
+              [class.cursor-not-allowed]="!canDownload(record)"
+              [disabled]="!canDownload(record)"
+              [title]="(canDownload(record) ? 'dataExport.history.download' : 'dataExport.history.unavailable') | translate"
+              (click)="download(record)"
+              [attr.data-testid]="'download-' + record.id"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+              </svg>
+              {{ 'dataExport.history.download' | translate }}
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+</div>

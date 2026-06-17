@@ -1,10 +1,10 @@
 ---
 module: Admin Console
-total_user_stories: 9
-total_test_cases: 193
+total_user_stories: 10
+total_test_cases: 217
 created: 2026-06-16
 updated: 2026-06-17
-status: in-progress
+status: complete
 ---
 
 # Admin Console -- Test Matrix
@@ -741,10 +741,106 @@ status: in-progress
 
 ---
 
-## Module Totals
+## US-ADM-010 — Tenant Data Export on Demand
+
+> TENTH and FINAL Admin Console story (DUAL persona: **Tenant Admin** exports own tenant via `ITenantContext`; **System Admin** exports any tenant via explicit `tenantId`). 24 test cases: 15 run-green functional/security/integration/e2e (TC-ADM-010-01..15) + 5 DEFERRED (TC-ADM-010-16..20) + 4 dedicated multi-tenant isolation (TC-ADM-ISO-028..031, continuing the running ISO counter; -031 DEFERRED). All 6 ACs (AC-1..AC-6), all 7 BRs (BR-1..BR-7), all 9 FRs (FR-1..FR-9) traced.
+>
+> IMPLEMENTATION FACTS (tested as built): a NEW `ExportRequest` entity (Queued/Processing/Completed/Failed/Expired). A Hangfire job generates per-entity CSVs (UTF-8 **BOM**, comma delimiter, header row, `AsNoTracking`), an `audit_log.jsonl` (one JSON object per line), and a `manifest.json` (`export_id`, `tenant_id`, `tenant_name`, `export_timestamp`, `scope`, and per-file `{filename, entity, row_count, file_size_bytes, sha256_checksum}`), packaged as a ZIP at `{tenantId}/exports/{export_id}/export_bundle.zip`. Sensitive-AUTH fields (password hashes, MFA secrets, token hashes) are NEVER in any CSV — the Users export is name/email/roles only (FR-8/BR-7); **PII (national id, bank account) IS included** (FR-8). Status gate (BR-2/BR-3, AC-4): Active/Trial/PastDue/Terminating allowed; **Suspended rejected for Tenant Admin but allowed for System Admin**; Terminated rejected for both. Rate limit (BR-5/FR-9): one concurrent export per tenant + max 3 per calendar month ("Monthly export limit reached."). Download (AC-3/FR-7): served only while Completed & now < 72h `ExpiresAt`; the cleanup job marks `Expired` + deletes the file. Audit on initiation/completion/download (NFR-4); a System-Admin export is dual-audited (system + tenant logs) with the System Admin as actor (AC-6). Tenant-Admin client-supplied `tenant_id` is IGNORED — export scoped to the resolved tenant (AC-5); cross-tenant export_id download injection -> **404 not 403**. Isolation runs on the EF global query filter (read) + TenantInterceptor (write), per module convention.
+>
+> DEFERRED (status: blocked; honest traceability, never fabricated): real email DELIVERY + pre-signed S3 / signed-link mechanics (FR-7/AC-2/BR-6, TC-ADM-010-16) — today the link is log-only and the bundle is served from a local tenant-scoped path; the 72h expiry + cleanup + audited download ARE run-green (TC-ADM-010-12). Schema-documentation PDF + "PII clearly marked" (FR-2/FR-8/§10, TC-ADM-010-17) — static build-time stub; PII INCLUSION in CSVs is run-green (TC-ADM-010-05). At-rest encryption + HTTPS (NFR-3, TC-ADM-010-18) — infra. Read-replica/streaming for >50k records + 30-min perf (NFR-1/NFR-2, TC-ADM-010-19) — needs a perf-representative env; `AsNoTracking` is in use and correctness is in TC-ADM-010-01. Uploaded-documents ZIP subtree (FR-4, TC-ADM-010-20) — no blob storage wired (same gap as TC-ADM-004-19). PostgreSQL RLS DB-layer isolation (AC-5, TC-ADM-ISO-031) — deferred RLS family (US-ADM-001..009 / Payroll / Leave).
+>
+> STORY MISMATCH worth flagging to the caller: (1) AC-5 names PostgreSQL RLS as an active third isolation layer — only the app (ITenantContext) + EF (query filter / TenantInterceptor) layers exist today; reword RLS as future hardening (TC-ADM-ISO-031). (2) AC-2/AC-3/FR-7 assume a signed-URL + email transport (S3 pre-signed + delivery to billing contact) — neither is wired; the bundle is served from a local path and the link is log-only (TC-ADM-010-16). (3) AC-2/FR-4 assume an uploaded-documents ZIP subtree — no blob storage exists (TC-ADM-010-20). (4) §10 correctly scopes the schema PDF as a static build-time artifact, so AC-2's "schema documentation file" is definitional in Phase-1 (TC-ADM-010-17).
+
+## Coverage by Test Case (US-ADM-010)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category | Status |
+|-----------|-------|------|----------|--------------------|----------|--------|
+| TC-ADM-010-01 | Full export bundle — CSVs + audit_log.jsonl + manifest, packaged ZIP | E2E | Critical | AC-1/2, FR-1/2/5/6 | Happy path | draft |
+| TC-ADM-010-02 | Manifest validation — SHA-256 + row counts match actual files | Integration | Critical | AC-2, FR-6 | Happy / negative / security | draft |
+| TC-ADM-010-03 | Partial export — only selected entities' CSVs | Functional | High | AC-1, FR-1/2 | Boundary | draft |
+| TC-ADM-010-04 | Sensitive-auth fields excluded — no pw/MFA/token hashes in any CSV | Security | Critical | FR-8, BR-7 | Negative / security | draft |
+| TC-ADM-010-05 | PII fields INCLUDED (national id, bank account) | Functional | High | FR-8 | Boundary | draft |
+| TC-ADM-010-06 | CSV format — UTF-8 BOM, comma delimiter, header row | Functional | High | FR-3 | Boundary | draft |
+| TC-ADM-010-07 | Audit log export as JSON Lines (audit_log.jsonl) | Functional | High | AC-2, FR-5 | Boundary | draft |
+| TC-ADM-010-08 | Terminating-tenant export ALLOWED (grace-period extraction) | Functional | Critical | AC-4, BR-3 | Boundary / security | draft |
+| TC-ADM-010-09 | Suspended — Tenant Admin REJECTED / System Admin ALLOWED | Security | Critical | AC-4/6, BR-1/2 | Negative / boundary / security | draft |
+| TC-ADM-010-10 | Terminated tenant — export REJECTED for both personas | Security | High | AC-4, BR-3 | Negative / boundary | draft |
+| TC-ADM-010-11 | Rate limit — 3/calendar month + one concurrent per tenant | Functional | Critical | FR-9, BR-5 | Negative / boundary | draft |
+| TC-ADM-010-12 | Download served while Completed & <72h; expiry -> Expired + file deleted | Functional | Critical | AC-3, FR-7 | Happy / negative / boundary | draft |
+| TC-ADM-010-13 | System-Admin export — dual audit with System Admin as actor | Security | Critical | AC-6, BR-1 | Happy / security | draft |
+| TC-ADM-010-14 | Audit trail — initiation + completion + download recorded | Integration | High | AC-1/3, NFR-4 | Negative / security | draft |
+| TC-ADM-010-15 | Tenant-Admin scoped to own tenant — foreign tenant_id ignored | Security | Critical | AC-5, FR-1, BR-1 | Negative / security / isolation | draft |
+| TC-ADM-010-16 | [DEFERRED] Email delivery + pre-signed/signed download URL | Integration | High | AC-2/3, FR-7, BR-6 | Deferred placeholder | blocked |
+| TC-ADM-010-17 | [DEFERRED] Schema-documentation PDF + PII "clearly marked" | Functional | Medium | AC-2, FR-2/8, §10 | Deferred placeholder | blocked |
+| TC-ADM-010-18 | [DEFERRED] Bundle encrypted at rest + HTTPS in transit | Security | Medium | NFR-3 | Deferred placeholder | blocked |
+| TC-ADM-010-19 | [DEFERRED] 50k/10GB in 30 min + read-replica/streaming | Performance | Medium | NFR-1/2, FR-4 | Deferred placeholder | blocked |
+| TC-ADM-010-20 | [DEFERRED] Uploaded-documents ZIP subtree by entity | Integration | Medium | AC-2, FR-4 | Deferred placeholder | blocked |
+| TC-ADM-ISO-028 | Cross-tenant — export bundle has ZERO Tenant B rows | Security | Critical | AC-5, FR-2, BR-1 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-029 | Export endpoints need context; foreign tenant_id ignored; cross-tenant download -> 404 | Security | Critical | AC-5, FR-1/7, BR-1 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-030 | EF query filter scopes export queries; ExportRequest + path tenant-stamped | Security | Critical | AC-5, FR-2/6 | Multi-tenant isolation | draft |
+| TC-ADM-ISO-031 | [DEFERRED] PostgreSQL RLS DB-layer isolation for the export pipeline | Security | Medium | AC-5 (DB hardening) | Deferred placeholder | blocked |
+
+## Acceptance-Criteria Coverage (US-ADM-010)
+
+| AC | Covered By | Notes |
+|----|-----------|-------|
+| AC-1 (initiate full/partial; Hangfire job enqueued; confirmation; logged) | TC-ADM-010-01, -03, -14 | Direct (email confirmation copy is FE/log; delivery deferred -16) |
+| AC-2 (bundle: CSVs + documents + audit jsonl + schema PDF + manifest; signed link emailed) | TC-ADM-010-01, -02, -07 (CSV/audit/manifest real) + -17 (DEFERRED PDF) + -20 (DEFERRED docs) + -16 (DEFERRED signed link/email) | CSV/audit/manifest/checksum real; PDF/docs/email deferred |
+| AC-3 (download within 72h; expire + delete after; logged) | TC-ADM-010-12, -14 (+ -16 DEFERRED signed link) | Serve/expiry/cleanup/audit real; signed-URL transport deferred |
+| AC-4 (terminating allowed; suspended/terminated excluded) | TC-ADM-010-08, -09, -10 | Direct |
+| AC-5 (Tenant-Admin own-tenant only; foreign tenant_id ignored; RLS) | TC-ADM-010-15, TC-ADM-ISO-028, -029, -030 (+ -031 DEFERRED RLS) | App+EF real; RLS deferred |
+| AC-6 (System-Admin export; dual audit, System Admin as actor; link to admin+billing) | TC-ADM-010-13, -09 (+ -16 DEFERRED email) | Dual audit + content real; email deferred |
+
+## BR / FR / NFR Coverage (US-ADM-010)
+
+| Requirement | Covered By | Notes |
+|-------------|-----------|-------|
+| BR-1 (Tenant Admin own tenant; System Admin any) | TC-ADM-010-13/-15, TC-ADM-ISO-028/-029/-030 | Direct |
+| BR-2 (suspended: Tenant Admin blocked, System Admin allowed) | TC-ADM-010-09 | Direct |
+| BR-3 (export available during terminating, not after) | TC-ADM-010-08, -10 | Direct |
+| BR-4 (no system-level data; tenant-scoped only) | TC-ADM-010-01/-03 (scope is tenant entities) | Inherent in tenant-scoped export set |
+| BR-5 (one concurrent + max 3/month) | TC-ADM-010-11 | Direct |
+| BR-6 (link to requester + billing contact) | TC-ADM-010-16 (DEFERRED) | Recipients deferred with email transport |
+| BR-7 (auth secrets never exported) | TC-ADM-010-04 | Direct |
+| FR-1 (initiation: scope full/array; context vs explicit tenant) | TC-ADM-010-01/-03/-15, TC-ADM-ISO-029 | Direct |
+| FR-2 (per-entity query + CSV + package; schema doc) | TC-ADM-010-01/-03 (+ -17 DEFERRED schema PDF) | CSV real; PDF deferred |
+| FR-3 (UTF-8 BOM, comma, headers) | TC-ADM-010-06 | Direct |
+| FR-4 (documents subtree by entity) | TC-ADM-010-20 (DEFERRED) | No blob storage today |
+| FR-5 (audit_log.jsonl) | TC-ADM-010-07 | Direct |
+| FR-6 (manifest contents incl. row_count/size/sha256) | TC-ADM-010-01, -02 | Direct |
+| FR-7 (signed URL 72h + cleanup deletes files) | TC-ADM-010-12 (expiry/cleanup real) + -16 (DEFERRED signed URL) | Expiry/cleanup real; signed-URL transport deferred |
+| FR-8 (auth fields excluded; PII included) | TC-ADM-010-04 (excluded) + -05 (PII included) (+ -17 DEFERRED "marked") | Direct |
+| FR-9 (one export at a time) | TC-ADM-010-11 | Direct |
+| NFR-1 (30 min @ 50k/10GB) | TC-ADM-010-19 (DEFERRED) | Needs perf env |
+| NFR-2 (AsNoTracking + read replica + streaming) | TC-ADM-010-19 (DEFERRED) | AsNoTracking real (in -01); replica/streaming deferred |
+| NFR-3 (encrypted at rest + HTTPS) | TC-ADM-010-18 (DEFERRED) | Infra |
+| NFR-4 (initiation/completion/download/expiry audited) | TC-ADM-010-14, -12, -13 | Direct |
+| NFR-5 (responsive mobile UI) | (FE-verified during FE story; not separately scripted here) | FE-verified |
+
+## Summary (US-ADM-010)
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 9 (US-ADM-001, US-ADM-002, US-ADM-003, US-ADM-004, US-ADM-005, US-ADM-006, US-ADM-007, US-ADM-008, US-ADM-009) |
-| Total test cases | 193 |
-| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-027 |
+| User stories covered | 1 (US-ADM-010) |
+| Total test cases | 24 (15 functional/security/integration/e2e + 5 DEFERRED + 4 isolation, 1 of which DEFERRED) |
+| AC coverage | 6/6 (AC-2/3/5/6 have DEFERRED sub-parts: schema PDF, docs, signed-URL/email, RLS) |
+| BR coverage | 7/7 (BR-1..BR-7; BR-6 recipients deferred with email transport) |
+| FR coverage | 9/9 (FR-1..FR-9; FR-2 schema-PDF / FR-4 docs / FR-7 signed-URL portions deferred) |
+| Run-green now | 19 (TC-ADM-010-01..15 + TC-ADM-ISO-028, -029, -030) |
+| Deferred (status: blocked) | 6 (TC-ADM-010-16..20 + TC-ADM-ISO-031) |
+| Functional ID range | TC-ADM-010-01 .. TC-ADM-010-20 |
+| ISO ID range | TC-ADM-ISO-028 .. TC-ADM-ISO-031 |
+
+---
+
+## Module Totals — Admin Console COMPLETE
+
+All 10 Admin Console user stories (US-ADM-001 .. US-ADM-010) now have IEEE 829 test coverage. US-ADM-010 is the LAST story; the module test suite is complete.
+
+| Metric | Value |
+|--------|-------|
+| User stories covered | 10 (US-ADM-001 .. US-ADM-010) — COMPLETE |
+| Total test cases | 217 (193 prior + 24 for US-ADM-010) |
+| Functional ID scheme | per-story suffix TC-ADM-{NNN}-XX |
+| ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-031 |
+| AC coverage | Every AC of every story has >= 1 test case (deferred sub-parts honestly marked status: blocked) |

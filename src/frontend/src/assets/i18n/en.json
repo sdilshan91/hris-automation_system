@@ -593,5 +593,73 @@
         "readonlyNotice": "Only Tenant Admins can modify authentication settings."
       }
     }
+  },
+  "dataExport": {
+    "page": {
+      "title": "Data Export",
+      "subtitle": "Export your organization's data for backup, migration, or compliance (GDPR data portability)."
+    },
+    "system": {
+      "title": "Export Tenant Data",
+      "subtitle": "Generate a data export for"
+    },
+    "scope": {
+      "title": "Export scope",
+      "subtitle": "Choose a full export or pick specific entities to include.",
+      "full": "Full export",
+      "fullHint": "Include every business entity, documents, and the audit log.",
+      "partial": "Select entities",
+      "partialHint": "Choose only the modules and entities you need."
+    },
+    "entities": {
+      "selected": "selected",
+      "selectAll": "Select all",
+      "clear": "Clear"
+    },
+    "format": {
+      "title": "Format preferences",
+      "delimiter": "CSV delimiter",
+      "delimiterComma": "Comma (,)",
+      "delimiterSemicolon": "Semicolon (;)",
+      "delimiterTab": "Tab",
+      "dateFormat": "Date format",
+      "dateIso": "ISO 8601 (2026-06-17)",
+      "dateUs": "US (06/17/2026)",
+      "dateEu": "EU (17/06/2026)"
+    },
+    "start": {
+      "button": "Start Export",
+      "success": "Export started. You will receive an email with the download link when it is ready."
+    },
+    "error": {
+      "inProgress": "An export is already in progress.",
+      "rateLimit": "Monthly export limit reached.",
+      "suspended": "Export is not available while the tenant is suspended.",
+      "generic": "Could not start the export. Please try again."
+    },
+    "progress": {
+      "Queued": "Export queued…",
+      "Processing": "Generating export bundle…",
+      "hint": "You can leave this page — we will email you when it is ready."
+    },
+    "status": {
+      "Queued": "Queued",
+      "Processing": "Processing",
+      "Completed": "Completed",
+      "Failed": "Failed",
+      "Expired": "Expired"
+    },
+    "history": {
+      "title": "Recent exports",
+      "refresh": "Refresh",
+      "empty": "No exports yet. Start one above.",
+      "download": "Download",
+      "unavailable": "Download unavailable",
+      "expires": "expires"
+    },
+    "download": {
+      "expired": "This download link has expired and the file has been deleted.",
+      "error": "Could not download the export. Please try again."
+    }
   }
 }

@@ -126,6 +126,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     // US-ADM-007: Approval-workflow definitions + steps (tenant-scoped).
     public DbSet<WorkflowDefinition> WorkflowDefinitions => Set<WorkflowDefinition>();
     public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
+    // US-ADM-010: tenant data-export requests (tenant-scoped).
+    public DbSet<ExportRequest> ExportRequests => Set<ExportRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -491,6 +493,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
 
         // US-ADM-007: WorkflowStep tenant isolation + soft-delete filter (BR-7).
         modelBuilder.Entity<WorkflowStep>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ADM-010: ExportRequest tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
+        modelBuilder.Entity<ExportRequest>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

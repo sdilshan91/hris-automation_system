@@ -27,6 +27,7 @@ import {
 } from '../../../lifecycle/components/lifecycle-confirm-dialog/lifecycle-confirm-dialog.component';
 import { LifecycleHistoryTimelineComponent } from '../../../lifecycle/components/lifecycle-history-timeline/lifecycle-history-timeline.component';
 import { PlanOverridesSectionComponent } from '../../../plans/components/plan-overrides-section/plan-overrides-section.component';
+import { SystemExportDialogComponent } from '../../../data-export/components/system-export-dialog/system-export-dialog.component';
 import {
   ITenantLifecycleEvent,
   ITenantLifecycleResult,
@@ -65,6 +66,7 @@ import {
     LifecycleConfirmDialogComponent,
     LifecycleHistoryTimelineComponent,
     PlanOverridesSectionComponent,
+    SystemExportDialogComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
@@ -96,6 +98,9 @@ export class TenantMonitoringDetailComponent implements OnInit {
   readonly terminateOpen = signal(false);
   /** Non-destructive confirm modal — null when closed, else the action. */
   readonly confirmAction = signal<LifecycleConfirmAction | null>(null);
+
+  /** US-ADM-010 AC-6: whether the System-Admin "Export Data" dialog is open. */
+  readonly exportOpen = signal(false);
 
   /** US-ADM-004: lifecycle history timeline state. */
   readonly history = signal<ITenantLifecycleEvent[]>([]);
@@ -227,6 +232,17 @@ export class TenantMonitoringDetailComponent implements OnInit {
       this.detail.set({ ...current, status: result.status });
     }
     this.load(result.tenantId);
+  }
+
+  // ─── Data export (US-ADM-010 AC-6) ──────────────────────────
+
+  /** Open the System-Admin "Export Data" dialog for this tenant. */
+  openExport(): void {
+    this.exportOpen.set(true);
+  }
+
+  closeExport(): void {
+    this.exportOpen.set(false);
   }
 
   /** Status badge colour (color-coded — AC / UI notes). */

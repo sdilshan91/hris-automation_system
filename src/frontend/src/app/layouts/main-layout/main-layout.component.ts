@@ -781,6 +781,13 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      // US-ADM-010: Tenant Admin on-demand data export (Data Management > Export).
+      label: 'Data Export',
+      route: '/admin/data-export',
+      permission: 'Admin.View',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a.75.75 0 0 1 .75.75v6.59l1.95-2.1a.75.75 0 1 1 1.1 1.02l-3.25 3.5a.75.75 0 0 1-1.1 0L6.2 7.26a.75.75 0 1 1 1.1-1.02l1.95 2.1V1.75A.75.75 0 0 1 10 1ZM5.273 11.5a.75.75 0 0 1 .727.927l-.6 2.4a.5.5 0 0 0 .485.673h8.23a.5.5 0 0 0 .485-.673l-.6-2.4a.75.75 0 0 1 1.454-.364l.6 2.4A2 2 0 0 1 14.515 17H6.27a2 2 0 0 1-1.94-2.48l.6-2.4a.75.75 0 0 1 .343-.62Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
       // US-ADM-009: System Admin Console subscription plans (role-gated, not permission).
       label: 'Plans',
       route: '/admin/plans',

@@ -432,6 +432,19 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IAuditLogPurgeService, AuditLogPurgeService>();
 
+        // US-ADM-010: Tenant data export on demand. Initiation runs in the resolved-tenant context (Tenant Admin,
+        // AC-5) OR the system/admin context with an explicit tenant id (System Admin, AC-6). The status gate
+        // (BR-2/BR-3), the concurrent + monthly-3 rate limit (BR-5), the Queued ExportRequest + "DataExport.Requested"
+        // audit live in the service; generation (GenerateAsync) is INVOKED by the Hangfire DataExportGenerationJob
+        // when the optional IExportJobScheduler is wired (HRM.Api), else directly (tests). The generation does the
+        // AsNoTracking per-entity CSV serialization with the auth-secret deny-list (BR-7), the audit-log JSONL,
+        // manifest.json with REAL SHA-256 checksums, the ZIP, and the IFileStorage store + (stub) download-link
+        // email seam. The retention cleanup (FR-7) is ExportCleanupService, driven by the hourly ExportCleanupJob.
+        // Real email + pre-signed S3 URL + the schema PDF + at-rest encryption are DEFERRED (TODO US-NTF / infra).
+        services.AddScoped<ITenantDataExportService, TenantDataExportService>();
+        services.AddScoped<IExportCleanupService, ExportCleanupService>();
+        services.AddScoped<IDataExportNotificationService, LogOnlyDataExportNotificationService>();
+
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
         // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running

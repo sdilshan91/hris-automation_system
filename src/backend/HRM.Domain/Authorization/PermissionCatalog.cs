@@ -306,6 +306,22 @@ public static class PermissionCatalog
         /// current tenant. Held by Tenant Admin and Tenant Owner only (BR-1).
         /// </summary>
         public const string ManageWorkflows = "Tenant.ManageWorkflows";
+
+        /// <summary>
+        /// US-ADM-010 (AC-1/BR-1): initiate + download an on-demand data export of the CURRENT tenant's data, and
+        /// view export history/status. A tenant-scoped capability held by Tenant Owner and Tenant Admin. The
+        /// endpoints run in the resolved-tenant context, so the export is always scoped to ITenantContext.TenantId
+        /// (AC-5) — a client-supplied foreign tenant id is ignored.
+        /// </summary>
+        public const string ExportData = "Tenant.ExportData";
+
+        /// <summary>
+        /// US-ADM-010 (AC-6/BR-1/BR-2): initiate a data export for ANY tenant from the System Admin console
+        /// (cross-tenant), including a Suspended tenant on the tenant's behalf (BR-2). A SYSTEM-level capability
+        /// held by the platform SystemAdmin role ONLY (seeded with every catalog permission); System Support is
+        /// read-only and is NOT granted this. The endpoint runs only in the system/admin context.
+        /// </summary>
+        public const string ExportDataSystem = "Tenant.ExportDataSystem";
     }
 
     // ── Subscription Plans (US-ADM-009) ──────────────────────────────
@@ -463,6 +479,7 @@ public static class PermissionCatalog
         // Tenant
         Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling, Tenant.Provision,
         Tenant.Lifecycle, Tenant.ViewLifecycle, Tenant.ViewWorkflows, Tenant.ManageWorkflows,
+        Tenant.ExportData, Tenant.ExportDataSystem,
 
         // Subscription Plans
         Plan.View, Plan.Manage,
@@ -567,7 +584,7 @@ public static class PermissionCatalog
             Reports.View, Reports.Export,
             Roles.View, Roles.Manage, Roles.AssignUsers,
             Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
-            Tenant.ViewWorkflows, Tenant.ManageWorkflows,
+            Tenant.ViewWorkflows, Tenant.ManageWorkflows, Tenant.ExportData,
             Audit.View, Audit.Export,
             Notifications.ManageTemplates,
             Training.ViewAll, Training.Manage,
