@@ -1,4 +1,57 @@
 {
+  "reports": {
+    "catalog": {
+      "title": "HR Reports",
+      "subtitle": "Generate pre-built reports for workforce planning and management metrics.",
+      "generate": "Generate",
+      "generateFor": "Generate report:",
+      "retry": "Try again",
+      "headcount": {
+        "title": "Headcount Summary",
+        "description": "Total headcount, active vs. inactive, and breakdown by employment type and sub-department."
+      },
+      "turnover": {
+        "title": "Employee Turnover",
+        "description": "Separations, voluntary vs. involuntary turnover, monthly trend, and average tenure of leavers."
+      },
+      "demographics": {
+        "title": "Demographics",
+        "description": "Gender distribution, age histogram, department headcount, and diversity metrics."
+      },
+      "joiners-leavers": {
+        "title": "Joiners & Leavers",
+        "description": "New hires and separations over the selected period, by month and department."
+      },
+      "department-distribution": {
+        "title": "Department Distribution",
+        "description": "Headcount distribution across departments and sub-departments."
+      },
+      "employment-type-breakdown": {
+        "title": "Employment Type Breakdown",
+        "description": "Workforce composition by full-time, part-time, contract, and intern."
+      }
+    },
+    "viewer": {
+      "generatedAt": "Generated",
+      "viewToggle": "Switch between chart and table view",
+      "chartView": "Charts",
+      "tableView": "Table",
+      "refresh": "Refresh",
+      "print": "Print",
+      "filters": "Filters",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "departments": "Departments",
+      "locations": "Locations",
+      "employmentType": "Employment type",
+      "status": "Status",
+      "commaSeparated": "Comma-separated ids",
+      "apply": "Apply",
+      "clear": "Clear",
+      "retry": "Try again",
+      "tableAlternativeHint": "Switch to Table view for a screen-reader-friendly version of this data."
+    }
+  },
   "notificationPreferences": {
     "title": "Notification Preferences",
     "subtitle": "Choose which events you hear about and how you're notified. Changes save automatically.",
