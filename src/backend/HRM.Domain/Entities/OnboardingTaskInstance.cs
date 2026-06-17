@@ -48,6 +48,29 @@ public sealed class OnboardingTaskInstance : BaseEntity
     /// <summary>Sort order within the checklist/category.</summary>
     public int SortOrder { get; set; }
 
+    // ── US-ONB-003: self-service completion ────────────────────────
+
+    /// <summary>
+    /// US-ONB-003 AC-4/FR-3: when true the employee MUST attach a document to complete this task
+    /// (e.g. "Submit ID proof"). Propagated from the template task at assignment time.
+    /// </summary>
+    public bool RequiresDocument { get; set; }
+
+    /// <summary>US-ONB-003 AC-3: when the task was marked completed (UTC). Null while not completed.</summary>
+    public DateTime? CompletedAt { get; set; }
+
+    /// <summary>US-ONB-003 AC-3: the user (the new hire) who completed the task. Null while not completed.</summary>
+    public Guid? CompletedByUserId { get; set; }
+
+    /// <summary>US-ONB-003 FR-2: optional free-text comment supplied on completion (max 500).</summary>
+    public string? CompletionComment { get; set; }
+
+    /// <summary>US-ONB-003 AC-4: tenant-isolated storage key of the uploaded document (null if none).</summary>
+    public string? AttachmentStorageKey { get; set; }
+
+    /// <summary>US-ONB-003 AC-4: original file name of the uploaded document (for download display).</summary>
+    public string? AttachmentFileName { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
     public OnboardingChecklistInstance? ChecklistInstance { get; set; }
 }

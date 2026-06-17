@@ -34,5 +34,15 @@ export const ONBOARDING_ROUTES: Routes = [
         './components/checklist-assignment/checklist-assignment.component'
       ).then((m) => m.ChecklistAssignmentComponent),
   },
+  {
+    // US-ONB-003: the logged-in new hire's own checklist (FR-1). No role guard —
+    // any authenticated employee with an assigned checklist self-serves here; the
+    // backend scopes to the caller's identity + tenant.
+    path: 'my-checklist',
+    loadComponent: () =>
+      import('./components/my-checklist/my-checklist.component').then(
+        (m) => m.MyChecklistComponent,
+      ),
+  },
   { path: '', redirectTo: 'templates', pathMatch: 'full' },
 ];

@@ -92,6 +92,13 @@ public sealed class OnboardingChecklistIntegrationTests
 
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
 
+        // US-ONB-003: file storage + malware-scanner seams (no real I/O in these US-ONB-002 tests).
+        services.AddSingleton(Substitute.For<IFileStorage>());
+        var scanner = Substitute.For<IVirusScanner>();
+        scanner.ScanAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(VirusScanResult.Clean());
+        services.AddSingleton(scanner);
+
         // IBackgroundJobClient intentionally not registered (optional dependency) — enqueue is a no-op.
         services.AddScoped<IOnboardingChecklistService, OnboardingChecklistService>();
 

@@ -38,6 +38,12 @@ public sealed class OnboardingTemplateTask : BaseEntity
     /// <summary>Mandatory flag (AC-4). Mandatory tasks cannot be skipped when assigned to a new hire.</summary>
     public bool IsMandatory { get; set; }
 
+    /// <summary>
+    /// US-ONB-003 AC-4: when true, the new hire must attach a document to complete tasks cloned from this
+    /// template task (e.g. "Submit ID proof"). Propagated to each <see cref="OnboardingTaskInstance"/>.
+    /// </summary>
+    public bool RequiresDocument { get; set; }
+
     /// <summary>Sort order within the template/category (FR-1/FR-3, &gt;= 0).</summary>
     public int SortOrder { get; set; }
 

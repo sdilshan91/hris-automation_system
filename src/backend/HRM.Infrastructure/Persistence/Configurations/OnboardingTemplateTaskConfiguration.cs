@@ -41,6 +41,8 @@ public sealed class OnboardingTemplateTaskConfiguration : IEntityTypeConfigurati
 
         builder.Property(t => t.DueOffsetDays).IsRequired();
         builder.Property(t => t.IsMandatory).HasDefaultValue(false).IsRequired();
+        // US-ONB-003 AC-4: document-required flag, propagated to assigned task instances.
+        builder.Property(t => t.RequiresDocument).HasDefaultValue(false).IsRequired();
         builder.Property(t => t.SortOrder).IsRequired();
 
         builder.Property(t => t.IsDeleted).HasDefaultValue(false).IsRequired();

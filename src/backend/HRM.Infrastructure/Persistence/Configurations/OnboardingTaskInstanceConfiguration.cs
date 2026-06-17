@@ -47,6 +47,14 @@ public sealed class OnboardingTaskInstanceConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.IsMandatory).HasDefaultValue(false).IsRequired();
         builder.Property(x => x.SortOrder).IsRequired();
 
+        // US-ONB-003: self-service completion fields.
+        builder.Property(x => x.RequiresDocument).HasDefaultValue(false).IsRequired();
+        builder.Property(x => x.CompletedAt);
+        builder.Property(x => x.CompletedByUserId);
+        builder.Property(x => x.CompletionComment).HasMaxLength(500);
+        builder.Property(x => x.AttachmentStorageKey).HasMaxLength(1024);
+        builder.Property(x => x.AttachmentFileName).HasMaxLength(255);
+
         builder.Property(x => x.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // Ordered read of a checklist's tasks (by instance, then sort order).

@@ -133,4 +133,92 @@ public sealed class OnboardingChecklistsController : ControllerBase
 
         return Ok(ApiResponse<OnboardingChecklistInstanceDto>.Ok(result.Value!));
     }
+
+    // ── US-ONB-003: self-service (the authenticated employee acts on their OWN tasks) ──
+    // These endpoints intentionally require ONLY authentication, NOT Onboarding.Manage — the new hire is a
+    // regular employee acting on their own checklist (FR-7 ownership is enforced in the service, not by a
+    // management permission).
+
+    /// <summary>
+    /// GET /api/v1/onboarding/checklists/me
+    /// US-ONB-003 AC-1/AC-2/FR-1: the logged-in employee's active checklist with tasks grouped by category
+    /// and a progress summary. The employee is resolved from the JWT; tasks are tenant-scoped.
+    /// </summary>
+    [HttpGet("me")]
+    [ProducesResponseType(typeof(ApiResponse<MyChecklistDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMyChecklist(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyChecklistQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<MyChecklistDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/onboarding/checklists/me/progress
+    /// US-ONB-003 AC-1/FR-4: the cheap progress summary for the dashboard widget (percent + counts).
+    /// </summary>
+    [HttpGet("me/progress")]
+    [ProducesResponseType(typeof(ApiResponse<MyChecklistProgressDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMyChecklistProgress(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyChecklistProgressQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<MyChecklistProgressDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/onboarding/checklists/tasks/{taskInstanceId}/complete
+    /// US-ONB-003 AC-3/AC-4/FR-2/FR-3: the employee marks their own task complete, optionally with a comment
+    /// and a document (multipart, form field "attachment"). Enforces ownership (FR-7/BR-1), cannot-revert
+    /// (BR-3), document-required (AC-4), and MIME + size (FR-3/NFR-6) in the service. Accepts either a JSON
+    /// body { comment } or multipart/form-data with "comment" + "attachment".
+    /// </summary>
+    [HttpPost("tasks/{taskInstanceId:guid}/complete")]
+    [ProducesResponseType(typeof(ApiResponse<CompleteTaskResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [RequestSizeLimit(11 * 1024 * 1024)] // 10 MB + multipart overhead (NFR-6).
+    public async Task<IActionResult> CompleteTask(
+        Guid taskInstanceId,
+        [FromForm] string? comment,
+        IFormFile? attachment,
+        CancellationToken cancellationToken)
+    {
+        if (attachment is not null && attachment.Length == 0)
+            return BadRequest(ApiResponse.Fail("Uploaded file is empty."));
+
+        Stream? stream = attachment is not null ? attachment.OpenReadStream() : null;
+        try
+        {
+            var command = new CompleteTaskCommand(
+                taskInstanceId,
+                comment,
+                stream,
+                attachment?.FileName,
+                attachment?.ContentType,
+                attachment?.Length ?? 0);
+
+            var result = await _mediator.Send(command, cancellationToken);
+
+            if (result.IsFailure)
+                return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+            return Ok(ApiResponse<CompleteTaskResultDto>.Ok(result.Value!));
+        }
+        finally
+        {
+            if (stream is not null)
+                await stream.DisposeAsync();
+        }
+    }
 }

@@ -5,11 +5,12 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../core/auth/auth.service';
+import { OnboardingProgressWidgetComponent } from '../onboarding/components/onboarding-progress-widget/onboarding-progress-widget.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OnboardingProgressWidgetComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page-container">
@@ -20,6 +21,12 @@ import { AuthService } from '../../core/auth/auth.service';
         <p class="mt-1 text-sm text-neutral-500">
           Here's an overview of your workspace.
         </p>
+      </div>
+
+      <!-- US-ONB-003 (AC-1): new-hire onboarding progress. Self-hides when the
+           logged-in user has no assigned checklist, so it is safe for all users. -->
+      <div class="mb-6">
+        <app-onboarding-progress-widget />
       </div>
 
       <!-- Placeholder cards -->
