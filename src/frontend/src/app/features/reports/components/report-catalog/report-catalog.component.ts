@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   inject,
   signal,
+  computed,
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -13,7 +14,19 @@ import { TranslateModule } from '@ngx-translate/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DestroyRef } from '@angular/core';
 import { ReportsService } from '../../services/reports.service';
-import { IReportCatalogItem } from '../../models/reports.models';
+import {
+  IReportCatalogItem,
+  ReportCategory,
+} from '../../models/reports.models';
+
+/** A catalog section: a (possibly categorized) bucket of report cards. */
+interface ICatalogGroup {
+  /** Stable category key (or '__none__' fallback). */
+  key: string;
+  /** i18n key for the section heading. */
+  headingKey: string;
+  items: IReportCatalogItem[];
+}
 
 /**
  * US-RPT-001 AC-1: report catalog. A card grid of the six pre-built report
@@ -50,32 +63,59 @@ import { IReportCatalogItem } from '../../models/reports.models';
             {{ 'reports.catalog.retry' | translate }}
           </button>
         </div>
-      } @else {
-        <div class="rpt-grid">
-          @for (item of catalog(); track item.type) {
-            <article class="rpt-card">
-              <mat-icon class="rpt-card-icon" aria-hidden="true">{{
-                item.icon
-              }}</mat-icon>
-              <h2 class="rpt-card-title">{{ item.titleKey | translate }}</h2>
-              <p class="rpt-card-desc">{{ item.descriptionKey | translate }}</p>
-              <button
-                type="button"
-                class="rpt-btn-primary"
-                (click)="generate(item)"
-                [attr.aria-label]="
-                  ('reports.catalog.generateFor' | translate) +
-                  ' ' +
-                  (item.titleKey | translate)
-                "
-              >
-                {{ 'reports.catalog.generate' | translate }}
-              </button>
-            </article>
+      } @else if (groups(); as gs) {
+        <!-- Light grouping (US-RPT-002 section 8): one section per server
+             category when any item carries one; else a single ungrouped grid. -->
+        @if (grouped()) {
+          @for (group of gs; track group.key) {
+            <section class="rpt-group">
+              <h2 class="rpt-group-title">
+                {{ group.headingKey | translate }}
+              </h2>
+              <div class="rpt-grid">
+                @for (item of group.items; track item.type) {
+                  <ng-container
+                    [ngTemplateOutlet]="cardTpl"
+                    [ngTemplateOutletContext]="{ $implicit: item }"
+                  />
+                }
+              </div>
+            </section>
           }
-        </div>
+        } @else {
+          <div class="rpt-grid">
+            @for (item of catalog(); track item.type) {
+              <ng-container
+                [ngTemplateOutlet]="cardTpl"
+                [ngTemplateOutletContext]="{ $implicit: item }"
+              />
+            }
+          </div>
+        }
       }
     </section>
+
+    <ng-template #cardTpl let-item>
+      <article class="rpt-card">
+        <mat-icon class="rpt-card-icon" aria-hidden="true">{{
+          item.icon
+        }}</mat-icon>
+        <h3 class="rpt-card-title">{{ item.titleKey | translate }}</h3>
+        <p class="rpt-card-desc">{{ item.descriptionKey | translate }}</p>
+        <button
+          type="button"
+          class="rpt-btn-primary"
+          (click)="generate(item)"
+          [attr.aria-label]="
+            ('reports.catalog.generateFor' | translate) +
+            ' ' +
+            (item.titleKey | translate)
+          "
+        >
+          {{ 'reports.catalog.generate' | translate }}
+        </button>
+      </article>
+    </ng-template>
   `,
   styles: [
     `
@@ -89,6 +129,15 @@ import { IReportCatalogItem } from '../../models/reports.models';
       }
       .rpt-head {
         margin-bottom: 1.5rem;
+      }
+      .rpt-group {
+        margin-bottom: 2rem;
+      }
+      .rpt-group-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 0.875rem;
       }
       .rpt-title {
         font-size: 1.5rem;
@@ -210,6 +259,37 @@ export class ReportCatalogComponent implements OnInit {
 
   readonly skeletons = [0, 1, 2, 3, 4, 5];
 
+  /**
+   * US-RPT-002 §8: true when the server tagged any catalog item with a
+   * `category`, so the catalog renders grouped sections; false → one flat grid.
+   */
+  readonly grouped = computed(() =>
+    this.catalog().some((item) => !!item.category)
+  );
+
+  /**
+   * Catalog items bucketed by `category`, preserving first-seen order. Items
+   * without a category fall into an "other" group. Only consumed when
+   * {@link grouped} is true.
+   */
+  readonly groups = computed<ICatalogGroup[]>(() => {
+    const order: string[] = [];
+    const buckets = new Map<string, IReportCatalogItem[]>();
+    for (const item of this.catalog()) {
+      const key = item.category ?? '__none__';
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
+        order.push(key);
+      }
+      buckets.get(key)!.push(item);
+    }
+    return order.map((key) => ({
+      key,
+      headingKey: this.headingKey(key),
+      items: buckets.get(key)!,
+    }));
+  });
+
   ngOnInit(): void {
     this.load();
   }
@@ -237,5 +317,13 @@ export class ReportCatalogComponent implements OnInit {
   /** Navigate to the viewer for the chosen report type. */
   generate(item: IReportCatalogItem): void {
     this.router.navigate(['/reports', item.type]);
+  }
+
+  /** Map a server category key to its section-heading i18n key. */
+  private headingKey(category: ReportCategory): string {
+    if (category === '__none__') {
+      return 'reports.catalog.groups.other';
+    }
+    return `reports.catalog.groups.${category}`;
   }
 }

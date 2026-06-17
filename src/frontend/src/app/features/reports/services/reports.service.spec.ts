@@ -121,4 +121,29 @@ describe('ReportsService', () => {
     expect(req.request.method).toBe('POST');
     req.flush(mockResult);
   });
+
+  // US-RPT-002: the new leave & attendance report types route through the same
+  // generic generate endpoint.
+  it('targets the correct URL for the US-RPT-002 report types', () => {
+    service.generateReport('leave-balance', emptyReportFilters()).subscribe();
+    const req = httpMock.expectOne(
+      (r) => r.url === `${baseUrl}/leave-balance/generate`
+    );
+    expect(req.request.method).toBe('POST');
+    req.flush(mockResult);
+  });
+
+  // US-RPT-002 §8: the server-driven `category` flows through to the catalog
+  // item so the catalog can render grouped sections.
+  it('passes the server category through to the catalog item', () => {
+    const serverCatalog: IReportCatalogServerItem[] = [
+      { type: 'leave-utilization', icon: 'beach_access', category: 'leave-attendance' },
+    ];
+    service.getCatalog().subscribe((items) => {
+      expect(items[0].category).toBe('leave-attendance');
+      expect(items[0].titleKey).toBe('reports.catalog.leave-utilization.title');
+    });
+    const req = httpMock.expectOne(baseUrl);
+    req.flush(serverCatalog);
+  });
 });

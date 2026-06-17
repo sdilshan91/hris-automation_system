@@ -52,6 +52,7 @@ export class ReportsService {
             icon: item.icon,
             titleKey: `reports.catalog.${item.type}.title`,
             descriptionKey: `reports.catalog.${item.type}.description`,
+            category: item.category,
           }))
         )
       );

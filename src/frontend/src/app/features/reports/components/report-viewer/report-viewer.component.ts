@@ -11,12 +11,14 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { TranslateModule } from '@ngx-translate/core';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReportsService } from '../../services/reports.service';
 import {
+  BalanceBand,
   IReportFilters,
   IReportResult,
+  IReportTable,
   ReportType,
   emptyReportFilters,
 } from '../../models/reports.models';
@@ -160,6 +162,33 @@ type ViewMode = 'chart' | 'table';
                 <option value="contract_ended">Contract ended</option>
               </select>
             </label>
+            <label class="rv-field">
+              <span>{{ 'reports.viewer.employee' | translate }}</span>
+              <input
+                type="text"
+                [(ngModel)]="employeeId"
+                name="employeeId"
+                [placeholder]="'reports.viewer.employeePlaceholder' | translate"
+              />
+            </label>
+            <label class="rv-field">
+              <span>{{ 'reports.viewer.leaveTypes' | translate }}</span>
+              <input
+                type="text"
+                [(ngModel)]="leaveTypesRaw"
+                name="leaveTypes"
+                [placeholder]="'reports.viewer.commaSeparated' | translate"
+              />
+            </label>
+            <label class="rv-field">
+              <span>{{ 'reports.viewer.shifts' | translate }}</span>
+              <input
+                type="text"
+                [(ngModel)]="shiftsRaw"
+                name="shifts"
+                [placeholder]="'reports.viewer.commaSeparated' | translate"
+              />
+            </label>
             <div class="rv-filters-actions">
               <button type="submit" class="rv-btn-primary" [disabled]="loading()">
                 {{ 'reports.viewer.apply' | translate }}
@@ -231,10 +260,23 @@ type ViewMode = 'chart' | 'table';
                 </tr>
               </thead>
               <tbody>
-                @for (row of r.table.rows; track $index) {
+                @for (row of r.table.rows; track $rowIdx; let $rowIdx = $index) {
                   <tr>
-                    @for (cell of row; track $index) {
-                      <td>{{ cell }}</td>
+                    @for (cell of row; track $colIdx; let $colIdx = $index) {
+                      <td
+                        [class.rv-band-ok]="
+                          bandAt(r.table, $rowIdx, $colIdx) === 'ok'
+                        "
+                        [class.rv-band-warn]="
+                          bandAt(r.table, $rowIdx, $colIdx) === 'warn'
+                        "
+                        [class.rv-band-low]="
+                          bandAt(r.table, $rowIdx, $colIdx) === 'low'
+                        "
+                        [attr.title]="bandTitle(r.table, $rowIdx, $colIdx)"
+                      >
+                        {{ cell }}
+                      </td>
                     }
                   </tr>
                 }
@@ -445,6 +487,23 @@ type ViewMode = 'chart' | 'table';
         font-weight: 600;
         color: #374151;
       }
+      /* US-RPT-002 AC-2: leave-balance color bands (green/yellow/red). Applied
+         generically per cell only when the server supplies band data. */
+      .rv-table td.rv-band-ok {
+        background: #ecfdf5;
+        color: #065f46;
+        font-weight: 600;
+      }
+      .rv-table td.rv-band-warn {
+        background: #fffbeb;
+        color: #92400e;
+        font-weight: 600;
+      }
+      .rv-table td.rv-band-low {
+        background: #fef2f2;
+        color: #991b1b;
+        font-weight: 600;
+      }
       .rv-error {
         background: #fef2f2;
         border: 1px solid #fecaca;
@@ -493,6 +552,7 @@ export class ReportViewerComponent implements OnInit {
   private readonly service = inject(ReportsService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly translate = inject(TranslateService);
 
   /** The report type resolved from the route param (AC-2..AC-4). */
   readonly reportType = signal<ReportType>('headcount');
@@ -514,6 +574,10 @@ export class ReportViewerComponent implements OnInit {
   locationsRaw = '';
   employmentTypes: string[] = [];
   employeeStatuses: string[] = [];
+  // US-RPT-002 FR-2: leave & attendance filters.
+  employeeId: string | null = null;
+  leaveTypesRaw = '';
+  shiftsRaw = '';
 
   ngOnInit(): void {
     const type = this.route.snapshot.paramMap.get('type') as ReportType | null;
@@ -544,6 +608,9 @@ export class ReportViewerComponent implements OnInit {
     this.locationsRaw = '';
     this.employmentTypes = [];
     this.employeeStatuses = [];
+    this.employeeId = null;
+    this.leaveTypesRaw = '';
+    this.shiftsRaw = '';
     this.generate(false);
   }
 
@@ -560,7 +627,25 @@ export class ReportViewerComponent implements OnInit {
     filters.locationIds = this.splitCsv(this.locationsRaw);
     filters.employmentTypes = [...this.employmentTypes];
     filters.employeeStatuses = [...this.employeeStatuses];
+    filters.employeeId = this.employeeId?.trim() || null;
+    filters.leaveTypeIds = this.splitCsv(this.leaveTypesRaw);
+    filters.shiftIds = this.splitCsv(this.shiftsRaw);
     return filters;
+  }
+
+  /**
+   * US-RPT-002 AC-2: the color band for a table cell, or null when the report
+   * supplies no band data for it (degrades to a plain cell for non-balance
+   * reports). Driven entirely by the server-provided {@link IReportTable.cellBands}.
+   */
+  bandAt(table: IReportTable, row: number, col: number): BalanceBand | null {
+    return table.cellBands?.[row]?.[col] ?? null;
+  }
+
+  /** Translated tooltip describing a cell's band (AC-2), or null when no band. */
+  bandTitle(table: IReportTable, row: number, col: number): string | null {
+    const band = this.bandAt(table, row, col);
+    return band ? this.translate.instant(`reports.viewer.band.${band}`) : null;
   }
 
   private generate(refresh: boolean): void {

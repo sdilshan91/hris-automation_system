@@ -36,6 +36,43 @@ public sealed class GenerateHrReportValidatorTests
     public void Valid_AllSixReportTypes_AreKnown(string type)
         => _validator.TestValidate(Query(type)).ShouldNotHaveValidationErrorFor(x => x.Type);
 
+    // ── US-RPT-002: the six new leave/attendance kebab keys must validate (FE contract) ────────
+    [Theory]
+    [InlineData("leave-utilization")]
+    [InlineData("leave-balance")]
+    [InlineData("attendance-summary")]
+    [InlineData("absenteeism-trends")]
+    [InlineData("overtime-report")]
+    [InlineData("late-arrival-report")]
+    public void Valid_AllSixLeaveAttendanceReportTypes_AreKnown(string type)
+        => _validator.TestValidate(Query(type)).ShouldNotHaveValidationErrorFor(x => x.Type);
+
+    [Fact]
+    public void Valid_NewFilters_EmployeeIdAndLeaveTypeIdsAndShiftIds_Pass()
+    {
+        var qp = new HrReportQueryParams
+        {
+            EmployeeId = Guid.NewGuid(),
+            LeaveTypeIds = [Guid.NewGuid()],
+            ShiftIds = [Guid.NewGuid()],
+        };
+        _validator.TestValidate(Query("leave-balance", qp)).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Invalid_EmptyEmployeeId_Fails()
+    {
+        var qp = new HrReportQueryParams { EmployeeId = Guid.Empty };
+        _validator.TestValidate(Query("leave-balance", qp)).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Invalid_EmptyLeaveTypeId_Fails()
+    {
+        var qp = new HrReportQueryParams { LeaveTypeIds = [Guid.Empty] };
+        _validator.TestValidate(Query("leave-utilization", qp)).IsValid.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("HEADCOUNT")]
     [InlineData("Joiners-Leavers")]
