@@ -1,7 +1,7 @@
 ---
 module: Reports & Analytics
-total_user_stories: 3
-total_test_cases: 48
+total_user_stories: 4
+total_test_cases: 64
 created: 2026-06-17
 updated: 2026-06-17
 status: in-progress
@@ -302,3 +302,99 @@ status: in-progress
 | BR-4 (bank advice follows tenant-configured format) | TC-RPT-003-05, -07 |
 | BR-5 (year-end/statutory aggregates over tenant fiscal year) | TC-RPT-003-04, -10 |
 | BR-6 (Cost-to-Company includes employer contributions in addition to gross) | TC-RPT-003-08 |
+
+---
+
+## US-RPT-004 -- Export Reports to CSV / PDF / Excel
+
+> US-RPT-004 adds export (CSV / Excel .xlsx / PDF) to the generic reports surface
+> (`/api/v1/reports`). Implementation contract: `POST /api/v1/reports/{type}/export
+> {format, filters, includeCharts}` -> `{exportId, status: Completed|Queued, rowCount, format}`;
+> `GET /api/v1/reports/exports` (history); `GET /api/v1/reports/exports/{exportId}/download`
+> (tenant-scoped blob). Sync < 1000 rows, async >= 1000 via Hangfire; SignalR notify on async
+> complete; audit every export; 3-in-progress-per-user concurrency cap; 7-day retention purge.
+> Adds 16 test cases: 12 functional/integration/security/performance/accessibility
+> (TC-RPT-004-01..12) + 4 multi-tenant isolation (TC-RPT-ISO-013..016, continuing the running ISO
+> counter from US-RPT-003's -012). All 5 acceptance criteria covered.
+>
+> DEFERRED / CONDITIONAL (flag to caller -- never relax a threshold to compensate):
+> (1) **Charts-as-images in PDF (AC-3 / FR-4):** server-side chart-to-PNG (SkiaSharp / headless
+> capture, S10) is DEFERRED. TC-RPT-004-03 step 6 is CONDITIONAL -- the PDF title + filters + data
+> tables + pagination + tenant-name footer (BR-5) are in-scope and binding; the chart-image step is
+> recorded pending if not wired, and its absence does NOT fail the case.
+> (2) **Cryptographic signed URLs + 15-min expiry (FR-7 / NFR-4):** DEFERRED. What IS implemented is
+> an AUTHENTICATED, tenant-scoped `/exports/{exportId}/download` endpoint + BR-3 7-day retention
+> purge. TC-RPT-004-06 asserts the tenant-403 + retention behavior that exists; the signed-URL /
+> 16-min-expiry-410 steps are CONDITIONAL (pending if not wired).
+> (3) **PostgreSQL RLS (NFR-7):** DEFERRED defense-in-depth (consistent with the whole module).
+> Isolation TCs assert EF global query filters + TenantInterceptor + ITenantContext; cross-tenant
+> exportId injection asserts **404, not 403** (TC-RPT-ISO-014); the raw-SQL RLS expectation is
+> CONDITIONAL (TC-RPT-ISO-016 step 6).
+> (4) **Audit action string (FR-9):** TC-RPT-004-07 asserts the export audit action verbatim against
+> the implementation's documented constant (e.g. `Report.Export`) -- confirm the exact value; do not
+> accept a lowercased/arbitrary variant (consistent with US-RPT-003 `PayrollReport.ViewSensitive`).
+> (5) **Reports.Export permission + View.Team/.All scope (BR-1):** `Reports.Export` exists in the
+> catalog; the Team-vs-All scope split still depends on scoped permission variants not yet exposed
+> (flagged in US-RPT-001) -- TC-RPT-ISO-015 asserts the export reuses the report view's CURRENT
+> scoping and flags the gap rather than relaxing it.
+> (6) Backend is forward-looking -- the generic reports export surface is to-be-built; these are
+> acceptance criteria for the implementation.
+
+### Coverage by Test Case (US-RPT-004)
+
+| Test Case | Title | Type | Priority | ACs / Reqs Covered | Category |
+|-----------|-------|------|----------|--------------------|----------|
+| TC-RPT-004-01 | Export dropdown shows CSV/Excel/PDF; selecting a format initiates export | E2E | Critical | AC-1, FR-1/5 | Happy path |
+| TC-RPT-004-02 | Excel async (>=1000) Hangfire .xlsx via ClosedXML; header title+filters+timestamp; SignalR ready link | Integration | Critical | AC-2, FR-3/5/8, BR-6 | Happy path |
+| TC-RPT-004-03 | PDF title+filters+tables+pagination+tenant footer (BR-5); chart-image DEFERRED | Integration | High | AC-3, FR-4/5, BR-5 | Happy / conditional |
+| TC-RPT-004-04 | CSV inline (100 emp): UTF-8 BOM, comma, header row, RFC-4180 escaping | Integration | Critical | AC-4, FR-2/5 | Happy / boundary |
+| TC-RPT-004-05 | Sync/async routing boundary: 999 sync (Completed), 1000 async (Queued) | Integration | Critical | AC-2/4, FR-5/8 | Boundary |
+| TC-RPT-004-06 | Tenant-scoped download: Tenant B -> 403; signed-URL 15-min expiry DEFERRED | Security | Critical | AC-5, FR-6/7, NFR-3/4 | Negative / security / isolation |
+| TC-RPT-004-07 | Audit every export: report type, filters, row count, format, actor; action verbatim | Security | Critical | AC-2/3/4, FR-9 | Security |
+| TC-RPT-004-08 | Concurrency cap: 3 in-progress/user; 4th -> 429/queued/rejected w/ message | Integration | High | AC-2, FR-10 | Negative / boundary |
+| TC-RPT-004-09 | 7-day retention purge (BR-3) + max 100k rows (BR-4) + Excel "Filters Applied" (BR-6) | Integration | High | AC-2/5, BR-3/4/6 | Negative / boundary |
+| TC-RPT-004-10 | Negative: invalid format/report_type, missing/expired download, no Reports.Export -> 403 | Security | Critical | AC-1/5, FR-1 | Negative / security |
+| TC-RPT-004-11 | Perf: sync CSV <2s (NFR-1); async <60s @50k (NFR-2); no viewer degradation (NFR-6) | Performance | Medium | AC-2/4, NFR-1/2/6 | Performance (conditional) |
+| TC-RPT-004-12 | A11y: export button/menu keyboard + SR; overflow menu <768px; progress/ready announced | Accessibility | Medium | AC-1/2, NFR-5 | Accessibility / cross-browser |
+| TC-RPT-ISO-013 | Export history + download isolated; A never sees/downloads B's exports | Security | Critical | AC-5, FR-6, NFR-3 | Multi-tenant isolation |
+| TC-RPT-ISO-014 | No-tenant-context rejected; cross-tenant exportId injection -> 404 (not 403); spoof ignored | Security | Critical | AC-5, NFR-3 | Multi-tenant isolation |
+| TC-RPT-ISO-015 | Export DATA tenant+permission scoped; sensitive masked; SignalR ready only to owner | Security | Critical | AC-5, FR-8, BR-1/2, NFR-3 | Multi-tenant isolation |
+| TC-RPT-ISO-016 | Storage path + retention purge + concurrency cap tenant-isolated; RLS deferred | Security | High | AC-5, FR-6/10, BR-3, NFR-7 | Multi-tenant isolation |
+
+### Acceptance-Criteria Coverage (US-RPT-004)
+
+| AC | Covered By |
+|----|-----------|
+| AC-1 (Export dropdown CSV/Excel/PDF; selecting a format initiates export) | TC-RPT-004-01, -10, -12 |
+| AC-2 (Excel async via Hangfire/ClosedXML; header title+filters+timestamp; formatted table; SignalR ready link) | TC-RPT-004-02, -05, -07, -08, -09, -11, -12 |
+| AC-3 (PDF branded: title, filters, data tables, pagination, tenant footer; charts-as-images DEFERRED) | TC-RPT-004-03 |
+| AC-4 (CSV: UTF-8 BOM, comma, header row, RFC-4180 escaping; small inline / large async) | TC-RPT-004-04, -05, -07, -11 |
+| AC-5 (tenant-scoped download -> Tenant B 403; tenant-isolated storage; signed-URL expiry DEFERRED) | TC-RPT-004-06, -10, TC-RPT-ISO-013, -014, -015, -016 |
+
+### FR / NFR / BR Coverage (US-RPT-004)
+
+| Requirement | Covered By |
+|-------------|-----------|
+| FR-1 (three formats: CSV, Excel .xlsx, PDF) | TC-RPT-004-01, -10 |
+| FR-2 (CSV UTF-8 BOM, comma, RFC-4180 escaping) | TC-RPT-004-04 |
+| FR-3 (Excel via ClosedXML: formatted headers, data, optional chart sheet) | TC-RPT-004-02 |
+| FR-4 (PDF via QuestPDF: branding, metadata, tables, pagination; chart PNGs DEFERRED) | TC-RPT-004-03 |
+| FR-5 (<1000 rows sync; >=1000 async via Hangfire) | TC-RPT-004-01, -02, -04, -05 |
+| FR-6 (tenant-isolated storage path {tenantId}/exports/{type}/{yyyy}/{mm}/{file}) | TC-RPT-004-06, TC-RPT-ISO-013, -016 |
+| FR-7 (signed download URL, configurable expiry -- DEFERRED) | TC-RPT-004-06 (conditional), TC-RPT-ISO-016 |
+| FR-8 (SignalR notify when async export ready, with download link) | TC-RPT-004-02, -05, TC-RPT-ISO-015 |
+| FR-9 (audit every export: report type, filters, row count, format, actor) | TC-RPT-004-07 |
+| FR-10 (max 3 concurrent exports per user) | TC-RPT-004-08, TC-RPT-ISO-016 |
+| NFR-1 (sync CSV <1000 rows within 2s) | TC-RPT-004-11 |
+| NFR-2 (async exports within 60s up to 50,000 rows) | TC-RPT-004-11 |
+| NFR-3 (tenant-isolated paths; cross-tenant -> 403) | TC-RPT-004-06, -07, TC-RPT-ISO-013, -014, -015 |
+| NFR-4 (signed URLs expire within 15 min -- DEFERRED) | TC-RPT-004-06 (conditional) |
+| NFR-5 (export button/selector responsive + WCAG 2.1 AA) | TC-RPT-004-12 |
+| NFR-6 (exports use background jobs; no viewer degradation) | TC-RPT-004-02, -11 |
+| NFR-7 (tenant isolation via PostgreSQL RLS -- DEFERRED -> EF filters) | TC-RPT-ISO-016 (conditional) |
+| BR-1 (export respects report scoping View.All vs View.Team) | TC-RPT-ISO-015 |
+| BR-2 (sensitive data masked without ViewSensitive) | TC-RPT-ISO-015 |
+| BR-3 (export files retained 7 days then Hangfire-purged) | TC-RPT-004-06, -09, TC-RPT-ISO-016 |
+| BR-4 (max 100,000 rows per export) | TC-RPT-004-09 |
+| BR-5 (PDF "Generated by [Tenant Name] via HRM SaaS" footer + timestamp) | TC-RPT-004-03 |
+| BR-6 (Excel "Filters Applied" header section) | TC-RPT-004-02, -09 |

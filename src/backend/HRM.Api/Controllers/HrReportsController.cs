@@ -63,4 +63,95 @@ public sealed class HrReportsController : ControllerBase
 
         return Ok(ApiResponse<HrReportResult>.Ok(result.Value!));
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  US-RPT-004 — Export reports to CSV / Excel / PDF
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// POST /api/v1/reports/{type}/export
+    /// Initiates an export of the report (US-RPT-004, FR-1/FR-5). ALWAYS returns JSON — never file bytes
+    /// (the file is fetched from <c>/exports/{exportId}/download</c>). Small reports (&lt; 1000 rows) render
+    /// synchronously and return <c>status: "Completed"</c>; large reports queue a Hangfire job and return
+    /// <c>status: "Queued"</c>. Returns 429 when the caller already has 3 exports in progress (FR-10), 400 for an
+    /// invalid report type or format.
+    /// </summary>
+    [HttpPost("{type}/export")]
+    [RequirePermission("Reports.Export")]
+    [ProducesResponseType(typeof(ApiResponse<HrReportExportInitiatedDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ExportReport(
+        [FromRoute] string type,
+        [FromBody] HrReportExportRequest? request,
+        [FromServices] IHrReportExportService exportService,
+        CancellationToken cancellationToken)
+    {
+        request ??= new HrReportExportRequest();
+
+        var result = await exportService.InitiateAsync(
+            type,
+            request.Filters ?? new HrReportQueryParams(),
+            request.Format,
+            request.IncludeCharts,
+            cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<HrReportExportInitiatedDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/reports/exports
+    /// The current user's recent exports (US-RPT-004 §8 history): id, reportType, format, status, requestedAt,
+    /// completedAt, rowCount, fileSizeBytes, expiresAt, downloadReady.
+    /// </summary>
+    [HttpGet("exports")]
+    [RequirePermission("Reports.Export")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<HrReportExportListItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListExports(
+        [FromServices] IHrReportExportService exportService,
+        CancellationToken cancellationToken)
+    {
+        var result = await exportService.ListAsync(cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<HrReportExportListItemDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/reports/exports/{exportId}/download
+    /// Downloads the rendered export FILE (US-RPT-004 AC-5). This is the ONLY endpoint that returns bytes
+    /// (a <c>FileContentResult</c> with a Content-Disposition attachment). Tenant + owner scoped: 404 when the
+    /// export is missing / cross-tenant / not the caller's, 410 when it has expired or been purged. Audits the
+    /// download ("HrReport.ExportDownloaded").
+    /// </summary>
+    [HttpGet("exports/{exportId:guid}/download")]
+    [RequirePermission("Reports.Export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status410Gone)]
+    public async Task<IActionResult> DownloadExport(
+        [FromRoute] Guid exportId,
+        [FromServices] IHrReportExportService exportService,
+        CancellationToken cancellationToken)
+    {
+        var result = await exportService.GetForDownloadAsync(exportId, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var download = result.Value;
+        if (download is null)
+            return NotFound(ApiResponse.Fail("Export not found.", "export_not_found"));
+
+        if (download.Expired)
+            return StatusCode(StatusCodes.Status410Gone,
+                ApiResponse.Fail("The export has expired and the file has been deleted.", "export_expired"));
+
+        return File(download.Content, download.ContentType, download.FileName);
+    }
 }

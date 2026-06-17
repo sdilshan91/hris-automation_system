@@ -1,13 +1,17 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  IExportHistoryItem,
+  IExportRequest,
+  IExportResponse,
   IReportCatalogItem,
   IReportCatalogServerItem,
   IReportFilters,
   IReportResult,
+  ReportExportFormat,
   ReportType,
 } from '../models/reports.models';
 
@@ -75,4 +79,93 @@ export class ReportsService {
       { params, withCredentials: true }
     );
   }
+
+  /**
+   * US-RPT-004 AC-1..AC-4 / FR-1: trigger an export. Returns the UNIFORM JSON
+   * descriptor (NOT the file) so the UI can branch on `status` with no
+   * content-type sniffing: `Completed` → download now, `Queued` → toast +
+   * refresh history. `includeCharts` is only sent when supplied (PDF/Excel).
+   *   POST /api/v1/reports/{type}/export
+   *     body { format, filters, includeCharts? } → { exportId, status, rowCount, format }
+   */
+  exportReport(
+    type: ReportType,
+    filters: IReportFilters,
+    format: ReportExportFormat,
+    includeCharts?: boolean
+  ): Observable<IExportResponse> {
+    const body: IExportRequest = { format, filters };
+    if (includeCharts !== undefined) {
+      body.includeCharts = includeCharts;
+    }
+    return this.http.post<IExportResponse>(
+      `${this.baseUrl}/${type}/export`,
+      body,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * US-RPT-004 §8: the "My Exports" history. Each item carries its own
+   * `downloadReady` flag (the only gate for the Download button — see
+   * {@link downloadExport}).
+   *   GET /api/v1/reports/exports
+   */
+  listExports(): Observable<IExportHistoryItem[]> {
+    return this.http.get<IExportHistoryItem[]>(`${this.baseUrl}/exports`, {
+      withCredentials: true,
+    });
+  }
+
+  /**
+   * US-RPT-004 §8 / AC-5: download a generated export FILE. Requested as a blob
+   * with the full response observed so the caller can read the
+   * `Content-Disposition` filename. The signed/tenant-scoped URL + 403 isolation
+   * are enforced server-side (AC-5 / NFR-3); the FE just streams the attachment.
+   *   GET /api/v1/reports/exports/{exportId}/download
+   */
+  downloadExport(exportId: string): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.baseUrl}/exports/${exportId}/download`, {
+      withCredentials: true,
+      responseType: 'blob',
+      observe: 'response',
+    });
+  }
+}
+
+/**
+ * US-RPT-004: parse a filename from a `Content-Disposition` header, preferring
+ * the RFC 5987 `filename*=UTF-8''…` form over the plain quoted `filename=`.
+ * Returns null when absent so the caller can fall back to a generated name.
+ */
+export function filenameFromDisposition(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8?.[1]) {
+    return decodeURIComponent(utf8[1]);
+  }
+  const quoted = /filename="?([^";]+)"?/i.exec(header);
+  return quoted?.[1] ?? null;
+}
+
+/**
+ * US-RPT-004 §8: trigger a browser download for a blob with the given filename.
+ * No-op in non-DOM environments (SSR/tests without a document).
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  if (
+    typeof document === 'undefined' ||
+    typeof URL === 'undefined' ||
+    !URL.createObjectURL
+  ) {
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }

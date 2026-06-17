@@ -291,6 +291,15 @@ try
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IExportJobScheduler, HRM.Api.Jobs.HangfireExportJobScheduler>();
     builder.Services.AddScoped<HRM.Api.Jobs.ExportCleanupJob>();
 
+    // US-RPT-004 (FR-5/FR-8/BR-3): generic HR/leave/attendance report-export job (renders + stores + notifies for
+    // large >= 1000-row exports), the Hangfire-backed scheduler seam (bound to IHrReportExportJobScheduler so the
+    // Infrastructure export service can enqueue by interface), and the daily retention-cleanup job (expires report
+    // exports past their 7-day window + deletes their files).
+    builder.Services.AddScoped<HRM.Api.Jobs.HrReportExportJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IHrReportExportJob, HRM.Api.Jobs.HrReportExportJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IHrReportExportJobScheduler, HRM.Api.Jobs.HangfireHrReportExportJobScheduler>();
+    builder.Services.AddScoped<HRM.Api.Jobs.HrReportExportCleanupJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -414,6 +423,13 @@ try
             "data-export-cleanup",
             job => job.RunAsync(),
             Cron.Hourly);
+
+        // US-RPT-004 BR-3: daily report-export retention cleanup — expires report exports past their 7-day
+        // download window and deletes their files (cross-tenant; runs in system context).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.HrReportExportCleanupJob>(
+            "hr-report-export-cleanup",
+            job => job.RunAsync(),
+            Cron.Daily);
 
         // US-LV-002 FR-5 / AC-5: Leave entitlement accrual processing (daily at 00:30 UTC)
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.LeaveAccrualJob>(

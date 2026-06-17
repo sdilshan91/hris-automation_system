@@ -223,3 +223,69 @@ export interface IReportResult {
   charts: IReportChart[];
   table: IReportTable;
 }
+
+// ─── Export (US-RPT-004) ────────────────────────────────────────────────────
+
+/**
+ * US-RPT-004 FR-1: the three supported export formats. `xlsx` is the Excel
+ * wire value (the dropdown labels it "Excel (.xlsx)").
+ */
+export type ReportExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/**
+ * Status of a single export job (US-RPT-004 §8). Small synchronous exports
+ * come back `Completed` immediately; large ones are `Queued` then progress to
+ * `Processing` → `Completed` (or `Expired` after the 7-day retention, BR-3).
+ * `downloadReady` (on the list item) is the authoritative gate for the
+ * Download button — the FE never infers it from `status` alone.
+ */
+export type ReportExportStatus =
+  | 'Queued'
+  | 'Processing'
+  | 'Completed'
+  | 'Expired'
+  | 'Failed';
+
+/**
+ * The uniform JSON response from `POST /reports/{type}/export` (NOT the file).
+ * `status` drives the sync-vs-async branch in the UI:
+ *   - 'Completed' → the file is ready now; the UI immediately calls the
+ *     download endpoint (FR-5 synchronous small exports, §8 direct download).
+ *   - 'Queued'   → an async Hangfire job was enqueued; the UI toasts and
+ *     refreshes the history list (the SignalR bell from US-NTF-001 surfaces
+ *     the 'ReportExportReady' notification app-wide when it finishes, FR-8).
+ */
+export interface IExportResponse {
+  exportId: string;
+  status: 'Completed' | 'Queued';
+  rowCount: number;
+  format: string;
+}
+
+/**
+ * The export request body (§7 / FR-1). `includeCharts` defaults true server-side
+ * for PDF/Excel; omitted for CSV.
+ */
+export interface IExportRequest {
+  format: ReportExportFormat;
+  filters: IReportFilters;
+  includeCharts?: boolean;
+}
+
+/**
+ * One row in the "My Exports" history (§8), from `GET /reports/exports`.
+ * `downloadReady` is the sole gate for enabling the Download button — a
+ * Completed-but-expired or still-Processing export reports `false`.
+ */
+export interface IExportHistoryItem {
+  id: string;
+  reportType: ReportType;
+  format: string;
+  status: ReportExportStatus;
+  requestedAt: string;
+  completedAt: string | null;
+  rowCount: number;
+  fileSizeBytes: number | null;
+  expiresAt: string | null;
+  downloadReady: boolean;
+}

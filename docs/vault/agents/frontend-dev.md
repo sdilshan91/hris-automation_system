@@ -73,6 +73,28 @@ Refer to the agent definition in [.claude/agents/team/frontend-dev.md](../../../
   - Adding `AuthService` to PayrollReportsComponent broke every TestBed in its spec
     (expected) — provide an `authStub = { permissions: signal<string[]>([]) }`.
 
+- **US-RPT-004 EXTENDED the US-RPT-001/002 generic report-viewer** (NOT the
+  payroll export, which has its own surface). Export is a two-call dance with NO
+  content-type branching:
+  - `POST /api/v1/reports/{type}/export` body `{ format:'csv'|'xlsx'|'pdf',
+    filters:IReportFilters, includeCharts? }` returns uniform JSON
+    `{ exportId, status:'Completed'|'Queued', rowCount, format }` (bare payload).
+    FE branches on `status`: `Completed` → immediately GET the file; `Queued` →
+    `toastr.info` + refresh history (the US-NTF-001 bell pushes 'ReportExportReady').
+  - `GET /reports/exports` → history items; `downloadReady` (per item) is the
+    SOLE gate for the Download button — never infer from `status`.
+  - `GET /reports/exports/{id}/download` → `responseType:'blob', observe:'response'`,
+    read `Content-Disposition` for the filename. The `downloadBlob` /
+    `filenameFromDisposition` helpers were added as EXPORTED functions on
+    `reports.service.ts` (own copy — the payroll one is private to its component).
+  - `includeCharts` sent only for pdf/xlsx (omitted for csv).
+  - Gated on the `Reports.Export` FE permission (already in the catalog) via
+    `auth.permissions().includes(...)`; mobile (<768px) uses a three-dot overflow
+    reusing the same menu. Adding `ToastrService`+`AuthService` to the viewer
+    broke its existing spec TestBeds (expected) — provide a toastr spy +
+    `{ permissions: signal<string[]>(['Reports.Export']) }` stub in EVERY setup
+    (incl. the inline resetTestingModule block).
+
 ## i18n (ngx-translate)
 - ngx-translate (`@ngx-translate/core` v16 + `@ngx-translate/http-loader`) is an installed
   dependency and `assets/i18n/en.json` exists, but it was **dormant** until US-ADM-003: nothing

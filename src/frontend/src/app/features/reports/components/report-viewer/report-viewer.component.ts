@@ -7,24 +7,43 @@ import {
   OnInit,
   DestroyRef,
 } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ReportsService } from '../../services/reports.service';
+import { ToastrService } from 'ngx-toastr';
+import {
+  ReportsService,
+  downloadBlob,
+  filenameFromDisposition,
+} from '../../services/reports.service';
+import { AuthService } from '../../../../core/auth/auth.service';
 import {
   BalanceBand,
+  IExportHistoryItem,
   IReportFilters,
   IReportResult,
   IReportTable,
+  ReportExportFormat,
   ReportType,
   emptyReportFilters,
 } from '../../models/reports.models';
 import { ReportChartComponent } from '../report-chart/report-chart.component';
 
 type ViewMode = 'chart' | 'table';
+
+/** One selectable export format with its file-type icon + i18n label (AC-1). */
+interface IExportOption {
+  format: ReportExportFormat;
+  /** Material icon token rendered by <mat-icon>-equivalent <span>. */
+  icon: string;
+  /** Tailwind/CSS accent class for the icon (Excel green, PDF red, CSV grey). */
+  tone: 'csv' | 'xlsx' | 'pdf';
+  /** i18n key for the option label. */
+  labelKey: string;
+}
 
 /**
  * US-RPT-001 AC-2..AC-4: the report viewer. A collapsible filter bar (date
@@ -45,6 +64,7 @@ type ViewMode = 'chart' | 'table';
     FormsModule,
     TranslateModule,
     DatePipe,
+    DecimalPipe,
     ReportChartComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -97,6 +117,94 @@ type ViewMode = 'chart' | 'table';
           <button type="button" class="rv-btn-secondary" (click)="print()">
             {{ 'reports.viewer.print' | translate }}
           </button>
+
+          <!-- Export dropdown (AC-1). Hidden without Reports.Export. On desktop
+               this is a labelled "Export" button; the same menu is reused by the
+               mobile overflow below (NFR-5). -->
+          @if (canExport()) {
+            <div class="rv-export rv-export-desktop">
+              <button
+                type="button"
+                class="rv-btn-primary rv-export-trigger"
+                [attr.aria-haspopup]="'menu'"
+                [attr.aria-expanded]="exportOpen()"
+                [attr.aria-label]="'reports.export.button' | translate"
+                [disabled]="exporting()"
+                (click)="toggleExportMenu()"
+              >
+                @if (exporting()) {
+                  <span class="rv-spinner" aria-hidden="true"></span>
+                  {{ 'reports.export.exporting' | translate }}
+                } @else {
+                  {{ 'reports.export.button' | translate }}
+                  <span aria-hidden="true">▾</span>
+                }
+              </button>
+              @if (exportOpen()) {
+                <ul class="rv-export-menu" role="menu">
+                  @for (opt of exportOptions; track opt.format) {
+                    <li role="none">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="rv-export-item"
+                        (click)="onExport(opt.format)"
+                      >
+                        <span
+                          class="rv-fileicon"
+                          [attr.data-tone]="opt.tone"
+                          aria-hidden="true"
+                          >{{ opt.tone | uppercase }}</span
+                        >
+                        {{ opt.labelKey | translate }}
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+
+            <!-- Mobile overflow (< 768px): the three-dot menu (NFR-5). -->
+            <div class="rv-export rv-export-mobile">
+              <button
+                type="button"
+                class="rv-btn-secondary rv-overflow-trigger"
+                [attr.aria-haspopup]="'menu'"
+                [attr.aria-expanded]="exportOpen()"
+                [attr.aria-label]="'reports.export.button' | translate"
+                [disabled]="exporting()"
+                (click)="toggleExportMenu()"
+              >
+                @if (exporting()) {
+                  <span class="rv-spinner" aria-hidden="true"></span>
+                } @else {
+                  <span aria-hidden="true">⋮</span>
+                }
+              </button>
+              @if (exportOpen()) {
+                <ul class="rv-export-menu rv-export-menu-right" role="menu">
+                  @for (opt of exportOptions; track opt.format) {
+                    <li role="none">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="rv-export-item"
+                        (click)="onExport(opt.format)"
+                      >
+                        <span
+                          class="rv-fileicon"
+                          [attr.data-tone]="opt.tone"
+                          aria-hidden="true"
+                          >{{ opt.tone | uppercase }}</span
+                        >
+                        {{ opt.labelKey | translate }}
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+          }
         </div>
       </header>
 
@@ -284,6 +392,79 @@ type ViewMode = 'chart' | 'table';
             </table>
           </div>
         }
+      }
+
+      <!-- My Exports history (§8). Collapsible; hidden without Reports.Export. -->
+      @if (canExport()) {
+        <section class="rv-history no-print" aria-labelledby="rv-history-h">
+          <button
+            type="button"
+            class="rv-history-toggle"
+            (click)="toggleHistory()"
+            [attr.aria-expanded]="historyOpen()"
+          >
+            <span id="rv-history-h">{{ 'reports.export.history.title' | translate }}</span>
+            <span aria-hidden="true">{{ historyOpen() ? '−' : '+' }}</span>
+          </button>
+          @if (historyOpen()) {
+            <div class="rv-history-body">
+              @if (historyLoading()) {
+                <div class="rv-skel-row" aria-busy="true"></div>
+                <div class="rv-skel-row" aria-busy="true"></div>
+              } @else if (exports().length === 0) {
+                <p class="rv-history-empty">
+                  {{ 'reports.export.history.empty' | translate }}
+                </p>
+              } @else {
+                <table class="rv-history-table">
+                  <caption class="rv-sr-only">
+                    {{ 'reports.export.history.caption' | translate }}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ 'reports.export.history.format' | translate }}</th>
+                      <th scope="col">{{ 'reports.export.history.status' | translate }}</th>
+                      <th scope="col">{{ 'reports.export.history.rows' | translate }}</th>
+                      <th scope="col">{{ 'reports.export.history.size' | translate }}</th>
+                      <th scope="col">{{ 'reports.export.history.requestedAt' | translate }}</th>
+                      <th scope="col">
+                        <span class="rv-sr-only">{{ 'reports.export.history.actions' | translate }}</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (ex of exports(); track ex.id) {
+                      <tr>
+                        <td class="rv-history-fmt">
+                          <span class="rv-fileicon" [attr.data-tone]="ex.format" aria-hidden="true">{{ ex.format | uppercase }}</span>
+                        </td>
+                        <td>
+                          <span class="rv-badge" [attr.data-status]="ex.status">{{
+                            'reports.export.status.' + ex.status | translate
+                          }}</span>
+                        </td>
+                        <td>{{ ex.rowCount | number }}</td>
+                        <td>{{ ex.fileSizeBytes ? formatBytes(ex.fileSizeBytes) : '—' }}</td>
+                        <td>{{ ex.requestedAt | date: 'short' }}</td>
+                        <td class="rv-history-action">
+                          <button
+                            type="button"
+                            class="rv-btn-secondary rv-history-download"
+                            [disabled]="!ex.downloadReady"
+                            [attr.aria-label]="'reports.export.history.downloadAria' | translate"
+                            (click)="onDownload(ex)"
+                          >
+                            {{ 'reports.export.history.download' | translate }}
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            </div>
+          }
+        </section>
       }
     </section>
   `,
@@ -528,10 +709,195 @@ type ViewMode = 'chart' | 'table';
         background: #e5e7eb;
         margin-bottom: 1.25rem;
       }
+      /* ── Export dropdown (US-RPT-004) ── */
+      .rv-export {
+        position: relative;
+        display: inline-block;
+      }
+      .rv-export-mobile {
+        display: none;
+      }
+      .rv-export-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+      }
+      .rv-export-menu {
+        position: absolute;
+        top: calc(100% + 0.375rem);
+        left: 0;
+        z-index: 20;
+        min-width: 12rem;
+        list-style: none;
+        margin: 0;
+        padding: 0.375rem;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.625rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      }
+      .rv-export-menu-right {
+        left: auto;
+        right: 0;
+      }
+      .rv-export-item {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.625rem;
+        font-size: 0.875rem;
+        color: #374151;
+        cursor: pointer;
+      }
+      .rv-export-item:hover,
+      .rv-export-item:focus-visible {
+        background: #f3f4f6;
+      }
+      .rv-fileicon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.25rem;
+        padding: 0.125rem 0.25rem;
+        border-radius: 0.375rem;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #fff;
+        background: #6b7280;
+      }
+      .rv-fileicon[data-tone='xlsx'] {
+        background: #16a34a;
+      }
+      .rv-fileicon[data-tone='pdf'] {
+        background: #dc2626;
+      }
+      .rv-fileicon[data-tone='csv'] {
+        background: #6b7280;
+      }
+      .rv-spinner {
+        width: 0.875rem;
+        height: 0.875rem;
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        border-top-color: #fff;
+        border-radius: 50%;
+        display: inline-block;
+        animation: rv-spin 0.6s linear infinite;
+      }
+      @keyframes rv-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      /* ── My Exports history (§8) ── */
+      .rv-history {
+        background: #fff;
+        border: 1px solid #f3f4f6;
+        border-radius: 0.75rem;
+        margin-top: 1.5rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      }
+      .rv-history-toggle {
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
+        padding: 0.875rem 1.25rem;
+        font-weight: 600;
+        color: #111827;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+      }
+      .rv-history-body {
+        padding: 0 1.25rem 1.25rem;
+      }
+      .rv-history-empty {
+        color: #6b7280;
+        font-size: 0.875rem;
+        padding: 0.5rem 0;
+      }
+      .rv-history-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+      .rv-history-table th,
+      .rv-history-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #f3f4f6;
+        vertical-align: middle;
+      }
+      .rv-history-table th {
+        font-weight: 600;
+        color: #374151;
+      }
+      .rv-history-action {
+        text-align: right;
+      }
+      .rv-history-download:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .rv-badge {
+        display: inline-block;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: #f3f4f6;
+        color: #374151;
+      }
+      .rv-badge[data-status='Completed'] {
+        background: #ecfdf5;
+        color: #065f46;
+      }
+      .rv-badge[data-status='Queued'],
+      .rv-badge[data-status='Processing'] {
+        background: #eff6ff;
+        color: #1d4ed8;
+      }
+      .rv-badge[data-status='Expired'] {
+        background: #f3f4f6;
+        color: #6b7280;
+      }
+      .rv-badge[data-status='Failed'] {
+        background: #fef2f2;
+        color: #991b1b;
+      }
+      .rv-skel-row {
+        height: 2.25rem;
+        border-radius: 0.5rem;
+        background: #e5e7eb;
+        margin-bottom: 0.5rem;
+      }
+      .rv-sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
       @media (max-width: 768px) {
         .rv-charts,
         .rv-skel-summary {
           grid-template-columns: 1fr;
+        }
+        .rv-export-desktop {
+          display: none;
+        }
+        .rv-export-mobile {
+          display: inline-block;
         }
       }
       @media print {
@@ -553,6 +919,8 @@ export class ReportViewerComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly translate = inject(TranslateService);
+  private readonly toastr = inject(ToastrService);
+  private readonly auth = inject(AuthService);
 
   /** The report type resolved from the route param (AC-2..AC-4). */
   readonly reportType = signal<ReportType>('headcount');
@@ -562,6 +930,26 @@ export class ReportViewerComponent implements OnInit {
   readonly loadError = signal<string | null>(null);
   readonly view = signal<ViewMode>('chart');
   readonly filtersOpen = signal<boolean>(false);
+
+  // ── US-RPT-004 export state ──────────────────────────────────────────────
+  /** AC-1: the dropdown menu open/close. */
+  readonly exportOpen = signal<boolean>(false);
+  /** §8: spinner / disabled state while the export POST is in flight. */
+  readonly exporting = signal<boolean>(false);
+  /** §8: the "My Exports" history. */
+  readonly exports = signal<IExportHistoryItem[]>([]);
+  readonly historyOpen = signal<boolean>(false);
+  readonly historyLoading = signal<boolean>(false);
+
+  /** AC-1: the three offered formats, each with a file-type icon. */
+  readonly exportOptions: IExportOption[] = [
+    { format: 'csv', icon: 'description', tone: 'csv', labelKey: 'reports.export.format.csv' },
+    { format: 'xlsx', icon: 'table_chart', tone: 'xlsx', labelKey: 'reports.export.format.xlsx' },
+    { format: 'pdf', icon: 'picture_as_pdf', tone: 'pdf', labelKey: 'reports.export.format.pdf' },
+  ];
+
+  /** Permission gate (BR-1, §preconditions): only render export with Reports.Export. */
+  readonly canExport = computed(() => this.auth.permissions().includes('Reports.Export'));
 
   readonly headerTitle = computed(
     () => this.result()?.metadata.title ?? this.titleCase(this.reportType())
@@ -616,6 +1004,153 @@ export class ReportViewerComponent implements OnInit {
 
   print(): void {
     window.print();
+  }
+
+  // ── US-RPT-004 export flow ────────────────────────────────────────────────
+
+  toggleExportMenu(): void {
+    this.exportOpen.update((open) => !open);
+  }
+
+  toggleHistory(): void {
+    const next = !this.historyOpen();
+    this.historyOpen.set(next);
+    // Lazy-load the history the first time the panel is opened, or refresh it.
+    if (next) {
+      this.loadExports();
+    }
+  }
+
+  /**
+   * AC-1..AC-4: trigger an export in the chosen format. The branch is driven
+   * purely by the JSON `status` — no content-type sniffing:
+   *   - 'Completed' → synchronously download the file now (FR-5 / §8).
+   *   - 'Queued'    → toast + refresh the history; the SignalR bell (US-NTF-001)
+   *                   surfaces 'ReportExportReady' when the async job finishes.
+   * `includeCharts` is sent only for PDF/Excel (the formats that embed charts).
+   */
+  onExport(format: ReportExportFormat): void {
+    this.exportOpen.set(false);
+    if (this.exporting()) {
+      return;
+    }
+    this.exporting.set(true);
+
+    const includeCharts = format === 'csv' ? undefined : true;
+    this.service
+      .exportReport(this.reportType(), this.buildFilters(), format, includeCharts)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (res) => {
+          if (res.status === 'Completed') {
+            // Sync path — pull the file immediately.
+            this.fetchAndSave(res.exportId, format);
+          } else {
+            // Async path — Hangfire job queued.
+            this.exporting.set(false);
+            this.toastr.info(
+              this.translate.instant('reports.export.queuedToast', {
+                format: this.formatLabel(format),
+              })
+            );
+            // Make sure the panel is visible and reflects the new Queued row.
+            this.historyOpen.set(true);
+            this.loadExports();
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.exporting.set(false);
+          this.toastr.error(
+            err.error?.message ??
+              this.translate.instant('reports.export.error')
+          );
+        },
+      });
+  }
+
+  /** §8: download a completed export from the history Download button (AC-5). */
+  onDownload(item: IExportHistoryItem): void {
+    if (!item.downloadReady) {
+      return;
+    }
+    this.service
+      .downloadExport(item.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (resp) => this.saveDownload(resp, this.fallbackName(item.format)),
+        error: () =>
+          this.toastr.error(this.translate.instant('reports.export.downloadError')),
+      });
+  }
+
+  /** Refresh the "My Exports" list (§8). */
+  loadExports(): void {
+    this.historyLoading.set(true);
+    this.service
+      .listExports()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (items) => {
+          this.exports.set(items);
+          this.historyLoading.set(false);
+        },
+        error: () => {
+          this.historyLoading.set(false);
+          this.toastr.error(this.translate.instant('reports.export.historyError'));
+        },
+      });
+  }
+
+  /** Human-readable file size for the history table (§8). */
+  formatBytes(bytes: number): string {
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let i = 0;
+    while (value >= 1024 && i < units.length - 1) {
+      value /= 1024;
+      i++;
+    }
+    return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
+  }
+
+  /** Pull a Completed export's file and save it (sync path). */
+  private fetchAndSave(exportId: string, format: ReportExportFormat): void {
+    this.service
+      .downloadExport(exportId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (resp) => {
+          this.saveDownload(resp, this.fallbackName(format));
+          this.exporting.set(false);
+        },
+        error: () => {
+          this.exporting.set(false);
+          this.toastr.error(this.translate.instant('reports.export.downloadError'));
+        },
+      });
+  }
+
+  /** Save a blob response, deriving the filename from Content-Disposition. */
+  private saveDownload(resp: HttpResponse<Blob>, fallback: string): void {
+    const blob = resp.body;
+    if (!blob) {
+      return;
+    }
+    const filename =
+      filenameFromDisposition(resp.headers.get('Content-Disposition')) ?? fallback;
+    downloadBlob(blob, filename);
+  }
+
+  private fallbackName(format: string): string {
+    const ext = format === 'xlsx' ? 'xlsx' : format;
+    return `${this.reportType()}.${ext}`;
+  }
+
+  private formatLabel(format: ReportExportFormat): string {
+    return this.translate.instant(`reports.export.format.${format}`);
   }
 
   /** Build the filter payload from the bound form fields. */
