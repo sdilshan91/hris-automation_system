@@ -1,0 +1,16 @@
+# Hybrid dev override: run ONLY the infra (Postgres + Redis) in Docker, while the
+# backend (dotnet) and frontend (ng serve) run natively on the host with hot reload.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+#
+# Postgres is published on host port 5433 (not 5432) because this machine already runs
+# a native PostgreSQL 18 service on 5432. The native backend connects to localhost:5433
+# (set via `dotnet user-secrets`). The pgdata volume — and its data — are preserved.
+name: hris
+
+services:
+  postgres:
+    # `!override` replaces the base ports list entirely (Compose v2.24+) so we don't
+    # also re-publish the shadowed 5432.
+    ports: !override
+      - "5433:5432"

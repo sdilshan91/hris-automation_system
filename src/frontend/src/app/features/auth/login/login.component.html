@@ -189,6 +189,26 @@
           Sign in
         }
       </button>
+
+      <!-- US-AUTH-015: Enterprise SSO entry point (Microsoft Entra ID / O365) -->
+      <div class="my-4 flex items-center gap-3 text-xs text-neutral-400">
+        <span class="h-px flex-1 bg-neutral-200"></span>
+        <span>or</span>
+        <span class="h-px flex-1 bg-neutral-200"></span>
+      </div>
+      <button
+        type="button"
+        class="w-full flex items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+        (click)="startMicrosoftLogin()"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" class="h-4 w-4" aria-hidden="true">
+          <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+          <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+          <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+          <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+        </svg>
+        Continue with Microsoft
+      </button>
     </form>
   }
 </div>

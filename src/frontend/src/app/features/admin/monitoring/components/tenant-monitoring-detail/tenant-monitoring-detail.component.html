@@ -153,8 +153,8 @@
             <div class="flex justify-between items-center">
               <dt class="text-neutral-500">SLA Uptime</dt>
               <dd>
-                @if (d.slaUptime !== null) {
-                  <span class="text-neutral-900 font-medium">{{ d.slaUptime | number: '1.2-2' }}%</span>
+                @if (d.slaUptimePercent !== null) {
+                  <span class="text-neutral-900 font-medium">{{ d.slaUptimePercent | number: '1.2-2' }}%</span>
                 } @else {
                   <span class="text-xs text-neutral-400" data-testid="sla-na">Not available — requires observability pipeline</span>
                 }
@@ -168,17 +168,17 @@
               <span class="text-neutral-500 font-medium">Employees</span>
               <span class="text-neutral-500">
                 {{ d.employeeUsage.used }} / {{ d.employeeUsage.limit ?? '∞' }}
-                @if (d.employeeUsage.percent !== null) {
-                  ({{ d.employeeUsage.percent | number: '1.0-0' }}%)
+                @if (d.employeeUsage.usagePercent !== null) {
+                  ({{ d.employeeUsage.usagePercent | number: '1.0-0' }}%)
                 }
               </span>
             </div>
             <div class="h-2.5 rounded-full bg-neutral-100 overflow-hidden" role="progressbar"
-                 [attr.aria-valuenow]="d.employeeUsage.percent" aria-valuemin="0" aria-valuemax="100">
+                 [attr.aria-valuenow]="d.employeeUsage.usagePercent" aria-valuemin="0" aria-valuemax="100">
               <div
                 class="h-full rounded-full transition-all duration-300"
                 [class]="bandClass(d.employeeUsage.band)"
-                [style.width.%]="d.employeeUsage.percent ?? 0"
+                [style.width.%]="d.employeeUsage.usagePercent ?? 0"
                 data-testid="detail-employee-gauge"
               ></div>
             </div>
@@ -188,24 +188,30 @@
         <!-- Background jobs (Hangfire) -->
         <div class="card-notion">
           <h2 class="text-sm font-semibold text-neutral-800 mb-3">Background Jobs</h2>
-          <div class="grid grid-cols-2 gap-3">
-            <div class="rounded-lg bg-neutral-50 p-3">
-              <p class="text-xs text-neutral-400">Queued</p>
-              <p class="text-xl font-semibold text-neutral-900">{{ d.hangfire.queued }}</p>
+          @if (d.jobQueue.available) {
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-lg bg-neutral-50 p-3">
+                <p class="text-xs text-neutral-400">Enqueued</p>
+                <p class="text-xl font-semibold text-neutral-900">{{ d.jobQueue.enqueued }}</p>
+              </div>
+              <div class="rounded-lg bg-neutral-50 p-3">
+                <p class="text-xs text-neutral-400">Processing</p>
+                <p class="text-xl font-semibold text-neutral-900">{{ d.jobQueue.processing }}</p>
+              </div>
+              <div class="rounded-lg bg-green-50 p-3">
+                <p class="text-xs text-green-600">Succeeded</p>
+                <p class="text-xl font-semibold text-green-700">{{ d.jobQueue.succeeded }}</p>
+              </div>
+              <div class="rounded-lg bg-red-50 p-3">
+                <p class="text-xs text-red-600">Failed</p>
+                <p class="text-xl font-semibold text-red-700">{{ d.jobQueue.failed }}</p>
+              </div>
             </div>
-            <div class="rounded-lg bg-neutral-50 p-3">
-              <p class="text-xs text-neutral-400">Processing</p>
-              <p class="text-xl font-semibold text-neutral-900">{{ d.hangfire.processing }}</p>
-            </div>
-            <div class="rounded-lg bg-green-50 p-3">
-              <p class="text-xs text-green-600">Succeeded</p>
-              <p class="text-xl font-semibold text-green-700">{{ d.hangfire.succeeded }}</p>
-            </div>
-            <div class="rounded-lg bg-red-50 p-3">
-              <p class="text-xs text-red-600">Failed</p>
-              <p class="text-xl font-semibold text-red-700">{{ d.hangfire.failed }}</p>
-            </div>
-          </div>
+          } @else {
+            <p class="text-sm text-neutral-400" data-testid="detail-jobqueue-na">
+              Not available — Hangfire job storage is not reachable.
+            </p>
+          }
         </div>
       </div>
 
@@ -267,7 +273,7 @@
         [tenantName]="d.name"
         [subdomain]="d.subdomain"
         [plan]="d.plan"
-        [employeeCount]="d.employeeUsage.used"
+        [employeeCount]="d.employeeUsage.used ?? 0"
         (terminated)="onLifecycleResult($event)"
         (cancelled)="closeLifecycle()"
       />

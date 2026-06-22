@@ -16,6 +16,7 @@ import { MonitoringDashboardComponent } from './monitoring-dashboard.component';
 import { environment } from '../../../../../../environments/environment';
 import {
   IPlatformHealth,
+  ITenantUsageDashboard,
   ITenantUsageSummary,
 } from '../../models/monitoring.models';
 
@@ -24,29 +25,40 @@ describe('MonitoringDashboardComponent', () => {
   let fixture: ComponentFixture<MonitoringDashboardComponent>;
   let httpMock: HttpTestingController;
 
-  const root = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin/monitoring`;
+  const root = `${environment.apiBaseUrl}/system/monitoring`;
   const healthUrl = `${root}/health`;
-  const tenantsUrl = `${root}/tenants`;
+  const tenantsUrl = `${root}/tenant-usage`;
 
   const metricsUnavailableHealth: IPlatformHealth = {
-    status: 'degraded',
-    activeTenants: 7,
-    activeUsers: 120,
-    tenantsByStatus: { trial: 3, active: 4 },
-    dbHealth: 'healthy',
-    redisHealth: 'notConfigured',
-    hangfire: { queued: 5, processing: 0, succeeded: 80, failed: 2 },
-    errorRate: null,
+    overallStatus: 'Degraded',
+    activeTenantCount: 7,
+    totalActiveUsers: 120,
+    tenantsByStatus: [
+      { status: 'Trial', count: 3 },
+      { status: 'Active', count: 4 },
+    ],
+    databaseHealth: 'Healthy',
+    redisHealth: 'NotConfigured',
+    jobQueue: {
+      available: true,
+      enqueued: 5,
+      processing: 0,
+      scheduled: 0,
+      succeeded: 80,
+      failed: 2,
+    },
+    aggregateErrorRatePercent: null,
     p95LatencyMs: null,
-    metricsAvailable: false,
+    metricsStatus: 'RequiresObservabilityPipeline',
+    generatedAtUtc: '2026-06-19T00:00:00Z',
   };
 
   const metricsAvailableHealth: IPlatformHealth = {
     ...metricsUnavailableHealth,
-    status: 'healthy',
-    errorRate: 1.25,
+    overallStatus: 'Healthy',
+    aggregateErrorRatePercent: 1.25,
     p95LatencyMs: 180,
-    metricsAvailable: true,
+    metricsStatus: 'Available',
   };
 
   const tenants: ITenantUsageSummary[] = [
@@ -54,36 +66,55 @@ describe('MonitoringDashboardComponent', () => {
       tenantId: 't-1',
       name: 'Acme',
       subdomain: 'acme',
-      status: 'active',
+      status: 'Active',
       plan: 'Pro',
-      employeeUsage: { used: 5, limit: 10, percent: 50, band: 'green' },
-      storageUsage: null,
-      apiUsage: null,
-      emailUsage: null,
+      activeEmployees: 5,
+      employeeLimit: 10,
+      usagePercent: 50,
+      band: 'Green',
+      limitKnown: true,
+      gauges: [],
     },
     {
       tenantId: 't-2',
       name: 'Globex',
       subdomain: 'globex',
-      status: 'trial',
+      status: 'Trial',
       plan: 'Starter',
-      employeeUsage: { used: 9, limit: 10, percent: 90, band: 'amber' },
-      storageUsage: null,
-      apiUsage: null,
-      emailUsage: null,
+      activeEmployees: 9,
+      employeeLimit: 10,
+      usagePercent: 90,
+      band: 'Amber',
+      limitKnown: true,
+      gauges: [],
     },
     {
       tenantId: 't-3',
       name: 'Initech',
       subdomain: 'initech',
-      status: 'active',
+      status: 'Active',
       plan: 'Pro',
-      employeeUsage: { used: 12, limit: 10, percent: 120, band: 'breached' },
-      storageUsage: null,
-      apiUsage: null,
-      emailUsage: null,
+      activeEmployees: 12,
+      employeeLimit: 10,
+      usagePercent: 120,
+      band: 'Breached',
+      limitKnown: true,
+      gauges: [],
     },
   ];
+
+  function dashboard(
+    rows: ITenantUsageSummary[] = tenants,
+    breachQueue: ITenantUsageSummary[] = [],
+  ): ITenantUsageDashboard {
+    return {
+      tenants: rows,
+      quotaBreachQueue: breachQueue,
+      attentionRequiredQueue: [],
+      attentionQueueStatus: 'RequiresObservabilityPipeline',
+      generatedAtUtc: '2026-06-19T00:00:00Z',
+    };
+  }
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -101,13 +132,13 @@ describe('MonitoringDashboardComponent', () => {
     component = fixture.componentInstance;
   });
 
-  /** Flush the health + tenants requests for one refresh cycle. */
+  /** Flush the health + tenant-usage requests for one refresh cycle. */
   function flushCycle(
     health: IPlatformHealth = metricsAvailableHealth,
-    rows: ITenantUsageSummary[] = tenants,
+    usage: ITenantUsageDashboard = dashboard(),
   ): void {
     httpMock.expectOne(healthUrl).flush(health);
-    httpMock.expectOne(tenantsUrl).flush(rows);
+    httpMock.expectOne(tenantsUrl).flush(usage);
   }
 
   it('loads health + tenants on init and renders KPIs (AC-1)', () => {
@@ -115,15 +146,16 @@ describe('MonitoringDashboardComponent', () => {
     flushCycle();
     fixture.detectChanges();
 
-    expect(component.health()?.activeTenants).toBe(7);
+    expect(component.health()?.activeTenantCount).toBe(7);
     expect(component.tenants().length).toBe(3);
 
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="active-tenants"]')?.textContent).toContain('7');
+    expect(el.querySelector('[data-testid="job-queue-enqueued"]')?.textContent).toContain('5');
     expect(el.querySelector('[data-testid="error-rate"]')?.textContent).toContain('1.25');
   });
 
-  it('shows the "Not available" placeholder when metricsAvailable is false / errorRate null', () => {
+  it('shows the "Not available" placeholder when error/latency metrics are null', () => {
     fixture.detectChanges();
     flushCycle(metricsUnavailableHealth);
     fixture.detectChanges();
@@ -135,14 +167,20 @@ describe('MonitoringDashboardComponent', () => {
     expect(el.textContent).toContain('requires observability pipeline');
   });
 
+  it('reads the tenant rows from the dashboard wrapper object (not a bare array)', () => {
+    fixture.detectChanges();
+    flushCycle();
+
+    expect(component.tenants().length).toBe(3);
+    expect(component.tenants()[0].activeEmployees).toBe(5);
+  });
+
   it('polling triggers a refetch on the interval (AC-1)', fakeAsync(() => {
     fixture.detectChanges();
     flushCycle(); // initial load (no interval emission yet)
 
-    // No outstanding requests right after the initial cycle.
     expect(httpMock.match(() => true).length).toBe(0);
 
-    // Advance one polling interval -> a second refresh fires (health + tenants).
     tick(component.refreshIntervalMs);
     expect(httpMock.match(healthUrl).length).toBe(1);
     expect(httpMock.match(tenantsUrl).length).toBe(1);
@@ -155,7 +193,6 @@ describe('MonitoringDashboardComponent', () => {
     flushCycle();
 
     component.refresh();
-    // A manual refresh issues exactly one health + one tenants request.
     expect(httpMock.match(healthUrl).length).toBe(1);
     expect(httpMock.match(tenantsUrl).length).toBe(1);
   });
@@ -165,20 +202,20 @@ describe('MonitoringDashboardComponent', () => {
     flushCycle();
 
     fixture.destroy();
-    // After destroy, advancing time must NOT issue new requests.
     tick(component.refreshIntervalMs * 2);
     expect(httpMock.match(() => true).length).toBe(0);
   }));
 
   it('maps gauge band to the correct colour class', () => {
-    expect(component.bandClass('green')).toContain('green');
-    expect(component.bandClass('amber')).toContain('amber');
-    expect(component.bandClass('red')).toContain('red');
-    expect(component.bandClass('breached')).toContain('red');
+    expect(component.bandClass('Green')).toContain('green');
+    expect(component.bandClass('Amber')).toContain('amber');
+    expect(component.bandClass('Red')).toContain('red');
+    expect(component.bandClass('Breached')).toContain('red');
   });
 
-  it('breach panel lists tenants at/above 80% (FR-3)', () => {
+  it('breach panel lists tenants at/above 80% derived from rows (FR-3)', () => {
     fixture.detectChanges();
+    // Empty server breach queue -> the component derives from the visible rows.
     flushCycle();
     fixture.detectChanges();
 
@@ -191,6 +228,14 @@ describe('MonitoringDashboardComponent', () => {
 
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="attention-count"]')?.textContent).toContain('2');
+  });
+
+  it('prefers the server-computed quota-breach queue when present', () => {
+    fixture.detectChanges();
+    flushCycle(metricsAvailableHealth, dashboard(tenants, [tenants[2]]));
+
+    expect(component.attentionTenants().length).toBe(1);
+    expect(component.attentionTenants()[0].tenantId).toBe('t-3');
   });
 
   it('records a "last updated" timestamp after a successful health load', () => {
@@ -209,7 +254,7 @@ describe('MonitoringDashboardComponent', () => {
 
     const req = httpMock.expectOne((r) => r.url === tenantsUrl);
     expect(req.request.params.get('search')).toBe('acme');
-    req.flush([tenants[0]]);
+    req.flush(dashboard([tenants[0]]));
 
     httpMock.verify();
   });
@@ -217,7 +262,7 @@ describe('MonitoringDashboardComponent', () => {
   it('surfaces an error message when health fails', () => {
     fixture.detectChanges();
     httpMock.expectOne(healthUrl).flush('err', { status: 500, statusText: 'Server Error' });
-    httpMock.expectOne(tenantsUrl).flush(tenants);
+    httpMock.expectOne(tenantsUrl).flush(dashboard());
 
     expect(component.healthError()).toBeTruthy();
     expect(component.healthLoading()).toBeFalse();

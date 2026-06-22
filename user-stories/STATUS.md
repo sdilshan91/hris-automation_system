@@ -26,7 +26,7 @@
 
 ---
 
-## 1. Authentication (10 stories)
+## 1. Authentication (16 stories)
 - [x] US-AUTH-001 — Admin login with username and password *(scaffold impl + 28 TCs exist; verify)*
 - [x] US-AUTH-002 — JWT token issuance and refresh token flow *(scaffold impl exists)*
 - [x] US-AUTH-003 — User logout and token invalidation *(scaffold impl exists)*
@@ -37,6 +37,13 @@
 - [x] US-AUTH-008 — Cross-tenant user switching *(merged, PR #6)*
 - [x] US-AUTH-009 — Session management and concurrent session limits *(PR #7)*
 - [x] US-AUTH-010 — Account lockout after failed attempts *(PR #8)*
+> **Enterprise SSO (Microsoft Entra ID) epic — CR-AUTH-001.** New feature, awaiting human review; build strictly in order (security depends on config). Gated on `PlanFeatureFlags.Sso`.
+- [~] US-AUTH-011 — Entra OIDC authentication foundation *(**Increment 1 done**: config-driven `/auth/sso/challenge` entry, fail-closed; **Increment 2 — callback + id_token validation — BLOCKED on Azure app registration**)*
+- [ ] US-AUTH-012 — Per-tenant SSO configuration *(CR-AUTH-001 Phase 2; pending)*
+- [ ] US-AUTH-013 — Tenant-scoped tid/domain validation & isolation *(CR-AUTH-001 Phase 2; pending; **Must Have** — gates 011 to prod)*
+- [ ] US-AUTH-014 — User matching, account linking & JIT provisioning *(CR-AUTH-001 Phase 3; pending)*
+- [~] US-AUTH-015 — "Sign in with Microsoft" frontend *(**Increment 1 done**: "Continue with Microsoft" button on the login page + `sso_error` UX; per-tenant gating + post-login UX land with US-AUTH-012/Increment 2)*
+- [ ] US-AUTH-016 — SSO enforcement, break-glass & admin-consent onboarding *(CR-AUTH-001 Phase 4; pending)*
 
 ## 2. Core HR (12 stories)
 - [x] US-CHR-001 — Add new employee with personal information *(PR #11)*

@@ -2,13 +2,13 @@
 
 > Generated: 2026-05-11
 > Standard: IEEE 830-1998 / ISO/IEC/IEEE 29148:2018
-> Total Stories: 102 | Total Acceptance Criteria: ~525
+> Total Stories: 108 | Total Acceptance Criteria: ~567
 
 ## Summary
 
 | # | Module | Directory | Stories | Priority Breakdown |
 |---|--------|-----------|---------|-------------------|
-| 1 | [Authentication & Authorization](#1-authentication--authorization) | `authentication/` | 10 | 7 Must, 3 Should |
+| 1 | [Authentication & Authorization](#1-authentication--authorization) | `authentication/` | 16 | 8 Must, 8 Should |
 | 2 | [Core HR](#2-core-hr) | `core-hr/` | 12 | 7 Must, 4 Should, 1 Could |
 | 3 | [Leave Management](#3-leave-management) | `leave-management/` | 12 | 7 Must, 5 Should |
 | 4 | [Attendance](#4-attendance) | `attendance/` | 10 | 7 Must, 3 Should |
@@ -36,6 +36,14 @@
 | [US-AUTH-008](authentication/US-AUTH-008.md) | Cross-tenant user switching | Should Have | Cross-Tenant User |
 | [US-AUTH-009](authentication/US-AUTH-009.md) | Session management and concurrent session limits | Should Have | Tenant Admin |
 | [US-AUTH-010](authentication/US-AUTH-010.md) | Account lockout after failed attempts | Must Have | System |
+| [US-AUTH-011](authentication/US-AUTH-011.md) | Entra OIDC authentication foundation | Should Have | Tenant User |
+| [US-AUTH-012](authentication/US-AUTH-012.md) | Per-tenant SSO configuration | Should Have | Tenant Admin |
+| [US-AUTH-013](authentication/US-AUTH-013.md) | Tenant-scoped tid/domain validation & isolation | Must Have | System |
+| [US-AUTH-014](authentication/US-AUTH-014.md) | User matching, account linking & JIT provisioning | Should Have | Tenant User / Tenant Admin |
+| [US-AUTH-015](authentication/US-AUTH-015.md) | "Sign in with Microsoft" frontend | Should Have | Tenant User |
+| [US-AUTH-016](authentication/US-AUTH-016.md) | SSO enforcement, break-glass & admin-consent onboarding | Should Have | Tenant Admin |
+
+> **Epic:** [CR-AUTH-001 — Enterprise SSO via Microsoft Entra ID](authentication/CR-AUTH-001-entra-sso.md) groups US-AUTH-011..016.
 
 ## 2. Core HR
 

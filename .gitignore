@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+docker.env
 
 # IDE
 .vscode/
@@ -42,3 +43,7 @@ obj/
 # test result artifacts
 TestResults/
 *.trx
+
+# Serilog rolling log files
+Logs/
+log-*.txt

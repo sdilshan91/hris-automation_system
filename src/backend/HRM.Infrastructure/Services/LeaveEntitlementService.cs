@@ -540,7 +540,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         }
 
         // 2. Fetch matching active rules for this leave type.
-        var referenceDate = new DateTime(leaveYear, 1, 1);
+        // EffectiveFrom/To are timestamptz, so the reference date MUST be UTC-kinded or Npgsql rejects it.
+        var referenceDate = new DateTime(leaveYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var rules = await _dbContext.LeaveEntitlementRules
             .AsNoTracking()
             .Where(r =>

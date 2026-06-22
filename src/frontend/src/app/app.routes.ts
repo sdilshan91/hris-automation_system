@@ -124,7 +124,7 @@ export const appRoutes: Routes = [
           import('./features/admin/tenants/tenants.routes').then(
             (m) => m.TENANT_ROUTES
           ),
-        canActivate: [roleGuard(['System Admin'])],
+        canActivate: [roleGuard(['SystemAdmin'])],
       },
       // ─── Admin / Monitoring (US-ADM-002) — System Admin Console ──
       // Platform/system context (admin.yourhrm.com). Both System Admin and
@@ -136,7 +136,7 @@ export const appRoutes: Routes = [
           import('./features/admin/monitoring/monitoring.routes').then(
             (m) => m.MONITORING_ROUTES
           ),
-        canActivate: [roleGuard(['System Admin', 'System Support'])],
+        canActivate: [roleGuard(['SystemAdmin', 'System Support'])],
       },
       // ─── Admin / Plans (US-ADM-009) — System Admin Console ──
       // Platform/system context (admin.yourhrm.com). Only the System Admin role
@@ -149,7 +149,7 @@ export const appRoutes: Routes = [
           import('./features/admin/plans/plans.routes').then(
             (m) => m.PLANS_ROUTES
           ),
-        canActivate: [roleGuard(['System Admin'])],
+        canActivate: [roleGuard(['SystemAdmin'])],
       },
       // ─── Admin / Roles (US-AUTH-006) ──────────────────────
       {

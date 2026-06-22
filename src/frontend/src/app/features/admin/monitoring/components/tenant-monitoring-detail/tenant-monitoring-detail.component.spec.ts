@@ -16,7 +16,7 @@ import { ITenantMonitoringDetail } from '../../models/monitoring.models';
 describe('TenantMonitoringDetailComponent', () => {
   let httpMock: HttpTestingController;
 
-  const root = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin/monitoring`;
+  const root = `${environment.apiBaseUrl}/system/monitoring`;
   const detailUrl = `${root}/tenants/t-1`;
   // US-ADM-004: lifecycle history is loaded alongside the detail.
   const historyUrl = `${environment.apiBaseUrl}/system/tenants/t-1/lifecycle/history`;
@@ -35,11 +35,28 @@ describe('TenantMonitoringDetailComponent', () => {
     ownerEmail: 'owner@acme.test',
     createdAt: '2026-06-01T00:00:00Z',
     lastActivityAt: null,
-    employeeUsage: { used: 5, limit: 10, percent: 50, band: 'green' },
-    hangfire: { queued: 0, processing: 0, succeeded: 5, failed: 1 },
-    errorTrend: null,
-    latencyTrend: null,
-    slaUptime: null,
+    employeeUsage: {
+      resource: 'Employees',
+      available: true,
+      used: 5,
+      limit: 10,
+      usagePercent: 50,
+      band: 'Green',
+    },
+    jobQueue: {
+      available: true,
+      enqueued: 0,
+      processing: 0,
+      scheduled: 0,
+      succeeded: 5,
+      failed: 1,
+    },
+    errorRateTrend24h: [],
+    latencyTrend24h: [],
+    topErrors: [],
+    slaUptimePercent: null,
+    metricsStatus: 'RequiresObservabilityPipeline',
+    generatedAtUtc: '2026-06-19T00:00:00Z',
   };
 
   /** Build the component with an AuthService whose hasRole returns the given role. */

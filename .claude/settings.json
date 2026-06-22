@@ -117,28 +117,5 @@
     "aspire-mailpit-integration": "off",
     "aspire-service-defaults": "off",
     "playwright-blazor": "off"
-  },
-  "mcpServers": {
-    "github": {
-      "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
-      "headers": {
-        "Authorization": "Bearer ${GITHUB_TOKEN}"
-      }
-    },
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "@playwright/mcp@latest",
-        "--browser",
-        "chrome",
-        "--caps",
-        "vision,pdf,devtools",
-        "--save-trace",
-        "--output-dir",
-        ".playwright-artifacts"
-      ]
-    }
   }
 }

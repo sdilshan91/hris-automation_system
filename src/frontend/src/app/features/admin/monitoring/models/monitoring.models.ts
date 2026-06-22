@@ -1,75 +1,93 @@
 /**
  * US-ADM-002: System Admin Console — platform monitoring models.
  *
- * These DTOs match the System Admin monitoring backend contract, rooted at
- * `/api/admin/monitoring/...` (the platform/system context), NOT the
- * tenant-scoped `/api/v1/...` namespace.
+ * These DTOs match the System Admin monitoring backend contract EXACTLY
+ * (AdminMonitoringController + MonitoringDtos.cs), rooted at
+ * `/api/v1/system/monitoring/...` (the platform/system context).
+ *
+ * SOURCE OF TRUTH: the backend. Field names AND enum values mirror the C# DTOs
+ * verbatim — enum values arrive as PascalCase strings ("Healthy", "Green",
+ * "NotConfigured", "RequiresObservabilityPipeline"), so the FE unions are
+ * PascalCase too. Do NOT lowercase them.
  *
  * HONEST RENDERING: the backend returns REAL data for some metrics and explicit
- * "not available" markers for others — no OpenTelemetry / SignalR / usage-counter
- * infrastructure exists yet. Nullable fields and `metricsAvailable === false`
- * indicate metrics that require an observability pipeline that is not wired up.
+ * "RequiresObservabilityPipeline" markers + null values for others — no
+ * OpenTelemetry / per-tenant usage-counter infrastructure exists yet. Nullable
+ * fields and the `*Status === 'RequiresObservabilityPipeline'` flags indicate
+ * metrics that require an observability pipeline that is not wired up. The UI
+ * renders an em-dash / "Not available" placeholder, never a fabricated 0.
  */
 
-/** Overall platform health rollup. */
-export type PlatformHealthStatus = 'healthy' | 'degraded' | 'down';
+/** Status marker the BE returns for deferred (not-yet-instrumented) metrics. */
+export const REQUIRES_OBSERVABILITY = 'RequiresObservabilityPipeline';
 
-/** Redis is optional infra — it may simply not be configured. */
-export type RedisHealth = 'healthy' | 'down' | 'notConfigured';
+/** Overall platform health roll-up (PlatformHealthStatus enum, serialized as a string). */
+export type PlatformHealthStatus = 'Healthy' | 'Degraded' | 'Down';
 
-/** Per-component health (DB / Redis probe). */
-export type ComponentHealth = 'healthy' | 'degraded' | 'down' | 'notConfigured';
+/** Per-dependency probe health (DependencyHealthStatus enum). Redis may be NotConfigured. */
+export type DependencyHealthStatus = 'Healthy' | 'Down' | 'NotConfigured';
 
-/** Quota band for a usage gauge. */
-export type UsageBand = 'green' | 'amber' | 'red' | 'breached';
+/** Quota band for a usage gauge (UsageBand enum). */
+export type UsageBand = 'Green' | 'Amber' | 'Red' | 'Breached';
 
-/** Hangfire background-job queue snapshot (FR-5). */
-export interface IHangfireStatus {
-  queued: number;
-  processing: number;
-  succeeded: number;
-  failed: number;
+/**
+ * Hangfire cross-tenant job-queue snapshot (JobQueueSnapshotDto, FR-5).
+ * When Hangfire storage is unavailable `available` is false and the counts are null.
+ */
+export interface IJobQueueSnapshot {
+  available: boolean;
+  enqueued: number | null;
+  processing: number | null;
+  scheduled: number | null;
+  succeeded: number | null;
+  failed: number | null;
 }
 
-/** Tenant counts grouped by lifecycle status (e.g. trial / active / suspended). */
-export interface ITenantsByStatus {
-  [status: string]: number;
+/** Per-status tenant count for the health summary (TenantStatusCountDto). */
+export interface ITenantStatusCount {
+  status: string;
+  count: number;
 }
 
 /**
- * GET /api/admin/monitoring/health — platform health rollup (AC-1, FR-1, FR-6).
+ * GET /api/v1/system/monitoring/health — platform health summary (PlatformHealthDto, AC-1).
  *
- * `errorRate` and `p95LatencyMs` are nullable and gated by `metricsAvailable`:
- * when the observability pipeline is absent the BE returns `metricsAvailable:false`
- * and null metrics — the UI must render a "Not available" placeholder, never 0.
+ * The aggregate counts, DB/Redis/JobQueue signals, and the overall roll-up are REAL.
+ * `aggregateErrorRatePercent` and `p95LatencyMs` are DEFERRED — null, with
+ * `metricsStatus === 'RequiresObservabilityPipeline'`.
  */
 export interface IPlatformHealth {
-  status: PlatformHealthStatus;
-  activeTenants: number;
-  activeUsers: number;
-  tenantsByStatus: ITenantsByStatus;
-  dbHealth: ComponentHealth;
-  redisHealth: RedisHealth;
-  hangfire: IHangfireStatus;
-  errorRate: number | null;
+  overallStatus: PlatformHealthStatus;
+  activeTenantCount: number;
+  totalActiveUsers: number;
+  tenantsByStatus: ITenantStatusCount[];
+  databaseHealth: DependencyHealthStatus;
+  redisHealth: DependencyHealthStatus;
+  jobQueue: IJobQueueSnapshot;
+  aggregateErrorRatePercent: number | null;
   p95LatencyMs: number | null;
-  metricsAvailable: boolean;
-}
-
-/** A single usage dimension (employees / storage / API / email). */
-export interface IUsageMetric {
-  used: number;
-  limit: number | null;
-  percent: number | null;
-  band: UsageBand;
+  metricsStatus: string;
+  generatedAtUtc: string;
 }
 
 /**
- * GET /api/admin/monitoring/tenants — per-tenant usage summary row (AC-2, FR-2/3).
- *
- * `storageUsage`, `apiUsage`, `emailUsage` are nullable: they depend on Redis
- * usage counters that are not yet incremented, so the BE returns null and the UI
- * shows an em-dash placeholder rather than a fake "0".
+ * A single per-tenant usage gauge (UsageGaugeDto, AC-2). The EMPLOYEE gauge is REAL;
+ * Storage / ApiCalls / EmailSends gauges are DEFERRED with `available === false` and
+ * null numeric fields.
+ */
+export interface IUsageGauge {
+  resource: string;
+  available: boolean;
+  used: number | null;
+  limit: number | null;
+  usagePercent: number | null;
+  band: UsageBand | null;
+}
+
+/**
+ * Per-tenant usage summary row (TenantUsageSummaryDto, AC-2/FR-2). The headline
+ * employee gauge drives `usagePercent` / `band`; deferred gauges ride along in
+ * `gauges[]` flagged `available === false`.
  */
 export interface ITenantUsageSummary {
   tenantId: string;
@@ -77,23 +95,35 @@ export interface ITenantUsageSummary {
   subdomain: string;
   status: string;
   plan: string;
-  employeeUsage: IUsageMetric;
-  storageUsage: IUsageMetric | null;
-  apiUsage: IUsageMetric | null;
-  emailUsage: IUsageMetric | null;
-}
-
-/** A point in an error-rate / latency trend series (24h). */
-export interface ITrendPoint {
-  timestamp: string;
-  value: number;
+  activeEmployees: number;
+  employeeLimit: number | null;
+  usagePercent: number | null;
+  band: UsageBand | null;
+  limitKnown: boolean;
+  gauges: IUsageGauge[];
 }
 
 /**
- * GET /api/admin/monitoring/tenants/{id} — tenant monitoring detail (AC-4).
+ * GET /api/v1/system/monitoring/tenant-usage — the dashboard payload
+ * (TenantUsageDashboardDto, AC-2/AC-3/FR-3). NOTE this is an OBJECT wrapper, not a
+ * bare array: read `tenants` for the table. `attentionRequiredQueue` (error-rate)
+ * is DEFERRED — empty, with `attentionQueueStatus === 'RequiresObservabilityPipeline'`.
+ */
+export interface ITenantUsageDashboard {
+  tenants: ITenantUsageSummary[];
+  quotaBreachQueue: ITenantUsageSummary[];
+  attentionRequiredQueue: ITenantUsageSummary[];
+  attentionQueueStatus: string;
+  generatedAtUtc: string;
+}
+
+/**
+ * GET /api/v1/system/monitoring/tenants/{id} — tenant monitoring detail
+ * (TenantMonitoringDetailDto, AC-4).
  *
- * `errorTrend` / `latencyTrend` / `slaUptime` are nullable: they require the
- * observability pipeline and are returned as null until it exists.
+ * Status / plan / owner-email / created / last-activity / job status / employee
+ * gauge are REAL. The 24h trend series, top errors, and SLA uptime are DEFERRED —
+ * empty/null with `metricsStatus === 'RequiresObservabilityPipeline'`.
  */
 export interface ITenantMonitoringDetail {
   tenantId: string;
@@ -101,17 +131,20 @@ export interface ITenantMonitoringDetail {
   subdomain: string;
   status: string;
   plan: string;
-  ownerEmail: string;
+  ownerEmail: string | null;
   createdAt: string;
   lastActivityAt: string | null;
-  employeeUsage: IUsageMetric;
-  hangfire: IHangfireStatus;
-  errorTrend: ITrendPoint[] | null;
-  latencyTrend: ITrendPoint[] | null;
-  slaUptime: number | null;
+  employeeUsage: IUsageGauge;
+  jobQueue: IJobQueueSnapshot;
+  errorRateTrend24h: unknown[];
+  latencyTrend24h: unknown[];
+  topErrors: unknown[];
+  slaUptimePercent: number | null;
+  metricsStatus: string;
+  generatedAtUtc: string;
 }
 
-/** Filters for GET /api/admin/monitoring/tenants (FR-4). */
+/** Filters for GET /tenant-usage (TenantUsageFilter, FR-4). Region/errorRate are no-ops. */
 export interface ITenantUsageFilters {
   search?: string;
   status?: string;
@@ -124,19 +157,24 @@ export interface ITenantUsageFilters {
 /** Default polling interval for dashboard auto-refresh (ms) — AC-1 (configurable). */
 export const DEFAULT_REFRESH_INTERVAL_MS = 30_000;
 
+/** True when a metricsStatus / queue-status flag marks a field as not-yet-instrumented. */
+export function requiresObservability(status: string | null | undefined): boolean {
+  return status === REQUIRES_OBSERVABILITY;
+}
+
 /**
- * Tailwind classes for a usage band's gauge fill + text.
- * green (0-79) / amber (80-94) / red (95-100) / breached (>=100).
+ * Tailwind classes for a usage band's gauge fill.
+ * Green (0-79) / Amber (80-94) / Red (95-99) / Breached (>=100). Null → neutral.
  */
-export function bandClass(band: UsageBand): string {
+export function bandClass(band: UsageBand | null | undefined): string {
   switch (band) {
-    case 'green':
+    case 'Green':
       return 'bg-green-500';
-    case 'amber':
+    case 'Amber':
       return 'bg-amber-500';
-    case 'red':
+    case 'Red':
       return 'bg-red-500';
-    case 'breached':
+    case 'Breached':
       return 'bg-red-600';
     default:
       return 'bg-neutral-300';
@@ -144,25 +182,28 @@ export function bandClass(band: UsageBand): string {
 }
 
 /**
- * Derive a usage band purely from a percentage. The BE is the source of truth
- * for `band`, but this mirrors its rule so the FE can validate/colour-code
- * consistently and the gauge spec can assert it.
- * green 0-79, amber 80-94, red 95-99, breached >=100.
+ * Derive a usage band purely from a percentage, mirroring the BE
+ * MonitoringClassifiers.ClassifyBand rule: Green 0-79, Amber 80-94, Red 95-99,
+ * Breached >=100. The BE is the source of truth for `band`; this lets the FE
+ * validate / colour-code consistently.
  */
 export function bandFromPercent(percent: number | null): UsageBand | null {
   if (percent === null || percent === undefined) {
     return null;
   }
-  if (percent >= 100) return 'breached';
-  if (percent >= 95) return 'red';
-  if (percent >= 80) return 'amber';
-  return 'green';
+  if (percent >= 100) return 'Breached';
+  if (percent >= 95) return 'Red';
+  if (percent >= 80) return 'Amber';
+  return 'Green';
 }
 
-/** True when a usage metric is at or above the 80% attention threshold (FR-3). */
-export function needsAttention(metric: IUsageMetric): boolean {
-  if (metric.band === 'amber' || metric.band === 'red' || metric.band === 'breached') {
+/**
+ * True when a tenant row is at/above the 80% attention threshold (FR-3) — either
+ * its headline band is Amber/Red/Breached, or its computed usagePercent is >= 80.
+ */
+export function needsAttention(tenant: ITenantUsageSummary): boolean {
+  if (tenant.band === 'Amber' || tenant.band === 'Red' || tenant.band === 'Breached') {
     return true;
   }
-  return metric.percent !== null && metric.percent >= 80;
+  return tenant.usagePercent !== null && tenant.usagePercent >= 80;
 }

@@ -10,10 +10,14 @@ Repo: `sdilshan91/hris-automation_system`
 These behavioral rules apply to **all** agents and skills, in addition to the
 project rules below. They exist to cut wasted diff, rework, and late surprises.
 
-1. **Think before coding.** Don't assume — surface tradeoffs and ask when a
-   requirement is genuinely ambiguous. If there are multiple reasonable
-   interpretations, name them instead of silently picking one. Don't hide
-   confusion; a question before implementation is cheaper than a rewrite after.
+1. **Think before coding — ask when unsure, and seek the best approach.** Don't
+   assume. Whenever you have doubts or low confidence about any task — while
+   **planning, checking, or executing** — pause and ask clarifying questions, and
+   pair each question with **your recommendation**. Surface tradeoffs and name
+   competing interpretations instead of silently picking one. Proactively propose a
+   **better way, method, or technology** when you see one, and converge on the best
+   approach *before* you plan or execute. Don't hide confusion; a question — or a
+   better idea — up front is cheaper than a rewrite after.
 2. **Simplicity first.** Write the minimal code that solves the stated problem.
    No speculative abstractions, unrequested flexibility, or error handling for
    impossible cases. Self-check: *would a senior engineer call this overcomplicated?*
@@ -70,8 +74,14 @@ reporting risks, not by narrating confidence on every line).
 
 ## MCP Server Integration
 
+> **All MCP servers are defined in [`.mcp.json`](.mcp.json)** at the repo root (project scope) —
+> this is the file Claude Code actually loads. The `mcpServers` key in `.claude/settings.json` is
+> **not** read by the VS Code extension; keep MCP server definitions in `.mcp.json` only. After
+> editing `.mcp.json`, fully restart the Claude Code session (a plain "Reload Window" may not
+> reconnect) and approve the project-MCP trust prompt.
+
 ### GitHub MCP Server
-Connected via `https://api.githubcopilot.com/mcp/`
+Connected via `https://api.githubcopilot.com/mcp/` (defined in `.mcp.json`)
 
 Enables agents to directly:
 - Create feature branches per agent per module
@@ -83,9 +93,10 @@ Enables agents to directly:
 
 ### Playwright MCP Server (Browser Debugging)
 Local stdio server (`npx @playwright/mcp@latest`) that gives agents a **real Chrome browser** for
-runtime investigation of the Angular UI and its calls to the .NET API. Configured in
-`.claude/settings.json` with `--browser chrome --caps vision,pdf,devtools --save-trace
---output-dir .playwright-artifacts`.
+runtime investigation of the Angular UI and its calls to the .NET API. Defined in `.mcp.json`
+with `--browser chrome --caps vision,pdf,devtools --save-session --output-dir .playwright-artifacts`.
+(Note: `--save-session`, not the older `--save-trace`, which current `@playwright/mcp` rejects and
+which crashes the server on launch.)
 
 Enables agents to:
 - Navigate the running app and reproduce user flows (click, type, fill forms)
@@ -94,11 +105,12 @@ Enables agents to:
 - Capture the accessibility snapshot, run page JS (`browser_evaluate`), take screenshots
 - Diagnose auth / **multi-tenant** routing issues from real traffic
 
-**Activation:** the server connects at Claude Code startup. After first adding/changing it,
-**reload the VS Code window** and confirm with `/mcp` that `playwright` is connected. Artifacts
-(traces/screenshots) save to `.playwright-artifacts/` (gitignored). It is **read-only on the
-codebase** — used to investigate, not to edit code. Driven by the `@browser-debugger` agent and the
-`/debug-ui` skill.
+**Activation:** the server connects at Claude Code session startup from `.mcp.json`. After first
+adding/changing it, **fully restart the Claude Code session** (a plain VS Code "Reload Window" on an
+already-running session may not reconnect) and **approve the project-MCP trust prompt**, then confirm
+`playwright` is connected (e.g. via `/mcp` where available). Artifacts (session/screenshots) save to
+`.playwright-artifacts/` (gitignored). It is **read-only on the codebase** — used to investigate, not
+to edit code. Driven by the `@browser-debugger` agent and the `/debug-ui` skill.
 
 ## Agent Team
 
@@ -190,6 +202,7 @@ main
 ```
 ├── .env                           # API keys (gitignored, local only)
 ├── .env.example                   # Template for .env
+├── .mcp.json                      # MCP server definitions (github, playwright) — loaded by Claude Code
 ├── .gitignore
 ├── docs/                          # Technical documentation (source of truth)
 │   └── vault/                     # Obsidian vault — shared agent memory (see Shared Memory section)
@@ -222,7 +235,7 @@ main
 │   ├── hooks/                     # Automation hooks
 │   │   ├── post-user-story-commit.sh
 │   │   └── post-dev-commit.sh
-│   └── settings.json              # MCP servers, hooks, permissions
+│   └── settings.json              # hooks, permissions, skill overrides (NOT MCP servers — see .mcp.json)
 └── .github/
     └── workflows/
         └── claude-agent-pipeline.yml  # GitHub Actions (future, needs credits)
