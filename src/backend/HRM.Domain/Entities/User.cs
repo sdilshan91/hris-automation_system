@@ -20,6 +20,19 @@ public sealed class User
     public DateTime? UpdatedAt { get; set; }
 
     /// <summary>
+    /// CR-AUTH-001 (US-AUTH-014): the Entra <c>oid</c> (immutable object id) this account is linked to,
+    /// set on first Microsoft SSO login. Null for local-only accounts. Unique when present — it is the
+    /// primary match key for SSO logins (email is the fallback / linking key).
+    /// </summary>
+    public string? EntraObjectId { get; set; }
+
+    /// <summary>
+    /// CR-AUTH-001: identity provider the account authenticates with — "local" (password) or "entra"
+    /// (Microsoft SSO). JIT-provisioned SSO users have a null <see cref="PasswordHash"/>.
+    /// </summary>
+    public string? IdentityProvider { get; set; }
+
+    /// <summary>
     /// Counter for consecutive failed MFA verification attempts.
     /// Resets on successful MFA verification.
     /// </summary>

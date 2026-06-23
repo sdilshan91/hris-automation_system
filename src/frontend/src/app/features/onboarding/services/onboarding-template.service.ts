@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IOnboardingLookups,
@@ -34,11 +35,20 @@ export class OnboardingTemplateService {
 
   // ─── Read (FR-6 / FR-7 list view) ────────────────────────
 
-  /** All templates for the current tenant (active + inactive, BR-4). */
+  /**
+   * All templates for the current tenant (active + inactive, BR-4).
+   *
+   * The backend now returns a paginated envelope `{ items, totalCount, ... }`
+   * (previously `{ data, total }`); tolerate a bare array, the new `items`, and
+   * the legacy `data` so the list never goes silently empty across the rollout.
+   */
   list(): Observable<IOnboardingTemplateSummary[]> {
-    return this.http.get<IOnboardingTemplateSummary[]>(this.base, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<
+        | IOnboardingTemplateSummary[]
+        | { items?: IOnboardingTemplateSummary[]; data?: IOnboardingTemplateSummary[] }
+      >(this.base, { withCredentials: true })
+      .pipe(map((res) => this.toArray(res)));
   }
 
   /** A single template with its full task list (for clone/edit pre-fill). */
@@ -98,6 +108,25 @@ export class OnboardingTemplateService {
   }
 
   // ─── Helpers ─────────────────────────────────────────────
+
+  /**
+   * Accept a bare array, the new `{ items }` page envelope, or the legacy
+   * `{ data }` one; default to []. Items first, then data, then [].
+   */
+  private toArray<T>(
+    res: T[] | { items?: T[]; data?: T[] } | null | undefined,
+  ): T[] {
+    if (Array.isArray(res)) {
+      return res;
+    }
+    if (res && Array.isArray((res as { items?: T[] }).items)) {
+      return (res as { items: T[] }).items;
+    }
+    if (res && Array.isArray((res as { data?: T[] }).data)) {
+      return (res as { data: T[] }).data;
+    }
+    return [];
+  }
 
   /** Parse an error body into a human-readable message; caller shows verbatim. */
   static parseErrorMessage(err: HttpErrorResponse): string {

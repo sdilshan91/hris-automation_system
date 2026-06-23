@@ -24,7 +24,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class JobTitleService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/job-titles`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/job-titles`;
 
   // --- Read --------------------------------------------------
 

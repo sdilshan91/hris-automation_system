@@ -8,7 +8,6 @@ import {
   OnDestroy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import {
   ReactiveFormsModule,
   FormBuilder,
@@ -58,7 +57,7 @@ import {
 @Component({
   selector: 'app-my-checklist',
   standalone: true,
-  imports: [CommonModule, RouterLink, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [

@@ -32,7 +32,7 @@ describe('EmployeeListComponent', () => {
   let router: Router;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
-  const baseUrl = `${environment.apiBaseUrl}/employees`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
   const mockEmployee: IEmployee = {
     employeeId: 'emp-1',

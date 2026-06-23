@@ -312,9 +312,43 @@ export class TenantService {
     return error.status === 404 && message.toLowerCase().includes('workspace does not exist');
   }
 
+  /** localStorage key for the dev-only active-tenant override. */
+  private static readonly DEV_TENANT_KEY = 'devTenantSubdomain';
+
+  /**
+   * Dev-only fallback subdomain for `localhost`, where the URL carries no subdomain.
+   *
+   * Resolution priority (so you can switch tenants at runtime WITHOUT editing environment.ts or
+   * rebuilding): a `?tenant=<subdomain>` query param (persisted to localStorage; `?tenant=` clears it)
+   * → the saved override → `environment.tenantSubdomain`. This is a localhost convenience ONLY — it is
+   * ignored in production, where the tenant is resolved from the real URL host (acme.yourhrm.com).
+   */
   private getDevFallbackSubdomain(): string {
-    const subdomain = (environment as { tenantSubdomain?: string }).tenantSubdomain;
-    return environment.production ? '' : (subdomain ?? '').trim().toLowerCase();
+    if (environment.production) {
+      return '';
+    }
+
+    let override = '';
+    try {
+      const fromQuery = new URLSearchParams(window.location.search).get('tenant');
+      if (fromQuery !== null) {
+        override = fromQuery.trim().toLowerCase();
+        if (override) {
+          window.localStorage.setItem(TenantService.DEV_TENANT_KEY, override);
+        } else {
+          window.localStorage.removeItem(TenantService.DEV_TENANT_KEY);
+        }
+      } else {
+        override = (window.localStorage.getItem(TenantService.DEV_TENANT_KEY) ?? '')
+          .trim()
+          .toLowerCase();
+      }
+    } catch {
+      // localStorage/URL unavailable (e.g. privacy mode) — fall through to the env default.
+    }
+
+    const envDefault = (environment as { tenantSubdomain?: string }).tenantSubdomain ?? '';
+    return (override || envDefault).trim().toLowerCase();
   }
 
   private setContext(context: ITenantContext): void {

@@ -188,17 +188,21 @@ public sealed class HolidayIntegrationTests
     {
         var mediator = BuildPipeline(_tenantA, _userA);
 
-        // Use a concrete Mon-Fri week and place a public holiday on the Wednesday.
-        var monday = new DateOnly(2026, 6, 15);
-        var wednesday = new DateOnly(2026, 6, 17);
-        var friday = new DateOnly(2026, 6, 19);
+        // Use the NEXT Mon-Fri week in the future (leave cannot be applied for past dates) and place a
+        // public holiday on the Wednesday. Computed relative to today so this never becomes a date
+        // time-bomb (it previously hard-coded a week that lapsed into the past).
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var daysUntilMonday = ((int)DayOfWeek.Monday - (int)today.DayOfWeek + 7) % 7;
+        var monday = today.AddDays(daysUntilMonday == 0 ? 7 : daysUntilMonday);
+        var wednesday = monday.AddDays(2);
+        var friday = monday.AddDays(4);
         monday.DayOfWeek.Should().Be(DayOfWeek.Monday);
         wednesday.DayOfWeek.Should().Be(DayOfWeek.Wednesday);
 
         (await mediator.Send(HolidayCmd(wednesday, "Mid-week Holiday"))).IsSuccess.Should().BeTrue();
 
         // Seed a balance for the leave type so the request passes the balance check.
-        SeedBalance(_tenantA, _employeeA, _leaveTypeA, 2026, 14m);
+        SeedBalance(_tenantA, _employeeA, _leaveTypeA, monday.Year, 14m);
 
         var apply = await mediator.Send(new CreateLeaveRequestCommand(
             _leaveTypeA, monday, friday, false, null, "Holiday week", null));

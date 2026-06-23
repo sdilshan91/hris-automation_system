@@ -17,7 +17,7 @@ describe('DocumentService', () => {
   let service: DocumentService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/employees`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
   const employeeId = 'emp-1';
   const docUrl = `${baseUrl}/${employeeId}/documents`;
 

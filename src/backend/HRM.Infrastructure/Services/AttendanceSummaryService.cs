@@ -348,8 +348,8 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         // Attendance logs for the month (match on the UTC calendar day of clock-in).
         var logs = await _dbContext.AttendanceLogs.AsNoTracking()
             .Where(a => a.EmployeeId == employee.Id
-                && a.ClockIn >= monthStart.ToDateTime(TimeOnly.MinValue)
-                && a.ClockIn < monthEnd.AddDays(1).ToDateTime(TimeOnly.MinValue))
+                && a.ClockIn >= monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                && a.ClockIn < monthEnd.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc))
             .ToListAsync(ct);
 
         // One log per date; if multiple, keep the one with the most worked minutes (best signal).
@@ -435,8 +435,8 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             var quarterStart = QuarterStart(monthStart);
             if (quarterStart < monthStart)
             {
-                var qStartUtc = quarterStart.ToDateTime(TimeOnly.MinValue);
-                var qPriorEndUtc = monthStart.ToDateTime(TimeOnly.MinValue);   // exclusive of this month
+                var qStartUtc = quarterStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                var qPriorEndUtc = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);   // exclusive of this month
                 priorQuarterLateCount = await _dbContext.AttendanceLogs.AsNoTracking()
                     .Where(a => a.EmployeeId == employee.Id && a.IsLate
                         && a.ClockIn >= qStartUtc && a.ClockIn < qPriorEndUtc)

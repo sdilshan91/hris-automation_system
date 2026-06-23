@@ -32,7 +32,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class PipService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/pips`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/pips`;
 
   /** AC-1: the HR PIP list. Tolerates either a bare array or a `{ data }` page. */
   listPips(): Observable<IPipSummary[]> {

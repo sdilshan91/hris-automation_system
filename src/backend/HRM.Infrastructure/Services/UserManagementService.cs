@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.DTOs;
 using HRM.Application.Features.Users.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
@@ -136,7 +137,13 @@ public sealed class UserManagementService : IUserManagementService
             linkedEmployees.TryGetValue(r.UserId, out var eid) ? eid : null)).ToList();
 
         return Result.Success<PagedResult<TenantUserListItemDto>>(
-            new PagedResult<TenantUserListItemDto>(items, page, pageSize, totalCount));
+            new PagedResult<TenantUserListItemDto>
+            {
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = totalCount,
+            });
     }
 
     // ── User detail (FR-6) ──────────────────────────────────────────────────

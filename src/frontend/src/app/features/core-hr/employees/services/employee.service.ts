@@ -43,7 +43,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class EmployeeService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/employees`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
   // ─── Read ────────────────────────────────────────────────
 

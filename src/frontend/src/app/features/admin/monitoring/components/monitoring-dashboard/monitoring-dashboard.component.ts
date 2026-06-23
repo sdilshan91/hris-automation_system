@@ -16,11 +16,13 @@ import { PlatformMonitoringService } from '../../services/platform-monitoring.se
 import {
   IPlatformHealth,
   ITenantUsageSummary,
+  ITenantUsageDashboard,
   ITenantUsageFilters,
-  IUsageMetric,
+  IUsageGauge,
   DEFAULT_REFRESH_INTERVAL_MS,
   bandClass,
   needsAttention,
+  requiresObservability,
 } from '../../models/monitoring.models';
 
 /**
@@ -31,9 +33,9 @@ import {
  * POLLING (no SignalR exists yet) at a configurable interval (default 30s) and
  * shows a "last updated" timestamp + manual refresh.
  *
- * Honest rendering: where a metric is null / metricsAvailable=false the UI shows
- * a muted "Not available — requires observability pipeline" placeholder instead
- * of a fabricated 0/empty chart.
+ * Honest rendering: where a metric is null / metricsStatus is
+ * "RequiresObservabilityPipeline" the UI shows a muted "Not available — requires
+ * observability pipeline" placeholder instead of a fabricated 0/empty chart.
  */
 @Component({
   selector: 'app-monitoring-dashboard',
@@ -67,6 +69,11 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
   readonly tenantsLoading = signal(true);
   readonly tenantsError = signal<string | null>(null);
 
+  /** The server-computed quota-breach queue (tenants >=80% of the employee limit). */
+  readonly quotaBreachQueue = signal<ITenantUsageSummary[]>([]);
+  /** Status flag for the deferred error-rate "Attention Required" queue (AC-3). */
+  readonly attentionQueueStatus = signal<string | null>(null);
+
   /** Timestamp of the last successful refresh (AC-1 "last updated"). */
   readonly lastUpdated = signal<Date | null>(null);
 
@@ -82,10 +89,18 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
   readonly pageSize = signal(10);
   readonly pageIndex = signal(0);
 
-  /** Quota-breach / attention list: tenants at/above 80% of any limit (FR-3). */
-  readonly attentionTenants = computed(() =>
-    this.tenants().filter((t) => this.tenantNeedsAttention(t)),
-  );
+  /**
+   * Quota-breach / attention list: tenants at/above 80% of the employee limit
+   * (FR-3). The BE returns a server-computed `quotaBreachQueue`; we prefer it and
+   * fall back to deriving from the visible tenant list if it is empty.
+   */
+  readonly attentionTenants = computed(() => {
+    const queue = this.quotaBreachQueue();
+    if (queue.length > 0) {
+      return queue;
+    }
+    return this.tenants().filter((t) => this.tenantNeedsAttention(t));
+  });
 
   /** Distinct status values for the filter dropdown. */
   readonly statusOptions = computed(() =>
@@ -109,6 +124,7 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
 
   // Expose helpers to the template.
   readonly bandClass = bandClass;
+  readonly requiresObservability = requiresObservability;
 
   ngOnInit(): void {
     this.refresh();
@@ -149,8 +165,10 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
     this.tenantsLoading.set(true);
     this.tenantsError.set(null);
     this.service.getTenantUsage(this.currentFilters()).subscribe({
-      next: (tenants) => {
-        this.tenants.set(tenants);
+      next: (dashboard: ITenantUsageDashboard) => {
+        this.tenants.set(dashboard.tenants ?? []);
+        this.quotaBreachQueue.set(dashboard.quotaBreachQueue ?? []);
+        this.attentionQueueStatus.set(dashboard.attentionQueueStatus ?? null);
         this.tenantsLoading.set(false);
         // Clamp the current page if the result set shrank.
         if (this.pageIndex() > this.totalPages() - 1) {
@@ -204,18 +222,20 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
     if (this.pageIndex() < this.totalPages() - 1) this.pageIndex.update((i) => i + 1);
   }
 
-  /** A tenant needs attention if ANY usage dimension is >=80% / breached (FR-3). */
+  /**
+   * A tenant needs attention if its headline employee usage is >=80% / breached
+   * (FR-3). The BE only sources the employee gauge; deferred gauges have no data.
+   */
   tenantNeedsAttention(t: ITenantUsageSummary): boolean {
-    const metrics: (IUsageMetric | null)[] = [
-      t.employeeUsage,
-      t.storageUsage,
-      t.apiUsage,
-      t.emailUsage,
-    ];
-    return metrics.some((m) => m !== null && needsAttention(m));
+    return needsAttention(t);
   }
 
-  /** Overall health badge colour. */
+  /** Look up a named gauge (e.g. 'Storage', 'ApiCalls', 'EmailSends') on a row. */
+  gauge(t: ITenantUsageSummary, resource: string): IUsageGauge | undefined {
+    return t.gauges?.find((g) => g.resource === resource);
+  }
+
+  /** Overall health badge colour (BE enum string: Healthy / Degraded / Down). */
   healthStatusClass(status: string): string {
     switch ((status || '').toLowerCase()) {
       case 'healthy':
@@ -229,13 +249,11 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Component (DB/Redis) health badge colour. */
+  /** Dependency (DB/Redis) health badge colour (Healthy / Down / NotConfigured). */
   componentHealthClass(health: string): string {
     switch ((health || '').toLowerCase()) {
       case 'healthy':
         return 'bg-green-50 text-green-700';
-      case 'degraded':
-        return 'bg-amber-50 text-amber-700';
       case 'down':
         return 'bg-red-50 text-red-700';
       case 'notconfigured':

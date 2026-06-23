@@ -26,7 +26,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class PerformanceGoalService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance`;
 
   /**
    * The current tenant's active appraisal cycle plus the authoritative

@@ -1,0 +1,42 @@
+import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * Playwright E2E config for the HRM SaaS frontend.
+ *
+ * These tests drive the REAL browser → Angular → real API → real Postgres, which is the only layer that
+ * catches FE↔BE contract drift (wrong URLs, missing form fields, route guards) that mocked unit tests miss.
+ *
+ * PREREQUISITES to run (`npm run e2e`):
+ *   1. `npx playwright install chromium` (one-time, downloads the browser).
+ *   2. The full dev stack running: backend on :5000 (rebuilt so the dev-only `e2e` tenant + owner@e2e.test
+ *      login is seeded) and `ng serve` on :4200.
+ * Multi-tenant in dev is selected via the `?tenant=e2e` query param (see auth fixture).
+ */
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: false,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  workers: 1,
+  reporter: process.env.CI ? 'github' : 'list',
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  use: {
+    baseURL: 'http://localhost:4200',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    actionTimeout: 15_000,
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  ],
+
+  // To have Playwright start the dev server itself, uncomment and adjust (it must also ensure the backend
+  // is up — left off by default because the stack is run separately in this project):
+  // webServer: {
+  //   command: 'npm start',
+  //   url: 'http://localhost:4200',
+  //   reuseExistingServer: true,
+  //   timeout: 120_000,
+  // },
+});

@@ -170,7 +170,7 @@ describe('BulkImportComponent', () => {
   let httpMock: HttpTestingController;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
-  const baseUrl = `${environment.apiBaseUrl}/employees/import`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/employees/import`;
 
   beforeEach(async () => {
     toastrSpy = jasmine.createSpyObj('ToastrService', ['success', 'error', 'warning']);

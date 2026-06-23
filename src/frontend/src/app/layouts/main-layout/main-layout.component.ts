@@ -184,26 +184,21 @@ interface INavItem {
           </button>
         </div>
 
-        <!-- Navigation items -->
+        <!-- Navigation items (pre-filtered by persona + permission in visibleNavItems) -->
         <nav class="sidebar-nav">
-          @for (item of navItems; track item.route) {
-            @if (
-              (!item.permission || authService.hasPermission(item.permission)) &&
-              (!item.role || authService.hasRole(item.role))
-            ) {
-              <a
-                [routerLink]="item.route"
-                routerLinkActive="nav-active"
-                class="nav-item"
-                [title]="sidebarCollapsed() ? item.label : ''"
-                (click)="mobileMenuOpen.set(false)"
-              >
-                <span class="nav-icon" [innerHTML]="item.icon"></span>
-                @if (!sidebarCollapsed()) {
-                  <span class="nav-label">{{ item.label }}</span>
-                }
-              </a>
-            }
+          @for (item of visibleNavItems(); track item.route) {
+            <a
+              [routerLink]="item.route"
+              routerLinkActive="nav-active"
+              class="nav-item"
+              [title]="sidebarCollapsed() ? item.label : ''"
+              (click)="mobileMenuOpen.set(false)"
+            >
+              <span class="nav-icon" [innerHTML]="item.icon"></span>
+              @if (!sidebarCollapsed()) {
+                <span class="nav-label">{{ item.label }}</span>
+              }
+            </a>
           }
         </nav>
 
@@ -689,13 +684,13 @@ export class MainLayoutComponent implements OnInit {
     {
       label: 'Leave',
       route: '/leave',
-      permission: 'Leave.View',
+      permission: 'Leave.View.Own',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z" clip-rule="evenodd"/></svg>`,
     },
     {
       label: 'Attendance',
       route: '/attendance',
-      permission: 'Attendance.View',
+      permission: 'Attendance.View.Own',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-13a.75.75 0 0 0-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 0 0 0-1.5h-3.25V5Z" clip-rule="evenodd"/></svg>`,
     },
     {
@@ -748,7 +743,7 @@ export class MainLayoutComponent implements OnInit {
     {
       label: 'Performance',
       route: '/performance',
-      permission: 'Performance.View',
+      permission: 'Performance.View.Own',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.785l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .785.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.785l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.183a1 1 0 0 1 .633.633l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.633l.551-.183a1 1 0 0 0 0-1.898l-.551-.184a1 1 0 0 1-.633-.632l-.183-.551Z"/></svg>`,
     },
     {
@@ -770,51 +765,83 @@ export class MainLayoutComponent implements OnInit {
       // US-ADM-005: Tenant Admin user & role-assignment management.
       label: 'Users',
       route: '/admin/users',
-      permission: 'Admin.Users.Manage',
+      permission: 'Tenant.ManageUsers',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z"/></svg>`,
     },
     {
       label: 'Roles',
       route: '/admin/roles',
-      permission: 'Admin.Roles.Manage',
+      permission: 'Roles.Manage',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/></svg>`,
     },
     {
       // US-ADM-006: Tenant Admin company settings (org / branding / localization / policies).
       label: 'Settings',
       route: '/admin/settings',
-      permission: 'Admin.View',
+      permission: 'Tenant.ManageSettings',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.993 6.993 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd"/></svg>`,
     },
     {
       // US-ADM-007: Tenant Admin approval-workflow definitions (per request type).
       label: 'Workflows',
       route: '/admin/workflows',
-      permission: 'Admin.View',
+      permission: 'Tenant.ManageWorkflows',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H6v2h4V8a1 1 0 0 1 1-1h.5a1 1 0 0 1 0-2H11a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.5a1 1 0 0 0 0 2H13a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h-4a1 1 0 0 1-1-1V7H4a1 1 0 0 1-1-1V3Z"/></svg>`,
     },
     {
       // US-ADM-008: Tenant Admin audit-log viewer (read-only; Auditor also allowed).
       label: 'Audit Log',
       route: '/admin/audit-log',
-      permission: 'Admin.View',
+      permission: 'Audit.View',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/></svg>`,
     },
     {
       // US-ADM-010: Tenant Admin on-demand data export (Data Management > Export).
       label: 'Data Export',
       route: '/admin/data-export',
-      permission: 'Admin.View',
+      permission: 'Tenant.ExportData',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a.75.75 0 0 1 .75.75v6.59l1.95-2.1a.75.75 0 1 1 1.1 1.02l-3.25 3.5a.75.75 0 0 1-1.1 0L6.2 7.26a.75.75 0 1 1 1.1-1.02l1.95 2.1V1.75A.75.75 0 0 1 10 1ZM5.273 11.5a.75.75 0 0 1 .727.927l-.6 2.4a.5.5 0 0 0 .485.673h8.23a.5.5 0 0 0 .485-.673l-.6-2.4a.75.75 0 0 1 1.454-.364l.6 2.4A2 2 0 0 1 14.515 17H6.27a2 2 0 0 1-1.94-2.48l.6-2.4a.75.75 0 0 1 .343-.62Z" clip-rule="evenodd"/></svg>`,
+    },
+    // ─── System Admin Console (platform persona only; role-gated, not permission) ──
+    {
+      // US-ADM-001: provision + manage tenants. SystemAdmin only (BR-1).
+      label: 'Tenants',
+      route: '/admin/tenants',
+      role: 'SystemAdmin',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
+      // US-ADM-002: platform-health + tenant-usage monitoring.
+      label: 'Monitoring',
+      route: '/admin/monitoring',
+      role: 'SystemAdmin',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M15.5 2A1.5 1.5 0 0 1 17 3.5v13A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-13A1.5 1.5 0 0 1 4.5 2h11ZM6 13.25a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-1.5 0v-.5a.75.75 0 0 1 .75-.75Zm3-3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0V11a.75.75 0 0 1 .75-.75Zm3-2a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Z"/></svg>`,
     },
     {
       // US-ADM-009: System Admin Console subscription plans (role-gated, not permission).
       label: 'Plans',
       route: '/admin/plans',
-      role: 'System Admin',
+      role: 'SystemAdmin',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M1 4.25C1 3.56 1.56 3 2.25 3h15.5c.69 0 1.25.56 1.25 1.25v2.5C19 7.44 18.44 8 17.75 8H2.25C1.56 8 1 7.44 1 6.75v-2.5ZM1 11.25c0-.69.56-1.25 1.25-1.25h15.5c.69 0 1.25.56 1.25 1.25v4.5c0 .69-.56 1.25-1.25 1.25H2.25C1.56 17 1 16.44 1 15.75v-4.5Zm4 1a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5H5Z"/></svg>`,
     },
   ];
+
+  /**
+   * Persona-aware sidebar (US-ADM-001..009). The platform SystemAdmin operates the System Admin
+   * Console (Tenants / Monitoring / Plans) and must NOT see the tenant-HR menu (whose routes it
+   * cannot enter — they guard on tenant roles it doesn't hold). Conversely tenant users never see
+   * the system-console items. Within each persona, items still gate on their real catalog permission.
+   */
+  visibleNavItems(): INavItem[] {
+    const isSystemAdmin = this.authService.hasRole('SystemAdmin');
+    return this.navItems.filter((item) => {
+      const isSystemItem = item.role === 'SystemAdmin';
+      if (isSystemAdmin !== isSystemItem) {
+        return false; // system admin → system items only; tenant user → tenant items only
+      }
+      return !item.permission || this.authService.hasPermission(item.permission);
+    });
+  }
 
   ngOnInit(): void {
     this.loadTenants();

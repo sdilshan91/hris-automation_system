@@ -18,8 +18,8 @@ describe('TenantProvisioningService', () => {
   let service: TenantProvisioningService;
   let httpMock: HttpTestingController;
 
-  // Admin console is rooted at /api/admin (the /v1 tenant suffix is stripped).
-  const adminUrl = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin`;
+  // System-admin tenant namespace: /api/v1/system/tenants.
+  const tenantsUrl = `${environment.apiBaseUrl}/system/tenants`;
 
   const mockPlans: ISubscriptionPlan[] = [
     { id: 'plan-1', name: 'Starter', code: 'STARTER', priceMonthly: 0, trialDays: 14, maxEmployees: 25 },
@@ -62,7 +62,7 @@ describe('TenantProvisioningService', () => {
       let result: ISubscriptionPlan[] | undefined;
       service.getSubscriptionPlans().subscribe((p) => (result = p));
 
-      const req = httpMock.expectOne(`${adminUrl}/subscription-plans`);
+      const req = httpMock.expectOne(`${tenantsUrl}/plans`);
       expect(req.request.method).toBe('GET');
       req.flush(mockPlans);
 
@@ -76,7 +76,7 @@ describe('TenantProvisioningService', () => {
       let result: ITenantSummary[] | undefined;
       service.getTenants().subscribe((t) => (result = t));
 
-      const req = httpMock.expectOne(`${adminUrl}/tenants`);
+      const req = httpMock.expectOne(tenantsUrl);
       expect(req.request.method).toBe('GET');
       req.flush(mockTenants);
 
@@ -93,7 +93,7 @@ describe('TenantProvisioningService', () => {
       service.checkSubdomainAvailability('acme').subscribe((r) => (result = r));
 
       const req = httpMock.expectOne(
-        `${adminUrl}/tenants/subdomain-available?subdomain=acme`,
+        `${tenantsUrl}/subdomain-availability?subdomain=acme`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('subdomain')).toBe('acme');
@@ -107,7 +107,7 @@ describe('TenantProvisioningService', () => {
       service.checkSubdomainAvailability('admin').subscribe((r) => (result = r));
 
       const req = httpMock.expectOne(
-        `${adminUrl}/tenants/subdomain-available?subdomain=admin`,
+        `${tenantsUrl}/subdomain-availability?subdomain=admin`,
       );
       req.flush({ available: false, reason: 'Subdomain is reserved' });
 
@@ -136,7 +136,7 @@ describe('TenantProvisioningService', () => {
       let result: IProvisionTenantResponse | undefined;
       service.provisionTenant(request).subscribe((r) => (result = r));
 
-      const req = httpMock.expectOne(`${adminUrl}/tenants`);
+      const req = httpMock.expectOne(tenantsUrl);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(request);
       req.flush(response);

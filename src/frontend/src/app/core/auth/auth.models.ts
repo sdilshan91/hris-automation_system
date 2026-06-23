@@ -78,6 +78,17 @@ export interface IRefreshResponse {
   accessToken: string;
 }
 
+/** Response of GET /auth/me — used to hydrate session state after an SSO redirect (CR-AUTH-001). */
+export interface ICurrentUserResponse {
+  userId: string;
+  email: string;
+  displayName: string;
+  tenant: ITenantInfo;
+  roles: string[];
+  permissions: string[];
+  mfaEnabled: boolean;
+}
+
 /** Forgot password request */
 export interface IForgotPasswordRequest {
   email: string;

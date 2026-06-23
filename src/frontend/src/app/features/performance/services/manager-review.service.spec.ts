@@ -16,7 +16,7 @@ import {
 describe('ManagerReviewService', () => {
   let service: ManagerReviewService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/manager-review`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/manager-review`;
 
   const mockTeam: IManagerTeamRow[] = [
     {

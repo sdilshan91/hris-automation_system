@@ -1,5 +1,6 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.DTOs;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;

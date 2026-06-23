@@ -17,7 +17,7 @@ import {
 describe('RecommendationService (US-PRF-010)', () => {
   let service: RecommendationService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/recommendations`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/recommendations`;
 
   const cycle: ICompletedCycleOption = {
     cycleId: 'c-1',

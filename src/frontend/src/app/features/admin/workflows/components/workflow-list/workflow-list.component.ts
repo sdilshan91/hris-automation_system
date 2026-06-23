@@ -6,7 +6,7 @@ import {
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { ToastrService } from 'ngx-toastr';
 import { WorkflowService } from '../../services/workflow.service';
@@ -35,7 +35,7 @@ interface IPendingAction {
   selector: 'app-workflow-list',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterLink, TranslateModule],
+  imports: [CommonModule, TranslateModule],
   templateUrl: './workflow-list.component.html',
 })
 export class WorkflowListComponent {

@@ -20,7 +20,7 @@ describe('WorkflowService', () => {
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/workflows`;
   const rolesUrl = `${environment.apiBaseUrl}/tenant/roles`;
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const sampleStep: IWorkflowStep = {
     stepOrder: 1,

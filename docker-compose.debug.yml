@@ -1,0 +1,16 @@
+# Debug override for the backend container — used by VS Code's "Full Stack (Docker)"
+# launch config so the coreclr debugger can attach inside the container.
+#
+# Builds the Dockerfile "debug" stage (Debug config + vsdbg) instead of the Release
+# runtime image. Postgres, Redis and the frontend are unchanged from docker-compose.yml.
+#
+# Usage (launch.json does this for you via the docker-compose-up-debug task):
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+name: hris
+
+services:
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+      target: debug

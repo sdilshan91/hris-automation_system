@@ -27,7 +27,7 @@ public sealed class SalaryStructuresController : ControllerBase
     /// <summary>GET — lists salary structures, paged + filterable (NFR-3, default 25 / max 100).</summary>
     [HttpGet]
     [RequirePermission("Payroll.Configure")]
-    [ProducesResponseType(typeof(ApiResponse<SalaryStructurePageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<SalaryStructureListItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] bool? isActive,
         [FromQuery] string? search,
@@ -40,14 +40,7 @@ public sealed class SalaryStructuresController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        var paged = result.Value!;
-        return Ok(ApiResponse<SalaryStructurePageResponse>.Ok(new SalaryStructurePageResponse
-        {
-            Data = paged.Items,
-            Total = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize,
-        }));
+        return Ok(ApiResponse<PagedResult<SalaryStructureListItemDto>>.Ok(result.Value!));
     }
 
     /// <summary>GET — single salary structure (with components) by id (tenant-scoped).</summary>

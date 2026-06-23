@@ -12,7 +12,7 @@ import { IReviewSignoff } from '../models/review-signoff.models';
 describe('ReviewSignoffService', () => {
   let service: ReviewSignoffService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/sign-off`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/sign-off`;
 
   const mockRecord: IReviewSignoff = {
     reviewId: 'rv-1',

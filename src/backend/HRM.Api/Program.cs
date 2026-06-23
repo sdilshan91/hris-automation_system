@@ -161,6 +161,11 @@ try
             Description = "Multi-tenant Human Resource Management platform API"
         });
 
+        // Disambiguate same-named DTOs across feature modules (e.g. Onboarding.TrendPointDto
+        // vs Attendance.TrendPointDto) — the default bare type name collides and 500s
+        // swagger.json. Keeps generic naming readable. See SwaggerSchemaIdGenerator.
+        options.CustomSchemaIds(HRM.Api.Swagger.SwaggerSchemaIdGenerator.GetSchemaId);
+
         // JWT Bearer auth in Swagger
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
@@ -196,7 +201,14 @@ try
             options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("DefaultConnection")!);
         });
     });
-    builder.Services.AddHangfireServer();
+    // The Hangfire background SERVER (job dispatcher + polling) can be disabled via config. The
+    // storage and client API stay registered so enqueue/schedule calls still work; only the worker
+    // loop is suppressed. Integration tests set Hangfire:DisableServer=true to avoid the polling
+    // noise and to keep the server from racing the test DB lifecycle.
+    if (!builder.Configuration.GetValue<bool>("Hangfire:DisableServer"))
+    {
+        builder.Services.AddHangfireServer();
+    }
 
     // US-ADM-002 FR-5: the Hangfire monitoring seam for the System Admin dashboard's cross-tenant job-queue
     // view. Lives here alongside Hangfire; bound to IJobQueueMonitor so the Infrastructure monitoring service
@@ -379,8 +391,21 @@ try
         app.UseHangfireDashboard(builder.Configuration["Hangfire:DashboardPath"] ?? "/hangfire");
     }
 
-    // Apply EF migrations and seed defaults on startup
-    await DbInitializer.RunAsync(app.Services);
+    // Apply pending EF migrations and seed defaults on startup.
+    // In Development, failures are logged but do NOT abort startup — the API still comes up (health
+    // endpoints stay reachable) instead of crash-looping while you fix the DB. Outside Development we
+    // fail fast: a failed migration may leave an outdated schema, and serving traffic against it can
+    // return wrong data, so the app refuses to start and surfaces the error.
+    try
+    {
+        await DbInitializer.RunAsync(app.Services);
+    }
+    catch (Exception ex) when (app.Environment.IsDevelopment())
+    {
+        Log.Error(ex, "Database initialization (migrations/seed) failed; the application will continue to "
+            + "start because the environment is Development. The schema may be outdated — investigate "
+            + "before relying on data operations.");
+    }
 
     // Register recurring jobs (uses IRecurringJobManager from the service-based API
     // because JobStorage.Current is only initialised after the Hangfire server starts)
@@ -570,4 +595,7 @@ static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
         .HandleTransientHttpError()
         .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
 }
+
+// Exposed so WebApplicationFactory<Program> (HRM.Tests integration HTTP harness) can boot this app.
+public partial class Program { }
 

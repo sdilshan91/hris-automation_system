@@ -1,3 +1,5 @@
+using HRM.Application.DTOs;
+
 namespace HRM.Application.Features.Users.DTOs;
 
 /// <summary>US-ADM-005 AC-1/FR-1: a row in the tenant user list.</summary>
@@ -13,13 +15,6 @@ public sealed record TenantUserListItemDto(
 
 /// <summary>A role assigned to a user's membership.</summary>
 public sealed record TenantUserRoleDto(Guid RoleId, string Name);
-
-/// <summary>Paged user-list envelope (FR-1).</summary>
-public sealed record PagedResult<T>(
-    IReadOnlyList<T> Items,
-    int Page,
-    int PageSize,
-    int TotalCount);
 
 /// <summary>US-ADM-005 FR-6: the user detail view.</summary>
 public sealed record TenantUserDetailDto(

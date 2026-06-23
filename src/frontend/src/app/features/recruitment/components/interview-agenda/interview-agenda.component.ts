@@ -299,7 +299,7 @@ export class InterviewAgendaComponent implements OnInit {
     this.vacancyService.listVacancies({ pageSize: 200 }).subscribe({
       next: (page) =>
         this.vacancies.set(
-          page.data.map((v) => ({ id: v.id, label: v.title })),
+          (page.data ?? []).map((v) => ({ id: v.id, label: v.title })),
         ),
       error: () => this.vacancies.set([]),
     });

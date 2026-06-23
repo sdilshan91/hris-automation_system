@@ -16,12 +16,13 @@ describe('DepartmentService', () => {
   let service: DepartmentService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/departments`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/departments`;
 
   const mockDepartment: IDepartment = {
     departmentId: 'dept-1',
     tenantId: 'tenant-1',
     name: 'Engineering',
+    code: 'ENG',
     description: 'Software engineering team',
     parentDepartmentId: null,
     parentDepartmentName: null,
@@ -37,6 +38,7 @@ describe('DepartmentService', () => {
     departmentId: 'dept-2',
     tenantId: 'tenant-1',
     name: 'Frontend',
+    code: 'FE',
     description: 'Frontend development',
     parentDepartmentId: 'dept-1',
     parentDepartmentName: 'Engineering',
@@ -111,6 +113,7 @@ describe('DepartmentService', () => {
     it('should create a new department', () => {
       const request: ICreateDepartmentRequest = {
         name: 'Design',
+        code: 'DSGN',
         description: 'UI/UX design team',
         parentDepartmentId: 'dept-1',
         isActive: true,
@@ -136,6 +139,7 @@ describe('DepartmentService', () => {
     it('should create a root department without parent', () => {
       const request: ICreateDepartmentRequest = {
         name: 'Operations',
+        code: 'OPS',
         isActive: true,
       };
 
@@ -153,6 +157,7 @@ describe('DepartmentService', () => {
     it('should update an existing department', () => {
       const request: IUpdateDepartmentRequest = {
         name: 'Engineering (Updated)',
+        code: 'ENG',
         description: 'Updated description',
         parentDepartmentId: null,
         isActive: true,
@@ -172,6 +177,7 @@ describe('DepartmentService', () => {
     it('should update parent department for hierarchy change (FR-4)', () => {
       const request: IUpdateDepartmentRequest = {
         name: 'Frontend',
+        code: 'FE',
         parentDepartmentId: 'dept-3',
         isActive: true,
       };

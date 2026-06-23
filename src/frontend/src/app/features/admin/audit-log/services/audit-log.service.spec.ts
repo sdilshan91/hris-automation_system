@@ -16,7 +16,7 @@ describe('AuditLogService', () => {
   let httpMock: HttpTestingController;
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/audit-logs`;
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const mockPage: IAuditLogPage = {
     items: [

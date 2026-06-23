@@ -19,7 +19,7 @@ describe('EditRolesPanelComponent', () => {
   let fixture: ComponentFixture<EditRolesPanelComponent>;
   let httpMock: HttpTestingController;
 
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const roles: IAssignableRole[] = [
     { id: 'r-1', name: 'Employee', description: '' },

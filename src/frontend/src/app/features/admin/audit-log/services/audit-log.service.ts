@@ -46,7 +46,7 @@ import {
 export class AuditLogService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/audit-logs`;
-  private readonly usersUrl = `${environment.apiBaseUrl}/users`;
+  private readonly usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   /** Paginated, filterable, reverse-chronological audit-log page (AC-1, AC-2). */
   getAuditLog(params: IAuditLogListParams): Observable<IAuditLogPage> {

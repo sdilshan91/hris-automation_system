@@ -291,7 +291,7 @@ describe('AuthService', () => {
     });
 
     it('endImpersonation restores the stashed admin token and clears impersonation', () => {
-      const adminToken = tokenFor({ is_impersonation: false, roles: ['System Admin'] });
+      const adminToken = tokenFor({ is_impersonation: false, roles: ['SystemAdmin'] });
       // Establish the admin session as the active token first.
       service.activateImpersonation(adminToken);
       // Now activate an impersonation token (admin token gets stashed).
@@ -304,7 +304,7 @@ describe('AuthService', () => {
       expect(restored).toBeTrue();
       expect(service.isImpersonating()).toBeFalse();
       expect(service.getAccessToken()).toBe(adminToken);
-      expect(service.roles()).toEqual(['System Admin']);
+      expect(service.roles()).toEqual(['SystemAdmin']);
     });
 
     it('endImpersonation returns false when there is no stashed admin token', () => {

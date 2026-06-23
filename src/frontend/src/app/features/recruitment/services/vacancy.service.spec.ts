@@ -62,14 +62,16 @@ describe('VacancyService', () => {
 
   describe('listVacancies', () => {
     it('GETs the base url and returns the page envelope', () => {
+      // New backend wire shape: { items, totalCount, ... }.
       const page: IVacancyPage = {
-        data: [mockVacancy],
-        total: 1,
+        items: [mockVacancy],
+        totalCount: 1,
         page: 1,
         pageSize: 20,
+        totalPages: 1,
       };
       service.listVacancies().subscribe((res) => {
-        expect(res.data.length).toBe(1);
+        expect(res.data?.length).toBe(1);
         expect(res.total).toBe(1);
       });
       const req = httpMock.expectOne((r) => r.url === base);
@@ -86,17 +88,26 @@ describe('VacancyService', () => {
       );
       expect(req.request.params.get('departmentId')).toBe('dept-1');
       expect(req.request.params.get('search')).toBe('eng');
-      req.flush({ data: [], total: 0, page: 1, pageSize: 0 });
+      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 0, totalPages: 0 });
     });
 
     it('normalizes a bare array response into a page envelope', () => {
       service.listVacancies().subscribe((res) => {
-        expect(res.data.length).toBe(1);
+        expect(res.data?.length).toBe(1);
         expect(res.total).toBe(1);
         expect(res.page).toBe(1);
       });
       const req = httpMock.expectOne((r) => r.url === base);
       req.flush([mockVacancy]);
+    });
+
+    it('still tolerates the legacy { data, total } envelope', () => {
+      service.listVacancies().subscribe((res) => {
+        expect(res.data?.length).toBe(1);
+        expect(res.total).toBe(1);
+      });
+      const req = httpMock.expectOne((r) => r.url === base);
+      req.flush({ data: [mockVacancy], total: 1, page: 1, pageSize: 20 });
     });
   });
 

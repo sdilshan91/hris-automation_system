@@ -25,7 +25,7 @@ describe('EmployeeDocumentsComponent', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const employeeId = 'emp-1';
-  const docsUrl = `${environment.apiBaseUrl}/employees/${employeeId}/documents`;
+  const docsUrl = `${environment.apiBaseUrl}/tenant/employees/${employeeId}/documents`;
 
   const mockDocs: IEmployeeDocument[] = [
     {

@@ -9,56 +9,113 @@ import { environment } from '../../../../../environments/environment';
 import {
   IPlatformHealth,
   ITenantMonitoringDetail,
-  ITenantUsageSummary,
+  ITenantUsageDashboard,
 } from '../models/monitoring.models';
 
 describe('PlatformMonitoringService', () => {
   let service: PlatformMonitoringService;
   let httpMock: HttpTestingController;
 
-  const root = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin/monitoring`;
+  // The system-admin monitoring namespace: …/api/v1/system/monitoring (the URL
+  // the deployed AdminMonitoringController actually serves).
+  const root = `${environment.apiBaseUrl}/system/monitoring`;
 
+  // BE PlatformHealthDto — PascalCase enum strings, object jobQueue, array tenantsByStatus.
   const mockHealth: IPlatformHealth = {
-    status: 'healthy',
-    activeTenants: 12,
-    activeUsers: 340,
-    tenantsByStatus: { trial: 4, active: 8 },
-    dbHealth: 'healthy',
-    redisHealth: 'notConfigured',
-    hangfire: { queued: 2, processing: 1, succeeded: 100, failed: 0 },
-    errorRate: null,
+    overallStatus: 'Healthy',
+    activeTenantCount: 12,
+    totalActiveUsers: 340,
+    tenantsByStatus: [
+      { status: 'Trial', count: 4 },
+      { status: 'Active', count: 8 },
+    ],
+    databaseHealth: 'Healthy',
+    redisHealth: 'NotConfigured',
+    jobQueue: {
+      available: true,
+      enqueued: 2,
+      processing: 1,
+      scheduled: 0,
+      succeeded: 100,
+      failed: 0,
+    },
+    aggregateErrorRatePercent: null,
     p95LatencyMs: null,
-    metricsAvailable: false,
+    metricsStatus: 'RequiresObservabilityPipeline',
+    generatedAtUtc: '2026-06-19T00:00:00Z',
   };
 
-  const mockTenants: ITenantUsageSummary[] = [
-    {
-      tenantId: 't-1',
-      name: 'Acme',
-      subdomain: 'acme',
-      status: 'active',
-      plan: 'Pro',
-      employeeUsage: { used: 5, limit: 10, percent: 50, band: 'green' },
-      storageUsage: null,
-      apiUsage: null,
-      emailUsage: null,
-    },
-  ];
+  // BE TenantUsageDashboardDto — an OBJECT wrapper, not a bare array.
+  const mockDashboard: ITenantUsageDashboard = {
+    tenants: [
+      {
+        tenantId: 't-1',
+        name: 'Acme',
+        subdomain: 'acme',
+        status: 'Active',
+        plan: 'starter',
+        activeEmployees: 5,
+        employeeLimit: 10,
+        usagePercent: 50,
+        band: 'Green',
+        limitKnown: true,
+        gauges: [
+          {
+            resource: 'Employees',
+            available: true,
+            used: 5,
+            limit: 10,
+            usagePercent: 50,
+            band: 'Green',
+          },
+          {
+            resource: 'Storage',
+            available: false,
+            used: null,
+            limit: null,
+            usagePercent: null,
+            band: null,
+          },
+        ],
+      },
+    ],
+    quotaBreachQueue: [],
+    attentionRequiredQueue: [],
+    attentionQueueStatus: 'RequiresObservabilityPipeline',
+    generatedAtUtc: '2026-06-19T00:00:00Z',
+  };
 
   const mockDetail: ITenantMonitoringDetail = {
     tenantId: 't-1',
     name: 'Acme',
     subdomain: 'acme',
-    status: 'active',
-    plan: 'Pro',
+    status: 'Active',
+    plan: 'starter',
     ownerEmail: 'owner@acme.test',
     createdAt: '2026-06-01T00:00:00Z',
     lastActivityAt: null,
-    employeeUsage: { used: 5, limit: 10, percent: 50, band: 'green' },
-    hangfire: { queued: 0, processing: 0, succeeded: 5, failed: 1 },
-    errorTrend: null,
-    latencyTrend: null,
-    slaUptime: null,
+    employeeUsage: {
+      resource: 'Employees',
+      available: true,
+      used: 5,
+      limit: 10,
+      usagePercent: 50,
+      band: 'Green',
+    },
+    jobQueue: {
+      available: true,
+      enqueued: 0,
+      processing: 0,
+      scheduled: 0,
+      succeeded: 5,
+      failed: 1,
+    },
+    errorRateTrend24h: [],
+    latencyTrend24h: [],
+    topErrors: [],
+    slaUptimePercent: null,
+    metricsStatus: 'RequiresObservabilityPipeline',
+    generatedAtUtc: '2026-06-19T00:00:00Z',
   };
 
   beforeEach(() => {
@@ -75,7 +132,7 @@ describe('PlatformMonitoringService', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('GET /health hits the admin monitoring root and maps the payload (AC-1)', () => {
+  it('GET /health hits the system monitoring root and maps the payload (AC-1)', () => {
     let result: IPlatformHealth | undefined;
     service.getHealth().subscribe((r) => (result = r));
 
@@ -85,45 +142,47 @@ describe('PlatformMonitoringService', () => {
     req.flush(mockHealth);
 
     expect(result).toEqual(mockHealth);
-    expect(result?.metricsAvailable).toBeFalse();
-    expect(result?.errorRate).toBeNull();
+    expect(result?.metricsStatus).toBe('RequiresObservabilityPipeline');
+    expect(result?.aggregateErrorRatePercent).toBeNull();
+    expect(result?.jobQueue.enqueued).toBe(2);
   });
 
-  it('GET /tenants with no filters sends no query params (AC-2)', () => {
-    let result: ITenantUsageSummary[] | undefined;
+  it('GET /tenant-usage with no filters returns the dashboard wrapper (AC-2)', () => {
+    let result: ITenantUsageDashboard | undefined;
     service.getTenantUsage().subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${root}/tenants`);
+    const req = httpMock.expectOne(`${root}/tenant-usage`);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.keys().length).toBe(0);
-    req.flush(mockTenants);
+    req.flush(mockDashboard);
 
-    expect(result?.length).toBe(1);
-    expect(result?.[0].storageUsage).toBeNull();
+    expect(result?.tenants.length).toBe(1);
+    expect(result?.tenants[0].activeEmployees).toBe(5);
+    expect(result?.tenants[0].gauges.length).toBe(2);
+    expect(result?.quotaBreachQueue).toEqual([]);
+    expect(result?.attentionQueueStatus).toBe('RequiresObservabilityPipeline');
   });
 
-  it('GET /tenants forwards all filter query params (FR-4)', () => {
+  it('GET /tenant-usage forwards all filter query params (FR-4)', () => {
     service
       .getTenantUsage({
         search: 'acme',
-        status: 'active',
-        plan: 'Pro',
+        status: 'Active',
+        plan: 'starter',
         region: 'us-east',
         createdFrom: '2026-01-01',
         createdTo: '2026-06-01',
       })
       .subscribe();
 
-    const req = httpMock.expectOne(
-      (r) => r.url === `${root}/tenants`,
-    );
+    const req = httpMock.expectOne((r) => r.url === `${root}/tenant-usage`);
     expect(req.request.params.get('search')).toBe('acme');
-    expect(req.request.params.get('status')).toBe('active');
-    expect(req.request.params.get('plan')).toBe('Pro');
+    expect(req.request.params.get('status')).toBe('Active');
+    expect(req.request.params.get('plan')).toBe('starter');
     expect(req.request.params.get('region')).toBe('us-east');
     expect(req.request.params.get('createdFrom')).toBe('2026-01-01');
     expect(req.request.params.get('createdTo')).toBe('2026-06-01');
-    req.flush(mockTenants);
+    req.flush(mockDashboard);
   });
 
   it('GET /tenants/{id} hits the detail endpoint (AC-4)', () => {
@@ -132,10 +191,14 @@ describe('PlatformMonitoringService', () => {
 
     const req = httpMock.expectOne(`${root}/tenants/t-1`);
     expect(req.request.method).toBe('GET');
-    req.flush(mockDetail);
+    // BE serializes the lifecycle status as PascalCase ("Active").
+    req.flush({ ...mockDetail, status: 'Active' });
 
     expect(result?.tenantId).toBe('t-1');
-    expect(result?.slaUptime).toBeNull();
-    expect(result?.errorTrend).toBeNull();
+    expect(result?.slaUptimePercent).toBeNull();
+    expect(result?.metricsStatus).toBe('RequiresObservabilityPipeline');
+    expect(result?.jobQueue.succeeded).toBe(5);
+    // The service normalises status to lowercase for the lifecycle gating helpers.
+    expect(result?.status).toBe('active');
   });
 });

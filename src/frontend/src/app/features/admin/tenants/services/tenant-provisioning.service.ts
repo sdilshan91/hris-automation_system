@@ -13,16 +13,16 @@ import {
 /**
  * US-ADM-001: System Admin Console tenant provisioning service.
  *
- * Codes to the System Admin backend contract, which is rooted at `/api/admin`
- * (the platform/system context) — NOT the tenant-scoped `/api/v1` namespace the
- * rest of the app uses. We derive the `/api` root by stripping the trailing
- * `/v1` from `environment.apiBaseUrl` so a single env var still drives both.
+ * Codes to the System Admin backend contract (AdminTenantsController), rooted at
+ * `/api/v1/system/tenants` — the `/v1/system` namespace (same root as plans,
+ * lifecycle, impersonation, data-export). We append to `environment.apiBaseUrl`
+ * (`…/api/v1`) verbatim.
  *
- * Endpoints:
- *   POST /api/admin/tenants                               provision a tenant
- *   GET  /api/admin/tenants                               list tenants (AC-4)
- *   GET  /api/admin/tenants/subdomain-available?subdomain debounced availability (AC-2)
- *   GET  /api/admin/subscription-plans                    active plans for the picker
+ * Endpoints (must match AdminTenantsController exactly):
+ *   POST /api/v1/system/tenants                              provision a tenant
+ *   GET  /api/v1/system/tenants                              list tenants (AC-4)
+ *   GET  /api/v1/system/tenants/subdomain-availability?...   debounced availability (AC-2)
+ *   GET  /api/v1/system/tenants/plans                        active plans for the picker
  *
  * Envelope: the global apiEnvelopeInterceptor (US-PLT-001) strips the
  * `ApiResponse<T>` wrapper, so these methods consume BARE payloads — matching
@@ -33,15 +33,15 @@ import {
 export class TenantProvisioningService {
   private readonly http = inject(HttpClient);
 
-  /** `/api` root (strip the tenant `/v1` suffix — admin console is system-scoped). */
-  private readonly adminUrl = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin`;
+  /** `/api/v1/system/tenants` — the system-admin tenant namespace. */
+  private readonly tenantsUrl = `${environment.apiBaseUrl}/system/tenants`;
 
   /** AC-1/FR-1: provision a new tenant. */
   provisionTenant(
     request: IProvisionTenantRequest,
   ): Observable<IProvisionTenantResponse> {
     return this.http.post<IProvisionTenantResponse>(
-      `${this.adminUrl}/tenants`,
+      this.tenantsUrl,
       request,
       { withCredentials: true },
     );
@@ -49,7 +49,7 @@ export class TenantProvisioningService {
 
   /** AC-4: list all tenants for the System Admin tenant list. */
   getTenants(): Observable<ITenantSummary[]> {
-    return this.http.get<ITenantSummary[]>(`${this.adminUrl}/tenants`, {
+    return this.http.get<ITenantSummary[]>(this.tenantsUrl, {
       withCredentials: true,
     });
   }
@@ -60,7 +60,7 @@ export class TenantProvisioningService {
   ): Observable<ISubdomainAvailability> {
     const params = new HttpParams().set('subdomain', subdomain);
     return this.http.get<ISubdomainAvailability>(
-      `${this.adminUrl}/tenants/subdomain-available`,
+      `${this.tenantsUrl}/subdomain-availability`,
       { params, withCredentials: true },
     );
   }
@@ -68,7 +68,7 @@ export class TenantProvisioningService {
   /** Active subscription plans for the card-based picker. */
   getSubscriptionPlans(): Observable<ISubscriptionPlan[]> {
     return this.http.get<ISubscriptionPlan[]>(
-      `${this.adminUrl}/subscription-plans`,
+      `${this.tenantsUrl}/plans`,
       { withCredentials: true },
     );
   }

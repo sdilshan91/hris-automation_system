@@ -205,7 +205,10 @@ describe('ClockInComponent', () => {
 
   // ─── Initial state: already clocked in from status (AC-2 reflect on load) ──
   it('starts in the clocked-in state with a running timer when status says so', fakeAsync(() => {
-    setup({ ...baseStatus, isClockedIn: true, clockedInAt: '2026-06-14T08:00:00Z' });
+    // Clocked in ~1h ago, relative to now, so elapsed() stays two-digit hours regardless of the run date
+    // (a fixed past date drifts to 3-digit hours and breaks the HH:MM:SS format assertion).
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    setup({ ...baseStatus, isClockedIn: true, clockedInAt: oneHourAgo });
 
     expect(component.isClockedIn()).toBeTrue();
     expect(component.clockedInAtLocal()).not.toBeNull();

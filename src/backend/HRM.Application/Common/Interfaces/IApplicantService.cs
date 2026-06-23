@@ -1,4 +1,5 @@
 using HRM.Application.Common.Models;
+using HRM.Application.DTOs;
 using HRM.Application.Features.Recruitment.DTOs;
 using HRM.Domain.Enums;
 

@@ -18,7 +18,7 @@ import {
 describe('PerformanceDashboardService (US-PRF-007)', () => {
   let service: PerformanceDashboardService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/dashboard`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/dashboard`;
 
   const mockOverview: IDashboardOverview = {
     scope: 'Organization',

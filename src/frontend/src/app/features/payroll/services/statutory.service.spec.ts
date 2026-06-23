@@ -62,7 +62,16 @@ describe('StatutoryService', () => {
     req.flush([mockRule]);
   });
 
-  it('unwraps a { data } envelope into a bare array (US-PLT-001)', () => {
+  it('reads the new { items, totalCount } page envelope', () => {
+    let result: IStatutoryRule[] = [];
+    service.listRules('2026-2027').subscribe((r) => (result = r));
+    httpMock
+      .expectOne(`${rulesUrl}?fiscalYear=2026-2027`)
+      .flush({ items: [mockRule], totalCount: 1, page: 1, pageSize: 20 });
+    expect(result.length).toBe(1);
+  });
+
+  it('still tolerates the legacy { data } envelope (US-PLT-001)', () => {
     let result: IStatutoryRule[] = [];
     service.listRules('2026-2027').subscribe((r) => (result = r));
     httpMock

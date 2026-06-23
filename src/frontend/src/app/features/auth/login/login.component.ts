@@ -12,11 +12,13 @@ import {
   FormGroup,
   Validators,
 } from '@angular/forms';
-import { RouterLink, Router } from '@angular/router';
+import { RouterLink, Router, ActivatedRoute } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/auth/auth.service';
 import { ILoginErrorResponse } from '../../../core/auth/auth.models';
+import { TenantService } from '../../../core/tenant/tenant.service';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -44,6 +46,8 @@ export class LoginComponent implements OnInit {
   readonly authService = inject(AuthService);
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly tenantService = inject(TenantService);
 
   readonly errorMessage = signal('');
   readonly showPassword = signal(false);
@@ -73,6 +77,42 @@ export class LoginComponent implements OnInit {
         [Validators.required, Validators.pattern(/^\d{6}$/)],
       ],
     });
+
+    // US-AUTH-015: surface the SSO entry result if the backend redirected back here.
+    const ssoError = this.route.snapshot.queryParamMap.get('sso_error');
+    if (ssoError === 'not_configured') {
+      this.errorMessage.set(
+        "Microsoft sign-in isn't set up for this workspace yet. Please sign in with your email and password, or contact your administrator."
+      );
+    } else if (ssoError === 'not_available') {
+      this.errorMessage.set(
+        'Microsoft sign-in is being configured and is not available yet. Please sign in with your email and password.'
+      );
+    } else if (ssoError === 'access_denied') {
+      // CR-AUTH-001: fail-closed — the Microsoft account is not allowed into this workspace, or has no
+      // access. Deliberately generic (no tenant/account enumeration).
+      this.errorMessage.set(
+        "This Microsoft account isn't allowed to sign in to this workspace. Please use your email and password, or contact your administrator."
+      );
+    } else if (ssoError === 'sso_failed') {
+      this.errorMessage.set(
+        "We couldn't complete Microsoft sign-in. Please try again, or sign in with your email and password."
+      );
+    }
+  }
+
+  /**
+   * US-AUTH-015: start the Microsoft Entra (O365) sign-in flow. A full-page redirect to the backend
+   * challenge endpoint — which (Increment 1) fails closed back here with a message when the Entra app
+   * registration is not configured, and (Increment 2) will redirect on to Microsoft once it is.
+   */
+  startMicrosoftLogin(): void {
+    const params = new URLSearchParams({ returnUrl: '/dashboard' });
+    const subdomain = this.tenantService.subdomain();
+    if (subdomain) {
+      params.set('tenant', subdomain);
+    }
+    window.location.href = `${environment.apiBaseUrl}/auth/sso/challenge?${params.toString()}`;
   }
 
   onLoginSubmit(): void {

@@ -7823,11 +7823,21 @@ namespace HRM.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("email");
 
+                    b.Property<string>("EntraObjectId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("entra_object_id");
+
                     b.Property<int>("FailedLoginCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(0)
                         .HasColumnName("failed_login_count");
+
+                    b.Property<string>("IdentityProvider")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("identity_provider");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
@@ -7887,6 +7897,11 @@ namespace HRM.Infrastructure.Persistence.Migrations
                     b.HasIndex("Email")
                         .IsUnique()
                         .HasDatabaseName("ix_users_email");
+
+                    b.HasIndex("EntraObjectId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_entra_object_id")
+                        .HasFilter("entra_object_id IS NOT NULL");
 
                     b.HasIndex("TenantId")
                         .HasDatabaseName("ix_users_tenant_id");

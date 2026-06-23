@@ -1,0 +1,67 @@
+# Local full-stack dev environment: Postgres + Redis + .NET 10 API + Angular 20 (nginx).
+# Usage:
+#   cp docker.env.example docker.env   # then edit if you want stable secrets
+#   docker compose up --build
+# App:     http://localhost:4200
+# API:     http://localhost:5000  (Swagger at /swagger, Hangfire at /hangfire)
+#
+# Note: the Angular bundle calls the API at http://localhost:5000 from the *browser*,
+# so the backend port MUST be published to the host (it is). The frontend container
+# does not talk to the backend container-to-container.
+name: hris
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: ./docker.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    env_file: ./docker.env
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

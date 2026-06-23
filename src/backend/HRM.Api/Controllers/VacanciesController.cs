@@ -32,11 +32,11 @@ public sealed class VacanciesController : ControllerBase
     /// <summary>
     /// GET /api/v1/recruitment/vacancies
     /// Lists vacancies for the current tenant, paged and filterable by status / department / free-text
-    /// search (NFR-1). Returns the contract shape { data, total, page, pageSize }.
+    /// search (NFR-1). Returns the canonical paged shape { items, page, pageSize, totalCount, totalPages }.
     /// </summary>
     [HttpGet]
     [RequirePermission("Recruitment.View")]
-    [ProducesResponseType(typeof(ApiResponse<VacancyPageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<VacancyListItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] VacancyStatus? status,
         [FromQuery] Guid? departmentId,
@@ -51,16 +51,7 @@ public sealed class VacanciesController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        var paged = result.Value!;
-        var response = new VacancyPageResponse
-        {
-            Data = paged.Items,
-            Total = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize,
-        };
-
-        return Ok(ApiResponse<VacancyPageResponse>.Ok(response));
+        return Ok(ApiResponse<PagedResult<VacancyListItemDto>>.Ok(result.Value!));
     }
 
     /// <summary>
@@ -214,16 +205,4 @@ public sealed class VacanciesController : ControllerBase
 
         return Ok(ApiResponse<BulkStatusChangeResult>.Ok(result.Value!));
     }
-}
-
-/// <summary>
-/// Frontend list-response contract: { data, total, page, pageSize }. A thin projection over the
-/// internal <see cref="PagedResult{T}"/> so the API surface matches what the recruitment UI consumes.
-/// </summary>
-public sealed record VacancyPageResponse
-{
-    public IReadOnlyList<VacancyListItemDto> Data { get; init; } = [];
-    public int Total { get; init; }
-    public int Page { get; init; }
-    public int PageSize { get; init; }
 }

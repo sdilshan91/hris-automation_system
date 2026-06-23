@@ -28,7 +28,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class ManagerReviewService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/manager-review`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/manager-review`;
 
   /**
    * The manager's direct reports for the active cycle with their review status

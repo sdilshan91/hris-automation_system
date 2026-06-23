@@ -48,10 +48,10 @@
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Platform Status</p>
           <span
             class="mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
-            [class]="healthStatusClass(h.status)"
+            [class]="healthStatusClass(h.overallStatus)"
             data-testid="health-status"
           >
-            {{ h.status }}
+            {{ h.overallStatus }}
           </span>
         </div>
 
@@ -59,7 +59,7 @@
         <div class="card-notion">
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Active Tenants</p>
           <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="active-tenants">
-            {{ h.activeTenants }}
+            {{ h.activeTenantCount }}
           </p>
         </div>
 
@@ -67,7 +67,7 @@
         <div class="card-notion">
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Active Users</p>
           <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="active-users">
-            {{ h.activeUsers }}
+            {{ h.totalActiveUsers }}
           </p>
         </div>
 
@@ -76,10 +76,10 @@
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Database</p>
           <span
             class="mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
-            [class]="componentHealthClass(h.dbHealth)"
+            [class]="componentHealthClass(h.databaseHealth)"
             data-testid="db-health"
           >
-            {{ h.dbHealth }}
+            {{ h.databaseHealth }}
           </span>
         </div>
 
@@ -91,27 +91,32 @@
             [class]="componentHealthClass(h.redisHealth)"
             data-testid="redis-health"
           >
-            {{ h.redisHealth === 'notConfigured' ? 'Not configured' : h.redisHealth }}
+            {{ h.redisHealth === 'NotConfigured' ? 'Not configured' : h.redisHealth }}
           </span>
         </div>
 
-        <!-- Hangfire queue depth -->
+        <!-- Job queue depth (honest placeholder when Hangfire is unavailable) -->
         <div class="card-notion">
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Job Queue</p>
-          <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="hangfire-queued">
-            {{ h.hangfire.queued }}
-          </p>
-          <p class="mt-0.5 text-xs text-neutral-400">
-            {{ h.hangfire.processing }} processing · {{ h.hangfire.failed }} failed
-          </p>
+          @if (h.jobQueue.available) {
+            <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="job-queue-enqueued">
+              {{ h.jobQueue.enqueued }}
+            </p>
+            <p class="mt-0.5 text-xs text-neutral-400">
+              {{ h.jobQueue.processing }} processing · {{ h.jobQueue.failed }} failed
+            </p>
+          } @else {
+            <p class="mt-2 text-2xl font-semibold text-neutral-300" data-testid="job-queue-na">—</p>
+            <p class="mt-0.5 text-xs text-neutral-400">Not available</p>
+          }
         </div>
 
         <!-- Error rate (honest placeholder when unavailable) -->
         <div class="card-notion">
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">Error Rate (5m)</p>
-          @if (h.metricsAvailable && h.errorRate !== null) {
+          @if (h.aggregateErrorRatePercent !== null) {
             <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="error-rate">
-              {{ h.errorRate | number: '1.2-2' }}%
+              {{ h.aggregateErrorRatePercent | number: '1.2-2' }}%
             </p>
           } @else {
             <p class="mt-2 text-2xl font-semibold text-neutral-300" data-testid="error-rate-na">—</p>
@@ -122,7 +127,7 @@
         <!-- P95 latency (honest placeholder when unavailable) -->
         <div class="card-notion">
           <p class="text-xs uppercase tracking-wider text-neutral-400 font-medium">P95 Latency</p>
-          @if (h.metricsAvailable && h.p95LatencyMs !== null) {
+          @if (h.p95LatencyMs !== null) {
             <p class="mt-2 text-2xl font-semibold text-neutral-900" data-testid="p95-latency">
               {{ h.p95LatencyMs | number: '1.0-0' }} ms
             </p>
@@ -183,12 +188,12 @@
                 <span class="ml-2 text-xs text-neutral-400 font-mono">{{ t.subdomain }}</span>
               </div>
               <div class="text-xs">
-                @if (t.employeeUsage.percent !== null) {
+                @if (t.usagePercent !== null) {
                   <span
                     class="inline-flex items-center rounded-full px-2 py-0.5 font-medium"
-                    [class]="t.employeeUsage.band === 'breached' || t.employeeUsage.band === 'red' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'"
+                    [class]="t.band === 'Breached' || t.band === 'Red' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'"
                   >
-                    Employees {{ t.employeeUsage.percent | number: '1.0-0' }}%
+                    Employees {{ t.usagePercent | number: '1.0-0' }}%
                   </span>
                 }
               </div>
@@ -344,42 +349,54 @@
                   </td>
                   <td class="px-5 py-3.5 text-neutral-600">{{ t.plan }}</td>
 
-                  <!-- Employee gauge -->
+                  <!-- Employee gauge (headline usagePercent / band) -->
                   <td class="px-5 py-3.5">
                     <div class="flex items-center gap-2">
                       <div class="flex-1 h-2 rounded-full bg-neutral-100 overflow-hidden" role="progressbar"
-                           [attr.aria-valuenow]="t.employeeUsage.percent" aria-valuemin="0" aria-valuemax="100">
+                           [attr.aria-valuenow]="t.usagePercent" aria-valuemin="0" aria-valuemax="100">
                         <div
                           class="h-full rounded-full transition-all duration-300"
-                          [class]="bandClass(t.employeeUsage.band)"
-                          [style.width.%]="t.employeeUsage.percent ?? 0"
+                          [class]="bandClass(t.band)"
+                          [style.width.%]="t.usagePercent ?? 0"
                           data-testid="employee-gauge"
                         ></div>
                       </div>
                       <span class="text-xs text-neutral-500 whitespace-nowrap">
-                        {{ t.employeeUsage.used }}<span class="text-neutral-300"> / {{ t.employeeUsage.limit ?? '∞' }}</span>
+                        {{ t.activeEmployees }}<span class="text-neutral-300"> / {{ t.employeeLimit ?? '∞' }}</span>
                       </span>
                     </div>
                   </td>
 
-                  <!-- Storage / API / Email: em-dash when null -->
+                  <!-- Storage / API / Email gauges: em-dash when unavailable -->
                   <td class="px-5 py-3.5 text-neutral-600">
-                    @if (t.storageUsage) {
-                      {{ t.storageUsage.used | number: '1.0-1' }}<span class="text-neutral-300"> / {{ t.storageUsage.limit ?? '∞' }} GB</span>
+                    @if (gauge(t, 'Storage'); as g) {
+                      @if (g.available && g.used !== null) {
+                        {{ g.used | number: '1.0-1' }}<span class="text-neutral-300"> / {{ g.limit ?? '∞' }}</span>
+                      } @else {
+                        <span class="text-neutral-300" data-testid="storage-na">—</span>
+                      }
                     } @else {
                       <span class="text-neutral-300" data-testid="storage-na">—</span>
                     }
                   </td>
                   <td class="px-5 py-3.5 text-neutral-600">
-                    @if (t.apiUsage) {
-                      {{ t.apiUsage.used | number }}
+                    @if (gauge(t, 'ApiCalls'); as g) {
+                      @if (g.available && g.used !== null) {
+                        {{ g.used | number }}
+                      } @else {
+                        <span class="text-neutral-300" data-testid="api-na">—</span>
+                      }
                     } @else {
                       <span class="text-neutral-300" data-testid="api-na">—</span>
                     }
                   </td>
                   <td class="px-5 py-3.5 text-neutral-600">
-                    @if (t.emailUsage) {
-                      {{ t.emailUsage.used | number }}
+                    @if (gauge(t, 'EmailSends'); as g) {
+                      @if (g.available && g.used !== null) {
+                        {{ g.used | number }}
+                      } @else {
+                        <span class="text-neutral-300" data-testid="email-na">—</span>
+                      }
                     } @else {
                       <span class="text-neutral-300" data-testid="email-na">—</span>
                     }

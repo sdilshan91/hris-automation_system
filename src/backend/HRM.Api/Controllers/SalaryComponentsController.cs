@@ -28,7 +28,7 @@ public sealed class SalaryComponentsController : ControllerBase
     /// <summary>GET — lists salary components, paged + filterable (NFR-3, default 25 / max 100).</summary>
     [HttpGet]
     [RequirePermission("Payroll.Configure")]
-    [ProducesResponseType(typeof(ApiResponse<SalaryComponentPageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<SalaryComponentListItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] SalaryComponentType? type,
         [FromQuery] bool? isActive,
@@ -43,14 +43,7 @@ public sealed class SalaryComponentsController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        var paged = result.Value!;
-        return Ok(ApiResponse<SalaryComponentPageResponse>.Ok(new SalaryComponentPageResponse
-        {
-            Data = paged.Items,
-            Total = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize,
-        }));
+        return Ok(ApiResponse<PagedResult<SalaryComponentListItemDto>>.Ok(result.Value!));
     }
 
     /// <summary>GET — single salary component by id (tenant-scoped).</summary>

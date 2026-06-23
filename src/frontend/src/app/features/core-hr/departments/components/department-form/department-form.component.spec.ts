@@ -22,6 +22,7 @@ describe('DepartmentFormComponent', () => {
     departmentId: 'dept-1',
     tenantId: 'tenant-1',
     name: 'Engineering',
+    code: 'ENG',
     description: 'Software engineering team',
     parentDepartmentId: null,
     parentDepartmentName: null,
@@ -39,6 +40,7 @@ describe('DepartmentFormComponent', () => {
       departmentId: 'dept-2',
       tenantId: 'tenant-1',
       name: 'Frontend',
+      code: 'FE',
       description: null,
       parentDepartmentId: 'dept-1',
       parentDepartmentName: 'Engineering',
@@ -53,6 +55,7 @@ describe('DepartmentFormComponent', () => {
       departmentId: 'dept-3',
       tenantId: 'tenant-1',
       name: 'Design',
+      code: 'DSGN',
       description: null,
       parentDepartmentId: null,
       parentDepartmentName: null,
@@ -111,6 +114,7 @@ describe('DepartmentFormComponent', () => {
 
     it('should initialize with empty form', () => {
       expect(component.form.value.name).toBe('');
+      expect(component.form.value.code).toBe('');
       expect(component.form.value.description).toBe('');
       expect(component.form.value.parentDepartmentId).toBeNull();
       expect(component.form.value.isActive).toBeTrue();
@@ -136,6 +140,7 @@ describe('DepartmentFormComponent', () => {
     it('should call createDepartment on submit', () => {
       component.form.patchValue({
         name: 'New Department',
+        code: 'NEW-DEPT',
         description: 'Test description',
         parentDepartmentId: null,
         isActive: true,
@@ -146,6 +151,7 @@ describe('DepartmentFormComponent', () => {
 
       expect(departmentServiceSpy.createDepartment).toHaveBeenCalledWith({
         name: 'New Department',
+        code: 'NEW-DEPT',
         description: 'Test description',
         parentDepartmentId: null,
         isActive: true,
@@ -169,7 +175,7 @@ describe('DepartmentFormComponent', () => {
         }))
       );
 
-      component.form.patchValue({ name: 'Engineering' });
+      component.form.patchValue({ name: 'Engineering', code: 'ENG' });
       component.form.markAsDirty();
       component.onSubmit();
 
@@ -190,7 +196,7 @@ describe('DepartmentFormComponent', () => {
         }))
       );
 
-      component.form.patchValue({ name: 'Test' });
+      component.form.patchValue({ name: 'Test', code: 'TST' });
       component.form.markAsDirty();
       component.onSubmit();
 
@@ -202,6 +208,7 @@ describe('DepartmentFormComponent', () => {
     it('should trim whitespace from name and description', () => {
       component.form.patchValue({
         name: '  Trimmed Name  ',
+        code: 'TRIM',
         description: '  Trimmed description  ',
       });
       component.form.markAsDirty();
@@ -232,6 +239,7 @@ describe('DepartmentFormComponent', () => {
 
     it('should populate form with department data', () => {
       expect(component.form.value.name).toBe('Engineering');
+      expect(component.form.value.code).toBe('ENG');
       expect(component.form.value.description).toBe(
         'Software engineering team'
       );

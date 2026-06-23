@@ -1,3 +1,4 @@
+using HRM.Application.DTOs;
 using HRM.Domain.Enums;
 
 namespace HRM.Application.Features.Recruitment.DTOs;
@@ -58,18 +59,6 @@ public sealed record VacancyListItemDto
     public int FilledCount { get; init; }
     public DateOnly? ApplicationDeadline { get; init; }
     public DateTime CreatedAt { get; init; }
-}
-
-/// <summary>
-/// Generic paged result envelope for list endpoints.
-/// </summary>
-public sealed record PagedResult<T>
-{
-    public IReadOnlyList<T> Items { get; init; } = [];
-    public int Page { get; init; }
-    public int PageSize { get; init; }
-    public int TotalCount { get; init; }
-    public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling(TotalCount / (double)PageSize);
 }
 
 /// <summary>

@@ -17,7 +17,7 @@ import {
 describe('PerformanceGoalService', () => {
   let service: PerformanceGoalService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance`;
 
   const mockCycle: IAppraisalCycle = {
     id: 'cyc-1',

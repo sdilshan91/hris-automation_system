@@ -110,12 +110,3 @@ public sealed record CloneSalaryStructureRequest
     public string Name { get; init; } = string.Empty;
     public string Code { get; init; } = string.Empty;
 }
-
-/// <summary>Frontend list-response contract: { data, total, page, pageSize }.</summary>
-public sealed record SalaryStructurePageResponse
-{
-    public IReadOnlyList<SalaryStructureListItemDto> Data { get; init; } = [];
-    public int Total { get; init; }
-    public int Page { get; init; }
-    public int PageSize { get; init; }
-}

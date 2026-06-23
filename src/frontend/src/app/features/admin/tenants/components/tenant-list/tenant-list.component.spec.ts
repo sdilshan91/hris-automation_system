@@ -15,7 +15,7 @@ describe('TenantListComponent', () => {
   let fixture: ComponentFixture<TenantListComponent>;
   let httpMock: HttpTestingController;
 
-  const tenantsUrl = `${environment.apiBaseUrl.replace(/\/v1$/, '')}/admin/tenants`;
+  const tenantsUrl = `${environment.apiBaseUrl}/system/tenants`;
 
   const mockTenants: ITenantSummary[] = [
     {

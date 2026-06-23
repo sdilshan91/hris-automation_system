@@ -1394,6 +1394,150 @@ public sealed class AuthService : IAuthService
 
     #endregion
 
+    /// <summary>
+    /// CR-AUTH-001 (US-AUTH-014): completes a Microsoft SSO login for an already-validated, already-
+    /// isolation-checked <see cref="SsoIdentity"/>. The SSO callback runs with NO resolved tenant context
+    /// (full-page redirect from Microsoft), so every query here is explicitly tenant-scoped via
+    /// IgnoreQueryFilters + manual TenantId predicates.
+    /// </summary>
+    public async Task<Result<LoginResponse>> SsoSignInAsync(SsoIdentity identity, CancellationToken cancellationToken = default)
+    {
+        var tenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Subdomain == identity.Subdomain && !t.IsDeleted, cancellationToken);
+
+        if (tenant is null)
+        {
+            _logger.LogWarning("SSO sign-in rejected: HRM tenant '{Subdomain}' not found.", identity.Subdomain);
+            return Result<LoginResponse>.Failure("Workspace not found.", 404);
+        }
+
+        if (tenant.Status != TenantStatus.Active && tenant.Status != TenantStatus.Trial)
+        {
+            return Result<LoginResponse>.Failure("This workspace is not active.", 403);
+        }
+
+        var email = identity.Email.Trim().ToLowerInvariant();
+
+        // 1) Match by Entra oid (primary), else by email. We defer writing the oid link until the login is
+        //    fully authorized below, so a denied attempt never mutates the account.
+        var user = await _dbContext.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.EntraObjectId == identity.ObjectId, cancellationToken);
+
+        var needsOidLink = false;
+        if (user is null)
+        {
+            user = await _dbContext.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+            needsOidLink = user is not null;
+        }
+
+        // 2) No match → just-in-time provision (gated by the domain allow-list decided in the protocol layer).
+        if (user is null)
+        {
+            if (!identity.JitAllowed)
+            {
+                await WriteAuditLogAsync(null, "sso_login_no_account", identity.IpAddress, identity.UserAgent, cancellationToken, tenant.Id);
+                return Result<LoginResponse>.Failure("No HRM account is linked to this Microsoft identity.", 403);
+            }
+
+            user = new User
+            {
+                Id = BaseEntity.NewUuidV7(),
+                Email = email,
+                DisplayName = identity.DisplayName,
+                PasswordHash = null,
+                IsActive = true,
+                IdentityProvider = "entra",
+                EntraObjectId = identity.ObjectId,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _dbContext.Users.Add(user);
+        }
+        else if (!user.IsActive)
+        {
+            return Result<LoginResponse>.Failure("Your account is inactive.", 403);
+        }
+
+        // 3) Ensure an active tenant membership; JIT-create one (with the default role) when allowed.
+        var userTenant = await _dbContext.UserTenants
+            .IgnoreQueryFilters()
+            .Include(ut => ut.UserTenantRoles).ThenInclude(utr => utr.Role).ThenInclude(r => r.RolePermissions)
+            .FirstOrDefaultAsync(ut => ut.UserId == user.Id && ut.TenantId == tenant.Id, cancellationToken);
+
+        if (userTenant is null)
+        {
+            if (!identity.JitAllowed)
+            {
+                await WriteAuditLogAsync(user.Id, "sso_login_no_membership", identity.IpAddress, identity.UserAgent, cancellationToken, tenant.Id);
+                return Result<LoginResponse>.Failure("You do not have access to this workspace.", 403);
+            }
+
+            var role = await _dbContext.Roles
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(r => r.TenantId == tenant.Id && r.Name == identity.DefaultRole, cancellationToken);
+
+            if (role is null)
+            {
+                _logger.LogError("SSO JIT provisioning failed: default role '{Role}' missing for tenant {TenantId}.",
+                    identity.DefaultRole, tenant.Id);
+                return Result<LoginResponse>.Failure("SSO is misconfigured for this workspace (default role missing).", 500);
+            }
+
+            userTenant = new UserTenant
+            {
+                Id = BaseEntity.NewUuidV7(),
+                UserId = user.Id,
+                TenantId = tenant.Id,
+                Status = UserTenantStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            };
+            userTenant.UserTenantRoles.Add(new UserTenantRole
+            {
+                UserTenantId = userTenant.Id,
+                RoleId = role.Id,
+                AssignedAt = DateTime.UtcNow,
+                AssignedBy = "sso-jit",
+            });
+            _dbContext.UserTenants.Add(userTenant);
+            if (needsOidLink)
+            {
+                user.EntraObjectId = identity.ObjectId;
+                user.IdentityProvider ??= "entra";
+                user.UpdatedAt = DateTime.UtcNow;
+                needsOidLink = false;
+            }
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            // Reload with the role graph populated (Role + RolePermissions) for token issuance.
+            userTenant = await _dbContext.UserTenants
+                .IgnoreQueryFilters()
+                .Include(ut => ut.UserTenantRoles).ThenInclude(utr => utr.Role).ThenInclude(r => r.RolePermissions)
+                .FirstAsync(ut => ut.Id == userTenant.Id, cancellationToken);
+
+            _logger.LogInformation("SSO JIT-provisioned user {UserId} into tenant {TenantId} as {Role}.",
+                user.Id, tenant.Id, identity.DefaultRole);
+        }
+        else if (userTenant.Status != UserTenantStatus.Active)
+        {
+            return Result<LoginResponse>.Failure("Your access to this workspace is not active.", 403);
+        }
+
+        // Authorized — link the Entra oid to the matched local account now (first SSO login).
+        if (needsOidLink)
+        {
+            user.EntraObjectId = identity.ObjectId;
+            user.IdentityProvider ??= "entra";
+            user.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await WriteAuditLogAsync(user.Id, "sso_login", identity.IpAddress, identity.UserAgent, cancellationToken, tenant.Id);
+
+        return await IssueTokensAsync(user, tenant, userTenant, identity.IpAddress, identity.UserAgent, cancellationToken);
+    }
+
     #region Private Helpers
 
     /// <summary>

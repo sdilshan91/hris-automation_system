@@ -13,6 +13,7 @@ export interface IDepartment {
   departmentId: string;
   tenantId: string;
   name: string;
+  code: string;
   description: string | null;
   parentDepartmentId: string | null;
   parentDepartmentName: string | null;
@@ -29,6 +30,7 @@ export interface IDepartment {
 /** Request payload for creating a department (FR-1) */
 export interface ICreateDepartmentRequest {
   name: string;
+  code: string;
   description?: string | null;
   parentDepartmentId?: string | null;
   /** TODO(US-CHR-001): Omitted until Employee entity exists */
@@ -39,6 +41,7 @@ export interface ICreateDepartmentRequest {
 /** Request payload for updating a department (FR-1) */
 export interface IUpdateDepartmentRequest {
   name: string;
+  code: string;
   description?: string | null;
   parentDepartmentId?: string | null;
   /** TODO(US-CHR-001): Omitted until Employee entity exists */

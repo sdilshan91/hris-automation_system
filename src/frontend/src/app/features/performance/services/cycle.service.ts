@@ -31,7 +31,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class CycleService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/cycles`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/cycles`;
 
   /** All cycles for the tenant (FR-7). Tolerates a bare array or a `{ data }` page. */
   list(): Observable<ICycleSummary[]> {

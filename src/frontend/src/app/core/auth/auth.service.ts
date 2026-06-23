@@ -2,7 +2,7 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, BehaviorSubject, throwError, of } from 'rxjs';
-import { tap, catchError, switchMap, finalize, filter, take } from 'rxjs/operators';
+import { tap, catchError, switchMap, finalize, filter, take, map } from 'rxjs/operators';
 import { ToastrService } from 'ngx-toastr';
 import { environment } from '../../../environments/environment';
 import { TenantService } from '../tenant/tenant.service';
@@ -10,6 +10,7 @@ import {
   ILoginRequest,
   ILoginResponse,
   IRefreshResponse,
+  ICurrentUserResponse,
   IForgotPasswordRequest,
   IResetPasswordRequest,
   IMessageResponse,
@@ -169,6 +170,37 @@ export class AuthService {
           this.isRefreshing = false;
         })
       );
+  }
+
+  // ─── SSO callback (CR-AUTH-001) ─────────────────────────
+
+  /**
+   * Completes a Microsoft SSO login after the backend redirect lands on /auth/sso/callback.
+   * The backend has already set the httpOnly refresh cookie, so we mint the in-memory access token
+   * via the existing refresh flow, then hydrate the session from /auth/me — no tokens ever travel
+   * in the URL.
+   */
+  completeSsoLogin(): Observable<void> {
+    return this.refreshToken().pipe(
+      switchMap(() =>
+        this.http.get<ICurrentUserResponse>(`${this.apiUrl}/auth/me`, {
+          withCredentials: true,
+        })
+      ),
+      tap((me) => {
+        this.currentUser.set({
+          userId: me.userId,
+          email: me.email,
+          displayName: me.displayName,
+          mfaEnabled: me.mfaEnabled,
+        });
+        this.currentTenant.set(me.tenant);
+        this.tenantService.setTenantFromAuth(me.tenant);
+        this.roles.set(me.roles ?? []);
+        this.permissions.set(me.permissions ?? []);
+      }),
+      map(() => undefined)
+    );
   }
 
   // ─── Forgot Password ────────────────────────────────────

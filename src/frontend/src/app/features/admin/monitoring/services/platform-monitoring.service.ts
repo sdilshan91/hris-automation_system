@@ -1,26 +1,26 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IPlatformHealth,
   ITenantMonitoringDetail,
+  ITenantUsageDashboard,
   ITenantUsageFilters,
-  ITenantUsageSummary,
 } from '../models/monitoring.models';
 
 /**
  * US-ADM-002: System Admin Console platform-monitoring service.
  *
- * Codes to the System Admin backend contract rooted at `/api/admin/monitoring`
- * (the platform/system context) — NOT the tenant-scoped `/api/v1` namespace. We
- * derive the `/api` root by stripping the trailing `/v1` from
- * `environment.apiBaseUrl`, matching the sibling US-ADM-001 service.
+ * Codes to the System Admin backend contract (AdminMonitoringController), rooted
+ * at `/api/v1/system/monitoring` — the `/v1/system` namespace. We append to
+ * `environment.apiBaseUrl` (`…/api/v1`) verbatim.
  *
- * Endpoints:
- *   GET /api/admin/monitoring/health          platform health rollup (AC-1)
- *   GET /api/admin/monitoring/tenants         per-tenant usage summaries (AC-2/3)
- *   GET /api/admin/monitoring/tenants/{id}    tenant detail (AC-4)
+ * Endpoints (must match AdminMonitoringController exactly):
+ *   GET /api/v1/system/monitoring/health         platform health rollup (AC-1)
+ *   GET /api/v1/system/monitoring/tenant-usage   per-tenant usage summaries (AC-2/3)
+ *   GET /api/v1/system/monitoring/tenants/{id}   tenant detail (AC-4)
  *
  * Envelope: the global apiEnvelopeInterceptor strips the `ApiResponse<T>`
  * wrapper, so these methods consume BARE payloads. All requests use
@@ -30,11 +30,8 @@ import {
 export class PlatformMonitoringService {
   private readonly http = inject(HttpClient);
 
-  /** `/api` root (strip the tenant `/v1` suffix — admin console is system-scoped). */
-  private readonly monitoringUrl = `${environment.apiBaseUrl.replace(
-    /\/v1$/,
-    '',
-  )}/admin/monitoring`;
+  /** `/api/v1/system/monitoring` — the system-admin monitoring namespace. */
+  private readonly monitoringUrl = `${environment.apiBaseUrl}/system/monitoring`;
 
   /** AC-1/FR-1/FR-6: platform health rollup. */
   getHealth(): Observable<IPlatformHealth> {
@@ -43,10 +40,15 @@ export class PlatformMonitoringService {
     });
   }
 
-  /** AC-2/FR-2/FR-4: per-tenant usage summaries, optionally filtered. */
+  /**
+   * AC-2/FR-2/FR-4: the tenant-usage dashboard, optionally filtered. The BE wraps
+   * the rows in a `TenantUsageDashboardDto` object (`{ tenants, quotaBreachQueue,
+   * attentionRequiredQueue, attentionQueueStatus, generatedAtUtc }`) — NOT a bare
+   * array. Read `.tenants` for the table.
+   */
   getTenantUsage(
     filters: ITenantUsageFilters = {},
-  ): Observable<ITenantUsageSummary[]> {
+  ): Observable<ITenantUsageDashboard> {
     let params = new HttpParams();
     if (filters.search) params = params.set('search', filters.search);
     if (filters.status) params = params.set('status', filters.status);
@@ -55,17 +57,33 @@ export class PlatformMonitoringService {
     if (filters.createdFrom) params = params.set('createdFrom', filters.createdFrom);
     if (filters.createdTo) params = params.set('createdTo', filters.createdTo);
 
-    return this.http.get<ITenantUsageSummary[]>(`${this.monitoringUrl}/tenants`, {
+    return this.http.get<ITenantUsageDashboard>(`${this.monitoringUrl}/tenant-usage`, {
       params,
       withCredentials: true,
     });
   }
 
-  /** AC-4: a single tenant's monitoring detail. */
+  /**
+   * AC-4: a single tenant's monitoring detail.
+   *
+   * The BE serializes the tenant lifecycle status as a PascalCase enum string
+   * ("Active", "Suspended", "Terminating", …). The detail view's lifecycle
+   * quick-action gating (canSuspend/canTerminate/… in the lifecycle module) and
+   * its `status === 'terminated'` template checks are case-sensitive against
+   * LOWERCASE values. Normalise `status` to lowercase here at the service
+   * boundary so those gates keep working — without touching the shared lifecycle
+   * contract. Every other field is passed through verbatim.
+   */
   getTenantDetail(tenantId: string): Observable<ITenantMonitoringDetail> {
-    return this.http.get<ITenantMonitoringDetail>(
-      `${this.monitoringUrl}/tenants/${tenantId}`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<ITenantMonitoringDetail>(`${this.monitoringUrl}/tenants/${tenantId}`, {
+        withCredentials: true,
+      })
+      .pipe(
+        map((detail) => ({
+          ...detail,
+          status: (detail.status ?? '').toLowerCase(),
+        })),
+      );
   }
 }

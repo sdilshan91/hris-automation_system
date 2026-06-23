@@ -16,7 +16,7 @@ describe('InviteUsersModalComponent', () => {
   let fixture: ComponentFixture<InviteUsersModalComponent>;
   let httpMock: HttpTestingController;
 
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const mockRoles: IAssignableRole[] = [
     { id: 'r-1', name: 'Employee', description: 'Standard access' },
