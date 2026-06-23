@@ -193,9 +193,12 @@ export class VacancyService {
     if (Array.isArray(res)) {
       return { data: res, total: res.length, page: 1, pageSize: res.length };
     }
+    // New backend envelope is `{ items, totalCount, ... }`; the old one was
+    // `{ data, total, ... }`. Read items first, fall back to data, then [].
+    const data = res?.items ?? res?.data ?? [];
     return {
-      data: res?.data ?? [],
-      total: res?.total ?? 0,
+      data,
+      total: res?.totalCount ?? res?.total ?? data.length,
       page: res?.page ?? 1,
       pageSize: res?.pageSize ?? 0,
     };

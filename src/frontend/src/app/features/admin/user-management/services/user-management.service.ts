@@ -41,8 +41,8 @@ import {
 @Injectable({ providedIn: 'root' })
 export class UserManagementService {
   private readonly http = inject(HttpClient);
-  private readonly usersUrl = `${environment.apiBaseUrl}/users`;
-  private readonly invitationsUrl = `${environment.apiBaseUrl}/invitations`;
+  private readonly usersUrl = `${environment.apiBaseUrl}/tenant/users`;
+  private readonly invitationsUrl = `${environment.apiBaseUrl}/tenant/users/invitations`;
 
   // ─── User list & detail (AC-1, FR-1, FR-6) ───────────────
 

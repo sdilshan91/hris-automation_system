@@ -33,7 +33,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class PerformanceDashboardService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/dashboard`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/dashboard`;
 
   /**
    * Every overview widget in one call (AC-1/AC-2/NFR-1): scope, filter option lists,

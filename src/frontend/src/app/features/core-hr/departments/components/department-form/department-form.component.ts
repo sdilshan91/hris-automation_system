@@ -90,6 +90,33 @@ import {
           }
         </div>
 
+        <!-- Department Code (FR-2: unique within tenant) -->
+        <div class="form-section">
+          <label class="label-notion" for="dept-code">
+            Department Code <span class="text-red-500" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="dept-code"
+            type="text"
+            formControlName="code"
+            class="input-notion"
+            placeholder="e.g. ENG-01"
+            maxlength="50"
+            autocomplete="off"
+          />
+          @if (form.get('code')?.invalid && form.get('code')?.touched) {
+            <p class="field-error">
+              @if (form.get('code')?.hasError('required')) {
+                Code is required.
+              } @else if (form.get('code')?.hasError('maxlength')) {
+                Code cannot exceed 50 characters.
+              } @else if (form.get('code')?.hasError('pattern')) {
+                Code may only contain letters, digits, hyphens, and underscores.
+              }
+            </p>
+          }
+        </div>
+
         <!-- Description -->
         <div class="form-section">
           <label class="label-notion" for="dept-description">
@@ -183,6 +210,7 @@ import {
           </button>
           <button
             type="submit"
+            data-testid="department-submit"
             class="btn-primary"
             [disabled]="isSaving() || form.invalid || form.pristine"
           >
@@ -398,6 +426,14 @@ export class DepartmentFormComponent implements OnInit {
         dept?.name ?? '',
         [Validators.required, Validators.maxLength(150)],
       ],
+      code: [
+        dept?.code ?? '',
+        [
+          Validators.required,
+          Validators.maxLength(50),
+          Validators.pattern(/^[A-Za-z0-9\-_]+$/),
+        ],
+      ],
       description: [dept?.description ?? ''],
       parentDepartmentId: [dept?.parentDepartmentId ?? null],
       isActive: [dept?.isActive ?? true],
@@ -417,6 +453,7 @@ export class DepartmentFormComponent implements OnInit {
       // Edit mode
       const request: IUpdateDepartmentRequest = {
         name: formValue.name.trim(),
+        code: formValue.code.trim(),
         description: formValue.description?.trim() || null,
         parentDepartmentId: formValue.parentDepartmentId || null,
         isActive: formValue.isActive,
@@ -439,6 +476,7 @@ export class DepartmentFormComponent implements OnInit {
       // Create mode
       const request: ICreateDepartmentRequest = {
         name: formValue.name.trim(),
+        code: formValue.code.trim(),
         description: formValue.description?.trim() || null,
         parentDepartmentId: formValue.parentDepartmentId || null,
         isActive: formValue.isActive,

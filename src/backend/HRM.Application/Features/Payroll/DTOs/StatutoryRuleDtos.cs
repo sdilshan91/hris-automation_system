@@ -160,12 +160,3 @@ public sealed record StatutoryLineDto
     public bool IsEmployerContribution { get; init; }
     public string Basis { get; init; } = string.Empty;
 }
-
-/// <summary>Frontend list-response contract: { data, total, page, pageSize }.</summary>
-public sealed record StatutoryRulePageResponse
-{
-    public IReadOnlyList<StatutoryRuleListItemDto> Data { get; init; } = [];
-    public int Total { get; init; }
-    public int Page { get; init; }
-    public int PageSize { get; init; }
-}

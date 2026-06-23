@@ -88,6 +88,30 @@ describe('OnboardingTemplateService', () => {
     expect(result![1].isActive).toBeFalse();
   });
 
+  it('list reads the new { items, totalCount } page envelope', () => {
+    let result: IOnboardingTemplateSummary[] | undefined;
+    service.list().subscribe((r) => (result = r));
+
+    httpMock.expectOne(base).flush({
+      items: [summary(), summary({ id: 'tpl-2', isActive: false })],
+      totalCount: 2,
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result!.length).toBe(2);
+    expect(result![1].isActive).toBeFalse();
+  });
+
+  it('list still tolerates the legacy { data } envelope', () => {
+    let result: IOnboardingTemplateSummary[] | undefined;
+    service.list().subscribe((r) => (result = r));
+
+    httpMock.expectOne(base).flush({ data: [summary()] });
+
+    expect(result!.length).toBe(1);
+  });
+
   // ─── get ───────────────────────────────────────────────────
 
   it('get GETs a single template by id', () => {

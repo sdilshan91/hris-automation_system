@@ -34,7 +34,7 @@ public sealed class OnboardingTemplatesController : ControllerBase
     /// </summary>
     [HttpGet]
     [RequirePermission("Onboarding.View")]
-    [ProducesResponseType(typeof(ApiResponse<OnboardingTemplatePageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<OnboardingTemplateListItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] bool? isActive,
         [FromQuery] string? search,
@@ -47,16 +47,7 @@ public sealed class OnboardingTemplatesController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        var paged = result.Value!;
-        var response = new OnboardingTemplatePageResponse
-        {
-            Data = paged.Items,
-            Total = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize,
-        };
-
-        return Ok(ApiResponse<OnboardingTemplatePageResponse>.Ok(response));
+        return Ok(ApiResponse<PagedResult<OnboardingTemplateListItemDto>>.Ok(result.Value!));
     }
 
     /// <summary>
@@ -171,16 +162,4 @@ public sealed class OnboardingTemplatesController : ControllerBase
 
         return Ok(ApiResponse<OnboardingTemplateDto>.Ok(result.Value!));
     }
-}
-
-/// <summary>
-/// Frontend list-response contract: { data, total, page, pageSize }. A thin projection over the
-/// internal <see cref="PagedResult{T}"/> so the API surface matches what the onboarding UI consumes.
-/// </summary>
-public sealed record OnboardingTemplatePageResponse
-{
-    public IReadOnlyList<OnboardingTemplateListItemDto> Data { get; init; } = [];
-    public int Total { get; init; }
-    public int Page { get; init; }
-    public int PageSize { get; init; }
 }

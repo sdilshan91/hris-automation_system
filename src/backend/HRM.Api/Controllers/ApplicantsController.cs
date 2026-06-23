@@ -33,11 +33,11 @@ public sealed class ApplicantsController : ControllerBase
     /// <summary>
     /// GET /api/v1/recruitment/vacancies/{vacancyId}/applicants
     /// Lists applicants for a vacancy (paged). Recruiter-facing — requires Recruitment.View.
-    /// Returns the contract shape { data, total, page, pageSize }.
+    /// Returns the canonical paged shape { items, page, pageSize, totalCount, totalPages }.
     /// </summary>
     [HttpGet]
     [RequirePermission("Recruitment.View")]
-    [ProducesResponseType(typeof(ApiResponse<ApplicantPageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<ApplicantListItemDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(
         Guid vacancyId,
@@ -51,16 +51,7 @@ public sealed class ApplicantsController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        var paged = result.Value!;
-        var response = new ApplicantPageResponse
-        {
-            Data = paged.Items,
-            Total = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize,
-        };
-
-        return Ok(ApiResponse<ApplicantPageResponse>.Ok(response));
+        return Ok(ApiResponse<PagedResult<ApplicantListItemDto>>.Ok(result.Value!));
     }
 
     /// <summary>
@@ -114,16 +105,4 @@ public sealed class ApplicantsController : ControllerBase
         return StatusCode(StatusCodes.Status201Created,
             ApiResponse<ApplicationConfirmationDto>.Ok(result.Value!, "Application submitted successfully."));
     }
-}
-
-/// <summary>
-/// Frontend list-response contract: { data, total, page, pageSize }. Mirrors VacancyPageResponse so the
-/// recruitment UI consumes a consistent shape.
-/// </summary>
-public sealed record ApplicantPageResponse
-{
-    public IReadOnlyList<ApplicantListItemDto> Data { get; init; } = [];
-    public int Total { get; init; }
-    public int Page { get; init; }
-    public int PageSize { get; init; }
 }

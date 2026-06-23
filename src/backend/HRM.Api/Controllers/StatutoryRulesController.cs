@@ -30,7 +30,7 @@ public sealed class StatutoryRulesController : ControllerBase
     /// <summary>GET — lists statutory rules, paged + filterable by type / fiscal year / active (default 25 / max 100).</summary>
     [HttpGet]
     [RequirePermission("Payroll.Configure")]
-    [ProducesResponseType(typeof(ApiResponse<StatutoryRulePageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<StatutoryRuleListItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] StatutoryRuleType? ruleType,
         [FromQuery] string? fiscalYear,
@@ -45,14 +45,7 @@ public sealed class StatutoryRulesController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        var paged = result.Value!;
-        return Ok(ApiResponse<StatutoryRulePageResponse>.Ok(new StatutoryRulePageResponse
-        {
-            Data = paged.Items,
-            Total = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize,
-        }));
+        return Ok(ApiResponse<PagedResult<StatutoryRuleListItemDto>>.Ok(result.Value!));
     }
 
     /// <summary>GET — distinct fiscal years that have statutory rules, newest-first (FR-4, FY selector).</summary>

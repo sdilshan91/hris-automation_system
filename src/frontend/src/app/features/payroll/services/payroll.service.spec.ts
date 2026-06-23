@@ -78,7 +78,17 @@ describe('PayrollService', () => {
       expect(result).toEqual([mockComponent]);
     });
 
-    it('tolerates a { data } envelope', () => {
+    it('reads the new { items, totalCount } page envelope', () => {
+      let result: ISalaryComponent[] | undefined;
+      service.listComponents().subscribe((r) => (result = r));
+
+      httpMock
+        .expectOne(componentsUrl)
+        .flush({ items: [mockComponent], totalCount: 1, page: 1, pageSize: 20 });
+      expect(result).toEqual([mockComponent]);
+    });
+
+    it('still tolerates the legacy { data } envelope', () => {
       let result: ISalaryComponent[] | undefined;
       service.listComponents().subscribe((r) => (result = r));
 
@@ -214,7 +224,17 @@ describe('PayrollService', () => {
       expect(result).toEqual([mockStructure]);
     });
 
-    it('tolerates a { data } envelope', () => {
+    it('reads the new { items, totalCount } page envelope', () => {
+      let result: ISalaryStructure[] | undefined;
+      service.listStructures().subscribe((r) => (result = r));
+
+      httpMock
+        .expectOne(structuresUrl)
+        .flush({ items: [mockStructure], totalCount: 1, page: 1, pageSize: 20 });
+      expect(result).toEqual([mockStructure]);
+    });
+
+    it('still tolerates the legacy { data } envelope', () => {
       let result: ISalaryStructure[] | undefined;
       service.listStructures().subscribe((r) => (result = r));
 

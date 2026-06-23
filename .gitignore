@@ -47,3 +47,8 @@ TestResults/
 # Serilog rolling log files
 Logs/
 log-*.txt
+
+# Test run artifacts
+test-results/
+playwright-report/
+.playwright-artifacts/

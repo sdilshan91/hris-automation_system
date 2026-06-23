@@ -28,7 +28,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class ReviewSignoffService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/sign-off`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/sign-off`;
 
   /** Load the full sign-off record for a review (drives every US-PRF-006 screen). */
   getSignoff(reviewId: string): Observable<IReviewSignoff> {

@@ -60,6 +60,22 @@ public static class DependencyInjection
         // Auth service
         services.AddScoped<IAuthService, AuthService>();
 
+        // CR-AUTH-001 Increment 2: Microsoft Entra (O365) OIDC SSO.
+        services.Configure<EntraSsoOptions>(configuration.GetSection(EntraSsoOptions.SectionName));
+        services.AddHttpClient("EntraSso");
+        // ConfigurationManager caches the Entra discovery document + JWKS and auto-refreshes; one shared
+        // singleton across requests. Built from the configured authority's well-known metadata endpoint.
+        services.AddSingleton(sp =>
+        {
+            var entra = configuration.GetSection(EntraSsoOptions.SectionName).Get<EntraSsoOptions>() ?? new EntraSsoOptions();
+            var metadataAddress = $"{entra.Authority.TrimEnd('/')}/.well-known/openid-configuration";
+            return new Microsoft.IdentityModel.Protocols.ConfigurationManager<Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectConfiguration>(
+                metadataAddress,
+                new Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectConfigurationRetriever(),
+                new Microsoft.IdentityModel.Protocols.HttpDocumentRetriever());
+        });
+        services.AddScoped<IEntraSsoService, EntraSsoService>();
+
         // Lockout notification service (US-AUTH-010 FR-8)
         services.AddScoped<ILockoutNotificationService, LockoutNotificationService>();
 

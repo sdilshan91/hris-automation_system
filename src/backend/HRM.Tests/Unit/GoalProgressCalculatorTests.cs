@@ -22,14 +22,14 @@ public sealed class GoalProgressCalculatorTests
     public void WeightedOverallCompletion_weights_the_average_by_goal_weight()
     {
         // 50%*100 + 30%*50 + 20%*0 = 50 + 15 + 0 = 65 over total weight 100.
-        var goals = new[] { (Weight: 50, LatestProgressPct: 100), (30, 50), (20, 0) };
+        var goals = new[] { (Weight: 50, LatestProgressPct: 100), (Weight: 30, LatestProgressPct: 50), (Weight: 20, LatestProgressPct: 0) };
         GoalProgressCalculator.WeightedOverallCompletion(goals).Should().Be(65);
     }
 
     [Fact]
     public void WeightedOverallCompletion_equal_weights_is_arithmetic_mean()
     {
-        var goals = new[] { (Weight: 25, LatestProgressPct: 80), (25, 40), (25, 20), (25, 60) };
+        var goals = new[] { (Weight: 25, LatestProgressPct: 80), (Weight: 25, LatestProgressPct: 40), (Weight: 25, LatestProgressPct: 20), (Weight: 25, LatestProgressPct: 60) };
         GoalProgressCalculator.WeightedOverallCompletion(goals).Should().Be(50);
     }
 
@@ -37,14 +37,14 @@ public sealed class GoalProgressCalculatorTests
     public void WeightedOverallCompletion_a_heavier_goal_dominates()
     {
         // 90%*100 + 10%*0 = 90.
-        var goals = new[] { (Weight: 90, LatestProgressPct: 100), (10, 0) };
+        var goals = new[] { (Weight: 90, LatestProgressPct: 100), (Weight: 10, LatestProgressPct: 0) };
         GoalProgressCalculator.WeightedOverallCompletion(goals).Should().Be(90);
     }
 
     [Fact]
     public void WeightedOverallCompletion_zero_total_weight_falls_back_to_mean()
     {
-        var goals = new[] { (Weight: 0, LatestProgressPct: 100), (0, 0) };
+        var goals = new[] { (Weight: 0, LatestProgressPct: 100), (Weight: 0, LatestProgressPct: 0) };
         GoalProgressCalculator.WeightedOverallCompletion(goals).Should().Be(50);
     }
 

@@ -41,7 +41,7 @@ export class WorkflowService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/workflows`;
   private readonly rolesUrl = `${environment.apiBaseUrl}/tenant/roles`;
-  private readonly usersUrl = `${environment.apiBaseUrl}/users`;
+  private readonly usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   // ─── Workflow definitions ──────────────────────────────────
 

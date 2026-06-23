@@ -7,7 +7,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ToastrService } from 'ngx-toastr';
 import { AuthService } from '../../../../core/auth/auth.service';
@@ -58,7 +58,7 @@ type FilterFacet = 'cycleIds' | 'departmentIds' | 'grades' | 'employmentTypes' |
 @Component({
   selector: 'app-performance-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [

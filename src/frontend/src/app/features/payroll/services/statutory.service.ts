@@ -101,12 +101,20 @@ export class StatutoryService {
     );
   }
 
-  /** Accept either a bare array or a `{ data }` page; default to []. */
-  private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
+  /**
+   * Accept a bare array, the new `{ items }` page envelope, or the legacy
+   * `{ data }` one; default to []. Items first, then data, then [].
+   */
+  private toArray<T>(
+    res: T[] | { items?: T[]; data?: T[] } | null | undefined,
+  ): T[] {
     if (Array.isArray(res)) {
       return res;
     }
-    if (res && Array.isArray((res as { data: T[] }).data)) {
+    if (res && Array.isArray((res as { items?: T[] }).items)) {
+      return (res as { items: T[] }).items;
+    }
+    if (res && Array.isArray((res as { data?: T[] }).data)) {
       return (res as { data: T[] }).data;
     }
     return [];

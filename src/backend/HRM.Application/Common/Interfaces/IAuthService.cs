@@ -9,6 +9,14 @@ namespace HRM.Application.Common.Interfaces;
 public interface IAuthService
 {
     Task<Result<LoginResponse>> LoginAsync(string email, string password, string? mfaCode, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// CR-AUTH-001 (US-AUTH-014): completes a Microsoft SSO login for an already-validated, already-isolation-
+    /// checked <see cref="SsoIdentity"/>. Resolves the tenant, matches the user by Entra <c>oid</c> (then email,
+    /// linking the oid), optionally just-in-time provisions a membership with the default role, and mints the
+    /// application JWT (+ refresh) by reusing the same issuance path as local login.
+    /// </summary>
+    Task<Result<LoginResponse>> SsoSignInAsync(SsoIdentity identity, CancellationToken cancellationToken = default);
     Task<Result<RefreshTokenResponse>> RefreshTokenAsync(string refreshToken, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<Result> LogoutAsync(string refreshToken, CancellationToken cancellationToken = default);
     Task<Result> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);

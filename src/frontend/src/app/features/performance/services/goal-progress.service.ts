@@ -31,7 +31,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class GoalProgressService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/goal-progress`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/goal-progress`;
 
   /** AC-1: the employee's "My Goals" screen (cycle window, overall %, goal cards). */
   getMyGoals(): Observable<IMyGoals> {

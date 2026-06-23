@@ -34,7 +34,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class RecommendationService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/recommendations`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/recommendations`;
 
   /** BR-1: completed cycles (published final ratings) — the cycle picker. */
   getCompletedCycles(): Observable<ICompletedCycleOption[]> {

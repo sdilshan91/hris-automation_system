@@ -42,7 +42,7 @@ export type IAttachmentUploadEvent =
 @Injectable({ providedIn: 'root' })
 export class SelfAssessmentService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/self-assessment`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/self-assessments`;
 
   /**
    * Load the authenticated employee's self-assessment for the active cycle: the

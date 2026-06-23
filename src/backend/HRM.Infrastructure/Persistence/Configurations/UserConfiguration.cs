@@ -28,6 +28,18 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.PasswordHash)
             .HasMaxLength(500);
 
+        // CR-AUTH-001: Entra SSO identity link. EntraObjectId is unique when present (filtered unique
+        // index — many local users have null and must not collide).
+        builder.Property(u => u.EntraObjectId)
+            .HasMaxLength(64);
+
+        builder.HasIndex(u => u.EntraObjectId)
+            .IsUnique()
+            .HasFilter("entra_object_id IS NOT NULL");
+
+        builder.Property(u => u.IdentityProvider)
+            .HasMaxLength(20);
+
         builder.Property(u => u.MfaSecret)
             .HasMaxLength(200);
 

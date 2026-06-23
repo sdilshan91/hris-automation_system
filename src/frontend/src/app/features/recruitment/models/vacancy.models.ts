@@ -155,12 +155,27 @@ export interface IVacancyStatusRequest {
   status: VacancyStatus;
 }
 
-/** Paginated response wrapper from the backend (mirrors Core HR IPaginatedResponse). */
+/**
+ * Paginated response wrapper from the backend.
+ *
+ * The canonical (normalized) shape the service hands callers is `{ data, total }`.
+ * The raw envelope from the backend is now `{ items, totalCount, page, pageSize,
+ * totalPages }`; the previous contract was `{ data, total, page, pageSize }`. Both
+ * the new and old field names are kept optional so `normalizePage` can tolerate
+ * either wire shape (items/data, totalCount/total) during the rollout window.
+ */
 export interface IVacancyPage {
-  data: IVacancy[];
-  total: number;
+  /** New backend field (preferred). */
+  items?: IVacancy[];
+  /** Legacy backend field + canonical normalized field. */
+  data?: IVacancy[];
+  /** New backend field (preferred). */
+  totalCount?: number;
+  /** Legacy backend field + canonical normalized field. */
+  total?: number;
   page: number;
   pageSize: number;
+  totalPages?: number;
 }
 
 /**

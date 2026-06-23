@@ -88,6 +88,16 @@ export class LoginComponent implements OnInit {
       this.errorMessage.set(
         'Microsoft sign-in is being configured and is not available yet. Please sign in with your email and password.'
       );
+    } else if (ssoError === 'access_denied') {
+      // CR-AUTH-001: fail-closed — the Microsoft account is not allowed into this workspace, or has no
+      // access. Deliberately generic (no tenant/account enumeration).
+      this.errorMessage.set(
+        "This Microsoft account isn't allowed to sign in to this workspace. Please use your email and password, or contact your administrator."
+      );
+    } else if (ssoError === 'sso_failed') {
+      this.errorMessage.set(
+        "We couldn't complete Microsoft sign-in. Please try again, or sign in with your email and password."
+      );
     }
   }
 

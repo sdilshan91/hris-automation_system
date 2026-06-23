@@ -34,7 +34,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class Feedback360Service {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/performance/feedback-360`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/feedback-360`;
 
   /**
    * Reviewer-nomination screen for an employee in the active 360-enabled cycle (AC-1):

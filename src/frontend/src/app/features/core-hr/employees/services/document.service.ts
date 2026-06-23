@@ -20,7 +20,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class DocumentService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/employees`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
   /**
    * List all documents for an employee.

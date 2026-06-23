@@ -20,7 +20,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class BulkImportService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/employees/import`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/employees/import`;
 
   // ─── Step 1: Download template ────────────────────────────
 

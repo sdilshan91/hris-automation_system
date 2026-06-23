@@ -73,6 +73,15 @@ export const appRoutes: Routes = [
             './features/auth/reset-password/reset-password.component'
           ).then((m) => m.ResetPasswordComponent),
       },
+      {
+        // CR-AUTH-001: Microsoft SSO redirect landing route. The user is not yet authenticated in the
+        // SPA on arrival (noAuthGuard passes); completeSsoLogin() then navigates to the returnUrl.
+        path: 'sso/callback',
+        loadComponent: () =>
+          import('./features/auth/sso-callback/sso-callback.component').then(
+            (m) => m.SsoCallbackComponent
+          ),
+      },
       { path: '', redirectTo: 'login', pathMatch: 'full' },
     ],
   },

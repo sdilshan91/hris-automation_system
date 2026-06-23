@@ -23,7 +23,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class OrgTreeService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/org-tree`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/org-tree`;
 
   /**
    * Fetch org tree nodes for the given view and optional subtree root.

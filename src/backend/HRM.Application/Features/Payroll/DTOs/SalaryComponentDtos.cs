@@ -1,3 +1,4 @@
+using HRM.Application.DTOs;
 using HRM.Domain.Enums;
 
 namespace HRM.Application.Features.Payroll.DTOs;
@@ -71,21 +72,3 @@ public sealed record UpdateSalaryComponentRequest
     public int ProcessingOrder { get; init; }
 }
 
-/// <summary>Frontend list-response contract: { data, total, page, pageSize }.</summary>
-public sealed record SalaryComponentPageResponse
-{
-    public IReadOnlyList<SalaryComponentListItemDto> Data { get; init; } = [];
-    public int Total { get; init; }
-    public int Page { get; init; }
-    public int PageSize { get; init; }
-}
-
-/// <summary>Generic paged result envelope for payroll list endpoints (mirrors the recruitment pattern).</summary>
-public sealed record PagedResult<T>
-{
-    public IReadOnlyList<T> Items { get; init; } = [];
-    public int Page { get; init; }
-    public int PageSize { get; init; }
-    public int TotalCount { get; init; }
-    public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling(TotalCount / (double)PageSize);
-}

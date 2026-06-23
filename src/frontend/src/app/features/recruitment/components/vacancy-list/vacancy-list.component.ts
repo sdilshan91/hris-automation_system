@@ -361,7 +361,7 @@ export class VacancyListComponent implements OnInit {
       .listVacancies(status ? { status } : {})
       .subscribe({
         next: (page) => {
-          this.vacancies.set(page.data);
+          this.vacancies.set(page.data ?? []);
           this.loading.set(false);
         },
         error: (err: HttpErrorResponse) => {
