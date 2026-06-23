@@ -20,7 +20,7 @@ describe('UserListComponent', () => {
   let fixture: ComponentFixture<UserListComponent>;
   let httpMock: HttpTestingController;
 
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const mockRoles: IAssignableRole[] = [
     { id: 'r-1', name: 'HR Officer', description: 'HR ops' },
@@ -184,7 +184,7 @@ describe('UserListComponent', () => {
     flushInit();
     component.selectTab('invitations');
     const req = httpMock.expectOne(
-      `${environment.apiBaseUrl}/invitations`
+      `${environment.apiBaseUrl}/tenant/users/invitations`
     );
     expect(req.request.method).toBe('GET');
     req.flush([]);

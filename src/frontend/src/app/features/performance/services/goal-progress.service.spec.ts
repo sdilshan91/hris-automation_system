@@ -16,7 +16,7 @@ import {
 describe('GoalProgressService (US-PRF-009)', () => {
   let service: GoalProgressService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/goal-progress`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/goal-progress`;
 
   const mockMyGoals: IMyGoals = {
     cycleId: 'c-1',

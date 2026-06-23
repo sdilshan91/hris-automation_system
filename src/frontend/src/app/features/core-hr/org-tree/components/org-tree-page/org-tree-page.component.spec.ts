@@ -139,7 +139,7 @@ describe('OrgTreePageComponent', () => {
   let fixture: ComponentFixture<OrgTreePageComponent>;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/org-tree`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/org-tree`;
 
   const mockNodes: IOrgTreeNode[] = [
     {

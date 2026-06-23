@@ -21,7 +21,7 @@ describe('EmployeeService', () => {
   let service: EmployeeService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/employees`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
   const mockEmployee: IEmployee = {
     employeeId: 'emp-1',

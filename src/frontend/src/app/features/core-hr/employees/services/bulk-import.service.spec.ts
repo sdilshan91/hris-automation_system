@@ -13,7 +13,7 @@ describe('BulkImportService', () => {
   let service: BulkImportService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/employees/import`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/employees/import`;
 
   beforeEach(() => {
     TestBed.configureTestingModule({

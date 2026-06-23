@@ -18,8 +18,8 @@ describe('UserManagementService', () => {
   let service: UserManagementService;
   let httpMock: HttpTestingController;
 
-  const usersUrl = `${environment.apiBaseUrl}/users`;
-  const invitationsUrl = `${environment.apiBaseUrl}/invitations`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
+  const invitationsUrl = `${environment.apiBaseUrl}/tenant/users/invitations`;
 
   const mockList: IUserListResponse = {
     items: [

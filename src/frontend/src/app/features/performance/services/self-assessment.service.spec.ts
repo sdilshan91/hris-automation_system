@@ -16,7 +16,7 @@ import {
 describe('SelfAssessmentService', () => {
   let service: SelfAssessmentService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/self-assessment`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/self-assessments`;
 
   const mockAssessment: ISelfAssessment = {
     id: 'sa-1',

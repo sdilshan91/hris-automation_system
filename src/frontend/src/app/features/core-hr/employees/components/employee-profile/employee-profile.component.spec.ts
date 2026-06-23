@@ -34,7 +34,7 @@ describe('EmployeeProfileComponent', () => {
   let httpMock: HttpTestingController;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
-  const profileUrl = `${environment.apiBaseUrl}/employees/emp-1/profile`;
+  const profileUrl = `${environment.apiBaseUrl}/tenant/employees/emp-1/profile`;
   const customFieldsUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
 
   /** Minimal profile fixture matching IEmployeeProfile */
@@ -330,7 +330,7 @@ describe('EmployeeProfileComponent', () => {
       tick();
 
       const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/sections/personal-info`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/personal-info`
       );
       expect(patchReq.request.method).toBe('PATCH');
       expect(patchReq.request.body.xmin).toBe('12345');
@@ -357,7 +357,7 @@ describe('EmployeeProfileComponent', () => {
       tick();
 
       const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/sections/personal-info`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/personal-info`
       );
       patchReq.flush(
         { message: 'Forbidden' },
@@ -395,7 +395,7 @@ describe('EmployeeProfileComponent', () => {
       tick();
 
       const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/sections/contact`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/contact`
       );
       expect(patchReq.request.method).toBe('PATCH');
 
@@ -418,7 +418,7 @@ describe('EmployeeProfileComponent', () => {
       tick();
 
       const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/sections/personal-info`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/personal-info`
       );
       expect(patchReq.request.body.xmin).toBe('12345');
       patchReq.flush({ xmin: '12346', profile: { ...mockProfile, xmin: '12346' } });
@@ -574,7 +574,7 @@ describe('EmployeeProfileComponent', () => {
       expect(component.isLoadingTransitions()).toBeTrue();
 
       const transReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       );
       expect(transReq.request.method).toBe('GET');
       transReq.flush([
@@ -594,7 +594,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       const transReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       );
       // Backend returns only one transition
       transReq.flush([
@@ -613,7 +613,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([]);
       tick();
 
@@ -628,7 +628,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([
         { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
       ]);
@@ -652,7 +652,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([
         { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access'] },
       ]);
@@ -675,7 +675,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([
         { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
       ]);
@@ -700,7 +700,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([
         { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
       ]);
@@ -715,7 +715,7 @@ describe('EmployeeProfileComponent', () => {
       component.submitStatusChange();
 
       const statusReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status`
       );
       expect(statusReq.request.method).toBe('POST');
       expect(statusReq.request.headers.has('Idempotency-Key')).toBeTrue();
@@ -740,7 +740,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([
         { targetStatus: 'probation', label: 'Probation', sideEffects: [] },
       ]);
@@ -755,7 +755,7 @@ describe('EmployeeProfileComponent', () => {
       component.submitStatusChange();
 
       const statusReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status`
       );
       statusReq.flush(
         { message: 'Invalid status transition. Terminated employees cannot be moved to probation.' },
@@ -776,7 +776,7 @@ describe('EmployeeProfileComponent', () => {
 
       component.openStatusChangeModal();
       httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/status/transitions`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       ).flush([
         { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access', 'Pause leave accrual'] },
         { targetStatus: 'terminated', label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
@@ -879,7 +879,7 @@ describe('EmployeeProfileComponent', () => {
       tick(350);
 
       const searchReq = httpMock.expectOne(
-        (r) => r.url === `${environment.apiBaseUrl}/employees` &&
+        (r) => r.url === `${environment.apiBaseUrl}/tenant/employees` &&
           r.params.get('search') === 'Al' &&
           r.params.get('statuses') === 'active'
       );
@@ -917,7 +917,7 @@ describe('EmployeeProfileComponent', () => {
       component.assignManagerToEmployee('mgr-1');
 
       const req = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/manager`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/manager`
       );
       expect(req.request.method).toBe('POST');
       expect(req.request.body.managerEmployeeId).toBe('mgr-1');
@@ -947,7 +947,7 @@ describe('EmployeeProfileComponent', () => {
       component.assignManagerToEmployee('emp-1');
 
       const req = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/manager`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/manager`
       );
       req.flush(
         { message: 'Circular reporting chain detected. Employee A cannot report to Employee B because Employee B already reports to Employee A.' },
@@ -978,7 +978,7 @@ describe('EmployeeProfileComponent', () => {
       component.assignManagerToEmployee(null);
 
       const req = httpMock.expectOne(
-        `${environment.apiBaseUrl}/employees/emp-1/manager`
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/manager`
       );
       expect(req.request.body.managerEmployeeId).toBeNull();
       req.flush({ profile: { ...mockProfile, reportingManagerId: null, reportingManagerName: null } });

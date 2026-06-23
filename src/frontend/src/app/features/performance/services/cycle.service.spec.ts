@@ -19,7 +19,7 @@ import {
 describe('CycleService', () => {
   let service: CycleService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/cycles`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/cycles`;
 
   const summaries: ICycleSummary[] = [
     {

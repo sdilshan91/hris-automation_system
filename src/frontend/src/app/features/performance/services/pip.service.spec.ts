@@ -12,7 +12,7 @@ import { IPip, IPipSummary } from '../models/pip.models';
 describe('PipService', () => {
   let service: PipService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/pips`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/pips`;
 
   const mockPip: IPip = {
     pipId: 'pip-1',

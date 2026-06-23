@@ -16,7 +16,7 @@ describe('DepartmentService', () => {
   let service: DepartmentService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/departments`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/departments`;
 
   const mockDepartment: IDepartment = {
     departmentId: 'dept-1',

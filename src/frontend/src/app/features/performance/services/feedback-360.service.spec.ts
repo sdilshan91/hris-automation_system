@@ -19,7 +19,7 @@ import {
 describe('Feedback360Service', () => {
   let service: Feedback360Service;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/performance/feedback-360`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/feedback-360`;
 
   const mockConfig: IReviewerConfig = {
     cycleId: 'cyc-1',

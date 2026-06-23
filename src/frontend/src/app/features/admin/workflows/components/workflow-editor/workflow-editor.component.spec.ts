@@ -15,7 +15,7 @@ import { environment } from '../../../../../../environments/environment';
 
 const baseUrl = `${environment.apiBaseUrl}/tenant/workflows`;
 const rolesUrl = `${environment.apiBaseUrl}/tenant/roles`;
-const usersUrl = `${environment.apiBaseUrl}/users`;
+const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
 const roles = [{ id: 'r-1', name: 'HR Officer', description: 'x' }];
 const users = {

@@ -176,9 +176,13 @@ describe('RecruitmentDashboardComponent', () => {
     svc.getDashboard.calls.reset();
     component.selectPreset('custom');
     expect(svc.getDashboard).not.toHaveBeenCalled();
+    // Pin `to` to a fixed value first, then reset: the custom range inherits the preset's `to` = *today*,
+    // so comparing it against a hard-coded `from` flips valid/invalid as the calendar advances (this test
+    // broke once today passed 2026-06-20). With `to` fixed at 2026-06-10 the out-of-order check is stable.
+    component.setCustomTo('2026-06-10');
+    svc.getDashboard.calls.reset();
     // An out-of-order range (from after to) must not trigger a reload.
     component.setCustomFrom('2026-06-20');
-    component.setCustomTo('2026-06-10');
     expect(svc.getDashboard).not.toHaveBeenCalled();
     // Correcting the start makes the range valid and reloads.
     component.setCustomFrom('2026-06-01');

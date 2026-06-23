@@ -17,10 +17,10 @@ describe('EmployeeWizardComponent', () => {
   let router: Router;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
-  const deptsUrl = `${environment.apiBaseUrl}/departments`;
-  const jtUrl = `${environment.apiBaseUrl}/job-titles`;
+  const deptsUrl = `${environment.apiBaseUrl}/tenant/departments`;
+  const jtUrl = `${environment.apiBaseUrl}/tenant/job-titles`;
   const cfUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
-  const empUrl = `${environment.apiBaseUrl}/employees`;
+  const empUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
   const mockDepartments = [
     {

@@ -16,7 +16,7 @@ describe('UserDetailComponent', () => {
   let fixture: ComponentFixture<UserDetailComponent>;
   let httpMock: HttpTestingController;
 
-  const usersUrl = `${environment.apiBaseUrl}/users`;
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const detail: IUserDetail = {
     userTenantId: 'ut-1',
