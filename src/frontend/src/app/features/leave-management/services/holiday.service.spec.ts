@@ -24,7 +24,7 @@ describe('HolidayService', () => {
     id: 'h-1',
     name: "New Year's Day",
     date: '2026-01-01',
-    type: 'public',
+    type: 'Public',
     locationId: null,
     locationName: null,
     description: 'Public holiday',
@@ -97,7 +97,7 @@ describe('HolidayService', () => {
       const request: ICreateHolidayRequest = {
         name: 'Labour Day',
         date: '2026-05-01',
-        type: 'public',
+        type: 'Public',
         locationId: null,
         description: null,
         isRecurring: true,
@@ -119,7 +119,7 @@ describe('HolidayService', () => {
       const request: IUpdateHolidayRequest = {
         name: 'Updated',
         date: '2026-01-01',
-        type: 'restricted',
+        type: 'Restricted',
         locationId: 'loc-1',
         description: 'note',
         isRecurring: false,
@@ -131,7 +131,7 @@ describe('HolidayService', () => {
       const req = httpMock.expectOne(`${baseUrl}/h-1`);
       expect(req.request.method).toBe('PUT');
       expect(req.request.body).toEqual(request);
-      req.flush({ ...mockHoliday, name: 'Updated', type: 'restricted' });
+      req.flush({ ...mockHoliday, name: 'Updated', type: 'Restricted' });
     });
   });
 

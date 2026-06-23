@@ -159,7 +159,7 @@ describe('ConversionFormComponent (US-REC-010)', () => {
   it('advances to the confirmation summary when valid', () => {
     create();
     component.form.patchValue({
-      employmentType: 'Full-Time',
+      employmentType: 'FullTime',
       workLocationId: 'loc1',
     });
     component.review();
@@ -174,7 +174,7 @@ describe('ConversionFormComponent (US-REC-010)', () => {
 
   function fillValid(): void {
     component.form.patchValue({
-      employmentType: 'Full-Time',
+      employmentType: 'FullTime',
       workLocationId: 'loc1',
     });
   }
@@ -193,7 +193,7 @@ describe('ConversionFormComponent (US-REC-010)', () => {
       'a1',
       jasmine.objectContaining({
         firstName: 'Ada',
-        employmentType: 'Full-Time',
+        employmentType: 'FullTime',
         workLocationId: 'loc1',
         departmentId: 'd1',
         jobTitleId: 'jt1',

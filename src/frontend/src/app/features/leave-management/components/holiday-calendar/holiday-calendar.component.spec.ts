@@ -18,7 +18,7 @@ function makeHoliday(o: Partial<IHoliday> = {}): IHoliday {
     id: 'h-1',
     name: 'New Year',
     date: '2026-01-01',
-    type: 'public',
+    type: 'Public',
     locationId: null,
     locationName: null,
     description: null,
@@ -57,16 +57,16 @@ describe('HolidayCalendarComponent (US-LV-007)', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const holidays: IHoliday[] = [
-    makeHoliday({ id: 'h-1', name: 'New Year', date: '2026-01-01', type: 'public' }),
+    makeHoliday({ id: 'h-1', name: 'New Year', date: '2026-01-01', type: 'Public' }),
     makeHoliday({
       id: 'h-2',
       name: 'Diwali',
       date: '2026-11-12',
-      type: 'restricted',
+      type: 'Restricted',
       locationId: 'loc-1',
       locationName: 'New York',
     }),
-    makeHoliday({ id: 'h-3', name: 'Founders Day', date: '2026-06-15', type: 'optional', isActive: false }),
+    makeHoliday({ id: 'h-3', name: 'Founders Day', date: '2026-06-15', type: 'Optional', isActive: false }),
   ];
 
   const locations: ILocation[] = [makeLocation()];
@@ -177,9 +177,9 @@ describe('HolidayCalendarComponent (US-LV-007)', () => {
     });
 
     it('maps holiday types to their documented colors', () => {
-      expect(component.typeColor('public')).toBe('#2563eb');
-      expect(component.typeColor('restricted')).toBe('#ea580c');
-      expect(component.typeColor('optional')).toBe('#16a34a');
+      expect(component.typeColor('Public')).toBe('#2563eb');
+      expect(component.typeColor('Restricted')).toBe('#ea580c');
+      expect(component.typeColor('Optional')).toBe('#16a34a');
     });
 
     it('groups active holidays by month for the mobile fallback (NFR-4)', () => {
@@ -272,7 +272,7 @@ describe('HolidayCalendarComponent (US-LV-007)', () => {
       component.form.setValue({
         name: '  Labour Day  ',
         date: '2026-05-01',
-        type: 'public',
+        type: 'Public',
         locationId: '',
         description: '',
         isRecurring: true,
@@ -290,7 +290,7 @@ describe('HolidayCalendarComponent (US-LV-007)', () => {
     it('loads an existing holiday into the form on edit', () => {
       component.openEdit(holidays[1]);
       expect(component.editingHoliday()!.id).toBe('h-2');
-      expect(component.form.controls['type'].value).toBe('restricted');
+      expect(component.form.controls['type'].value).toBe('Restricted');
       expect(component.form.controls['locationId'].value).toBe('loc-1');
     });
 
@@ -299,7 +299,7 @@ describe('HolidayCalendarComponent (US-LV-007)', () => {
         throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'Duplicate date', code: 'duplicate_date' } }))
       );
       component.openCreate();
-      component.form.patchValue({ name: 'Dup', date: '2026-01-01', type: 'public' });
+      component.form.patchValue({ name: 'Dup', date: '2026-01-01', type: 'Public' });
       component.submitForm();
       expect(toastrSpy.error).toHaveBeenCalledWith('Duplicate date');
       expect(component.formOpen()).toBeTrue(); // stays open on error

@@ -32,6 +32,8 @@ import {
   PAGE_SIZE_OPTIONS,
   IBulkAssignResult,
   getInitialsFromName,
+  employeeStatusLabel,
+  employmentTypeLabel,
 } from '../../models/employee.models';
 
 /**
@@ -279,8 +281,8 @@ import {
                   (ngModelChange)="filterStatuses.set($event)"
                   aria-label="Filter by status"
                 >
-                  @for (s of statusOptions; track s) {
-                    <option [value]="s">{{ s }}</option>
+                  @for (s of statusOptions; track s.value) {
+                    <option [value]="s.value">{{ s.label }}</option>
                   }
                 </select>
               </div>
@@ -296,8 +298,8 @@ import {
                   (ngModelChange)="filterEmploymentTypes.set($event)"
                   aria-label="Filter by employment type"
                 >
-                  @for (et of employmentTypeOptions; track et) {
-                    <option [value]="et">{{ et }}</option>
+                  @for (et of employmentTypeOptions; track et.value) {
+                    <option [value]="et.value">{{ et.label }}</option>
                   }
                 </select>
               </div>
@@ -515,11 +517,11 @@ import {
                 </div>
                 <span
                   class="status-badge"
-                  [class.status-active]="employee.status === 'active'"
-                  [class.status-probation]="employee.status === 'probation'"
-                  [class.status-suspended]="employee.status === 'suspended'"
-                  [class.status-terminated]="employee.status === 'terminated'"
-                  [class.status-inactive]="employee.status === 'inactive'"
+                  [class.status-active]="employee.status === 'Active'"
+                  [class.status-probation]="employee.status === 'Probation'"
+                  [class.status-suspended]="employee.status === 'Suspended'"
+                  [class.status-terminated]="employee.status === 'Terminated'"
+                  [class.status-inactive]="employee.status === 'Inactive'"
                 >
                   {{ employee.status }}
                 </span>
@@ -624,10 +626,10 @@ import {
                   <td class="table-cell">
                     <span
                       class="status-badge"
-                      [class.status-active]="employee.status === 'active'"
-                      [class.status-probation]="employee.status === 'probation'"
-                      [class.status-suspended]="employee.status === 'suspended'"
-                      [class.status-terminated]="employee.status === 'terminated'"
+                      [class.status-active]="employee.status === 'Active'"
+                      [class.status-probation]="employee.status === 'Probation'"
+                      [class.status-suspended]="employee.status === 'Suspended'"
+                      [class.status-terminated]="employee.status === 'Terminated'"
                     >
                       {{ employee.status }}
                     </span>
@@ -1116,7 +1118,7 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
     for (const s of this.filterStatuses()) {
       chips.push({
         category: 'Status',
-        label: s,
+        label: employeeStatusLabel(s),
         value: s,
         filterKey: 'statuses',
       });
@@ -1124,7 +1126,7 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
     for (const et of this.filterEmploymentTypes()) {
       chips.push({
         category: 'Type',
-        label: et,
+        label: employmentTypeLabel(et),
         value: et,
         filterKey: 'employmentTypes',
       });

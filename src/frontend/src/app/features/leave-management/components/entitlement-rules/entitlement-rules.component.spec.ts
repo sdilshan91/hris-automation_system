@@ -29,7 +29,7 @@ describe('EntitlementRulesComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: null,
     jobTitleName: null,
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     tenureMinMonths: null,
     tenureMaxMonths: null,
     entitlementDays: 25,
@@ -62,7 +62,7 @@ describe('EntitlementRulesComponent', () => {
     color: '#2563eb',
     description: null,
     annualEntitlement: 20,
-    accrualFrequency: 'monthly',
+    accrualFrequency: 'Monthly',
     carryForwardLimit: 5,
     carryForwardExpiryMonths: 3,
     probationEligible: false,
@@ -72,7 +72,7 @@ describe('EntitlementRulesComponent', () => {
     maxEncashDays: null,
     halfDayAllowed: false,
     hourlyAllowed: false,
-    gender: 'all',
+    gender: 'All',
     maxConsecutiveDays: null,
     negativeBalanceAllowed: false,
     negativeBalanceLimit: null,
@@ -205,7 +205,7 @@ describe('EntitlementRulesComponent', () => {
       flushInitialRequests();
       tick();
 
-      component.filterEmploymentType.set('Full-Time');
+      component.filterEmploymentType.set('FullTime');
       expect(component.filteredRules().length).toBe(1);
     }));
   });

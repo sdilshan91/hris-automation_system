@@ -36,6 +36,8 @@ import {
   IChangeStatusRequest,
   IReportingChainNode,
   getInitialsFromName,
+  genderLabel,
+  employmentTypeLabel,
 } from '../../models/employee.models';
 import { FormsModule } from '@angular/forms';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
@@ -308,8 +310,8 @@ import {
                       <label class="label-notion" for="pi-gender">Gender</label>
                       <select id="pi-gender" formControlName="gender" class="input-notion select-input">
                         <option [ngValue]="null">Not specified</option>
-                        @for (g of genderOptions; track g) {
-                          <option [ngValue]="g">{{ g }}</option>
+                        @for (g of genderOptions; track g.value) {
+                          <option [ngValue]="g.value">{{ g.label }}</option>
                         }
                       </select>
                     </div>
@@ -337,7 +339,7 @@ import {
                   </div>
                   <div class="data-field">
                     <dt class="data-label">Gender</dt>
-                    <dd class="data-value">{{ profile()!.gender || 'Not specified' }}</dd>
+                    <dd class="data-value">{{ profile()!.gender ? genderLabel(profile()!.gender) : 'Not specified' }}</dd>
                   </div>
                 </div>
               }
@@ -606,7 +608,7 @@ import {
                   </div>
                   <div class="data-field">
                     <dt class="data-label">Employment Type</dt>
-                    <dd class="data-value">{{ profile()!.employmentType }}</dd>
+                    <dd class="data-value">{{ employmentTypeLabel(profile()!.employmentType) }}</dd>
                   </div>
                   <div class="data-field">
                     <dt class="data-label">Status</dt>
@@ -1740,7 +1742,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   private readonly destroy$ = new Subject<void>();
 
   // ─── Constants ─────────────────────────────────────────────
-  readonly genderOptions: EmployeeGender[] = GENDER_OPTIONS;
+  readonly genderOptions = GENDER_OPTIONS;
   readonly objectKeys = Object.keys;
 
   readonly sectionList: { key: ProfileSection | 'employment-history' | 'documents' | 'custom-fields'; label: string }[] = [
@@ -1889,6 +1891,16 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     this.router.navigate(['/employees']);
   }
 
+  /** Pretty display label for a gender wire value (template helper). */
+  genderLabel(value: EmployeeGender | string | null | undefined): string {
+    return genderLabel(value);
+  }
+
+  /** Pretty display label for an employment type wire value (template helper). */
+  employmentTypeLabel(value: string | null | undefined): string {
+    return employmentTypeLabel(value);
+  }
+
   getInitials(): string {
     const p = this.profile();
     if (!p) return '';
@@ -1897,11 +1909,11 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
 
   getStatusBadgeClass(status: string): string {
     switch (status) {
-      case 'active': return 'badge-active';
-      case 'probation': return 'badge-probation';
-      case 'terminated': return 'badge-terminated';
-      case 'suspended': return 'badge-suspended';
-      case 'inactive': return 'badge-inactive';
+      case 'Active': return 'badge-active';
+      case 'Probation': return 'badge-probation';
+      case 'Terminated': return 'badge-terminated';
+      case 'Suspended': return 'badge-suspended';
+      case 'Inactive': return 'badge-inactive';
       default: return 'badge-neutral';
     }
   }

@@ -17,7 +17,7 @@ function makeHoliday(overrides: Partial<IHoliday> = {}): IHoliday {
     id: 'h-1',
     name: 'New Year',
     date: '2026-01-01',
-    type: 'public',
+    type: 'Public',
     locationId: null,
     locationName: null,
     description: null,
@@ -29,9 +29,9 @@ function makeHoliday(overrides: Partial<IHoliday> = {}): IHoliday {
 
 describe('holiday.models — type helpers', () => {
   it('maps each type to its documented color (§8)', () => {
-    expect(getHolidayTypeColor('public')).toBe('#2563eb'); // blue
-    expect(getHolidayTypeColor('restricted')).toBe('#ea580c'); // orange
-    expect(getHolidayTypeColor('optional')).toBe('#16a34a'); // green
+    expect(getHolidayTypeColor('Public')).toBe('#2563eb'); // blue
+    expect(getHolidayTypeColor('Restricted')).toBe('#ea580c'); // orange
+    expect(getHolidayTypeColor('Optional')).toBe('#16a34a'); // green
   });
 
   it('falls back to public color for an unknown type', () => {
@@ -39,15 +39,15 @@ describe('holiday.models — type helpers', () => {
   });
 
   it('maps each type to a distinct badge class set', () => {
-    expect(getHolidayTypeBadgeClasses('public')).toContain('blue');
-    expect(getHolidayTypeBadgeClasses('restricted')).toContain('orange');
-    expect(getHolidayTypeBadgeClasses('optional')).toContain('green');
+    expect(getHolidayTypeBadgeClasses('Public')).toContain('blue');
+    expect(getHolidayTypeBadgeClasses('Restricted')).toContain('orange');
+    expect(getHolidayTypeBadgeClasses('Optional')).toContain('green');
   });
 
   it('maps each type to a human label', () => {
-    expect(getHolidayTypeLabel('public')).toBe('Public');
-    expect(getHolidayTypeLabel('restricted')).toBe('Restricted');
-    expect(getHolidayTypeLabel('optional')).toBe('Optional');
+    expect(getHolidayTypeLabel('Public')).toBe('Public');
+    expect(getHolidayTypeLabel('Restricted')).toBe('Restricted');
+    expect(getHolidayTypeLabel('Optional')).toBe('Optional');
     expect(getHolidayTypeLabel('xyz')).toBe('xyz');
   });
 });
@@ -205,7 +205,7 @@ describe('parseHolidayCsv (AC-3)', () => {
   });
 
   it('flags rows duplicating an existing holiday (BR-1)', () => {
-    const existing = [makeHoliday({ date: '2026-01-01', type: 'public' })];
+    const existing = [makeHoliday({ date: '2026-01-01', type: 'Public' })];
     const csv = 'name,date,type\nNew Year,2026-01-01,public';
     const preview = parseHolidayCsv(csv, existing);
     expect(preview.duplicateCount).toBe(1);
@@ -213,7 +213,7 @@ describe('parseHolidayCsv (AC-3)', () => {
   });
 
   it('does not flag the same date with a different type as a duplicate', () => {
-    const existing = [makeHoliday({ date: '2026-01-01', type: 'public' })];
+    const existing = [makeHoliday({ date: '2026-01-01', type: 'Public' })];
     const csv = 'name,date,type\nOptional Day,2026-01-01,optional';
     const preview = parseHolidayCsv(csv, existing);
     expect(preview.duplicateCount).toBe(0);

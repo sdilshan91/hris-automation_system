@@ -25,7 +25,7 @@ describe('LeaveTypeFormComponent', () => {
     color: '#2563eb',
     description: 'Paid annual leave',
     annualEntitlement: 20,
-    accrualFrequency: 'monthly',
+    accrualFrequency: 'Monthly',
     carryForwardLimit: 5,
     carryForwardExpiryMonths: 3,
     probationEligible: false,
@@ -35,7 +35,7 @@ describe('LeaveTypeFormComponent', () => {
     maxEncashDays: 10,
     halfDayAllowed: true,
     hourlyAllowed: false,
-    gender: 'all',
+    gender: 'All',
     maxConsecutiveDays: 15,
     negativeBalanceAllowed: false,
     negativeBalanceLimit: null,
@@ -91,7 +91,7 @@ describe('LeaveTypeFormComponent', () => {
     expect(component.form.get('name')?.value).toBe('');
     expect(component.form.get('code')?.value).toBe('');
     expect(component.form.get('annualEntitlement')?.value).toBe(0);
-    expect(component.form.get('accrualFrequency')?.value).toBe('yearly');
+    expect(component.form.get('accrualFrequency')?.value).toBe('Yearly');
   });
 
   it('should require name and code', () => {
@@ -139,7 +139,7 @@ describe('LeaveTypeFormComponent', () => {
       code: 'TL',
       color: '#2563eb',
       annualEntitlement: 10,
-      accrualFrequency: 'yearly',
+      accrualFrequency: 'Yearly',
     });
     component.form.markAsDirty();
 
@@ -179,7 +179,7 @@ describe('LeaveTypeFormComponent', () => {
       code: 'AL2',
       color: '#2563eb',
       annualEntitlement: 10,
-      accrualFrequency: 'yearly',
+      accrualFrequency: 'Yearly',
     });
     component.form.markAsDirty();
 
@@ -206,7 +206,7 @@ describe('LeaveTypeFormComponent', () => {
       code: 'TST',
       color: '#2563eb',
       annualEntitlement: 5,
-      accrualFrequency: 'yearly',
+      accrualFrequency: 'Yearly',
     });
     component.form.markAsDirty();
 
@@ -224,7 +224,7 @@ describe('LeaveTypeFormComponent', () => {
     expect(component.form.get('code')?.value).toBe('AL');
     expect(component.form.get('color')?.value).toBe('#2563eb');
     expect(component.form.get('annualEntitlement')?.value).toBe(20);
-    expect(component.form.get('accrualFrequency')?.value).toBe('monthly');
+    expect(component.form.get('accrualFrequency')?.value).toBe('Monthly');
   });
 
   it('should auto-expand advanced section in edit mode when advanced fields differ from defaults', () => {
@@ -276,7 +276,7 @@ describe('LeaveTypeFormComponent', () => {
       code: 'TST',
       color: '#2563eb',
       annualEntitlement: 5,
-      accrualFrequency: 'yearly',
+      accrualFrequency: 'Yearly',
       documentsRequired: true,
       documentDayThreshold: 3,
     });
@@ -301,7 +301,7 @@ describe('LeaveTypeFormComponent', () => {
       code: 'TST',
       color: '#2563eb',
       annualEntitlement: 5,
-      accrualFrequency: 'yearly',
+      accrualFrequency: 'Yearly',
       encashable: false,
       maxEncashDays: 10,
     });
@@ -323,7 +323,7 @@ describe('LeaveTypeFormComponent', () => {
       code: 'TST',
       color: '#2563eb',
       annualEntitlement: 5,
-      accrualFrequency: 'yearly',
+      accrualFrequency: 'Yearly',
       negativeBalanceAllowed: false,
       negativeBalanceLimit: 5,
     });

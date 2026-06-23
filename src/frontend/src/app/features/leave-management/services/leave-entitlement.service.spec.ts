@@ -28,7 +28,7 @@ describe('LeaveEntitlementService', () => {
     departmentName: 'Engineering',
     jobTitleId: null,
     jobTitleName: null,
-    employmentType: 'Full-Time',
+    employmentType: 'FullTime',
     tenureMinMonths: null,
     tenureMaxMonths: null,
     entitlementDays: 25,
@@ -87,7 +87,7 @@ describe('LeaveEntitlementService', () => {
       service.getRules({
         leaveTypeId: 'lt-1',
         departmentId: 'dept-1',
-        employmentType: 'Full-Time',
+        employmentType: 'FullTime',
         activeOnly: true,
       }).subscribe();
 
@@ -95,7 +95,7 @@ describe('LeaveEntitlementService', () => {
         r.url === `${baseUrl}/rules` &&
         r.params.get('leaveTypeId') === 'lt-1' &&
         r.params.get('departmentId') === 'dept-1' &&
-        r.params.get('employmentType') === 'Full-Time' &&
+        r.params.get('employmentType') === 'FullTime' &&
         r.params.get('activeOnly') === 'true'
       );
       expect(req.request.method).toBe('GET');

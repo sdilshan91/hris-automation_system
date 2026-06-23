@@ -19,41 +19,63 @@
 
 // ─── Enums ────────────────────────────────────────────────────
 
+// Wire values match the C# enum member names (PascalCase) per US-PLT-003.
+// Display labels stay human-readable (e.g. 'Non-Binary', 'Full-Time').
+
 export type EmployeeGender =
   | 'Male'
   | 'Female'
-  | 'Non-Binary'
-  | 'Prefer Not To Say';
+  | 'NonBinary'
+  | 'PreferNotToSay';
 
 export type EmploymentType =
-  | 'Full-Time'
-  | 'Part-Time'
+  | 'FullTime'
+  | 'PartTime'
   | 'Contract'
   | 'Intern';
 
-export type EmployeeStatus = 'active' | 'probation' | 'suspended' | 'terminated' | 'inactive';
+export type EmployeeStatus = 'Active' | 'Probation' | 'Suspended' | 'Terminated' | 'Inactive';
 
-export const EMPLOYEE_STATUS_OPTIONS: EmployeeStatus[] = [
-  'active',
-  'probation',
-  'suspended',
-  'terminated',
-  'inactive',
+/** Option arrays: `value` = PascalCase wire value, `label` = pretty display text. */
+export const EMPLOYEE_STATUS_OPTIONS: { value: EmployeeStatus; label: string }[] = [
+  { value: 'Active', label: 'Active' },
+  { value: 'Probation', label: 'Probation' },
+  { value: 'Suspended', label: 'Suspended' },
+  { value: 'Terminated', label: 'Terminated' },
+  { value: 'Inactive', label: 'Inactive' },
 ];
 
-export const GENDER_OPTIONS: EmployeeGender[] = [
-  'Male',
-  'Female',
-  'Non-Binary',
-  'Prefer Not To Say',
+export const GENDER_OPTIONS: { value: EmployeeGender; label: string }[] = [
+  { value: 'Male', label: 'Male' },
+  { value: 'Female', label: 'Female' },
+  { value: 'NonBinary', label: 'Non-Binary' },
+  { value: 'PreferNotToSay', label: 'Prefer Not To Say' },
 ];
 
-export const EMPLOYMENT_TYPE_OPTIONS: EmploymentType[] = [
-  'Full-Time',
-  'Part-Time',
-  'Contract',
-  'Intern',
+export const EMPLOYMENT_TYPE_OPTIONS: { value: EmploymentType; label: string }[] = [
+  { value: 'FullTime', label: 'Full-Time' },
+  { value: 'PartTime', label: 'Part-Time' },
+  { value: 'Contract', label: 'Contract' },
+  { value: 'Intern', label: 'Intern' },
 ];
+
+/** Pretty display label for a gender wire value (e.g. 'NonBinary' → 'Non-Binary'). */
+export function genderLabel(value: EmployeeGender | string | null | undefined): string {
+  if (!value) return '';
+  return GENDER_OPTIONS.find((o) => o.value === value)?.label ?? String(value);
+}
+
+/** Pretty display label for an employment type wire value (e.g. 'FullTime' → 'Full-Time'). */
+export function employmentTypeLabel(value: EmploymentType | string | null | undefined): string {
+  if (!value) return '';
+  return EMPLOYMENT_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? String(value);
+}
+
+/** Pretty display label for an employee status wire value. */
+export function employeeStatusLabel(value: EmployeeStatus | string | null | undefined): string {
+  if (!value) return '';
+  return EMPLOYEE_STATUS_OPTIONS.find((o) => o.value === value)?.label ?? String(value);
+}
 
 // ─── Entity ───────────────────────────────────────────────────
 
@@ -156,11 +178,11 @@ export const MAX_PHOTO_SIZE_LABEL = '5 MB';
  * visible on the profile page (AC-1 status badge).
  */
 export type EmployeeProfileStatus =
-  | 'active'
-  | 'probation'
-  | 'terminated'
-  | 'suspended'
-  | 'inactive';
+  | 'Active'
+  | 'Probation'
+  | 'Terminated'
+  | 'Suspended'
+  | 'Inactive';
 
 /** Emergency contact sub-entity */
 export interface IEmergencyContact {
@@ -405,11 +427,11 @@ export interface IChangeStatusResponse {
  */
 export function getStatusBadgeClasses(status: EmployeeStatus | string): string {
   switch (status) {
-    case 'active':     return 'bg-green-100 text-green-800';
-    case 'probation':  return 'bg-amber-100 text-amber-800';
-    case 'suspended':  return 'bg-gray-100 text-gray-800';
-    case 'terminated': return 'bg-red-100 text-red-800';
-    case 'inactive':   return 'bg-slate-100 text-slate-800';
+    case 'Active':     return 'bg-green-100 text-green-800';
+    case 'Probation':  return 'bg-amber-100 text-amber-800';
+    case 'Suspended':  return 'bg-gray-100 text-gray-800';
+    case 'Terminated': return 'bg-red-100 text-red-800';
+    case 'Inactive':   return 'bg-slate-100 text-slate-800';
     default:           return 'bg-neutral-100 text-neutral-600';
   }
 }

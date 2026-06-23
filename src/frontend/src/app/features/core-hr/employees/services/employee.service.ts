@@ -300,7 +300,7 @@ export class EmployeeService {
 
   /**
    * Search active employees for manager autocomplete (AC-1).
-   * Reuses the directory endpoint with status=active filter.
+   * Reuses the directory endpoint with status=Active filter.
    */
   searchActiveEmployees(
     search: string,
@@ -308,7 +308,7 @@ export class EmployeeService {
   ): Observable<IPaginatedResponse<IEmployee>> {
     let params = new HttpParams()
       .set('search', search)
-      .set('statuses', 'active')
+      .set('statuses', 'Active')
       .set('page', '1')
       .set('pageSize', pageSize.toString());
     return this.http.get<IPaginatedResponse<IEmployee>>(this.baseUrl, {

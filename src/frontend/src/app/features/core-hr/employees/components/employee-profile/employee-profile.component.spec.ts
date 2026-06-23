@@ -53,8 +53,8 @@ describe('EmployeeProfileComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Software Engineer',
-    employmentType: 'Full-Time',
-    status: 'active',
+    employmentType: 'FullTime',
+    status: 'Active',
     profilePhotoUrl: null,
     customFields: null,
     isActive: true,
@@ -234,10 +234,10 @@ describe('EmployeeProfileComponent', () => {
       fixture.detectChanges();
       httpMock.expectOne(profileUrl).flush(mockProfile);
 
-      expect(component.getStatusBadgeClass('active')).toBe('badge-active');
-      expect(component.getStatusBadgeClass('probation')).toBe('badge-probation');
-      expect(component.getStatusBadgeClass('terminated')).toBe('badge-terminated');
-      expect(component.getStatusBadgeClass('suspended')).toBe('badge-suspended');
+      expect(component.getStatusBadgeClass('Active')).toBe('badge-active');
+      expect(component.getStatusBadgeClass('Probation')).toBe('badge-probation');
+      expect(component.getStatusBadgeClass('Terminated')).toBe('badge-terminated');
+      expect(component.getStatusBadgeClass('Suspended')).toBe('badge-suspended');
     });
 
     it('should format address correctly', fakeAsync(() => {
@@ -521,11 +521,11 @@ describe('EmployeeProfileComponent', () => {
       fixture.detectChanges();
       httpMock.expectOne(profileUrl).flush(mockProfile);
 
-      expect(component.getStatusBadgeClass('active')).toBe('badge-active');
-      expect(component.getStatusBadgeClass('probation')).toBe('badge-probation');
-      expect(component.getStatusBadgeClass('terminated')).toBe('badge-terminated');
-      expect(component.getStatusBadgeClass('suspended')).toBe('badge-suspended');
-      expect(component.getStatusBadgeClass('inactive')).toBe('badge-inactive');
+      expect(component.getStatusBadgeClass('Active')).toBe('badge-active');
+      expect(component.getStatusBadgeClass('Probation')).toBe('badge-probation');
+      expect(component.getStatusBadgeClass('Terminated')).toBe('badge-terminated');
+      expect(component.getStatusBadgeClass('Suspended')).toBe('badge-suspended');
+      expect(component.getStatusBadgeClass('Inactive')).toBe('badge-inactive');
       expect(component.getStatusBadgeClass('unknown')).toBe('badge-neutral');
     });
   });
@@ -881,7 +881,7 @@ describe('EmployeeProfileComponent', () => {
       const searchReq = httpMock.expectOne(
         (r) => r.url === `${environment.apiBaseUrl}/employees` &&
           r.params.get('search') === 'Al' &&
-          r.params.get('statuses') === 'active'
+          r.params.get('statuses') === 'Active'
       );
       searchReq.flush({
         data: [{ ...mockProfile, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
@@ -1074,23 +1074,23 @@ describe('isSectionEditable utility function', () => {
 // ─── US-CHR-009: getStatusBadgeClasses (pure function — no TestBed/HTTP) ───
 describe('getStatusBadgeClasses utility function (US-CHR-009)', () => {
   it('should return green classes for active', () => {
-    expect(getStatusBadgeClasses('active')).toBe('bg-green-100 text-green-800');
+    expect(getStatusBadgeClasses('Active')).toBe('bg-green-100 text-green-800');
   });
 
   it('should return amber classes for probation', () => {
-    expect(getStatusBadgeClasses('probation')).toBe('bg-amber-100 text-amber-800');
+    expect(getStatusBadgeClasses('Probation')).toBe('bg-amber-100 text-amber-800');
   });
 
   it('should return gray classes for suspended', () => {
-    expect(getStatusBadgeClasses('suspended')).toBe('bg-gray-100 text-gray-800');
+    expect(getStatusBadgeClasses('Suspended')).toBe('bg-gray-100 text-gray-800');
   });
 
   it('should return red classes for terminated', () => {
-    expect(getStatusBadgeClasses('terminated')).toBe('bg-red-100 text-red-800');
+    expect(getStatusBadgeClasses('Terminated')).toBe('bg-red-100 text-red-800');
   });
 
   it('should return slate classes for inactive', () => {
-    expect(getStatusBadgeClasses('inactive')).toBe('bg-slate-100 text-slate-800');
+    expect(getStatusBadgeClasses('Inactive')).toBe('bg-slate-100 text-slate-800');
   });
 
   it('should return neutral classes for unknown status', () => {

@@ -25,7 +25,7 @@ describe('LopService', () => {
     employeeName: 'Jane Doe',
     date: '2026-07-06',
     days: 1,
-    source: 'system_generated',
+    source: 'SystemGenerated',
     status: 'System-Generated',
     reason: 'No clock-in',
   };
@@ -48,7 +48,7 @@ describe('LopService', () => {
     it('GETs the lop-summary endpoint with no params', () => {
       service.getLopSummary().subscribe((list) => {
         expect(list.length).toBe(1);
-        expect(list[0].source).toBe('system_generated');
+        expect(list[0].source).toBe('SystemGenerated');
       });
       const req = httpMock.expectOne((r) => r.url === `${baseUrl}/lop-summary`);
       expect(req.request.method).toBe('GET');
