@@ -4,7 +4,7 @@ user_story: US-ATT-008
 module: Attendance
 priority: medium
 type: functional
-status: draft
+status: fail
 created: 2026-06-14
 ---
 

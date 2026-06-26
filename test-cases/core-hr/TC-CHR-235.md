@@ -4,7 +4,7 @@ user_story: US-CHR-009
 module: Core HR
 priority: high
 type: accessibility
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 

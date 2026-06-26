@@ -4,7 +4,7 @@ user_story: US-LV-012
 module: Leave Management
 priority: critical
 type: security
-status: draft
+status: blocked
 created: 2026-06-14
 ---
 

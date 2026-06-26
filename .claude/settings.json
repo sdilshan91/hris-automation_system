@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Read",
       "Glob",
@@ -8,11 +9,17 @@
       "Edit(*)",
       "Write(*)",
       "Bash(*)",
+      "Bash(cd *)",
+      "Bash(curl *)",
+      "Bash(psql *)",
+      "Bash(export *)",
+      "Bash(PSQL=*)",
       "PowerShell(*)",
       "WebFetch(domain:*)",
       "WebSearch",
       "mcp__github__*",
-      "mcp__playwright__*"
+      "mcp__playwright__*",
+      "mcp__chrome-devtools__*"
     ],
     "deny": [],
     "ask": [

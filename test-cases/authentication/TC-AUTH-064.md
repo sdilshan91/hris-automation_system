@@ -4,7 +4,7 @@ user_story: US-AUTH-008
 module: Authentication
 priority: medium
 type: performance
-status: draft
+status: blocked
 created: 2026-06-09
 ---
 

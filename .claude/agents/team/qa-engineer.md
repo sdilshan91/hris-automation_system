@@ -48,7 +48,7 @@ user_story: US-{MODULE}-{NUMBER}
 module: {Module Name}
 priority: critical | high | medium | low
 type: functional | integration | e2e | security | performance | accessibility
-status: draft | ready | pass | fail | blocked
+status: draft | ready | automated | pass | fail | blocked
 created: {YYYY-MM-DD}
 ---
 
@@ -124,6 +124,29 @@ For EACH user story, write test cases covering:
 - TC-{MODULE}-ISO-02: Verify API rejects requests without valid tenant context
 - TC-{MODULE}-ISO-03: Verify RLS blocks direct DB queries across tenants
 - TC-{MODULE}-ISO-04: Verify cache keys are tenant-scoped
+
+## Test Automation & Traceability (how specs become runnable)
+
+You author IEEE-829 **markdown specs**; the **dev agents** bind them to **automated runners**. Keep the two
+in sync so the "0% executed" number becomes a real, rising metric.
+
+- **Runner ownership by test-type** (per [TEST-COVERAGE-PLAN-2026-06-23.md](../../../test-cases/TEST-COVERAGE-PLAN-2026-06-23.md)):
+
+  | Test type | Runner | Status |
+  |---|---|---|
+  | Happy / Negative / Boundary | xUnit + Testcontainers (BE) · Karma + Playwright (FE) | in use |
+  | Security | xUnit authz/permission tests · OWASP ZAP (DAST) | ZAP **planned** |
+  | Multi-tenant isolation | xUnit 2-tenant integration suite + Playwright cross-tenant | in use |
+  | Performance | k6 (API/SLA) · Lighthouse (page) | **planned** |
+  | Accessibility | @axe-core/playwright (WCAG) | **planned** |
+  | Cross-browser | Playwright firefox/webkit projects | **planned** |
+
+- **Traceability tag:** name each spec so an automated test can bind to it — the runner references the TC id
+  (`@TC-{MODULE}-{NUMBER}`). When you add or modify a TC, preserve its id so the binding survives.
+- **Status lifecycle:** `draft → automated → pass | fail` (the `status:` enum now includes `automated`).
+  Coverage KPI = % of TCs past `draft`. **Never** set `pass` without a real run — that is weakening the suite.
+- **Test-type tags are not optional:** every TC must have ≥1 "Test Category Tags" box checked. A genuinely
+  deferred/blocked TC keeps `status: blocked` but is still tagged with its *intended* category.
 
 ## Workflow
 1. Read user stories from `user-stories/` directory

@@ -4,7 +4,7 @@ user_story: US-ATT-001
 module: Attendance
 priority: critical
 type: integration
-status: draft
+status: pass
 created: 2026-06-14
 ---
 

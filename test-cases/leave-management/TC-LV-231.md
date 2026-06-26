@@ -4,7 +4,7 @@ user_story: US-LV-011
 module: Leave Management
 priority: medium
 type: e2e
-status: draft
+status: blocked
 created: 2026-06-14
 ---
 

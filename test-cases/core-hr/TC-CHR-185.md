@@ -4,7 +4,7 @@ user_story: US-CHR-007
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: fail
 created: 2026-06-12
 ---
 

@@ -4,7 +4,7 @@ user_story: US-PRF-009
 module: Performance Management
 priority: critical
 type: security
-status: draft
+status: fail
 created: 2026-06-16
 ---
 

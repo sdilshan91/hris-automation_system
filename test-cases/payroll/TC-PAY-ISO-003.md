@@ -4,7 +4,7 @@ user_story: US-PAY-001
 module: Payroll
 priority: critical
 type: security
-status: draft
+status: fail
 created: 2026-06-15
 ---
 

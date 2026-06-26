@@ -4,7 +4,7 @@ user_story: US-AUTH-007
 module: Authentication
 priority: critical
 type: security
-status: draft
+status: fail
 created: 2026-06-09
 ---
 

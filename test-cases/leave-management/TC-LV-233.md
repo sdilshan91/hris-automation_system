@@ -4,7 +4,7 @@ user_story: US-LV-012
 module: Leave Management
 priority: critical
 type: integration
-status: draft
+status: fail
 created: 2026-06-14
 ---
 

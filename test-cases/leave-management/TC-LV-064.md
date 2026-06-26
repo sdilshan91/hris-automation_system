@@ -4,7 +4,7 @@ user_story: US-LV-003
 module: Leave Management
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-13
 ---
 

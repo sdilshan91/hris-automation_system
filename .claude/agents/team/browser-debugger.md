@@ -24,6 +24,19 @@ tools:
   - mcp__playwright__browser_resize
   - mcp__playwright__browser_handle_dialog
   - mcp__playwright__browser_close
+  - mcp__chrome-devtools__navigate_page
+  - mcp__chrome-devtools__lighthouse_audit
+  - mcp__chrome-devtools__performance_start_trace
+  - mcp__chrome-devtools__performance_stop_trace
+  - mcp__chrome-devtools__performance_analyze_insight
+  - mcp__chrome-devtools__emulate
+  - mcp__chrome-devtools__list_network_requests
+  - mcp__chrome-devtools__get_network_request
+  - mcp__chrome-devtools__list_console_messages
+  - mcp__chrome-devtools__take_snapshot
+  - mcp__chrome-devtools__take_screenshot
+  - mcp__chrome-devtools__take_heapsnapshot
+  - mcp__chrome-devtools__evaluate_script
 model: claude-opus-4-8
 maxTurns: 30
 memory: project
@@ -65,6 +78,22 @@ human or `@frontend-dev` / `@backend-dev` can act on.
 | Wait for async UI | `browser_wait_for` |
 | Multiple windows / responsive checks | `browser_tabs`, `browser_resize` |
 
+## Deep diagnostics (Chrome DevTools MCP)
+For performance, memory, and audit-grade signals that Playwright doesn't give, drive the **Chrome DevTools
+MCP** (`chrome-devtools_*`) — it launches its own isolated Chrome. Use it when the symptom is *slowness*,
+*jank*, *a memory leak*, or *a Core-Web-Vitals / Lighthouse regression*:
+
+| Goal | Tool |
+|------|------|
+| One-shot perf + a11y + best-practices audit | `lighthouse_audit` |
+| Record a runtime performance trace (LCP/CLS/TBT) | `performance_start_trace` → `performance_stop_trace` → `performance_analyze_insight` |
+| Throttle CPU / network to reproduce slow conditions | `emulate` |
+| Memory growth / leak check | `take_heapsnapshot` |
+| Navigate / inspect network + console under CDP | `navigate_page`, `list_network_requests`, `get_network_request`, `list_console_messages` |
+
+Pick the right browser: **Playwright** for functional reproduction + DOM/a11y tree; **Chrome DevTools** for
+*why is it slow / leaking / failing an audit*. Don't run both for the same step — choose by the question.
+
 ## Workflow
 1. **Confirm the app is running.** If `http://localhost:4200` (or the URL given) is unreachable,
    STOP and report that the dev server isn't up — do not try to start it yourself unless asked.
@@ -78,6 +107,12 @@ human or `@frontend-dev` / `@backend-dev` can act on.
    - `browser_evaluate` → inspect runtime state when needed (e.g. `localStorage.getItem('token')`,
      NgRx state, the resolved tenant). NEVER print full token values — report only presence/shape.
    - `browser_take_screenshot` → only when a visual matters; artifacts land in `.playwright-artifacts/`.
+   - **Backend Serilog log** → for any failed / 4xx / 5xx API call you see in the network panel, read
+     `src/backend/HRM.Api/Logs/hrm-<YYYYMMDD>.log` (via `Bash` `grep`/`tail`, read-only) and correlate by
+     `RequestId` (on every line of a request) — or by path + tenant + timestamp — to pull the **exception
+     type, stack trace, and failing SQL**. The browser shows the *symptom*; the server log shows the
+     *cause*. The Dev log includes `HRM.*` at Debug + EF Core SQL. Scan `grep -E '\] (WRN|ERR|FTL) '` for
+     errors a 2xx response hid.
 5. **Correlate** the symptom to a likely cause: frontend (component/state/template), API
    (status/payload/CORS), or tenancy (wrong/missing tenant context).
 6. **Report** (see format below). Close the browser with `browser_close` when finished.

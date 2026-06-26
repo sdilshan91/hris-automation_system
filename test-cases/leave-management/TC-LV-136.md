@@ -4,7 +4,7 @@ user_story: US-LV-007
 module: Leave Management
 priority: high
 type: performance
-status: draft
+status: pass
 created: 2026-06-14
 ---
 

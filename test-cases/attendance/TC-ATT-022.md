@@ -4,7 +4,7 @@ user_story: US-ATT-002
 module: Attendance
 priority: critical
 type: integration
-status: draft
+status: blocked
 created: 2026-06-14
 ---
 

@@ -4,7 +4,7 @@ user_story: US-ATT-010
 module: Attendance
 priority: high
 type: integration
-status: draft
+status: pass
 created: 2026-06-15
 ---
 

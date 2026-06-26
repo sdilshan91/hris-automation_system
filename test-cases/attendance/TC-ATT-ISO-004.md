@@ -4,7 +4,7 @@ user_story: US-ATT-001
 module: Attendance
 priority: critical
 type: security
-status: draft
+status: blocked
 created: 2026-06-14
 ---
 

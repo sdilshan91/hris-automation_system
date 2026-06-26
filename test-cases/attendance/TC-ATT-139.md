@@ -4,7 +4,7 @@ user_story: US-ATT-010
 module: Attendance
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-15
 ---
 

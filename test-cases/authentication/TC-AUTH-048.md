@@ -4,7 +4,7 @@ user_story: US-AUTH-006
 module: Authentication
 priority: medium
 type: accessibility
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -67,3 +67,7 @@ Verify that the Roles management page and the custom role creation/editing form 
 - [ ] Performance test
 - [x] Accessibility test
 - [x] Cross-browser test
+
+
+## Execution Note (2026-06-25, @test-runner) — BLOCKED
+BLOCKED: fe-platform-bound. The Roles management UI (WCAG 2.1 AA, axe scan, keyboard nav, permission-tree ARIA, responsive viewports, cross-browser) cannot be exercised — the dev frontend is pinned to the `platform` subdomain, so the tenant Roles page for `acme` is not reachable in the running SPA. Requires a tenant-scoped FE build (or playwright-mcp against a tenant host) to execute.

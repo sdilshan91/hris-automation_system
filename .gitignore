@@ -52,3 +52,10 @@ log-*.txt
 test-results/
 playwright-report/
 .playwright-artifacts/
+
+# Local backup archive (not source)
+.claude.zip
+
+# Backend runtime artifacts (tenant uploads, local agent memory)
+src/backend/HRM.Api/uploads/
+src/backend/HRM.Api/.claude/

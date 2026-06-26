@@ -4,7 +4,7 @@ user_story: US-LV-004
 module: Leave Management
 priority: high
 type: security
-status: draft
+status: pass
 created: 2026-06-13
 ---
 

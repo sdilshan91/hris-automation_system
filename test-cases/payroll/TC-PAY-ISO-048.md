@@ -4,7 +4,7 @@ user_story: US-PAY-012
 module: Payroll
 priority: high
 type: security
-status: draft
+status: pass
 created: 2026-06-16
 ---
 

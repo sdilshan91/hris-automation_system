@@ -4,7 +4,7 @@ user_story: US-REC-001
 module: Recruitment
 priority: critical
 type: security
-status: draft
+status: pass
 created: 2026-06-15
 ---
 

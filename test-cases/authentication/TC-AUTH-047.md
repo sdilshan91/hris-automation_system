@@ -4,7 +4,7 @@ user_story: US-AUTH-006
 module: Authentication
 priority: high
 type: functional
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -64,3 +64,7 @@ Verify that when a user's role assignment is changed, or when a role's permissio
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+
+## Execution Note (2026-06-25, @test-runner) — BLOCKED
+BLOCKED: redis-not-wired. NFR-2 Redis cache key `t:{tenantId}:user:{userId}:permissions` cannot be inspected — dev runs with Redis OFF (`ConnectionStrings:Redis`='' in appsettings.Development.json) so the permission cache is `InMemoryPermissionCache` (singleton), not Redis. Steps 2/4/6/8/10 (Redis key existence/invalidation inspection) are not executable. NOTE: invalidation IS wired and functionally correct — `AssignUserRolesAsync` calls `_permissionCache.InvalidateAsync`, `UpdateRole`/`DeleteRole` call `InvalidateCacheForRoleUsersAsync`, and the cache key is tenant-scoped by design (`InMemoryPermissionCache.BuildKey`). Empirically, after a role change a fresh token reflects updated perms (verified in TC-039/043/046) — i.e. no stale permissions are served. Only the Redis-specific assertions are blocked.

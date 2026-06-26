@@ -4,9 +4,18 @@ user_story: US-AUTH-004
 module: Authentication
 priority: critical
 type: functional
-status: draft
+status: fail
 created: 2026-05-11
 ---
+<!-- EXECUTED 2026-06-25 (API-layer, debugger-free, on THROWAWAY user qa-reset-throwaway@acme.test;
+  shared personas untouched; throwaway deleted after). VERDICT: FAIL.
+  The AC-3 SIDE-EFFECTS all work: reset returns 200; password_hash changed (steps 4); password_changed_at
+  set (5); failed_login_count→0 (6); locked_until→null (7, BR-4); ALL refresh tokens revoked (8, 1→revoked);
+  old password 401 (10); new password 200 (11). BUT the test's core PREMISE is broken: the reset succeeded
+  with a FABRICATED token never issued by any email — `reset-password` performs zero token validation
+  (BUG-040 CRIT). So "valid token works" cannot be distinguished from "any string works". FR-8 step 9 —
+  no `password_reset_completed` audit row (ISSUE-051). UI steps 1/2/12 BLOCKED: fe-platform-bound.
+  Findings: BUG-040 (CRIT), ISSUE-051. -->
 
 # TC-AUTH-011: Reset password with valid token works
 

@@ -4,7 +4,7 @@ user_story: US-AUTH-006
 module: Authentication
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -64,3 +64,7 @@ Verify that the authorization middleware's permission evaluation (reading cached
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+
+## Execution Note (2026-06-25, @test-runner) — BLOCKED
+BLOCKED: perf-instrumentation-not-wired. NFR-1 (<=5ms authorization-middleware overhead, P50/P95/P99 over 1000 reqs, Server-Timing/APM spans, zero-DB-query verification) requires server-side per-middleware timing instrumentation that is not exposed (no Server-Timing header / APM). Indirect signal only: Serilog request lines show 403 authz decisions resolving in ~0.8–2.1 ms total request time (e.g. `responded 403 in 0.8084 ms` for `/tenant/roles`), consistent with sub-5ms claim-based checks, but this is not the isolated-middleware P95 the TC mandates. k6 could measure end-to-end latency but cannot isolate the auth-middleware slice.

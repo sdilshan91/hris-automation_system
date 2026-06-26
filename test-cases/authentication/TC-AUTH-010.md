@@ -4,9 +4,19 @@ user_story: US-AUTH-004
 module: Authentication
 priority: critical
 type: functional
-status: draft
+status: fail
 created: 2026-05-11
 ---
+<!-- EXECUTED 2026-06-25 (API-layer, debugger-free). VERDICT: FAIL.
+  PASS: AC-1/BR-1 no-enumeration — existing & non-existent emails both return HTTP 200 with the
+  identical generic message ("If an account with that email exists, we've sent a password reset link.");
+  response times comparable (~0.08s vs ~0.01s, no exploitable side-channel).
+  FAIL: AC-2/FR-3 — forgot-password generates and stores NO reset token (no token table/column exists);
+  steps 2-5 (email arrival, branding, reset link, stored token) unverifiable because the email/token side
+  is entirely stubbed (AuthService.ForgotPasswordAsync TODOs, log-only seam). FR-8 step 6 — no
+  `password_reset_requested` audit row (ISSUE-051). FR-9 step 10 — NO rate limiting; 6 rapid same-email
+  requests all 200, no 429 (ISSUE-052). Steps 2/3/4 (email arrival/branding/link) BLOCKED: no SMTP
+  (log-only). Findings: ISSUE-051, ISSUE-052; the absent token underlies BUG-040. -->
 
 # TC-AUTH-010: Forgot password sends reset email
 

@@ -4,7 +4,7 @@ user_story: US-CHR-010
 module: Core HR
 priority: high
 type: security
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 

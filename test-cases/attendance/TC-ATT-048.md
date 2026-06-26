@@ -4,7 +4,7 @@ user_story: US-ATT-004
 module: Attendance
 priority: high
 type: security
-status: draft
+status: fail
 created: 2026-06-14
 ---
 

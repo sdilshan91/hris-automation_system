@@ -4,9 +4,20 @@ user_story: US-AUTH-004
 module: Authentication
 priority: critical
 type: security
-status: draft
+status: fail
 created: 2026-05-11
 ---
+<!-- EXECUTED 2026-06-25 (API-layer, debugger-free, THROWAWAY user; shared personas untouched). VERDICT: FAIL.
+  FAIL step 5 (invalid/fabricated token) — `abc123-fake-token-xyz` → HTTP 200, password CHANGED (expected 400);
+  reset-password validates NOTHING beyond token non-emptiness (BUG-040 CRIT).
+  Steps 1 (expired) & 3 (already-used) are STRUCTURALLY UNENFORCEABLE: no token is ever stored, so there is
+  no expiry and no single-use — every non-empty token is perpetually valid and infinitely reusable (BUG-040).
+  FAIL step 10 (password history) — resetting to the immediately-previous password → 200, no reuse check
+  (ISSUE-053, NFR-4).
+  PASS: step 7 (wrong/non-existent email) → 400 (user-lookup fail, not token logic); empty token → 400
+  (validator only); step 9 (weak password `123`) → 400 with hardcoded min12+complexity messages — but the
+  validator is hardcoded and ignores tenant policy (BUG-004 re-confirmed/extended).
+  Findings: BUG-040 (CRIT), ISSUE-053; BUG-004 re-confirmed. -->
 
 # TC-AUTH-012: Reset with expired/invalid token fails
 

@@ -112,6 +112,21 @@ already-running session may not reconnect) and **approve the project-MCP trust p
 `.playwright-artifacts/` (gitignored). It is **read-only on the codebase** — used to investigate, not
 to edit code. Driven by the `@browser-debugger` agent and the `/debug-ui` skill.
 
+### Chrome DevTools MCP Server (performance / Lighthouse / memory)
+Local stdio server (`npx chrome-devtools-mcp@latest --isolated`, defined in `.mcp.json`) that exposes the
+**Chrome DevTools Protocol** — the front-end performance + audit layer Playwright doesn't cover. It launches
+its **own isolated Chrome** (separate from the Playwright instance). Enables agents to:
+- Run a one-shot **`lighthouse_audit`** (performance + accessibility + best-practices) — a second a11y signal alongside `@axe-core/playwright`.
+- Record runtime **performance traces** (`performance_start_trace` → `performance_stop_trace` → `performance_analyze_insight`) for Core Web Vitals (LCP/CLS/TBT).
+- **Throttle** CPU / network (`emulate`) to reproduce slow conditions; **`take_heapsnapshot`** for memory leaks.
+- Inspect network/console under CDP (`list_network_requests`, `get_network_request`, `list_console_messages`).
+
+**Division of labour:** **Playwright MCP** = functional UI, a11y (axe), cross-browser, DOM/console/network;
+**Chrome DevTools MCP** = *why is it slow / leaking / failing a Lighthouse audit*; **k6** = server/load perf.
+Same activation rules as Playwright (attaches at session startup from `.mcp.json`; needs a full restart +
+trust-prompt approval). Used by `@test-runner` (perf/a11y TC execution) and `@browser-debugger` (deep
+diagnosis). **Read-only on the codebase.**
+
 ## Agent Team
 
 | Agent | Role | Branch | MCP Tools |
@@ -120,7 +135,15 @@ to edit code. Driven by the `@browser-debugger` agent and the `/debug-ui` skill.
 | `@frontend-dev` | Implements Angular 20 UI | `feature/frontend-{module}` | create_branch, push_files, create_pull_request |
 | `@backend-dev` | Implements ASP.NET Core 10 API | `feature/backend-{module}` | create_branch, push_files, create_pull_request |
 | `@qa-engineer` | Writes IEEE 829 test cases | `feature/qa-{module}` | create_branch, push_files, create_pull_request, create_issue |
-| `@browser-debugger` | Drives Chrome to debug UI (console, network, DOM) — read-only investigator | _(no branch — diagnoses only)_ | playwright (navigate, console_messages, network_requests, snapshot, evaluate, screenshot, interactions) |
+| `@browser-debugger` | Drives Chrome to debug UI (console, network, DOM) — read-only investigator | _(no branch — diagnoses only)_ | playwright (navigate, console_messages, network_requests, snapshot, evaluate, screenshot, interactions) + chrome-devtools (lighthouse, perf-trace, heapsnapshot, emulate) |
+| `@test-runner` | **Executes** test cases against the running stack + **triages** findings (bug/issue/enhancement: severity, root cause, repro). **REPORT-ONLY — never fixes, never opens PRs.** Writes only to `test-cases/` ledgers. | _(no branch — diagnoses only)_ | playwright (UI/a11y/cross-browser) + chrome-devtools (lighthouse/perf-trace/memory) + create_issue (optional); runs xUnit/Karma/Playwright/axe/k6/curl via Bash |
+| `@test-authenticator` | **Read-only auditor** of test quality — flags "test theater" (mock-everything, tautologies, happy-path-only, InMemory-masks-Postgres, fake isolation arms). Reports a verdict; **never edits/weakens a test.** Use after test code changes. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
+| `@integration-enforcer` | **Read-only auditor** of wiring — catches orphaned code (undispatched MediatR handlers, missing DI, unrouted Angular components, entities missing tenant query filters). Reports a verdict; **never wires it itself.** Use after implementation. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
+
+> The last two are **auxiliary local review agents** in [`.claude/agents/review/`](.claude/agents/review/)
+> (adapted from third-party MIT agent definitions, retargeted to this stack). They are read-only and
+> report-only — separate from the pipeline `team/` agents above; invoke them explicitly or let them
+> auto-delegate after dev/test changes.
 
 ## Skills (Slash Commands)
 
@@ -131,9 +154,19 @@ to edit code. Driven by the `@browser-debugger` agent and the `/debug-ui` skill.
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
 | `/research-story US-{ID}` | Local + MCP | **Feasibility gate (RPI-style).** Read-only: reads ONE story + codebase + vault and writes `research/US-{ID}.md` with a GO / GO-WITH-CONDITIONS / NO-GO verdict. Run before implementing a large/risky/unclear story. |
 | `/implement-story US-{ID}` | Local + MCP | Implement ONE specific story end-to-end (manual single-shot; does NOT touch STATUS.md) |
+| `/test-all [module\|US-ID]` | Local + MCP | **Test loop driver (REPORT-ONLY).** Picks the next untested story from `test-cases/TEST-STATUS.md`, executes its test cases against the running stack via `@test-runner`, and logs bugs/issues/enhancements to `test-cases/TEST-FINDINGS.md` (severity, status, root cause, repro). **Never fixes; never opens PRs.** One story per call; rerun (or `/loop`) to continue. See below. |
+| `/test-us US-{ID}` | Local + MCP | Execute the test cases for ONE specific story (manual single-shot; **REPORT-ONLY**; does NOT touch TEST-STATUS.md). |
 | `/security-audit [scope]` | Local + MCP | **HRM security gate.** Reviews a diff (branch/US-ID/path) against this platform's threat model — tenant isolation, authz, injection, secrets, PII — and writes `security-reviews/{scope}.md` with severity-by-exploitability findings + fixes. Read-only; run before opening a PR. `--deep` fans out parallel reviewers. |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
+| `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
+| `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
+
+> **Locally-vendored discipline skills.** `/fault-diagnosis` and `/error-recovery` live in
+> [`.claude/skills/`](.claude/skills/) (adapted from third-party MIT skill definitions, retargeted to
+> this stack — Serilog/`RequestId`, EF/Postgres, xUnit/Karma/Playwright). They are guidance protocols,
+> not pipeline drivers; invoke them explicitly or let them fire on bug/stuck-loop triggers. They defer to
+> the `test-integrity-guard` hook and the `/implement-all` remediation loop rather than competing with them.
 
 > **Optional — .NET reference skills.** Installing the third-party MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) plugin (`/plugin marketplace add Aaronontheweb/dotnet-skills`) gives `@backend-dev` battle-tested C#/EF Core reference knowledge. Lean on **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test approach), `database-performance`, `csharp-api-design`/`-coding-standards`, and the `microsoft-extensions-*` DI/config skills. Off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`) are muted via `skillOverrides` in [.claude/settings.json](.claude/settings.json). Installed as a plugin (auto-updates), not vendored.
 
@@ -149,6 +182,25 @@ Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.
 4. On green: commits `feat(US-XXX)`, pushes, opens a PR, flips STATUS.md `[~]`→`[x]` on `main`.
 
 Run continuously with `/loop /implement-all [scope]` — it re-fires until the scope reports "all done." Requires a **clean working tree on `main`**; only run unattended when you're willing to review the stacked PRs after the fact (they are opened, not auto-merged).
+
+### `/test-all` — autonomous test-execution loop (REPORT-ONLY)
+
+Source of truth: [.claude/skills/test-all.md](.claude/skills/test-all.md). The **testing** counterpart to
+`/implement-all`. **Hard policy decision: the testing loop identifies and documents defects but NEVER fixes
+them.** It has **no remediation loop** — a failing test produces a *finding*, not a fix attempt. Fixing is a
+separate step the human decides on after reviewing the ledger. Per story it:
+
+1. Picks the first `[ ]` (not-tested) story in [test-cases/TEST-STATUS.md](test-cases/TEST-STATUS.md) (scoped by module/ID arg, else priority order), pre-flights the running stack, marks it `[~]`.
+2. Dispatches `@test-runner` to execute every test case bound to that story — bound automated test (xUnit/Karma/Playwright) if present, else API-layer (curl + JWT) / UI-layer (Playwright MCP) per the TC steps.
+3. Records each TC verdict (flips the TC `status:` `draft → automated → pass | fail | blocked`) and appends **every** defect to [test-cases/TEST-FINDINGS.md](test-cases/TEST-FINDINGS.md) with the full schema: **type** (BUG/ISSUE/ENH), **severity**, **status** (`OPEN`), **layer**, module/US/TC, **root cause + confidence**, **reproduction steps**, and evidence.
+4. Flips TEST-STATUS.md: `[x]` tested-clean · `[!]` tested-with-findings (lists the finding IDs) · `[b]` blocked.
+
+`@test-runner` writes **only** to `test-cases/` ledgers — it must never edit `src/`, never weaken a test to
+go green, and never open a PR. Run continuously with `/loop /test-all [scope]`; because nothing is auto-fixed
+and no PRs are opened, this is **safe to run unattended** — the worst case is a longer findings ledger to
+triage. `/test-us US-{ID}` is the manual single-shot variant (does not touch TEST-STATUS.md). The findings in
+`TEST-FINDINGS.md` are the input to a **separate, human-decided** fix cycle (e.g. you then run `/implement-story`
+or hand a finding to a dev agent).
 
 ## Automation Hooks
 
@@ -226,11 +278,16 @@ main
 │   │   ├── backend-dev.md
 │   │   ├── qa-engineer.md
 │   │   └── browser-debugger.md    # Playwright-driven UI debugger (read-only)
+│   ├── agents/review/             # Auxiliary read-only review agents (local, adapted)
+│   │   ├── test-authenticator.md  # Flags fake/theatrical tests (report-only)
+│   │   └── integration-enforcer.md # Flags orphaned/unwired code (report-only)
 │   ├── skills/                    # Slash command skills
 │   │   ├── orchestrate.md         # Local + MCP pipeline
 │   │   ├── analyze-module.md
 │   │   ├── implement-story.md
 │   │   ├── debug-ui.md            # Browser debugging via Playwright MCP
+│   │   ├── fault-diagnosis.md     # Root-cause-before-fix discipline (local)
+│   │   ├── error-recovery.md      # Stuck-loop breaker / failure-counter (local)
 │   │   └── github-pipeline.md     # Remote pipeline (needs credits)
 │   ├── hooks/                     # Automation hooks
 │   │   ├── post-user-story-commit.sh
@@ -352,7 +409,7 @@ Tenant isolation is enforced in **three coordinated layers** — when adding ent
 - **Auth**: JWT bearer; `JwtService` is registered as a singleton and also supplies `TokenValidationParameters`. BCrypt for password hashing. Refresh tokens are cleaned up by the `TokenCleanupJob` Hangfire recurring job (daily).
 - **Background jobs**: Hangfire on PostgreSQL storage; dashboard at `/hangfire` (dev only).
 - **Resilience**: a named `ResilientClient` HttpClient with Polly retry + circuit-breaker for outbound calls.
-- **Logging**: Serilog; `TenantId`/`TenantSubdomain` are pushed into the log context per request.
+- **Logging**: Serilog; `TenantId`/`TenantSubdomain`/`RequestId` are pushed into the log context per request. Writes a daily rolling **structured file** at `src/backend/HRM.Api/Logs/hrm-<YYYYMMDD>.log` (console + file sinks; exception + stack included). In **Development** (`appsettings.Development.json`) the level is raised for root-causing: `HRM.*` at **Debug** and **EF Core SQL** (`Microsoft.EntityFrameworkCore.Database.Command`) at Information — base `appsettings.json` stays Information-only for prod. **QA/debug practice:** `@test-runner` and `@browser-debugger` read this log (correlating by `RequestId`) to pull the real exception/stack/SQL behind a failing TC — never infer root cause from the HTTP body alone when a log line exists. Requires a backend restart after changing the logging config.
 
 ### Frontend: standalone Angular 20
 - `core/` holds singletons: `auth/` (service, guard, interceptor, models), `interceptors/` (`error`, `tenant`), `tenant/` (subdomain resolution mirroring the backend rules, using signals).

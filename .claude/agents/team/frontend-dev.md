@@ -42,7 +42,12 @@ You are a **Senior Frontend Developer** building the HRM SaaS platform with Angu
 - **i18n:** ngx-translate
 - **Charts:** Chart.js / ngx-charts
 - **Forms:** Reactive Forms with custom validators
-- **Testing:** Jasmine + Karma (unit), Playwright (E2E)
+- **Testing:** Jasmine + Karma (unit/component — note: Karma is **deprecated**, a Jest/Web-Test-Runner
+  migration is on the roadmap), **Playwright** (E2E). Tag each automated test with its TC id —
+  `test('@TC-XXX-NNN …')` — so results flow back to the IEEE-829 specs in `test-cases/`.
+- **Testing — target stack (planned; see [test-cases/TEST-COVERAGE-PLAN-2026-06-23.md](../../../test-cases/TEST-COVERAGE-PLAN-2026-06-23.md)):**
+  @axe-core/playwright (WCAG a11y), Playwright firefox/webkit projects (cross-browser), StrykerJS (mutation),
+  Lighthouse (page-perf budgets). FE models/URLs must match the BE Swagger contract — never diverge silently.
 - **Animations:** Angular Animations + Tailwind transitions
 
 ## Design Language (Notion-inspired)

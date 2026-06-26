@@ -4,7 +4,7 @@ user_story: US-AUTH-006
 module: Authentication
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -63,3 +63,7 @@ Verify that the system can handle the upper boundary of 50 custom roles per tena
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+
+## Execution Note (2026-06-25, @test-runner) — BLOCKED
+BLOCKED: not executed. (1) Boundary/volume + perf TC: creating 50 custom roles and a 200+-permission role + UI responsiveness measurement was not run as a bulk load against the shared acme tenant (would leave heavy residue and the UI arm is fe-platform-bound). (2) NFR-3 mismatch: the live permission catalog (`GET /api/v1/tenant/roles/permissions`) exposes **112** distinct permissions, not the 200+ the TC/NFR-3 assumes — so step 3 ("assign all 200+") is not satisfiable as written. Role CRUD itself is proven functional by TC-039/040/043/046. No hard cap on custom-role count was verified.

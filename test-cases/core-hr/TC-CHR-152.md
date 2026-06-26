@@ -4,7 +4,7 @@ user_story: US-CHR-006
 module: Core HR
 priority: critical
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 

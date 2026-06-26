@@ -4,7 +4,7 @@ user_story: US-CHR-006
 module: Core HR
 priority: high
 type: security
-status: draft
+status: pass
 created: 2026-06-12
 ---
 

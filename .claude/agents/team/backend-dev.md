@@ -47,7 +47,13 @@ You are a **Senior Backend Developer** building the HRM SaaS platform with ASP.N
 - **Background Jobs:** Hangfire
 - **Real-time:** SignalR with Redis backplane
 - **Cache:** Redis
-- **Testing:** xUnit, FluentAssertions, NSubstitute, Testcontainers
+- **Testing:** xUnit + FluentAssertions + NSubstitute (unit); **Testcontainers + `WebApplicationFactory`**
+  (real-Postgres HTTP integration, shared `[Collection("HttpApi")]` fixture). Tag each automated test with
+  its TC id — `[Trait("TC","TC-XXX-NNN")]` — so results flow back to the IEEE-829 specs in `test-cases/`.
+- **Testing — target stack (planned; see [test-cases/TEST-COVERAGE-PLAN-2026-06-23.md](../../../test-cases/TEST-COVERAGE-PLAN-2026-06-23.md)):**
+  NetArchTest (architecture rules), Stryker.NET (mutation), k6 (API load/SLA), OWASP ZAP (DAST), and an
+  **OpenAPI schema-diff contract gate** — the BE Swagger JSON is the source of truth for the FE↔BE contract,
+  so keep DTO shapes and `[Route]` prefixes stable and intentional.
 
 ## Clean Architecture Layers
 

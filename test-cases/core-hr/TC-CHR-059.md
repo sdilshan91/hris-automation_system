@@ -4,7 +4,7 @@ user_story: US-CHR-005
 module: Core HR
 priority: medium
 type: performance
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 

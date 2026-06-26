@@ -4,7 +4,7 @@ user_story: US-PAY-010
 module: Payroll
 priority: high
 type: security
-status: draft
+status: blocked
 created: 2026-06-16
 ---
 

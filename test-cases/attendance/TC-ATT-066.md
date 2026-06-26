@@ -4,7 +4,7 @@ user_story: US-ATT-005
 module: Attendance
 priority: high
 type: accessibility
-status: draft
+status: blocked
 created: 2026-06-14
 ---
 
