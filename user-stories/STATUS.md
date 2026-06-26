@@ -101,7 +101,7 @@
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
 - [x] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(PR #50; surfaced in US-REC-001 / PR #49)*
 - [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(Phases 1-3 plumbing in PR #51, inert by default; **Phase 4 switch-on DEFERRED** — needs Docker/Postgres env, see Persistence/Rls/README.md)*
-- [~] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(PR #57: global JsonStringEnumConverter DONE + recruitment FE casing DONE; **residual**: leave-management + core-hr FE enum unions still lowercase/kebab — no regression, deferred follow-up)*
+- [x] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(PR #57: global JsonStringEnumConverter + recruitment FE casing; PR #111: leave-management + core-hr FE enum casing reconciled — **COMPLETE**)*
 
 ## 6. Payroll (12 stories) — COMPLETE ✅
 - [x] US-PAY-001 — Configure salary structure and components *(PR #63)*
@@ -168,7 +168,7 @@
 ## Tally
 - Total stories: **105** (incl. 3 Platform/tech-debt)
 - Done: **103** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100), **Notifications & Audit US-NTF-001..005 COMPLETE** (#101–#105), **Reports & Analytics US-RPT-001..005 COMPLETE** (#106–#110)
-- In progress: **2** (US-PLT-002 RLS Phase 4 deferred; US-PLT-003 FE enum-casing residual)
+- In progress: **1** (US-PLT-002 RLS Phase 4 deferred)
 - Pending: **0** — all 12 feature modules COMPLETE 🎉 (only the 2 deferred platform tech-debt stories remain)
 - **All feature modules done. Remaining: US-PLT-002 (RLS Phase 4) and US-PLT-003 (FE enum-casing) — platform tech-debt, run with `/implement-all platform` if desired.**
 
