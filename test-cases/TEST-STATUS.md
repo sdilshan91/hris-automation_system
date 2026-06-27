@@ -143,5 +143,14 @@
 
 ## 1b. Enterprise SSO epic (shipped PR #112 — now in scope for QA)
 > Was excluded "until shipped"; PR #112 shipped the POC. US-AUTH-012/016 not built yet (test once implemented).
-- [~] US-AUTH-011 — Entra OIDC foundation *(AC-1/2/5/7 live-PASS 2026-06-26; happy-path + id_token negatives pending)*
-- [ ] US-AUTH-013 — Tenant tid/domain isolation (fail-closed) · [ ] US-AUTH-014 — match/link/JIT · [ ] US-AUTH-015 — "Sign in with Microsoft" FE
+> **Re-exec 2026-06-27 (REPORT-ONLY):** BE on :5000 was **DOWN** this pass (confirmed not listening after 30s poll;
+> last Serilog activity 16:30 Hangfire job; FE `tenant/context` + SSO-challenge XHRs → `ERR_CONNECTION_REFUSED`).
+> So all API-layer SSO arms (011 challenge/callback, 013 config) are **BLOCKED this pass (be-down)** — NOT failed;
+> they previously live-PASSed 2026-06-26 (see [[SSO-EPIC-STATUS-AND-TODO]] live-results table). FE (:4200) was UP →
+> US-AUTH-015 fully executed. The interactive-Microsoft arms remain blocked by design (need real Entra sign-in).
+- [b] US-AUTH-011 — Entra OIDC foundation — **blocked (be-down this pass)** for AC-1/2/5/7 API re-confirm + FR-8 log; AC-3/4/6 happy-path & id_token negatives blocked (need interactive Microsoft login / mock IdP). *(AC-1/2/5/7 live-PASSed 2026-06-26.)*
+- [b] US-AUTH-012 — per-tenant DB SSO config — **blocked (not implemented)**; allow-list still in `appsettings` `EntraSsoOptions`, no DB columns/DTO fields. See [[SSO-EPIC-STATUS-AND-TODO]] TODO §US-AUTH-012.
+- [b] US-AUTH-013 — Tenant tid/domain isolation (fail-closed) — **blocked**: fail-closed config-surface arm needs BE up (be-down); positive allow-list match needs a real id_token (interactive Microsoft login).
+- [b] US-AUTH-014 — match/link/JIT — **blocked (needs interactive Microsoft login)**; `AuthService.SsoSignInAsync` only reachable after a completed Microsoft round-trip.
+- [x] US-AUTH-015 — "Sign in with Microsoft" FE — **tested-clean (no findings).** "Continue with Microsoft" button renders w/ MS icon + "or" divider; click triggers full-page redirect to `${apiBaseUrl}/auth/sso/challenge?returnUrl=…&tenant=…` (network-confirmed); 4 `sso_error` codes (`not_configured`/`not_available`/`access_denied`/`sso_failed`) each render a distinct friendly message in an ARIA `role=alert`. Only console noise = BE-down XHR fail + favicon 404 (environmental, not SSO).
+- [b] US-AUTH-016 — enforcement / break-glass / admin-consent — **blocked (not implemented)**; no `enforcement_mode`/break-glass/admin-consent flow exists. See [[SSO-EPIC-STATUS-AND-TODO]] TODO §US-AUTH-016.

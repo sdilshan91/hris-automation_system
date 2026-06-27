@@ -4561,3 +4561,45 @@ Re-executed the high-signal TCs across **US-PAY-001..012** against the running s
 - **BUG-068 ID COLLISION (flagged for human disambiguation):** `BUG-068` is used for TWO distinct defects in the ledger — (1) Performance US-PRF-009 "team-goals cross-tenant read" (HIGH) and (2) Recruitment US-REC-010 "convert-to-employee broken on Postgres (manual tx vs EnableRetryOnFailure)" (CRIT). Same number, different modules/severities. A human should renumber one (suggest the recruitment one → next free BUG-094) to keep traceability unambiguous. Not auto-fixed.
 
 **Residue from THIS pass:** acme fixtures created — 1 Draft cycle `REGTEST-ISO-2026` (`019f0881-38cd-70b1-9ecd-12d7110edbc7`), 1 Active cycle `REGTEST-OPEN-2026` (`019f0882-22b3-7aa6-b3e0-842874354042`), 1 goal `RegTest Goal A v3` (`019f0883-0868-773f-95cf-ae2757e49d55`) — ALL in acme (my test tenant). Removed by exact PK at end of run (see cleanup confirmation). **No cross-tenant writes performed.**
+
+---
+
+## Run note — Enterprise SSO epic (US-AUTH-011..016) re-exec, 2026-06-27 (REPORT-ONLY)
+
+**No new findings.** The one autonomously-completable story, **US-AUTH-015**, passed clean; the API-layer arms
+were **environment-blocked** (backend down), not failed, so per the fail-closed policy no verdict/finding was
+fabricated. Recorded here for traceability — no `BUG-`/`ISSUE-`/`ENH-` ID consumed.
+
+- **Stack state:** BE on `:5000` **DOWN** this pass — not listening after a 30s poll (`curl` exit 7 / HTTP 000);
+  last Serilog activity in `hrm-20260627.log` was a 16:30 Hangfire `StaleGoalNudgeJob`; the FE's
+  `GET /api/v1/tenant/context` and the SSO challenge XHR both returned `net::ERR_CONNECTION_REFUSED`. FE on
+  `:4200` was UP. So all **011 challenge/callback** + **013 fail-closed-config** API probes are `[b] be-down`
+  (they previously live-PASSed 2026-06-26 per [[SSO-EPIC-STATUS-AND-TODO]] — carried forward by reference,
+  not re-shown this pass).
+- **US-AUTH-015 (FE) — PASS (no findings).** On `http://localhost:4200/auth/login`:
+  - "Continue with Microsoft" button renders with the Microsoft icon and an "or" divider under the password form.
+  - Clicking it performs a **full-page redirect to the backend challenge endpoint** — network log captured the
+    real attempt `GET http://localhost:5000/api/v1/auth/sso/challenge?returnUrl=%2Fdashboard&tenant=platform`
+    (failed only with `ERR_CONNECTION_REFUSED` because BE was down — correct FE behavior). Source confirms
+    `login.component.ts:115` → `window.location.href = ${apiBaseUrl}/auth/sso/challenge?...`. (`tenant=platform`
+    here is correct: the page was loaded on the platform/default host, not the `acme` subdomain.)
+  - `?sso_error=` renders distinct **friendly** messages in an ARIA `role=alert` for all 4 handled codes:
+    `not_configured`, `not_available`, `access_denied` ("This Microsoft account isn't allowed to sign in to
+    this workspace…"), `sso_failed` ("We couldn't complete Microsoft sign-in…"). Broader than the spec minimum.
+  - Console errors were environmental only (BE-down `tenant/context` XHR + a benign `favicon.ico` 404) — no
+    SSO/Angular runtime error.
+- **Blocked-by-design (not defects):** **US-AUTH-012** and **US-AUTH-016** are **not implemented** (allow-list
+  still in `appsettings` `EntraSsoOptions`; no `enforcement_mode`/break-glass/admin-consent) → `[b]`. The SSO
+  happy-path / positive-isolation / match-JIT arms (**011 AC-3/4/6, 013 positive, 014**) require a **real
+  Microsoft Entra interactive sign-in** that cannot be driven by curl/headless → `[b]`.
+
+**TCs that need the user's interactive Microsoft login to complete** (cannot be automated — real Entra browser
+sign-in as e.g. `sachithra@techoneglobal.org`, allow-listed tenant `tid f9654482-…`):
+- US-AUTH-011 AC-3 (code exchange → id_token retrieval), AC-4 (app JWT+refresh issued, redirect to originating
+  subdomain), AC-6 (id_token negatives: bad `aud`/`exp`/signature/`nonce` — needs a mock IdP or crafted tokens).
+- US-AUTH-013 positive allow-list match (a real id_token carrying the allow-listed `tid`/domain).
+- US-AUTH-014 user match / link / JIT provisioning (`AuthService.SsoSignInAsync`, only reachable post round-trip).
+
+Additionally, **US-AUTH-011 AC-1/2/5/7 + FR-8 (Serilog)** were blocked **only** because the BE was down this
+pass; they are curl-automatable and should simply be re-run once the API is back up on `:5000` (no interactive
+login needed).
