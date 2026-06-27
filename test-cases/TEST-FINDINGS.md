@@ -1648,6 +1648,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-047 — Concurrent clock-in race returns HTTP 500 (unhandled 23505) instead of a graceful 409
 - **Type / Severity / Status:** BUG · MED · OPEN
+- **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). 5 parallel clock-ins for `employee@acme.test` → one 201, one **500**, three 409. Live log `hrm-20260627.log` re-confirms `23505 duplicate key … ix_attendance_log_open_unique` unhandled at `AttendanceService.ClockInAsync:172`.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-012 (step 3 — DB-guard-not-translated)
 - **Title:** When two genuinely-concurrent clock-in requests for the same employee both pass the application-level open-record pre-check, one wins the INSERT and the other violates the partial unique index `ix_attendance_log_open_unique (tenant_id, employee_id) WHERE clock_out IS NULL`. The resulting `PostgresException 23505` / `DbUpdateException` is **not caught** around the main clock-in `SaveChangesAsync`, so it bubbles to `ExceptionHandlingMiddleware` and the client receives **HTTP 500** rather than the intended **409 "You have already clocked in."**. DB integrity is preserved (exactly one row), but the contract/UX is wrong and a 500 is emitted.
@@ -1663,6 +1664,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### ISSUE-065 — Late-arrival detection compares UTC time-of-day against the shift start, ignoring tenant timezone (FR-7)
 - **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). A clock-in at 14:47 server-local (+05:30) was stored `clockIn:2026-06-27T09:17:14Z` and flagged `isLate:true, lateMinutes:17` — i.e. compared 09:17 **UTC** against the 09:00 shift start with no tenant-tz conversion. Headline tz defect of the module; do not mis-file as a calc bug.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-006 (step 5 — tenant-tz late determination)
 - **Title:** The `is_late` / `late_minutes` computed at clock-in uses the **UTC** time-of-day of the punch versus the shift start time (a naive `09:00` with no zone), with **no conversion to the tenant timezone**. For any tenant not on UTC this misclassifies lateness. The acme tenant's intended tz is `America/New_York` (per the TC), yet a clock-in at 17:01 UTC (= 13:01 local) was flagged `lateMinutes: 484` (≈ 17:01 − 09:00 in UTC) instead of ≈ 241 (13:01 − 09:00 local). Grace-boundary correctness (BR-4) therefore cannot hold for a non-UTC tenant.
@@ -1787,6 +1789,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-048 — Trailing/leading-whitespace shift name returns HTTP 500 (unhandled 23505): the duplicate-name pre-check compares the RAW name but the row is stored `.Trim()`-ed, so it slips past the app check and crashes on the unique index
 - **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). On `POST /api/v1/attendance/shifts` as tenantadmin@acme: base `"RegTestShift"`→201, whitespace variant `" RegTestShift "`→**HTTP 500**. Live log `hrm-20260627.log` re-confirms `23505 … ix_shift_tenant_name_unique` unhandled at `ShiftService.CreateAsync:89` (line moved from prior :74, same defect). Note current route is `/api/v1/attendance/shifts` (not the `/tenant/shifts` in earlier notes), request field is `type` ∈ {SINGLE,ROTATING,FLEXIBLE} + `workingDays` required. Test shifts cleaned up (DELETE 204).
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-052 (step 3, FAIL)
 - **Title:** Creating a shift whose name differs from an existing one only by leading/trailing whitespace (e.g. `"Day Shift "` when `"Day Shift"` exists) returns **HTTP 500** "An unexpected error occurred." instead of a clean 409 `duplicate_name`. The app-level uniqueness check (`AnyAsync(s => s.Name == request.Name)`) tests the **untrimmed** request name (so `"Day Shift "` is "not found" and passes), but the row is persisted with `Name = request.Name.Trim()` = `"Day Shift"`, which then violates the case-/whitespace-exact unique index → an unhandled `DbUpdateException` bubbles to a 500.
@@ -1798,6 +1801,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### ISSUE-074 — Shift-name uniqueness is case-SENSITIVE and whitespace-exact (no LOWER/citext/trim normalization): "day shift" and "Day Shift" both persist as distinct shifts in the same tenant
 - **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). `"RegTestShift"` and `"regtestshift"` both created → both 201 (distinct rows, same tenant). No LOWER/citext normalization.
 - **Layer:** BE (+ DB index)
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-052 (step 3, FAIL)
 - **Title:** The per-tenant "name unique" rule (US-ATT-005 §7 Data, AC-1) is enforced by an exact, case-sensitive comparison both in the app (`s.Name == request.Name`) and in the DB index `ix_shift_tenant_name_unique`. So `"day shift"`, `"Day Shift"`, `"DAY SHIFT"` are all treated as different names and all succeed, defeating the spirit of the uniqueness constraint (an HR user sees two visually-identical shifts). Same case-sensitive-uniqueness class already filed for departments/job-titles/employee fields (BUG-013/016/017, ISSUE-028) — no `LOWER()`/`citext`/normalization anywhere in the shift path.
@@ -1849,6 +1853,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-049 — Overtime approval has no working HR / fallback approver path; an HR Officer cannot approve ANY overtime, and a top-level manager's own overtime is un-approvable (BR-8 "or HR" unmet)
 - **Type / Severity / Status:** BUG · MED · OPEN
+- **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). HR's `GET /attendance/overtime/pending` queue is EMPTY (`totalCount:0`) while the Manager's queue holds the same tenant's pending OT — HR sees nothing to approve. HR `POST /attendance/overtime/{id}/approve` → **403 "No employee record is linked to the current user."** (fail-closed, no mutation). BR-8 "or HR" still unmet.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-077 (step 5) / TC-ATT-082 (step 7 HR)
 - **Title:** BR-8 says a manager's own overtime "must route to their supervisor **or HR**." Two real gaps: (a) `hr@acme.test` (role HR Officer) holds `Attendance.Approve.Team` but has **no linked employee record**, so every approve/reject call returns **HTTP 403 "No employee record is linked to the current user"** — HR cannot approve *any* overtime; (b) the approve path is strictly "direct reports of the calling manager" with **no HR/fallback branch**, so an overtime record for a manager who has `reports_to = null` (a top-level manager) has **no actor who can approve it** — it is permanently stuck PENDING.
@@ -2093,6 +2098,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-050 — Manager persona is fully locked out of the attendance dashboard/reports (403 on everything); BR-4 "managers see their team" is unreachable because every US-ATT-010 endpoint is gated by `Attendance.View.All`, which Managers do not hold
 - **Type / Severity / Status:** BUG · MED · OPEN
+- **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). Manager persona → `GET /attendance/dashboard` **403**, `GET /attendance/dashboard/live-board` **403**, `GET /attendance/custom-report` **403**. HR (`Attendance.View.All`) gets 200 on all. BR-4 team view still unreachable.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-010 · TC-ATT-137 (S2/S3/S4/S5 manager team scope) + TC-ATT-140 (S3)
 - **Title:** Every US-ATT-010 endpoint (`dashboard`, `dashboard/live-board`, `reports/department-comparison`, `reports/custom`, `reports/custom/export`, `reports/trends`, all `reports/scheduled` CRUD) carries `[RequirePermission("Attendance.View.All")]`. The `Manager` role holds `Attendance.View.Team` + `Attendance.Approve.Team` + `Reports.View` but **NOT** `Attendance.View.All`, so a manager gets **403 on the endpoint itself — even with `?scope=team`**. BR-4 ("Managers viewing the dashboard see only their team, scoped by `Attendance.Read.Team`") is therefore **unmet for the actual Manager persona**: the team-scope branch in the service (`ResolveScopeEmployeesAsync` scope=="team") is only reachable by callers who already hold `Attendance.View.All` (i.e. an HR user who is also a line manager). A plain manager cannot view their team's attendance dashboard at all.
