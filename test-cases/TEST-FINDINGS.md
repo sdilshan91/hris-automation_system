@@ -4297,7 +4297,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-086
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** OPEN — **STILL PRESENT, re-confirmed in the Leave-Management regression pass 2026-06-27**: `GET /api/v1/leaves/my-balance?year=2026` → 500 (`?year=2025` → 200), `GET /api/v1/leaves/reports/BalanceSummary?year=2026` → 500, `GET /api/v1/leaves/reports/Utilization?year=2026` → 500 (`?year=2025` → 200). Serilog `hrm-20260627.log:24022,24419+` = identical `InvalidOperationException: Cannot convert string value 'Accrued' … 'LedgerEntryType' enum`. **This is the SAME defect already filed inside the leave module as BUG-037 / BUG-037(EXTENDED to reports)** — BUG-086 (Reports run) and BUG-037 (Leave run) are duplicate IDs for one root-cause `leave_ledger.entry_type='Accrued'` row (id b8179fd3-…, created 2026-06-25); kept distinct here only for the Reports-module traceability. Both remain OPEN. Bad row still left in place per report-only policy (reproducible).
 - **Layer:** BE (no defensive enum handling) + DATA (one malformed legacy row)
 - **Module / US / TC:** Reports & Analytics / US-RPT-002 / TC-RPT-002-* (balance/utilization report + utilization-by-dept chart)
 - **Title:** A single `leave_ledger` row with `entry_type='Accrued'` (not a member of `LedgerEntryType`) makes EF throw on materialization, 500-ing every report that scans the ledger
