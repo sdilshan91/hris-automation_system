@@ -4239,3 +4239,127 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **TC-NTF-ISO-020 (EF filter constrains all viewer query paths; URL filter state cannot widen scope) -- FAIL (ISSUE-191).** The EF/service filter keys off _tenantContext, which trusts the subdomain header -> the subdomain (not a URL filter param) widens scope to the foreign tenant. No URL filter param widens scope within a tenant, but the tenant-context itself is bypassable (ISSUE-191).
 
 **US-NTF-005 tally (16 TCs): 7 PASS / 6 FAIL / 3 BLOCKED.** PASS: -01,-03,-04,-06,-07,-09,-10, + ISO-018(under-correct-context). FAIL: -02 (BUG-085 date-only), -05 (BUG-084 keyword), ISO-017/019/020 (ISSUE-191). BLOCKED: -08(counted PASS-partial), -11 (FE down), -12 (perf+BUG-084). New findings: BUG-084 HIGH (keyword search jsonb ~~ jsonb 500), BUG-085 MED (date-only startDate 500 UTC-Kind), ISSUE-192 LOW (pageSize cap 200 vs 100). Core viewer (list/filters/multi-select/actor-autocomplete/export/meta-audit/authz/pagination) is otherwise SOLID. New max: BUG-085 / ISSUE-192.
+
+---
+
+# Module 11 — Reports & Analytics (US-RPT-001..005) — REPORT-ONLY run 2026-06-27
+
+> Stack: BE up :5000 (debugger-free), API-layer (curl+JWT) + DB ground truth (psql). Personas: acme `tenantadmin@acme.test`/`hr@acme.test`/`employee@acme.test`/`manager@acme.test` (subdomain `acme`), all `Admin@123!`; platform `admin@hrm.local` (subdomain `platform`). Cross-tenant probe target: `techoneglobal` (1 employee) vs `acme` (34 employees: 31 Active/1 Probation/1 Suspended/1 Terminated; 48 depts). Headline risk realised: **BUG-003 cross-tenant leak applies to every aggregated report + export.**
+
+### ISSUE-193 — BUG-003 extension: every HR report + export leaks cross-tenant under a foreign `X-Tenant-Subdomain`
+- **ID:** ISSUE-193
+- **Type:** ISSUE (extension of the still-OPEN root BUG-003; filed as ISSUE not re-filed as a new root bug, per prior-run convention)
+- **Severity:** HIGH (reports aggregate the WHOLE tenant — leak exposes totals + every per-department/per-status breakdown + exported file bytes; read-only here but maximal blast radius)
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports & Analytics / US-RPT-001, US-RPT-002, US-RPT-003, US-RPT-004, US-RPT-005 / TC-RPT-001-* , TC-RPT-ISO-*, TC-RPT-004-*, TC-RPT-005-*
+- **Title:** acme JWT + `X-Tenant-Subdomain: techoneglobal` returns techoneglobal's report aggregates AND downloadable export files AND dashboard KPI counts; acme-subdomain control returns acme's data
+- **SCOPE CONFIRMED across the whole module (2026-06-27):** HR reports (headcount 1 vs 34), leave/attendance reports, payroll reports (switch to foreign empty context → "no finalized runs"), the export *generate* path (CSV body = foreign tenant's data), AND the **dashboard KPI widgets** (`GET /api/v1/dashboard/widgets` under techoneglobal → headcount=1 vs acme 34; manager JWT under techoneglobal → role re-derived to `employee` on foreign data). **One channel is ISOLATED:** the export *download* endpoint (`/reports/exports/{id}/download`) is tenant-filtered — an acme export id requested under techoneglobal → 404 (NOT acme's file). So stored exports don't leak; the exposure is "any JWT can act AS any tenant it names in the subdomain header."
+- **Root cause:** Reports read through the EF global query filter, which keys off the scoped `ITenantContext` populated by `TenantResolutionMiddleware` from the **subdomain header** — the JWT's `tid` claim is never cross-checked against the resolved tenant. Same root locus as BUG-003 (US-AUTH-007 / TenantResolutionMiddleware). Confidence: 98% (DB-confirmed: techoneglobal=1 emp, acme=34; the foreign-subdomain call returns 1 / control returns 34).
+- **Reproduction steps:**
+  1. `POST /api/v1/auth/login` subdomain `acme`, `tenantadmin@acme.test`/`Admin@123!` → accessToken.
+  2. `POST /api/v1/reports/headcount/generate` with that token + header `X-Tenant-Subdomain: techoneglobal`, body `{}` → summary `Total Headcount=1` (techoneglobal's), NOT acme's 34.
+  3. Control: same call with `X-Tenant-Subdomain: acme` → `Total Headcount=34`.
+  4. Export channel: `POST /api/v1/reports/headcount/export {"format":"Csv"}` + `X-Tenant-Subdomain: techoneglobal` → exportId; `GET /api/v1/reports/exports/{id}/download` (techoneglobal subdomain) → 200, CSV body `Total Headcount,1` (techoneglobal's data).
+- **Evidence:** generate probe — foreign summary `[('Total Headcount',1),('Active',1),('Inactive / Separated',0)]` vs control `[34,32,2]`. Export download (techoneglobal): `﻿Metric,Value\nTotal Headcount,1\nActive,1...`. Affects turnover/demographics/joiners-leavers/department-distribution/employment-type-breakdown identically (all read the same tenant-filtered query path).
+- **Severity rationale:** Aggregated cross-tenant exposure of the entire workforce dataset incl. a downloadable file artifact; the most data-dense leak surface in the app. Read-only (no cross-tenant writes seen on reports), hence HIGH not CRIT.
+
+### ISSUE-194 — Department aggregation is case-sensitive: "Engineering" and "engineering" appear as separate buckets
+- **ID:** ISSUE-194
+- **Type:** ISSUE (data-quality / aggregation grouping; partly seed-data driven)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE (grouping) / DATA
+- **Module / US / TC:** Reports & Analytics / US-RPT-001 / TC-RPT-001-05 (department-distribution), TC-RPT-001-01 (headcount by dept)
+- **Title:** Headcount-by-department / department-distribution / demographics group departments by exact (case-sensitive) name, splitting "Engineering" (32) from "engineering" (1)
+- **Root cause:** GROUP BY department name/key is case-sensitive (or two distinct department rows with names differing only in case exist in seed). Demographics + department-distribution + headcount all show `Engineering` and `engineering` as separate bars. Confidence: 70% (could be two genuinely distinct department rows; either way the report surfaces a near-duplicate that a reader will misread).
+- **Reproduction steps:** `POST /api/v1/reports/department-distribution/generate` (acme) → chart bars `[('Engineering',30),('Sales',1),('engineering',1)]`.
+- **Evidence:** department-distribution summary `Total Active Headcount=32, Departments=3`; bars Engineering=30 + Sales=1 + engineering=1. Same split in headcount + demographics dept charts.
+- **Severity rationale:** Cosmetic/readability; totals are still correct (sum matches), but a duplicated-looking department label undermines trust in the report. Likely upstream data hygiene.
+
+### ISSUE-195 — Manager team-scope (BR-2 / `Reports.View.Team`) is unimplemented; managers with `Reports.View` see the FULL tenant
+- **ID:** ISSUE-195
+- **Type:** ISSUE (spec-vs-impl gap; not a leak — stays within tenant)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports & Analytics / US-RPT-001 / TC-RPT-001-08
+- **Title:** No `Reports.View.Team` permission exists; the Manager role holds `Reports.View` and the report returns full-tenant aggregates (34), not just the manager's direct reports
+- **Root cause:** The implemented permission scheme is only `Reports.View` / `Reports.Export` / `Leave.Reports` (confirmed in `role_permissions`); the spec's `Reports.View.Team` and the BR-2 manager team-scoping path were never built. Report generation has no team/manager filtering branch — every authorized caller gets tenant-wide aggregates. Confidence: 90% (DB: Manager role → `{Reports.View}` only; report returns Total=34 for manager == TA).
+- **Reproduction steps:** login `manager@acme.test`/`Admin@123!` subdomain acme → `POST /api/v1/reports/headcount/generate {}` → summary `Total Headcount=34` (identical to tenant admin), not a direct-reports subset.
+- **Evidence:** `role_permissions` has no `Reports.View.Team`; Manager role perms = `{Reports.View}`; manager headcount summary `[34,32,2]` == TA's.
+- **Severity rationale:** Not a cross-tenant leak (data stays in-tenant), but BR-2's least-privilege intent (managers see only their team) is unmet — a manager sees the entire workforce's headcount/turnover/demographics. Confidentiality concern within the tenant.
+- **REFINEMENT (confirmed during US-RPT-002):** the gap is **scoped to the HR report family** (headcount/turnover/demographics/joiners-leavers/department-distribution/employment-type-breakdown — the `Reports.View`-gated reports that ignore role and always emit Scope='All'). The **attendance/leave reports in the SAME unified `/reports/` catalog DO scope correctly**: a manager calling `/reports/attendance-summary/generate` gets `Scope='Manager'` (54 working days) vs TA `Scope='All'` (624) — team subset works. The dedicated `/leaves/reports/` path is `Leave.Reports`-gated and 403s the Manager entirely. So ISSUE-195 is specifically "the HR report builders don't honor the ReportScope the rest of the catalog does."
+
+### BUG-086 — Leave reports (BalanceSummary, Utilization) + UtilizationByDepartment analytics throw 500 — unmapped `LedgerEntryType` enum value 'Accrued' in leave_ledger
+- **ID:** BUG-086
+- **Type:** BUG
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE (no defensive enum handling) + DATA (one malformed legacy row)
+- **Module / US / TC:** Reports & Analytics / US-RPT-002 / TC-RPT-002-* (balance/utilization report + utilization-by-dept chart)
+- **Title:** A single `leave_ledger` row with `entry_type='Accrued'` (not a member of `LedgerEntryType`) makes EF throw on materialization, 500-ing every report that scans the ledger
+- **Root cause:** `LedgerEntryType` enum = {Accrual, Used, Adjusted, Encashed, CarryForward, Expired} (HRM.Domain/Enums/LedgerEntryType.cs:7) — there is **no `Accrued`**. EF maps the enum as a string; the acme `leave_ledger` has 1 row with `entry_type='Accrued'` (id b8179fd3-…, created 2026-06-25). When `LeaveReportService.BuildBalanceSummaryAsync` (LeaveReportService.cs:289) / `ComputeUtilizationAggregatesAsync` (:748, via BuildUtilizationByDepartmentChartAsync :578) iterate the query, EF throws `InvalidOperationException: Cannot convert string value 'Accrued' from the database to any value in the mapped 'LedgerEntryType' enum.` → ExceptionHandlingMiddleware returns 500. Confidence: 99% (Serilog RequestId 0HNMJGENHI0NC + 0HNMJGENHI0N9, exact exception + stack + file:line; DB confirms 1 'Accrued' row).
+- **Reproduction steps:**
+  1. acme TA token, `GET /api/v1/leaves/reports/BalanceSummary` + `X-Tenant-Subdomain: acme` → 500 `{"errors":["An unexpected error occurred..."]}`.
+  2. Same for `GET /api/v1/leaves/reports/Utilization` and `GET /api/v1/leaves/analytics/UtilizationByDepartment`.
+  3. DB: `SELECT entry_type, COUNT(*) FROM leave_ledger GROUP BY 1;` → `Accrual 5, Accrued 1, Adjusted 6, Used 12` — `Accrued` is not in the enum.
+- **Evidence:** Serilog (hrm-20260627.log lines 6666-6713): `Cannot convert string value 'Accrued'… 'LedgerEntryType' enum` at LeaveReportService.cs:289 (BalanceSummary) and :578/:748 (UtilizationByDepartment). Working reports (Absenteeism, LopSummary, LeaveByType, MonthlyTrend) do NOT touch entry_type and return 200.
+- **Severity rationale:** Two of six leave report types + one analytics chart are 100% unavailable for any tenant whose ledger contains the bad value; a malformed row is reachable via normal seeding/adjustment flows and there is no defensive read (no `EnumToStringConverter` fallback / data validation). Contained to the leave-ledger reports (HR reports + LopSummary/Absenteeism unaffected) → HIGH not CRIT. NB: bad row predates this run (created 2026-06-25); left in place per report-only policy so the bug stays reproducible.
+
+### ISSUE-196 — Payroll reports ignore an explicit year/month that has no run and silently serve the latest run instead (honestly relabeled)
+- **ID:** ISSUE-196
+- **Type:** ISSUE (filter-handling / least-surprise; not a data-integrity defect — period is relabeled, not falsified)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports & Analytics / US-RPT-003 / TC-RPT-003-09, TC-RPT-003-10
+- **Title:** `GET /payroll/reports/PayrollSummary?year=2025&month=1` (no run for that period) and `month=13` (invalid) both return the latest finalized run (June 2026) with `currentLabel/payYear/payMonth` set to June 2026
+- **Root cause:** the report resolver applies the BR-1/FR-4 "default = latest finalized run" fallback even when an explicit, non-matching period is supplied, rather than returning an empty/"no run for period" result. month=13 is not range-validated (no 1–12 guard) and also falls through to latest. The response DOES echo the actual served period (currentLabel "June 2026", payYear 2026/payMonth 6), so the number is not mislabeled — but the explicit filter is silently overridden. Confidence: 85% (observed: 2025/1 and month=13 both return June-2026 net 33421.10 with June-2026 labels).
+- **Reproduction steps:** acme TA, `GET /api/v1/payroll/reports/PayrollSummary?year=2025&month=1` → 200, metrics net=33421.10, currentLabel="June 2026". Same for `?year=2026&month=13`.
+- **Evidence:** 2025/1 → `currentLabel=June 2026, net=33421.1`; EmployeeRegister 2025/1 → `payYear=2026, payMonth=6, totalCount=1`. No 1–12 month validation.
+- **Severity rationale:** The served period is honestly labeled so there is no false-data exposure, and totals stay tenant-correct; but a user explicitly requesting an empty/invalid period silently gets a different period's figures — a least-surprise / input-validation gap. LOW.
+
+### ISSUE-197 — CTC Analysis report shows 0.00 employer contributions (BR-6 "employer contributions on top of gross" not reflected)
+- **ID:** ISSUE-197
+- **Type:** ISSUE (calculation/data — possibly missing employer-contribution config in seed; report's defining feature shows nothing)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE / DATA
+- **Module / US / TC:** Reports & Analytics / US-RPT-003 / TC-RPT-003-08
+- **Title:** CTC report's "Employer Contributions (est.)" column is 0.00 for every row and the TOTAL; Annual CTC == Annual Gross (no employer add-on)
+- **Root cause:** the CTC report computes Annual CTC = Annual Gross + Employer Contributions, but the employer-contribution term resolves to 0 — either no employer-contribution payroll component is configured/seeded for acme, or the estimation logic isn't wired. BR-6's whole point (CTC includes employer EPF/ETF etc. on top of gross) is unobservable. Confidence: 55% (could be legitimately-empty config rather than a logic bug; no employer-contribution component rows found for acme's finalized run).
+- **Reproduction steps:** acme TA, `GET /api/v1/payroll/reports/Ctc?year=2026&month=6` → every row `Employer Contributions (est.)=0.00`; TOTAL Annual Gross=1800000.00, Annual CTC=1800000.00.
+- **Evidence:** Ctc totalRow `['TOTAL','','','150000.00','1800000.00','0.00','1800000.00']` — employer-contrib col 0, CTC==Gross.
+- **Severity rationale:** Report renders and other columns are correct; only the employer-contribution differentiator is empty. Likely a seed/config data gap rather than a hard calc bug, hence LOW + flagged for confirmation.
+
+### ISSUE-198 — CSV exports are inconsistent on the UTF-8 BOM: HR `/reports/` exports include it, payroll + leave report exports do NOT
+- **ID:** ISSUE-198
+- **Type:** ISSUE (export fidelity / cross-module inconsistency)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports & Analytics / US-RPT-004 / TC-RPT-004-04 (CSV UTF-8 BOM)
+- **Title:** HR report CSV starts with the UTF-8 BOM (EF BB BF) for Excel compatibility, but the payroll-report and leave-report CSV writers omit it
+- **Root cause:** three separate CSV writers exist — the HR `IHrReportExportService` prepends a BOM, while the payroll (`PayrollReportService` export) and leave (`LeaveReportService` export) CSV builders write raw UTF-8 with no BOM. TC-RPT-004-04 (AC-4/FR-2/FR-5) requires the UTF-8 BOM so Excel renders non-ASCII (accented names, etc.) correctly. Confidence: 95% (byte-level: headcount.csv first bytes `EF BB`, payroll EmployeeRegister + leave Absenteeism first bytes `45 6D` = ASCII 'E').
+- **Reproduction steps:**
+  1. `POST /api/v1/reports/headcount/export {"format":"Csv"}` → download → first 3 bytes `EF BB BF` (BOM present).
+  2. `GET /api/v1/payroll/reports/EmployeeRegister/export?...&format=csv` → first bytes `45 6D` (no BOM).
+  3. `GET /api/v1/leaves/reports/Absenteeism/export?format=csv` → first bytes `45 6D` (no BOM).
+- **Evidence:** xxd of the three downloaded CSVs: HR `efbb…`, payroll `456d`, leave `456d`.
+- **Severity rationale:** Data is intact and comma-delimited; only the Excel UTF-8 auto-detect hint is missing on two of three paths, so non-ASCII text may garble when opened directly in Excel. Cosmetic/compat, hence LOW — but a real cross-module inconsistency against the AC.
+
+### ISSUE-199 — Dashboard role is derived from org-structure (has-direct-reports → manager), not from the RBAC role; the pure Employee dashboard couldn't be exercised in acme
+- **ID:** ISSUE-199
+- **Type:** ISSUE (test-observability / behavior note; not clearly a defect)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports & Analytics / US-RPT-005 / TC-RPT-005-03
+- **Title:** `employee@acme.test` holds the `Employee` RBAC role yet `GET /dashboard/widgets` returns role='manager' (team widgets) under acme; only under an empty foreign tenant does the same user resolve to role='employee'
+- **Root cause:** the dashboard `ResolveRole` derives the dashboard variant from the employee's org position (linked employee record with direct reports ⇒ manager dashboard) rather than the assigned RBAC role. In acme the persona has reports ⇒ manager view; under techoneglobal (no employee record) it falls back to the employee view ([upcoming-holidays, pending-actions] only). Confidence: 70% (DB: employee@acme.test role=Employee; dashboard returns role=manager in acme, employee in techoneglobal — derivation is position-based not role-based).
+- **Reproduction steps:** acme `employee@acme.test` token → `GET /api/v1/dashboard/widgets` (X-Tenant-Subdomain: acme) → role='manager', team widgets. Same token under techoneglobal → role='employee', widgets [upcoming-holidays, pending-actions].
+- **Evidence:** acme: role=manager widgets=[team-size, team-attendance-today, pending-approvals, team-leave-calendar, quick-actions]; techoneglobal: role=employee widgets=[upcoming-holidays, pending-actions].
+- **Severity rationale:** Likely intentional (the dashboard shows you a manager view if you manage people), but it (a) means there is no acme persona that yields the pure-employee dashboard, blocking TC-RPT-005-03's full-widget verification (leave-balance donut / attendance progress / payslips link), and (b) the observed employee set ([upcoming-holidays, pending-actions]) is thinner than the spec's described employee widget set — though observed only in the empty foreign tenant where optional collaborators omit-when-absent. Flagged for confirmation, not a hard defect. LOW.
+
+> **Cleanup note (Reports run 2026-06-27):** All 14 functional probe export rows removed (12 acme + 2 techoneglobal cross-tenant) from `hr_report_exports` — zero residue. **3 append-only `audit_logs` rows remain in techoneglobal** (`HrReport.Export` ×2 + `HrReport.ExportDownloaded` ×1, user_id=acme tenantadmin 019efa61…, created 10:01) — the meta-audit of the BUG-003/ISSUE-193 cross-tenant export probes. Deletion of audit-trail rows was blocked by the safety guard (correct); left in place as append-only history (they are themselves evidence of the ISSUE-193 leak, not functional data). No `export_requests` residue. Bad `leave_ledger` 'Accrued' row (BUG-086) predates this run (2026-06-25) and was intentionally left so the bug stays reproducible.
