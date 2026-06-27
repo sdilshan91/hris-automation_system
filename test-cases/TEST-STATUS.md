@@ -106,12 +106,18 @@
 ## Tally
 | State | Count |
 |---|---|
-| `[ ]` not-tested | 67 |
+| `[ ]` not-tested | 16 (Onboarding 6 · Notifications 5 · Reports 5) |
 | `[~]` testing (in progress) | 0 |
-| `[x]` tested-clean | 1 |
-| `[!]` tested-findings | 21 |
+| `[x]` tested-clean | 3 (US-LV-004, US-PLT-001, US-ADM-001) |
+| `[!]` tested-findings | modules 1–8 (~70) |
 | `[b]` blocked | 0 |
 | **Total implemented US** | **89** |
 
-> Not listed = not yet implemented (see `user-stories/STATUS.md`). Deferred SSO stories (US-AUTH-011..016),
-> US-PLT-002/003, and unbuilt stories are intentionally excluded until they ship.
+> **Corrected 2026-06-27** — the prior 67/1/21 split was stale (it predated the modules 1–8 test passes).
+> Per-module sections above are the source of truth. Remaining zero-coverage: Onboarding, Notifications,
+> Reports. See [QA-COVERAGE-PLAN.md](QA-COVERAGE-PLAN.md) for the prioritized campaign.
+
+## 1b. Enterprise SSO epic (shipped PR #112 — now in scope for QA)
+> Was excluded "until shipped"; PR #112 shipped the POC. US-AUTH-012/016 not built yet (test once implemented).
+- [~] US-AUTH-011 — Entra OIDC foundation *(AC-1/2/5/7 live-PASS 2026-06-26; happy-path + id_token negatives pending)*
+- [ ] US-AUTH-013 — Tenant tid/domain isolation (fail-closed) · [ ] US-AUTH-014 — match/link/JIT · [ ] US-AUTH-015 — "Sign in with Microsoft" FE
