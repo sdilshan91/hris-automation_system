@@ -4,7 +4,7 @@ user_story: US-ONB-001
 module: Onboarding / Offboarding
 priority: high
 type: security
-status: draft
+status: pass
 created: 2026-06-17
 ---
 

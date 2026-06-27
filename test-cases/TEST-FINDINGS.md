@@ -4363,3 +4363,114 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **Severity rationale:** Likely intentional (the dashboard shows you a manager view if you manage people), but it (a) means there is no acme persona that yields the pure-employee dashboard, blocking TC-RPT-005-03's full-widget verification (leave-balance donut / attendance progress / payslips link), and (b) the observed employee set ([upcoming-holidays, pending-actions]) is thinner than the spec's described employee widget set — though observed only in the empty foreign tenant where optional collaborators omit-when-absent. Flagged for confirmation, not a hard defect. LOW.
 
 > **Cleanup note (Reports run 2026-06-27):** All 14 functional probe export rows removed (12 acme + 2 techoneglobal cross-tenant) from `hr_report_exports` — zero residue. **3 append-only `audit_logs` rows remain in techoneglobal** (`HrReport.Export` ×2 + `HrReport.ExportDownloaded` ×1, user_id=acme tenantadmin 019efa61…, created 10:01) — the meta-audit of the BUG-003/ISSUE-193 cross-tenant export probes. Deletion of audit-trail rows was blocked by the safety guard (correct); left in place as append-only history (they are themselves evidence of the ISSUE-193 leak, not functional data). No `export_requests` residue. Bad `leave_ledger` 'Accrued' row (BUG-086) predates this run (2026-06-25) and was intentionally left so the bug stays reproducible.
+
+---
+
+## Onboarding / Offboarding run (2026-06-27, @test-runner, REPORT-ONLY)
+
+### ISSUE-200 — No audit_logs rows are written for ANY Onboarding/Offboarding action (templates, checklist assign/modify, task completion, asset issuance, clearance, offboarding, exit interviews)
+- **ID:** ISSUE-200
+- **Type:** ISSUE (missing-audit theme — recurring across modules; see ISSUE-025/ISSUE-071)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-001..006 / TC-ONB-001-01 (FR-8) + module-wide
+- **Title:** None of the Onboarding domain entities implement `IAuditableEntity`, so the central `AuditCaptureInterceptor` records zero `audit_logs` rows for any onboarding/offboarding/exit-interview create/update/delete/clearance/sign-off
+- **Root cause:** The platform's automatic action-audit is opt-in via `IAuditableEntity` (only `Department`, `JobTitle`, `LeaveRequest` implement it — `src/backend/HRM.Infrastructure/Persistence/Interceptors/AuditCaptureInterceptor.cs:78` filters `ChangeTracker.Entries<IAuditableEntity>()`). The Onboarding entities (`OnboardingTemplate`, `OnboardingTemplateTask`, `OnboardingChecklistInstance`, `OnboardingTaskInstance`, `OffboardingInstance`, `OffboardingTask`, asset, `ExitInterview`) all extend only `BaseEntity` and implement no audit interface, and no Onboarding handler writes an explicit audit row (grep of `src/backend/HRM.Application/Features/Onboarding/` for `audit` = 0 hits). Entity audit *columns* (created_at/created_by) ARE stamped by `AuditInterceptor` (FR-8 column-level satisfied — template `createdAt` populates), but the action trail is empty. Confidence: 95% (source-level: interceptor opt-in filter + zero IAuditableEntity implementers in onboarding + zero explicit writers).
+- **Reproduction steps:** acme HR creates a template / records a clearance / records an exit interview → no `{Entity}.Create|Update|Delete` row appears in `audit_logs` (the interceptor never sees a non-IAuditableEntity entry). Compare LeaveRequest, which DOES produce `LeaveRequest.Create` rows.
+- **Evidence:** `grep -rl IAuditableEntity src/backend/HRM.Domain/Entities/` → Department, JobTitle, LeaveRequest only. `grep -rni audit src/backend/HRM.Application/Features/Onboarding/` → 0 hits.
+- **Severity rationale:** Functional flows all work and entity audit columns persist; but sign-off / clearance / exit-interview are sensitive HR actions whose action history (who approved clearance, who recorded an exit interview) is not retained, and US-ONB-006 NFR-6's "de-anonymized access is flagged in the audit log" is consequently unmet (see ISSUE for US-ONB-006). MED because it's a compliance/traceability gap on sensitive offboarding data, not a broken user flow.
+- **Update (US-ONB-006 NFR-6, 2026-06-27):** PARTIALLY mitigated for one case — exit-interview de-anonymized PII free-text access DOES emit a Serilog `INF` line ("Exit-interview PII free-text accessed. InterviewId=… By=…", `ExitInterviewService.cs:79-84`), verified firing 3× incl. the cross-tenant read (RequestId-correlated, carries actor+tenant). So NFR-6 access-flagging is met **in the structured log** but NOT as a durable `audit_logs` row queryable via the audit API — the rest of the module (templates/assignments/task-completion FR-8/clearance/exit-interview *recording*) still writes nothing to `audit_logs`. The NFR-6 log line is the only audit-ish signal in the whole module.
+
+### BUG-087 — Cross-tenant onboarding-template READ + WRITE via subdomain header (BUG-003 class): acme JWT + `X-Tenant-Subdomain: techoneglobal` lists, creates, and reads another tenant's templates
+- **ID:** BUG-087
+- **Type:** BUG (multi-tenant isolation bypass — instance of the systemic BUG-003)
+- **Severity:** CRIT
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-001 / TC-ONB-ISO-001, TC-ONB-ISO-002, TC-ONB-ISO-003
+- **Title:** An authenticated tenant-A principal can operate in tenant B's onboarding-template context simply by sending tenant B's subdomain header; the JWT `tenant_id` is never validated against the resolved tenant
+- **Root cause:** Same root locus as BUG-003 — `TenantResolutionMiddleware` (US-AUTH-007) resolves the active tenant from the request **subdomain** (dev: `X-Tenant-Subdomain` header) and never cross-checks it against the authenticated token's `tenant_id` claim. The EF global query filter then scopes to the *resolved* (header) tenant, and `TenantInterceptor` stamps writes with the *resolved* tenant — so a valid acme token + `X-Tenant-Subdomain: techoneglobal` reads/writes techoneglobal data. Confidence: 98% (direct probe below; consistent with the documented BUG-003 root cause).
+- **Reproduction steps:**
+  1. Login `tenantadmin@acme.test` (subdomain acme) → JWT (tenant_id=019ef3ba acme).
+  2. `GET /api/v1/onboarding/templates` with that JWT + `X-Tenant-Subdomain: techoneglobal` → 200, returns techoneglobal's template set (NOT acme's 11) — totalCount reflects techone.
+  3. `POST /api/v1/onboarding/templates {"templateName":"XTENANT PROBE ONB001","tasks":[...]}` same headers → 201, id `019f078b-2f91-73a6-b2e0-b69bf4d6f639`.
+  4. `GET .../templates/019f078b-...` under `X-Tenant-Subdomain: techoneglobal` → 200; under `X-Tenant-Subdomain: acme` → 404. The row landed in techoneglobal.
+- **Evidence:** techone list after probe = total 1 `['XTENANT PROBE ONB001']`; acme list = total 11; cross-read 200(techone)/404(acme).
+- **Severity rationale:** CRIT — full cross-tenant read AND write of another tenant's onboarding configuration with only a valid same-platform token + a guessed/known subdomain. Violates Critical Rule #1 (tenant isolation). Systemic (not onboarding-specific); onboarding is one more confirmed surface.
+
+### BUG-088 — Onboarding checklist assignment is NOT idempotent: the Idempotency-Key retry guard is dead code (AuditInterceptor overwrites the created_by slot it relies on)
+- **ID:** BUG-088
+- **Type:** BUG (contract — NFR-5 idempotency unmet)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-002 / TC-ONB-002-08 (idempotent retry)
+- **Title:** Two POSTs to `/api/v1/onboarding/checklists` with the SAME `Idempotency-Key` create TWO distinct checklist instances; the retry-dedup never matches
+- **Root cause:** `OnboardingChecklistService.AssignAsync` stashes the idempotency key into the entity's `CreatedBy` column (`OnboardingChecklistService.cs:218`) and later detects a retry via `c.CreatedBy == input.IdempotencyKey` (`:150`). But `AuditInterceptor.SavingChanges` unconditionally overwrites `CreatedBy = userId` for every Added entity (`AuditInterceptor.cs:51`), running AFTER the service sets it — so the key is never persisted; `created_by` always holds the actor's user GUID. The retry lookup at `:150` therefore never matches and a second instance (a new version, superseding the first under Replace mode) is created every time. The code comment at `:216-218` even anticipates the interceptor overwrite but the guard ships broken. Confidence: 97% (source: interceptor overwrite at :51 + the dead `created_by` lookup at :150; reproduced live, distinct IDs on identical key).
+- **Reproduction steps:** acme TA (or HR). `KEY=idem-clean-X`. `POST /api/v1/onboarding/checklists {"employeeId":"019efced-88a9-...","templateId":"019f0785-4eef-...","mode":"Replace"}` with `Idempotency-Key: $KEY` twice → call1 id `019f0791-4f4a-...`, call2 id `019f0791-50a6-...` (different). Body-key variant (`idempotencyKey` in JSON) behaves the same.
+- **Evidence:** call1 id 019f0791-4f4a-7697-81b1-bf6e8349295e, call2 id 019f0791-50a6-7646-9799-0c51e7b8e2ae (same Idempotency-Key). Source `OnboardingChecklistService.cs:150,218` + `AuditInterceptor.cs:51`.
+- **Severity rationale:** MED — a double-submit / network retry creates a duplicate (superseding) checklist version and re-queues assignment notifications, but the one-active-checklist invariant still holds (the earlier becomes Superseded) so the new hire isn't shown two active lists. Contract (NFR-5) is unmet; impact is duplicate versions + duplicate notification outbox rows, not data corruption.
+
+### BUG-089 — Cross-tenant onboarding-checklist ASSIGNMENT (write) via subdomain header (BUG-003 class): acme JWT + `X-Tenant-Subdomain: techoneglobal` assigns a checklist into another tenant
+- **ID:** BUG-089
+- **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003)
+- **Severity:** CRIT
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-002 / TC-ONB-ISO-005, TC-ONB-ISO-006, TC-ONB-ISO-007
+- **Title:** A tenant-A principal can create an onboarding-checklist assignment in tenant B (and read it back) by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
+- **Root cause:** Same root locus as BUG-003/BUG-087 — `TenantResolutionMiddleware` (US-AUTH-007) trusts the subdomain header for tenant resolution and never cross-checks the token's `tenant_id`. The EF query filter + `TenantInterceptor` scope to the resolved (header) tenant. Confidence: 98% (live probe). Note the READ side is self-protected: injecting an acme checklist id while in techone context → 404 (query filter blocks); the leak is purely the subdomain-header write/read-in-foreign-context path.
+- **Reproduction steps:**
+  1. Login `tenantadmin@acme.test` (acme) → JWT.
+  2. `POST /api/v1/onboarding/checklists {"employeeId":"019efcf4-ce46-...(a techoneglobal employee)","templateId":"019f078b-...(a techoneglobal template)","mode":"Replace"}` with that acme JWT + `X-Tenant-Subdomain: techoneglobal` → 201, checklist id `019f0794-595e-7e77-b193-ce8954c10cdb`.
+  3. `GET .../checklists/019f0794-...` under techone header → 200; under acme header → 404. The assignment landed in techoneglobal.
+  4. Control: an acme checklist id read under techone context → 404 (read-side IDOR is blocked).
+- **Evidence:** assign-into-techone 201; cross-read 200(techone)/404(acme).
+- **Severity rationale:** CRIT — cross-tenant WRITE of onboarding assignments (creates task instances, queues notification outbox rows in the victim tenant) with only a valid same-platform token + the victim's subdomain. Critical Rule #1 violation; systemic.
+
+### BUG-090 — Cross-tenant asset ISSUANCE (write) via subdomain header (BUG-003 class): acme JWT + `X-Tenant-Subdomain: techoneglobal` issues an asset into another tenant's register
+- **ID:** BUG-090
+- **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003)
+- **Severity:** CRIT
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-004 / TC-ONB-ISO-012, TC-ONB-ISO-013, TC-ONB-ISO-014
+- **Title:** A tenant-A principal can create/assign an asset register row in tenant B by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
+- **Root cause:** Same root locus as BUG-003/087/089 — `TenantResolutionMiddleware` (US-AUTH-007) trusts the subdomain for tenant resolution and never cross-checks the token's `tenant_id`. `AssetService.IssueAssetsAsync` stamps `TenantId = _tenantContext.TenantId` (the resolved/header tenant). Read-side is self-protected (an acme employee id under techone context returns 0 — query filter). Confidence: 98% (live probe).
+- **Reproduction steps:** acme TA JWT + `X-Tenant-Subdomain: techoneglobal`. `POST /api/v1/onboarding/assets/issue` (multipart `request` = `{"employeeId":"019efcf4-ce46-...(techone emp)","assets":[{"assetType":"Laptop","assetTag":"XTENANT-ASSET-001","condition":"New","issueDate":"2026-06-27..."}]}`) → 200, asset id `019f079f-dcd7-...` assigned to the techone employee. Visible in techone register; NOT in acme. The `tenantId` JSON field (when supplied) is correctly ignored (FR-7) — the leak is purely the subdomain header.
+- **Evidence:** issue-into-techone 200; techone register = `['XTENANT-ASSET-001']`; acme does not see it.
+- **Severity rationale:** CRIT — cross-tenant WRITE of asset-register/issuance data with only a valid same-platform token + the victim's subdomain. Critical Rule #1 violation; systemic.
+
+### ENH-022 — Asset types are a hardcoded global list, not tenant-configurable, despite BR-2's "configured asset type for the tenant"
+- **Type:** ENH
+- **Title:** `AssetService.DefaultAssetTypes` is a static hardcoded set (`Laptop, Phone, ID Card, Access Badge, Vehicle`); US-ONB-004 BR-2 implies per-tenant asset-type configuration
+- **Module / US / TC:** Onboarding / US-ONB-004 / TC-ONB-004-01 (BR-2)
+- **Why it matters:** A tenant cannot add its own asset types (e.g. "Monitor", "Headset", "ID Badge" with different spelling) — issuance fails with `invalid_asset_type` for anything outside the 5 hardcoded values, and the error message ("not a configured asset type") implies configurability that doesn't exist. Tenants with different asset taxonomies are blocked.
+- **Suggested direction:** back the allow-list with a per-tenant asset-type config table (seeded with the current 5 defaults) and validate against it, OR relax to a free-text type with a soft suggestion list. Not a defect against the current build's behavior, hence ENH.
+
+### BUG-091 — Cross-tenant OFFBOARDING initiation (write) via subdomain header (BUG-003 class): acme JWT + `X-Tenant-Subdomain: techoneglobal` initiates an offboarding (and changes employee status) in another tenant
+- **ID:** BUG-091
+- **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003)
+- **Severity:** CRIT
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-005 / TC-ONB-ISO-016, TC-ONB-ISO-017, TC-ONB-ISO-018
+- **Title:** A tenant-A principal can change a tenant-B employee's status AND initiate a tenant-B offboarding (generating clearance tasks) by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
+- **Root cause:** Same root locus as BUG-003/087/089/090 — `TenantResolutionMiddleware` (US-AUTH-007) trusts the subdomain for tenant resolution; `OffboardingService` stamps writes with the resolved (header) tenant. Cross-read is self-protected (an acme offboarding id under techone context → 404). Confidence: 98% (live probe). Note: the same probe also mutated a techone employee's status (`POST /tenant/employees/{id}/status` → 200) — the leak is platform-wide, not offboarding-specific.
+- **Reproduction steps:** acme TA JWT + `X-Tenant-Subdomain: techoneglobal`. (1) `POST /tenant/employees/019efcf4-ce46-.../status {"newStatus":4,...}` → 200 (techone emp set Suspended). (2) `POST /offboarding/initiate {"employeeId":"019efcf4-ce46-...","lastWorkingDay":"2026-07-30...","reason":"Resignation"}` → 201, offboarding id `019f07a7-9c8a-...` with generated clearance tasks. Visible under techone (200); 404 under acme.
+- **Evidence:** initiate-into-techone 201; cross-read 200(techone)/404(acme); acme offboarding id under techone → 404 (read self-protected).
+- **Severity rationale:** CRIT — cross-tenant WRITE that changes another tenant's employee lifecycle state and creates an offboarding workflow, with only a valid same-platform token + the victim's subdomain. Critical Rule #1 violation; systemic.
+
+### BUG-092 — Cross-tenant EXIT-INTERVIEW recording (write of sensitive HR PII) via subdomain header (BUG-003 class): acme JWT + `X-Tenant-Subdomain: techoneglobal` records an exit interview into another tenant
+- **ID:** BUG-092
+- **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003; highest sensitivity surface)
+- **Severity:** CRIT
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB-006 / TC-ONB-ISO-020, TC-ONB-ISO-021, TC-ONB-ISO-022
+- **Title:** A tenant-A principal can create a tenant-B exit interview (incl. free-text PII / additional comments) by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
+- **Root cause:** Same root locus as BUG-003/087/089/090/091 — `TenantResolutionMiddleware` (US-AUTH-007) trusts the subdomain; the exit-interview service stamps the write with the resolved (header) tenant. Cross-READ is self-protected: an acme exit interview read under techone context → 404, and techone analytics do not include acme aggregates. The leak is the subdomain-header write path. Confidence: 98% (live probe).
+- **Reproduction steps:** acme TA JWT + `X-Tenant-Subdomain: techoneglobal`. `POST /api/v1/exit-interviews {"offboardingId":"019f07a7-9c8a-...(a techone offboarding)","interviewMode":"hr_conducted","interviewDate":"2026-06-27...","additionalComments":"XTENANT PROBE ...","overallExperienceRating":2,"responses":[]}` → 201, exit interview id `019f07ac-6468-...`. Visible under techone (200); 404 under acme.
+- **Evidence:** record-into-techone 201; read 200(techone)/404(acme); acme exit interview under techone → 404 (read self-protected).
+- **Severity rationale:** CRIT — this is the most sensitive surface in the module: cross-tenant WRITE of exit-interview records that carry departing-employee PII / free-text grievances, with only a valid same-platform token + the victim's subdomain. Critical Rule #1 violation; systemic.
