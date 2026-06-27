@@ -4,7 +4,7 @@ user_story: US-NTF-005
 module: Notifications & Audit
 priority: critical
 type: security
-status: draft
+status: pass
 created: 2026-06-17
 ---
 
