@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: critical
 type: functional
-status: pass
+status: fail
 created: 2026-06-12
 ---
 

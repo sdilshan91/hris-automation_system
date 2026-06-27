@@ -4,7 +4,7 @@ user_story: US-CHR-003
 module: Core HR
 priority: high
 type: functional
-status: pass
+status: fail
 created: 2026-06-12
 ---
 
