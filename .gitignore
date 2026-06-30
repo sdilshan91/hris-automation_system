@@ -59,3 +59,8 @@ playwright-report/
 # Backend runtime artifacts (tenant uploads, local agent memory)
 src/backend/HRM.Api/uploads/
 src/backend/HRM.Api/.claude/
+
+# Local TLS dev proxy — private keys + downloaded nginx binary (never commit)
+local-dev/certs/
+local-dev/nginx/
+local-dev/nginx.zip
