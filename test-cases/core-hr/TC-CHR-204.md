@@ -61,3 +61,7 @@ Verify that the daily background job (scheduled at 09:00) correctly identifies d
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — document-management is an employee-detail tab reached via the Employee Directory (crashed, **BUG-099**), and this assertion (virus-scan / expiry-badge / expiry-notification job / storage-quota / upload-perf / EXIF-strip) is backend/upload-processing behavior requiring a real file POST + job/storage inspection, not a browser-render check.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** BLOCKED — background-job + notification, and precondition (docs with 30/7/1-day expiry) uncreatable this pass. The document-expiry reminder job's notification dispatch is DEFERRED per the TC (Notification module). Triggering the Hangfire job and verifying emitted notification records is not report-only-API-reachable, and seeding docs at exact expiry marks requires uploads against staged data. Blocked: job-trigger-not-API-reachable + notification-dispatch-DEFERRED.

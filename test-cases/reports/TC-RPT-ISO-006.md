@@ -4,7 +4,8 @@ user_story: US-RPT-002
 module: Reports & Analytics
 priority: critical
 type: security
-status: draft
+status: fail
+exec_note: "2026-06-30 API iso-fixture probe: no-tenant-context correctly rejected (no X-Tenant-Subdomain -> HTTP 400 'No tenant context resolved'); BUT cross-tenant access via foreign X-Tenant-Subdomain header LEAKS (BUG-003). Mixed: rejection arm holds, header-spoof arm breaches -> fail on the breach."
 created: 2026-06-17
 ---
 

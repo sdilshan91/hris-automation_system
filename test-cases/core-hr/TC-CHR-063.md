@@ -59,3 +59,7 @@ Verify that when a job title with a linked salary grade is assigned to an employ
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — this TC requires opening an **employee profile** to verify the linked grade is displayed. The Employee Directory list is crashed (**BUG-099**), so no employee detail can be reached by in-app navigation, and the Job Titles GRADE column itself shows "—" for all 17 rows (no grade linkage in seed). Cannot execute the AC-4 profile-display flow.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** STILL BLOCKED — Grade feature effectively not built. Job-title carries a bare `gradeId` (`Guid?`) but there is **no `Grade` entity/table** in the domain (no `Grade.cs`, no grade-name lookup), so there is no "L5 - Senior" label to display anywhere. The employee profile (`GET /employees/{id}/profile`) exposes `jobTitleName` but **no grade field at all** — it does not resolve a grade via the job title. Steps 3-6 (grade shown on profile, dynamically re-resolved after a job-title grade change) are unverifiable because the profile never surfaces grade. The TC's own fallback ("if Grade entity not yet available…") applies: grade is a deferred/unwired feature, not a functional defect worth a new finding. Kept blocked (feature-not-built).

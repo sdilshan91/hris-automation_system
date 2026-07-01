@@ -53,3 +53,5 @@ Verify that the employee creation form is fully responsive from 360px to 1920px 
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive/cross-browser TC. The employee form renders correctly at the current desktop viewport; requires viewport resizing (360–1920px) / multiple browser engines not available in the fixed single shared chromium MCP session.

@@ -59,3 +59,7 @@ Verify that the document list on the employee profile's Documents tab displays a
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — document list/category/upload-form render is an employee-detail tab unreachable in-app due to the crashed Employee Directory (**BUG-099**). No in-app path to the document tab.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI arm (document-list rendering: expiry-badge colors / file-type icons / category filter tabs / upload-form fields). Not API-testable this pass (visual/DOM assertions). The underlying document CRUD + metadata API works (verified via upload/list/delete under TC-205), but the badge-color/icon/tab-filter rendering is front-end. Not a functional/business-rule defect at the API layer.

@@ -6,6 +6,7 @@ priority: high
 type: security
 status: blocked
 created: 2026-06-11
+exec_note: "2026-06-30: social-login-failures-do-NOT-increment-lockout needs a configured social/OIDC provider + the social login flow, not provisioned in the iso fixture. Auth tenant-scoping isolation confirmed separately (cross-tenant login rejected, 2026-06-30 API iso-fixture probe (auth tenant-scoping arm): login IS tenant-scoped — isoa-admin login against isob subdomain -> rejected 'no active membership in this organization' (HTTP). /auth/me reflects the TOKEN tenant even under a foreign X-Tenant-Subdomain (returns isoa, header ignored on identity). NOTE the divergence: identity follows the token but DATA queries follow the spoofable header (BUG-003 root locus US-AUTH-007/TenantResolutionMiddleware). This TC's own arm (MFA/session/social specifics) still needs that flow + remains blocked below. truncated). Keep blocked: needs social-login provider fixture."
 ---
 
 # TC-AUTH-096: Social login failures do NOT increment the lockout counter

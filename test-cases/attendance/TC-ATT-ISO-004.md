@@ -4,8 +4,9 @@ user_story: US-ATT-001
 module: Attendance
 priority: critical
 type: security
-status: blocked
+status: fail
 created: 2026-06-14
+exec_note: "2026-06-30 API iso-fixture probe: BUG-003 cross-tenant leak CONFIRMED on attendance — a shift seeded in isoa (ISOA-Shift-FP) is INVISIBLE under the isob header ([]) while visible under isoa; tenant context is header-driven not from the JWT. Dashboard/shift cache scoping fails by the same mechanism. Systemic (BUG-003 class)."
 ---
 
 # TC-ATT-ISO-004: Attendance dashboard cache keys are tenant-scoped (no cross-tenant cache bleed)

@@ -6,6 +6,7 @@ priority: critical
 type: security
 status: blocked
 created: 2026-06-11
+exec_note: "2026-06-30: MFA-failure-counts-toward-lockout (shared counter) needs an MFA-enrolled user + the MFA challenge flow, not provisioned in the iso fixture. Auth tenant-scoping isolation confirmed separately (cross-tenant login rejected). Keep blocked: needs MFA-enrolled persona."
 ---
 
 # TC-AUTH-090: MFA failures count toward lockout threshold (shared counter)

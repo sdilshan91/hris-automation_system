@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-03
----
+exec_note: "P3b k6 2026-06-30: SCALE NOT SEEDED — kept blocked. Requires 50 custom roles + a 200+-permission role bulk-created in the tenant + role-list read <=400ms; the 5k perf tenant was not seeded with this role/permission volume and the bulk role-create writes were not driven. (Also a known NFR mismatch: live catalog exposes only 112 permissions, not 200+.) Perf harness exists (perf/), re-run after seeding roles."
 
 # TC-AUTH-044: System supports 50 custom roles per tenant and 200+ permissions
 

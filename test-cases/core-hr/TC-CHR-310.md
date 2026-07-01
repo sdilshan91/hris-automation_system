@@ -49,3 +49,5 @@ Verify that malicious scripts injected into custom field names, dropdown options
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the custom-field create modal cannot open (**BUG-100**: openAddModal throws), so an XSS payload cannot be entered into a field name / dropdown option via the UI. Server-side sanitization would need an API probe regardless.

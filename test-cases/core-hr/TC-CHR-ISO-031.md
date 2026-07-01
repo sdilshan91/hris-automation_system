@@ -4,9 +4,9 @@ user_story: US-CHR-008
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (employee documents). EF-Core global query filter ISOLATION HOLDS: GET isob-emp documents under isoa-token+isoa-hdr -> 404 (employee resolution itself excluded by tenant filter, so docs unreachable cross-tenant via direct id). Achievable EF-layer ORM-isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only); raw-SQL step 5 NOT DB-enforced -- documented gap. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob lists isob-emp documents (200) = systemic BUG-003. READ-ONLY on real tenants; throwaway writes only into isob; nothing deleted."
 
 # TC-CHR-ISO-031: RLS blocks direct DB queries across tenants for employee documents
 

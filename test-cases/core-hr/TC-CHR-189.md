@@ -4,7 +4,7 @@ user_story: US-CHR-007
 module: Core HR
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -57,3 +57,5 @@ Verify that the Locations management page (list view and add/edit form) meets WC
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — partial. The Locations page renders a proper semantic `<table>` (`<th>`: NAME / CITY / COUNTRY / TIME ZONE / EMPLOYEES / STATUS / ACTIONS, 7 rows of real acme data incl. Colombo Head Office), `h1` heading, "Add Location" button; XSS-named rows render inert. BUT the WCAG 2.1 AA contrast clause FAILS via systemic **BUG-096** (#a3a3a3 low-contrast text app-wide).

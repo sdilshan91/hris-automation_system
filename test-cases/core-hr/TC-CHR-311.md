@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-13
----
+exec_note: "P3b k6 2026-06-30: WRITE ARM NOT MEASURED — kept blocked. Read arm met: custom-fields list (GET /tenant/custom-fields) p95 57–70ms @50VU on 5k perf tenant < 400ms SLA. But the TC also requires POST/PUT/reorder writes <=800ms P95, and write-load was not measured this pass. Re-run after scripting the custom-field write flow."
 
 # TC-CHR-311: Custom field configuration API response times within SLA
 
@@ -50,3 +50,5 @@ Verify that custom field configuration API endpoints meet the P95 response time 
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — performance/API-SLA TC (response-time / JSONB-GIN query / form-render budget). Needs an instrumented perf/load harness, not a browser-render check. Custom-fields UI is also non-functional (BUG-100).

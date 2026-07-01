@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: WRITE ARM NOT MEASURED — kept blocked. Read arm met: locations list p95 57–70ms @50VU on 5k perf tenant < 400ms SLA. But the TC also requires location write <=800ms P95, and write-load was not measured this pass. Re-run after scripting the location write flow."
 
 # TC-CHR-188: Location API response times within SLA (read <= 400ms P95, write <= 800ms P95)
 
@@ -58,3 +58,5 @@ Verify that location CRUD API endpoints meet the performance SLA defined in NFR-
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — API-SLA TC (read/write response-time percentiles), not a browser-render check. Needs a load/timing harness.

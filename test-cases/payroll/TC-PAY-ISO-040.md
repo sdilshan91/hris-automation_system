@@ -6,6 +6,7 @@ priority: high
 type: security
 status: blocked
 created: 2026-06-16
+exec_note: "2026-06-30: reconciliation report cache + attendance/leave summary cache + advisory-lock isolation needs reconciliation run-state in each iso tenant (no run/attendance data seeded). BUG-003 header-driven context confirmed on payroll config (TC-PAY-ISO-004). Keep blocked: needs payroll-run/reconciliation data."
 ---
 
 # TC-PAY-ISO-040: Attendance/leave summary cache + reconciliation report cache + advisory-lock state are tenant-scoped (no cross-tenant cache leak) (AC-5, FR-8, NFR-1)

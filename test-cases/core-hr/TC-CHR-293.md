@@ -53,3 +53,7 @@ Verify that the manager assignment UI is fully responsive at 360px viewport widt
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive TC (360px manager selector overlay / My Team stack). Requires viewport resizing not available in the fixed shared chromium session; assignment UI also gated by BUG-099.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

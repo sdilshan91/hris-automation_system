@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: WRITE-ONLY ARM NOT MEASURED — kept blocked. Target is the status-change WRITE API <=800ms P95; write-load was not measured this pass (only read/list scenarios + report-export ran). Needs a status-change write scenario. Re-run after scripting it."
 
 # TC-CHR-234: Status change API response time within 800ms P95 (NFR-1)
 
@@ -50,3 +50,5 @@ Verify that the status change API endpoint responds within the SLA of 800ms at t
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — API-SLA TC (status-change response time); also gated by BUG-099 and needs an instrumented timing harness.

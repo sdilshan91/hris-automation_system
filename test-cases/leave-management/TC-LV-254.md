@@ -4,9 +4,9 @@ user_story: US-LV-012
 module: Leave Management
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-14
----
+exec_note: "FAIL 2026-07-01 — /leave/reports (landing, axe CLEAN) + /leave/reports/utilization report view reached via inject-axe + soft-nav as hr@acme.test (has Leave.Reports). After 'Apply filters', axe (wcag2a/2aa/21a/21aa) on main shows serious color-contrast (3 nodes) on .text-xs labels → BUG-096 class. GOOD: print-friendly CSS present (@media print rule found in stylesheets); Print + Export buttons rendered; filter sidebar present. PARTIAL data: the utilization chart/table did not populate (default period returned no data for acme), so the central NFR-4 arm — chart non-color cue / data-table alternative / chart aria-label — was NOT fully verifiable. Fail driven by the contrast defect on the always-rendered report shell labels."
 
 # TC-LV-254: Reports accessible + print-friendly; charts carry non-color cues / data labels (NFR-5, NFR-4)
 

@@ -4,7 +4,9 @@ user_story: US-ADM-001
 module: Admin Console
 priority: critical
 type: security
-status: blocked
+status: fail
+exec_note: >-
+  2026-06-30 API: same-context reads correctly isolated (isoa sees only its 2 emp, isob only its 2). BUT isoa token + foreign X-Tenant-Subdomain:isob -> 200 + full isob rows LEAKED. Systemic cross-tenant leak = existing BUG-003 (token tenant_id never validated vs resolved subdomain). Admin/CoreHR surface LEAKS.
 created: 2026-06-16
 ---
 

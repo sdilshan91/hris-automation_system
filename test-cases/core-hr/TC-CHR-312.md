@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-13
----
+exec_note: "P3b k6 2026-06-30: SCALE/SCENARIO NOT MEASURED — kept blocked. Target is a JSONB-by-custom-field-value query <=500ms P95 at 10,000 employees with a GIN index; this specific filtered query at 10k was not driven (the generic employee list read measured 212ms but is not the JSONB-value filter path). Needs a 10k-employee + custom-field-value seed. Re-run after seeding."
 
 # TC-CHR-312: JSONB query by custom field value within 500ms at 10,000 employees with GIN index
 
@@ -53,3 +53,5 @@ Verify that querying employees by a custom field value using JSONB operators com
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — performance/API-SLA TC (response-time / JSONB-GIN query / form-render budget). Needs an instrumented perf/load harness, not a browser-render check. Custom-fields UI is also non-functional (BUG-100).

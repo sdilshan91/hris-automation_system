@@ -4,7 +4,7 @@ user_story: US-CHR-002
 module: Core HR
 priority: medium
 type: accessibility
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -60,3 +60,6 @@ Verify that the employee profile page meets WCAG 2.1 AA accessibility standards:
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the employee profile/detail page is reached in-app by clicking a row in the Employee Directory, which is crashed (**BUG-099**: list never renders), so no profile can be opened by navigation. (TC-106 also needs the employee@acme self-service persona / portal route.) Not runnable until the directory list renders.
+> **Re-exec 2026-06-30 (deep-a11y pass, FE, acme):** STILL BLOCKED — re-confirmed BUG-099 live (`EmployeeListComponent_Template` throws `Cannot read properties of undefined (reading 'length')` on every change-detection pass; `GET /tenant/employees` is 200 but the list body stays blank). With no employee row clickable, the profile/detail page cannot be opened to run keyboard/focus/SR checks. Deep-a11y method (keyboard tab-order, label-association, axe-core, focus-visibility) WAS validated working on the reachable **Add Employee** wizard (`/employees/new`) — see BUG-108 — but that create-wizard is not this TC's target (existing-employee profile read/edit). Unblocks only when BUG-099 is fixed.

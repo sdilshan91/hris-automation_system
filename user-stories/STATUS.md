@@ -100,8 +100,30 @@
 ## Platform / Cross-Cutting Tech Debt (3 stories)
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
 - [x] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(PR #50; surfaced in US-REC-001 / PR #49)*
-- [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(Phases 1-3 plumbing in PR #51, inert by default; **Phase 4 switch-on DEFERRED** — needs Docker/Postgres env, see Persistence/Rls/README.md)*
+- [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(Phases 1-3 plumbing in PR #51, inert by default. **Phase 4 switch-on = the remaining dev task** — full spec in [`src/backend/HRM.Infrastructure/Persistence/Rls/README.md`](src/backend/HRM.Infrastructure/Persistence/Rls/README.md):*
+  1. *Enable-RLS EF migration: `ALTER TABLE … ENABLE/FORCE ROW LEVEL SECURITY` + `CREATE POLICY tenant_isolation … USING (tenant_id = current_setting('app.current_tenant', true)::uuid)` on every `TenantId`-filtered table (exclude `tenants`/`users`; `roles` = nullable-tenant special case).*
+  2. *Route system/admin paths (`DbInitializer`, tenant lookup, system-context, cross-tenant Hangfire) to `ConnectionStrings:PrivilegedConnection` (BYPASSRLS `hrm_owner` from `roles.sql`).*
+  3. *Flip `Rls:Enabled=true` + add CI RLS integration tests.*
+  - ***Env precondition now MET*** *(native PG18 :5432 + Docker both up — the original "no Docker/Postgres" deferral reason is stale). QA-verified 2026-06-30: live DB has **0 policies / 0 RLS-enabled tables**, flag `false` → genuinely unimplemented (DB availability is NOT the blocker; the migration is). Completing it unblocks the `[DEFERRED]` isolation TCs ADM-ISO-016/020/024/027/031 + ADM-005-21. Run via `/implement-story US-PLT-002` (deliberate dev+review — RLS touches every tenant query).)*
 - [x] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(PR #57: global JsonStringEnumConverter + recruitment FE casing; PR #111: leave-management + core-hr FE enum casing reconciled — **COMPLETE**)*
+
+### QA-Surfaced Dev Backlog (from 2026-06-30 isolation + FE testing — fixes/implementations needed to unblock tests)
+> These are dev tasks (fixes or unbuilt features) found during the P3 testing campaign. Full detail in [test-cases/TEST-FINDINGS.md](../test-cases/TEST-FINDINGS.md). Hand to a fix cycle / `/implement-story`; not auto-picked.
+- [ ] **FIX BUG-003 (CRIT, systemic cross-tenant)** — validate the JWT `tenant_id` claim against the subdomain-resolved tenant (root `TenantResolutionMiddleware` / US-AUTH-007). Unblocks/clears the cross-tenant read+write isolation arms across every module.
+- [ ] **FIX BUG-107 (HIGH, security)** — impersonation destructive-op blocklist misses `ForcePasswordReset`/`DeactivateUser`/`AssignUserRoles`/`EditUserRoles`; they execute during a full SystemAdmin impersonation. Add them to the hard-block list.
+- [ ] **FIX BUG-106 (MED)** — suspended-tenant Tenant Admin/Owner not exempt from the 451 gate → can't reach the read-only suspension landing/export (AC-2 unmet).
+- [ ] **FIX BUG-104 + ISSUE-217 (HIGH/MED, one root)** — FE↔BE route mismatch `/tenant/exports` (FE) vs `/tenant/data-exports` (BE); breaks the Data Export UI and the terminating-tenant grace export allowlist.
+- [ ] **FIX FE render/contract bugs from the sweep** — BUG-097 (no silent session-restore → reload logs out), BUG-099 (Employee Directory render crash), BUG-100 (Custom Fields render crash), BUG-101/102 (carry-forward NaN / apply-leave empty dropdown), BUG-098 (leave-type null-color null-deref). See TEST-FINDINGS.md BUG-096..104.
+- [ ] **BUILD deferred Admin monitoring KPIs** (TC-ADM-002-14..18 `[DEFERRED]`) — aggregate error-rate %, P95 latency, SLA-uptime %, storage/API-call/email usage gauges. Unblocks those TCs.
+- [ ] **FIX systemic a11y classes (from P3c-FE deep-a11y, 2026-06-30/07-01)** — these recur on EVERY module's pages, so each is one shared fix:
+  - **BUG-096** — `#a3a3a3` (Tailwind `neutral-400`) muted text + green trend-pill fail WCAG AA contrast app-wide → darken the design token(s).
+  - **BUG-109** — **every hand-rolled overlay/drawer/modal** (payroll run, attendance regularization, etc.) asserts `aria-modal` but doesn't make the background inert, trap focus, move initial focus, or close on Esc → adopt Angular CDK `Dialog`/`overlay` (focus-trap + `cdkTrapFocus` + inert background) for all overlays.
+  - **BUG-108** — focusable `aria-hidden` file inputs nested in `role="button"` drop-zones (upload controls) → `tabindex="-1"` on the hidden input / unnest.
+  - **BUG-110** — `role="tablist"` containing non-`tab` children (statutory fiscal-year selector class) → correct ARIA roles.
+  - **BUG-111** — dynamic char-counters lack `aria-live`/`role="status"` → add live region.
+  - **BUG-112** — `overflow-x-auto` scroll regions lack `tabindex="0"` → make keyboard-scrollable.
+- [ ] **BUILD/FIX Core HR functional gaps (P3c-functional, 2026-07-01)** — **BUG-113 HIGH** (employee Create/Edit API has no `LocationId` → employee↔location linking impossible, per-location count always 0, deactivation-guard is dead code — wire `LocationId` into `CreateEmployeeCommand`/`UpdateEmployeeProfileRequest`), **BUG-114 MED** (tenant storage quota `MaxStorageGb` never enforced — no usage sum/gate), **ISSUE-218 MED** (reporting-manager/chain not exposed on `GET /employees/{id}`).
+- [ ] **(tracked above) US-PLT-002 RLS** — unblocks the 19 `[DEFERRED]` RLS/at-rest-encryption isolation TCs; env precondition now met.
 
 ## 6. Payroll (12 stories) — COMPLETE ✅
 - [x] US-PAY-001 — Configure salary structure and components *(PR #63)*

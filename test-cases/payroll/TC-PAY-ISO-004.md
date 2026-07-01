@@ -4,8 +4,9 @@ user_story: US-PAY-001
 module: Payroll
 priority: high
 type: security
-status: blocked
+status: fail
 created: 2026-06-15
+exec_note: "2026-06-30 API iso-fixture probe: BUG-003 cross-tenant leak CONFIRMED on payroll config surface — isoa-admin token + X-Tenant-Subdomain:isob honors the HEADER tenant not the token: read returns isob context, and a CREATE salary-component landed in ISOB (XLEAKPROBE in isob list, not isoa). Both reads and writes follow the spoofable subdomain header. Systemic (BUG-003 / ISSUE-187 write-leak class). List-cache isolation fails by the same mechanism."
 ---
 
 # TC-PAY-ISO-004: Payroll list caches are tenant-scoped (no cross-tenant cache leak)

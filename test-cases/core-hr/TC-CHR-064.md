@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: critical
 type: functional
-status: draft
+status: pass
 created: 2026-06-12
 ---
 
@@ -60,3 +60,5 @@ Verify that clicking "Add Employee" opens a card-based multi-step wizard with al
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** PASS. Clicking **Add Employee** opens `/employees/new` — a multi-step wizard (`navigation "Employee creation steps"`) with all required sections as labeled steps: 1 Personal Info, 2 Contact, 3 Emergency Contact, 4 Employment Details, plus optional 5 Education / 6 Work History / 7 Dependents (each badged "Optional"). Progress indicator shows current/disabled step states; Step 1 renders Personal Information card (Profile Photo uploader, First/Last Name*, Email*, DOB, Gender). All sections present per AC-1.

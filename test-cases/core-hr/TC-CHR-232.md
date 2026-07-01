@@ -53,3 +53,7 @@ Verify that the status change UI is fully responsive. On a 360px viewport (mobil
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive TC (360px bottom-sheet for status change); status-change modal unreachable in-app (BUG-099) and viewport resizing unavailable in the fixed shared chromium session.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

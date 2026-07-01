@@ -4,7 +4,7 @@ user_story: US-CHR-007
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: pass
 created: 2026-06-12
 ---
 
@@ -57,3 +57,7 @@ Verify that a deactivated location is hidden from assignment dropdowns (cannot b
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — behavioral/integration TC (location appears in employee-assignment dropdowns & holiday-calendar config; deactivation-with-active-employees rules; deactivated-not-assignable). The Locations table renders, but verifying these cross-feature/write rules requires creating/assigning records and reaching the employee-assignment form — out of scope for the FE-render sweep (and employee directory is crashed, BUG-099). Not an FE-render defect.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **PASS (API core).** Throwaway location `TWLoc22895` (`019f1b1d-37f0-79b5-a6b5-aa2a849a0248`) created active, then `POST /tenant/locations/{id}/deactivate` → 200. After deactivation it is EXCLUDED from `GET /tenant/locations?activeOnly=true` (the assignment-dropdown source — so it "cannot be assigned to new employees") yet REMAINS in the full `GET /tenant/locations` admin list with `isActive:false` (soft-deleted, not hard-deleted). The "was previously assigned to an employee, remains on existing records" clause is unverifiable because the employee↔LocationId link itself is unreachable (see BUG-113), but the tested location-side behaviour (not assignable when inactive, still visible in admin) is correct. Cleaned up: location left deactivated (soft-deleted throwaway).

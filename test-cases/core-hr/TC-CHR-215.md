@@ -55,3 +55,5 @@ Verify that the document description field sanitizes user input to prevent cross
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — security TC (XSS in document description); document upload form unreachable in-app (BUG-099) and server-side sanitization needs an API probe.

@@ -4,7 +4,7 @@ user_story: US-CHR-007
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -55,3 +55,7 @@ Verify that the Locations management page displays an accurate employee count pe
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the EMPLOYEES column renders per location, but every acme location shows count 0, so the clickable-badge-with-count behavior (navigating to filtered employees) cannot be verified without a location that has assigned employees. Column presence confirmed; badge interaction unrunnable on current seed.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **FAIL — BUG-113.** `LocationDto.EmployeeCount` is computed as `Employees.Count(e => e.LocationId == locationId && e.IsActive)`, but no employee can ever have `LocationId` set through the standard forms (Create/Edit API expose only free-text `Location`, no FK). Verified: every acme location returns `"employeeCount": 0`. The clickable-badge → filtered-directory navigation (steps 4-5) is an FE arm, but the underlying count is structurally always 0, so the badge is always "0". See BUG-113.

@@ -4,8 +4,9 @@ user_story: US-LV-001
 module: Leave Management
 priority: critical
 type: security
-status: blocked
+status: fail
 created: 2026-06-13
+exec_note: "2026-06-30 API iso-fixture probe: BUG-003 cross-tenant leak CONFIRMED on leave-types — isoa-admin token + X-Tenant-Subdomain:isob honors the HEADER tenant: read returns isob context ([], not isoa's ISOALV), and a CREATE leave-type landed in ISOB (XLEAKLV in isob list, not isoa). Read+write both follow the spoofable subdomain header. Systemic (BUG-003 / BUG-026 read + write-leak class)."
 ---
 
 # TC-LV-ISO-003: RLS blocks direct DB queries across tenants for leave types

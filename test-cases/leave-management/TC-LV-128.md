@@ -6,7 +6,7 @@ priority: high
 type: accessibility
 status: blocked
 created: 2026-06-14
----
+exec_note: "BLOCKED 2026-07-01 (data) — /leave/dashboard reached via inject-axe + soft-nav as employee@acme.test; page renders 'No leave balances yet' (employee has ZERO leave-type entitlements/ledger), so the balance cards + progress bars — the central object of this TC (role=progressbar, aria-valuenow/min/max, color-not-sole-indicator) — never render. Visible structure (header, 2024/25/26 year selector, upcoming-leaves list, history filter chips) is axe-clean (0 WCAG2a/2aa/21a/21aa violations) with named/focusable controls and no h-overflow @1440. Cannot verify progress-bar a11y without seeded ledger data for an employee-linked persona (TC names 'Nina Patel' w/ multiple active leave types)."
 
 # TC-LV-128: WCAG 2.1 AA -- progress bars have aria-labels and color is not the sole indicator
 

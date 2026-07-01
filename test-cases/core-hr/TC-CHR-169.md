@@ -4,7 +4,7 @@ user_story: US-CHR-006
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -53,3 +53,5 @@ Verify that the org tree is read-only: users cannot reorganize the hierarchy via
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **ISSUE-207**. The Org Tree page renders only the empty-state ("No departments found") despite 51 departments existing (API 200). With no tree nodes rendered, this node-interaction check (click / search-expand / expand-collapse / export-with-content / read-only links) cannot be exercised.

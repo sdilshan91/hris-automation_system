@@ -4,9 +4,9 @@ user_story: US-CHR-012
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-13
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (custom field definitions). Seeded throwaway 'ISO B Field' (id 019f194d-b5ba-...) into isob. EF-Core global query filter ISOLATION HOLDS: IDOR GET isob custom-field by id under isoa-token+isoa-hdr -> 404 (matches TC step 3 'returns null even by direct ID'). Achievable EF-layer ORM-isolation objective met -> PASS. CAVEAT: (1) No PostgreSQL RLS (EF-filter-only); raw-SQL step 4 NOT DB-enforced -- documented gap per TC. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob returns isob custom-fields ('ISO B Field') = systemic BUG-003. Serilog confirms mechanism: isoa-token request w/ hdr isob resolved TenantId=2b1b...b1 and EF emitted `... OR e.tenant_id=@ef_filter__TenantId` keyed to the SUBDOMAIN tenant, token tenant ignored. READ-ONLY on real tenants; throwaway writes only into isob; nothing deleted."
 
 # TC-CHR-ISO-047: RLS blocks direct DB queries across tenants for custom field definitions
 

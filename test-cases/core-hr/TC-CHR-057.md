@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: WRITE ARM NOT MEASURED — kept blocked. Read arm (GET /job-titles, GET /{id}) met: job-titles list p95 57–70ms @50VU on 5k perf tenant < 400ms SLA. But the TC also requires POST /job-titles write <=800ms P95, and write-load was not measured this pass. Re-run after scripting the job-title write flow."
 
 # TC-CHR-057: Job title CRUD API response time within SLA
 
@@ -52,3 +52,5 @@ Verify that job title API endpoints meet the performance SLA defined in NFR-1: r
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — API-SLA TC (response-time percentiles), not a browser-executable FE check. Needs a load/timing harness (k6 / instrumented API timing). Out of scope for this FE per-TC pass.

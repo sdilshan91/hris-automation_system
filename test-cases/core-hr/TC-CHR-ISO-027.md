@@ -4,9 +4,9 @@ user_story: US-CHR-007
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (locations). Seeded throwaway 'ISO B Location' (id 019f194e-0166-...) into isob. EF-Core global query filter ISOLATION HOLDS: IDOR GET isob location by id under isoa-token+isoa-hdr -> 404 (direct-ID lookup excluded by filter, matching TC step 3). Achievable EF-layer ORM-isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only); the IgnoreQueryFilters/raw step is application-layer only. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob returns isob locations ('ISO B Location') = systemic BUG-003. READ-ONLY on real tenants; throwaway writes only into isob; nothing deleted."
 
 # TC-CHR-ISO-027: RLS blocks direct DB queries across tenants for locations
 

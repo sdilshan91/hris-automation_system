@@ -4,7 +4,7 @@ user_story: US-CHR-010
 module: Core HR
 priority: high
 type: accessibility
-status: draft
+status: fail
 created: 2026-06-12
 ---
 
@@ -50,3 +50,5 @@ Verify that the bulk import page meets WCAG 2.1 AA accessibility standards, incl
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — partial. The Bulk Import wizard has strong structure: `list "Import steps"` (Download Template / Upload File / Review Results), `h1`/`h2` headings, "Back to employee directory" link, labeled "Download CSV/Excel Template" buttons, a drag-drop zone with an `input[type=file]`, and "Next: Upload File"/Back/Import buttons. BUT the WCAG 2.1 AA contrast clause FAILS via systemic **BUG-096** (#a3a3a3 low-contrast text app-wide).

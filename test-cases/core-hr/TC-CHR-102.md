@@ -51,3 +51,5 @@ Verify that at least one emergency contact is recommended but not mandatory duri
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — partial signal only. Emergency Contact is wizard step 3; Save & Continue advanced past Step 1 (Personal Info) without any emergency-contact entry, suggesting it is not mandatory early. But fully confirming "recommended but not mandatory on creation" (BR-5) needs reaching final submit and creating the record (a write), which is out of scope for this REPORT-ONLY FE sweep. Not flipped to avoid an unverified pass.

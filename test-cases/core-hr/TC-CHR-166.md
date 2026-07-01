@@ -4,7 +4,7 @@ user_story: US-CHR-006
 module: Core HR
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -63,3 +63,5 @@ Verify that the org tree meets WCAG 2.1 AA accessibility standards: tree nodes a
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — partial. Chrome a11y is good (`radiogroup "Organization tree view"`, labeled "Export organization chart as PNG", `h1` heading), but (a) no tree nodes render (**ISSUE-207**) so keyboard arrow-navigation across `treeitem`s and screen-reader node/level announcements cannot be verified, and (b) systemic contrast **BUG-096** fails the WCAG AA contrast clause.

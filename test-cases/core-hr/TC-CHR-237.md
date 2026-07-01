@@ -4,7 +4,7 @@ user_story: US-CHR-009
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: pass
 created: 2026-06-12
 ---
 
@@ -53,3 +53,7 @@ Verify that a suspended employee is excluded from active headcount reports/queri
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — employee status-change is a profile/detail action reached via the Employee Directory (crashed, **BUG-099**), and this assertion (probation reminder job / future-dated background apply / suspended-excluded-from-headcount) is backend/job behavior needing a write + job execution, not a browser-render check.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **PASS.** Subject EMP-0030 "Pq1 Test" (`019efd93-a863-7b69-b4a8-cf37f7f4d600`), originally Active — mutated then **restored to Active immediately**. Suspend (`POST /employees/{id}/status` `{newStatus:Suspended, effectiveDate:2026-07-01}`) → 200. Active headcount `?activeOnly=true` dropped 28→27 (suspended excluded from active headcount, BR-5 ✓). Full list `GET /employees` (34) still contains it with status "Suspended" — data retained, total unchanged, `isActive:false` but not deleted (soft-delete flag never set by status change). Profile `GET /{id}/profile` still loads fully (name intact). Restored to Active → headcount back to 28. (Note: status change requires `effectiveDate` — omitting it returns 400 "Effective date is required.")

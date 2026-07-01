@@ -59,3 +59,5 @@ Verify that uploading a valid profile photo (JPEG, PNG, or WebP, under 5 MB) dur
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the create wizard renders a "Upload profile photo" control (JPEG/PNG/WebP, Max 5 MB hint), but verifying EXIF-stripping / signed-URL / server-side size rejection is backend upload behavior requiring a real file POST + storage inspection, not a browser-render check. Not an FE-render defect.

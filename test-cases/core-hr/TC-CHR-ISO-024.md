@@ -4,9 +4,9 @@ user_story: US-CHR-006
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 N/A->PASS. Code-confirmed: no OrgTreeService cache and Employee/DepartmentService have ZERO cache references; org-tree responses are not cached. No shared org-tree cache to pollute. Observable guarantee verified: org-tree under honest isoa context returns only isoa nodes; under the foreign-subdomain override it returns isob nodes (that is the systemic BUG-003 read leak, NOT cache pollution -- it's fetched live, tenant-scoped to the resolved subdomain). No Redis wired. API-only; nothing deleted."
 
 # TC-CHR-ISO-024: Cache keys for org-tree data are tenant-scoped
 

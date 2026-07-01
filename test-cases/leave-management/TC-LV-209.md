@@ -4,9 +4,9 @@ user_story: US-LV-010
 module: Leave Management
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-14
----
+exec_note: "FAIL 2026-07-01 — /leave/my-requests reached via inject-axe + soft-nav as employee@acme.test; opened the cancel-confirmation dialog (clicked row Cancel → clicked 'Keep request' to close, NO DB write). GOOD: it IS a role=dialog + aria-modal=true with an accessible name (aria-labelledby='cancel-dialog-title' → 'Cancel leave request?'), and the reason textarea #cancel-reason is properly labeled. DEFECTS: (1) BUG-109 class — hand-rolled <div role=dialog> (my-leave-requests.component.ts:187, NOT a CDK MatDialog: no cdkTrapFocus / no (keydown.escape) / no cdkFocusInitial): focus is NOT moved into the dialog on open (activeElement=BODY) and Escape does NOT close it; (2) BUG-096 class — axe serious color-contrast on the '(optional)' hint text, color #a3a3a3 (rgb 163,163,163) 14px on white ≈2.6:1 (<4.5:1 AA). NOTE: this Pending request makes reason optional (aria-required=false) — the TC's mandatory-reason/announced-error arm (approved request, BR-5) was NOT exercised this pass (no approved future request was cancelled to avoid a write); structural reason-field labeling verified."
 
 # TC-LV-209: Cancel confirmation dialog -- keyboard/screen-reader accessible, mandatory-reason field labeled with announced errors, usable at 360px+ (WCAG 2.1 AA; Section 8)
 

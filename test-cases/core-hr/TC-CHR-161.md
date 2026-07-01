@@ -4,7 +4,7 @@ user_story: US-CHR-006
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -53,3 +53,5 @@ Verify that searching for a non-existent employee name in the org tree produces 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **ISSUE-207**. No tree renders (no-data empty-state shown regardless), so a search-with-no-match cannot be distinguished/exercised against a populated tree.

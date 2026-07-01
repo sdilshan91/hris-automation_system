@@ -56,3 +56,7 @@ Verify that the Job Titles management page is fully responsive across viewport w
 - [ ] Performance test
 - [x] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive/cross-browser TC. Job Titles renders correctly at the current desktop viewport; requires viewport resizing / multiple browser engines not available in the fixed single shared chromium MCP session.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

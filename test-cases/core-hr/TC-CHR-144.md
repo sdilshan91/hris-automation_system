@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is debounce + search-result RENDER within 500ms of last keystroke (FE interaction), not a pure server API. The search-API sub-arm (<=200ms) was not isolated this pass. Needs a Chrome DevTools FE perf trace / interaction timing, not k6."
 
 # TC-CHR-144: Search results update within 500ms of user stopping typing (NFR-2)
 

@@ -4,7 +4,7 @@ user_story: US-CHR-003
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -56,3 +56,5 @@ Verify that the Excel export produces a valid .xlsx file (via ClosedXML) with a 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **BUG-099**. The `/employees` Employee Directory renders header + toolbar only; the list body never renders (`EmployeeListComponent_Template` throws `TypeError: …reading 'length'` on render despite the list API returning 200). With no list/grid/pagination, this TC's check cannot pass.

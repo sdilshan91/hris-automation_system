@@ -53,3 +53,5 @@ Verify that when an image file (JPEG or PNG) is uploaded as a document, the syst
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — document-management is an employee-detail tab reached via the Employee Directory (crashed, **BUG-099**), and this assertion (virus-scan / expiry-badge / expiry-notification job / storage-quota / upload-perf / EXIF-strip) is backend/upload-processing behavior requiring a real file POST + job/storage inspection, not a browser-render check.

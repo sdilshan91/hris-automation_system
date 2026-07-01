@@ -6,7 +6,7 @@ priority: critical
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE TTI<=2.5s P95 (Employee Directory full render incl. skeleton-replace + interactive pagination at 5k employees), not a server API. Needs a Chrome DevTools FE perf trace, not k6. (For reference, the underlying directory LIST API read measured 212ms p95 @50VU on the 5k perf tenant.)"
 
 # TC-CHR-143: Directory page load within 2.5 seconds P95 at 5,000 employees (NFR-1)
 
@@ -53,3 +53,5 @@ Verify that the Employee Directory page (including API response, rendering, and 
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Re-exec 2026-06-30 (deep FE-render pass, CDP):** STILL BLOCKED — triple-gated. Metric is **cold-load TTI P95 of the Employee Directory at 5,000 employees** (step 2: "navigation start to … skeletons replaced + pagination interactive"). (a) Cold-load TTI needs a full navigation that logs you out (**BUG-097**); (b) the directory list itself crashes on render — `EmployeeListComponent_Template … reading 'length'` of undefined, list body never paints (**BUG-099**) — so there is no "skeletons replaced/interactive" moment to time; (c) acme has 34 employees, not the 5k scale this TC requires. No measurable arm until BUG-097 + BUG-099 fixed and a 5k seed exists.

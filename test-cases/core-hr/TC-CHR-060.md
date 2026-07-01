@@ -4,7 +4,7 @@ user_story: US-CHR-005
 module: Core HR
 priority: medium
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -56,3 +56,5 @@ Verify that the Job Titles management page meets WCAG 2.1 Level AA accessibility
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — partial. The Job Titles page renders a proper semantic `<table>` (`<th>` headers: TITLE NAME / GRADE / EMPLOYEES / STATUS / ACTIONS, 17 data rows of real acme data), `h1` page heading, and SQL-injection-named titles render as inert text. BUT the WCAG 2.1 AA automated contrast clause FAILS via systemic **BUG-096** (#a3a3a3 low-contrast text app-wide). No table `<caption>` (minor). Marked fail on the contrast violation.

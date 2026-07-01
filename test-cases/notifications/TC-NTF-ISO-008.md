@@ -4,8 +4,9 @@ user_story: US-NTF-002
 module: Notifications & Audit
 priority: high
 type: security
-status: blocked
+status: fail
 created: 2026-06-17
+exec_note: "2026-06-30 API iso-fixture probe: template SELECTION is context-scoped (isoa's custom 'leave_approved' subject is INVISIBLE under the isob header -> isob sees the default, isCustom:false) — the selection logic itself respects the resolved tenant. BUT the resolved tenant is the spoofable X-Tenant-Subdomain header: isoa-admin token + isob header PUT customized ISOB's template (isob now shows 'XLEAK-INTO-ISOB', isCustom:true). 'Strictly within the recipient's tenant' is breached at the resolution layer. BUG-003 / ISSUE-189-191 write-leak class."
 ---
 
 # TC-NTF-ISO-008: Email render/send pipeline selects templates strictly within the recipient's tenant

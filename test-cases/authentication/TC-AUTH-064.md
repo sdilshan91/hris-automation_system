@@ -6,7 +6,7 @@ priority: medium
 type: performance
 status: blocked
 created: 2026-06-09
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED (needs Redis + invalidation flow) — kept blocked. Target is my-tenants per-user Redis cache p95 + tenant-switch <=400ms + invalidation-after-membership-change; Redis is not wired this env (in-memory fallback) and the membership-change invalidation flow was not driven. The my-tenants endpoint was not part of the P3b read scenarios. Re-run with Redis wired + the switch/invalidation flow scripted."
 
 # TC-AUTH-064: My-tenants cache performance and invalidation
 

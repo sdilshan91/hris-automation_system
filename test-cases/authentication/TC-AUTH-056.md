@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-09
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE THIS ENV — kept blocked. Target is tenant-resolution cache-MISS PostgreSQL fallback + Redis repopulate <=50ms; Redis is not wired in this env (in-memory fallback), so the miss→repopulate path can't be exercised, and isolated middleware overhead needs server-side timing not k6. Re-run with Redis wired + middleware timing."
 
 # TC-AUTH-056: Cache miss falls back to PostgreSQL and repopulates Redis within 50 ms
 

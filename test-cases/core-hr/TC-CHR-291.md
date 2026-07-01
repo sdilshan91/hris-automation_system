@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Target is bulk manager-assignment for 100 employees <=5s (batched write); the bulk-assign write was not driven this pass. Needs a bulk-assign write scenario. Re-run after scripting it."
 
 # TC-CHR-291: Bulk manager assignment for 100 employees completes within 5 seconds
 
@@ -51,3 +51,5 @@ Verify that a bulk manager assignment operation for 100 employees completes with
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — API/performance TC (assignment SLA / deep-hierarchy cycle-detection / bulk-assign timing). Needs an instrumented timing/load harness, not a browser-render check.

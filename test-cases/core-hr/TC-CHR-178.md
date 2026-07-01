@@ -4,7 +4,7 @@ user_story: US-CHR-007
 module: Core HR
 priority: critical
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -58,3 +58,7 @@ Verify that when a Tenant Admin attempts to deactivate a location that has activ
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — behavioral/integration TC (location appears in employee-assignment dropdowns & holiday-calendar config; deactivation-with-active-employees rules; deactivated-not-assignable). The Locations table renders, but verifying these cross-feature/write rules requires creating/assigning records and reaching the employee-assignment form — out of scope for the FE-render sweep (and employee directory is crashed, BUG-099). Not an FE-render defect.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **FAIL — BUG-113.** The deactivation guard exists (`LocationService.DeactivateAsync` counts `e.LocationId == locationId && e.IsActive` and returns 400 "This location has N active employee(s). Reassign them before deactivating."), but it is **dead code**: no employee can hold a `location_id` because the employee Create/Edit API never sets `LocationId` (only a free-text `Location` string). The precondition "3 active employees assigned to London Office" is unreachable via API, and an empty throwaway location deactivated with 200/no resistance. The blocking behaviour can never fire. See BUG-113.

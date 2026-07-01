@@ -4,7 +4,7 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: pass
 created: 2026-06-12
 ---
 
@@ -54,3 +54,7 @@ Verify that after manager assignments are made via US-CHR-011, the org tree "Rep
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — requires the employee profile/detail view and/or the org-tree hierarchy to verify the reporting-manager field / null-root / unlimited-reports / hierarchy / breadcrumb. The Employee Directory list is crashed (**BUG-099**) so profiles aren't reachable by in-app click, and the org tree renders no nodes (**ISSUE-207**). The "My Team" view (`/employees/my-team`) renders correctly with an empty-state for tenantadmin. Not separately runnable in this FE sweep.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **PASS.** `GET /org-tree?view=reporting&depth=5` returns a real manager-to-report hierarchy: 17 root nodes (`parentId:null`), 5 with children, including genuine multi-level chains — e.g. "Imp1782370711_6 > _5 > _4" (3 levels) and "Team Manager > John Doe > …". Roots with no `reports_to` appear at top level (BR-3 fallback observed — employees without a manager surface as roots). ReportingViewAvailable is effectively true (non-empty reporting graph). Node toggling/expansion (steps 3-6 UI) is FE, but the underlying hierarchy data is correct and nested.

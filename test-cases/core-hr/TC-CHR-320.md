@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-13
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE page-load degradation (<=200ms delta when rendering 20 custom fields on a form vs baseline) — a pure client-render metric. Needs a Chrome DevTools FE perf trace (baseline vs custom-field render), not k6."
 
 # TC-CHR-320: Custom field rendering on forms does not degrade page load by more than 200ms
 
@@ -50,3 +50,5 @@ Verify that rendering custom fields on employee creation and profile edit forms 
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — performance/API-SLA TC (response-time / JSONB-GIN query / form-render budget). Needs an instrumented perf/load harness, not a browser-render check. Custom-fields UI is also non-functional (BUG-100).

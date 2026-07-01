@@ -52,3 +52,7 @@ Verify that the Custom Fields management page displays a plan limit progress ind
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — feature DEFERRED (plan-limit indicator) per the TC title; not implemented, nothing to verify.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — feature not built ([DEFERRED] to US-CHR-012 custom fields, which is not implemented). Not testable this pass.

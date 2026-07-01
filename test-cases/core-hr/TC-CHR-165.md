@@ -6,7 +6,7 @@ priority: critical
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is 60fps pan/zoom on a 200-node org tree (FE frame-time / jank), a pure client-render metric. Needs a Chrome DevTools FE performance trace (frame timeline), not k6. (Tree also renders no nodes — ISSUE-207 — so nothing to profile yet.)"
 
 # TC-CHR-165: 200-node tree maintains smooth pan/zoom at approximately 60fps
 
@@ -57,3 +57,5 @@ Verify that a tree with 200 visible nodes maintains smooth pan and zoom interact
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance TC (P95 render / 60fps pan-zoom). Cannot measure with the shared Playwright browser, and the tree renders no nodes (ISSUE-207) to profile anyway. Not separately runnable.

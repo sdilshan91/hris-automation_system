@@ -53,3 +53,5 @@ Verify that when a tenant on the Starter plan (limit: 5 custom fields per entity
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — feature not built ([DEFERRED] to US-CHR-012 custom fields, which is not implemented). Not testable this pass.

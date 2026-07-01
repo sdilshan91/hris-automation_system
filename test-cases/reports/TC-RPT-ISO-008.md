@@ -4,7 +4,8 @@ user_story: US-RPT-002
 module: Reports & Analytics
 priority: high
 type: security
-status: draft
+status: fail
+exec_note: "2026-06-30 API iso-fixture probe: report cache key NOT tenant-isolated — isoa-tok+isob-hdr headcount returned isob's cached result (generatedAt reused from isob own call). Cross-tenant cache collision. BUG-003 class (ISSUE-193)."
 created: 2026-06-17
 ---
 

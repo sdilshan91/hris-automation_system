@@ -4,7 +4,7 @@ user_story: US-CHR-004
 module: Core HR
 priority: medium
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-11
 ---
 
@@ -58,3 +58,5 @@ Verify that the Department management page meets WCAG 2.1 AA accessibility stand
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — partial. Keyboard/ARIA structure is GOOD: `h1` page heading, List/Tree `radiogroup` with labeled radios, every card is a labeled button (`"Edit department: <name>"`), active depts expose `"Deactivate department: <name>"`, manager region labeled. XSS-named departments render as inert text (no script execution). BUT step 11 (automated contrast ≥4.5:1) FAILS — systemic **BUG-096** (#a3a3a3 low-contrast text app-wide) applies to this page, so it does not meet WCAG 2.1 AA. Tree-view `role="tree"`/`role="treeitem"` (steps 7,10) not separately verified.

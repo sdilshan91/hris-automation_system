@@ -4,7 +4,7 @@ user_story: US-AUTH-010
 module: Authentication
 priority: medium
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-11
 ---
 

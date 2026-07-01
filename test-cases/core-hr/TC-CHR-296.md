@@ -4,7 +4,7 @@ user_story: US-CHR-012
 module: Core HR
 priority: critical
 type: functional
-status: blocked
+status: fail
 created: 2026-06-13
 ---
 
@@ -51,3 +51,5 @@ Verify that after a custom field definition is created, it dynamically renders o
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **ISSUE-206**. Custom-field definitions cannot dynamically render on the employee create form because the FE's `GET /tenant/custom-fields/active?entityType=employee` returns 404 (endpoint not implemented). The "Additional Information"/custom-fields section never appears, so type-specific rendering and display-order (AC-2/FR-9) cannot be validated on the create form.

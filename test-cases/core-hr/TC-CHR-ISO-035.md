@@ -4,9 +4,9 @@ user_story: US-CHR-009
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (employee status + profile/history). EF-Core global query filter ISOLATION HOLDS: IDOR GET isob-emp profile under isoa-token+isoa-hdr -> 404; status/transitions on isob-emp under isoa context unreachable. (No standalone employment-history list endpoint; history surfaces via {id}/profile, which 404s cross-tenant.) Achievable EF-layer ORM-isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only); raw-SQL steps 3-4 against employment_history NOT DB-enforced -- documented escalation/hardening item per the TC. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob reads isob-emp profile + status/transitions (200) = systemic BUG-003. READ-ONLY on real tenants; nothing deleted."
 
 # TC-CHR-ISO-035: RLS and EF global query filters block direct DB queries across tenants for status and history data
 

@@ -56,3 +56,7 @@ Verify that the document list UI renders the correct color-coded expiry badge ba
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — document-management is an employee-detail tab reached via the Employee Directory (crashed, **BUG-099**), and this assertion (virus-scan / expiry-badge / expiry-notification job / storage-quota / upload-perf / EXIF-strip) is backend/upload-processing behavior requiring a real file POST + job/storage inspection, not a browser-render check.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI arm (document-list rendering: expiry-badge colors / file-type icons / category filter tabs / upload-form fields). Not API-testable this pass (visual/DOM assertions). The underlying document CRUD + metadata API works (verified via upload/list/delete under TC-205), but the badge-color/icon/tab-filter rendering is front-end. Not a functional/business-rule defect at the API layer.
