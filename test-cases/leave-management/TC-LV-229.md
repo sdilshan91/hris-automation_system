@@ -5,6 +5,7 @@ module: Leave Management
 priority: medium
 type: performance
 status: blocked
+exec_note: "S1: perf under load — needs S2 volume seed + k6."
 created: 2026-06-14
 ---
 

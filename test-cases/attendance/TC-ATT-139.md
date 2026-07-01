@@ -5,6 +5,7 @@ module: Attendance
 priority: high
 type: performance
 status: blocked
+exec_note: "S1: needs S5 (live WS/SignalR client)."
 created: 2026-06-15
 ---
 

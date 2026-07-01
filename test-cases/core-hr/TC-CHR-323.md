@@ -5,6 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
+exec_note: "S1: needs-CODE (feature-not-built/RLS) — dev backlog."
 created: 2026-06-13
 ---
 

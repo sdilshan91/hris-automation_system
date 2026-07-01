@@ -5,6 +5,7 @@ module: Leave Management
 priority: critical
 type: performance
 status: blocked
+exec_note: "S1: needs S2 (scale data seed)."
 created: 2026-06-14
 ---
 

@@ -5,6 +5,7 @@ module: Core HR
 priority: medium
 type: functional
 status: blocked
+exec_note: "S1: needs S4 (Firefox/WebKit cross-browser rig)."
 created: 2026-06-11
 ---
 

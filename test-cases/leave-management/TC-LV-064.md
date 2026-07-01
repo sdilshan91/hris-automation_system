@@ -5,6 +5,7 @@ module: Leave Management
 priority: high
 type: performance
 status: blocked
+exec_note: "S1: FE-render perf (FCP/TTI) — gated on BUG-097 fix (code)."
 created: 2026-06-13
 ---
 

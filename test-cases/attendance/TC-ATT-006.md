@@ -5,6 +5,7 @@ module: Attendance
 priority: high
 type: functional
 status: blocked
+exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
 created: 2026-06-14
 ---
 

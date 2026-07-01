@@ -5,6 +5,7 @@ module: Leave Management
 priority: critical
 type: security
 status: blocked
+exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
 created: 2026-06-14
 ---
 
