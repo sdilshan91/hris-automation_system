@@ -5120,3 +5120,68 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** Login `tenantadmin@acme.test`/`Admin@123!`, `X-Tenant-Subdomain: acme`. `POST /api/v1/tenant/employees/019efced-88a9-7825-a8e0-7571318deb74/documents` with any small file (multipart `file=@x;type=application/pdf`, `category=Other`) → **201 Created** with `fileSizeBytes` echoed, and no quota accounting. Repeat uploads never surface an 80% warning nor a quota block; there is no `GET …/storage-usage` endpoint to read cumulative usage. (Throwaway doc `019f1b3c-…` was deleted immediately.)
 - **Evidence:** `UploadEmployeeDocumentCommandHandler` + `EmployeeDocumentService` enforce only `"File exceeds the 10 MB limit."` (per-file); `grep -rniE 'storagequota|MaxStorage|StorageUsed|Sum.*FileSize|quota'` in app/infra matches only `SubscriptionPlanConfiguration.MaxStorageGb` + migration designers — no enforcement; live upload returned 201 with `fileSizeBytes:60`, deleted via `DELETE …/documents/{id}` (200, verified gone).
 - **Severity rationale:** MED — a defined plan limit (`MaxStorageGb`) is silently unenforced, so a tenant can upload unbounded document storage regardless of plan (billing/capacity leak) and TC-205's warning+block acceptance criteria are fully inoperative; contained to the documents feature and not a data-integrity/isolation risk, and per-file 10 MB caps runaway single files.
+
+### BUG-115 — Redis outage stalls every request ~11s: no fast-fail timeout on the StackExchange.Redis connection (fail-SAFE but slow-fail)
+- **ID:** BUG-115
+- **Type:** BUG (resilience — slow-fail on cache-store outage)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Authentication / tenant-resolution + distributed cache / TC-AUTH-057 (Redis outage fallback)
+- **Title:** When Redis is configured but unreachable (`docker pause hrm-redis`), every cached-path request stalls ~11s before falling back to Postgres. `DependencyInjection.cs:604` registers `AddStackExchangeRedisCache` with only `Configuration`+`InstanceName` — **no `ConnectTimeout`/`SyncTimeout`/`AbortOnConnectFail=false` tuning** — so each request pays two serial ~5s StackExchange.Redis timeouts (the HMGET read, then the HMSET write-back) before the DB fallback fires. The result is correct (HTTP 200 via DB fallback — fail-SAFE), but ~11s latency per request during an outage.
+- **Root cause:** default StackExchange.Redis timeouts + a read-then-write-back cache pattern with no fast-fail. Confidence: **HIGH** — reproduced live (`docker pause hrm-redis` → request ~11s → 200 from DB); Serilog `RedisTimeoutException`, RequestId `0HNMN6MF5DN30`.
+- **Reproduction steps:** enable Redis, warm a cache (dashboard/context), `docker pause hrm-redis`, hit a cached endpoint → ~11s then 200. `docker unpause hrm-redis` restores fast path.
+- **Evidence:** Serilog `RedisTimeoutException` (RequestId `0HNMN6MF5DN30`); `DependencyInjection.cs:604` (no timeout options).
+- **Severity rationale:** MED — no data loss and it stays available (fail-safe), but an ~11s stall per request during a Redis blip is a real availability degradation; a `ConnectTimeout`/`AbortOnConnectFail=false` + short `SyncTimeout` would fast-fail to the DB.
+
+### BUG-116 — `my-tenants` Redis cache is never invalidated on membership/role change (stale up to 5 min)
+- **ID:** BUG-116
+- **Type:** BUG (cache invalidation gap → stale authorization data)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Authentication / user tenant memberships / TC-AUTH-064
+- **Title:** The `hrm:user:{userId}:tenants` distributed-cache entry (a user's tenant memberships/roles) has exactly two references — a read (`AuthService.cs:616`) and a write (`AuthService.cs:661`) — and **zero `RemoveAsync`/invalidation anywhere**. So when a user's membership or role changes (added/removed to a tenant, role reassigned), the cached list stays stale until the 5-minute TTL expires. Perf + tenant-scoping of the cache are correct; only invalidation is missing.
+- **Root cause:** TTL-only cache with no explicit eviction on the mutating paths (membership add/remove, role assign). Confidence: **HIGH** — grep shows only the read/write refs, no RemoveAsync; verified the my-tenants list served from Redis.
+- **Reproduction steps:** load `/auth/me` (caches my-tenants) → change the user's role/membership → re-load within 5 min → stale roles/tenants served from cache.
+- **Evidence:** `AuthService.cs:616` (read), `:661` (write); no invalidation call in the membership/role mutation handlers.
+- **Severity rationale:** MED — a correctness/authorization staleness window (a revoked membership or downgraded role can persist up to 5 min), not just cosmetic; bounded by TTL and self-heals, so not HIGH.
+
+### ISSUE-219 — Plan data is live-read, not Redis-cached: contract drift vs NFR-4 ("plan cached in Redis, invalidated on update")
+- **ID:** ISSUE-219
+- **Type:** ISSUE (spec/contract drift — implementation exceeds SLA but doesn't match the stated mechanism)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / plan configuration / TC-ADM-009-15
+- **Title:** NFR-4 specifies plan/limit data is "cached in Redis and invalidated on update (<60s propagation)". In practice the plan is **live-read** every request (no `hrm:*:plan` Redis key is ever created, and a plan update never touches a `:config` cache key). The behavior is CORRECT and in fact *exceeds* the SLA (0s staleness, not <60s), but the literal "cached in Redis / invalidated on update" mechanism does not exist.
+- **Root cause:** the plan cache described in NFR-4 was not implemented; plan reads go straight to the store. Confidence: **HIGH** — no plan key appears in `redis-cli --scan`; plan PUT doesn't evict any key; reads are always fresh.
+- **Reproduction steps:** update a tenant's plan → immediately read plan-gated behavior → reflects instantly (0s). `redis-cli --scan` shows no plan cache key.
+- **Evidence:** Redis key scan (no plan key); live plan-update propagation = immediate.
+- **Severity rationale:** LOW — spec-reconciliation only; the live-read is a superset of the requirement (stricter freshness), so no user-facing defect. Flag so the doc/NFR is reconciled to reality (or the cache added if the load profile ever needs it).
+
+### ISSUE-220 — SSO challenge returns the misleading error code `not_configured` when the tenant is missing (conflates "no tenant supplied" with "SSO is off")
+- **ID:** ISSUE-220
+- **Type:** ISSUE (diagnostics/UX — wrong error code)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Authentication / US-AUTH-011 (SSO challenge) / SSO negative arms
+- **Title:** `EntraSsoService.BuildAuthorizeUrlAsync` (`EntraSsoService.cs:63-66`) returns `Result.Failure("not_configured")` for TWO distinct conditions: (a) SSO genuinely not configured (`!IsConfigured`, line 57), and (b) SSO IS configured but the caller supplied no `tenant` (line 63-66, which even logs "SSO challenge rejected: no tenant subdomain supplied"). A caller hitting `/api/v1/auth/sso/challenge` without `?tenant=` gets `sso_error=not_configured`, wrongly implying SSO is disabled.
+- **Root cause:** the no-tenant branch reuses the `not_configured` error string instead of a distinct code (e.g. `no_tenant`/`tenant_required`). Confidence: **HIGH** — read from source + reproduced (challenge with no `?tenant=` → `sso_error=not_configured`; with `?tenant=techoneglobal` → correct Microsoft redirect).
+- **Reproduction steps:** `GET /api/v1/auth/sso/challenge` (no tenant) → 302 `…/auth/login?sso_error=not_configured`. `GET …/challenge?tenant=techoneglobal` → 302 to `login.microsoftonline.com` (works).
+- **Evidence:** live curl; `EntraSsoService.cs:57` vs `:63-66` both return `"not_configured"`.
+- **Severity rationale:** LOW — cosmetic/diagnostics only; the happy path is unaffected and the FE always supplies a tenant. Worth a distinct code so a genuinely-misconfigured deployment is distinguishable from a missing-tenant request in logs.
+
+### ISSUE-221 — Real SMTP delivery is wired for ONLY the generic notification-template "test email"; every module transactional email (payslip/welcome/lockout/leave/recruitment) stays LogOnly and never delivers
+- **ID:** ISSUE-221
+- **Type:** ISSUE (incomplete feature — email delivery coverage gap)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Notifications / US-NTF-002 (email delivery)
+- **Title:** On `feature/smtp-email-sender` (commit `ea1b6b3`, MailKit `SmtpEmailSender`), only the GENERIC `IEmailSender` seam is swapped to real SMTP when `Smtp:Host` is set (`DependencyInjection.cs:571`) — used solely by `NotificationTemplateService.SendTestEmail` (`POST /api/v1/notification-templates/{eventKey}/test-email`). The module-specific senders — `IPayslipEmailSender`, `ITenantWelcomeEmailService`, `ILeaveNotificationService`, lockout, recruitment, password-reset — are **intentionally left as `LogOnly*`** ("module-specific seams intentionally left untouched (follow-up)"). So even with SMTP fully configured, none of the app's actual transactional emails are delivered — only the admin "send test email" facade.
+- **Root cause:** partial wiring — one seam converted, the rest deferred. Confidence: **HIGH** — verified live: `POST .../test-email` → real email captured in smtp4dev (from `noreply@hrm.test`, subject rendered from the `leave_approved` template); module seams still bind `LogOnly*` (`DependencyInjection.cs:256/465/485`).
+- **Reproduction steps:** on `feature/smtp-email-sender`, set `Smtp:Host` (smtp4dev localhost:2525). `POST /api/v1/notification-templates/leave_approved/test-email {"recipientEmail":"x@y.test"}` → delivered (smtp4dev). A real payslip/lockout/leave email → only a LogOnly log line, no SMTP.
+- **Evidence:** smtp4dev `GET /api/Messages` showed the test email; `DependencyInjection.cs` still registers `LogOnlyPayslipEmailSender` (256), LogOnly welcome/leave (465/485). On `main`/current branch there is NO real send at all (even the generic seam is LogOnly).
+- **Severity rationale:** MED — the delivery infrastructure works but covers ~1 of ~6 email types, so the feature isn't usable for its primary purpose until the remaining seams are wired. Not HIGH because it's an isolated unmerged feature branch and the mechanism is proven.

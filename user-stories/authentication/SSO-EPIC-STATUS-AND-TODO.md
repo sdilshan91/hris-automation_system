@@ -89,3 +89,14 @@ set for `techoneglobal`: `AllowedTenantIds=[f9654482-…]`, `AllowedDomains=[tec
    BR-5 (011 stays feature-flagged off until enforced isolation is DB-backed).
 2. **STATUS.md state for 011/013/014/015** — keep `[~]` (POC, awaiting 012 prod form) vs flip `[x]`.
    Currently left `[~]` with a note pointing here; revisit when 012 lands.
+
+---
+## ✅ Live verification 2026-07-01 (real Entra login, techoneglobal)
+Full OIDC flow exercised end-to-end (real Microsoft interactive login by the human):
+- **US-AUTH-011 AC-1/2 PASS** — `/sso/challenge?tenant=techoneglobal` → 302 to `login.microsoftonline.com/organizations/oauth2/v2.0/authorize` with `client_id`, `response_type=code`, PKCE (`code_challenge`+`code_challenge_method=S256`), `nonce`, signed `state`, `scope=openid profile email`, `prompt=select_account`, verbatim `redirect_uri`.
+- **US-AUTH-011 AC-5/7 PASS** — callback error handling: `error=access_denied`→`sso_error=access_denied`; missing code/state→`sso_failed`; tampered state→`sso_failed`.
+- **US-AUTH-011 AC-3/4 PASS** — code→token exchange + id_token signature/issuer/nonce validation succeeded; user landed authenticated (dashboard 200, SignalR NotificationHub connected via Redis backplane).
+- **US-AUTH-013 PASS (positive)** — tid allow-list accepted techoneglobal directory `f9654482-61cf-4c55-8f6f-8e4843a3dc45`.
+- **US-AUTH-014 PASS** — `sachithra@techoneglobal.org` matched by email → linked (`identity_provider=entra`, `entra_object_id` set) and assigned **Tenant Owner** (NOT the JIT DefaultRole).
+- Minor finding: **ISSUE-220** (no-tenant challenge returns misleading `not_configured`).
+- **Still untested (need crafted tokens / 2nd Entra directory):** US-AUTH-011 AC-6 (id_token negatives — bad aud/exp/signature/nonce) and US-AUTH-013 fail-closed FOREIGN-tid rejection.

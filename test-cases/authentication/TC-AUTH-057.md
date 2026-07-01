@@ -4,9 +4,9 @@ user_story: US-AUTH-007
 module: Authentication
 priority: high
 type: performance
-status: blocked
+status: pass
 created: 2026-06-09
-exec_note: "P3b k6 2026-06-30: NOT APPLICABLE TO k6 LOAD RUN — kept blocked. This is a Redis-outage resilience scenario (fail-over to PostgreSQL without failing requests), not a latency-SLA TC; it needs a controlled Redis-down fault injection. Redis is not even wired in this env (in-memory fallback). Re-run with Redis wired + a fault-injection harness."
+exec_note: "Redis 2026-07-01: Redis outage (docker pause) -> DB fallback, 200 not 500. Caveat BUG-115 (~11s slow-fail)."
 
 # TC-AUTH-057: Redis outage falls back to PostgreSQL without failing tenant requests
 
