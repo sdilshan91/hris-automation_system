@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: performance
 status: blocked
-exec_note: "S1: needs S5 (live WS/SignalR client)."
+exec_note: "S5 2026-07-01: STILL BLOCKED — SignalR delivery path PROVEN LIVE (negotiate 200, WS handshake→Connected, Redis backplane channel `hrm:signalr:...NotificationHub:group:t:{tid}:user:{uid}` observed for the connected fntest-admin), but this TC's live-board arm (NFR-2) is DEFERRED BY THE TC ITSELF (polling measured; SignalR live-board producer not built) AND its dashboard/report arms need a 5,000-emp perf-acme scale seed (fntest is small; perf tenant is a different subdomain). No live-board producer + no scale seed on this tenant. See ISSUE-228 (channel live, producers absent). No new endpoint measured here from the 50k run (attendance dashboard/live-board not in the k6 script)."
 created: 2026-06-15
 ---
 

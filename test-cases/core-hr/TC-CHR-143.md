@@ -6,7 +6,7 @@ priority: critical
 type: performance
 status: blocked
 created: 2026-06-12
-exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE TTI<=2.5s P95 (Employee Directory full render incl. skeleton-replace + interactive pagination at 5k employees), not a server API. Needs a Chrome DevTools FE perf trace, not k6. (For reference, the underlying directory LIST API read measured 212ms p95 @50VU on the 5k perf tenant.)"
+exec_note: "STILL BLOCKED on the dominant arm (FE TTI<=2.5s P95, Chrome-DevTools-only, blocked by BUG-097/099). But the S2/50k run 2026-07-01 DID measure this TC's step-5 API arm at scale and it now BREACHES: the employee LIST read `GET /api/v1/tenant/employees?pageSize=20` p95 **477.72ms** @50VU on the **50,000-employee** perf tenant vs the step-5 <=400ms read SLA — FAIL on the API-read arm (was 212ms at 5k). See BUG-123 (which also cites this 477ms list regression). The FE-TTI acceptance arm remains unmeasurable this pass, so the TC stays blocked overall, but note the underlying read is no longer within 400ms at 50k. Evidence: perf/results/50k-hot.json (employees p95 477.72ms). [Prior P3b 5k: list read 212ms; NOT MEASURABLE by k6 note was about the FE arm only.]"
 
 # TC-CHR-143: Directory page load within 2.5 seconds P95 at 5,000 employees (NFR-1)
 
