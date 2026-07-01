@@ -5288,3 +5288,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** fntest, `POST /tenant/employees/{EMP-0001}/manager {"managerEmployeeId":"{EMP-0002}","reason":"x"}` → 200; `GET /tenant/employees/{EMP-0002}/direct-reports` → lists EMP-0001; `GET /tenant/employees/{EMP-0001}/profile` → no managerId/managerName field.
 - **Evidence:** live curl 2026-07-01, fntest; profile key list quoted above.
 - **Severity rationale:** LOW — the reporting relationship is stored and retrievable via the dedicated manager/direct-reports endpoints, so no data loss; the gap is that the profile view's manager field/breadcrumb can't be rendered from the profile call alone. Cosmetic/DTO-completeness.
+
+---
+
+### ISSUE-226 — Offer free-text (custom clauses / benefits) stored & returned UNSANITIZED (stored-XSS defense-in-depth gap)
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Module/US/TC:** Recruitment / US-REC-007 / TC-REC-007-13
+- **Title:** `POST /api/v1/recruitment/offers` persists recruiter-supplied `customClauses`/`benefitsSummary` verbatim and `GET /offers/{id}` returns them verbatim — no server-side sanitization/encoding of HTML.
+- **Root cause (70%):** Offer create/read path does no HTML sanitization; free-text is stored and echoed raw. Angular interpolation auto-escapes in the UI (so the in-app render is likely safe), but TC-REC-007-13 asserts sanitization specifically for the **generated PDF/HTML offer template** substitution path — if that path emits the stored string into HTML without encoding, it is stored XSS. The PDF-render encoding was NOT verified in this run (blocked separately), so this is filed as a defense-in-depth gap, not a confirmed live XSS.
+- **Reproduction:** fntest, `Bearer <fntest-admin>` + `X-Tenant-Subdomain: fntest`. Create offer for a Hired-track applicant with `"customClauses":"<img src=x onerror=alert(1)>"`, `"benefitsSummary":"<script>alert(1)</script>"` → 200. `GET /api/v1/recruitment/offers/{offerId}` returns `customClauses:"<img src=x onerror=alert(1)>"`, `benefitsSummary:"<script>alert(1)</script>"` (raw, unescaped).
+- **Evidence:** offer OID `019f1d57-040b-705f-8a99-1941412d3a5b` (fntest) — readback shows both payloads verbatim. HTTP 200 on create + get.
+- **Severity rationale:** Server stores/echoes attacker-controlled HTML; blast radius limited by Angular's default output escaping, but the PDF/HTML offer-template render path (unverified) could execute it and reaches candidates. Sanitize on store or on the PDF-render seam.
