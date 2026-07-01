@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: Hangfire TokenCleanupJob test needs (a) seeding refresh_token rows with crafted revoked_at/expires_at ages and (b) manually triggering the recurring job + reading row survival — both require DB access (psql denied) and a job-trigger surface not exposed via API. Job is registered (TokenCleanupJob, daily). Re-run in a DB-seedable + Hangfire-trigger harness."
 created: 2026-06-11
 ---
 

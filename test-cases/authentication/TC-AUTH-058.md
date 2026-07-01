@@ -5,7 +5,7 @@ module: Authentication
 priority: medium
 type: accessibility
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: static 404 (unknown workspace) + suspended-tenant pages require reaching distinct SUBDOMAINS (unknown.*, suspcorp.*). Local dev only has a hosts entry for acme.myhrm.org (unknownxyz.myhrm.org -> ERR_NAME_NOT_RESOLVED) and uses HEADER-based tenant resolution, not real subdomains — so the subdomain-served static pages can't be exercised here. Re-run against an env with wildcard DNS / the static 404+suspended host entries."
 created: 2026-06-09
 ---
 

@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: NFR-1 <2ms overhead needs EXPLAIN ANALYZE on users.locked_until index + DB timing (psql access denied — no credential guessing). Login-path lockout check is functionally correct (locked account -> 401), but the 2ms micro-benchmark requires DB introspection unavailable this run. Re-run with DB access."
 created: 2026-06-11
 ---
 

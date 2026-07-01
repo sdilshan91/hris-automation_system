@@ -5,7 +5,7 @@ module: Authentication
 priority: critical
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: absolute-timeout test needs (a) tenant absoluteTimeoutHours set low + (b) DB-level manipulation of session issued_at to simulate 61+ min elapsed (or a 60-min real wait). psql access denied (no credential guessing) and can't wait 60min in a breadth run; refresh token is HTTP-only-cookie based (not body-settable). auth-settings shows absoluteTimeoutHours=8. Re-run in a time-manipulable session harness with DB access."
 created: 2026-06-11
 ---
 

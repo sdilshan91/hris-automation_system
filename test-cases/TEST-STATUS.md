@@ -162,3 +162,18 @@
 - [b] US-AUTH-014 — match/link/JIT — **blocked (needs interactive Microsoft login)**; `AuthService.SsoSignInAsync` only reachable after a completed Microsoft round-trip.
 - [x] US-AUTH-015 — "Sign in with Microsoft" FE — **tested-clean (no findings).** "Continue with Microsoft" button renders w/ MS icon + "or" divider; click triggers full-page redirect to `${apiBaseUrl}/auth/sso/challenge?returnUrl=…&tenant=…` (network-confirmed); 4 `sso_error` codes (`not_configured`/`not_available`/`access_denied`/`sso_failed`) each render a distinct friendly message in an ARIA `role=alert`. Only console noise = BE-down XHR fail + favicon 404 (environmental, not SSO).
 - [b] US-AUTH-016 — enforcement / break-glass / admin-consent — **blocked (not implemented)**; no `enforcement_mode`/break-glass/admin-consent flow exists. See [[SSO-EPIC-STATUS-AND-TODO]] TODO §US-AUTH-016.
+
+## 1c. S1 "now-testable" blocked-TC re-run (2026-07-01, REPORT-ONLY, targeted subset)
+> Re-executed the 22 TCs the S1 sweep marked `now-testable` (11 Auth + 11 Admin). Per-TC verdicts live in each
+> TC's `status:` frontmatter (authoritative); US-level lines above are NOT re-flipped (this was a targeted subset,
+> not a full-module re-test). **Result: Auth 0 pass / 0 fail / 11 blocked · Admin 2 pass / 1 fail / 8 blocked.**
+> Two NEW findings: **BUG-121** (HIGH) and **ISSUE-227** (MED).
+> **Environment reality vs S1 assumption:** Redis was assumed UP but is **DOWN** (config drift — base `appsettings.json`
+> points at `localhost:6379` with no Redis running; the Dev override that blanks it isn't in effect). This is **BUG-121**:
+> `/auth/me` + `/auth/my-tenants` return **500** on every persona (uncaught `RedisConnectionException` in
+> `AuthService.GetMyTenantsAsync`; tenant-resolution falls back to DB but this path doesn't) → the authenticated SPA can't
+> hydrate, which cascade-blocks every FE/a11y TC in this set.
+> - **PASS (3):** TC-ADM-004-02 (suspend PastDue→Suspended, lifecycle event + actor), TC-ADM-004-13 (Terminated is terminal — restore/reactivate/suspend all 409 `invalid_transition`). Partial: TC-ADM-001-12 uniqueness half PASS (dup subdomain→409), email-fault half blocked. TC-AUTH-108 API arm PASS (lockout 401 + admin unlock 200), FE arm blocked.
+> - **FAIL (1):** TC-ADM-007-05 → **ISSUE-227**: workflow plan-limit reads only `Tenant.MaxWorkflows` snapshot, ignores plan-limit overrides + plan value (BUG-008 class); set override=2, created 3 active workflows unblocked.
+> - **BLOCKED (dominant reasons):** DB-timestamp/psql-denied session-timeout arms (AUTH-068/074/099/104/079); Hangfire-job-trigger + DB-seed integration arms (ADM-004-09/008-14/001-12); Redis-down FE hydration (AUTH-048; ADM-006-10/004-17); missing fixtures — MFA-enrolled (AUTH-063/110), multi-tenant (AUTH-063), settable `Tenant.MaxEmployees` (ADM-005-06/009-16); unresolvable subdomains for static 404/suspended pages (AUTH-058); Phase-2 not-implemented enterprise settings (ADM-006-15).
+> Throwaways cleaned: fntest-emp unlocked, max_workflows override deleted + 16 QA workflows archived, scale099 reactivated, qaresil throwaway suspended (parked). scale002 left Suspended (the tested PastDue→Suspended transition; suspending scale* is sanctioned).

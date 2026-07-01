@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: needs a user with active membership in a SECOND tenant whose role REQUIRES MFA, and the user NOT enrolled. No such fixture: fntest-admin has 1 tenant; switch-tenant to acme -> 403 'no active membership' (correctly rejects non-members). mfaPolicy='off' tenant-wide + no enrolled MFA persona. Re-run with a multi-tenant + MFA-required fixture."
 created: 2026-06-09
 ---
 

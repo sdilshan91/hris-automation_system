@@ -5,7 +5,7 @@ module: Authentication
 priority: medium
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 PARTIAL/BLOCKED: API arm PASS — locked fntest-emp login 401 'Account temporarily locked'; admin unlock POST /tenant/users/{userTenantId}/unlock -> 200, login works after. FE assertions blocked: users LIST DTO exposes NO lockout state (locked fntest-emp shows status:'Active', no isLocked/lockedUntil) so 'Locked badge' has no data; browser hydration broken by BUG-121 (Redis-down /auth/me 500). Re-run FE arm once Redis up + list DTO surfaces lock state."
 created: 2026-06-11
 ---
 

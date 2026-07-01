@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: Redis is DOWN in the running instance (config drift — appsettings.json points at localhost:6379 with no Redis up). The permission-cache key this TC inspects cannot be populated/invalidated; distributed-cache reads throw. Filed BUG-121 (auth/me 500 on Redis-down). Re-run once Redis is actually reachable."
 created: 2026-06-03
 ---
 

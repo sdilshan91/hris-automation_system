@@ -5,7 +5,7 @@ module: Authentication
 priority: medium
 type: accessibility
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: roles-management a11y needs an AUTHENTICATED session on the Roles page, but post-login hydration is broken by BUG-121 (Redis-down /auth/me + /my-tenants 500), so the authenticated SPA cannot load the roles UI to scan with axe. FE served (200) and login page reachable. Re-run axe on Roles page once Redis is up."
 created: 2026-06-03
 ---
 

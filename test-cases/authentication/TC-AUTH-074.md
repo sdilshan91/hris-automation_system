@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: exact idle/absolute boundary arms (last_active_at = now-1800/1799/1801s, issued_at = 12h+/-1s) require DB-level timestamp manipulation of the session rows (psql denied). Concurrent-session boundary needs per-device session control + policy edits. Cookie-based refresh not body-settable. Re-run in a session harness with DB timestamp control."
 created: 2026-06-11
 ---
 

@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: requires an MFA-enrolled user. fntest auth-settings mfaPolicy='off' and no persona has TOTP enrolled; MFA enrollment needs an authenticator secret + valid TOTP codes (interactive). Password-based lockout at 5 fails is confirmed working (see TC-108 evidence: 5 bad logins -> locked). MFA-failure-counts-toward-lockout path not exercisable without enrolled MFA."
 created: 2026-06-11
 ---
 

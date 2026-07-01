@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 BLOCKED: report-only run must not stop/restart the shared running API (other TCs depend on it). Restart-persistence needs a controlled restart + direct DB read of failed_login_count/locked_until (psql denied). Lockout DOES persist in Postgres by design (locked_until column) — verified indirectly: lockout survives across separate requests. Re-run in a dedicated restart harness."
 created: 2026-06-11
 ---
 
