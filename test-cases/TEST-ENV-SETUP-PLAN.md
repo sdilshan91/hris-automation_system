@@ -57,7 +57,7 @@ Rationale: S1 is free and de-risks everything; S2 unblocks the largest concrete 
 |---|---|---|---|---|
 | S0 Pre-flight | `[x]` | 2026-07-01 | 2026-07-01 | backend/FE 200, Docker OK, k6 v2.0.0, acme login OK; baseline acme=34/TG=1, 23 tenants, no stale throwaway |
 | S1 Re-triage C | `[x]` | 2026-07-01 | 2026-07-01 | **251 un-triaged reclassified** (title+type): **152 now-testable no-setup** (136 re-run + 16 iso) · 52 needs-B-setup (32 S2-scale, 15 S4-crossbrowser, 3 S5-WS, 2 S3-2nd-instance) · 47 needs-code (deferred/RLS/BUG-097). exec_notes written per TC |
-| S2 Scale seeds | `[~]` | 2026-07-01 | | Seeding 50k + 100 tenants + module volume |
+| S2 Scale seeds | `[x]` | 2026-07-01 | 2026-07-01 | **50k employees** in `perf` (8.8s) + **100 `scaleNNN` tenants** (total 124). Verified: emp-list@50k 32–67ms warm (<400 SLA), pageSize=100 44ms, **headcount-agg@50k 719ms** (<800 but ~5× the 5k time — watch), platform tenant-list@100 84ms. S2c module-volume = on-demand per TC in S6. **Throwaway — must teardown in S6 (perf tenant + `scale%`).** |
 | S3 2nd instance | `[ ]` | | | |
 | S4 Cross-browser | `[ ]` | | | |
 | S5 WS client | `[ ]` | | | |
