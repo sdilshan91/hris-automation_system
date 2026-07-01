@@ -4,8 +4,8 @@ user_story: US-LV-011
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 PARTIAL/FAIL (manual LOP arm, via platform-admin+fntest — Leave.ManageLop=BUG-036): AUDIT present (LeaveRequest.Create row, IsLop:true, LopSource:2, actor+before-snapshot). NOTIFICATION MISSING — LopService calls NotifyLopAssignedAsync but ILeaveNotificationService=LogOnlyLeaveNotificationService (DI:188): 0 in-app notif rows for target employee (fn_emp=EMP-0001 notifications empty). Log-only seam, no delivered notify. Auto/compulsory arms blocked (Attendance/BUG-036)."
 created: 2026-06-14
 ---
 

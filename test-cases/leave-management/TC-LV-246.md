@@ -4,8 +4,8 @@ user_story: US-LV-012
 module: Leave Management
 priority: critical
 type: security
-status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+status: fail
+exec_note: "2026-07-01 FAIL (fntest): Manager persona gets 403 on /leaves/reports/* (no Leave.Reports perm) — cannot reach the report to exercise team-scope filtering. Perm-gap class BUG-027/034 (role locked out of leave surface). Report itself works for admin (200)."
 created: 2026-06-14
 ---
 

@@ -4,8 +4,8 @@ user_story: US-LV-009
 module: Leave Management
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 PASS (source+iso payload): GetTeamLeaveCalendarAsync employee scope filters Status==Approved ONLY (never Pending, LeaveRequestService.cs:~578), fullDetail=false. Live isoa employee-scope call returns scope=Employee, empty entries (no seed). Approved-only + no-detail confirmed."
 created: 2026-06-14
 ---
 

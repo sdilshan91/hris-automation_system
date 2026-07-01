@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: Employee entity has NO FTE field — part-time FTE proration cannot be exercised. Feature-not-built."
 created: 2026-06-13
 ---
 

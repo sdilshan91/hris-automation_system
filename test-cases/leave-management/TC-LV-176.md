@@ -4,8 +4,8 @@ user_story: US-LV-009
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 PASS-partial (source): Leave.ViewAll/HR persona resolves scope=All (employeeIdFilter=null → no restriction, whole-org calendar) per LeaveRequestService.cs:~534. Live data empty in iso tenant; scope-resolution logic confirmed."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: payroll-lock is DEFERRED by design (IsPayrollLockedAsync always returns false, LeaveRequestService.cs:701/992 — no payroll module). The block message is unreachable. Non-locked approve arm also needs an approvable pending request (accrual-seeded balance + manager-report link absent in fntest)."
 created: 2026-06-13
 ---
 

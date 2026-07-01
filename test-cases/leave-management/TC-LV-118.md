@@ -4,8 +4,8 @@ user_story: US-LV-006
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 PASS-partial (fntest): my-balance?year= buckets by leaveYear (2026 vs 2025 rows distinct, leaveYear field correct) = calendar-year honored. Fiscal-year arm NOT testable — no fiscal-configured throwaway tenant available; calendar path verified."
 created: 2026-06-14
 ---
 

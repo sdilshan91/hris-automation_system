@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: LOP-immutable-after-payroll-lock CONDITIONAL on payroll period-lock (DEFERRED — IsPayrollLocked always false, no payroll module) + LOP surface (Leave.ManageLop=BUG-036). Lock signal never asserted."
 created: 2026-06-14
 ---
 

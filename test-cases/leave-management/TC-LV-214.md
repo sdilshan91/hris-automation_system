@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: same as TC-213 (idempotency arm) — needs Attendance absence source + global ProcessAbsenteeismJob run + Leave.ManageLop (BUG-036)."
 created: 2026-06-14
 ---
 

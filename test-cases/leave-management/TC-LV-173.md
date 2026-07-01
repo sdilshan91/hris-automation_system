@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED (UI-render): FE up (acme.myhrm.org:4200) but /leave/team-calendar is auth-guarded and browser login-fill was denied by the session permission classifier; cannot reach the authenticated calendar view with seeded manager/HR leave data. Also subject to systemic a11y BUG-096/108-112 + BUG-097 (no-reload). Route + team-calendar API confirmed present server-side."
 created: 2026-06-14
 ---
 

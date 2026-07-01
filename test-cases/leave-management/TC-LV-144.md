@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: onboarding-wizard Step-4 holiday-seed call site UNWIRED (TODO(onboarding)); seeding service exists but no trigger surface to exercise. Feature-not-built."
 created: 2026-06-14
 ---
 

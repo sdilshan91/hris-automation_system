@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: requires firing a param-less GLOBAL recurring Hangfire job (RunAsync() iterates ALL active tenants) which would WRITE ledger rows to acme/techoneglobal — barred by no-cross-tenant-write policy. No per-tenant trigger/API exists. Math side validated separately via carry-forward-preview where applicable."
 created: 2026-06-14
 ---
 

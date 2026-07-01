@@ -5,7 +5,7 @@ module: Leave Management
 priority: critical
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 KEEP-BLOCKED: requires running the GLOBAL param-less ProcessLeaveYearEndJob (iterates ALL tenants → writes to acme/techoneglobal) to observe A/B independence — barred by no-cross-tenant-write policy. EF global filter makes per-tenant scoping structurally sound but the job-run cross-contamination check is unrunnable here."
 created: 2026-06-14
 ---
 

@@ -4,8 +4,8 @@ user_story: US-LV-006
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 FAIL (fntest API my-balance): isArchived field EXISTS but a deactivated leave type WITH remaining balance (Sick, bal=10) DISAPPEARS from my-balance entirely instead of surfacing with isArchived=true (BR-3 archived-section requirement unmet). Active types render correctly. UI collapsed-Archived arm not reachable since API drops the row."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Leave Management
 priority: critical
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 KEEP-BLOCKED: Redis cache-key isolation arm — Redis is in-memory (blank config) in this env, no cache layer to inspect key scoping; the DB/logic side is tenant-filtered by EF global filter (no leak seen) but the cache-key assertion itself is un-observable. Redis DEFERRED module-wide."
 created: 2026-06-14
 ---
 

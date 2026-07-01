@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: onboarding wizard Step-4 leave-type seeding hook NOT implemented (TODO(onboarding), UNWIRED). Feature-not-built."
 created: 2026-06-13
 ---
 

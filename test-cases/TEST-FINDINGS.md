@@ -5185,3 +5185,41 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** on `feature/smtp-email-sender`, set `Smtp:Host` (smtp4dev localhost:2525). `POST /api/v1/notification-templates/leave_approved/test-email {"recipientEmail":"x@y.test"}` → delivered (smtp4dev). A real payslip/lockout/leave email → only a LogOnly log line, no SMTP.
 - **Evidence:** smtp4dev `GET /api/Messages` showed the test email; `DependencyInjection.cs` still registers `LogOnlyPayslipEmailSender` (256), LogOnly welcome/leave (465/485). On `main`/current branch there is NO real send at all (even the generic seam is LogOnly).
 - **Severity rationale:** MED — the delivery infrastructure works but covers ~1 of ~6 email types, so the feature isn't usable for its primary purpose until the remaining seams are wired. Not HIGH because it's an isolated unmerged feature branch and the mechanism is proven.
+
+### ISSUE-222 — LOP system leave type is created LAZILY on first LOP assignment, not "auto-created at tenant setup" (US-LV-011 FR-1 says setup-time)
+- **ID:** ISSUE-222
+- **Type:** ISSUE (behavioral drift vs spec)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave Management / US-LV-011 / TC-LV-218
+- **Title:** TC-LV-218 (FR-1) asserts the LOP leave type is "auto-created at tenant setup". Actual behavior: no LOP type exists in a fresh tenant's `leave-types` list; it is created on-demand the first time `LeaveTypeService.EnsureLopTypeForTenantAsync` is called (i.e. on the first `assign-lop` / `compulsory` / an LOP-producing leave request). Until then the LOP type is absent from the tenant catalog. The other system properties DO hold once created: `SystemCategory=LossOfPay`, `AnnualEntitlement=0`, cannot be deactivated ("This is a system leave type and cannot be deactivated."), and it can be renamed.
+- **Root cause:** LOP type is not part of tenant provisioning/seed; `EnsureLopTypeForTenantAsync` (`LeaveTypeService.cs:341-367`) inserts it only when first needed. Confidence: **HIGH** — verified live: fresh `fntest` tenant leave-types list has no LOP until an `assign-lop` was issued, after which `Loss of Pay` (code `LOP`) appears.
+- **Reproduction steps:** fresh tenant `fntest`; `GET /api/v1/tenant/leave-types?includeInactive=true` → only the manually-created types, no LOP. `POST /api/v1/leaves/assign-lop` (platform admin + `X-Tenant-Subdomain: fntest`) → 200; re-GET leave-types → `Loss of Pay` / `LOP` now present, `annualEntitlement=0`, `systemCategory=LossOfPay`.
+- **Evidence:** live curl 2026-07-01; leave-types list before/after assign-lop; `LeaveTypeService.cs:341` `EnsureLopTypeForTenantAsync`.
+- **Severity rationale:** LOW — the LOP type is guaranteed to exist by the time any LOP action completes, so no functional loss; the only observable gap is that a brand-new tenant's leave-type UI won't list LOP until the first LOP event. Spec/impl wording mismatch, not a broken flow.
+
+### BUG-117 — Renaming the LOP system leave type via PUT wipes its system Color (#B71C1C) and Description because UpdateLeaveTypeRequest has no Color/Description-preserve and the client must resend every field
+- **ID:** BUG-117
+- **Type:** BUG (data loss on partial update)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave Management / US-LV-011 / TC-LV-218
+- **Title:** `PUT /api/v1/tenant/leave-types/{id}` is a full-replace update (`UpdateLeaveTypeRequest`), so any field omitted by the caller is reset to null/default. Renaming the LOP type (TC-LV-218 "can be renamed") with a minimal body `{name,code,annualEntitlement,accrualFrequency}` silently cleared the seeded system `Color=#B71C1C` and `Description` to null. There is no PATCH/merge semantics and no protection preserving the system type's presentation fields.
+- **Root cause:** `UpdateLeaveTypeCommand`/handler applies the request as a whole-object overwrite; omitted optional fields (`Color`, `Description`) become null. Confidence: **HIGH** — reproduced: after rename PUT, GET shows `color:null, description:null` where the seed set `#B71C1C` + the system description.
+- **Reproduction steps:** trigger LOP creation (assign-lop). `PUT .../leave-types/{lopId}` with `{"name":"Loss of Pay (Renamed)","code":"LOP","annualEntitlement":0,"accrualFrequency":"Upfront"}` → 200; `GET .../leave-types/{lopId}` → `color:null, description:null` (were `#B71C1C` + system description).
+- **Evidence:** live curl 2026-07-01, before/after GET of the LOP type.
+- **Severity rationale:** LOW — cosmetic (loses the red color tag + descriptive text); no balance/authz impact. It is a general full-replace-PUT footgun that also affects ordinary leave types, but the LOP system type is the case where seeded presentation is silently lost.
+
+### BUG-118 — Modifying a leave entitlement rule does NOT enqueue any Hangfire recalculation; affected employees' balances are never updated (US-LV-002 AC-5 / FR-5 unmet)
+- **ID:** BUG-118
+- **Type:** BUG
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave Management / US-LV-002 / TC-LV-030, TC-LV-034
+- **Title:** TC-LV-030/034 require that editing an entitlement rule (or a mid-year dept transfer) enqueues a Hangfire "RecalculateEntitlements" job to update affected employees' balances + write adjustment ledger entries. Actual: `UpdateLeaveEntitlementRuleCommandHandler` → `LeaveEntitlementService.UpdateRuleAsync` only persists the rule and returns; there is NO `BackgroundJob.Enqueue`, no recalc call, no ledger adjustment. `ProcessAccrualsAsync` (tenant-scoped, param `leaveYear`/`leaveTypeId`) exists but is invoked ONLY by the global `LeaveAccrualJob.RunAsync()` (all-tenant recurring) — nothing links a rule edit to a recalc. Confidence HIGH — live PUT rules/{id} 25→28 returned 200 with no job enqueued; source grep of the handler/service shows no enqueue.
+- **Reproduction:** fntest, create rule Annual=25, `PUT .../leave-entitlements/rules/{id}` days=28 → 200; no Hangfire job appears; employee balances unchanged (no adjustment ledger entry).
+- **Evidence:** live curl 2026-07-01; `UpdateLeaveEntitlementRuleCommandHandler.cs:19-21` (pass-through to `UpdateRuleAsync`); no `Enqueue` in `LeaveEntitlementService`.
+- **Severity rationale:** MED — the rule record updates correctly, but the AC-5 "recalc affected employees" promise silently no-ops, so balances drift from policy until the next global accrual run. Not HIGH because the nightly/annual accrual job would eventually reconcile and no data is corrupted.

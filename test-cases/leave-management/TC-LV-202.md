@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: cancel-restores-carry-forward is CONDITIONAL on carry-forward data existing (needs year-end job to have run to create CF ledger), which is the global-job barrier; plus an approved leave consuming CF. Preconditions unattainable without firing the global year-end job."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: multi-level (L2) approval workflow NOT implemented (LeaveRequestService TODO(multi-level): single-level direct-report only). The TC core objective (L1->PendingL2 transition) is unreachable; single-level default is TC-LV-089."
 created: 2026-06-13
 ---
 

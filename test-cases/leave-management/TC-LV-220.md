@@ -4,8 +4,8 @@ user_story: US-LV-011
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 PASS (via platform-admin+fntest hdr — Leave.ManageLop unreachable by tenant roles=BUG-036): LOP type has annualEntitlement=0, systemCategory=LossOfPay, no balance; pure deduction confirmed."
 created: 2026-06-14
 ---
 

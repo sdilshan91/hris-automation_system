@@ -4,8 +4,8 @@ user_story: US-LV-011
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 FAIL on FR-1 setup-time clause: LOP NOT auto-created at tenant setup — lazy on first assign-lop (ISSUE-222). Core props HOLD: system type, cannot-deactivate, renamable. Rename wipes system color/desc (BUG-117). Driven via platform-admin+fntest (Leave.ManageLop=BUG-036)."
 created: 2026-06-14
 ---
 

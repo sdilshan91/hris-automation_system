@@ -4,8 +4,8 @@ user_story: US-LV-009
 module: Leave Management
 priority: critical
 type: security
-status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+status: pass
+exec_note: "2026-07-01 PASS (source-confirmed data-leak probe): for employee scope fullDetail=false → LeaveTypeName=null, Color=null, Status=null in the DTO projection (LeaveRequestService.cs:618-620); Pending rows excluded at query level. Payload shape (from/to/scope/entries/holidays) carries no leaked fields."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: Job Level entity (distinct from Job Title) + tenure-bracket dimension not implemented as employee-linked. Feature-not-built."
 created: 2026-06-13
 ---
 

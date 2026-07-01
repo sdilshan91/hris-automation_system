@@ -4,8 +4,8 @@ user_story: US-LV-008
 module: Leave Management
 priority: critical
 type: integration
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 PASS via carry-forward-preview (LeaveCarryForwardService.PreviewYearEndAsync SHARES ProcessYearEnd calc, src:287-337) in fntest — job-run ledger-write side not fired (global recurring job, unsafe vs prod tenants) but the carry/forfeit/encash OUTCOME objects are identical. CF-Zero type limit=0 → CF=0.00, forfeit=20.00 (all forfeited, AC-4/BR-2)."
 created: 2026-06-14
 ---
 

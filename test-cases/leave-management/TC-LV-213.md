@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: auto-LOP absenteeism CONDITIONAL on Attendance module as absence source + firing the GLOBAL ProcessAbsenteeismJob (all-tenant) + LOP write perm (Leave.ManageLop=BUG-036 unreachable by tenant roles). Triple dependency unmet."
 created: 2026-06-14
 ---
 

@@ -4,8 +4,8 @@ user_story: US-LV-002
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 FAIL (fntest): dept-transfer recalc path shares the same missing enqueue — BUG-118 (no Hangfire recalc on entitlement change)."
 created: 2026-06-13
 ---
 

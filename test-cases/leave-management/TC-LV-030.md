@@ -4,8 +4,8 @@ user_story: US-LV-002
 module: Leave Management
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 FAIL (fntest): rule PUT 25->28 returns 200 but enqueues NO Hangfire recalc, no adjustment ledger, balances unchanged — BUG-118. Audit before/after side also not produced."
 created: 2026-06-13
 ---
 

@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: needs a fiscal-year-configured throwaway tenant (globex Apr-Mar) to contrast against calendar-year; only calendar tenants (fntest/iso) available. Calendar-year pro-rata side proven under TC-118; fiscal boundary + accrual-job side both unavailable (global-job barrier)."
 created: 2026-06-13
 ---
 

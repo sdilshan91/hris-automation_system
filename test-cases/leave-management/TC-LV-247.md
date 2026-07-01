@@ -4,8 +4,8 @@ user_story: US-LV-012
 module: Leave Management
 priority: critical
 type: security
-status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+status: fail
+exec_note: "2026-07-01 FAIL (fntest): Employee persona gets 403 on /leaves/reports/* (no Leave.Reports perm) — own-data-scope arm unreachable. Same perm-gap class BUG-027/034. There is no self-service report route for employees."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Leave Management
 priority: medium
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 KEEP-BLOCKED: scenario B multi-level DEFERRED (not built). Scenario A (direct-reports-only default) confirmed at code level (single-level scope) but the pending-queue live check needs a manager-with-direct-reports persona; fntest personas have no reporting structure → /pending 403/empty. Multi-level=TODO."
 created: 2026-06-13
 ---
 

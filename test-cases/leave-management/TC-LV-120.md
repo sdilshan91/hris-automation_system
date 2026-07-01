@@ -4,8 +4,8 @@ user_story: US-LV-006
 module: Leave Management
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 PASS (fntest API /leaves/mine): history list returns past requests with type/dates/days/status; self-scoped (caller sees only own rows). UI status/type/year filter widgets not clicked but the data + scope back them."
 created: 2026-06-14
 ---
 
