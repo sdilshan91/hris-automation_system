@@ -15,7 +15,7 @@
 ## Summary
 | Type | Open | Other | Total |
 |---|---|---|---|
-| BUG | 53 | 3 retracted | 56 |
+| BUG | 54 | 3 retracted | 57 |
 | ISSUE | 103 | 0 | 103 |
 | ENH | 9 | 0 | 9 |
 
@@ -5321,3 +5321,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** platform admin `POST /api/v1/system/plans/overrides {tenantId:fntest, limitKey:"max_workflows", value:2}` → 200. fntest-admin `POST /api/v1/tenant/workflows` with `"activate":true` three times (entityType Leave/Expense/Offer) → all 200 Active (limit 2 not enforced). The message-template and count logic ARE correct (`WorkflowService.cs:40-41`, counts `Status==Active`), so enforcement WOULD fire if `Tenant.MaxWorkflows` itself were set — but the override/plan resolution is the missing link.
 - **Evidence:** live curl 2026-07-01 (override created id `019f1d6d-d778-...`, 3 active workflows created 200); `WorkflowService.cs:460-481` (Tenant.MaxWorkflows-only query). Override + all QA workflows cleaned up (override deleted, 16 QA workflows archived).
 - **Severity rationale:** MED — the plan-limit override feature (a US-ADM-009 primitive) silently does not govern the workflow dimension; a platform operator setting a per-tenant workflow cap gets no enforcement. Contained to the workflow limit key and requires the operator to rely on overrides rather than the Tenant column. Duplicate-of-mechanism with BUG-008 (cross-reference).
+
+### BUG-122 — Notification template per-language variant cap (BR-6 "max 2 language variants per template per tenant") is NOT enforced — an unlimited number of language variants can be saved
+- **ID:** BUG-122
+- **Type:** BUG
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Notifications & Audit / US-NTF-002 / TC-NTF-002-09 (also touches TC-NTF-002-06)
+- **Title:** `PUT /api/v1/notification-templates/{eventKey}?language={lang}` upserts a per-(tenant, eventKey, language) override with no guard against BR-6's 2-variant-per-template cap. Saving a 3rd distinct language variant returns HTTP 200 "Template saved." instead of the expected 422/400 "max 2 variants" rejection.
+- **Root cause (HIGH):** The `SaveTemplateCommand`/handler path for notification templates performs a language-keyed upsert with no count check of existing custom variants for the (tenant, eventKey) pair. A grep of `src/backend/HRM.Application/Features/Notifications` for any max-2 / variant-limit / BR-6 enforcement returns **zero matches** — the rule was specified but never implemented. There is no plan-limit resolution here either (BR-6 is described as "plan-configurable", default 2), so the cap is simply absent. Confidence HIGH (reproduced live + confirmed no enforcement code exists).
+- **Reproduction steps:** fntest, `Bearer <fntest-admin@fn.test>` + `X-Tenant-Subdomain: fntest`. On the seeded `leave_approved` template: `PUT …/leave_approved?language=en` → 200 (1 of 2); `PUT …/leave_approved?language=es` → 200 (2 of 2, at the boundary); `PUT …/leave_approved?language=fr` → **200 "Template saved."** (should be rejected as the 3rd variant). Readback `GET …/leave_approved?language={en|es|fr}` shows all three persisted with `isCustom:true`.
+- **Evidence:** live curl 2026-07-01 — all three PUTs returned `{"success":true,...,"message":"Template saved."}` with distinct `language` values; readback confirms en/es/fr all `isCustom:true`. No BR-6 enforcement code found in the Notifications feature.
+- **Severity rationale:** MED — contained to the template-authoring surface (Tenant.ManageSettings, admin-only); no data-corruption or cross-tenant impact, but a documented business rule (and its plan-configurable limit) is entirely unenforced, so a tenant admin can create arbitrarily many language variants, defeating BR-6 and any plan-tier differentiation built on it. The per-language selection mechanism itself works (variants persist and retrieve distinctly).
