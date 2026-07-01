@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: accessibility
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED (partial) — primary Late&Early report page (acme, manager persona, soft-nav) axe WCAG2.1AA scan CLEAN except 1 serious color-contrast on .user-email (sidebar chrome, known BUG-108/112 family, not report-specific). Full TC not executable: SR announcements are manual, 360px sub-scans + HR-only late-policy form (manager->/forbidden) + lateness-score view not covered this pass. No new report-specific finding."
 created: 2026-06-14
 ---
 

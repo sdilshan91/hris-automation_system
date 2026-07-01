@@ -5,7 +5,7 @@ module: Attendance
 priority: critical
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — no fault-injection seam to force mid-clock-out-tx failure. Code review: single atomic SaveChanges (design meets NFR-3) but not live-assertable. No harness."
 created: 2026-06-14
 ---
 

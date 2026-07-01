@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: performance
 status: blocked
-exec_note: "S1: needs S2 (scale data seed)."
+exec_note: "S2 2026-07-01: BLOCKED — perf/scale tenant (>=500 emp) credentials not accessible; login failed for all guessed perf personas and perf tenant is not code-seeded. Bulk-assign endpoint exists (POST shifts/{id}/assign) but not drivable at scale this pass."
 created: 2026-06-14
 ---
 

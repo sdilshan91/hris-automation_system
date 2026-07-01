@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — multi-level Approval Workflow Engine (US-ADM-007) absent; RegularizationApprovalService implements SINGLE-LEVEL final approve only (code comment L18-20). Single-level path covered by TC-ATT-037. No new finding."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — late-notification dispatch seam DOES NOT EXIST (late_policy.notification_on_late stored but no code acts on it on late clock-in). Seam absent, not just delivery deferred. No new finding."
 created: 2026-06-14
 ---
 

@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — clock-in time is server-side UTC only (ClockInCommand has no client timestamp); grace-boundary sub-cases (09:00:00/09:15:00/09:15:01) not drivable via live API. Needs time-travel + shift-assign harness. No new finding."
 created: 2026-06-14
 ---
 

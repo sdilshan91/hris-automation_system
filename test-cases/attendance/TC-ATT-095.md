@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: needs S2 (scale data seed)."
+exec_note: "S2 2026-07-01: BLOCKED — async-export threshold seam CONFIRMED in code (AttendanceSummaryService.SyncExportEmployeeThreshold=1000, Hangfire enqueue path). But not drivable: no accessible >1000-emp tenant login (perf personas failed). Notification seam DEFERRED on US-NTF. No new finding."
 created: 2026-06-14
 ---
 

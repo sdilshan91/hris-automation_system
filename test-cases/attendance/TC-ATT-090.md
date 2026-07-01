@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — half-day BR-5 logic IS implemented (AttendanceSummaryService.cs L496-607, HalfDayEnabled setting). But verifying needs a fabricated 4h-worked day at a fixed date + half-day-enabled tenant + generated summary; clock times are server-UTC so not seedable in the breadth budget. No new finding."
 created: 2026-06-14
 ---
 

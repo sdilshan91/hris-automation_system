@@ -5,7 +5,7 @@ module: Attendance
 priority: critical
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — no fault-injection seam at attendance_log write/commit boundary. Code review: approve is single atomic SaveChanges (NFR-2 by construction) but not live-assertable. No harness."
 created: 2026-06-14
 ---
 

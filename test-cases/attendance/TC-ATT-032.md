@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — regularization notify-on-submit seam DEFERRED (RegularizationApprovalService.cs:164/290 TODO US-NTF); no dispatch/outbox row written on submit. Step-1 submit works live; core Step-2 seam assertion unmeetable. Matches deferred design."
 created: 2026-06-14
 ---
 

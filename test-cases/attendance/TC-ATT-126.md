@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: performance
 status: blocked
-exec_note: "S1: needs S2 (scale data seed)."
+exec_note: "S2 2026-07-01: BLOCKED — 5,000-emp acme scale dataset not accessible (perf tenant login failed, not code-seeded). payroll-data/reconciliation/lock SLAs not measurable this pass."
 created: 2026-06-15
 ---
 

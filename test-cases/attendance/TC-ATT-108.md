@@ -5,7 +5,7 @@ module: Attendance
 priority: high
 type: integration
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "S2 2026-07-01: BLOCKED — chronic-lateness escalation seam DOES NOT EXIST in attendance code (late_policy.chronic_threshold stored but no escalation/dispatch acts on it; grep of Application/Infrastructure finds no chronic escalation). Feature not built beyond the policy field. Not deferred-with-seam — seam absent. No new finding (design gap already implied by US-NTF deferral)."
 created: 2026-06-14
 ---
 
