@@ -4,8 +4,8 @@ user_story: US-CHR-009
 module: Core HR
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS (create-half / BR-4) — POST /status with effectiveDate=2026-12-31 → isFutureDated:true, 'scheduled...applied automatically on the effective date', and the employee status stays Active today (NOT applied immediately). The job-apply half (ApplyFutureDatedStatusChangesJob) is a global daily Hangfire job scanning all tenants — not triggered here to avoid touching real tenants — but the scheduling behavior and deferral are verified."
 created: 2026-06-12
 ---
 

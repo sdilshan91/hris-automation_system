@@ -4,8 +4,8 @@ user_story: US-CHR-008
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS — category filter works with valid categories: uploaded Other + ID docs; ?category=Other → ['Other'], ?category=ID → ['ID'], no filter → all. (Invalid category strings e.g. 'Contracts' are silently ignored/return-all, but valid tabs filter correctly.)"
 created: 2026-06-12
 ---
 

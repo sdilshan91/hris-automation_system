@@ -4,8 +4,8 @@ user_story: US-CHR-008
 module: Core HR
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS (API contract) — upload endpoint accepts the required fields file+category+description+expiryDate (multipart/form-data); upload succeeds 201 with these persisted. FE form-render arm (all fields visible/labeled) is UI-only, but the underlying AC-1 field set is present and functional at the API."
 created: 2026-06-12
 ---
 

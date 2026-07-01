@@ -4,8 +4,8 @@ user_story: US-CHR-003
 module: Core HR
 priority: critical
 type: security
-status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+status: fail
+exec_note: "2026-07-01 (API, fntest+acme-read): FAIL — Manager gets 403 on GET /tenant/employees/directory (TC expects 200 w/ all tenant employees). See BUG-120: directory is gated by Employee.View.Own only; Manager(View.Team)/HR/Admin(View.All) all 403; only Employee role + platform admin get 200. Confirmed same 403 for acme Manager persona."
 created: 2026-06-12
 ---
 

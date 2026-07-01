@@ -4,8 +4,8 @@ user_story: US-CHR-010
 module: Core HR
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS — POST /tenant/employees/import with a valid 10-row CSV → {total:10, success:10, failed:0, isComplete:true}. All 10 employees created (synchronous path, dept/title names resolved to FN Dept 1/FN Title 1)."
 created: 2026-06-12
 ---
 

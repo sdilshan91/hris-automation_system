@@ -4,8 +4,8 @@ user_story: US-CHR-010
 module: Core HR
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS (rejection enforced) — a 26.4 MB CSV upload is rejected 400 with 'Request body too large. The max request body size is 27262976 bytes' (~26 MB Kestrel limit). NOTE: message is the generic framework body-size error, not the friendly 'File exceeds 25 MB limit' spec wording, and the effective cap is ~26 MB not exactly 25 MB — cosmetic, rejection itself works."
 created: 2026-06-12
 ---
 

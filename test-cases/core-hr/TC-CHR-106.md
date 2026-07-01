@@ -4,8 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 (API, fntest): FAIL — Employee GET own /tenant/employees/{id}/profile returns 403 even for the correctly-linked owner (fntest-emp linked to EMP-0001), so the self-service read-only profile view is inaccessible to the Employee role. View.Own is over-restricted on this route (mirror of BUG-119 inconsistency). Edit-button-visibility per section is a FE arm not driveable here."
 created: 2026-06-12
 ---
 

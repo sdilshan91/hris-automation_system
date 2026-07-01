@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 (API, fntest): BLOCKED (partial-verified) — API arm SAFE: employee search with <script> payload → 200, content-type application/json (no HTML reflection, values JSON-escaped). The 'no alert / sanitized autocomplete render' assertion is an FE browser-render check (blocked by BUG-097). No API-layer reflection defect."
 created: 2026-06-12
 ---
 

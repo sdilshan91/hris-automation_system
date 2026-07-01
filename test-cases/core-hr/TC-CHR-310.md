@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 (API, fntest): BLOCKED (partial-verified) — API arm SAFE: custom-field name '<script>x</script>' stored+returned as a literal string (201, JSON-escaped, no server-side execution). The remaining 'HTML-encoded in DOM / no script runs' assertion is an FE Angular auto-escape render check needing a browser on the custom-fields page (blocked by BUG-097). No API-layer injection defect."
 created: 2026-06-13
 ---
 

@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — Grade entity is deferred (Payroll module). Employee profile DTO exposes NO grade field at all (only jobTitleName); job-titles carry a gradeId column but it is always null and there is no Grade resolution/display. Feature not built; cannot verify grade-on-profile."
 created: 2026-06-12
 updated: 2026-06-12
 unblocked_by: US-CHR-001

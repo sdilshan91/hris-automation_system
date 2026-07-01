@@ -4,8 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS — employee self-edit of permitted contact fields (phone/personalEmail/address) via PATCH /tenant/employees/{id}/profile → 200, persisted. AC-4 edit flow works. NOTE: exposed BUG-119 (Edit.Own has no owner check → any employee can edit ANY employee's profile). Audit-log verification not deep-dived."
 created: 2026-06-12
 ---
 

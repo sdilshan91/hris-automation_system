@@ -4,8 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: medium
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 (API, fntest): FAIL — no is_deleted soft-delete/Archived model exists (see ISSUE-223). Lifecycle is status-based: a Terminated employee still returns 200 on GET (spec expects 404) and still appears in the default list (spec expects hidden); includeArchived=true is a no-op; no DELETE route (405). activeOnly=true DOES exclude it. BR-6 assertions not met."
 created: 2026-06-12
 ---
 

@@ -4,8 +4,8 @@ user_story: US-CHR-010
 module: Core HR
 priority: critical
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS — 1200-row CSV (>500 threshold) → 'Import has been queued for background processing', isComplete:false, jobId returned. GET /import/{jobId}/status shows a real Hangfire job progressing (Processing, processedRows 400→1200, progressPercent 33→100, status Completed). Async queue + progress indicator work."
 created: 2026-06-12
 ---
 

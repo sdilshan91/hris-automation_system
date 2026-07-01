@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — document DTO returns raw expiryDate but NO computed badge/threshold field (green>30d/amber<30d/red<7d/expired). Badge thresholds are FE-computed from expiryDate and rendered visually; needs a browser on the documents view. API layer has only the raw date."
 created: 2026-06-12
 ---
 

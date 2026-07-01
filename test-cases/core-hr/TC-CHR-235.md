@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: accessibility
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01: BLOCKED — accessibility (WCAG 2.1 AA) arm requires an axe-core browser run against the rendered page; direct deep-link nav to this feature is blocked by systemic BUG-097 (SPA login-fill/route reach), so axe cannot be injected on the target view this pass. Systemic a11y gaps already tracked as BUG-096/108-112. Not separately re-verifiable here."
 created: 2026-06-12
 ---
 

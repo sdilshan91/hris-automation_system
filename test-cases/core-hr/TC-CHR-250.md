@@ -4,8 +4,8 @@ user_story: US-CHR-010
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS — idempotency by unique email. Re-uploading the identical 10-row CSV → {success:0, failed:10}, every row error 'Email already exists in tenant.' → zero duplicate employees created."
 created: 2026-06-12
 ---
 

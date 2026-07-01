@@ -4,8 +4,8 @@ user_story: US-CHR-010
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS (async batch-commit arm) — the 1200-row async job commits in batches: /status showed processedRows advancing 400→800→1200 with successCount tracking in step (partial results visible mid-run), i.e. per-batch commits not a single final transaction. Sync path (241) is all-or-per-row validated (10/10). Explicit forced-mid-batch-rollback not induced this pass."
 created: 2026-06-12
 ---
 

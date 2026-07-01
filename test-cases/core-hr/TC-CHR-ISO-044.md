@@ -5,7 +5,7 @@ module: Core HR
 priority: critical
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 (API, iso): BLOCKED — direct-reports cache isolation needs a seeded reporting structure (manager + reports) in TWO tenants; isoa/isob have no employee data seeded (employee list empty), so Manager-A(3 reports) vs Manager-G(2 reports) cannot be established. Mechanism is indirectly validated: ISO-048 PASSED showing tenant-scoped cache keys with no cross-tenant bleed on the same cache layer used by direct-reports."
 created: 2026-06-12
 ---
 

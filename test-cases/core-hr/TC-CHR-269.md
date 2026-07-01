@@ -4,8 +4,8 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 (API, fntest): FAIL — manager assignment works (POST /manager → /direct-reports lists the report), BUT the subordinate's profile DTO has NO managerId/managerName field (see ISSUE-225), so the 'Reporting Manager displays current manager or Not Assigned' field cannot be populated from GET /profile. Data absent from the profile payload."
 created: 2026-06-12
 ---
 

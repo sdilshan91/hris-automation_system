@@ -5,7 +5,7 @@ module: Core HR
 priority: critical
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — precondition 'tenant pinned at exactly MaxEmployees' is unreachable: MaxEmployees is not exposed/settable via any reachable system-admin API endpoint (tenant DTO omits it), and per BUG-008 enforcement reads the Tenant.MaxEmployees snapshot. fntest creation succeeds past 10 (limit not hit). Would need DB manipulation of MaxEmployees to establish the at-limit state."
 created: 2026-06-12
 ---
 

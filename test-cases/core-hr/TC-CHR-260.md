@@ -4,8 +4,8 @@ user_story: US-CHR-010
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: fail
+exec_note: "2026-07-01 (API, fntest): FAIL — async import completes (1200/1200, status Completed) but the initiating admin receives NO in-app notification: GET /api/v1/notifications?includeRead=true → totalCount:0. See ISSUE-224 (completion emitter missing; BUG-082 class). Job-status polling works as an alternate feedback channel."
 created: 2026-06-12
 ---
 

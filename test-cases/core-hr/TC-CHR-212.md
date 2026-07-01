@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — EXIF-strip cannot be verified: (a) no EXIF tooling available in this env (no PIL/piexif to craft/inspect a GPS-tagged JPEG), and (b) no image EXIF-stripping code found in src/backend (no ImageSharp/Mutate/EXIF handling on the document-upload path), suggesting the strip may not be wired. Needs image tooling + a browser/file-inspection to confirm."
 created: 2026-06-12
 ---
 

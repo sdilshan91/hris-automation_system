@@ -4,8 +4,8 @@ user_story: US-CHR-008
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+status: pass
+exec_note: "2026-07-01 (API, fntest): PASS — GET /tenant/employees/{id}/documents returns full metadata columns: fileName, fileSizeBytes, mimeType, category, description, expiryDate, uploadedBy, createdAt, updatedAt. Uploaded legit.pdf (201) listed with all fields populated."
 created: 2026-06-12
 ---
 

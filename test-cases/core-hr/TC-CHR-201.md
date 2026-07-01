@@ -5,7 +5,7 @@ module: Core HR
 priority: critical
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — virus scanning is NOT wired: Serilog shows 'Virus scan SKIPPED (stub scanner). TODO(prod): Wire ClamAV'. EICAR upload does NOT get scanned/rejected (feature absent); the EICAR-content upload actually returned 500 (unhandled exception, separate). Cannot verify malware rejection until ClamAV is wired. Feature-not-built."
 created: 2026-06-12
 ---
 

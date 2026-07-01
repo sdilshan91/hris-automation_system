@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — reporting-chain breadcrumb is an FE-render arm AND the profile DTO omits any manager/chain fields (ISSUE-225), so there is no data source in /profile to render the breadcrumb; would need the FE plus separate /direct-reports/manager calls. Manager link itself is stored correctly."
 created: 2026-06-12
 ---
 

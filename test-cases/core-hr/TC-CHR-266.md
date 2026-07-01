@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01: BLOCKED — CSV-import XSS render arm. Import pipeline (multipart CSV → parse → directory render) needs the browser to confirm Angular auto-escape on the directory/profile; API stores values as literals (consistent with 310/288 safe-storage). FE-render + multipart-import arm not driveable this pass (BUG-097)."
 created: 2026-06-12
 ---
 

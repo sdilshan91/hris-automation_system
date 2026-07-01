@@ -5223,3 +5223,68 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction:** fntest, create rule Annual=25, `PUT .../leave-entitlements/rules/{id}` days=28 → 200; no Hangfire job appears; employee balances unchanged (no adjustment ledger entry).
 - **Evidence:** live curl 2026-07-01; `UpdateLeaveEntitlementRuleCommandHandler.cs:19-21` (pass-through to `UpdateRuleAsync`); no `Enqueue` in `LeaveEntitlementService`.
 - **Severity rationale:** MED — the rule record updates correctly, but the AC-5 "recalc affected employees" promise silently no-ops, so balances drift from policy until the next global accrual run. Not HIGH because the nightly/annual accrual job would eventually reconcile and no data is corrupted.
+
+### BUG-119 — `Employee.Edit.Own` does NOT enforce ownership: any Employee-role user can edit ANY other employee's profile in their tenant via `PATCH /tenant/employees/{id}/profile` (self-service privilege escalation)
+- **ID:** BUG-119
+- **Type:** BUG
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-002 / TC-CHR-123 (self-service edit), TC-CHR-106/110 (self-service view)
+- **Title:** The self-service profile edit endpoint `PATCH /api/v1/tenant/employees/{id}/profile` is gated only by the `Employee.Edit.Own` permission but performs **no owner check** binding the caller's linked employee to `{id}`. An Employee-role user therefore successfully edits **another** employee's contact info (phone/personalEmail/address), not just their own. The only obstacle is the optimistic-concurrency `rowVersion`, which is itself readable, so it is trivially satisfied. Compounding inconsistency: the matching **GET** `/tenant/employees/{id}/profile` returns **403** even for the caller's OWN record (so `View.Own` is over-restricted while `Edit.Own` is under-restricted).
+- **Root cause:** the `/profile` PATCH authorization checks the `Employee.Edit.Own` *permission* but omits the "id == current user's employeeId" ownership predicate; `.Own`-scoped permissions are treated as tenant-wide. Confidence: **HIGH** — reproduced end-to-end in fntest (write went through and persisted). Serilog shows a normal 200 (no authz rejection). Not root-caused to a specific handler line this pass (breadth-first) — the missing check is in the UpdateEmployeeProfile command/authorization path.
+- **Reproduction steps:** login `fntest-emp@fn.test` (Employee role, linked to EMP-0001). Read a foreign employee's rowVersion via admin (or any readable source): EMP-0002 rowVersion=117752. `PATCH /api/v1/tenant/employees/{EMP-0002-id}/profile` `X-Tenant-Subdomain: fntest`, body `{"rowVersion":117752,"contactInfo":{"phone":"555-HACKED"}}` → **200 success**; admin GET of EMP-0002 confirms `phone:"555-HACKED"`. (Reverted after test.)
+- **Evidence:** live curl 2026-07-01 in fntest (throwaway). PATCH-own (EMP-0001) → 200 persisted; PATCH-foreign (EMP-0002) → 200 persisted (privilege escalation); GET-own /profile as employee → 403.
+- **Severity rationale:** HIGH — a low-privilege Employee can tamper with any coworker's contact data (phone/personal email/address) within the tenant, a horizontal privilege-escalation / data-integrity breach on a primary self-service flow. Not CRIT because it is intra-tenant (tenant isolation still holds) and limited to the profile contact/emergency fields exposed by the PATCH DTO, not salary/role.
+
+### ISSUE-223 — No `is_deleted` soft-delete / "Archived" model for employees: lifecycle is status-based (Active/Terminated/Inactive), so TC-CHR-125's BR-6 assertions (hidden by default, GET→404, `includeArchived` reveals) do not hold
+- **ID:** ISSUE-223
+- **Type:** ISSUE (behavioral drift vs spec)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-002 / TC-CHR-125
+- **Title:** TC-CHR-125 (BR-6) assumes an employee soft-delete flag (`is_deleted=true`) where a "deleted" employee (a) is hidden from the default list, (b) returns **404** on `GET /employees/{id}`, and (c) reappears only via an `includeArchived`/Archived filter. The implementation has **no such soft-delete**: employees have a status lifecycle (`Active → Suspended/Terminated/Inactive`). A `Terminated` employee (1) **still appears in the default employee list**, (2) **still returns 200** on GET by id (not 404), and (3) is excluded only by the explicit `activeOnly=true` filter or a `status=` filter. The `includeArchived=true` query param is accepted but is a **no-op** (no separate archived state to reveal). There is also no DELETE route (`DELETE /employees/{id}` → 405).
+- **Root cause:** the employee model implements a status enum, not an `is_deleted` global-query-filter soft-delete; there is no "archived" partition and no filter that maps to it. Confidence: **HIGH** — reproduced live in fntest with a throwaway employee.
+- **Reproduction steps:** fntest, create employee → `POST /tenant/employees/{id}/status {"newStatus":"Terminated",...}` → 200. `GET /tenant/employees/{id}` → **200** (spec expects 404). `GET /tenant/employees` (default) → Terminated employee **present**. `GET ...?activeOnly=true` → excluded. `GET ...?includeArchived=true` → identical to default (no-op). `DELETE /tenant/employees/{id}` → 405.
+- **Evidence:** live curl 2026-07-01, fntest throwaway employee EMP-0011 (terminated, left in place — throwaway tenant).
+- **Severity rationale:** MED — deactivated employees are hidden by the `activeOnly` filter so there is a working exclusion path, but the "point-in-time record still retrievable but hidden by default" BR-6 semantics (and the GET→404 privacy expectation) are not met; the archived-filter UX in the TC has no backing. Not HIGH because no data is exposed cross-tenant and a functional deactivation exists.
+
+### BUG-120 — Employee Directory (`GET /tenant/employees/directory`) is gated by `Employee.View.Own` only, so Manager, HR Officer and Tenant Admin (who hold `View.Team`/`View.All`, not `View.Own`) all get 403 — the org directory is inaccessible to every role above Employee
+- **ID:** BUG-120
+- **Type:** BUG
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-002 / TC-CHR-139 (manager directory scope), TC-CHR-121/210 dir-render arms
+- **Title:** `EmployeesController.GetDirectory` (`EmployeesController.cs:151-152`) is annotated `[RequirePermission("Employee.View.Own")]`. Because permissions are **not hierarchical** in this system, a higher-tier permission does NOT imply `View.Own`. Result: the **Employee** role (which holds `Employee.View.Own`) gets **200**, but **Manager** (`Employee.View.Team`), **HR Officer** and **Tenant Admin** (`Employee.View.All`) all get **403**. TC-CHR-139 explicitly requires a Manager to receive 200 with the tenant employees; instead the manager is denied. The whole directory feature is thus available only to the lowest-privilege role plus the platform super-admin.
+- **Root cause:** wrong/too-narrow permission on the directory action — it should accept any of `Employee.View.Own`/`View.Team`/`View.All` (or a dedicated `Employee.View.Directory`), not `View.Own` alone. Confidence: **HIGH** — read from source (`EmployeesController.cs:152`) and reproduced across four personas.
+- **Reproduction steps:** fntest, `GET /api/v1/tenant/employees/directory?page=1&pageSize=20` `X-Tenant-Subdomain: fntest`. As `fntest-emp` (View.Own) → **200** (4 rows). As `fntest-mgr` (View.Team) → **403**. As `fntest-hr`/`fntest-admin` (View.All) → **403**. Same 403 for the acme Manager persona (read-only probe). Platform admin → 200.
+- **Evidence:** live curl 2026-07-01; `EmployeesController.cs:151-152` `[RequirePermission("Employee.View.Own")]`.
+- **Severity rationale:** MED — a primary read feature (org directory) is unusable for Manager/HR/Admin, breaking TC-139's stated flow; it is an availability/authz-config defect, not a data leak (isolation holds and the Employee path works). Not HIGH because a workaround (Employee role, or the plain `/employees` list for HR/Admin) exists.
+
+### ISSUE-224 — Async (Hangfire) employee-import completion emits NO in-app notification to the initiating user (US-CHR-003 async-notify unmet)
+- **ID:** ISSUE-224
+- **Type:** ISSUE (missing notification emitter)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-003 / TC-CHR-260
+- **Title:** TC-CHR-260 requires that when a large (>500-row) import is processed as a background Hangfire job, the initiating user is notified in-app on completion. The async import works end-to-end (job queued, `status:Processing`→`Completed`, 1200/1200 rows), but after completion the initiating admin's notification feed is empty (`GET /api/v1/notifications?includeRead=true` → `totalCount:0`, `unreadCount:0`). No completion notification is created. Consistent with the known incomplete-notification-emitter theme (BUG-082 class).
+- **Root cause:** the import background job does not dispatch a notification on completion (no `INotificationDispatcher` call in the completion path). Confidence: **HIGH** — reproduced: imported 1200 rows in fntest → job Completed → notifications feed empty.
+- **Reproduction steps:** fntest, `POST /tenant/employees/import` with a 1200-row CSV → warning 'queued for background processing', jobId. Poll `/import/{jobId}/status` → `Completed`, 1200 processed. `GET /api/v1/notifications?page=1&pageSize=20&includeRead=true` → `items:[]`, `totalCount:0`.
+- **Evidence:** live curl 2026-07-01, fntest; job status Completed; empty notifications list.
+- **Severity rationale:** LOW — the import completes correctly and its status is pollable via the job-status endpoint (a working feedback channel), so no functional loss; only the convenience in-app completion notification is missing.
+
+### ISSUE-225 — Employee profile DTO (`GET /tenant/employees/{id}/profile`) omits the reporting manager entirely — no `managerId`/`managerName`, so the profile page's "Reporting Manager" field and reporting-chain breadcrumb have no data source
+- **ID:** ISSUE-225
+- **Type:** ISSUE (missing field in DTO)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-006 / TC-CHR-269 (reporting-manager field), TC-CHR-283 (reporting-chain breadcrumb)
+- **Title:** After assigning a manager (`POST /tenant/employees/{id}/manager` with `managerEmployeeId`) — which correctly reflects in `GET /tenant/employees/{managerId}/direct-reports` (manager→report link works) — the subordinate's own profile response (`GET /tenant/employees/{id}/profile`) contains **no** manager fields at all (full key set: id, employeeNo, name, email, personalEmail, phone, address, dob, gender, dateOfJoining, department*, jobTitle*, employmentType, status, profilePhotoUrl, customFields, userId, isActive, timestamps, rowVersion, emergencyContacts, employmentHistory — no `managerId`/`managerName`/`reportsTo`). TC-CHR-269 ("Reporting Manager field displays current manager or 'Not Assigned'") and TC-CHR-283 (reporting-chain breadcrumb) therefore have no backing field in the profile payload; the FE would have to make a separate `/direct-reports`-style call to reconstruct it.
+- **Root cause:** the `EmployeeProfileDto` projection does not include the manager relationship. Confidence: **HIGH** — reproduced: assigned EMP-0002 as EMP-0001's manager (direct-reports confirms), profile of EMP-0001 has no manager key.
+- **Reproduction steps:** fntest, `POST /tenant/employees/{EMP-0001}/manager {"managerEmployeeId":"{EMP-0002}","reason":"x"}` → 200; `GET /tenant/employees/{EMP-0002}/direct-reports` → lists EMP-0001; `GET /tenant/employees/{EMP-0001}/profile` → no managerId/managerName field.
+- **Evidence:** live curl 2026-07-01, fntest; profile key list quoted above.
+- **Severity rationale:** LOW — the reporting relationship is stored and retrievable via the dedicated manager/direct-reports endpoints, so no data loss; the gap is that the profile view's manager field/breadcrumb can't be rendered from the profile call alone. Cosmetic/DTO-completeness.

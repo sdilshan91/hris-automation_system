@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — ProbationReminderJob EXISTS (src/backend/HRM.Api/Jobs/ProbationReminderJob.cs) but it is a global daily Hangfire recurring job that scans ALL tenants; triggering it would emit against real tenants (acme/techoneglobal). No per-tenant on-demand trigger. The 'daily job sends HR notification within 7 days of probation end, no auto-transition' arm can't be exercised in isolation this pass."
 created: 2026-06-12
 ---
 

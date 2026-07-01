@@ -4,8 +4,8 @@ user_story: US-CHR-012
 module: Core HR
 priority: critical
 type: security
-status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+status: pass
+exec_note: "2026-07-01 (API, isoa/isob): PASS — custom-field cache is tenant-scoped. Created 'IsoaSecretField' in isoa → isob's custom-fields list does NOT contain it (count 0), isoa's does (count 1). Redis up; no cross-tenant cache bleed on custom-field definitions. (Separate BUG-003-class token-tid-vs-subdomain read behavior not in scope of this cache TC.)"
 created: 2026-06-13
 ---
 

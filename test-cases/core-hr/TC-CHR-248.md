@@ -5,7 +5,7 @@ module: Core HR
 priority: critical
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — plan-limit pre-validation in import needs a tenant pinned at/near MaxEmployees, which is unreachable via the system-admin API (MaxEmployees not exposed/settable; BUG-008 enforcement reads the snapshot). Same precondition gap as TC-074. Import itself works (241/249/250); the 'partial-allowed with user choice at capacity' branch can't be triggered."
 created: 2026-06-12
 ---
 

@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — status field IS present on employee list+profile (e.g. 'Active'), but the color-coding of the status badge is an FE visual-render assertion (needs browser on the profile/directory). API provides the raw status enum; badge color not verifiable at API layer."
 created: 2026-06-12
 ---
 

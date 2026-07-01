@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "S1: now-testable — re-run against current infra (FE/Docker/Redis/platform-login up)."
+exec_note: "2026-07-01 (API, fntest): BLOCKED — Manager (Employee.View.Team) gets 403 on /profile, /{id}, /directory and /direct-reports; AND fntest has no manager→report linkage seeded (all managerId null), so the direct-report precondition cannot be established. Read-only edit-button-visibility is also a FE-UI arm. Needs seeded reporting chain + browser."
 created: 2026-06-12
 ---
 

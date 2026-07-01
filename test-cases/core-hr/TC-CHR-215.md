@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: security
 status: blocked
-exec_note: "S1: now-testable via throwaway iso fixture (S6); may FAIL on BUG-003."
+exec_note: "2026-07-01: BLOCKED — document-description XSS render arm requires (a) a multipart document upload and (b) a browser to confirm the description renders HTML-escaped (Angular auto-escape). API-layer stores literals safely (per 310/288). Upload+FE-render arm not driveable this pass."
 created: 2026-06-12
 ---
 
