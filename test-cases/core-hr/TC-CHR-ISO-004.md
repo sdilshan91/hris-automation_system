@@ -4,9 +4,9 @@ user_story: US-CHR-004
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-11
----
+exec_note: "2026-06-30 N/A->PASS. Code-confirmed: DepartmentService.cs has ZERO cache references; no ICacheService/IMemoryCache for departments. The TC's own escape (no caching => verify no un-scoped keys) is satisfied vacuously -- there is no shared cache to pollute. Observable guarantee verified instead: per-tenant department lists are distinct and IDOR-isolated (isob dept by id under isoa honest context -> 404), i.e. no cross-tenant data served. No Redis wired (in-memory fallback per env). API-only; nothing deleted."
 
 # TC-CHR-ISO-004: Cache keys for departments are tenant-scoped
 

@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: pass
 created: 2026-06-12
 ---
 
@@ -55,3 +55,5 @@ Verify that the "Save as Draft" button at each wizard step persists the partiall
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** PASS. Both **Save as Draft** and **Save & Continue** buttons render on each step. Save & Continue is correctly disabled until required fields (First/Last/Email) are valid, then enables; clicking it advanced the wizard from Step 1 (Personal Info) to Step 2 (Contact Details) and a **Back** button appeared, confirming step advance with multi-step state retained. (Final DB persist not exercised — REPORT-ONLY, no employee created.)

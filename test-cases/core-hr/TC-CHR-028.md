@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-11
----
+exec_note: "P3b k6 2026-06-30: SCALE NOT SEEDED — kept blocked. Requires 500 departments per tenant + create #501 write + filter; the 5k perf tenant was seeded for employee volume, not 500-dept scale, and the create/filter write arms were not driven. Needs a 500-department volume seed. Perf harness exists (perf/), re-run after seeding."
 
 # TC-CHR-028: Support 500 departments per tenant without degradation
 
@@ -51,3 +51,5 @@ Verify that the system supports up to 500 departments per tenant without perform
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance/SLA TC. The Departments page renders ~51 cards promptly in-browser, but this TC requires instrumented page-load timing (P95 / 500-dept scale seed) that the single shared Playwright browser cannot measure reliably. Not a functional defect. Needs perf harness + seeded scale data.

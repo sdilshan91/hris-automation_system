@@ -4,9 +4,9 @@ user_story: US-CHR-005
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 N/A->PASS (matches TC step 6 'if no caching, mark N/A'). Code-confirmed: JobTitleService.cs has ZERO cache references. No job-title caching exists -> no shared key to pollute. Observable guarantee verified: per-tenant job-title lists distinct (isoa a63cee67, isob 6838d04e), IDOR by id under honest isoa context -> 404. No Redis wired. API-only; nothing deleted."
 
 # TC-CHR-ISO-008: Cache keys for job titles are tenant-scoped
 

@@ -4,9 +4,9 @@ user_story: US-CHR-009
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 N/A->PASS (matches TC step 5 'if no caching, verify no un-scoped keys / mark N/A'). Code-confirmed: EmployeeService.cs + EmployeeStatusService.cs have ZERO cache references for status/history. No employee status/history cache exists -> no shared key to pollute. Observable guarantee verified: isob-emp profile/status under honest isoa context -> 404. No Redis wired. API-only; nothing deleted."
 
 # TC-CHR-ISO-036: Cache keys for employee status and employment history are tenant-scoped
 

@@ -4,8 +4,9 @@ user_story: US-LV-002
 module: Leave Management
 priority: critical
 type: security
-status: blocked
+status: fail
 created: 2026-06-13
+exec_note: "2026-06-30 API iso-fixture probe: leave-balance cache-key isolation fails by the BUG-003 mechanism (tenant context resolved from the spoofable X-Tenant-Subdomain header, confirmed read+write leak on /tenant/leave-types). DEFERRED/partial Redis arm aside, the read-path leak is present. BUG-003 class."
 ---
 
 # TC-LV-ISO-008: Cache keys for leave balances are tenant-scoped (DEFERRED -- partial)

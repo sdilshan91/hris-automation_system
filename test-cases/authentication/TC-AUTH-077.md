@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-11
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Targets are the session-list endpoints (GET /auth/me/sessions + /tenant/users/{id}/sessions <=200ms P95) — not part of the P3b read scenarios — plus last_active_at debounced write overhead <=2ms which needs server-side instrumentation, not k6. Needs a seeded multi-session user + the session-list flow scripted. Re-run after seeding sessions."
 
 # TC-AUTH-077: Session list P95 <= 200 ms and last_active_at update overhead <= 2 ms
 

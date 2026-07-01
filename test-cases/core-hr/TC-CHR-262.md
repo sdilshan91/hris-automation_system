@@ -4,9 +4,9 @@ user_story: US-CHR-010
 module: Core HR
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Target is a 10,000-row bulk-import file processed <=5min with bounded memory (async Hangfire write path); the bulk-import write was not driven this pass. Needs a 10k-row import file scenario. Perf harness exists (perf/), re-run after scripting it."
 
 # TC-CHR-262: Performance -- 10,000-row file processed within 5 minutes with bounded memory usage
 
@@ -56,3 +56,5 @@ Verify that a bulk import of 10,000 rows completes within 5 minutes (NFR-1) when
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — upload-processing/behavior TC. The Bulk Import wizard renders (3-step, drag-drop + file input, 25 MB cap, .csv/.xlsx) and advances Step 1→2, but verifying actual file-row creation / >25 MB rejection / plan-limit / async Hangfire / idempotency / per-batch transaction / 10k-row perf / CSV-XSS requires POSTing real files and observing backend processing + DB — out of scope for the FE-render sweep (and a write). Not an FE-render defect.

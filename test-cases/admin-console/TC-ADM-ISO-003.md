@@ -4,7 +4,9 @@ user_story: US-ADM-001
 module: Admin Console
 priority: critical
 type: security
-status: blocked
+status: fail
+exec_note: >-
+  2026-06-30 API: query filter scopes same-context reads correctly; but the read-isolation claim fails cross-tenant via foreign X-Tenant-Subdomain header -> isob rows returned to isoa token = existing BUG-003. Write-stamping not re-probed (no cross-tenant write per safety policy).
 created: 2026-06-16
 ---
 

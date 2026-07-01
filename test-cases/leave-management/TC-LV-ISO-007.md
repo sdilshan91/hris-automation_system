@@ -4,8 +4,9 @@ user_story: US-LV-002
 module: Leave Management
 priority: critical
 type: security
-status: blocked
+status: fail
 created: 2026-06-13
+exec_note: "2026-06-30 API iso-fixture probe: entitlement-data isolation fails by the BUG-003 mechanism confirmed on the sibling /tenant/leave-types surface (header-driven tenant context: isoa-tok+isob-hdr read=isob context, write landed in isob). Entitlement queries share the same TenantResolutionMiddleware/header path. BUG-003 class."
 ---
 
 # TC-LV-ISO-007: RLS blocks direct DB queries across tenants for entitlement data

@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-09
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE THIS ENV — kept blocked. Target is tenant-resolution Redis cache-HIT <=5ms middleware overhead; (a) Redis is not wired in this env (in-memory fallback per localhost runbook), so the cache-hit path can't be exercised, and (b) isolated middleware overhead needs server-side timing, not k6 wall-clock. Re-run with Redis wired + middleware timing."
 
 # TC-AUTH-055: Tenant resolution cache hit completes within 5 ms
 

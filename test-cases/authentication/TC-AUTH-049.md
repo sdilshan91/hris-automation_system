@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-03
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED (needs middleware instrumentation) — kept blocked. Target is authorization-middleware overhead <=5ms P95 per request (isolated middleware execution time, not end-to-end endpoint p95). k6 only sees total response time; per-request authz-middleware timing needs server-side instrumentation/Serilog timing, not k6 wall-clock. Re-run with middleware timing captured."
 
 # TC-AUTH-049: Permission evaluation adds no more than 5ms overhead per request
 

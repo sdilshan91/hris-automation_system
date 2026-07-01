@@ -4,7 +4,7 @@ user_story: US-CHR-007
 module: Core HR
 priority: critical
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -56,3 +56,7 @@ Verify that after creating a new location, it becomes immediately available in t
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — behavioral/integration TC (location appears in employee-assignment dropdowns & holiday-calendar config; deactivation-with-active-employees rules; deactivated-not-assignable). The Locations table renders, but verifying these cross-feature/write rules requires creating/assigning records and reaching the employee-assignment form — out of scope for the FE-render sweep (and employee directory is crashed, BUG-099). Not an FE-render defect.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **FAIL — BUG-113.** The new active location DOES appear in the assignment-dropdown source (`GET /tenant/locations?activeOnly=true` lists it), so step 2/3 pass. But the assignment itself (step 4/5) is inoperable: `POST /tenant/employees` (`CreateEmployeeCommand`) accepts only a free-text `Location` string and has **no `LocationId` field**; `PATCH /employees/{id}/profile` has none either. So an employee can never be linked to a `Location` row via the standard forms, `location_id` stays null (verified: all 34 acme employees `locationId:null`), and the location's Employee Count never reaches 1. See BUG-113.

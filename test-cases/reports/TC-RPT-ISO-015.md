@@ -4,7 +4,8 @@ user_story: US-RPT-004
 module: Reports & Analytics
 priority: critical
 type: security
-status: draft
+status: fail
+exec_note: "2026-06-30 API iso-fixture probe: export-DOWNLOAD is isolated (foreign id->404) BUT the report GENERATE/export-source path leaks under foreign X-Tenant-Subdomain (BUG-003, ISSUE-193). Exported DATA scoping fails on the generate side. SignalR per-tenant fan-out not API-probeable. Fail on generate-side leak."
 created: 2026-06-17
 ---
 

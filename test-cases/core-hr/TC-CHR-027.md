@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-11
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE page-load FCP<=1.5s / TTI<=2.5s (browser render of the Departments page), not a server API latency. k6 only covers server-side. Needs a Chrome DevTools FE perf trace (LCP/TTI), not k6. (For reference, the departments LIST API read measured 57–70ms p95 @50VU on 5k perf tenant.)"
 
 # TC-CHR-027: Department page load within 2.5 seconds
 
@@ -51,3 +51,6 @@ Verify that the Department management page (list view and tree view) loads withi
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance/SLA TC. The Departments page renders ~51 cards promptly in-browser, but this TC requires instrumented page-load timing (P95 / 500-dept scale seed) that the single shared Playwright browser cannot measure reliably. Not a functional defect. Needs perf harness + seeded scale data.
+> **Re-exec 2026-06-30 (deep FE-render pass, CDP):** STILL BLOCKED. Steps 1–2 (FCP≤1.5s / TTI≤2.5s) are **cold-load navigation** metrics — a true cold load needs a full navigation/reload which logs you out (**BUG-097**); not cleanly measurable until BUG-097 is fixed. Steps 3–5 (tree-view toggle render, node-expand, 500-dept) need the **200/500-dept scale seed** acme lacks (acme has ~51 depts). For reference, a CDP soft-nav (route → Departments) render trace recorded **CLS 0.00, no jank, sub-frame render of all 51 cards** — i.e. the component-render is fast, but that soft-nav render is a different metric than this TC's cold-load FCP/TTI-at-scale. No pass arm available.

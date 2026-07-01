@@ -6,7 +6,7 @@ priority: high
 type: accessibility
 status: blocked
 created: 2026-06-13
----
+exec_note: "BLOCKED 2026-07-01 (page-not-reachable via harness) — /leave/approvals bounces to /forbidden for EVERY persona tried via inject-axe + soft-nav: hr@acme + tenantadmin lack Leave.Approve.Team (their Leave.Approve.All does not satisfy the Approve.Team-gated GET /api/v1/leaves/pending — server log RequestId 0HNMMGISP80AP 'MissingPermission=Leave.Approve.Team'); and manager@acme.test (who DOES hold Leave.Approve.Team — JWT decoded, and curl GET /leaves/pending?…=200 both direct :5000 and via :4200 proxy) STILL gets an in-browser 403 on that same call → error-interceptor bounce. Net: the queue never renders in-session, so its mobile/keyboard/non-color-cue a11y could not be exercised this pass. The curl-200-vs-browser-403 gap for the manager looks like an SPA token-attachment timing issue (out of a11y scope — flag for a browser-debug diagnosis). Re-attempt once the approvals queue renders for the manager persona."
 
 # TC-LV-086: Queue and detail panel are usable on mobile 360px+ and WCAG 2.1 AA accessible with non-color cues
 

@@ -54,3 +54,6 @@ Verify that the manager assignment UI (manager selector modal, My Team view, bul
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the manager-assignment UI (manager-search autocomplete / bulk-assign) lives on the employee edit form and the directory bulk-assign panel, both gated by the crashed Employee Directory (**BUG-099**). The "My Team" view renders cleanly, but the assignment a11y target cannot be reached.
+> **Re-exec 2026-06-30 (deep-a11y pass, FE, acme):** STILL BLOCKED — BUG-099 re-confirmed live; the manager-selector modal + directory bulk-assign panel are both gated by the crashed directory / employee edit form (an edit form can't be opened without a clickable row). Deep-a11y method validated on the reachable Add-Employee wizard (BUG-108), but the Add wizard exposes no Reporting-Manager autocomplete (the manager field lives on the edit/profile form, not Step 1 of create). Unblocks when BUG-099 is fixed.

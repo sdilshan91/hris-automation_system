@@ -64,21 +64,28 @@ Track A first (smaller, surfaces real Postgres bugs fast); Track B second (more 
 ## STATUS TRACKER (update as phases run)
 | Track | Phase | Status | Started | Finished | Result / findings |
 |---|---|---|---|---|---|
-| A | A0 Docker up | `[ ]` | | | |
-| A | A1 Run suite | `[ ]` | | | |
-| A | A2 Triage | `[ ]` | | | |
-| A | A3 Reconcile ledger | `[ ]` | | | |
-| B | B0 Pre-flight | `[ ]` | | | |
-| B | B1 Bulk seed | `[ ]` | | | |
-| B | B2 Author scripts | `[ ]` | | | |
-| B | B3 Execute | `[ ]` | | | |
-| B | B4 Analyze + findings | `[ ]` | | | |
-| B | B5 Teardown | `[ ]` | | | |
+| A | A0 Docker up | `[x]` | 2026-06-30 | 2026-06-30 | Docker Desktop started; `docker ps` 0; `postgres:17-alpine` image present |
+| A | A1 Run suite | `[x]` | 2026-06-30 | 2026-06-30 | **518/518 PASS, 0 fail, 0 skip** on real throwaway Postgres (had to stop the :5000 backend first — it locked the build DLLs) |
+| A | A2 Triage | `[x]` | 2026-06-30 | 2026-06-30 | **No failures → no new findings.** Integration layer validated against real Postgres |
+| A | A3 Reconcile ledger | `[!]` | 2026-06-30 | 2026-06-30 | Postgres-class findings re-checked: **BUG-068 (convert-to-employee) appears RESOLVED** (code refactored to single-SaveChanges + `BeginTransaction` guarded behind `IsRelational()`; `EnableRetryOnFailure(3)` set; `ApplicantConversionIntegrationTests` 11/11 green on real PG). Recommend confirming the original live API repro before formally closing. No TEST-STATUS TC was marked "needs Docker" — the blocker was the xUnit suite itself, now green |
+| B | B0 Pre-flight | `[x]` | 2026-06-30 | 2026-06-30 | k6 v2.0.0 OK; backend :5000 reachable; **`perf` tenant chosen** (id `11111111-2222-3333-4444-555555555555`, none pre-existing); k6 smoke 5/5 checks PASS |
+| B | B1 Bulk seed | `[x]` | 2026-06-30 | 2026-06-30 | **5,000 employees** seeded via direct SQL in 1.3s (10 depts, 8 titles, 8 roles copied from acme, `perfadmin@perf.test`). Login + read verified (headcount report = 5000). acme/techoneglobal untouched |
+| B | B2 Author scripts | `[x]` | 2026-06-30 | 2026-06-30 | `perf/scripts/`: smoke, 01-hot-reads (50VU/5m), 02-auth-login (→20VU/2m), 03-scale-reads (30VU/3m @5k), 04-bulk-import-boundary (500/600). Thresholds from TC SLAs (list p95<400, reports<800, export<2000, err<1%) |
+| B | B3 Execute | `[x]` | 2026-06-30 | 2026-06-30 | All 4 scenarios ran; metrics in `perf/results/`. hot-reads + scale-reads + import-boundary clean; login threshold crossed (captured) |
+| B | B4 Analyze + findings | `[!]` | 2026-06-30 | 2026-06-30 | **2 new findings: BUG-095** (MED — report export 500 under concurrent same-second exports, file-name collision, `LocalReportExportStorage.cs:41`) + **ISSUE-203** (MED — login p95 3.86s @20VU vs 800ms SLA, BCrypt(12) CPU-bound). Reads meet SLA (list p95 145ms; scale list p95 141ms; reports ~75ms). Import boundary verified both sides. Aggregation exact (5000) |
+| B | B5 Teardown | `[x]` | 2026-06-30 | 2026-06-30 | Teardown by exact tenant_id — **all perf residue = 0**, perf tenant removed. acme intact (34 employees), techoneglobal intact (1 — pre-existing orphan, not from this run) |
 
 ## PROGRESS LOG (append a row each session)
 | Date | Phase(s) | What happened | Outcome |
 |---|---|---|---|
 | _2026-06-30_ | — | Plan created | Ready to start |
+| _2026-06-30_ | A0–A3 | Started Docker; ran integration suite (had to stop :5000 backend first — DLL lock). **518/518 PASS** on real Postgres. No failures → no findings. Re-checked Postgres-class findings: BUG-068 appears resolved (single-SaveChanges refactor + IsRelational guard + EnableRetryOnFailure; 11/11 conversion ITs green). Restarted backend on :5000 (needed `ASPNETCORE_ENVIRONMENT=Development` so user-secrets load). | **Track A done** — A0/A1/A2 clean, A3 done-with-note |
+| _2026-06-30_ | B0–B5 | Built the `perf/` k6 harness + direct-SQL seed; seeded a dedicated `perf` tenant with 5,000 employees; ran 4 scenarios; analyzed vs TC SLAs; tore down to zero residue. Reads meet SLA comfortably; **2 new findings: BUG-095** (export 500 under concurrent same-second exports — filename collision) + **ISSUE-203** (login p95 3.86s @20VU, BCrypt(12) CPU-bound). Import sync→async boundary verified both sides. | **Track B done** — all phases; B4 done-with-findings |
+
+---
+
+## ✅ Plan complete (2026-06-30)
+**Track A:** 518/518 integration tests pass on real Postgres; BUG-068 appears resolved (verify the live repro before formally closing). **Track B:** perf harness built (`perf/`), 5k-employee `perf` tenant load-tested and torn down clean; **BUG-095** + **ISSUE-203** logged to [TEST-FINDINGS.md](TEST-FINDINGS.md). Per report-only policy, nothing was fixed — these findings are input to a separate, human-decided fix cycle.
 
 ---
 

@@ -6,6 +6,7 @@ priority: high
 type: security
 status: blocked
 created: 2026-06-11
+exec_note: "2026-06-30: system-admin session-policy + impersonation-exclusion-from-count arm needs an active session inventory + an impersonation flow + system-policy config, none present in the iso fixture (tenant-admin personas only, no impersonation). Tenant-scoping isolation arm executed separately: login IS tenant-scoped (cross-tenant login rejected); /auth/me reflects token tenant. Keep blocked: needs session/impersonation fixture."
 ---
 
 # TC-AUTH-082: System admin sessions follow system policy; impersonation sessions excluded from count

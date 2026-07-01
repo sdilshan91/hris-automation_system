@@ -4,7 +4,7 @@ user_story: US-CHR-002
 module: Core HR
 priority: medium
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -60,3 +60,7 @@ Verify that the employee profile page is fully responsive and renders correctly 
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive TC; profile page unreachable in-app (BUG-099) and viewport resizing unavailable in the fixed shared chromium session.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

@@ -56,3 +56,5 @@ Verify that the system accepts and correctly processes an Excel (.xlsx) file for
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — upload-processing/behavior TC. The Bulk Import wizard renders (3-step, drag-drop + file input, 25 MB cap, .csv/.xlsx) and advances Step 1→2, but verifying actual file-row creation / >25 MB rejection / plan-limit / async Hangfire / idempotency / per-batch transaction / 10k-row perf / CSV-XSS requires POSTing real files and observing backend processing + DB — out of scope for the FE-render sweep (and a write). Not an FE-render defect.

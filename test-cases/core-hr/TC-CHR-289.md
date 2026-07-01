@@ -6,7 +6,7 @@ priority: critical
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: WRITE-ONLY ARM NOT MEASURED — kept blocked. Target is the manager-assignment WRITE API <=800ms P95 incl. cycle detection; write-load was not driven this pass. Needs a manager-assign write scenario over a deep-hierarchy seed. Re-run after scripting it."
 
 # TC-CHR-289: Manager assignment API response time within 800ms P95 including cycle detection
 
@@ -48,3 +48,5 @@ Verify that the manager assignment API (including server-side cycle detection) r
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — API/performance TC (assignment SLA / deep-hierarchy cycle-detection / bulk-assign timing). Needs an instrumented timing/load harness, not a browser-render check.

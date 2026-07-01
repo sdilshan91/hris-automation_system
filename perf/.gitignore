@@ -1,0 +1,5 @@
+# perf run artifacts — scripts + seed are committed, results are not
+results/
+*.csv
+*.json.summary
+summary-*.json

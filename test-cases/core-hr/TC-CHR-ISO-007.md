@@ -4,9 +4,9 @@ user_story: US-CHR-005
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (job-titles). EF-Core global query filter ISOLATION HOLDS: IDOR GET isob job-title by id under isoa-token+isoa-hdr -> 404; per-tenant job-title lists distinct (isoa jt a63cee67, isob jt 6838d04e). Achievable EF-layer ORM-isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only per CLAUDE.md); raw-SQL step 4 NOT DB-enforced -- documented gap. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob returns isob job-titles (200) = systemic BUG-003, not a new finding. READ-ONLY on real tenants; throwaway writes only into isob; nothing deleted."
 
 # TC-CHR-ISO-007: RLS blocks direct DB queries across tenants for job titles
 

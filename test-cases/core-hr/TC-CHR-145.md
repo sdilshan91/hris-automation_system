@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Target is a 10,000-row directory CSV export <=5min (or async 202) — the large-row directory export write was not driven this pass (the report-export measured was the small single-report path at 80ms, a different endpoint). Needs a 10k-row export scenario. Perf harness exists (perf/), re-run after scripting it."
 
 # TC-CHR-145: Export 10,000 rows completes within 5 minutes or is async (NFR-5)
 

@@ -4,7 +4,9 @@ user_story: US-ADM-001
 module: Admin Console
 priority: critical
 type: security
-status: blocked
+status: fail
+exec_note: >-
+  2026-06-30 API: no header->400, unknown subdomain->404, tenant-JWT POST /system/tenants->403 (these correct). BUT step2 mismatch (isoa JWT + header isob) NOT rejected -> 200 + isob employee-by-id LEAKED. = existing BUG-003. IDOR-by-foreign-header unblocked.
 created: 2026-06-16
 ---
 

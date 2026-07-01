@@ -4,9 +4,9 @@ user_story: US-CHR-007
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 N/A->PASS. Code-confirmed: LocationService.cs has ZERO cache references; location list/by-id are not cached. No shared location cache to pollute. Observable guarantee verified: seeded throwaway isob location; IDOR GET by id under honest isoa context -> 404 (cache lookup uses resolved ITenantContext, not user-supplied key, per TC step 7). No Redis wired. API-only; nothing deleted."
 
 # TC-CHR-ISO-028: Cache keys for locations are tenant-scoped
 

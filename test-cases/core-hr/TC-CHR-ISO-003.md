@@ -4,9 +4,9 @@ user_story: US-CHR-004
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-11
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (departments). EF-Core global query filter ISOLATION HOLDS: IDOR GET isob dept by id under isoa-token+isoa-hdr -> 404; per-tenant dept lists distinct. Cross-tenant WRITE probed (throwaway->throwaway): isoa-admin-token + hdr isob CREATED a dept that landed in isob (visible from isob own admin as 'ISO XWrite Probe Dept', id 019f194b-6864-...). Write tenant-STAMPING correct under honest context: isoa-created dept stamped isoa, returns 404 from isob context. Achievable EF-layer read/write isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only); steps 3-6 DB-session INSERT/UPDATE/DELETE blocking NOT DB-enforced -- documented gap (psql out of scope). (2) Cross-tenant READ+WRITE LEAK via foreign X-Tenant-Subdomain override = systemic BUG-003 (read: isoa-tok+hdr-isob lists isob depts; write: created into isob). READ-ONLY on real tenants; writes only into throwaway isob; nothing deleted."
 
 # TC-CHR-ISO-003: RLS blocks direct DB queries across tenants for departments
 

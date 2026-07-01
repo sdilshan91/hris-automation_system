@@ -53,3 +53,7 @@ Verify that the status change workflow (form rendering, submission, badge update
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — cross-browser TC; status-change flow unreachable in-app (BUG-099) and multiple browser engines unavailable in the single shared chromium session.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

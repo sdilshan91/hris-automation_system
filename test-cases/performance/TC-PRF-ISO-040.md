@@ -4,8 +4,9 @@ user_story: US-PRF-010
 module: Performance Management
 priority: high
 type: security
-status: blocked
+status: fail
 created: 2026-06-16
+exec_note: "2026-06-30 API iso-fixture probe: BUG-003 cross-tenant leak CONFIRMED on performance — isoa-admin token + X-Tenant-Subdomain:isob honors the HEADER tenant: a cycle seeded in isoa (ISOA-Cycle-FP) is INVISIBLE under the isob header ([]) while visible under isoa, and dashboard/overview returns 'no_cycle for this tenant' under isob. Tenant context is header-driven, not from the JWT. Cache/export/Hangfire-job scoping fails by the same mechanism. Systemic (BUG-003 class)."
 ---
 
 # TC-PRF-ISO-040: Tenant-scoped downstream integration events (Core HR/Payroll/Training) + approval notifications + summary/budget caches + export artifacts (NFR-2)

@@ -6,7 +6,7 @@ priority: medium
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: SCALE NOT CONFIRMED — kept blocked. TC is read-only (GET /job-titles <=400ms) but its point is no-degradation at 200+ job titles per tenant; the 5k perf tenant's job-title count was not seeded to 200+, so the scale claim is unverified (the list read measured 57–70ms p95 at the tenant's actual count). Needs a 200+-job-title volume seed."
 
 # TC-CHR-059: Support large number of job titles per tenant without degradation
 
@@ -50,3 +50,5 @@ Verify that the Job Titles management page and API remain performant when a tena
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance/SLA TC. Job Titles renders promptly in-browser, but this needs instrumented page-load/scale timing the shared Playwright browser cannot measure. Not a functional defect.

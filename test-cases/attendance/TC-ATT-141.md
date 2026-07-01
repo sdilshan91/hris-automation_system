@@ -4,7 +4,7 @@ user_story: US-ATT-010
 module: Attendance
 priority: medium
 type: accessibility
-status: blocked
+status: pass
 created: 2026-06-15
 ---
 

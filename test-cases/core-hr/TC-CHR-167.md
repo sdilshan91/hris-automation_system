@@ -58,3 +58,7 @@ Verify that on mobile viewports (< 768px, specifically at 360px width), the org 
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive TC (360px accordion fallback). Requires viewport resizing not available in the fixed shared chromium MCP session; tree also renders no nodes (ISSUE-207).
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

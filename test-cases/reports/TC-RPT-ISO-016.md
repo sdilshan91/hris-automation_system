@@ -4,7 +4,8 @@ user_story: US-RPT-004
 module: Reports & Analytics
 priority: high
 type: security
-status: draft
+status: blocked
+exec_note: "2026-06-30: export storage-path/retention-purge/concurrency-cap are infra/job behaviors not exercisable via a single curl probe in the iso fixture (no exports seeded; retention job + Hangfire concurrency cap need time/queue state). Download-path isolation verified (see ISO-013/014). Keep blocked: needs export+job fixture."
 created: 2026-06-17
 ---
 

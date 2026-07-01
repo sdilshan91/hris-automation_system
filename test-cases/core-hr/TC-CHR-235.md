@@ -54,3 +54,6 @@ Verify that the status change modal/bottom sheet and the employment history time
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — a11y TC; the status-change form/timeline is a profile/detail action unreachable in-app due to the crashed Employee Directory (**BUG-099**). (Contrast clause would also fail via systemic BUG-096.)
+> **Re-exec 2026-06-30 (deep-a11y pass, FE, acme):** STILL BLOCKED — BUG-099 re-confirmed live (directory list crash). The "Change Status" modal + employment-history timeline live on the employee detail page, which cannot be opened without a clickable directory row. Deep-a11y method validated on the reachable Add-Employee wizard (BUG-108); that page has no status-change/timeline control. Unblocks when BUG-099 is fixed.

@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -53,3 +53,5 @@ Verify that the employee creation form dynamically renders custom fields configu
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **ISSUE-206**. The create form attempts `GET /api/v1/tenant/custom-fields/active?entityType=employee` to fetch tenant-configured custom-field definitions, but the backend has no `active` route → **404**, so NO dynamic custom fields render on the wizard (FR-9 / AC-6 dynamic-render flow cannot be observed). The standard wizard fields render fine; only the custom-field section is absent.

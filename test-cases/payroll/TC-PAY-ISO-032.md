@@ -6,6 +6,7 @@ priority: high
 type: security
 status: blocked
 created: 2026-06-16
+exec_note: "2026-06-30: pending-approvals queue/badge-count cache + approval SignalR group isolation needs a submitted-for-approval payroll RUN in each iso tenant (runs are attendance-gated; no run data seeded). Underlying tenant-context binding is header-driven (BUG-003 confirmed on payroll config surface, see TC-PAY-ISO-004) so a leak is expected, but the specific approval-queue/SignalR arms are unrunnable here. Keep blocked: needs payroll-run data."
 ---
 
 # TC-PAY-ISO-032: Pending-approvals queue / badge-count caches and the approval SignalR notification group are tenant-scoped (no cross-tenant row/count/notification leak)

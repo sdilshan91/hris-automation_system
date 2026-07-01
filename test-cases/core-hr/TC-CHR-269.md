@@ -52,3 +52,7 @@ Verify that the Reporting Manager field on an employee's profile Employment Deta
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — requires the employee profile/detail view and/or the org-tree hierarchy to verify the reporting-manager field / null-root / unlimited-reports / hierarchy / breadcrumb. The Employee Directory list is crashed (**BUG-099**) so profiles aren't reachable by in-app click, and the org tree renders no nodes (**ISSUE-207**). The "My Team" view (`/employees/my-team`) renders correctly with an empty-state for tenantadmin. Not separately runnable in this FE sweep.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI arm (profile "Reporting Manager" mini-card render). Not API-testable this pass. Underlying data gap noted: the manager is NOT surfaced on `GET /employees/{id}` / `/profile` (see ISSUE-218), so even the FE cannot render the mini-card or the "Not Assigned" state from the employee detail endpoint without crawling org-tree.

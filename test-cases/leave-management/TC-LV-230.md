@@ -6,7 +6,7 @@ priority: high
 type: accessibility
 status: blocked
 created: 2026-06-14
----
+exec_note: "BLOCKED 2026-07-01 (BUG-036) — /leave/lop is UNREACHABLE for every available acme persona, so its a11y cannot be exercised. The component loads then fires GET /api/v1/leaves/lop-summary which returns 403 (server log RequestId 0HNMMGISP80AT: 'Authorization denied … MissingPermission=Leave.ManageLop'), and the error interceptor bounces to /forbidden. Tried hr@acme.test (HR Officer) AND tenantadmin@acme.test (all normal perms) — both 403, because Leave.ManageLop is granted to NO built-in tenant role = the existing systemic BUG-036. Blocked pending BUG-036 (grant Leave.ManageLop to a seeded persona) before the LOP-screen a11y can be tested."
 
 # TC-LV-230: LOP management screen is keyboard/screen-reader accessible; bulk actions navigable; red/orange LOP highlight has non-color cues (WCAG 2.1 AA; §8)
 

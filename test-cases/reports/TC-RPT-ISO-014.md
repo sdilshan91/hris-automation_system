@@ -4,7 +4,8 @@ user_story: US-RPT-004
 module: Reports & Analytics
 priority: critical
 type: security
-status: draft
+status: pass
+exec_note: "2026-06-30 API iso-fixture probe: export-DOWNLOAD channel IS isolated — foreign/random exportId -> HTTP 404 'export_not_found' under own tenant; isoa export history empty (no cross-tenant rows visible). Isolation holds for the stored-export download path."
 created: 2026-06-17
 ---
 

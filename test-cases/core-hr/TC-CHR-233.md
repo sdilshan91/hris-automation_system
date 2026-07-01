@@ -54,3 +54,7 @@ Verify that the employee status is displayed as a color-coded pill-shaped badge 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — status badge color-coding shows on the employee profile + directory, both unreachable/crashed in-app (**BUG-099** — directory list never renders). No in-app path to verify the badge.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

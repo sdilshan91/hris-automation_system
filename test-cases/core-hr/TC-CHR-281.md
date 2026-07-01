@@ -4,7 +4,7 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: pass
 created: 2026-06-12
 ---
 
@@ -49,3 +49,7 @@ Verify that there is no system-enforced limit on the number of direct reports a 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — requires the employee profile/detail view and/or the org-tree hierarchy to verify the reporting-manager field / null-root / unlimited-reports / hierarchy / breadcrumb. The Employee Directory list is crashed (**BUG-099**) so profiles aren't reachable by in-app click, and the org tree renders no nodes (**ISSUE-207**). The "My Team" view (`/employees/my-team`) renders correctly with an empty-state for tenantadmin. Not separately runnable in this FE sweep.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **PASS.** No system-enforced cap on direct reports. Assigned EMP-0031 (`019efd95-...`, a reporting-view root with `previousManagerId:null`) to EMP-MGR01 "Team Manager" via `POST /employees/{id}/manager` → 200, "Manager assigned successfully", **no "maximum direct reports exceeded" error**. `GET /employees/{MGR}/direct-reports` then included EMP-0031. **Restored immediately**: re-POST with `managerEmployeeId:null` → 200, EMP-0031 back to reporting-view root. The 20→21 threshold in the TC is illustrative of "no limit"; the assign path imposes no cap. (My Team FE view = step 4 FE arm.)

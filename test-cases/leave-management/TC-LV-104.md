@@ -6,7 +6,7 @@ priority: high
 type: accessibility
 status: blocked
 created: 2026-06-13
----
+exec_note: "BLOCKED 2026-07-01 (page-not-reachable via harness) — same root cause as TC-LV-086: the /leave/approvals queue (whose detail panel hosts the Approve/Reject actions this TC targets) bounces to /forbidden for every persona via inject-axe + soft-nav. manager@acme.test holds Leave.Approve.Team and curl GET /leaves/pending = 200, but the in-session SPA call 403s → interceptor bounce, so the queue + its detail panel never render. The Approve/Reject panel a11y (full-width mobile buttons, labeled mandatory-reason, announced validation) could not be exercised. Re-attempt once the approvals queue renders for the manager."
 
 # TC-LV-104: Approve/Reject detail-panel actions are usable on mobile 360px+ and meet WCAG 2.1 AA (keyboard, screen reader, labeled mandatory-reason field)
 

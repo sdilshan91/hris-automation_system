@@ -4,7 +4,7 @@ user_story: US-CHR-010
 module: Core HR
 priority: medium
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -53,3 +53,7 @@ Verify that the bulk import page renders and functions correctly across Chrome, 
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — cross-browser TC. Requires multiple browser engines not available in the single shared chromium MCP session.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

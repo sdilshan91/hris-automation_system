@@ -56,3 +56,7 @@ Verify that the Department management page functions correctly across all suppor
 - [ ] Performance test
 - [ ] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive/cross-browser TC. The Departments page renders correctly at the current desktop viewport, but this TC requires viewport resizing (360px–1920px) / multiple browser engines that the fixed single shared chromium MCP session cannot exercise. Not a functional defect.
+
+> **Execution 2026-07-01 (triage, acme):** STILL BLOCKED — FE-UI-only arm (responsive-viewport / cross-browser / visual-render). Not API-testable this pass; requires viewport resizing (360px–1920px) and/or multiple browser engines the single shared MCP session can't drive. Not a functional/business-rule defect.

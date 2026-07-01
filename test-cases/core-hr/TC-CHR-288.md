@@ -50,3 +50,5 @@ Verify that the manager search/autocomplete field sanitizes user input to preven
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the manager-search autocomplete is on the employee edit form, gated by the crashed directory (**BUG-099**); XSS input can't be entered via UI. Server-side sanitization needs an API probe.

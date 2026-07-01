@@ -4,9 +4,9 @@ user_story: US-LV-009
 module: Leave Management
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-14
----
+exec_note: "FAIL 2026-07-01 — /leave/team-calendar reached via inject-axe + soft-nav as employee@acme.test. axe (wcag2a/2aa/21a/21aa) on main: serious color-contrast (3 nodes) on the view-toggle buttons (button[data-test=view-week] etc.) → BUG-096 class. Calendar grid renders Month/Week/List toggles, Today, day cells, a 'Holiday' text marker (non-color cue present for holidays). PARTIAL data: acme shows 'No team leave for July 2026' so the per-leave-type color blocks (the central non-color-cue/aria-label arm of this TC) do not render — that arm not fully verifiable without populated team leave for the viewed month. Fail driven by the contrast defect on always-present controls."
 
 # TC-LV-188: Calendar accessibility -- keyboard, screen reader, and non-color cues; usable at 360px+ (WCAG 2.1 AA, AC-4)
 

@@ -4,7 +4,7 @@ user_story: US-CHR-002
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -59,3 +59,5 @@ Verify that a Manager can view the profile of their direct report in read-only m
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the employee profile/detail page is reached in-app by clicking a row in the Employee Directory, which is crashed (**BUG-099**: list never renders), so no profile can be opened by navigation. (TC-106 also needs the employee@acme self-service persona / portal route.) Not runnable until the directory list renders.

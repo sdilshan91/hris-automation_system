@@ -6,7 +6,7 @@ priority: critical
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE org-tree initial render P95<=2.5s (FCP to last-node-rendered, browser render), not a server API. Needs a Chrome DevTools FE perf trace, not k6."
 
 # TC-CHR-164: Initial top-2-level tree render completes within 2.5 seconds P95
 
@@ -56,3 +56,5 @@ Verify that the initial org tree render (top 2 levels) completes within 2.5 seco
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance TC (P95 render / 60fps pan-zoom). Cannot measure with the shared Playwright browser, and the tree renders no nodes (ISSUE-207) to profile anyway. Not separately runnable.

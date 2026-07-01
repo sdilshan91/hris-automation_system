@@ -4,9 +4,9 @@ user_story: US-CHR-002
 module: Core HR
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: WRITE ARM NOT MEASURED + exact endpoint not driven — kept blocked. Read arm GET /tenant/employees/{id} <=400ms is plausibly met (employee list read measured 212ms p95; single-{id} not separately driven this pass) but the TC also requires PATCH write <=800ms P95 (step 5), and write-load was not measured. Re-run after scripting the {id} read + PATCH write flow."
 
 # TC-CHR-120: Employee profile API read response time within 400ms P95 (NFR-2)
 
@@ -51,3 +51,5 @@ Verify that the `GET /api/v1/tenant/employees/{id}` API endpoint responds within
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — performance/API-SLA TC; also gated by BUG-099 (no in-app path to a profile) and needs an instrumented timing harness.

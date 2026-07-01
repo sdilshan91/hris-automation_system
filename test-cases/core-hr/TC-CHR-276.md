@@ -4,7 +4,7 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -52,3 +52,7 @@ Verify that an employee can exist without a reporting manager (`reports_to_emplo
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — requires the employee profile/detail view and/or the org-tree hierarchy to verify the reporting-manager field / null-root / unlimited-reports / hierarchy / breadcrumb. The Employee Directory list is crashed (**BUG-099**) so profiles aren't reachable by in-app click, and the org tree renders no nodes (**ISSUE-207**). The "My Team" view (`/employees/my-team`) renders correctly with an empty-state for tenantadmin. Not separately runnable in this FE sweep.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **FAIL (step 2) — ISSUE-218.** The org-tree reporting view DOES render null-manager employees as root nodes (17 roots with `parentId:null`), so the "appears as org-tree root" behaviour (steps 3-5) is correct. But step 2 fails: `GET /employees/{id}` response has NO `reports_to_employee_id` field at all (see ISSUE-218) — a client cannot read the null-manager state from the employee detail endpoint. Employee load itself is 200/clean. Steps 1/6 are FE (profile page render, console). Marked fail on the concrete API-arm miss.

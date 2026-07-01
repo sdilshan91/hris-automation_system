@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: medium
 type: accessibility
-status: draft
+status: fail
 created: 2026-06-12
 ---
 
@@ -55,3 +55,5 @@ Verify that the employee creation form meets WCAG 2.1 AA accessibility standards
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — partial. Structure is strong: `navigation "Employee creation steps"` with per-step button labels carrying `(current)`/`disabled` state, every field labeled (First Name*, Last Name*, Email*, Date of Birth, Gender combobox), "Back to employee list" and "Upload profile photo" labeled buttons, Save & Continue gated on validity. BUT the WCAG 2.1 AA contrast clause FAILS via systemic **BUG-096** (#a3a3a3 low-contrast text app-wide). Marked fail on the contrast violation; keyboard/label structure otherwise sound.

@@ -4,7 +4,7 @@ user_story: US-CHR-008
 module: Core HR
 priority: high
 type: functional
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -61,3 +61,7 @@ Verify that tenant storage usage is tracked against the plan storage quota. When
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — document-management is an employee-detail tab reached via the Employee Directory (crashed, **BUG-099**), and this assertion (virus-scan / expiry-badge / expiry-notification job / storage-quota / upload-perf / EXIF-strip) is backend/upload-processing behavior requiring a real file POST + job/storage inspection, not a browser-render check.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** **FAIL — BUG-114.** Tenant document storage quota is NOT enforced. Upload path (`EmployeeDocumentService`) checks only a per-file 10 MB limit — no cumulative-usage sum, no 80% warning (step 3), no block at plan limit (steps 4-6). `SubscriptionPlan.MaxStorageGb` exists in schema but is dead config (no enforcement code anywhere). Verified live: uploaded a small doc to EMP-0001 → 201 with no quota accounting; deleted it immediately (`019f1b3c-…`, DELETE 200, gone). See BUG-114.

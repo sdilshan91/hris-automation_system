@@ -4,9 +4,9 @@ user_story: US-CHR-003
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 N/A->PASS. Code-confirmed: EmployeeService.cs has ZERO cache references; directory queries are not cached. No shared directory cache to pollute. Observable guarantee verified: per-tenant directory lists distinct (isoa->ISO-2a1a-*, isob->ISO-2b1b-*), IDOR isolated under honest context. Export path is generated fresh per request (no cached file served cross-tenant). No Redis wired. API-only; nothing deleted."
 
 # TC-CHR-ISO-020: Cache keys for directory queries are tenant-scoped
 

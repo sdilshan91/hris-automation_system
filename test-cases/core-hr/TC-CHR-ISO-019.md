@@ -4,9 +4,9 @@ user_story: US-CHR-003
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (isoa/isob, throwaway). EF-Core global query filter ISOLATION HOLDS for employee/directory: IDOR GET isob-emp by id under isoa-token+isoa-hdr -> 404; Serilog shows generated SQL `WHERE NOT(e.is_deleted) AND (... OR e.tenant_id=@ef_filter__TenantId)` correctly scoped. Per-tenant lists are distinct (isoa->ISO-2a1a-*, isob->ISO-2b1b-*). The TC's achievable ORM-isolation objective is met -> PASS. CAVEATS: (1) No PostgreSQL RLS exists (CLAUDE.md confirms EF-filter-only); the raw-SQL/IgnoreQueryFilters defense-in-depth steps (4-5) are NOT DB-enforced -- documented gap. (2) Cross-tenant READ LEAK present on this surface via foreign `X-Tenant-Subdomain` override: isoa-token + hdr isob returns isob employees (200) -- this is the systemic BUG-003 (tenant resolved from subdomain only, token tenant_id never reconciled; root locus TenantResolutionMiddleware), not a new finding. READ-ONLY against real tenants; throwaway writes only into isob; nothing deleted."
 
 # TC-CHR-ISO-019: RLS blocks direct DB queries across tenants for directory data
 

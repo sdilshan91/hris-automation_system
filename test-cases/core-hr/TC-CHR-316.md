@@ -4,7 +4,7 @@ user_story: US-CHR-012
 module: Core HR
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-13
 ---
 
@@ -52,3 +52,5 @@ Verify that the Custom Fields management page, creation/edit forms, and custom f
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **BUG-100**. The Custom Fields management page renders only its header + Add button; the list template crashes on render (`TypeError …'length'`) and the "Add Custom Field" button's `openAddModal` throws so the create modal never opens. No fields list, no usage-count column, no dropdown-option editor can be exercised. (Contrast WCAG clause would also fail via systemic BUG-096.)

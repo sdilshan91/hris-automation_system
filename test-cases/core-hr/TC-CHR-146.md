@@ -4,7 +4,7 @@ user_story: US-CHR-003
 module: Core HR
 priority: medium
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-12
 ---
 
@@ -58,3 +58,5 @@ Verify that the Employee Directory meets WCAG 2.1 AA standards, specifically: ke
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** FAIL — blocked by **BUG-099**. Filter toolbar renders, but the list and pagination never appear (directory crashes on render), so keyboard navigation across filters→results→pagination cannot be completed. a11y of the toolbar alone is insufficient for this TC.

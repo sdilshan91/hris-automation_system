@@ -4,7 +4,7 @@ user_story: US-LV-001
 module: Leave Management
 priority: high
 type: accessibility
-status: blocked
+status: fail
 created: 2026-06-13
 ---
 

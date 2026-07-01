@@ -4,9 +4,9 @@ user_story: US-CHR-002
 module: Core HR
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE page-load P95<=2.5s on simulated 4G (full card-section render of the employee profile page), not a server API. Needs a Chrome DevTools FE perf trace (LCP/TTI + 4G throttle), not k6."
 
 # TC-CHR-119: Employee profile page load within 2.5 seconds P95 (NFR-1)
 
@@ -54,3 +54,6 @@ Verify that the employee profile page loads completely within 2.5 seconds at the
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — performance/API-SLA TC; also gated by BUG-099 (no in-app path to a profile) and needs an instrumented timing harness.
+> **Re-exec 2026-06-30 (deep FE-render pass, CDP):** STILL BLOCKED — double-gated. The metric is **cold-load LCP P95 on 4G** of the employee profile page (step 2: "navigate … measure to LCP"), which (a) needs a full navigation that logs you out (**BUG-097**) and (b) targets the employee detail page that cannot even be reached because the directory list crashes (**BUG-099**). Neither cold-load timing nor the profile page is reachable. Unblocks only after both BUG-097 and BUG-099.

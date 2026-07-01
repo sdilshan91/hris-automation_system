@@ -4,7 +4,9 @@ user_story: US-ADM-001
 module: Admin Console
 priority: high
 type: security
-status: blocked
+status: pass
+exec_note: >-
+  2026-06-30 API: GET /tenant/context back-to-back isoa then isob each returns ONLY its own tenantId/subdomain (2a1a... vs 2b1b...); no shared/global config key, no cross-tenant bleed. PASS (cache/lookup tenant-scoped).
 created: 2026-06-16
 ---
 

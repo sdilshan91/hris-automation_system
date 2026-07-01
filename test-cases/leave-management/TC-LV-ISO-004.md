@@ -4,8 +4,9 @@ user_story: US-LV-001
 module: Leave Management
 priority: critical
 type: security
-status: blocked
+status: fail
 created: 2026-06-13
+exec_note: "2026-06-30 API iso-fixture probe: leave-type list isolation fails by the BUG-003 mechanism — request runs under the foreign X-Tenant-Subdomain header (confirmed read+write leak on /tenant/leave-types: isoa-tok+isob-hdr CREATE landed in isob). Cross-tenant cache-key isolation cannot hold when the tenant context itself is header-driven. BUG-003 class."
 ---
 
 # TC-LV-ISO-004: Cache keys for leave types are tenant-scoped

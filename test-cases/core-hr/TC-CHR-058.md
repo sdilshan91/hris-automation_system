@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURABLE BY k6 — kept blocked. Target is FE page-load (DOMContentLoaded<=2.0s / total<=2.5s, browser render of the Job Titles page), not a server API. Needs a Chrome DevTools FE perf trace, not k6. (For reference, the job-titles LIST API read measured 57–70ms p95.)"
 
 # TC-CHR-058: Job titles page load within 2.5 seconds
 
@@ -53,3 +53,6 @@ Verify that the Job Titles management page loads completely within 2.5 seconds, 
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance/SLA TC. Job Titles renders promptly in-browser, but this needs instrumented page-load/scale timing the shared Playwright browser cannot measure. Not a functional defect.
+> **Re-exec 2026-06-30 (deep FE-render pass, CDP):** STILL BLOCKED. Steps 1–3 are explicitly **cold-load** ("Clear browser cache and navigate", DOMContentLoaded / total-load from navigation start) — a true cold load needs a full navigation/reload which logs you out (**BUG-097**); not cleanly measurable until BUG-097 is fixed. The page renders fine via soft-nav (no crash, no jank), but soft-nav render ≠ this TC's cold-load DOMContentLoaded/total-load metric. No pass arm available.

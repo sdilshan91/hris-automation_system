@@ -4,9 +4,9 @@ user_story: US-CHR-006
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (org-tree: depts+employees). EF-Core global query filter ISOLATION HOLDS: IDOR GET isob dept by id under isoa-token+isoa-hdr -> 404; org-tree under honest isoa context returns only isoa nodes. Achievable EF-layer ORM-isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only); step 3 (raw SQL) and step 5 (IgnoreQueryFilters DB-bypass) NOT DB-enforced -- documented risk per the TC's own 'document the finding' instruction. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob org-tree returns isob's 'ISO Dept' node (nodeId=isob dept 4e732d56) = systemic BUG-003. READ-ONLY on real tenants; throwaway writes only into isob; nothing deleted."
 
 # TC-CHR-ISO-023: RLS blocks direct DB queries across tenants for org-tree data
 

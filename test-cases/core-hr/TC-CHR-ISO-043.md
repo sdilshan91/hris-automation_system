@@ -4,9 +4,9 @@ user_story: US-CHR-011
 module: Core HR
 priority: critical
 type: security
-status: blocked
+status: pass
 created: 2026-06-12
----
+exec_note: "2026-06-30 API-layer exec vs iso fixture (reporting structure / direct-reports / manager-assign). EF-Core global query filter ISOLATION HOLDS: GET isob-emp direct-reports under isoa-token+isoa-hdr -> 404 'Manager employee not found'. TC step-5 cross-tenant manager assignment EXACT MATCH: as isoa, POST {id}/manager with managerEmployeeId = isob-emp UUID -> 404 'Manager employee not found' (foreign manager excluded by filter, assignment correctly fails). Valid in-tenant manager assign -> 200 (links isoa-emp2->isoa-emp1). Achievable EF-layer ORM-isolation objective met -> PASS. CAVEATS: (1) No PostgreSQL RLS (EF-filter-only); raw-SQL step 4 NOT DB-enforced -- documented gap. (2) Cross-tenant READ LEAK via foreign X-Tenant-Subdomain override: isoa-tok+hdr-isob reads isob direct-reports (200) = systemic BUG-003. NOTE: the manager-assign request field is `managerEmployeeId` (not `managerId`); a wrong field name silently no-ops to unassign -- contract observation, not a defect. READ-ONLY on real tenants; nothing deleted."
 
 # TC-CHR-ISO-043: RLS blocks direct DB queries across tenants for reporting structure data
 

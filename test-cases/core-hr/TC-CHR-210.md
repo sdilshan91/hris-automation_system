@@ -58,3 +58,6 @@ Verify that the document management UI (document list, upload form, category fil
 - [ ] Performance test
 - [x] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — a11y TC; the document-management UI is an employee-detail tab unreachable in-app due to the crashed Employee Directory (**BUG-099**). (Contrast clause would also fail via systemic BUG-096.)
+> **Re-exec 2026-06-30 (deep-a11y pass, FE, acme):** STILL BLOCKED — BUG-099 re-confirmed live (directory list crash, no employee row clickable), so the Documents tab on an employee detail page cannot be reached to run the keyboard/focus/SR/axe checks. Deep-a11y method validated working on the reachable Add-Employee wizard (BUG-108) but that page has no document-management UI. Unblocks when BUG-099 is fixed.

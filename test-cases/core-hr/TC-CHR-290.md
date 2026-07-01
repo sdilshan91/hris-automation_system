@@ -6,7 +6,7 @@ priority: critical
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: NOT MEASURED + scale not seeded — kept blocked. Target is deep-hierarchy (10-level) cycle-detection write rejected <=200ms; needs a 10-level-deep manager chain seed + the assignment write driven. Neither was done this pass. Re-run after seeding a 10-level hierarchy."
 
 # TC-CHR-290: Deep hierarchy (10 levels) cycle detection completes within 200ms
 
@@ -51,3 +51,5 @@ Verify that the cycle detection algorithm completes within 200 ms even for deepl
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — API/performance TC (assignment SLA / deep-hierarchy cycle-detection / bulk-assign timing). Needs an instrumented timing/load harness, not a browser-render check.

@@ -6,6 +6,7 @@ priority: high
 type: security
 status: blocked
 created: 2026-06-16
+exec_note: "2026-06-30: per-tenant SMTP rate-limiter/sender-domain/distribution-progress cache + SignalR group isolation needs a finalized run + payslip distribution in each iso tenant (none seeded). Keep blocked: needs payroll-run + distribution data."
 ---
 
 # TC-PAY-ISO-044: Tenant-scoped distribution infrastructure -- the per-tenant SMTP rate-limiter/throttle, sender-domain config, distribution-summary/progress cache, and SignalR progress group are tenant-scoped; no cross-tenant rate-budget sharing, sender bleed, cache hit, or progress leak

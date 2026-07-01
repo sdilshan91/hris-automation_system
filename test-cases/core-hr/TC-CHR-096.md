@@ -52,3 +52,5 @@ Verify that the employee creation form (Add Employee wizard) loads completely wi
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance TC. The `/employees/new` form renders promptly in-browser, but P95 page-load timing needs an instrumented perf harness the shared Playwright browser cannot measure. Not a functional defect.

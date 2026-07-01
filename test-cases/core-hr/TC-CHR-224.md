@@ -60,3 +60,7 @@ Verify that the daily background job detects employees in "probation" status who
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — employee status-change is a profile/detail action reached via the Employee Directory (crashed, **BUG-099**), and this assertion (probation reminder job / future-dated background apply / suspended-excluded-from-headcount) is backend/job behavior needing a write + job execution, not a browser-render check.
+
+> **Execution 2026-07-01 (API, acme, tenantadmin):** BLOCKED — background-job + notification, precondition unreachable. Job VERIFIED present by read: `EmployeeStatusService.CheckProbationEndDatesAsync` (line 318, invoked by `ProbationReminderJob`) selects `Status == Probation`, computes `ProbationEndDate = DateOfJoining.AddDays(90)`, and for those within the window logs a WRN reminder (`has probation ending on … (N days remaining)`) with **no auto-transition** (AC-4 ✓ by inspection — the job only reads/logs, never writes status). Not executed live because: (a) the only acme Probation employee is EMP-0033 (DoJ 2026-01-01 → probation end 2026-04-01, already ~90 days past, outside the ≤7-day window) so the job would not fire for it; (b) creating a fresh probation employee whose end date is within 7 days is blocked by BUG-093 (employee create 500s); (c) triggering the recurring Hangfire job + verifying the emitted notification is not report-only-API-reachable. Blocked: precondition-employee-uncreatable (BUG-093) + job-trigger-not-API-reachable.

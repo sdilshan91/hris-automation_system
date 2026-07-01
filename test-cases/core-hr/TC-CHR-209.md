@@ -6,7 +6,7 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-12
----
+exec_note: "P3b k6 2026-06-30: WRITE/UPLOAD ARM NOT MEASURED — kept blocked. The 10MB document UPLOAD <=5s and document delete write <=800ms arms (the TC's main targets, incl. MIME validation + virus scan + storage write) were not driven this pass; only read/list scenarios + report-export ran. Needs a 10MB upload + delete write scenario. Re-run after scripting it."
 
 # TC-CHR-209: Performance -- file upload within 5 seconds for 10 MB; API read/write within SLA
 
@@ -54,3 +54,5 @@ Verify that document upload completes within 5 seconds for a 10 MB file on a sta
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-06-30:** STILL BLOCKED — document-management is an employee-detail tab reached via the Employee Directory (crashed, **BUG-099**), and this assertion (virus-scan / expiry-badge / expiry-notification job / storage-quota / upload-perf / EXIF-strip) is backend/upload-processing behavior requiring a real file POST + job/storage inspection, not a browser-render check.
