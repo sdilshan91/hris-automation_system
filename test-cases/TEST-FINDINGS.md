@@ -5436,3 +5436,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** On the payslip distribution card, the "Send payslips" button correctly exposes `disabled` + `aria-disabled=true` (good), but its disabling-reason hint ("Generate payslip PDFs before sending them by email.") is not linked via `aria-describedby`, so an AT user tabbing to the dimmed button hears no reason. Suggested direction: wire the hint via `aria-describedby` on the button.
 - **Evidence:** acme run-detail distribution card, axe pass 2026-07-02 (button dimmed, hint present as adjacent text, not programmatically associated).
 - **Severity rationale:** LOW — non-blocking a11y nicety; the button state itself is correctly conveyed.
+
+### BUG-126 — Onboarding overdue-notification Hangfire job 500s on a `jsonb ~~ jsonb` LIKE (idempotency check), retries forever
+- **ID:** BUG-126
+- **Type:** BUG (broken vs spec)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Onboarding / US-ONB (overdue-task notifications) / (caught during BUG-003/007 verification, no bound TC)
+- **Title:** The onboarding overdue-task notification job's "once-per-day" idempotency check does `o.Payload.Contains(task.Id.ToString())` where `OnboardingNotificationOutbox.Payload` is a **jsonb** column (`OnboardingChecklistService.cs:702`). Npgsql cannot translate `string.Contains` on jsonb → `42883: operator does not exist: jsonb ~~ jsonb`. The query aborts (`Microsoft.EntityFrameworkCore.Query.QueryIterationFailed`), the Hangfire job fails and **retries indefinitely** (observed live: job '513', retry 5/10, 30 failures in the startup window). This is the **same class as BUG-007** (jsonb `Contains` untranslatable) but in a background job, so it never surfaces as an HTTP 500 — it just silently fails on every run, so overdue-task notifications are never sent AND the idempotency guard is dead.
+- **Root cause (~98%, live Serilog + code-read):** `OnboardingChecklistService.cs:702` — `.Contains()` on the jsonb `Payload` column inside `AnyAsync(...)`. Should match on a structured column (e.g. a dedicated `TaskId`/`ResourceId` column or `NotificationType` + a scalar key), or cast/compare without a jsonb LIKE.
+- **Reproduction steps:** start the API (Development) against Postgres with any overdue onboarding checklist task → the recurring overdue-notification job runs → Serilog logs `operator does not exist: jsonb ~~ jsonb` + `Failed to process the job '<id>'` (Hangfire AutomaticRetry).
+- **Evidence:** `src/backend/HRM.Api/Logs/hrm-<date>.log` this run — `Npgsql.PostgresException 42883: operator does not exist: jsonb ~~ jsonb` with `EventId 10100 QueryIterationFailed`, followed by `Hangfire.AutomaticRetryAttribute Failed to process the job '513'`. Source: `OnboardingChecklistService.cs:702` (`o.Payload.Contains(task.Id.ToString())`).
+- **Severity rationale:** MED — a background feature (overdue notifications) is entirely broken on Postgres and burns retry capacity every cycle; not user-facing 500 and data-contingent on overdue tasks existing, so not HIGH. Trivial fix (same remedy as BUG-007). Found by verification, not previously in the ledger.
