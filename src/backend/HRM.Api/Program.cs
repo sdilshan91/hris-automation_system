@@ -363,6 +363,11 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
+    // BUG-003: reject a request whose JWT tenant differs from the tenant resolved from the host/subdomain
+    // (the spoofable X-Tenant-Subdomain dev header / subdomain). After auth (needs ICurrentUser), before
+    // any tenant-scoped controller work. Does not touch resolution; a matching token+subdomain passes.
+    app.UseMiddleware<TenantAccessGuardMiddleware>();
+
     // US-ADM-003 (AC-3/NFR-2): session-based revocation + expiry for impersonation tokens. After auth (needs the
     // resolved ICurrentUser), before controllers — rejects 401 once the session is ended/expired and best-effort
     // counts mutating actions. No-op for non-impersonated traffic.
