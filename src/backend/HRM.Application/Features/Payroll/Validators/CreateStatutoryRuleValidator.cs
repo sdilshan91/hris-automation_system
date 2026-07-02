@@ -61,14 +61,28 @@ public sealed class CreateStatutoryRuleValidator : AbstractValidator<CreateStatu
     }
 }
 
+/// <summary>
+/// BUG-072: monetary columns are Postgres numeric(18,2) — a value above the precision max overflows
+/// (22003) and 500s instead of returning a validation error. Cap monetary inputs at that maximum.
+/// </summary>
+internal static class StatutoryLimits
+{
+    public const decimal MaxMonetary = 9_999_999_999_999_999.99m; // numeric(18,2) maximum
+    public const string MaxMonetaryMessage = "Amount exceeds the maximum allowed (9,999,999,999,999,999.99).";
+}
+
 /// <summary>Per-slab field validation (US-PAY-006 FR-1).</summary>
 public sealed class TaxSlabInputValidator : AbstractValidator<TaxSlabInput>
 {
     public TaxSlabInputValidator()
     {
-        RuleFor(s => s.SlabFrom).GreaterThanOrEqualTo(0).WithMessage("Slab lower bound cannot be negative.");
+        RuleFor(s => s.SlabFrom).GreaterThanOrEqualTo(0).WithMessage("Slab lower bound cannot be negative.")
+            .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).WithMessage(StatutoryLimits.MaxMonetaryMessage);
         RuleFor(s => s.RatePercentage).InclusiveBetween(0, 100).WithMessage("Slab rate must be between 0 and 100.");
         RuleFor(s => s.OrderIndex).GreaterThanOrEqualTo(0).WithMessage("Slab order index cannot be negative.");
+        RuleFor(s => s.SlabTo!.Value)
+            .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).WithMessage(StatutoryLimits.MaxMonetaryMessage)
+            .When(s => s.SlabTo.HasValue);
         RuleFor(s => s)
             .Must(s => s.SlabTo is null || s.SlabTo.Value > s.SlabFrom)
             .WithMessage("Slab upper bound must be greater than its lower bound.");
@@ -85,6 +99,9 @@ public sealed class SocialSecurityInputValidator : AbstractValidator<SocialSecur
         RuleFor(s => s.WageCeilingAnnual)
             .GreaterThan(0).When(s => s.WageCeilingAnnual.HasValue)
             .WithMessage("Wage ceiling must be greater than 0 when supplied.");
+        RuleFor(s => s.WageCeilingAnnual!.Value)
+            .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).When(s => s.WageCeilingAnnual.HasValue)
+            .WithMessage(StatutoryLimits.MaxMonetaryMessage);
         RuleFor(s => s.ApplicableOn).IsInEnum().WithMessage("Applicable-on is invalid.");
         RuleFor(s => s.ApplicableComponentIds)
             .NotEmpty().When(s => s.ApplicableOn == StatutoryApplicableOn.Custom)
