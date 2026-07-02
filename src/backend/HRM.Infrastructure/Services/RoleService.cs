@@ -108,10 +108,11 @@ public sealed class RoleService : IRoleService
         }
 
         _dbContext.Roles.Add(role);
+        // BUG-041 (FR-7): write a queryable RBAC audit trail, not just an ILogger line.
+        AddRbacAudit("Role.Created", "Role", role.Id.ToString(),
+            $"Role '{role.Name}' created with {permissions.Count} permission(s).");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // FR-7: Audit role creation
-        // TODO (US-NTF-004): Replace ILogger audit with AuditLog entity when available
         _logger.LogInformation(
             "RBAC Audit: Role created. RoleId={RoleId}, Name={RoleName}, TenantId={TenantId}, By={UserId}, PermissionCount={PermCount}",
             role.Id, role.Name, _tenantContext.TenantId, _currentUser.Email, permissions.Count);
@@ -162,12 +163,14 @@ public sealed class RoleService : IRoleService
             role.RolePermissions.Add(new RolePermission { RoleId = role.Id, Permission = perm });
         }
 
+        // BUG-041 (FR-7): queryable RBAC audit trail.
+        AddRbacAudit("Role.Updated", "Role", role.Id.ToString(),
+            $"Role '{role.Name}' updated ({permissions.Distinct().Count()} permission(s)).");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // Invalidate cache for all users who have this role
         await InvalidateCacheForRoleUsersAsync(role, cancellationToken);
 
-        // FR-7: Audit role update
         _logger.LogInformation(
             "RBAC Audit: Role updated. RoleId={RoleId}, Name={RoleName}, TenantId={TenantId}, By={UserId}",
             role.Id, role.Name, _tenantContext.TenantId, _currentUser.Email);
@@ -197,9 +200,11 @@ public sealed class RoleService : IRoleService
 
         // BR-7: Removing role from assigned users (cascade delete handles user_tenant_role rows)
         _dbContext.Roles.Remove(role);
+        // BUG-041 (FR-7): queryable RBAC audit trail.
+        AddRbacAudit("Role.Deleted", "Role", role.Id.ToString(),
+            $"Role '{role.Name}' deleted (affected {role.UserTenantRoles.Count} user(s)).");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // FR-7: Audit role deletion
         _logger.LogInformation(
             "RBAC Audit: Role deleted. RoleId={RoleId}, Name={RoleName}, TenantId={TenantId}, By={UserId}, AffectedUsers={UserCount}",
             roleId, role.Name, _tenantContext.TenantId, _currentUser.Email, role.UserTenantRoles.Count);
@@ -278,17 +283,39 @@ public sealed class RoleService : IRoleService
             });
         }
 
+        // BUG-041 (FR-7): queryable RBAC audit trail for privilege changes.
+        AddRbacAudit("UserRoles.Updated", "UserTenant", userTenantId.ToString(),
+            $"Roles for membership {userTenantId} set to [{string.Join(",", roleIds)}].");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // Invalidate permission cache for this user
         await _permissionCache.InvalidateAsync(_tenantContext.TenantId, userTenant.UserId, cancellationToken);
 
-        // FR-7: Audit role assignment change
         _logger.LogInformation(
             "RBAC Audit: User roles updated. UserTenantId={UserTenantId}, TenantId={TenantId}, By={UserId}, NewRoleIds={RoleIds}",
             userTenantId, _tenantContext.TenantId, _currentUser.Email, string.Join(",", roleIds));
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// BUG-041 (FR-7): appends a queryable RBAC audit row to the shared audit_log table. Tenant/actor are
+    /// stamped from context. Added to the change tracker; persisted by the caller's SaveChanges.
+    /// </summary>
+    private void AddRbacAudit(string eventType, string resourceType, string resourceId, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = eventType,
+            Action = eventType,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
     }
 
     public async Task<IReadOnlyList<string>> ResolvePermissionsAsync(
