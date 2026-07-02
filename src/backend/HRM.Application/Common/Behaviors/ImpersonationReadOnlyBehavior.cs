@@ -48,6 +48,11 @@ public sealed class ImpersonationReadOnlyBehavior<TRequest, TResponse> : IPipeli
         "DeleteUser",
         "DeleteTenant",
         "TerminateTenant",
+        // BUG-107: the prior markers missed these user-admin mutations (no substring overlap):
+        "ForcePasswordReset",   // ForcePasswordResetCommand (not caught by "ResetPassword")
+        "DeactivateUser",       // DeactivateUserCommand (not caught by "DeleteUser")
+        "AssignUserRoles",      // AssignUserRolesCommand (not caught by "AssignRole")
+        "EditUserRoles",        // EditUserRolesCommand
     ];
 
     /// <summary>

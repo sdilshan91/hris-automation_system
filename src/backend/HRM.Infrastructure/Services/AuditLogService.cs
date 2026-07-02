@@ -211,11 +211,16 @@ public sealed class AuditLogService : IAuditLogService
 
         if (!string.IsNullOrWhiteSpace(filter.SearchQuery))
         {
+            // BUG-007: Before/After are jsonb columns — `string.Contains` on them is not translatable by
+            // Npgsql and 500s on Postgres (it only "worked" on the InMemory tests). Search the human-readable
+            // text/structured columns instead (Detail + the standardized action/resource fields).
             var q = filter.SearchQuery.Trim();
             query = query.Where(a =>
-                (a.Before != null && a.Before.Contains(q)) ||
-                (a.After != null && a.After.Contains(q)) ||
-                (a.Detail != null && a.Detail.Contains(q)));
+                (a.Detail != null && a.Detail.Contains(q)) ||
+                (a.Action != null && a.Action.Contains(q)) ||
+                a.EventType.Contains(q) ||
+                (a.ResourceType != null && a.ResourceType.Contains(q)) ||
+                (a.ResourceId != null && a.ResourceId.Contains(q)));
         }
 
         // US-NTF-005 FR-9/BR-5: the AuditLog.View meta-audit rows (written on every list view) are accountability
