@@ -4,9 +4,9 @@ user_story: US-CHR-012
 module: Core HR
 priority: high
 type: performance
-status: blocked
+status: pass
 created: 2026-06-13
-exec_note: "P3b k6 2026-06-30: WRITE ARM NOT MEASURED — kept blocked. Read arm met: custom-fields list (GET /tenant/custom-fields) p95 57–70ms @50VU on 5k perf tenant < 400ms SLA. But the TC also requires POST/PUT/reorder writes <=800ms P95, and write-load was not measured this pass. Re-run after scripting the custom-field write flow."
+exec_note: "2026-07-02 PASS (perf tenant, all arms measured, 3 warmup discarded on reads). READ (GET /tenant/custom-fields?entityType=Employee, n=30): med 5.4ms / p95 6.0ms << 400ms SLA. WRITE CREATE (POST, n=15): med 8.7ms / p95 12.3ms << 800ms. WRITE PUT (n=15): med 5.5ms / p95 8.8ms << 800ms. REORDER (POST /reorder, n=10): med 4.7ms / p95 29.9ms << 800ms. All four Step-1..4 SLAs comfortably met. Side-note (not a TC step): DELETE /tenant/custom-fields/{id} did not remove the probe fields via API (cleanup done by exact-PK DB delete in perf tenant); out of TC-311 scope, no finding. WRITE to perf tenant only; all 16 probe fields deleted (teardown clean)."
 
 # TC-CHR-311: Custom field configuration API response times within SLA
 

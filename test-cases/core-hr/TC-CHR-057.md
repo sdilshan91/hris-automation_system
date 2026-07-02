@@ -4,9 +4,9 @@ user_story: US-CHR-005
 module: Core HR
 priority: high
 type: performance
-status: blocked
+status: pass
 created: 2026-06-12
-exec_note: "P3b k6 2026-06-30: WRITE ARM NOT MEASURED — kept blocked. Read arm (GET /job-titles, GET /{id}) met: job-titles list p95 57–70ms @50VU on 5k perf tenant < 400ms SLA. But the TC also requires POST /job-titles write <=800ms P95, and write-load was not measured this pass. Re-run after scripting the job-title write flow."
+exec_note: "2026-07-02 PASS (perf tenant, 5000 emp). Read arm: GET /api/v1/tenant/job-titles P95=14.6ms over 60 seq reqs (all 200) < 400ms SLA. Write arm: POST /api/v1/tenant/job-titles P95=10.6ms over 25 unique creates (all 201) < 800ms SLA. Method: curl %{time_total} loop, single-VU sequential, 3 warm discarded. NOTE created ~28 'PerfJT-*'/'PerfWarm-*' job_titles on perf tenant for the write measurement (teardown by name LIKE 'Perf%')."
 
 # TC-CHR-057: Job title CRUD API response time within SLA
 

@@ -4,9 +4,9 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: performance
-status: blocked
+status: pass
 created: 2026-06-12
-exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Target is bulk manager-assignment for 100 employees <=5s (batched write); the bulk-assign write was not driven this pass. Needs a bulk-assign write scenario. Re-run after scripting it."
+exec_note: "2026-07-02 PASS (perf tenant, 5k employees). POST /tenant/employees/bulk-assign-manager with 100 employeeIds → HTTP 200 in total=0.874s (re-runs 0.387s, 0.512s) — all << 5s NFR-6 SLA. Response: totalRequested=100, successCount=99, failureCount=1; the 1 failure is a legitimate cycle-detection guard ('Circular reporting chain detected … First1 already reports to First28') — a correctness feature, not a perf miss. Step4 audit: employee_field_audit_logs shows 99 rows section='ManagerAssignment' created in the window (one per successful assignment). SLA + per-employee-audit both PASS. WRITE to perf tenant only (reports_to reassigned + 99 audit rows — dropped by perf teardown script)."
 
 # TC-CHR-291: Bulk manager assignment for 100 employees completes within 5 seconds
 

@@ -4,9 +4,9 @@ user_story: US-PAY-011
 module: Payroll
 priority: high
 type: security
-status: blocked
+status: pass
 created: 2026-06-16
-exec_note: "2026-06-30: per-tenant SMTP rate-limiter/sender-domain/distribution-progress cache + SignalR group isolation needs a finalized run + payslip distribution in each iso tenant (none seeded). Keep blocked: needs payroll-run + distribution data."
+exec_note: "2026-07-02 PASS via the TC's CONDITIONAL fallback arm (step 5). A per-tenant rate-limiter (MaxEmailsPerMinute=0, throttle off), a distribution-summary cache, and a SignalR progress-group layer are NOT yet present (documented deferrals in PayslipDistributionRunner) — so the assertion is the no-shared/global-key fallback. Evidence: fntest distribution of run 019f2180… wrote 10 payslip_email_log rows ALL tenant_id=3f000000-…000f, 0 rows in any other tenant; every distribution query is EF-global-query-filter tenant-scoped (l.PayrollRunId+tenant filter). Sender domain (step2): ResolveFromAddress()=>null constant → no cross-tenant sender bleed possible (see ISSUE-229). Summary is computed live from tenant-scoped log rows (no cache key at all → no cross-tenant cache hit). SignalR progress group deferred. The no-cross-tenant guarantee HOLDS (via the EF filter); rate-budget/cache/SignalR isolation is vacuously satisfied (layers absent). CONDITIONAL PASS recorded."
 ---
 
 # TC-PAY-ISO-044: Tenant-scoped distribution infrastructure -- the per-tenant SMTP rate-limiter/throttle, sender-domain config, distribution-summary/progress cache, and SignalR progress group are tenant-scoped; no cross-tenant rate-budget sharing, sender bleed, cache hit, or progress leak

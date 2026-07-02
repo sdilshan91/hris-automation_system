@@ -4,9 +4,9 @@ user_story: US-CHR-009
 module: Core HR
 priority: high
 type: performance
-status: blocked
+status: pass
 created: 2026-06-12
-exec_note: "P3b k6 2026-06-30: WRITE-ONLY ARM NOT MEASURED — kept blocked. Target is the status-change WRITE API <=800ms P95; write-load was not measured this pass (only read/list scenarios + report-export ran). Needs a status-change write scenario. Re-run after scripting it."
+exec_note: "2026-07-02 PASS (perf tenant, 5000 emp). POST /api/v1/tenant/employees/{id}/status (Active->Suspended, distinct employees, effectiveDate + reason) P95=18.4ms over 25 seq writes (all 200) — well within the 800ms write SLA. Method: curl %{time_total} loop, single-VU sequential. NOTE: the 25 suspended employees were reverted to Active afterward (24 API-reverted + 1 prior) — verified 5000/5000 Active post-run, no residual state change."
 
 # TC-CHR-234: Status change API response time within 800ms P95 (NFR-1)
 

@@ -4,9 +4,9 @@ user_story: US-CHR-011
 module: Core HR
 priority: critical
 type: performance
-status: blocked
+status: pass
 created: 2026-06-12
-exec_note: "P3b k6 2026-06-30: NOT MEASURED + scale not seeded — kept blocked. Target is deep-hierarchy (10-level) cycle-detection write rejected <=200ms; needs a 10-level-deep manager chain seed + the assignment write driven. Neither was done this pass. Re-run after seeding a 10-level hierarchy."
+exec_note: "2026-07-02 PASS (perf tenant, 5000 emp). Built a real 10-level chain E1->E2->...->E10 via POST /employees/{id}/manager (9 assigns, all 200), then attempted the cycle E10.manager=E1: rejected 400 all 5 attempts with the correct 'Circular reporting chain detected' message; cycle-detection latency P95=18.7ms — well within the 200ms SLA. Method: curl %{time_total} loop, single-VU sequential. NOTE: the 10-employee chain reports_to remains set on perf (cosmetic; null reports_to for the 10 chain employees to reset)."
 
 # TC-CHR-290: Deep hierarchy (10 levels) cycle detection completes within 200ms
 
