@@ -300,12 +300,15 @@ public sealed class AuthService : IAuthService
         // Check if token was already revoked (reuse detection)
         if (storedToken.RevokedAt is not null)
         {
-            // Token reuse detected - revoke entire chain
-            _logger.LogWarning("Refresh token reuse detected for user {UserId}, tenant {TenantId}. Revoking all tokens.",
+            // BUG-043: token reuse detected — revoke only the COMPROMISED token's lineage (the chain that
+            // descends from the reused token via ReplacedByTokenId), not every session for the user+tenant.
+            // Independent sessions on other devices (separate chains) remain valid, so one stolen token no
+            // longer logs the user out everywhere.
+            _logger.LogWarning("Refresh token reuse detected for user {UserId}, tenant {TenantId}. Revoking the compromised token lineage.",
                 storedToken.UserId, storedToken.TenantId);
 
-            await RevokeTokenChainAsync(storedToken.UserId, storedToken.TenantId, cancellationToken);
-            return Result<RefreshTokenResponse>.Failure("Token reuse detected. All sessions have been revoked.", 401);
+            await RevokeTokenLineageAsync(storedToken, cancellationToken);
+            return Result<RefreshTokenResponse>.Failure("Token reuse detected. This session has been revoked.", 401);
         }
 
         // Check expiration
@@ -1741,6 +1744,35 @@ public sealed class AuthService : IAuthService
         foreach (var token in tokens)
         {
             token.RevokedAt = DateTime.UtcNow;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// BUG-043: revokes ONLY the lineage (rotation chain) that the reused token belongs to — walking forward
+    /// via <see cref="RefreshToken.ReplacedByTokenId"/> — instead of every session for the user+tenant. This
+    /// kills the compromised session without logging the user out of unrelated concurrent sessions.
+    /// </summary>
+    private async Task RevokeTokenLineageAsync(RefreshToken reusedToken, CancellationToken cancellationToken)
+    {
+        var sameOwnerTokens = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .Where(rt => rt.UserId == reusedToken.UserId && rt.TenantId == reusedToken.TenantId)
+            .ToListAsync(cancellationToken);
+        var byId = sameOwnerTokens.ToDictionary(t => t.Id);
+
+        var now = DateTime.UtcNow;
+        // Walk forward from the reused token through its replacements; revoke the whole descendant chain.
+        RefreshToken? current = byId.TryGetValue(reusedToken.Id, out var start) ? start : reusedToken;
+        var guard = 0;
+        while (current is not null && guard++ < sameOwnerTokens.Count + 1)
+        {
+            if (current.RevokedAt is null)
+                current.RevokedAt = now;
+            current = current.ReplacedByTokenId is { } nextId && byId.TryGetValue(nextId, out var next)
+                ? next
+                : null;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
