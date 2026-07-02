@@ -39,9 +39,9 @@ blast radius + severity, and sequenced into phases with dependencies.
 
 | # | Finding(s) | Sev | Area | File / locus | Code change | TCs cleared (approx) | Status |
 |---|---|---|---|---|---|---|---|
-| P0-1 | **BUG-003** + BUG-069, ISSUE-193, ISSUE-189/190/191 | CRIT | Cross-cutting (Reports, Notif, Perf, Payroll, Leave, Admin, CHR) | `TenantResolutionMiddleware.cs:56-146` | After auth, assert `_currentUser.TenantId == _tenantContext.TenantId`; reject 403 on mismatch. **Keep** the `X-Tenant-Subdomain` dev fallback (pre-auth); only add the post-auth invariant. | ~30–40 (all ISO arms + report/dashboard leaks) | `TODO` |
+| P0-1 | **BUG-003** + BUG-069, ISSUE-193, ISSUE-189/190/191 | CRIT | Cross-cutting (Reports, Notif, Perf, Payroll, Leave, Admin, CHR) | `TenantResolutionMiddleware.cs:56-146` | After auth, assert `_currentUser.TenantId == _tenantContext.TenantId`; reject 403 on mismatch. **Keep** the `X-Tenant-Subdomain` dev fallback (pre-auth); only add the post-auth invariant. | ~30–40 (all ISO arms + report/dashboard leaks) | `WIP` — new `TenantAccessGuardMiddleware` (post-auth, resolution untouched) on `fix/BUG-003`; unit regression test, mutation-proven. Dev header fallback preserved. **Full ISO re-run = `/verify-fix --iso` (deferred, needs live stack)**. PR pending. |
 | P0-2 | **BUG-093** | HIGH | Core HR | `EmployeeService.cs:770-788` | Employee-no generator sorts lexicographically → parse-fail collides `EMP-0001` → 500. Extract numeric suffix, sort numerically (or move to a DB sequence). | TC-CHR-065/066/080/010 + downstream (anything needing a seeded employee) | `WIP` — fix + regression TC written, mutation-proven, local `dotnet test` green 29/29 (2026-07-02). PR not opened; `/verify-fix` pending live stack. |
-| P0-3 | **BUG-040** | CRIT | Auth | `AuthService.cs:439-522` | Reset-token flow is a stub accepting any non-empty token (account takeover). Implement hashed, single-use, expiring token. | TC-AUTH-011/012 | `TODO` |
+| P0-3 | **BUG-040** | CRIT | Auth | `AuthService.cs:439-522` | Reset-token flow is a stub accepting any non-empty token (account takeover). Implement hashed, single-use, expiring token. | TC-AUTH-011/012 | `WIP` — SHA-256 hashed, 1h-expiry, single-use, constant-time token on `fix/BUG-040` (+EF migration, +User columns); 6 regression tests, mutation-proven (all fail pre-fix). PR/verify pending. |
 
 **Rationale:** P0-1 is the systemic BUG-003 hole behind nearly every module's isolation failure. P0-2 blocks
 realistic-tenant employee creation → gates Core HR *and* anything needing employees to test. P0-3 is an open
@@ -258,8 +258,8 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 - [~] P1-6 BUG-036 grant Leave.ManageLop → **fix + unit regression test, startup self-heal** on `fix/BUG-036`. Pending: PR + merge + re-run US-LV-011 surface.
 
 ### Phase B — security gateway
-- [ ] P0-3 BUG-040 reset-token flow → merge → re-run TC-AUTH-011/012.
-- [ ] P0-1 BUG-003 post-auth tenant invariant (own PR) → merge → **full ISO suite re-run all modules**.
+- [~] P0-3 BUG-040 reset-token flow → **hashed/expiring/single-use token + migration + 6 mutation-proven tests** on `fix/BUG-040`. Pending: PR + merge + re-run TC-AUTH-011/012.
+- [~] P0-1 BUG-003 post-auth tenant invariant (own PR) → **TenantAccessGuardMiddleware + mutation-proven test** on `fix/BUG-003`; dev header fallback preserved. Pending: PR + merge + **full ISO suite re-run all modules** (`/verify-fix --iso`).
 
 ### Phase C — hydration + notifications
 - [ ] P1-7 BUG-121 Redis fallback → merge → re-run Auth/Admin FE TCs.
