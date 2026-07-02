@@ -38,10 +38,11 @@ public sealed class EmployeesController : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] bool? activeOnly = null,
         [FromQuery] string? search = null,
+        [FromQuery] bool includeTerminated = false,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
-            new GetEmployeesQuery(page, pageSize, activeOnly, search), cancellationToken);
+            new GetEmployeesQuery(page, pageSize, activeOnly, search, includeTerminated), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));

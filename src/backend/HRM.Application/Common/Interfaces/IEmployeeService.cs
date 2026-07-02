@@ -22,6 +22,7 @@ public interface IEmployeeService
         int pageSize = 20,
         bool? activeOnly = null,
         string? search = null,
+        bool includeTerminated = false,
         CancellationToken cancellationToken = default);
 
     /// <summary>

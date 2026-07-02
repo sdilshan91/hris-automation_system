@@ -11,5 +11,6 @@ public sealed record GetEmployeesQuery(
     int Page = 1,
     int PageSize = 20,
     bool? ActiveOnly = null,
-    string? Search = null
+    string? Search = null,
+    bool IncludeTerminated = false
 ) : IRequest<Result<EmployeeListResult>>;
