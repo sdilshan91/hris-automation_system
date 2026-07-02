@@ -5,7 +5,7 @@ module: Leave Management
 priority: critical
 type: performance
 status: blocked
-exec_note: "2026-07-01 KEEP-BLOCKED: true scale/p95 arm — needs S2 5k-employee seed in a throwaway tenant + k6 load run (job-based ones also need the global-job barrier lifted). Not runnable in this breadth pass."
+exec_note: "2026-07-02 KEEP-BLOCKED (perf tenant, 5000 emp seeded): the entitlement-recalc job is HRM.Api/Jobs/LeaveAccrualJob (recurring cron '30 0 * * *', id 'leave-entitlement-accruals'). No admin-facing HTTP trigger exists (Swagger has no recalc endpoint). The job iterates ALL active/trial tenants (Program.cs:460; job loops every tenant), so a Hangfire-dashboard 'Trigger now' would write leave_ledger accruals to acme/techoneglobal/every tenant — a hard violation of the perf-tenant-only write rule. Cannot scope to perf → keep-blocked, not chased. SLA (5000 emp <=60s) unmeasured."
 created: 2026-06-13
 ---
 

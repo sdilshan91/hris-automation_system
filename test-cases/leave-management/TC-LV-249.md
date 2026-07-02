@@ -4,8 +4,8 @@ user_story: US-LV-012
 module: Leave Management
 priority: high
 type: performance
-status: blocked
-exec_note: "2026-07-01 KEEP-BLOCKED: true scale/p95 arm — needs S2 5k-employee seed in a throwaway tenant + k6 load run (job-based ones also need the global-job barrier lifted). Not runnable in this breadth pass."
+status: fail
+exec_note: "2026-07-02 FAIL (perf tenant, 5000 emp / 6200 leave_request / 13 types seeded). The 5000-row synchronous-export CEILING cannot be met via the report that would reach it. The only report producing >=5000 rows is BalanceSummary (5000 x 13 ~= 65000 rows), whose build is an N+1 (ResolveEntitlementAsync per employee x type) that never completes: GET /leaves/reports/BalanceSummary/export?format=xlsx -> HTTP 000 timeout at 30s (server ERR 'after 90078ms' + 500, RequestId 0HNMN7ROLJCHR). The sync path DOES work at smaller volume: Absenteeism export (1000 rows) XLSX 662ms, CSV 84ms (both <<10s, HTTP 200, correct content-types). But at the TC's 5000-row target the export cannot complete, so NFR-2 (<=5000 rows within 10s) is NOT demonstrably met — the largest report exercisable via a working build tops out at 1000 rows; the 5000-row-capable report hangs. Boundary/streaming steps (3,4) unverifiable for the same reason. See BUG (report N+1 timeout). Method: curl --max-time timing + Serilog RequestId correlation; no report in perf tenant produces 4001-5000 rows on a fast build path."
 created: 2026-06-14
 ---
 

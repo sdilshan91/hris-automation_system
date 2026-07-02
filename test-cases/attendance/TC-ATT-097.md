@@ -4,8 +4,8 @@ user_story: US-ATT-007
 module: Attendance
 priority: high
 type: performance
-status: blocked
-exec_note: "S2 2026-07-01: BLOCKED — 5,000-emp scale tenant not accessible (perf login failed, not code-seeded). NFR-1/2/4 SLAs not measurable this pass."
+status: pass
+exec_note: "2026-07-02 PASS: perf tenant (5000 emp, June 2026 attendance). (NFR-1) GET /attendance/summary/monthly?month=2026-06 P95 0.340s over 25 reqs (3 warmup discarded) << 2.5s. (NFR-2) POST /attendance/summary/monthly/generate?month=2026-06 Hangfire summary job COMPLETED synchronously in 63s << 10min. (NFR-4) GET .../export?month=2026-06&format=csv&departmentId=<Perf Dept 1> returned 500 emp rows (501 lines incl header), HTTP 200 in 0.076s << 30s (dept-filter used to hit the <=1000 sync path; full-5000 export goes 202/async by design). Method: curl P95 loop + timed job/export."
 created: 2026-06-14
 ---
 

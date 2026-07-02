@@ -4,8 +4,8 @@ user_story: US-LV-001
 module: Leave Management
 priority: high
 type: performance
-status: blocked
-exec_note: "S1: perf under load — needs S2 volume seed + k6."
+status: pass
+exec_note: "2026-07-02 (perf tenant): real routes POST /api/v1/tenant/leave-types, PUT /{id}, POST /{id}/deactivate (TC's /api/v1/leave-types + PATCH are stale). 33 writes/op, 3 warmup discarded (n=30 each): CREATE P50=11.8 P95=33.5ms; PUT P50=11.7 P95=51.3ms; DEACTIVATE P50=7.9 P95=16.7ms — all well within 800ms SLA. Worst P95=51.3ms. Wrote 33 PERFTC023-prefixed throwaway leave-types into perf tenant (deactivated; dropped at perf teardown). PASS."
 created: 2026-06-13
 ---
 

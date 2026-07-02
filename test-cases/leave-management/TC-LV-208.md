@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: performance
 status: blocked
-exec_note: "S1: perf under load — needs S2 volume seed + k6."
+exec_note: "2026-07-02 (perf tenant): BLOCKED — persona gap. POST /api/v1/leaves/{id}/cancel cancels the CURRENT employee's OWN request (ownership enforced server-side); perfadmin has no employee record so it cannot own/cancel any of the 6200 seeded requests, and the sibling employee endpoints (mine/my-balance) already return 403. Not measurable as admin. Needs an employee-linked persona with a pool of own pending + approved-future requests. blocked: needs-employee-persona."
 created: 2026-06-14
 ---
 

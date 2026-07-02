@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: performance
 status: blocked
-exec_note: "S1: perf under load — needs S2 volume seed + k6."
+exec_note: "2026-07-02 (perf tenant): BLOCKED — feature not implemented + persona gap. (1) Redis scanned live (docker exec hrm-redis redis-cli KEYS): 13 keys total, ZERO leave-balance keys — only dashboard/report/tenant-subdomain keys. Leave balances are NOT cached in Redis, matching the TC's own DEFERRED note. No key `hrm:t:...:leave_balance:...` (nor the TC's `tenant:{}:leave_balance:{}` pattern) exists to inspect for 24h TTL or eviction. (2) The balance read GET /api/v1/leaves/my-balance returns 403 for perfadmin (no employee record) — can't produce a cold-vs-warm read anyway. Needs the cache feature implemented AND an employee-linked persona. blocked: feature-not-implemented."
 created: 2026-06-13
 ---
 

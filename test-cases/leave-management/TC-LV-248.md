@@ -4,8 +4,8 @@ user_story: US-LV-012
 module: Leave Management
 priority: high
 type: performance
-status: blocked
-exec_note: "2026-07-01 KEEP-BLOCKED: true scale/p95 arm — needs S2 5k-employee seed in a throwaway tenant + k6 load run (job-based ones also need the global-job barrier lifted). Not runnable in this breadth pass."
+status: fail
+exec_note: "2026-07-02 FAIL (perf tenant, 5000 emp / 6200 leave_request / 13 leave_types seeded). The report types the TC names (Balance Summary, Utilization) DO NOT MEET the 2s P95 target at 5000-employee scale — they time out entirely. GET /leaves/reports/BalanceSummary?Year=2026 -> HTTP 000 client-timeout at 90s; server logged ERR 'Error handling GetLeaveReportQuery after 90078ms' + 500, RequestId 0HNMN7ROLJCHR. Root cause: BuildBalanceSummaryAsync calls ResolveEntitlementAsync PER employee x leave-type (N+1: ~5000 x 13 sequential EF round-trips) -> no full-report SLA possible. GET /leaves/reports/Utilization -> also HTTP 000 at 25s (ComputeUtilizationAggregatesAsync, same non-scaling path). Only the cheap reports respond: Absenteeism P95 = 102ms (n=32, min 40 / med 54 / max 126, warmup 3 discarded) and it/LopSummary cap at 1000 rows. So the API meets 2s for the light aggregate reports but FAILS the two report types this TC calls out at the NFR-1 dataset scale. See BUG (report N+1 timeout). Method: 3 warmup + 32-sample curl P95 loop for the working report; --max-time timeout probe + Serilog RequestId for the failing ones."
 created: 2026-06-14
 ---
 

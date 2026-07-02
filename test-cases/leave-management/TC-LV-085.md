@@ -5,7 +5,7 @@ module: Leave Management
 priority: high
 type: performance
 status: blocked
-exec_note: "S1: perf under load — needs S2 volume seed + k6."
+exec_note: "2026-07-02 (perf tenant): BLOCKED — persona gap. GET /api/v1/leaves/pending returns 403 for perfadmin (endpoint is manager/team-scoped; perfadmin has no employee/team identity, so the direct-reports queue can't resolve). Not measurable as admin despite the seeded 6200 leave_request rows. Needs a manager persona with direct reports in the perf tenant. blocked: needs-team-scoped-user."
 created: 2026-06-13
 ---
 

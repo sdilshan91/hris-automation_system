@@ -5,7 +5,7 @@ module: Leave Management
 priority: medium
 type: performance
 status: blocked
-exec_note: "S1: perf under load — needs S2 volume seed + k6."
+exec_note: "2026-07-02 BLOCKED on persona permission (perf tenant, 5000 emp seeded). Both LOP endpoints require [RequirePermission(\"Leave.ManageLop\")] (LeaveLopController.cs:37,57). The seeded perfadmin@perf.test JWT does NOT carry Leave.ManageLop (it has Leave.Reports/View.All/Approve.All/ConfigurePolicy). Live probe: POST /leaves/assign-lop -> 403, GET /leaves/lop-summary -> 403. SLA (write <=800ms / read <=400ms P95) unmeasurable without a Leave.ManageLop persona; not chased (would require mutating role assignments). Method: curl P95 loop ready once a scoped persona exists."
 created: 2026-06-14
 ---
 

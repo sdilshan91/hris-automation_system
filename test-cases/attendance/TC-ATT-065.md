@@ -4,8 +4,8 @@ user_story: US-ATT-005
 module: Attendance
 priority: high
 type: performance
-status: blocked
-exec_note: "S2 2026-07-01: BLOCKED — perf/scale tenant (>=500 emp) credentials not accessible; login failed for all guessed perf personas and perf tenant is not code-seeded. Bulk-assign endpoint exists (POST shifts/{id}/assign) but not drivable at scale this pass."
+status: pass
+exec_note: "2026-07-02 PASS: perf tenant (5000 emp). POST /attendance/shifts/b16083e5.../assign with 500 distinct perf employeeIds + effectiveFrom=2026-07-02, measured end-to-end via curl. Run1 0.357s, Run2 0.172s (both <5s SLA; no progressive degradation — run2 faster). Both returned assignedCount=500. Method: 2 sequential timed runs. Single-active-invariant (BR-2) not row-verified (no DB access this pass) but assignedCount=500 both runs consistent."
 created: 2026-06-14
 ---
 

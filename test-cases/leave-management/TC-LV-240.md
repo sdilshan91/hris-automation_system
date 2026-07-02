@@ -4,8 +4,8 @@ user_story: US-LV-012
 module: Leave Management
 priority: high
 type: integration
-status: blocked
-exec_note: "2026-07-01 KEEP-BLOCKED: true scale/p95 arm — needs S2 5k-employee seed in a throwaway tenant + k6 load run (job-based ones also need the global-job barrier lifted). Not runnable in this breadth pass."
+status: fail
+exec_note: "2026-07-02 FAIL (perf tenant, 5000 emp / 6200 leave_request / 13 types seeded). The >5000-row background-export path is UNREACHABLE for the only report that can produce >5000 rows. LeaveReportService.ExportReport (svc line 180) runs the FULL report generation (PageSize=int.MaxValue) via GenerateReportCoreAsync BEFORE the rowCount>SyncExportRowThreshold(5000) queue check (line 189). BalanceSummary (5000 emp x 13 types ~= 65000 rows) is the only report over threshold, but its build is an N+1 (ResolveEntitlementAsync per employee x leave-type in BuildBalanceSummaryAsync) that never completes: GET /leaves/reports/BalanceSummary/export?format=xlsx timed out at HTTP 000 / 30s (server logged ERR 'GetLeaveReportQuery after 90078ms' then 500, RequestId 0HNMN7ROLJCHR, LeaveReportService.cs BuildBalanceSummary->ResolveEntitlement). So step-1 (large export returns 202 promptly + enqueues Hangfire job) FAILS: no report over the threshold ever reaches the queue check; the request hangs instead. The 202/queue logic + LeaveReportExportJob wiring exist in code but cannot be exercised live. Sub: Absenteeism(1000)/LopSummary(1000)/CarryForwardSummary(0) never cross 5000, so cannot exercise the boundary from the fast path either. See BUG (report N+1 timeout). Method: curl --max-time 30, Serilog RequestId correlation."
 created: 2026-06-14
 ---
 

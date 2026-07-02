@@ -5373,3 +5373,66 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** fntest (`X-Tenant-Subdomain: fntest`, `fntest-admin@fn.test`/`Admin@123!`), Finalized run `019f2180-1991-730d-9607-b72d7b5ccfab`. `POST /api/v1/payroll/runs/{runId}/payslips/send-emails {}` → 202 queued. Serilog `src/backend/HRM.Api/Logs/hrm-20260702.log` shows 9 `[PAYSLIP-EMAIL-STUB] Would send payslip email to fnempN@fn.test … Subject='Your Payslip for June 2026'` lines — none carry a tenant-specific From (the stub logs recipient/subject/attachment only; the code path never sets a tenant sender). Grep confirms `ResolveFromAddress() => null`.
 - **Evidence:** PayslipDistributionRunner.cs:312-314 (`=> null` with deferral comment); 9 stub log lines 2026-07-02 12:10:11 with no tenant From; no `sender`/`from_address`/sender-domain column on any tenant/payroll-settings table (schema grep negative).
 - **Severity rationale:** LOW — the TC itself permits the system-default fallback ("still a valid, tenant-appropriate address, never another tenant's domain"), no cross-tenant sender bleed is possible (the value is a constant), and delivery is a log-only stub with no real recipients today. It is a genuine but contained BR-4 spec gap that only materializes once a real SMTP sender + a per-tenant sender-domain config are added. Not a security or data issue.
+
+### BUG-124 — Leave BalanceSummary/Utilization reports N+1 at scale: time out (500 after 90s) at 5,000 employees, breaking the report + both export SLAs
+- **ID:** BUG-124
+- **Type:** BUG (performance / scalability)
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave Management / US-LV (reports/export) / TC-LV-248, TC-LV-249, TC-LV-240
+- **Title:** `LeaveReportService.BuildBalanceSummaryAsync` resolves entitlement **per employee × leave-type** (`ResolveEntitlementAsync` in a nested loop → ~5,000 × 13 sequential EF round-trips); `BuildUtilizationAsync`/`ComputeUtilizationAggregatesAsync` has the same non-scaling shape. At the platform's own NFR-1 target scale (5,000 employees) neither report completes — the request returns **500 after ~90s**. The lighter reports that do NOT resolve per-employee entitlement (Absenteeism, LopSummary) return in ~100ms, isolating the N+1 as the cause.
+- **Root cause (~90%, code + live Serilog):** per-employee/per-leave-type `ResolveEntitlementAsync` calls inside `BuildBalanceSummaryAsync`/`BuildUtilizationAsync` (`src/backend/HRM.Infrastructure/Services/LeaveReportService.cs`), no set-based/batched entitlement resolution. Query time, not error — 200 never returned; the request is killed at the 90s ceiling.
+- **Reproduction steps:** login `perfadmin@perf.test`/`Admin@123!`, header `X-Tenant-Subdomain: perf` (5,000 employees, 6,200 leave_request, 13 leave_types seeded). `curl "http://localhost:5000/api/v1/leaves/reports/BalanceSummary?Year=2026"` → HTTP 000 (client timeout 90s); `/Utilization` → HTTP 000 @25s; `/Absenteeism` → 200 in ~100ms.
+- **Evidence:** Serilog RequestId `0HNMN7ROLJCHR`: `[ERR] Error handling GetLeaveReportQuery after 90078ms`, `[ERR] HTTP GET …/BalanceSummary responded 500 in 90089ms`, stack `LeaveReportService.ResolveEntitlementAsync ← BuildBalanceSummaryAsync ← GenerateReportCoreAsync`. Absenteeism P95 = 102ms (n=32).
+- **Severity rationale:** HIGH — the primary leave-reporting flow (balance/utilization) is unusable at the documented NFR-1 scale, and it cascades to block both the sync-export (TC-LV-249) and large-export (TC-LV-240) SLAs, since export first generates the same report inline. Fix = batch/set-based entitlement resolution (single query per report, not per employee).
+
+### BUG-125 — Attendance `payroll-data` endpoint: P95 ~28s at 5,000 employees (5.7x over the <=5s SLA), not served from the materialized monthly summary
+- **ID:** BUG-125
+- **Type:** BUG (performance / scalability)
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance / US-ATT (payroll-data handoff) / TC-ATT-126
+- **Title:** `GET /api/v1/attendance/payroll-data?month=2026-06` returns all 5,000 rows correctly but at **P95 28.4s / min 11.2s / p50 12.7s** — grossly over the <=5s NFR-1. The sibling materialized reads (`summary/monthly` 0.34s, `reconciliation` 0.21s) are fast, so payroll-data is NOT reading the pre-materialized `attendance_monthly_summary` path the TC assumes.
+- **Root cause (~70%, timing + contrast):** payroll-data appears to recompute/aggregate per-employee over raw `attendance_log` at request time rather than reading the materialized monthly summary; 200 responses (no exception in Serilog) — the cost is query time, not error. (Confidence 70% pending a source read of the payroll-data query path.)
+- **Reproduction steps:** login `perfadmin@perf.test`/`Admin@123!`, header `X-Tenant-Subdomain: perf`, with 150,000 attendance_log rows (June 2026, 5,000 emp × 30 days) + a generated monthly summary. `curl -w "%{time_total}" "http://localhost:5000/api/v1/attendance/payroll-data?month=2026-06"` → ~11-28s per call.
+- **Evidence:** P95 28.4s over 6 reqs (2 warmup discarded); `summary/monthly` P95 0.34s and `reconciliation` P95 0.21s on the same tenant/volume.
+- **Severity rationale:** HIGH — payroll-data is the attendance→payroll integration handoff; ~28s per pull directly blocks a 5,000-employee payroll run from meeting its SLA. Fix = serve payroll-data from the materialized summary (or a set-based aggregate) instead of per-request recomputation over raw logs.
+
+### ISSUE-230 — Leave large-export background threshold is unreachable: the full report is generated inline before the row-count queue check
+- **ID:** ISSUE-230
+- **Type:** ISSUE (design flaw)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave Management / US-LV (export) / TC-LV-240
+- **Title:** `LeaveReportService.ExportReport` calls `GenerateReportCoreAsync` with `PageSize = int.MaxValue` to obtain the full row count **before** the `rowCount > SyncExportRowThreshold(5000)` routing that decides sync-vs-Hangfire (svc ~line 180 vs ~line 189). So any report large enough to warrant the background path must first be fully generated inline — which for the only >5,000-row report (BalanceSummary) is exactly the request that hangs (see BUG-124). The 202/queue logic and `LeaveReportExportJob` wiring exist but can never be exercised live for an oversized report.
+- **Root cause (~95%, code-read):** ordering in `ExportReport` — count-via-full-generation precedes the threshold routing; the AC-5 background-export protection is defeated by its own pre-check.
+- **Reproduction steps:** `curl "http://localhost:5000/api/v1/leaves/reports/BalanceSummary/export?format=xlsx"` (perf tenant) → HTTP 000 @30s (never reaches the 202 queue path).
+- **Evidence:** `LeaveReportService.ExportReport` lines ~180 (full-count generation) vs ~189 (`rowCount > 5000` routing), read this run.
+- **Severity rationale:** MED — real design flaw that defeats AC-5's oversized-export protection, but contingent on the same underlying N+1 (BUG-124); fixing the N+1 still leaves the whole report built in-memory before routing, so both want addressing.
+
+### ISSUE-231 — Recruitment pipeline board hard-500s on an unmapped `ApplicationSource` enum value; a single bad row poisons the whole board query
+- **ID:** ISSUE-231
+- **Type:** ISSUE (robustness / defense-in-depth)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Recruitment / US-REC-003 / TC-REC-003-12
+- **Title:** `GET /recruitment/vacancies/{id}/pipeline` throws `System.InvalidOperationException: Cannot convert string value '<x>' from the database to any value in the mapped 'ApplicationSource' enum` (thrown in `Microsoft.EntityFrameworkCore.Query` during materialization) if ANY applicant row on the vacancy has a `source` string outside the mapped enum (`Public/Internal/Referral`, `HRM.Domain/Enums/ApplicationSource.cs`). One unmapped row 500s the entire board for every user. (Surfaced by a test-seed that used `source='CareerSite'`; the write API validates the enum so it should not occur through normal use — hence LOW — but the read path has no graceful fallback for a bad-data row.)
+- **Root cause (~95%, Serilog):** EF enum value-conversion has no fallback/default for unknown strings; the projection iterates all applicants, so one bad row aborts the whole query.
+- **Reproduction steps:** insert an applicant with `source` not in the enum, then `GET /recruitment/vacancies/{id}/pipeline` → 500. (After correcting the seed to `Public`, the board returns 200 at P95 0.027s — see TC-REC-003-12 pass.)
+- **Evidence:** Serilog RequestId `0HNMN7ROLJC9E` — `InvalidOperationException … 'CareerSite' … 'ApplicationSource'`.
+- **Severity rationale:** LOW — data-contingent (write path validates the enum, so normal use won't produce it), but a defense-in-depth gap: the board should not be fully unavailable because of one malformed row.
+
+### ENH-024 — Disabled "Send payslips" button gives screen-reader users no reason (no `aria-describedby` to the disabling hint)
+- **ID:** ENH-024
+- **Type:** ENH (accessibility improvement)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** FE
+- **Module / US / TC:** Payroll / US-PAY-011 / TC-PAY-011-12
+- **Title:** On the payslip distribution card, the "Send payslips" button correctly exposes `disabled` + `aria-disabled=true` (good), but its disabling-reason hint ("Generate payslip PDFs before sending them by email.") is not linked via `aria-describedby`, so an AT user tabbing to the dimmed button hears no reason. Suggested direction: wire the hint via `aria-describedby` on the button.
+- **Evidence:** acme run-detail distribution card, axe pass 2026-07-02 (button dimmed, hint present as adjacent text, not programmatically associated).
+- **Severity rationale:** LOW — non-blocking a11y nicety; the button state itself is correctly conveyed.

@@ -5,7 +5,7 @@ module: Leave Management
 priority: critical
 type: performance
 status: blocked
-exec_note: "2026-07-01 KEEP-BLOCKED: true scale/p95 arm — needs S2 5k-employee seed in a throwaway tenant + k6 load run (job-based ones also need the global-job barrier lifted). Not runnable in this breadth pass."
+exec_note: "2026-07-02 KEEP-BLOCKED (perf tenant, 5000 emp seeded): ProcessLeaveYearEndJob is a recurring Hangfire job (cron '0 2 1 1 *', id 'leave-year-end-carry-forward', Program.cs:474). No admin-facing HTTP trigger endpoint (Swagger has none). The job loops ALL active/trial tenants (job body iterates every tenant, sets context per-tenant), so a dashboard 'Trigger now' would write carry_forward/expired ledger entries to acme/techoneglobal/all tenants — violates the perf-tenant-only write rule. Cannot scope to perf → keep-blocked. SLA (5000 emp <=5min) unmeasured."
 created: 2026-06-14
 ---
 

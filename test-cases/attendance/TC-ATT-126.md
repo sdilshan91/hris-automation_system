@@ -4,8 +4,8 @@ user_story: US-ATT-009
 module: Attendance
 priority: high
 type: performance
-status: blocked
-exec_note: "S2 2026-07-01: BLOCKED — 5,000-emp acme scale dataset not accessible (perf tenant login failed, not code-seeded). payroll-data/reconciliation/lock SLAs not measurable this pass."
+status: fail
+exec_note: "2026-07-02 FAIL (NFR-1): perf tenant 5000 emp. GET /attendance/payroll-data?month=2026-06 — P95 28.4s, min 11.2s, p50 12.7s over 6 reqs (2 warmup discarded) — GROSSLY EXCEEDS the <=5s SLA (5.7x over at P95; even best case 2.2x over). Returns all 5000 rows correctly but far too slow. NFR-5 reconciliation (GET /attendance/reconciliation?month=2026-06) PASSES: P95 0.210s over 25 reqs << 3s. Lock atomicity (NFR-2/4) not exercised this pass. TC verdict = FAIL on the headline NFR-1 payroll-data SLA. See finding BUG (payroll-data non-cached full-scan at scale). Method: curl P95 loop."
 created: 2026-06-15
 ---
 
