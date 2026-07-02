@@ -267,9 +267,16 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 
 ### Phase D — localized cleanup
 - [~] Auth: **P2-9 BUG-041 ✅ + P2-10 BUG-042 ✅** (fix/phase-d-auth, PR #122, mutation-proven). **P2-11 BUG-043 DEFERRED** — refresh-token reuse-revocation scoping is a security-sensitive redesign of the rotation model (needs chain-parent tracking / revocation_reason); do as a focused pass.
-- [ ] Admin: P2-12 BUG-001, P2-13 BUG-004, P2-14 BUG-007, P2-15 BUG-008/ISSUE-227 (override>plan>snapshot), P2-16 BUG-106, P2-17 BUG-107.
-- [ ] Payroll: P2-18 BUG-072, P2-19 BUG-073.
-- [ ] Core HR: P2-20 BUG-119, P2-21 ISSUE-223 (Archived + exclude Terminated).
+- [~] Admin (PR #125): **P2-14 BUG-007 ✅ + P2-17 BUG-107 ✅** (mutation-proven). **Deferred:** P2-12 BUG-001 + P2-16 BUG-106 (runtime role-claim detection — need live repro), P2-15 BUG-008/ISSUE-227 (needs SubscriptionPlan-field + override-key mapping), P2-13 BUG-004 (tenant password-policy model).
+- [~] Payroll (PR #123): **P2-18 BUG-072 ✅**. **Deferred:** P2-19 BUG-073 (no concurrency token exists — finding hypothesis disproven; needs live repro).
+- [x] Core HR (PR #124): **P2-20 BUG-119 ✅ + P2-21 ISSUE-223 ✅** (Archived + exclude Terminated).
+
+### Deferred backlog (need live reproduction or deeper design — NOT rushed)
+- **BUG-043** (Auth) — refresh-token reuse-revocation scoping; token-rotation-model redesign.
+- **BUG-073** (Payroll) — update-500; StatutoryRule has NO concurrency token, so the finding's RowVersion hypothesis is wrong — reproduce on Postgres to find the real cause.
+- **BUG-001 + BUG-106** (Admin) — "role not detected at runtime" (Tenant Admin / SystemSupport); logic reads correct statically → claim-population bug, needs live repro.
+- **BUG-008 / ISSUE-227** (Admin) — wire PlanLimitResolver (override>plan>snapshot); map SubscriptionPlan field + override key.
+- **BUG-004** (Admin) — enforce tenant PasswordPolicy on reset.
 
 ### Close-out (per fix, via `/verify-fix` — automates the two manual steps below)
 - [ ] Run `/verify-fix {ID}` after each merge → re-runs affected TCs, flips `TEST-STATUS.md` (`[b]`→`[x]`/`[!]`), marks the finding RESOLVED in `TEST-FINDINGS.md` with PR#.
