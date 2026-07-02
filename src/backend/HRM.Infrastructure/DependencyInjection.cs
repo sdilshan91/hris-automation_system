@@ -184,8 +184,9 @@ public static class DependencyInjection
         // lands (mirrors how IHolidayProvider was a NoOp until US-LV-007 swapped in the real impl).
         services.AddScoped<IAttendanceProvider, NoOpAttendanceProvider>();
 
-        // Leave notification seam — log-only until the notification service exists (FR-6).
-        services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();
+        // ISSUE-188: real leave notification producer — persists + real-time-pushes via
+        // INotificationService (US-NTF-001) for requested/approved/rejected/cancelled/LOP events.
+        services.AddScoped<ILeaveNotificationService, LeaveNotificationService>();
 
         // US-REC-001: Recruitment — vacancy lifecycle + anonymous public careers page.
         services.AddScoped<IVacancyService, VacancyService>();
