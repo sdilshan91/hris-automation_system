@@ -163,6 +163,26 @@ public sealed class EmployeeServiceTests : IDisposable
         };
     }
 
+    private Employee SeedEmployeeEntity(string employeeNo, string email, Guid deptId, Guid jtId, Guid? tenantId = null)
+    {
+        return new Employee
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId ?? _tenantId,
+            EmployeeNo = employeeNo,
+            FirstName = "Seed",
+            LastName = "User",
+            Email = email,
+            DateOfJoining = DateTime.UtcNow.Date,
+            DepartmentId = deptId,
+            JobTitleId = jtId,
+            EmploymentType = EmploymentType.FullTime,
+            Status = EmployeeStatus.Active,
+            IsActive = true,
+            IsDeleted = false,
+        };
+    }
+
     // ── AC-2: Create employee (happy path) ─────────────────────────
 
     [Fact]
@@ -352,6 +372,34 @@ public sealed class EmployeeServiceTests : IDisposable
 
         // Each tenant has its own sequence
         r2.Value!.EmployeeNo.Should().Be("EMP-0001");
+    }
+
+    // ── BR-1 / BUG-093: non-numeric employee_no must not collide seq 1 ──
+
+    [Fact]
+    public async Task Create_WithNonNumericEmployeeNoPresent_ShouldNotCollideOnSeqOne()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+
+        // Seed a canonical EMP-0001 plus a non-numeric EMP-MGR01 that sorts highest
+        // lexicographically and fails numeric parsing — the exact BUG-093 trigger.
+        using (var db = CreateDbContext())
+        {
+            db.Employees.Add(SeedEmployeeEntity("EMP-0001", "seed1@test.com", deptId, jtId));
+            db.Employees.Add(SeedEmployeeEntity("EMP-MGR01", "mgr@test.com", deptId, jtId));
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+        var result = await service.CreateAsync(MakeRequest(deptId, jtId, "new@test.com"));
+
+        // Pre-fix: EMP-MGR01 sorted highest, parse-failed, fell back to seq 1 and
+        // returned the duplicate "EMP-0001" (Postgres 23505). Post-fix: parse the
+        // numeric suffix in memory → max is 1 → next is EMP-0002.
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.EmployeeNo.Should().Be("EMP-0002");
     }
 
     // ── AC-5 / FR-5: Plan limit enforcement ────────────────────────

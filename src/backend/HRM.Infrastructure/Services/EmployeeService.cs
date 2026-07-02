@@ -769,22 +769,25 @@ public sealed class EmployeeService : IEmployeeService
     /// </summary>
     private async Task<string> GenerateEmployeeNoAsync(CancellationToken cancellationToken)
     {
-        // Get the maximum existing employee number for this tenant
-        // IgnoreQueryFilters so we count even soft-deleted employees to avoid reuse
-        var maxNo = await _dbContext.Employees
+        // Pull every employee number for this tenant (incl. soft-deleted, to avoid reuse).
+        // IgnoreQueryFilters so the tenant filter / soft-delete don't hide existing numbers.
+        var employeeNos = await _dbContext.Employees
             .IgnoreQueryFilters()
             .Where(e => e.TenantId == _tenantContext.TenantId)
-            .OrderByDescending(e => e.EmployeeNo)
             .Select(e => e.EmployeeNo)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
 
-        int nextSeq = 1;
-        if (maxNo is not null && maxNo.StartsWith("EMP-") && int.TryParse(maxNo[4..], out var currentSeq))
-        {
-            nextSeq = currentSeq + 1;
-        }
+        // BUG-093: compute the max sequence by parsing the numeric suffix of the canonical
+        // "EMP-####" form IN MEMORY — never via a DB lexicographic OrderByDescending. A
+        // non-conforming number (e.g. "EMP-MGR01") would otherwise sort highest, fail to parse,
+        // fall back to seq 1, and collide with the existing "EMP-0001" (Postgres 23505).
+        var maxSeq = employeeNos
+            .Where(no => no is not null && no.StartsWith("EMP-") && int.TryParse(no[4..], out _))
+            .Select(no => int.Parse(no![4..]))
+            .DefaultIfEmpty(0)
+            .Max();
 
-        return $"EMP-{nextSeq:D4}";
+        return $"EMP-{maxSeq + 1:D4}";
     }
 
     /// <summary>
