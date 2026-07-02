@@ -271,12 +271,12 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 - [~] Payroll (PR #123): **P2-18 BUG-072 ✅**. **Deferred:** P2-19 BUG-073 (no concurrency token exists — finding hypothesis disproven; needs live repro).
 - [x] Core HR (PR #124): **P2-20 BUG-119 ✅ + P2-21 ISSUE-223 ✅** (Archived + exclude Terminated).
 
-### Deferred backlog (need live reproduction or deeper design — NOT rushed)
-- **BUG-043** (Auth) — refresh-token reuse-revocation scoping; token-rotation-model redesign.
-- **BUG-073** (Payroll) — update-500; StatutoryRule has NO concurrency token, so the finding's RowVersion hypothesis is wrong — reproduce on Postgres to find the real cause.
-- **BUG-001 + BUG-106** (Admin) — "role not detected at runtime" (Tenant Admin / SystemSupport); logic reads correct statically → claim-population bug, needs live repro.
-- **BUG-008 / ISSUE-227** (Admin) — wire PlanLimitResolver (override>plan>snapshot); map SubscriptionPlan field + override key.
-- **BUG-004** (Admin) — enforce tenant PasswordPolicy on reset.
+### Deferred backlog — 4 of 6 now CLEARED
+- [x] **BUG-043** (Auth) — reuse revocation scoped to the compromised lineage (ReplacedByTokenId chain). **PR #129**, mutation-proven.
+- [x] **BUG-073** (Payroll) — root-caused via Postgres repro: rebuilt child slabs assigned to a tracked parent were tracked as MODIFIED (`UPDATE ... WHERE id=<new id>` → 0 rows). Fixed with explicit AddRange. **PR #128** (RowVersion hypothesis disproven).
+- [x] **BUG-008 / ISSUE-227** (Admin) — PlanLimitResolver wired (override>plan>snapshot) for employee + workflow caps. **PR #126**.
+- [x] **BUG-004** (Admin) — tenant PasswordPolicy enforced on reset via the existing validator. **PR #127**.
+- [ ] **BUG-001 + BUG-106** (Admin) — STILL DEFERRED. Both are "role not detected at runtime" (System Support read-only gate / Tenant Admin suspended access). Verified statically: the role NAME matches (both use `PermissionCatalog.SystemRoles.SystemSupport` = "System Support"; seeded via the same constant) and the `roles` claim mint↔read path is consistent — so the cause is **runtime claim/data resolution** (whether the operator's token actually carries the role). Needs an **HTTP-level repro** (ApiTestFactory + a seeded System Support persona + the impersonation/suspended flow) to pin the real cause before fixing. A blind change would likely be wrong.
 
 ### Close-out (per fix, via `/verify-fix` — automates the two manual steps below)
 - [ ] Run `/verify-fix {ID}` after each merge → re-runs affected TCs, flips `TEST-STATUS.md` (`[b]`→`[x]`/`[!]`), marks the finding RESOLVED in `TEST-FINDINGS.md` with PR#.
