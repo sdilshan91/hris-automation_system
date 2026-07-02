@@ -134,133 +134,142 @@ public sealed class ApplicantConversionService : IApplicantConversionService
         if (!_tenantContext.IsResolved)
             return Result<ConversionResultDto>.Failure("Tenant context is not resolved.", 400);
 
-        var applicant = await _dbContext.Applicants
-            .FirstOrDefaultAsync(a => a.Id == input.ApplicantId, cancellationToken);
-        if (applicant is null)
-            return Result<ConversionResultDto>.Failure("Applicant not found.", 404, "applicant_not_found");
-
-        // FR-10/BR-2: duplicate-conversion prevention.
-        if (applicant.ConvertedToEmployeeId is not null)
-            return Result<ConversionResultDto>.Failure(
-                "This applicant has already been converted to an employee.", 409, "already_converted");
-
-        // FR-1: preconditions — Hired stage + an Accepted offer.
-        var eligibility = await CheckEligibilityAsync(applicant, cancellationToken);
-        if (eligibility.IsFailure)
-            return Result<ConversionResultDto>.Failure(eligibility.Error!, eligibility.StatusCode ?? 409, eligibility.ErrorCode);
-
-        // NFR-3: atomic. Guard BeginTransaction behind a relational provider (InMemory has no transactions).
-        var useTransaction = _dbContext.Database.IsRelational();
-        await using var transaction = useTransaction
-            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
-            : null;
-
-        try
+        // BUG-068: a user-initiated BeginTransactionAsync throws under Npgsql's retrying execution
+        // strategy ("does not support user-initiated transactions") — the whole atomic unit (NFR-3)
+        // must run *inside* the execution strategy delegate so it is retried as a single retriable
+        // unit. Reads live inside the delegate too, so a transient retry re-reads from the DB rather
+        // than re-using the state from the rolled-back attempt.
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            // Reuse the Core HR create path: email uniqueness (BR-2 employee), dept/job-title validation,
-            // subscription-plan limit (BR-3), and auto employee-number (FR-4). DateOfJoining defaults to the
-            // offer start date (BR-4) but is supplied by the caller (overridable on the form).
-            var createResult = await _employeeService.CreateAsync(new CreateEmployeeRequest
-            {
-                FirstName = applicant.FirstName,
-                LastName = applicant.LastName,
-                Email = applicant.Email,
-                Phone = applicant.Phone,
-                DateOfBirth = input.DateOfBirth,
-                Gender = input.Gender,
-                DateOfJoining = input.DateOfJoining,
-                DepartmentId = input.DepartmentId,
-                JobTitleId = input.JobTitleId,
-                EmploymentType = input.EmploymentType,
-                Status = null, // Core HR defaults Active (probation handling is a separate Core HR concern).
-            }, cancellationToken);
+            var applicant = await _dbContext.Applicants
+                .FirstOrDefaultAsync(a => a.Id == input.ApplicantId, cancellationToken);
+            if (applicant is null)
+                return Result<ConversionResultDto>.Failure("Applicant not found.", 404, "applicant_not_found");
 
-            if (createResult.IsFailure)
+            // FR-10/BR-2: duplicate-conversion prevention.
+            if (applicant.ConvertedToEmployeeId is not null)
+                return Result<ConversionResultDto>.Failure(
+                    "This applicant has already been converted to an employee.", 409, "already_converted");
+
+            // FR-1: preconditions — Hired stage + an Accepted offer.
+            var eligibility = await CheckEligibilityAsync(applicant, cancellationToken);
+            if (eligibility.IsFailure)
+                return Result<ConversionResultDto>.Failure(eligibility.Error!, eligibility.StatusCode ?? 409, eligibility.ErrorCode);
+
+            // NFR-3: atomic. Guard BeginTransaction behind a relational provider (InMemory has no transactions).
+            var useTransaction = _dbContext.Database.IsRelational();
+            await using var transaction = useTransaction
+                ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+
+            try
+            {
+                // Reuse the Core HR create path: email uniqueness (BR-2 employee), dept/job-title validation,
+                // subscription-plan limit (BR-3), and auto employee-number (FR-4). DateOfJoining defaults to the
+                // offer start date (BR-4) but is supplied by the caller (overridable on the form).
+                var createResult = await _employeeService.CreateAsync(new CreateEmployeeRequest
+                {
+                    FirstName = applicant.FirstName,
+                    LastName = applicant.LastName,
+                    Email = applicant.Email,
+                    Phone = applicant.Phone,
+                    DateOfBirth = input.DateOfBirth,
+                    Gender = input.Gender,
+                    DateOfJoining = input.DateOfJoining,
+                    DepartmentId = input.DepartmentId,
+                    JobTitleId = input.JobTitleId,
+                    EmploymentType = input.EmploymentType,
+                    Status = null, // Core HR defaults Active (probation handling is a separate Core HR concern).
+                }, cancellationToken);
+
+                if (createResult.IsFailure)
+                {
+                    if (transaction is not null)
+                        await transaction.RollbackAsync(cancellationToken);
+                    // Surface the Core HR failure verbatim (e.g. duplicate email 400, plan limit 403/BR-3).
+                    return Result<ConversionResultDto>.Failure(
+                        createResult.Error!, createResult.StatusCode ?? 400, createResult.ErrorCode);
+                }
+
+                var employeeId = createResult.Value!.Id;
+
+                // Apply the Core HR fields the create request doesn't carry: manual employee-number override
+                // (FR-4), the structured LocationId FK, and the reporting manager. Tracked fetch (no AsNoTracking).
+                var employee = await _dbContext.Employees.FirstAsync(e => e.Id == employeeId, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(input.EmployeeNo))
+                    employee.EmployeeNo = input.EmployeeNo.Trim();
+                employee.LocationId = input.LocationId;
+                employee.ReportsToEmployeeId = input.ReportsToEmployeeId;
+
+                // FR-6: link the applicant to the new employee record (one-way, BR-6 — applicant not deleted).
+                applicant.ConvertedToEmployeeId = employeeId;
+                applicant.ConvertedAt = DateTime.UtcNow;
+                applicant.ConvertedByUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null;
+
+                // FR-7/BR-5: increment the vacancy filled-count; auto-close when fully filled.
+                var vacancyClosed = false;
+                var filledCount = 0;
+                var headcount = 0;
+                var vacancy = await _dbContext.Vacancies.FirstOrDefaultAsync(v => v.Id == applicant.VacancyId, cancellationToken);
+                if (vacancy is not null)
+                {
+                    vacancy.FilledCount += 1;
+                    filledCount = vacancy.FilledCount;
+                    headcount = vacancy.Headcount;
+                    if (vacancy.FilledCount >= vacancy.Headcount &&
+                        vacancy.Status is VacancyStatus.Open or VacancyStatus.OnHold)
+                    {
+                        vacancy.Status = VacancyStatus.Closed;
+                        vacancy.ClosedAt = DateTime.UtcNow;
+                        vacancyClosed = true;
+                    }
+                }
+
+                // Audit trail for the conversion (security-relevant org change).
+                _dbContext.AuditLogs.Add(new AuditLog
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+                    EventType = "recruitment.applicant.converted",
+                    Detail = $"Applicant {applicant.ApplicationReferenceNumber} converted to employee {employee.EmployeeNo} ({employeeId}).",
+                });
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                if (transaction is not null)
+                    await transaction.CommitAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Applicant converted to employee. ApplicantId={ApplicantId}, EmployeeId={EmployeeId}, " +
+                    "EmployeeNo={EmployeeNo}, VacancyId={VacancyId}, FilledCount={FilledCount}/{Headcount}, " +
+                    "VacancyClosed={VacancyClosed}, TenantId={TenantId}, By={User}",
+                    applicant.Id, employeeId, employee.EmployeeNo, applicant.VacancyId, filledCount, headcount,
+                    vacancyClosed, _tenantContext.TenantId, _currentUser.Email);
+
+                // FR-7/BR-5 + FR-8/FR-9: log-only seams (no real email/onboarding module yet — deferred).
+                await PostConversionNotificationsSafeAsync(applicant, employeeId, vacancyClosed, cancellationToken);
+
+                return Result<ConversionResultDto>.Success(new ConversionResultDto
+                {
+                    EmployeeId = employeeId,
+                    EmployeeNo = employee.EmployeeNo,
+                    ApplicantId = applicant.Id,
+                    VacancyId = applicant.VacancyId,
+                    VacancyFilledCount = filledCount,
+                    VacancyHeadcount = headcount,
+                    VacancyClosed = vacancyClosed,
+                    UserAccountCreated = false, // FR-5 deferred — no tenant auto-create setting yet.
+                });
+            }
+            catch
             {
                 if (transaction is not null)
                     await transaction.RollbackAsync(cancellationToken);
-                // Surface the Core HR failure verbatim (e.g. duplicate email 400, plan limit 403/BR-3).
-                return Result<ConversionResultDto>.Failure(
-                    createResult.Error!, createResult.StatusCode ?? 400, createResult.ErrorCode);
+                throw;
             }
-
-            var employeeId = createResult.Value!.Id;
-
-            // Apply the Core HR fields the create request doesn't carry: manual employee-number override
-            // (FR-4), the structured LocationId FK, and the reporting manager. Tracked fetch (no AsNoTracking).
-            var employee = await _dbContext.Employees.FirstAsync(e => e.Id == employeeId, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(input.EmployeeNo))
-                employee.EmployeeNo = input.EmployeeNo.Trim();
-            employee.LocationId = input.LocationId;
-            employee.ReportsToEmployeeId = input.ReportsToEmployeeId;
-
-            // FR-6: link the applicant to the new employee record (one-way, BR-6 — applicant not deleted).
-            applicant.ConvertedToEmployeeId = employeeId;
-            applicant.ConvertedAt = DateTime.UtcNow;
-            applicant.ConvertedByUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null;
-
-            // FR-7/BR-5: increment the vacancy filled-count; auto-close when fully filled.
-            var vacancyClosed = false;
-            var filledCount = 0;
-            var headcount = 0;
-            var vacancy = await _dbContext.Vacancies.FirstOrDefaultAsync(v => v.Id == applicant.VacancyId, cancellationToken);
-            if (vacancy is not null)
-            {
-                vacancy.FilledCount += 1;
-                filledCount = vacancy.FilledCount;
-                headcount = vacancy.Headcount;
-                if (vacancy.FilledCount >= vacancy.Headcount &&
-                    vacancy.Status is VacancyStatus.Open or VacancyStatus.OnHold)
-                {
-                    vacancy.Status = VacancyStatus.Closed;
-                    vacancy.ClosedAt = DateTime.UtcNow;
-                    vacancyClosed = true;
-                }
-            }
-
-            // Audit trail for the conversion (security-relevant org change).
-            _dbContext.AuditLogs.Add(new AuditLog
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = _tenantContext.TenantId,
-                UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
-                EventType = "recruitment.applicant.converted",
-                Detail = $"Applicant {applicant.ApplicationReferenceNumber} converted to employee {employee.EmployeeNo} ({employeeId}).",
-            });
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
-
-            _logger.LogInformation(
-                "Applicant converted to employee. ApplicantId={ApplicantId}, EmployeeId={EmployeeId}, " +
-                "EmployeeNo={EmployeeNo}, VacancyId={VacancyId}, FilledCount={FilledCount}/{Headcount}, " +
-                "VacancyClosed={VacancyClosed}, TenantId={TenantId}, By={User}",
-                applicant.Id, employeeId, employee.EmployeeNo, applicant.VacancyId, filledCount, headcount,
-                vacancyClosed, _tenantContext.TenantId, _currentUser.Email);
-
-            // FR-7/BR-5 + FR-8/FR-9: log-only seams (no real email/onboarding module yet — deferred).
-            await PostConversionNotificationsSafeAsync(applicant, employeeId, vacancyClosed, cancellationToken);
-
-            return Result<ConversionResultDto>.Success(new ConversionResultDto
-            {
-                EmployeeId = employeeId,
-                EmployeeNo = employee.EmployeeNo,
-                ApplicantId = applicant.Id,
-                VacancyId = applicant.VacancyId,
-                VacancyFilledCount = filledCount,
-                VacancyHeadcount = headcount,
-                VacancyClosed = vacancyClosed,
-                UserAccountCreated = false, // FR-5 deferred — no tenant auto-create setting yet.
-            });
-        }
-        catch
-        {
-            if (transaction is not null)
-                await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        });
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
