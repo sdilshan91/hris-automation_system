@@ -132,6 +132,31 @@ public sealed class PermissionCatalogTests
         perms.Should().Contain(PermissionCatalog.Audit.Export);
     }
 
+    // ── BUG-036: Leave.ManageLop must be granted to the HR-administrative roles, not just ──
+    // ── TenantOwner (via AllPermissions). Otherwise the entire LOP surface is unreachable. ──
+
+    [Theory]
+    [InlineData("Tenant Admin")]
+    [InlineData("HR Manager")]
+    [InlineData("HR Officer")]
+    public void DefaultPermissionsFor_HrAdminRoles_HaveLeaveManageLop(string roleName)
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(roleName);
+
+        perms.Should().Contain(PermissionCatalog.Leave.ManageLop,
+            $"role '{roleName}' manages Leave and must be able to manage LOP (BUG-036)");
+    }
+
+    [Theory]
+    [InlineData("Manager")]
+    [InlineData("Employee")]
+    public void DefaultPermissionsFor_NonHrRoles_DoNotHaveLeaveManageLop(string roleName)
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(roleName);
+
+        perms.Should().NotContain(PermissionCatalog.Leave.ManageLop);
+    }
+
     [Fact]
     public void DefaultPermissionsFor_AllBuiltInRoles_ShouldContainOnlyValidPermissions()
     {
