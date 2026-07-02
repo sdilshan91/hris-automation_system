@@ -225,6 +225,15 @@ public sealed class AuthController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> SwitchTenant([FromBody] SwitchTenantRequest request, CancellationToken cancellationToken)
     {
+        // BUG-042 (BR-4): a tenant switch mid-impersonation would mint a fresh, non-impersonation token
+        // and escape the (audited, time-boxed) impersonation session. Block it.
+        if (_currentUser.IsImpersonating)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail(
+                "Tenant switching is not allowed during an impersonation session.",
+                "switch_forbidden_during_impersonation"));
+        }
+
         var command = new SwitchTenantCommand(
             _currentUser.UserId,
             _currentUser.TenantId,
