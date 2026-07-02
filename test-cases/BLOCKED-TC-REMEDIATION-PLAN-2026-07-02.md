@@ -40,7 +40,7 @@ blast radius + severity, and sequenced into phases with dependencies.
 | # | Finding(s) | Sev | Area | File / locus | Code change | TCs cleared (approx) | Status |
 |---|---|---|---|---|---|---|---|
 | P0-1 | **BUG-003** + BUG-069, ISSUE-193, ISSUE-189/190/191 | CRIT | Cross-cutting (Reports, Notif, Perf, Payroll, Leave, Admin, CHR) | `TenantResolutionMiddleware.cs:56-146` | After auth, assert `_currentUser.TenantId == _tenantContext.TenantId`; reject 403 on mismatch. **Keep** the `X-Tenant-Subdomain` dev fallback (pre-auth); only add the post-auth invariant. | ~30–40 (all ISO arms + report/dashboard leaks) | `TODO` |
-| P0-2 | **BUG-093** | HIGH | Core HR | `EmployeeService.cs:770-788` | Employee-no generator sorts lexicographically → parse-fail collides `EMP-0001` → 500. Extract numeric suffix, sort numerically (or move to a DB sequence). | TC-CHR-065/066/080/010 + downstream (anything needing a seeded employee) | `TODO` |
+| P0-2 | **BUG-093** | HIGH | Core HR | `EmployeeService.cs:770-788` | Employee-no generator sorts lexicographically → parse-fail collides `EMP-0001` → 500. Extract numeric suffix, sort numerically (or move to a DB sequence). | TC-CHR-065/066/080/010 + downstream (anything needing a seeded employee) | `WIP` — fix + regression TC written, mutation-proven, local `dotnet test` green 29/29 (2026-07-02). PR not opened; `/verify-fix` pending live stack. |
 | P0-3 | **BUG-040** | CRIT | Auth | `AuthService.cs:439-522` | Reset-token flow is a stub accepting any non-empty token (account takeover). Implement hashed, single-use, expiring token. | TC-AUTH-011/012 | `TODO` |
 
 **Rationale:** P0-1 is the systemic BUG-003 hole behind nearly every module's isolation failure. P0-2 blocks
@@ -181,7 +181,7 @@ track §6, not US edits.)*
 - [x] `/verify-fix` skill (close-out: re-run affected TCs + flip TEST-STATUS + mark RESOLVED) — `.claude/skills/verify-fix.md`.
 - [x] TC-scoped + ISO-suite re-run options on `@test-runner` (report-only preserved).
 - [x] Registered in CLAUDE.md.
-- [ ] Smoke-test the pair on one low-risk fix (P0-2 BUG-093) — needs running stack.
+- [x] Smoke-test the pair on one low-risk fix (P0-2 BUG-093) — fix + regression TC written, mutation-proven, `dotnet test` green 29/29 (2026-07-02). `/fix-finding` code+verify flow validated; `/verify-fix` (live TC re-run) still needs the stack.
 
 ### Phase A — Unblock the test rig (low-risk, high enablement)
 - P0-2 (BUG-093 employee-create) — lets other modules seed employees.
@@ -252,7 +252,7 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 - [ ] After fix: existing blocked/failed TCs flip via `/verify-fix` (no content edit); new regression TC committed with the fix PR.
 
 ### Phase A — rig enablement
-- [ ] P0-2 BUG-093 employee-no numeric sort → `/implement-story` → merge → re-run TC-CHR-065/066/080/010.
+- [~] P0-2 BUG-093 employee-no numeric sort → **fix + regression TC done, local test green 29/29, mutation-proven (2026-07-02)**. Pending: PR + merge + `/verify-fix` (needs stack).
 - [ ] P1-4 BUG-037/086 leave enum backfill + parse-harden → merge → re-run US-LV-006/010/012, US-RPT-002.
 - [ ] P1-5 BUG-068(REC) convert ExecutionStrategy → merge → re-run US-REC-010.
 - [ ] P1-6 BUG-036 grant Leave.ManageLop → merge → re-run US-LV-011 surface.
