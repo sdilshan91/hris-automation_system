@@ -88,12 +88,79 @@ features from remediation-plan §6) is outstanding, and that is env work, not fi
 
 ---
 
-## 4. Close-out checklist (per finding, done by `/verify-fix`)
-- [ ] Merge PRs #114–129.
-- [ ] Bring the stack up (§0); reseed personas.
-- [ ] `/verify-fix BUG-003 --iso` (gateway) — full cross-module ISO re-run.
-- [ ] Run the rest of the §1 matrix (`/verify-fix {ID}` each).
-- [ ] Each green fix → `TEST-STATUS.md` flips `[b]`/`[!]`→`[x]`/`[!]`; finding → `RESOLVED` w/ PR#.
-- [ ] Any red re-run → leave `OPEN`, append re-test evidence, open a fresh `/fix-finding`.
-- [ ] Reproduce + fix + verify **BUG-001** and **BUG-106** (§3).
-- [ ] Re-run the non-code track (env/persona/perf-harness) from the remediation plan §6.
+## 4. Verification execution — phased TODOs
+
+Run top-to-bottom. Each `/verify-fix` re-runs the finding's TCs, flips `TEST-STATUS.md`, and (on green)
+marks the finding `RESOLVED` with its PR#. **Report-only:** never edit `src/` here; a red re-run stays
+`OPEN` and spawns a fresh `/fix-finding`.
+
+### Phase V0 — Prerequisites (do first; blocks everything)
+- [ ] Merge **PR #130** (BUG-001/106). PRs #114–129 already merged.
+- [ ] Start **PostgreSQL** (PG18 `developer/hris_dev_db`, secret in user-secrets) + **Docker**.
+- [ ] `dotnet run --project src/backend/HRM.Api` → confirm `:5000` + `/swagger`. *(No builds while it runs — DLL lock.)*
+- [ ] `npm start` in `src/frontend` → confirm `:4200`.
+- [ ] Reseed QA personas (memory: `qa-personas-reseed`); confirm `acme` tenant + tenantadmin/hr/manager/employee personas.
+- [ ] Sanity: `curl -s localhost:5000/health` OK; login as `admin@hrm.local` / `Admin@123!` returns a token.
+
+### Phase V1 — Gateway (MUST be first substantive verify)
+- [ ] `/verify-fix BUG-003 --iso` — full cross-module ISO re-run. Expect ISO arms to flip from "leak observed" → **403 on JWT≠subdomain**. A red here reopens the systemic leak — STOP and re-fix before continuing.
+
+### Phase V2 — Rig-enablement (verify before the TCs that depend on them)
+- [ ] `/verify-fix BUG-093` — employee create (unblocks anything needing seeded employees).
+- [ ] `/verify-fix BUG-037` — 2026 leave balance + reports materialize.
+- [ ] `/verify-fix BUG-068` — REC-010 convert (needs Docker/PG).
+- [ ] `/verify-fix BUG-036` — Leave.ManageLop surface reachable.
+- [ ] `/verify-fix BUG-121` — stop Redis, confirm `/auth/me` + `/my-tenants` still 200 (fail-soft).
+
+### Phase V3 — Per-module (batch; any order after V2)
+- [ ] **Auth:** `/verify-fix BUG-040` · `BUG-041` · `BUG-042` · `BUG-043` · `BUG-004`.
+- [ ] **Admin:** `/verify-fix BUG-007` · `BUG-107` · `BUG-008` · `BUG-001`.
+- [ ] **Core HR:** `/verify-fix BUG-119` · `ISSUE-223`.
+- [ ] **Payroll:** `/verify-fix BUG-072` · `BUG-073` *(PG)*.
+- [ ] **Notifications:** `/verify-fix ISSUE-188`.
+- [ ] **BUG-106 (special):** its dedicated HTTP test was removed (login-gate entanglement). Verify by hand:
+      suspend a tenant, log in as its Tenant Admin, confirm a tenant GET is **not 451** (TC-ADM-004). Then mark RESOLVED.
+
+### Phase V4 — Close-out (as each fix goes green)
+- [ ] `TEST-STATUS.md`: flip `[b]`/`[!]` → `[x]` (clean) or `[!]` (residual findings) per module.
+- [ ] `TEST-FINDINGS.md`: each verified finding → `Status: RESOLVED` + PR#.
+- [ ] Any red re-run → leave `OPEN`, append re-test evidence, open `/fix-finding {ID}`.
+- [ ] Post a short verification summary (findings verified / residual / newly-opened).
+
+### Phase V5 — Non-code track (env, not fixes — after V1–V4)
+- [ ] Seed/persona: BUG-060 (HR Officer Payroll perms), BUG-101 (`PublicCareersEnabled`).
+- [ ] Infra: Redis, k6 harness, 5k/1k perf seeds, on-demand Hangfire triggers.
+- [ ] Deferred features (build, not fix): multi-level approval, fiscal-year balances, US-AUTH-012/016.
+
+---
+
+## 5. Verification status tracker
+
+Mark as you go: `TODO` · `PASS` · `FAIL(→/fix-finding)` · `BLOCKED(reason)`.
+
+| # | Finding | PR | Phase | Verify status |
+|---|---|---|---|---|
+| 1 | BUG-003 (+069/193/189-191) | #119 | V1 | `TODO` |
+| 2 | BUG-093 | #114 | V2 | `TODO` |
+| 3 | BUG-037/086 | #117 | V2 | `TODO` |
+| 4 | BUG-068 | #115 | V2 | `TODO` |
+| 5 | BUG-036 | #116 | V2 | `TODO` |
+| 6 | BUG-121 | #120 | V2 | `TODO` |
+| 7 | BUG-040 | #118 | V3 | `TODO` |
+| 8 | BUG-041 | #122 | V3 | `TODO` |
+| 9 | BUG-042 | #122 | V3 | `TODO` |
+| 10 | BUG-043 | #129 | V3 | `TODO` |
+| 11 | BUG-004 | #127 | V3 | `TODO` |
+| 12 | BUG-007 | #125 | V3 | `TODO` |
+| 13 | BUG-107 | #125 | V3 | `TODO` |
+| 14 | BUG-008/ISSUE-227 | #126 | V3 | `TODO` |
+| 15 | BUG-001 | #130 | V3 | `TODO` |
+| 16 | BUG-119 | #124 | V3 | `TODO` |
+| 17 | ISSUE-223 | #124 | V3 | `TODO` |
+| 18 | BUG-072 | #123 | V3 | `TODO` |
+| 19 | BUG-073 | #128 | V3 | `TODO` |
+| 20 | ISSUE-188 | #121 | V3 | `TODO` |
+| 21 | BUG-106 | #130 | V3 (manual) | `TODO` |
+
+**Exit criteria:** all 21 rows `PASS`; `TEST-STATUS.md` shows no `[b]` for these stories; every finding
+`RESOLVED` in `TEST-FINDINGS.md`; any `FAIL` has a tracked `/fix-finding` follow-up.
