@@ -164,6 +164,7 @@ public sealed class EmployeeService : IEmployeeService
         int pageSize = 20,
         bool? activeOnly = null,
         string? search = null,
+        bool includeTerminated = false,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -176,6 +177,11 @@ public sealed class EmployeeService : IEmployeeService
 
         if (activeOnly == true)
             query = query.Where(e => e.IsActive);
+
+        // ISSUE-223: Terminated employees are "archived" — excluded from the default directory. Callers
+        // opt in explicitly (includeTerminated) to see them, mirroring an archived/all view.
+        if (!includeTerminated)
+            query = query.Where(e => e.Status != EmployeeStatus.Terminated);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -348,6 +354,12 @@ public sealed class EmployeeService : IEmployeeService
 
         if (employee is null)
             return Result<EmployeeProfileDto>.Failure("Employee not found.", 404);
+
+        // BUG-119: a self-service caller (Employee.Edit.Own, without the HR-level Employee.Edit) may edit
+        // ONLY their own record — otherwise it is horizontal privilege escalation (edit anyone's contact/
+        // emergency data). HR-level editors (CallerRole.HrOfficer) are exempt.
+        if (callerRole == CallerRole.Employee && employee.UserId != _currentUser.UserId)
+            return Result<EmployeeProfileDto>.Failure("You can only edit your own profile.", 403);
 
         // Set the expected concurrency token for optimistic concurrency (FR-4, AC-3)
         _dbContext.Entry(employee).Property(e => e.RowVersion).OriginalValue = request.RowVersion;

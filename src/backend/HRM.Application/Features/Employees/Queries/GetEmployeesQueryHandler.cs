@@ -20,6 +20,6 @@ public sealed class GetEmployeesQueryHandler
     {
         return _employeeService.GetAllAsync(
             request.Page, request.PageSize, request.ActiveOnly, request.Search,
-            cancellationToken);
+            request.IncludeTerminated, cancellationToken);
     }
 }
