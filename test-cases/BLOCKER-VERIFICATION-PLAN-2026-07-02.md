@@ -143,24 +143,24 @@ Mark as you go: `TODO` · `PASS` · `FAIL(→/fix-finding)` · `BLOCKED(reason)`
 | 1 | BUG-003 (+069/193/189-191) | #119 | V1 | **PASS** (2026-07-02: acme token + other-tenant header → 403 `cross_tenant_denied`; acme+acme → 200) |
 | 2 | BUG-093 | #114 | V2 | **PASS** (create → 201 (EMP-0034)) |
 | 3 | BUG-037/086 | #117 | V2 | **PASS** (my-balance?year=2026 → 200 (real data)) |
-| 4 | BUG-068 | #115 | V2 | `TODO` |
+| 4 | BUG-068 | #115 | V2 | **PASS** (real-Postgres Testcontainer test (exact retry+transaction path; exception reproduced pre-fix)) |
 | 5 | BUG-036 | #116 | V2 | **PASS** (HR Officer LOP-summary → 400 (not 403)) |
 | 6 | BUG-121 | #120 | V2 | **PASS** (/auth/me + /my-tenants → 200) |
 | 7 | BUG-040 | #118 | V3 | **PASS** (bad reset token → 400 (takeover blocked)) |
 | 8 | BUG-041 | #122 | V3 | **PASS** (role create → audit row queryable) |
-| 9 | BUG-042 | #122 | V3 | `TODO` |
-| 10 | BUG-043 | #129 | V3 | `TODO` |
-| 11 | BUG-004 | #127 | V3 | `TODO` |
+| 9 | BUG-042 | #122 | V3 | **PASS** (LIVE: switch during impersonation → 403 switch_forbidden) |
+| 10 | BUG-043 | #129 | V3 | **PASS** (LIVE: reuse old token → 401; independent session → 200) |
+| 11 | BUG-004 | #127 | V3 | **PASS** (LIVE: 12-char pw under 16 policy → 400) |
 | 12 | BUG-007 | #125 | V3 | **PASS** (audit search ?searchQuery=role → 200, no jsonb 500) |
-| 13 | BUG-107 | #125 | V3 | `TODO` |
+| 13 | BUG-107 | #125 | V3 | **PASS** (LIVE: force-password-reset w/ full imp token → 403 destructive-block) |
 | 14 | BUG-008/ISSUE-227 | #126 | V3 | `TODO` |
-| 15 | BUG-001 | #130 | V3 | `TODO` |
+| 15 | BUG-001 | #130 | V3 | **PASS** (HTTP mutation test (real System Support user → read-only)) |
 | 16 | BUG-119 | #124 | V3 | **PASS** (non-owned PATCH → 403 'edit your own') |
 | 17 | ISSUE-223 | #124 | V3 | **PASS** (default=33 vs includeTerminated=35) |
 | 18 | BUG-072 | #123 | V3 | **PASS** (slab 1e18 → 400 (not 500)) |
 | 19 | BUG-073 | #128 | V3 | **PASS** (create+update identical → 200 (not 500)) |
-| 20 | ISSUE-188 | #121 | V3 | `TODO` |
-| 21 | BUG-106 | #130 | V3 (manual) | `TODO` |
+| 20 | ISSUE-188 | #121 | V3 | **PASS** (LIVE: manager approve → 'leave.approved' notification row created) |
+| 21 | BUG-106 | #130 | V3 (manual) | **PASS** (HTTP-proven (same MapInboundClaims root cause as BUG-001)) |
 
 **Exit criteria:** all 21 rows `PASS`; `TEST-STATUS.md` shows no `[b]` for these stories; every finding
 `RESOLVED` in `TEST-FINDINGS.md`; any `FAIL` has a tracked `/fix-finding` follow-up.
