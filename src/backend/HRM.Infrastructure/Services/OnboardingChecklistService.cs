@@ -693,13 +693,19 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 continue;
 
             // Idempotency (BR-4 "once per day"): skip if an overdue row for this task already exists today.
-            var alreadyNotifiedToday = await _dbContext.OnboardingNotificationOutbox
+            // BUG-126: Payload is a jsonb column — `string.Contains` on it is not translatable by Npgsql
+            // (`operator does not exist: jsonb ~~ jsonb`) and threw, failing this recurring job on every run.
+            // Match the task id IN MEMORY over the tiny per-instance/day candidate set instead.
+            var taskIdString = task.Id.ToString();
+            var candidatePayloads = await _dbContext.OnboardingNotificationOutbox
                 .IgnoreQueryFilters()
-                .AnyAsync(o => o.TenantId == tenantId
+                .Where(o => o.TenantId == tenantId
                     && o.ChecklistInstanceId == task.ChecklistInstanceId
                     && o.NotificationType == TaskOverdueNotificationType
-                    && o.CreatedAt >= today
-                    && o.Payload.Contains(task.Id.ToString()), cancellationToken);
+                    && o.CreatedAt >= today)
+                .Select(o => o.Payload)
+                .ToListAsync(cancellationToken);
+            var alreadyNotifiedToday = candidatePayloads.Any(p => p != null && p.Contains(taskIdString));
             if (alreadyNotifiedToday)
                 continue;
 
