@@ -28,7 +28,7 @@
 ## Findings
 
 ### BUG-001 — SystemSupport-initiated impersonation is NOT read-only (AC-6/BR-1 bypass; write gate never fires)
-- **Type / Severity / Status:** BUG · HIGH · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27)**: `support@hrm.local` (System Support) `POST /api/v1/system/impersonation` (body `{targetTenantId, targetUserId, reason}`) → 200, response `isReadOnly:false`; Serilog confirms `Impersonation session … started … (readOnly=false)` + the notify stub logs `read-only=false`. Write gate never fires regardless of target perms. Session ended after probe (cleanup). NOTE the start request shape evolved since the baseline pass: field is now `targetTenantId` (not `tenantId`) and the result token field is `token` (not `accessToken`).
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #130, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-003 · TC-ADM-003-04 (also weakens TC-ADM-003-11 step 2 intent)
 - **Title:** A `System Support` user who starts an impersonation session gets a FULL (non-read-only) session — `is_read_only=false`, `imp_readonly=false` — so the `ImpersonationReadOnlyBehavior` write gate is never triggered. AC-6/BR-1 require SystemSupport impersonation to be read-only **always**, regardless of tenant status.
@@ -190,7 +190,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-003 — Cross-tenant settings WRITE: any authenticated Tenant Admin can read AND mutate ANOTHER tenant's company settings (token `tenant_id` never validated against the resolved tenant) — AC-5 / Critical-Rule-#1 isolation bypass
-- **Type / Severity / Status:** BUG · CRIT · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27, READ-ONLY per the 2026-06-27 safety policy — no cross-tenant writes performed this run)**: acme `tenantadmin@acme.test` JWT (tenant_id=acme) + `X-Tenant-Subdomain: techoneglobal` GET leaks TechOne Global across every admin surface — `/tenant/settings` (returns orgProfile.name="TechOne Global"), `/tenant/audit-logs` (200, foreign forensic trail), `/tenant/workflows` (200), `/tenant/data-exports` (200), `/tenant/users` (200, returns foreign owner `sachithra@techoneglobal.org` — cross-tenant PII). acme-header control returns acme's own data. The missing token↔resolved-tenant invariant in `TenantResolutionMiddleware` (US-AUTH-007) is unchanged; the write half (proven in the 2026-06-24 pass) is unverified-this-run by policy but the same hole. Root locus and fix unchanged.
+- **Type / Severity / Status:** BUG · CRIT · RESOLVED (PR #119, verified 2026-07-02)
 - **REGRESSION RE-TEST 2026-06-27 (REPORT-ONLY; READ-ONLY probe only — no cross-tenant WRITE per 2026-06-27 safety policy): STILL PRESENT — unchanged at root locus US-AUTH-007 / TenantResolutionMiddleware.** As `tenantadmin@acme.test` (JWT `tenant_id=acme` `019ef3ba-…`) + header `X-Tenant-Subdomain: techoneglobal`: `GET /api/v1/tenant/users?pageSize=50` → **HTTP 200** returning techoneglobal's user `sachithra@techoneglobal.org` (count=1), NOT acme's 8 users; same token with correct `X-Tenant-Subdomain: acme` returns acme's own 8 users. Missing `CurrentUser.TenantId == ITenantContext.TenantId` invariant unchanged; PRs #110/#111/#112 neither fixed nor regressed it. Canonical TC-AUTH-054 remains FAIL.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-006 · TC-ADM-006-01 (step 6 cross-tenant) / TC-ADM-006-03 (multi-tenant isolation tag) — surfaced while executing the isolation arms
@@ -221,7 +221,7 @@
   - **US-AUTH-007 `TenantResolutionMiddleware` — ★ ROOT LOCUS of this bug ★ — CONFIRMED 2026-06-25 (cross-tenant READ of users on TWO independent victim tenants, plus a log-level smoking gun for the split-brain).** US-AUTH-007 is the user story that *owns* the tenant-resolution middleware where this defect lives; TC-AUTH-054 (the story's "resolved tenant context prevents cross-tenant data exposure" case) is arguably the canonical test for BUG-003, and it **FAILS**. As `tenantadmin@acme.test` (JWT `tenant_id=acme` `019ef3ba-…`), `GET /api/v1/tenant/users` under header `X-Tenant-Subdomain: e2e` → **HTTP 200** returning the **e2e** tenant's user list (`owner@e2e.test`), and under `X-Tenant-Subdomain: techoneglobal` → **HTTP 200** returning **techoneglobal's** user list (`sachithra@techoneglobal.org`) — NOT acme's 6 users. **Log-level smoking gun (Serilog `hrm-20260625.log`, RequestId `0HNMIFE5GI2QT`/`…QU`):** the `PermissionAuthorizationHandler` line for the suspended-tenant arm logged `Authorization denied … Tenant=019ef3ba-…[acme] … MissingPermission=Tenant.ManageUsers` while the SAME request's Serilog `tenant_id` enricher property read `019efa84-…[qa04-react-1]` — i.e. the **authz layer evaluates the permission against the TOKEN's tenant (`CurrentUser.TenantId`), while the data/query layer + status middleware operate on the SUBDOMAIN-RESOLVED tenant (`ITenantContext.TenantId`)**, and the two are never required to match. That split-brain is the mechanical heart of BUG-003: a token whose role-permissions happen to satisfy the check is then served entirely in the foreign resolved tenant's context. **Same-request confirmation of the status path:** the acme Tenant Admin token under suspended `X-Tenant-Subdomain: qa04-react-1` reached `TenantStatusEnforcementMiddleware` and got **HTTP 451** (`tenant_suspended`) — proving the acme token was treated as an authorized principal of qa04-react-1 (it passed authz against the foreign resolved tenant before the suspension gate fired). **Contrast that localizes it:** the SAME acme token with the CORRECT `acme` subdomain returns ONLY acme's 6 users — the EF query filter on the resolved tenant scopes correctly; the only hole is the unvalidated pre-auth `X-Tenant-Subdomain` (dev) / host (prod) selecting the tenant with no `CurrentUser.TenantId == ITenantContext.TenantId` guard after authentication (`TenantResolutionMiddleware.cs:56-146` runs before `UseAuthentication`/`UseAuthorization` at `Program.cs:360/363-364`, and nothing downstream re-links token↔resolved-tenant). NOT re-filed — this is the root-story confirmation, so the canonical fix belongs here (add the invariant in/after auth and an integration test that replays tenant-A's token against tenant-B's subdomain expecting 403). **READ-ONLY probe — ZERO writes to e2e/techoneglobal/qa04-react-1; no data mutated.** (This is why TC-AUTH-054 FAILS, and reinforces the already-recorded TC-AUTH-ISO-001/ISO-003 failures.)
 
 ### BUG-004 — Tenant password policy is STORED but NEVER ENFORCED: password reset validates against a HARDCODED rule, ignoring the configured policy — AC-4/FR-5 enforcement contract unmet
-- **Type / Severity / Status:** BUG · HIGH · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27)**. The auth-regression's "reset now enforces min-len ≥12" is NOT a tenant-policy fix — it is exactly this same HARDCODED value. `ResetPasswordValidator` (`src/backend/HRM.Application/Features/Auth/Validators/ResetPasswordValidator.cs:21-27`) still hardcodes `MinimumLength(12)` + uppercase/lowercase/digit/special, and reads NONE of the tenant's `MinPasswordLength`/`Require*`/`PasswordHistoryCount`/`PasswordMaxAgeDays` columns. acme's stored policy (GET `/tenant/settings` → `passwordPolicy.minLength:12, requireUppercase:true,…`) is inert: a tenant that sets min=8 still gets a hardcoded 12-char demand on reset; one that sets min=16 still only gets 12. No change-password endpoint exists (`POST /api/v1/auth/change-password` → 404), so history/max-age have no enforcement path at all. Confirmed by source read + live probes. Unchanged.
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #127, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-006 · TC-ADM-006-12 (AC-4 enforcement "read from the CURRENT tenant policy")
 - **Title:** US-ADM-006 persists a per-tenant password policy (min length, complexity flags, history count, max age) to the Tenant row, but no password-setting path reads it. `ResetPasswordValidator` enforces a **hardcoded** policy (min 12 + upper/lower/digit/special); password history and max-age are enforced nowhere; and there is **no change-password endpoint at all**. So tightening or loosening the tenant policy via the settings API has zero effect on what passwords are actually accepted.
@@ -326,7 +326,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Either align the API to 201-on-create / 400-or-422-on-plan-limit, or update the US-ADM-007 TCs to the codebase's house convention of 200 + `success:false` envelope and 409 for limit conflicts — a documentation/convention decision, not a defect to silently fix.)
 
 ### BUG-007 — Audit-log keyword `search=` returns HTTP 500 on real Postgres: `string.Contains` is run against `jsonb` before/after columns and cannot be translated — FR-1 full-text search 100% non-functional
-- **Type / Severity / Status:** BUG · HIGH · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27)**: acme GET `/tenant/audit-logs?page=1&pageSize=5&search=workflow` → 500; same call without `search=` → 200. Full-text audit search remains 100% non-functional on real Postgres. Unchanged.
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #125, verified 2026-07-02)
 - **Layer:** BE (DB-interaction)
 - **Module / US / TC:** Admin Console · US-ADM-008 · TC-ADM-008-07 (keyword search over before/after JSON)
 - **Title:** `GET /api/v1/tenant/audit-logs?search={any-non-empty}` returns **HTTP 500 "An unexpected error occurred. Please try again later."** for EVERY non-empty search term. The absent/empty-string cases work (200), so the keyword-search filter (a documented AC-2/FR-1 capability) is completely broken on the production PostgreSQL provider. All other list filters (date/actor/action/resourceType/combined/multi-select) work correctly.
@@ -355,7 +355,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Add a list-query validator that rejects `startDate > endDate` with 400 `invalid_date_range`; mirror the existing per-endpoint FluentValidation pattern used elsewhere in the codebase.)
 
 ### BUG-008 — Plan-limit propagation is BROKEN: a plan edit does NOT reach existing tenants AND per-tenant overrides have NO runtime effect — `Tenant.MaxEmployees` snapshot is enforced, the live plan + `PlanLimitResolver` + override table are never consulted (AC-3 / AC-5 / FR-4 runtime contract unmet)
-- **Type / Severity / Status:** BUG · HIGH · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27 by source read)**: `PlanLimitResolver.Resolve` STILL has ZERO production callers (grep across `src/backend`: only `HRM.Domain` self-references + doc-comments; the only live `.Resolve(` hits are the unrelated `OvertimeMultiplierResolver`). `EmployeeService.CheckPlanLimitAsync` (`EmployeeService.cs:745-763`) still reads the `tenant.MaxEmployees` snapshot only — never the live plan, never `plan_limit_overrides`, never the resolver. Plan edits + per-tenant overrides remain runtime-inert. Unchanged.
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #126, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-009 · TC-ADM-009-07 (AC-3 edit-propagation) + TC-ADM-009-10 (AC-5/FR-4 override runtime effect)
 - **Title:** Editing a plan's `max_employees` (100→200) updates the plan row but does **not** change the enforced limit for tenants already provisioned on that plan — the tenant keeps its provisioning-time snapshot (`tenants.max_employees`). Likewise, a per-tenant `plan_limit_override` created via the management API has **zero effect** on what is actually enforced. The only live employee-limit check reads the static `Tenant.MaxEmployees` column and never reads the live plan, never calls `PlanLimitResolver.Resolve`, and never reads the `plan_limit_override` table. AC-3 ("existing tenants on that plan immediately benefit from the increased limit") and the AC-5/FR-4 runtime-resolution contract are therefore unmet — the resolver + override table exist and are correct in isolation, but are not wired into any enforcement path.
@@ -1226,7 +1226,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev would tag ledger reversals to the original allocation buckets once carry-forward pools are tracked distinctly, per the existing TODO.)
 
 ### BUG-036 — `Leave.ManageLop` is granted to NO built-in tenant role: the ENTIRE LOP / compulsory-leave management surface (assign-lop, lop-summary, compulsory, override) returns 403 for HR Officer, HR Manager, Tenant Admin AND Manager — the intended personas cannot perform any LOP action
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #116, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-011 · TC-LV-215, TC-LV-216, TC-LV-217, TC-LV-219, TC-LV-221, TC-LV-223, TC-LV-224 (AC-3 / FR-3 / FR-5 / FR-6 / BR-3 / NFR-4)
 - **Title:** All four LOP endpoints are gated `[RequirePermission("Leave.ManageLop")]`, but `PermissionCatalog.DefaultPermissionsFor` never grants `Leave.ManageLop` to any built-in tenant role. Only `TenantOwner` receives it (implicitly, via `AllPermissions`). HR Officer / HR Manager / Tenant Admin / Manager / Employee are all 403 — so the entire AC-3 (manual LOP), FR-6 (compulsory leave), BR-3 (override), and FR-5 (lop-summary for payroll) management surface is unreachable by the personas the story (persona = "HR Officer") and the controller's own XML doc say should hold it.
@@ -1240,7 +1240,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev would add `Leave.ManageLop` to the `TenantAdmin`, `HRManager`, and `HROfficer` arms of `DefaultPermissionsFor`, matching the XML doc, and re-seed/migrate existing tenant role grants.)
 
 ### BUG-037 — LOP override "convert to another type" (and the leave balance dashboard `my-balance`) throw HTTP 500: a `leave_ledger` row holds `entry_type='Accrued'`, a value absent from the `LedgerEntryType` enum (`Accrual`), so EF cannot materialize the balance query
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #117, verified 2026-07-02)
 - **Layer:** DB (data) / BE
 - **Module / US / TC:** Leave Management · US-LV-011 · TC-LV-221 (BR-3 override-convert), TC-LV-220 (BR-1 balance dashboard) — also US-LV-006 `my-balance`
 - **Title:** Any LOP balance read that materializes the affected employee's `leave_ledger` throws `InvalidOperationException: Cannot convert string value 'Accrued' from the database to any value in the mapped 'LedgerEntryType' enum`. This breaks (a) `POST /api/v1/leaves/lop/{id}/override` when converting an LOP entry to a balance-backed type (it calls `GetLedgerBalanceAsync`), and (b) `GET /api/v1/leaves/my-balance` for the same employee. The override **remove** path (null target, no balance read) is unaffected and returns 200.
@@ -1379,7 +1379,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would call `WriteAuditLogAsync(storedToken.UserId, "refresh_token_reuse_detected", ipAddress, userAgent, ct, storedToken.TenantId)` in the reuse branch before returning 401, so the theft attempt is durably auditable — and likewise consider it for the cross-subdomain mismatch in ISSUE-049.)
 
 ### BUG-040 — Password reset accepts ANY non-empty token: `POST /api/v1/auth/reset-password` performs ZERO token validation, so anyone who knows a user's email can set their password (full account takeover)
-- **Type / Severity / Status:** BUG · CRIT · OPEN
+- **Type / Severity / Status:** BUG · CRIT · RESOLVED (PR #118, verified 2026-07-02)
 - **REGRESSION RE-TEST 2026-06-27 (REPORT-ONLY): STILL PRESENT — unchanged.** Re-confirmed live against throwaway `qa-lockout-2@acme.test`: `POST /api/v1/auth/reset-password` with `token:"totally-bogus-not-a-real-token-123"` + `newPassword:"Pwn3dReset!2026"` → **HTTP 200 "Password updated successfully."**; takeover login with the attacker-chosen pw → **HTTP 200**. Zero token validation; full unauthenticated account takeover still reproduces. **Partial delta (relates to BUG-004 password-policy):** the reset path now ENFORCES min-length — a 9-char `Admin@123!` reset was rejected **HTTP 400 "must be at least 12 characters."** (previously BUG-004 reported pw-policy unenforced; min-length is now enforced on reset). Side-effect of this probe: `qa-lockout-2@acme.test` could not be restored to the 9-char shared `Admin@123!` (now policy-rejected) and is left on **`Admin@123456!`** (documented; account usable).
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-004 · TC-AUTH-011 (token-validity premise), TC-AUTH-012 (steps 1/3/5 — expired/used/invalid all fail to reject)
@@ -1434,7 +1434,7 @@
 > **BUG-004 (US-ADM-006) RE-CONFIRMED on the reset surface, not re-filed.** The reset-password new-password validator (`ResetPasswordValidator.cs:21-27`) is a **hardcoded** min-12 + uppercase/lowercase/digit/special rule and does NOT read the tenant's configurable password policy (BR-2 / FR-5 / AC-5). Live: a weak password `123` → 400 with the hardcoded messages; an 11-char no-special → 400 — i.e. the fixed rule fires, but a tenant that configured (say) min-8 or no-special could neither relax nor tighten it. There is still no change-password endpoint. Same root cause as BUG-004 (tenant pw-policy stored-but-never-enforced); referenced as confirmed/extended.
 
 ### BUG-041 — RBAC role/permission changes are NOT written to the queryable tenant audit log (FR-7 unmet); only Serilog file lines exist
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #122, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-006 · TC-AUTH-050 (steps 3,5,7,11,13), TC-AUTH-040 (step 9), TC-AUTH-039 (step 9)
 - **Title:** FR-7 requires "Role and permission changes SHALL be audited in the tenant audit log." Every RBAC mutation (role create/update/delete, user-role assign/unassign) is emitted **only** as a `_logger.LogInformation("RBAC Audit: …")` Serilog line; **none** is written to the `audit_logs` table that backs `GET /api/v1/tenant/audit-logs`. A tenant admin / auditor querying the audit log sees zero RBAC events, so there is no queryable forensic/compliance trail for privilege changes — the most security-sensitive class of change in the platform.
@@ -1463,7 +1463,7 @@
 > **Case-sensitive / untrimmed uniqueness systemic class (BUG-013/016/017, ISSUE-028) EXTENDED to role names, not re-filed.** Role-name uniqueness in `RoleService.CreateRoleAsync` (`src/backend/HRM.Infrastructure/Services/RoleService.cs:88-93`) is a plain `r.Name == name` equality with no `LOWER()`/citext and no trim. Live 2026-06-25 in acme: with `QA Leave Coordinator` already present, `POST /api/v1/tenant/roles` for `qa leave coordinator` (lowercase) → **201**, and `  QA Leave Coordinator  ` (leading/trailing spaces) → **201** — three near-duplicate roles coexist. Lets an admin create confusingly-similar role names. (All three test roles were deleted afterward; zero residue.) Affects FR-2's "unique within tenant" intent.
 
 ### BUG-042 — Tenant switch is allowed DURING impersonation (BR-4 unmet); it mints a fresh NON-impersonation token, letting the impersonator escape the impersonation session into a second tenant
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #122, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-008 · TC-AUTH-062 (step 3)
 - **Title:** BR-4 requires "Impersonation sessions cannot use tenant switching; the system admin must end impersonation and initiate a new one for a different tenant." Live, an active impersonation token successfully calls `POST /api/v1/auth/switch-tenant` and receives **HTTP 200** with a brand-new access token for the target tenant whose `is_impersonation` claim is `"false"` and which carries NO `imp_*` claims. The impersonating actor thereby leaves the tracked, revocable, read-only-enforced impersonation session and obtains a full ordinary token scoped to a second tenant — bypassing `ImpersonationEnforcementMiddleware` (no session row to kill, so "End Session" / the 60-minute cap cannot revoke it), any read-only gate, and the per-session action audit.
@@ -1520,7 +1520,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 ## Findings (US-AUTH-009 — Session management, 2026-06-25)
 
 ### BUG-043 — Refreshing an already-revoked session token nukes ALL the user's other active sessions (reuse-detection cannot distinguish a rotated/stolen token from one revoked by admin / concurrent-eviction / idle / logout) — AC-5 "revoke a specific session" + AC-1 revoke_oldest collateral-revoke a legitimate user out of every device
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #129, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-009 · TC-AUTH-025 (step 7), TC-AUTH-066 (step 7), TC-AUTH-070 (step 4)
 - **Title:** When a refresh token that is already `revoked_at != null` is presented to `POST /api/v1/auth/refresh`, the reuse-detection branch treats it as token theft/reuse and revokes the **entire** user-tenant token chain (`RevokeTokenChainAsync`). But a token can be revoked for many *non-reuse* reasons: an **admin specific revoke** (AC-5), a **concurrent-eviction** (`revoke_oldest`, AC-1), **idle/absolute timeout**, or **logout**. In all those cases the evicted/revoked device's *normal* next refresh (which every client does automatically) collateral-revokes the user's **other legitimate active sessions**. Net effect: revoking ONE session, or evicting the oldest on a 4th login, logs the user out of **all** devices as soon as the affected device pings refresh once.
@@ -3080,7 +3080,7 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 > Routes (live, `GoalProgressController`): `GET /api/v1/tenant/performance/my-goals` · `POST .../goals/{goalId}/progress` (append-only update; TC wording `/updates` is wrong - no such route) · `GET .../goals/{goalId}/timeline` (TC wording `/updates` wrong) · `GET .../team-goals` · `GET .../team-goals/employees/{employeeId}` · `POST .../goals/{goalId}/comments`. There is intentionally NO PUT/PATCH/DELETE on an update (NFR-3 append-only - confirmed 404 for all, incl. HR). Personas: employee@acme.test = John Doe (EMP-0001) reports to manager@acme.test (Team Manager); hr@/tenantadmin@ = Review.All. Tenant B = techoneglobal (no `globex` tenant exists).
 
 ### BUG-068 — BUG-003 cross-tenant leak extends to US-PRF-009 team-goals summary + team-goals/employees/{id} drill-down (.All-gated read surfaces); self-scoped surfaces CLEAN
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-009 / TC-PRF-ISO-033, TC-PRF-ISO-034
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #115, verified 2026-07-02) · **Layer:** BE · **US/TC:** US-PRF-009 / TC-PRF-ISO-033, TC-PRF-ISO-034
 - **Title:** An acme `Performance.Review.All` holder (hr@/tenantadmin@acme.test) sending `X-Tenant-Subdomain: techoneglobal` reads techoneglobal's employee roster + goal aggregates via `GET /api/v1/tenant/performance/team-goals` - a cross-tenant read. The drill-down `GET .../team-goals/employees/{id}` is the same leak class (runs in the spoofed-tenant context with no owner-tenant guard; returned empty only because techoneglobal has zero goal data).
 - **Root cause (confidence 96%):** classic BUG-003 split - authorization reads `_currentUser.Permissions` (acme HR genuinely has Review.All) while the data query is scoped by `_tenantContext.TenantId` (resolved from the spoofed subdomain header), with NO guard asserting `CurrentUser.TenantId == ITenantContext.TenantId`. `GoalProgressService.GetTeamSummaryAsync` (GoalProgressService.cs:202-218): isHr short-circuits to `_dbContext.Employees.AsNoTracking().ToListAsync()` under the resolved (foreign) tenant filter. `AuthorizeManagerScopeAsync` (GoalProgressService.cs:506) returns Success immediately for Review.All without re-checking tenant. Self-scoped surfaces (my-goals, goals/{id}/progress, goals/{id}/timeline by id) are CLEAN - they resolve identity via UserId to employee inside the tenant filter, so the acme user has no_employee_record (403) / goal_not_found (404) in the foreign context.
 - **Reproduction:** `curl .../performance/team-goals -H "Authorization: Bearer <acme-hr-jwt>" -H "X-Tenant-Subdomain: techoneglobal"` returns 200 data:[{employeeName:"Cross Write", employeeId:"019efcf4-..."}] (a techoneglobal employee). Same token+header on my-goals returns 403 no_employee_record; on goals/{acmeGoalId}/timeline returns 404 goal_not_found (self-protected).
@@ -3132,7 +3132,7 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Module/US:** Performance / US-PRF-009 (TC-PRF-009-02, TC-PRF-009-01). **Why it matters:** keeps the AC-3 "progress change" presentation server-authoritative and flags that attachment evidence isn't actually downloadable yet. **Suggested direction:** add a computed delta to GoalProgressUpdateDto; track file-storage integration as a follow-up to the deferred file-management dependency. Not a defect - do not auto-apply.
 
 ### BUG-068 — Convert-applicant-to-employee is 100% broken on PostgreSQL: user-initiated transaction conflicts with `NpgsqlRetryingExecutionStrategy` → 500 on every conversion
-- **Type:** BUG · **Severity:** CRIT · **Status:** OPEN · **Layer:** BE · **US/TC:** US-REC-010 / TC-REC-010-01 (+ blocks 010-02 persist arm, 010-03/04/05/06/08/10/11, TC-REC-ISO-019)
+- **Type:** BUG · **Severity:** CRIT · **Status:** RESOLVED (PR #115, verified 2026-07-02) · **Layer:** BE · **US/TC:** US-REC-010 / TC-REC-010-01 (+ blocks 010-02 persist arm, 010-03/04/05/06/08/10/11, TC-REC-ISO-019)
 - **Title:** Every call to `POST /api/v1/recruitment/applicants/{id}/convert` for an eligible (Hired + Accepted-offer) applicant returns **HTTP 500** ("An unexpected error occurred"). The conversion feature — the entire point of US-REC-010 — does not work at all against the real Postgres provider. It only passes the InMemory unit/integration tests, which skip the transaction. This also closes the loop on the prior US-REC-003/004 BUG-059 note (Hired does not auto-convert): the dedicated convert seam exists but is non-functional.
 - **Root cause (confidence 98%):** `ApplicantConversionService.ConvertAsync` (`src/backend/HRM.Infrastructure/Services/ApplicantConversionService.cs:153-156`) opens a **user-initiated** transaction via `_dbContext.Database.BeginTransactionAsync()` guarded only by `Database.IsRelational()`. The DbContext is configured with `EnableRetryOnFailure(maxRetryCount: 3)` → `NpgsqlRetryingExecutionStrategy` (`src/backend/HRM.Infrastructure/DependencyInjection.cs:40`). EF Core forbids a manual `BeginTransaction` when a retrying execution strategy is active; the first query executed inside that transaction — the email-uniqueness `SingleAsync` in `EmployeeService.CreateAsync` (`EmployeeService.cs:68`, reached via `ApplicantConversionService.cs:163`) — throws `System.InvalidOperationException: The configured execution strategy 'NpgsqlRetryingExecutionStrategy' does not support user-initiated transactions. Use the execution strategy returned by 'DbContext.Database.CreateExecutionStrategy()' to execute all the operations in the transaction as a retriable unit.` The `IsRelational()` guard correctly handles the InMemory test provider but does nothing for the retrying-strategy-on-Postgres case, so the bug is invisible to the test suite (green-in-tests / broken-in-prod). Fix is to wrap the whole transaction body in `_dbContext.Database.CreateExecutionStrategy().ExecuteAsync(...)` (the standard EF pattern), not to remove retry-on-failure.
 - **Reproduction:** seed a Hired applicant with an Accepted offer (apply via `POST /api/v1/careers/vacancies/{vac}/apply`; create+send+respond(accepted) the offer); then `POST /api/v1/recruitment/applicants/{applicantId}/convert` as `hr@acme.test` (subdomain `acme`) with body `{"jobTitleId","departmentId","employmentType":"FullTime","dateOfJoining":"2026-07-01T00:00:00Z","reportsToEmployeeId"}` → **500** in ~180ms.
@@ -3157,7 +3157,7 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 > Compensation is NOT implemented across the module: `currentCompensation` is always `null` (workspace + DTO), documented seam ("compensation lives in Payroll; not joined here"). Downstream integration (BR-6 Core HR/Payroll/Training) is a documented seam that raises an `IntegrationRaised` event but does NOT write to any module ("seam; not wired"). pgcrypto compensation-at-rest (NFR-3) does not exist. Story-acknowledged deferrals, captured as ISSUE-149/ISSUE-150 for traceability.
 
 ### BUG-069 — BUG-003 cross-tenant leak extends to US-PRF-010 recommendations: `.All`-gated surfaces LEAK cross-tenant READ **and WRITE**; manager/employee self-scoped surfaces CLEAN
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-ISO-037, TC-PRF-ISO-038, TC-PRF-ISO-039, TC-PRF-ISO-040
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #119, verified 2026-07-02) · **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-ISO-037, TC-PRF-ISO-038, TC-PRF-ISO-039, TC-PRF-ISO-040
 - **Title:** An acme `Performance.Publish.All` holder (hr@/tenantadmin@acme.test) sending `X-Tenant-Subdomain: techoneglobal` (with the acme JWT) executes in techoneglobal's tenant context and (a) READS techoneglobal recommendations by id + the techoneglobal recommendation summary, and (b) **WRITES** — overrode techoneglobal's recommendation (bonus to 31337, justification `ACME-INJECTED-OVERRIDE`, `updated_by=hr@acme.test`) while the row stays under techoneglobal's tenant_id. The token's `tenant_id` is never validated against the resolved subdomain. Same root locus as platform-wide BUG-003; this extends it to the recommendation read+write surfaces. The WRITE arm is worse than the PRF-009 variant (BUG-068, which self-protected on writes) because the recommendation create/override path keys off `employeeId`+`cycleId` (not the caller's identity), so a foreign-tenant write succeeds outright.
 - **Root cause (confidence 96%):** classic BUG-003 split — authorization reads `_currentUser.Permissions` (the acme HR genuinely has Publish.All) while every query/write is scoped by `_tenantContext.TenantId` (resolved from the spoofed subdomain header), with NO guard asserting `CurrentUser.TenantId == ITenantContext.TenantId`. `RecommendationService.IsHr` (`RecommendationService.cs:50`) short-circuits authorization on permission only; `GetAsync`/`GetSummaryAsync`/`SaveAsync` (`:143`,`:542`,`:258`) and the `TenantInterceptor` all bind to the resolved (foreign) tenant. No token-vs-context tenant check exists in the controller or service. Self-scoped surfaces (manager workspace/`GetAsync` via `Performance.Review.Team`, employee@ with no perm) are CLEAN — they 403 in the foreign context because the manager resolves their direct-report set via UserId inside the tenant filter (no foreign reports) and the employee lacks the permission entirely.
 - **Reproduction:** seed a techoneglobal recommendation (`bonus 7777`, just `TECH-SECRET-JUSTIFICATION`). READ: `curl .../recommendations/<techRecId> -H "Authorization: Bearer <acme-hr-jwt>" -H "X-Tenant-Subdomain: techoneglobal"` to 200 with `bonusAmount 7777`, `justification "TECH-SECRET-JUSTIFICATION"`; same id with `X-Tenant-Subdomain: acme` to 404 `recommendation_not_found` (control). `.../summary?cycleId=<techCycle>` with the tech header to 200 `totalRecommendations 1, bonusPool 7777`. WRITE: `POST .../recommendations -H acme-jwt -H "X-Tenant-Subdomain: techoneglobal" {"employeeId":"<techEmp>","cycleId":"<techCycle>","type":"Bonus","justification":"ACME-INJECTED-OVERRIDE","details":{"bonusAmount":31337}}` to 200; DB row `019efddd-0002-...C1` then `tenant_id=019ef3c3(techoneglobal)`, `bonus_amount=31337`, `updated_by=hr@acme.test`. (Reverted/deleted in cleanup.)
@@ -3511,7 +3511,7 @@ Scope: API-layer (curl + JWT, acme tenant) execution of TC-PAY-006-01..12 + TC-P
 **US-PAY-006 NEW FINDINGS SUMMARY (this run):** BUG-072 (HIGH, over-magnitude numeric → 500), BUG-073 (HIGH, PUT Update endpoint 500 for all rule types), ISSUE-166 (MED, FR-7 no stored exemption config), ISSUE-167 (MED, BR-5 YTD-cumulative tax not implemented), ISSUE-168 (LOW, controller-comment HR-perm doc drift), ISSUE-169 (LOW, over-precision rate silent round), ISSUE-170 (MED, BR-7 retro-edit guard absent), ENH-017 (NFR-1 Redis cache deferred). BUG-003: statutory-rules SELF-PROTECTED (not a leak). New max → BUG-073 / ISSUE-170 / ENH-017.
 
 ### BUG-072 — Over-magnitude tax-slab amount (> numeric(18,2)) crashes statutory-rule create with HTTP 500 instead of a 400 field error
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #123, verified 2026-07-02) · **Layer:** BE
 - **Module/US/TC:** Payroll / US-PAY-006 / TC-PAY-006-09
 - **Title:** `POST /api/v1/payroll/statutory-rules` with a slab amount exceeding numeric(18,2) (e.g. `slabTo: 1e18`) returns a generic 500 instead of validating the magnitude with a 400.
 - **Root cause:** `TaxSlabInputValidator` (CreateStatutoryRuleValidator.cs) validates `SlabFrom >= 0`, `RatePercentage 0-100`, and `SlabTo > SlabFrom`, but has **no upper-magnitude bound** for slab amounts. The over-range value reaches `StatutoryRuleService.CreateAsync` → `SaveChangesAsync` and Postgres throws `22003: numeric field overflow` (`apply_typmod`, numeric.c:8091), surfaced as `DbUpdateException` → ExceptionHandlingMiddleware → generic 500. Serilog RequestId `0HNMJGENHI022:00000001`. Confidence: 99% (logged exception + SQLSTATE).
@@ -3520,7 +3520,7 @@ Scope: API-layer (curl + JWT, acme tenant) execution of TC-PAY-006-01..12 + TC-P
 - **Severity rationale:** HIGH — a malformed (or fat-fingered) numeric input on a financial-config endpoint yields an unhandled 500; should be a clean 400. No corruption (rolls back) so not CRIT, but it is an input-validation coverage gap on a Must-Have surface and a poor client contract.
 
 ### BUG-073 — PUT update of any statutory rule throws DbUpdateConcurrencyException → HTTP 500; the Update endpoint is non-functional for all rule types
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #128, verified 2026-07-02) · **Layer:** BE
 - **Module/US/TC:** Payroll / US-PAY-006 / TC-PAY-006-11 (also blocks TC-04 step 6 update-revalidation being observable beyond the 400 path)
 - **Title:** `PUT /api/v1/payroll/statutory-rules/{id}` returns 500 for BOTH income-tax (slab) and EPF (social-security) rules — editing a statutory rule is impossible via the API.
 - **Root cause:** `StatutoryRuleService.UpdateAsync` (line 141) replaces owned children wholesale — `_dbContext.TaxSlabs.RemoveRange(rule.TaxSlabs)` / `SocialSecurityRules.Remove(...)` then rebuilds with new ids — but under `TenantTransactionBehavior` (line 60) the EF change-tracker emits a stale UPDATE against an already-removed child row, so `SaveChangesAsync` throws `DbUpdateConcurrencyException: expected to affect 1 row(s), but actually affected 0`. Serilog RequestId `0HNMJGENHI028:00000001`. Confidence: 95% (logged exception + stack at UpdateAsync:141; reproduced 3× incl identical-payload edit). Likely the same InMemory-masks-Postgres class as prior payroll bugs — the integration tests may not exercise the real-Postgres owned-children replace under the tenant transaction.
@@ -3995,7 +3995,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-188
 - **Type:** ISSUE (orphaned/under-wired feature -- the consumer API works, but no business event feeds it except one report-export path)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #121, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-001 / TC-NTF-001-01, -02 (AC-2, FR-3/4, NFR-1)
 - **Title:** INotificationService.CreateAndDispatchAsync (the persist+SignalR-push seam) is called by exactly ONE producer -- HrReportExportService (report-export-ready). Leave approval (the US-NTF-001 AC-2 headline scenario) and every other module emit nothing into the in-app notification table, so the bell/panel is empty in normal use.
@@ -4049,7 +4049,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-189
 - **Type:** ISSUE (cross-tenant WRITE leak -- extension of the systemic BUG-003; root locus BUG-003 / US-AUTH-007, NOT re-filed)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #119, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-002 / TC-NTF-ISO-005, -006, -007 (AC-5, FR-10, NFR-2)
 - **Title:** PUT /api/v1/notification-templates/{eventKey} stamps the override with the tenant resolved from the X-Tenant-Subdomain header, NOT the JWT tenant claim -- so an authenticated user of Tenant A can create/modify Tenant B's email template overrides by sending B's subdomain header with A's token.
@@ -4088,7 +4088,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-190
 - **Type:** ISSUE (cross-tenant WRITE leak -- extension of the systemic BUG-003; root locus BUG-003 / US-AUTH-007, NOT re-filed)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #119, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-003 / TC-NTF-003-09, -10, TC-NTF-ISO-009, -010, -011 (AC-5, FR-8, NFR-2, BR-4)
 - **Title:** PUT /api/v1/notification-preferences/{category} stamps the row with the tenant resolved from the X-Tenant-Subdomain header, not the JWT tenant claim -- so an authenticated acme user can create a preference override stamped into the techoneglobal tenant (a tenant they have no membership in) by sending techoneglobal's subdomain header with their acme token.
@@ -4153,7 +4153,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-191
 - **Type:** ISSUE (cross-tenant read+write leak -- extension of the systemic BUG-003; root locus BUG-003 / US-AUTH-007, NOT re-filed)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #119, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-004 + US-NTF-005 / TC-NTF-ISO-013, -014, -015, -016, -017, -019, -020 (AC-5, NFR-2/3, FR-8/9)
 - **Title:** GET /api/v1/tenant/audit-logs (and /{id}) scope by _tenantContext.TenantId, which is derived from the X-Tenant-Subdomain header with no check against the JWT tenant claim -- so Tenant A's admin reads Tenant B's full audit log (list + single row) by swapping only the subdomain header, and the meta-audit "AuditLog.View" write lands in Tenant B too.
@@ -4261,7 +4261,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-193
 - **Type:** ISSUE (extension of the still-OPEN root BUG-003; filed as ISSUE not re-filed as a new root bug, per prior-run convention)
 - **Severity:** HIGH (reports aggregate the WHOLE tenant — leak exposes totals + every per-department/per-status breakdown + exported file bytes; read-only here but maximal blast radius)
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #119, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Reports & Analytics / US-RPT-001, US-RPT-002, US-RPT-003, US-RPT-004, US-RPT-005 / TC-RPT-001-* , TC-RPT-ISO-*, TC-RPT-004-*, TC-RPT-005-*
 - **Title:** acme JWT + `X-Tenant-Subdomain: techoneglobal` returns techoneglobal's report aggregates AND downloadable export files AND dashboard KPI counts; acme-subdomain control returns acme's data
@@ -4306,7 +4306,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-086
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN — **STILL PRESENT, re-confirmed in the Leave-Management regression pass 2026-06-27**: `GET /api/v1/leaves/my-balance?year=2026` → 500 (`?year=2025` → 200), `GET /api/v1/leaves/reports/BalanceSummary?year=2026` → 500, `GET /api/v1/leaves/reports/Utilization?year=2026` → 500 (`?year=2025` → 200). Serilog `hrm-20260627.log:24022,24419+` = identical `InvalidOperationException: Cannot convert string value 'Accrued' … 'LedgerEntryType' enum`. **This is the SAME defect already filed inside the leave module as BUG-037 / BUG-037(EXTENDED to reports)** — BUG-086 (Reports run) and BUG-037 (Leave run) are duplicate IDs for one root-cause `leave_ledger.entry_type='Accrued'` row (id b8179fd3-…, created 2026-06-25); kept distinct here only for the Reports-module traceability. Both remain OPEN. Bad row still left in place per report-only policy (reproducible).
+- **Status:** RESOLVED (PR #117, verified 2026-07-02) — **STILL PRESENT, re-confirmed in the Leave-Management regression pass 2026-06-27**: `GET /api/v1/leaves/my-balance?year=2026` → 500 (`?year=2025` → 200), `GET /api/v1/leaves/reports/BalanceSummary?year=2026` → 500, `GET /api/v1/leaves/reports/Utilization?year=2026` → 500 (`?year=2025` → 200). Serilog `hrm-20260627.log:24022,24419+` = identical `InvalidOperationException: Cannot convert string value 'Accrued' … 'LedgerEntryType' enum`. **This is the SAME defect already filed inside the leave module as BUG-037 / BUG-037(EXTENDED to reports)** — BUG-086 (Reports run) and BUG-037 (Leave run) are duplicate IDs for one root-cause `leave_ledger.entry_type='Accrued'` row (id b8179fd3-…, created 2026-06-25); kept distinct here only for the Reports-module traceability. Both remain OPEN. Bad row still left in place per report-only policy (reproducible).
 - **Layer:** BE (no defensive enum handling) + DATA (one malformed legacy row)
 - **Module / US / TC:** Reports & Analytics / US-RPT-002 / TC-RPT-002-* (balance/utilization report + utilization-by-dept chart)
 - **Title:** A single `leave_ledger` row with `entry_type='Accrued'` (not a member of `LedgerEntryType`) makes EF throw on materialization, 500-ing every report that scans the ledger
@@ -4503,7 +4503,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-093
 - **Type:** BUG (broken vs spec — FR-2/BR-1 "auto-generate unique employee_no per tenant" fails; primary create flow down)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #114, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-001 (Add new employee) / TC-CHR-065/066-class (create happy path) + TC-CHR-080 (configurable/auto employee_no)
 - **Title:** `GenerateEmployeeNoAsync` sorts `employee_no` as a STRING descending and `int.TryParse`s the suffix; the acme-seeded `EMP-MGR01` sorts highest, parse fails → fallback `nextSeq=1` → emits `EMP-0001`, which already exists → `23505 duplicate key value violates unique constraint "ix_employees_tenant_id_employee_no"` → every create 500s
@@ -4961,7 +4961,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-106 - Suspended-tenant Tenant Admin/Owner is NOT exempt from the 451 gate: every tenant API (incl. the read-only suspension-notice + export paths) returns 451, so an admin can never reach the read-only suspension landing (AC-2 unmet)
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #130, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-004 / **TC-ADM-004-05** (primary); also breaks **TC-ADM-004-04** step1 and **TC-ADM-003-03** (suspended-impersonation reads)
 - **Title:** On a `Suspended` tenant, a *directly-logged-in* Tenant Admin (role "Tenant Admin") is 451'd on `GET /api/v1/tenant/employees`, `GET /api/v1/tenant/audit-logs`, and `POST /api/v1/tenant/data-exports`, despite `TenantStatusEnforcementMiddleware` documenting Tenant Owner/Admin as exempt (read-only notice + export). Login itself succeeds (200) but the admin then has zero reachable tenant API surface.
@@ -4979,7 +4979,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-107 - Impersonation destructive-op block (FR-6) is bypassed: ForcePasswordReset / DeactivateUser / AssignUserRoles / EditUserRoles are not matched by the blocklist and execute during a full SystemAdmin impersonation
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #125, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-003 / **TC-ADM-003-05**
 - **Title:** During an active (full, non-read-only) SystemAdmin impersonation of an Active tenant, a forced password reset, user deactivation, and role re-assignment are all permitted - FR-6 requires these destructive ops to be hard-blocked (403) regardless of read-only status. `POST /api/v1/tenant/users/{id}/force-password-reset` returned **200** and actually reset the target user's password while impersonating.
@@ -5228,7 +5228,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-119
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #124, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-002 / TC-CHR-123 (self-service edit), TC-CHR-106/110 (self-service view)
 - **Title:** The self-service profile edit endpoint `PATCH /api/v1/tenant/employees/{id}/profile` is gated only by the `Employee.Edit.Own` permission but performs **no owner check** binding the caller's linked employee to `{id}`. An Employee-role user therefore successfully edits **another** employee's contact info (phone/personalEmail/address), not just their own. The only obstacle is the optimistic-concurrency `rowVersion`, which is itself readable, so it is trivially satisfied. Compounding inconsistency: the matching **GET** `/tenant/employees/{id}/profile` returns **403** even for the caller's OWN record (so `View.Own` is over-restricted while `Edit.Own` is under-restricted).
@@ -5241,7 +5241,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-223
 - **Type:** ISSUE (behavioral drift vs spec)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #124, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-002 / TC-CHR-125
 - **Title:** TC-CHR-125 (BR-6) assumes an employee soft-delete flag (`is_deleted=true`) where a "deleted" employee (a) is hidden from the default list, (b) returns **404** on `GET /employees/{id}`, and (c) reappears only via an `includeArchived`/Archived filter. The implementation has **no such soft-delete**: employees have a status lifecycle (`Active → Suspended/Terminated/Inactive`). A `Terminated` employee (1) **still appears in the default employee list**, (2) **still returns 200** on GET by id (not 404), and (3) is excluded only by the explicit `activeOnly=true` filter or a `status=` filter. The `includeArchived=true` query param is accepted but is a **no-op** (no separate archived state to reveal). There is also no DELETE route (`DELETE /employees/{id}` → 405).
@@ -5304,7 +5304,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-121
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #120, verified 2026-07-02)
 - **Layer:** BE (+ INFRA config)
 - **Module / US / TC:** Authentication / US-AUTH-006 (roles/permissions hydration) — surfaced while executing TC-AUTH-047 and the ADM plan-limit TCs (auth/me is the app's identity bootstrap).
 - **Title:** With the running API pointed at a Redis that is down, `AuthService.GetMyTenantsAsync` calls `IDistributedCache.GetStringAsync("hrm:user:{id}:tenants")` and lets the `RedisConnectionException` propagate uncaught → `ExceptionHandlingMiddleware` returns a generic 500. `/auth/me` (which calls `GetCurrentUserAsync` → `GetMyTenantsAsync`) and `/auth/my-tenants` both 500 for **every** persona (fntest-admin, platform admin all reproduced). By contrast `TenantResolutionMiddleware` catches the identical Redis failure and falls back to the DB (logs `WRN Tenant cache read failed for {sub}; falling back to database`), so resolution/login still work — the degradation handling is inconsistent between call sites.
@@ -5314,7 +5314,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** HIGH — `/auth/me` is the identity/permissions bootstrap called on every SPA load and after every tenant switch; a down (or briefly flapping) Redis takes the whole authenticated UI offline with a 500, even though login and tenant resolution survive. It is a hard availability dependency on a cache that the rest of the stack treats as optional/degradable. Not CRIT because it requires Redis to be down/unreachable (an infra condition), and login itself still succeeds.
 
 ### ISSUE-227 — Workflow plan-limit (`Tenant.MaxWorkflows`) enforcement ignores plan-limit OVERRIDES and the subscription plan's MaxWorkflows — only the `Tenant.MaxWorkflows` column snapshot is consulted (BUG-008 class)
-- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** MED · **Status:** RESOLVED (PR #126, verified 2026-07-02) · **Layer:** BE
 - **Module/US/TC:** Admin Console / US-ADM-007 / TC-ADM-007-05 (also relates to US-ADM-009 override propagation)
 - **Title:** `WorkflowService.EnsureWithinPlanLimitAsync` (`WorkflowService.cs:460-481`) resolves the workflow cap by reading only `Tenant.MaxWorkflows` (`SELECT MaxWorkflows FROM tenants WHERE id=@t`); `null` → treated as unlimited. It does NOT consult the `plan_limit_override` table nor the tenant's `SubscriptionPlan.MaxWorkflows`. Consequently a `max_workflows=2` **override** set via `POST /system/plans/overrides` has ZERO effect on create-time enforcement — same root pattern as the recorded BUG-008 (PlanLimitResolver/overrides have no live callers; enforcement reads the Tenant column snapshot).
 - **Root cause (HIGH):** read directly from source — the limit query selects `t.MaxWorkflows` only; no `PlanLimitOverride`/plan join. Reproduced live: set `max_workflows=2` override on fntest, then created 3 ACTIVE workflows (`activate:true`) with 0 pre-existing active → all 3 returned 200, no `workflow_limit_reached`. fntest `Tenant.MaxWorkflows` is null so the snapshot path also allows unlimited.
@@ -5441,7 +5441,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-126
 - **Type:** BUG (broken vs spec)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #131, verified 2026-07-02)
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB (overdue-task notifications) / (caught during BUG-003/007 verification, no bound TC)
 - **Title:** The onboarding overdue-task notification job's "once-per-day" idempotency check does `o.Payload.Contains(task.Id.ToString())` where `OnboardingNotificationOutbox.Payload` is a **jsonb** column (`OnboardingChecklistService.cs:702`). Npgsql cannot translate `string.Contains` on jsonb → `42883: operator does not exist: jsonb ~~ jsonb`. The query aborts (`Microsoft.EntityFrameworkCore.Query.QueryIterationFailed`), the Hangfire job fails and **retries indefinitely** (observed live: job '513', retry 5/10, 30 failures in the startup window). This is the **same class as BUG-007** (jsonb `Contains` untranslatable) but in a background job, so it never surfaces as an HTTP 500 — it just silently fails on every run, so overdue-task notifications are never sent AND the idempotency guard is dead.
