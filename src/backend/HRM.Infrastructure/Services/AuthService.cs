@@ -658,7 +658,21 @@ public sealed class AuthService : IAuthService
         CancellationToken cancellationToken = default)
     {
         var cacheKey = $"user:{userId}:tenants";
-        var cached = await _cache.GetStringAsync(cacheKey, cancellationToken);
+
+        // BUG-121: the cache is best-effort. A Redis outage must NOT 500 the FE-hydration path
+        // (/auth/me, /auth/my-tenants) — treat a cache failure as a miss and fall back to the DB
+        // (mirrors the fail-soft cache handling in TenantResolutionMiddleware).
+        string? cached = null;
+        try
+        {
+            cached = await _cache.GetStringAsync(cacheKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "my-tenants cache read failed for user {UserId}; falling back to database", userId);
+        }
+
         if (!string.IsNullOrWhiteSpace(cached))
         {
             var cachedMemberships = JsonSerializer.Deserialize<List<TenantMembershipDto>>(cached);
@@ -702,14 +716,23 @@ public sealed class AuthService : IAuthService
                 false))
             .ToList();
 
-        await _cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(memberships),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5),
-            },
-            cancellationToken);
+        // BUG-121: cache write is best-effort too — a Redis outage must not fail the request.
+        try
+        {
+            await _cache.SetStringAsync(
+                cacheKey,
+                JsonSerializer.Serialize(memberships),
+                new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5),
+                },
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "my-tenants cache write failed for user {UserId}; continuing without cache", userId);
+        }
 
         return Result<IReadOnlyList<TenantMembershipDto>>.Success(
             WithCurrentTenant(memberships, currentTenantId));
