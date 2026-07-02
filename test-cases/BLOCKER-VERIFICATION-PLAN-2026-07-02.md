@@ -52,13 +52,15 @@ bound set from the ledger.
 | **BUG-007** | #125 | TC-ADM-008-07 (audit keyword search on PG) | `/verify-fix BUG-007` |
 | **BUG-107** | #125 | TC-ADM-003 (impersonation destructive-op block) | `/verify-fix BUG-107` |
 
-### Deferred-cleared (PRs #126–129)
+### Deferred-cleared (PRs #126–130)
 | Finding | PR | Affected TCs (verify) | Command |
 |---|---|---|---|
 | **BUG-008/ISSUE-227** | #126 | TC-ADM-009-07/-10 (employee cap), TC-ADM-007-05 (workflow cap) | `/verify-fix BUG-008` |
 | **BUG-004** | #127 | TC-ADM-006-12, TC-AUTH-012 (tenant password policy on reset) | `/verify-fix BUG-004` |
 | **BUG-073** | #128 | TC-PAY-006-02, TC-PAY-007-01 (statutory rule update) | `/verify-fix BUG-073` |
 | **BUG-043** | #129 | TC-AUTH-009/005/062 (per-session revocation) | `/verify-fix BUG-043` |
+| **BUG-001** | #130 | TC-ADM-003-04/-11 (System Support read-only impersonation) | `/verify-fix BUG-001` |
+| **BUG-106** | #130 | TC-ADM-004 (suspended-tenant admin read-only access) | `/verify-fix BUG-106` |
 
 ---
 
@@ -77,15 +79,12 @@ bound set from the ledger.
 
 ---
 
-## 3. Still-open (NOT verifiable yet — need HTTP repro, then fix, then verify)
+## 3. Still-open
 
-- **BUG-001** (impersonation read-only gate) and **BUG-106** (suspended-tenant admin access) remain OPEN.
-  Both are "role not detected at runtime." The fix is not written (static paths look correct), so there is
-  nothing to `/verify-fix` yet. **Next step is reproduction, not verification:** build an ApiTestFactory
-  (Testcontainer) HTTP test that logs in as a **seeded System Support persona**, starts impersonation, and
-  asserts `is_read_only=true` (BUG-001) / that a Tenant Admin reaches the suspended read-only notice
-  (BUG-106). That repro pins whether the operator's token actually carries the role, then drives the fix.
-- Their TCs stay `[b]`/OPEN until then: TC-ADM-003-04/-11 (BUG-001), TC-ADM-004 suspension arm (BUG-106).
+**None.** All 21 code-clearable blockers are fixed (PRs #114–130). BUG-001 + BUG-106 (the last two) were
+root-caused via HTTP repro — the JWT `MapInboundClaims` remapping of the `"roles"` claim — and fixed in
+PR #130. Nothing remains code-blocked; only the **non-code track** (env/persona/perf-harness/deferred
+features from remediation-plan §6) is outstanding, and that is env work, not fixes.
 
 ---
 
