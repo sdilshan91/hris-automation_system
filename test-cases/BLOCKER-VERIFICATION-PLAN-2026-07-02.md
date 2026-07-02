@@ -167,6 +167,7 @@ Mark as you go: `TODO` · `PASS` · `FAIL(→/fix-finding)` · `BLOCKED(reason)`
 
 ## 6. Findings caught during verification (report-only)
 - **BUG-126** (MED, NEW, logged in `TEST-FINDINGS.md`) — the onboarding overdue-notification Hangfire job
-  does `o.Payload.Contains(...)` on a **jsonb** column (`OnboardingChecklistService.cs:702`) → `jsonb ~~ jsonb`
-  (42883) → the job fails and **retries forever**. Same class as BUG-007, but in a background job (no HTTP
-  500). Trivial fix (structured-column match). Recommend a `/fix-finding BUG-126` follow-up.
+  did `o.Payload.Contains(...)` on a **jsonb** column (`OnboardingChecklistService.cs:702`) → `jsonb ~~ jsonb`
+  (42883) → the job failed and **retried forever**. Same class as BUG-007, in a background job (no HTTP 500).
+  **FIXED — PR #131** (in-memory match over the candidate set; PG regression test, mutation-proven). Verify
+  with `/verify-fix BUG-126` after merge (confirm the job's Serilog no longer logs `jsonb ~~ jsonb`).
