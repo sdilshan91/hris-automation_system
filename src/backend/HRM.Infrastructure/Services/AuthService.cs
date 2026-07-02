@@ -2,6 +2,7 @@ using Hangfire;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Auth.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
@@ -532,6 +533,29 @@ public sealed class AuthService : IAuthService
         if (!matches)
         {
             return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
+        }
+
+        // BUG-004: enforce the TENANT's configured password policy (min length, complexity), not just the
+        // hardcoded validator defaults. Validated BEFORE the token is consumed so a policy failure lets the
+        // user retry with the same link.
+        var policyTenant = await _dbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => new
+            {
+                t.MinPasswordLength, t.RequireUppercase, t.RequireLowercase, t.RequireDigit,
+                t.RequireSpecialCharacter, t.PasswordHistoryCount, t.PasswordMaxAgeDays,
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (policyTenant is not null)
+        {
+            var policy = new PasswordPolicy(
+                policyTenant.MinPasswordLength, policyTenant.RequireUppercase, policyTenant.RequireLowercase,
+                policyTenant.RequireDigit, policyTenant.RequireSpecialCharacter,
+                policyTenant.PasswordHistoryCount, policyTenant.PasswordMaxAgeDays);
+            var violations = PasswordPolicyValidator.Validate(newPassword, policy);
+            if (violations.Count > 0)
+                return Result.Failure(string.Join(" ", violations), 400);
         }
 
         // Single-use: consume the token so it cannot be replayed.
