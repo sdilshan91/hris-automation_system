@@ -243,8 +243,8 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 ### Pre-flight
 - [ ] Renumber duplicate **BUG-068** (REC → BUG-094) and update all TC cross-refs.
 - [ ] Confirm clean working tree on `main`; each fix on its own `fix/{ID}` branch.
-- [ ] **Product decision — ISSUE-223:** soft-delete/`Archived` model for employees? → update Core HR US/AC before fixing.
-- [ ] **Product decision — ISSUE-227/BUG-008:** write limit precedence (override>plan>snapshot) into US-ADM-007/009 AC before fixing.
+- [x] **Product decision — ISSUE-223:** RESOLVED 2026-07-02 → **add Archived/soft-delete + exclude Terminated from the default list** (explicit filter to include). Update Core HR US/AC when implementing.
+- [x] **Product decision — ISSUE-227/BUG-008:** RESOLVED 2026-07-02 → precedence **override > plan > snapshot** (use the existing PlanLimitResolver). Write into US-ADM-007/009 AC when implementing.
 - [ ] (Optional) Verify exact TC counts per finding to replace ~approx numbers with hard lists.
 
 ### Per-fix TC obligation (enforced inside `/fix-finding`)
@@ -266,10 +266,10 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 - [ ] P1-8 ISSUE-188 wire approval producer → merge → re-run US-NTF-001.
 
 ### Phase D — localized cleanup
-- [ ] Auth: P2-9 BUG-041, P2-10 BUG-042, P2-11 BUG-043.
-- [ ] Admin: P2-12 BUG-001, P2-13 BUG-004, P2-14 BUG-007, P2-15 BUG-008/ISSUE-227, P2-16 BUG-106, P2-17 BUG-107.
+- [~] Auth: **P2-9 BUG-041 ✅ + P2-10 BUG-042 ✅** (fix/phase-d-auth, PR #122, mutation-proven). **P2-11 BUG-043 DEFERRED** — refresh-token reuse-revocation scoping is a security-sensitive redesign of the rotation model (needs chain-parent tracking / revocation_reason); do as a focused pass.
+- [ ] Admin: P2-12 BUG-001, P2-13 BUG-004, P2-14 BUG-007, P2-15 BUG-008/ISSUE-227 (override>plan>snapshot), P2-16 BUG-106, P2-17 BUG-107.
 - [ ] Payroll: P2-18 BUG-072, P2-19 BUG-073.
-- [ ] Core HR: P2-20 BUG-119, P2-21 ISSUE-223.
+- [ ] Core HR: P2-20 BUG-119, P2-21 ISSUE-223 (Archived + exclude Terminated).
 
 ### Close-out (per fix, via `/verify-fix` — automates the two manual steps below)
 - [ ] Run `/verify-fix {ID}` after each merge → re-runs affected TCs, flips `TEST-STATUS.md` (`[b]`→`[x]`/`[!]`), marks the finding RESOLVED in `TEST-FINDINGS.md` with PR#.
