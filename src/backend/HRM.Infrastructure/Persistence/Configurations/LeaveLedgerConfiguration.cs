@@ -19,8 +19,15 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
         builder.Property(l => l.Id)
             .HasColumnName("id");
 
+        // BUG-037/086: EntryType is persisted as its enum name. A legacy/seed row stored the Accrual
+        // entry as the string "Accrued" — not a LedgerEntryType member — so the default enum<->string
+        // conversion threw during materialization and 500'd every 2026 balance/utilization read that
+        // touched that row. Tolerate that one legacy alias on READ; writes always emit the canonical
+        // enum name. Genuinely unknown values still throw, so real data corruption is not masked.
         builder.Property(l => l.EntryType)
-            .HasConversion<string>()
+            .HasConversion(
+                v => v.ToString(),
+                v => ParseEntryType(v))
             .HasMaxLength(20)
             .IsRequired();
 
@@ -84,4 +91,13 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
         builder.HasIndex(l => new { l.TenantId, l.OccurredAt })
             .HasDatabaseName("ix_leave_ledger_tenant_occurred_at");
     }
+
+    /// <summary>
+    /// Reads a persisted EntryType string back to the enum, tolerating the legacy "Accrued" alias for
+    /// <see cref="LedgerEntryType.Accrual"/> (BUG-037/086). Unknown values still throw.
+    /// </summary>
+    private static LedgerEntryType ParseEntryType(string value) =>
+        value == "Accrued"
+            ? LedgerEntryType.Accrual
+            : Enum.Parse<LedgerEntryType>(value);
 }
