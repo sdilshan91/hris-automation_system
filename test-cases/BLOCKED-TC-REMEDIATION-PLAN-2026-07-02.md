@@ -56,9 +56,9 @@ account-takeover.
 
 | # | Finding(s) | Sev | Area | File / locus | Code change | TCs cleared | Status |
 |---|---|---|---|---|---|---|---|
-| P1-4 | **BUG-037** + **BUG-086** | HIGH | Leave / Reports | `leave_ledger.entry_type` enum + materialization | Bad row `entry_type='Accrued'` vs enum `Accrual` → 500 on all 2026 balance/report reads. Backfill row **and** harden enum parsing. | US-LV-006/010/011(BR-1)/012, US-RPT-002, TC-232–237/246–247 (~15–20) | `TODO` |
-| P1-5 | **BUG-068 (REC)** | CRIT | Recruitment | `ApplicantConversionService.cs:153-156` | Manual `BeginTransactionAsync` conflicts with EF retry strategy on Postgres → convert 500. Wrap in `CreateExecutionStrategy().ExecuteAsync(...)`. | All US-REC-010 convert TCs (~11) | `TODO` |
-| P1-6 | **BUG-036** | HIGH | Leave | `DefaultPermissionsFor` | `Leave.ManageLop` granted only to TenantOwner. Grant to TenantAdmin/HRManager/HROfficer. | US-LV-011 LOP surface (~11; some also need attendance/payroll) | `TODO` |
+| P1-4 | **BUG-037** + **BUG-086** | HIGH | Leave / Reports | `leave_ledger.entry_type` enum + materialization | Bad row `entry_type='Accrued'` vs enum `Accrual` → 500 on all 2026 balance/report reads. Backfill row **and** harden enum parsing. | US-LV-006/010/011(BR-1)/012, US-RPT-002, TC-232–237/246–247 (~15–20) | `WIP` — tolerant value-converter (LeaveLedgerConfiguration) on `fix/BUG-037`; PG-Testcontainer regression test, mutation-proven; local green. Data-backfill migration = optional follow-up (converter neutralizes the 500). PR/verify pending. |
+| P1-5 | **BUG-068 (REC)** | CRIT | Recruitment | `ApplicantConversionService.cs:153-156` | Manual `BeginTransactionAsync` conflicts with EF retry strategy on Postgres → convert 500. Wrap in `CreateExecutionStrategy().ExecuteAsync(...)`. | All US-REC-010 convert TCs (~11) | `WIP` — `CreateExecutionStrategy().ExecuteAsync` wrap on `fix/BUG-068`; PG-Testcontainer regression test with retry, mutation-proven (exact InvalidOperationException); local green. PR/verify pending. |
+| P1-6 | **BUG-036** | HIGH | Leave | `DefaultPermissionsFor` | `Leave.ManageLop` granted only to TenantOwner. Grant to TenantAdmin/HRManager/HROfficer. | US-LV-011 LOP surface (~11; some also need attendance/payroll) | `WIP` — granted to the 3 HR roles on `fix/BUG-036`; existing tenants self-heal via startup reconcile (no backfill); unit regression test; local green. PR/verify pending. |
 | P1-7 | **BUG-121** | HIGH | Auth / Admin | `AuthService.GetMyTenantsAsync` + config | Redis outage throws on `/auth/me`, `/my-tenants` → SPA can't hydrate. Add DB fallback / fail-soft. (Code fallback is the durable fix vs config-only.) | ~11+ Auth/Admin FE TCs | `TODO` |
 | P1-8 | **ISSUE-188** | HIGH | Notifications | `INotificationDispatcher` producers | Approval-notification producer never wired (only export producer exists). Wire leave-approval → dispatch. | US-NTF-001 approval arms (~4–8) | `TODO` |
 
@@ -252,10 +252,10 @@ Fix these in fixtures/env/build — a `src/` change won't move them off `[b]`:
 - [ ] After fix: existing blocked/failed TCs flip via `/verify-fix` (no content edit); new regression TC committed with the fix PR.
 
 ### Phase A — rig enablement
-- [~] P0-2 BUG-093 employee-no numeric sort → **fix + regression TC done, local test green 29/29, mutation-proven (2026-07-02)**. Pending: PR + merge + `/verify-fix` (needs stack).
-- [ ] P1-4 BUG-037/086 leave enum backfill + parse-harden → merge → re-run US-LV-006/010/012, US-RPT-002.
-- [ ] P1-5 BUG-068(REC) convert ExecutionStrategy → merge → re-run US-REC-010.
-- [ ] P1-6 BUG-036 grant Leave.ManageLop → merge → re-run US-LV-011 surface.
+- [~] P0-2 BUG-093 employee-no numeric sort → **fix + regression TC, local green 29/29, mutation-proven** on `fix/BUG-093` (2026-07-02). Pending: PR + merge + `/verify-fix`.
+- [~] P1-4 BUG-037/086 leave enum parse-harden → **tolerant converter + PG regression test, mutation-proven** on `fix/BUG-037`. Data backfill = optional follow-up. Pending: PR + merge + re-run US-LV-006/010/012, US-RPT-002.
+- [~] P1-5 BUG-068(REC) convert ExecutionStrategy → **fix + PG-retry regression test, mutation-proven** on `fix/BUG-068`. Pending: PR + merge + re-run US-REC-010.
+- [~] P1-6 BUG-036 grant Leave.ManageLop → **fix + unit regression test, startup self-heal** on `fix/BUG-036`. Pending: PR + merge + re-run US-LV-011 surface.
 
 ### Phase B — security gateway
 - [ ] P0-3 BUG-040 reset-token flow → merge → re-run TC-AUTH-011/012.
