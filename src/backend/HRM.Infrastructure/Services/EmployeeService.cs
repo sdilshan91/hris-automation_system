@@ -2,6 +2,7 @@ using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -760,13 +761,34 @@ public sealed class EmployeeService : IEmployeeService
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
 
-        if (tenant?.MaxEmployees is null)
-            return Result.Success(); // No limit configured
+        if (tenant is null)
+            return Result.Success();
+
+        // BUG-008: resolve the effective cap with precedence override > plan > snapshot, instead of
+        // reading only the Tenant.MaxEmployees snapshot (which ignored plan changes + per-tenant overrides).
+        var planValue = await _dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxEmployees)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _dbContext.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenant.Id)
+            .ToListAsync(cancellationToken);
+
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxEmployees, planValue, overrides, DateTime.UtcNow);
+        long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
+            ? resolved.Value                                   // override wins (null = unlimited)
+            : planValue ?? (long?)tenant.MaxEmployees;         // else plan value, else snapshot
+
+        if (limit is null)
+            return Result.Success(); // unlimited
 
         var currentCount = await _dbContext.Employees
             .CountAsync(e => e.IsActive, cancellationToken);
 
-        if (currentCount >= tenant.MaxEmployees.Value)
+        if (currentCount >= limit.Value)
             return Result.Failure(
                 "Employee limit reached for your current plan. Please upgrade or contact your administrator.",
                 403);

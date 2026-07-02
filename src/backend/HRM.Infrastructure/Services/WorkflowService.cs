@@ -2,6 +2,7 @@ using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Workflows.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Workflows;
@@ -464,10 +465,30 @@ public sealed class WorkflowService : IWorkflowService
         var tenant = await _db.Tenants
             .AsNoTracking()
             .Where(t => t.Id == tenantId)
-            .Select(t => new { t.MaxWorkflows })
+            .Select(t => new { t.PlanId, t.MaxWorkflows })
             .FirstOrDefaultAsync(cancellationToken);
 
-        var limit = tenant?.MaxWorkflows;
+        if (tenant is null)
+            return Result.Success();
+
+        // ISSUE-227/BUG-008: resolve the effective cap with precedence override > plan > snapshot, rather
+        // than reading only the Tenant.MaxWorkflows snapshot (which ignored plan changes + overrides).
+        var planValue = await _db.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxWorkflows)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _db.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxWorkflows, planValue, overrides, DateTime.UtcNow);
+        long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
+            ? resolved.Value
+            : planValue ?? (long?)tenant.MaxWorkflows;
+
         if (limit is null)
             return Result.Success();
 
