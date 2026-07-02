@@ -456,18 +456,45 @@ public sealed class AuthService : IAuthService
 
             if (hasMembership)
             {
-                // In production: generate reset token and enqueue email via Hangfire
-                // For now, log it
-                _logger.LogInformation("Password reset requested for user {UserId} in tenant {TenantId}",
-                    user.Id, _tenantContext.TenantId);
+                // BUG-040: issue a real single-use, time-limited reset token. Only the SHA-256 hash is
+                // stored; the raw token is delivered to the user out-of-band (email). Issuing a fresh
+                // token invalidates any prior pending one for this user.
+                var rawToken = GenerateResetToken();
+                user.PasswordResetTokenHash = HashResetToken(rawToken);
+                user.PasswordResetTokenExpiresAt = DateTime.UtcNow.Add(ResetTokenLifetime);
+                await _dbContext.SaveChangesAsync(cancellationToken);
 
-                // TODO: Generate password reset token using Identity token provider
-                // TODO: Enqueue email dispatch via Hangfire background job
+                // Real email dispatch (Hangfire) is deferred like the rest of the platform's outbound
+                // email. The raw token is NOT logged (it is a credential); the delivery seam replaces
+                // this log line when the email platform lands.
+                _logger.LogInformation(
+                    "Password reset token issued for user {UserId} in tenant {TenantId}, expires {Expiry:o}. " +
+                    "Email dispatch deferred (log-only seam).",
+                    user.Id, _tenantContext.TenantId, user.PasswordResetTokenExpiresAt);
             }
         }
 
         // Always return success regardless of whether user exists
         return Result.Success();
+    }
+
+    /// <summary>Lifetime of a password-reset token (BUG-040).</summary>
+    private static readonly TimeSpan ResetTokenLifetime = TimeSpan.FromHours(1);
+
+    /// <summary>Generates a 256-bit cryptographically-random, URL-safe reset token (BUG-040).</summary>
+    private static string GenerateResetToken()
+    {
+        var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    }
+
+    /// <summary>SHA-256 hex of a reset token — what we store/compare, never the raw token (BUG-040).</summary>
+    private static string HashResetToken(string rawToken)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(rawToken));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     public async Task<Result> ResetPasswordAsync(
@@ -487,12 +514,29 @@ public sealed class AuthService : IAuthService
             return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
         }
 
-        // TODO: Validate token via Identity token provider
-        // For now, we accept any non-empty token for the skeleton implementation
-        if (string.IsNullOrEmpty(token))
+        // BUG-040: validate the reset token — it must be present, the user must have a pending token,
+        // it must not be expired, and its hash must match. Anything else is rejected with the same
+        // generic message (no oracle). A missing stored hash means no reset was requested.
+        if (string.IsNullOrEmpty(token) ||
+            string.IsNullOrEmpty(user.PasswordResetTokenHash) ||
+            user.PasswordResetTokenExpiresAt is null ||
+            user.PasswordResetTokenExpiresAt.Value <= DateTime.UtcNow)
         {
             return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
         }
+
+        var providedHash = HashResetToken(token);
+        var matches = System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(providedHash),
+            System.Text.Encoding.UTF8.GetBytes(user.PasswordResetTokenHash));
+        if (!matches)
+        {
+            return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
+        }
+
+        // Single-use: consume the token so it cannot be replayed.
+        user.PasswordResetTokenHash = null;
+        user.PasswordResetTokenExpiresAt = null;
 
         // Hash and set new password (BR-2: password reset clears lockout)
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);

@@ -28,6 +28,10 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.PasswordHash)
             .HasMaxLength(500);
 
+        // BUG-040: SHA-256 hex of the active password-reset token (64 chars).
+        builder.Property(u => u.PasswordResetTokenHash)
+            .HasMaxLength(64);
+
         // CR-AUTH-001: Entra SSO identity link. EntraObjectId is unique when present (filtered unique
         // index — many local users have null and must not collide).
         builder.Property(u => u.EntraObjectId)
