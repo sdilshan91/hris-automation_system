@@ -127,12 +127,21 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
 
         // Replace slabs + social-security wholesale (these are owned children; historical payslips are never
         // recomputed so prior versions can be replaced for the SAME rule version).
+        // BUG-073: explicitly ADD the rebuilt children. Assigning new children (with client-generated
+        // UUIDv7 keys) to the TRACKED rule's navigation made EF treat them as MODIFIED, not Added — it
+        // emitted `UPDATE tax_slab ... WHERE id = <brand-new-id>` which matched 0 rows and threw
+        // DbUpdateConcurrencyException on every update. AddRange/Add forces the Added state (INSERT).
         _dbContext.TaxSlabs.RemoveRange(rule.TaxSlabs);
-        rule.TaxSlabs = BuildSlabs(ruleId, input.TaxSlabs);
+        var newSlabs = BuildSlabs(ruleId, input.TaxSlabs);
+        _dbContext.TaxSlabs.AddRange(newSlabs);
+        rule.TaxSlabs = newSlabs;
 
         if (rule.SocialSecurityRule is not null)
             _dbContext.SocialSecurityRules.Remove(rule.SocialSecurityRule);
-        rule.SocialSecurityRule = BuildSocialSecurity(ruleId, input.SocialSecurity);
+        var newSocial = BuildSocialSecurity(ruleId, input.SocialSecurity);
+        if (newSocial is not null)
+            _dbContext.SocialSecurityRules.Add(newSocial);
+        rule.SocialSecurityRule = newSocial;
 
         // US-PAY-012 (FR-2): audit the update with before/after JSON.
         _audit.Log(PA.StatutoryRuleUpdated, PA.ResourceType.StatutoryRule,
