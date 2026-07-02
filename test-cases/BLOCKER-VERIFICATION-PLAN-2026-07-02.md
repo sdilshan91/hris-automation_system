@@ -141,13 +141,13 @@ Mark as you go: `TODO` · `PASS` · `FAIL(→/fix-finding)` · `BLOCKED(reason)`
 | # | Finding | PR | Phase | Verify status |
 |---|---|---|---|---|
 | 1 | BUG-003 (+069/193/189-191) | #119 | V1 | **PASS** (2026-07-02: acme token + other-tenant header → 403 `cross_tenant_denied`; acme+acme → 200) |
-| 2 | BUG-093 | #114 | V2 | `TODO` |
-| 3 | BUG-037/086 | #117 | V2 | `TODO` |
+| 2 | BUG-093 | #114 | V2 | **PASS** (create → 201 (EMP-0034)) |
+| 3 | BUG-037/086 | #117 | V2 | **PASS** (my-balance?year=2026 → 200 (real data)) |
 | 4 | BUG-068 | #115 | V2 | `TODO` |
-| 5 | BUG-036 | #116 | V2 | `TODO` |
+| 5 | BUG-036 | #116 | V2 | **PASS** (HR Officer LOP-summary → 400 (not 403)) |
 | 6 | BUG-121 | #120 | V2 | **PASS** (/auth/me + /my-tenants → 200) |
-| 7 | BUG-040 | #118 | V3 | `TODO` |
-| 8 | BUG-041 | #122 | V3 | `TODO` |
+| 7 | BUG-040 | #118 | V3 | **PASS** (bad reset token → 400 (takeover blocked)) |
+| 8 | BUG-041 | #122 | V3 | **PASS** (role create → audit row queryable) |
 | 9 | BUG-042 | #122 | V3 | `TODO` |
 | 10 | BUG-043 | #129 | V3 | `TODO` |
 | 11 | BUG-004 | #127 | V3 | `TODO` |
@@ -155,10 +155,10 @@ Mark as you go: `TODO` · `PASS` · `FAIL(→/fix-finding)` · `BLOCKED(reason)`
 | 13 | BUG-107 | #125 | V3 | `TODO` |
 | 14 | BUG-008/ISSUE-227 | #126 | V3 | `TODO` |
 | 15 | BUG-001 | #130 | V3 | `TODO` |
-| 16 | BUG-119 | #124 | V3 | `TODO` |
-| 17 | ISSUE-223 | #124 | V3 | `TODO` |
-| 18 | BUG-072 | #123 | V3 | `TODO` |
-| 19 | BUG-073 | #128 | V3 | `TODO` |
+| 16 | BUG-119 | #124 | V3 | **PASS** (non-owned PATCH → 403 'edit your own') |
+| 17 | ISSUE-223 | #124 | V3 | **PASS** (default=33 vs includeTerminated=35) |
+| 18 | BUG-072 | #123 | V3 | **PASS** (slab 1e18 → 400 (not 500)) |
+| 19 | BUG-073 | #128 | V3 | **PASS** (create+update identical → 200 (not 500)) |
 | 20 | ISSUE-188 | #121 | V3 | `TODO` |
 | 21 | BUG-106 | #130 | V3 (manual) | `TODO` |
 
