@@ -72,6 +72,11 @@ try
     .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = jwtService.GetTokenValidationParameters();
+        // BUG-001: keep JWT claim names 1:1 with the token. With the default MapInboundClaims=true, the
+        // handler remaps the "roles" claim to ClaimTypes.Role, so ICurrentUser.Roles (which reads the
+        // literal "roles" claim) saw nothing — while "permissions" (non-standard, unmapped) worked. That
+        // silently broke role-based gates like the System Support read-only impersonation check.
+        options.MapInboundClaims = false;
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context =>
