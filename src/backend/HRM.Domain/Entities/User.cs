@@ -16,6 +16,20 @@ public sealed class User
     public DateTime? PasswordChangedAt { get; set; }
     public bool MfaEnabled { get; set; }
     public string? MfaSecret { get; set; }
+
+    /// <summary>
+    /// BUG-040: SHA-256 hash (hex) of the currently-active password-reset token. Null when no reset is
+    /// pending. The raw token is delivered to the user (email) and never stored. Single-use — cleared
+    /// on a successful reset.
+    /// </summary>
+    public string? PasswordResetTokenHash { get; set; }
+
+    /// <summary>
+    /// BUG-040: expiry of the active password-reset token (UTC). Null when none is pending; a token past
+    /// this instant is rejected.
+    /// </summary>
+    public DateTime? PasswordResetTokenExpiresAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
