@@ -195,7 +195,6 @@ import { JobTitleFormComponent } from '../job-title-form/job-title-form.componen
                       (click)="openEdit(jt)"
                       (keydown.enter)="openEdit(jt)"
                       tabindex="0"
-                      role="button"
                       [attr.aria-label]="'Edit job title: ' + jt.titleName"
                     >
                       <td class="td-notion">

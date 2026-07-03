@@ -194,9 +194,9 @@ import { DepartmentTreeComponent } from '../department-tree/department-tree.comp
                 >
                   <div class="flex items-start justify-between mb-2">
                     <div class="flex items-center gap-2 min-w-0">
-                      <h3 class="text-base font-semibold text-neutral-900 truncate">
+                      <h2 class="text-base font-semibold text-neutral-900 truncate">
                         {{ dept.name }}
-                      </h3>
+                      </h2>
                       @if (!dept.isActive) {
                         <span class="badge-inactive">Inactive</span>
                       }
