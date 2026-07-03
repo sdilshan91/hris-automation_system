@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "2026-07-01: BLOCKED — FE-UI-only arm (responsive-viewport 360px–1920px / pan-zoom / visual-render / cross-browser). Not API-testable; the single shared chromium MCP session cannot exercise a viewport matrix or multiple browser engines, and in-app SPA nav is blocked (systemic BUG-097). Not a functional/business-rule defect."
+exec_note: "2026-07-03 (BROWSER-RIG Wave 1): STILL BLOCKED — but now on DATA, not tooling. The responsive rig IS available (CDP emulate + soft-nav via pushState/popstate reaches /org-tree while authenticated). However /org-tree renders the empty-state 'No departments found.' (ISSUE-207 reproduces) despite 51 departments on the Departments page, so the 360px accordion-vs-tree fallback has no nodes to verify at any width. Zoom toolbar (Zoom in/out/Fit to screen/Export PNG) present but chart body empty. Re-runnable once ISSUE-207 is fixed."
 created: 2026-06-12
 ---
 

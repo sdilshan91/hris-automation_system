@@ -5,7 +5,7 @@ module: Core HR
 priority: medium
 type: functional
 status: blocked
-exec_note: "S1: needs S4 (Firefox/WebKit cross-browser rig)."
+exec_note: "2026-07-03 (browser-rig smoke, acme FE): BLOCKED — BUG-099 re-confirmed LIVE via real browser. Logged in hr@acme.test on acme.myhrm.org:4200, SPA-navigated to /employees; console throws 'TypeError: Cannot read properties of undefined (reading length) at EmployeeListComponent_Template (chunk-IBYMXJBI.js:1833:69)'. Employee list body renders 0 cards / 0 rows (only toolbar/header render); BE GET /api/v1/tenant/employees returned 200 (FE-only bug). Profile page unreachable (no clickable row), so cross-browser profile render cannot be exercised. Rig itself works; unblocks when BUG-099 is fixed."
 created: 2026-06-12
 ---
 

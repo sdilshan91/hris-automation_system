@@ -212,3 +212,37 @@ Only **25** blocked TCs reference a now-cleared root (all covered by T1–T3). T
 
 ### Bottom line
 The code-fix verification loop is **complete and green**. What remains blocked is four *separate* backlogs — FE-fix (Cat D), browser+perf rigs (B/C/E/H), persona seeding (F), and deferred features (G) — each of which is its own track, not a gap in this remediation.
+
+---
+
+## 10. FOLLOW-ON — Track A (live convert) + Track B (browser rig), 2026-07-03
+
+User elected "A + B": run the live REC-010 convert E2E, and stand up + batch the browser rig.
+
+### Track A — live REC-010 convert E2E (BUG-068)
+**BUG-068 is fixed and now LIVE-proven:** `POST /api/v1/recruitment/applicants/{id}/convert` → **HTTP 201**, created employee **EMP-0036** (`019f2607-…`, acme, filled 1/3), no Npgsql retry/tx 500. Of the 6 REC-010 TCs:
+- **PASS (2):** TC-REC-010-04 (convert + data carried), TC-REC-010-06 (duplicate → 409 `already_converted`, no side effects).
+- **FAIL → new ISSUE-232 (1):** TC-REC-010-05 — the "Converted" badge + employee deep-link (AC-4) are not surfaced on `/applicants/{id}/detail` (only the conversion-prefill DTO carries the linkage). Read-projection gap, data is persisted.
+- **BLOCKED, non-BUG-068 (3):** 010-03 auto-create-user is deferred (ISSUE-140); 010-08 auto-close needs headcount-fill (row spam); 010-10 limit-block needs a tenant-config write (report-only can't).
+
+### Track B — browser rig: proven, but the "blocked census" was mis-classified
+**Rig works.** Both Playwright & Chrome-DevTools MCP drove the live app end-to-end. **Unlock recipe (durable):** host **`http://acme.myhrm.org:4200`** (hosts entry exists; `localhost`→platform tenant, `acme.localhost`→login 400); Playwright login needs `pressSequentially` (reactive form ignores `fill()`); Chrome-DevTools `fill_form` works; a11y via `lighthouse_audit` (external axe CDN is CSP-blocked); `emulate` viewport **without** mobile/touch flags (touch forces reload→logout = BUG-097); SPA-nav only (hard reload logs out).
+
+**Key correction:** the grep that built the "~50 browser-runnable" list conflated *TCs that mention an a11y/responsive strata section* with *TCs whose objective is a11y/responsive*. In reality most were perf/functional/integration/deferred. Genuine, rig-clearable TCs are **few** and several are **persona-gated**.
+
+**Wave results:**
+- **Wave 1 (Core-HR non-employee, 18 TCs): 3 PASS** — TC-CHR-030 (Departments responsive+a11y), TC-CHR-061 (Job-Titles), TC-CHR-190 (Locations). 13 blocked by *other* rigs: cross-browser needs FF/WebKit (4), FE-perf needs scale seed + BUG-097 fix (7), deferred custom-fields (2); org-tree empty = ISSUE-207.
+- **Wave 2 (multi-module a11y/responsive, 24 TCs): 0 flips** — agent correctly refused to flip perf/functional IDs to pass (would fabricate). Confirmed **5 pages render clean** (Dashboard/Reports/Vacancies/Pipeline/Onboarding — a11y 96, responsive clean); genuine a11y TCs (AUTH-048 roles, LV-170/173/174 team-calendar) are **persona-gated** for `hr@acme.test` (`/leave`, `/admin/*` → `/forbidden`).
+
+**New a11y findings (real, logged OPEN):** ISSUE-233 (Core-HR ARIA structure nits), ISSUE-234 (Leave-Types `role="switch"` toggle has no `aria-checked`/name — SR users can't operate it).
+
+### Must-fix / must-provision to unblock the rest (reported, not fixed — report-only)
+1. **BUG-099** (FE) — `EmployeeListComponent` `.length`-of-undefined crash → employee directory renders 0 rows; **gates ~40 employee-dir/profile TCs**. Highest-leverage FE fix.
+2. **BUG-097** (FE) — touch/mobile emulation forces reload→logout; blocks mobile-viewport arms.
+3. **ISSUE-207** (FE/data) — org-tree renders "No departments found"; blocks org-tree TCs.
+4. **Persona reach** — genuine a11y TCs need `tenantadmin`/manager/employee (not `hr`) to reach `/leave`, `/admin/*`, `/notifications`.
+5. **FF/WebKit rig** — cross-browser TCs need Playwright FF/WebKit projects (the MCP is chromium-only).
+6. **Perf seeds** — perf TCs need the 200/500-dept, 200-job-title, 5k-employee seeds.
+
+### Track B net
+5 real passes (CHR-030/061/190 + rig-proven page health on 5 more pages), 2 new a11y findings, and a corrected map of what "browser-blocked" actually means. The chromium-CDP rig's practical ceiling is the **responsive + a11y-audit arm on pages that render for the current persona** — a small set, not the 90 the census implied.

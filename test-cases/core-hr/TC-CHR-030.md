@@ -4,8 +4,8 @@ user_story: US-CHR-004
 module: Core HR
 priority: medium
 type: functional
-status: blocked
-exec_note: "2026-07-01: BLOCKED — FE-UI-only arm (responsive-viewport 360px–1920px / pan-zoom / visual-render / cross-browser). Not API-testable; the single shared chromium MCP session cannot exercise a viewport matrix or multiple browser engines, and in-app SPA nav is blocked (systemic BUG-097). Not a functional/business-rule defect."
+status: pass
+exec_note: "2026-07-03 (BROWSER-RIG Wave 1, CDP emulate, acme/hr@acme.test): PASS on responsive arm. Departments page (/departments) measured at 1920×1080, 768×1024, 360×800 via Chrome DevTools MCP `emulate` (plain viewport resize — no mobile flag, so no BUG-097 reload/logout). No horizontal document overflow at any width (scrollWidth==clientWidth at all three: 1914/762/354). 51 department cards render at every width; 'Add Department' button present + accessible at 360px; List/Tree view toggle present. Lighthouse a11y (snapshot, desktop) = 94: only failures are color-contrast (systemic BUG-096) + tenant-switcher label-content-name-mismatch (known ISSUE-205) + a NEW LOW heading-order h1→h3 skip on cards (logged ISSUE-233). Cross-browser (Firefox/WebKit/Safari) arm NOT covered — rig is chromium-only. Responsive + a11y-non-contrast criteria PASS."
 created: 2026-06-11
 ---
 

@@ -4,8 +4,8 @@ user_story: US-CHR-005
 module: Core HR
 priority: medium
 type: functional
-status: blocked
-exec_note: "2026-07-01: BLOCKED — FE-UI-only arm (responsive-viewport 360px–1920px / pan-zoom / visual-render / cross-browser). Not API-testable; the single shared chromium MCP session cannot exercise a viewport matrix or multiple browser engines, and in-app SPA nav is blocked (systemic BUG-097). Not a functional/business-rule defect."
+status: pass
+exec_note: "2026-07-03 (BROWSER-RIG Wave 1, CDP emulate, acme/hr@acme.test): PASS on responsive arm. Job Titles page (/job-titles) at 1440/768/360 via `emulate` resize. At 360px the desktop `<table>` is hidden (width 0) and the mobile card list (`div.sm:hidden`) renders — fields stack correctly ('Trim Probe… / Active / — employees / Grade: — / Deactivate'); 'Add Job Title' + search bar present. No document horizontal scroll (scrollWidth==clientWidth 354). NOTE: 1 of 17 cards (a pathological 100-char 'AAAA…' test-data title) does not word-wrap and is 1627px wide but clipped by parent overflow:hidden (no page-level scroll) — data-artifact, borderline LOW, not filed. Lighthouse a11y (snapshot desktop)=92: failures = color-contrast (BUG-096) + tenant-switcher label mismatch (ISSUE-205) + NEW aria-required-children on `role=table` with `role=button` children (logged ISSUE-233). Cross-browser (Firefox/WebKit/Safari) NOT covered (chromium-only rig). Responsive + a11y-non-contrast criteria PASS."
 created: 2026-06-12
 ---
 

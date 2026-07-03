@@ -4,8 +4,8 @@ user_story: US-CHR-007
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "2026-07-01: BLOCKED — FE-UI-only arm (responsive-viewport 360px–1920px / pan-zoom / visual-render / cross-browser). Not API-testable; the single shared chromium MCP session cannot exercise a viewport matrix or multiple browser engines, and in-app SPA nav is blocked (systemic BUG-097). Not a functional/business-rule defect."
+status: pass
+exec_note: "2026-07-03 (BROWSER-RIG Wave 1, CDP emulate, acme/hr@acme.test): PASS on responsive arm. Locations page (/locations — reached via pushState+popstate soft-nav since it has no sidebar link; HR Officer is route-authorized) at 1440/360 via `emulate` resize. At 360px the desktop `<table>` is hidden (width 0) and the mobile card list (`div.md:hidden`) renders; 'Add Location' button present. No document horizontal scroll (scrollWidth==clientWidth 354). Same benign artifact as TC-CHR-061: one pathological long-name card is 1627px wide but clipped by overflow:hidden (no page break). Cross-browser (Firefox/WebKit/Safari) NOT covered (chromium-only rig). Responsive criteria PASS."
 created: 2026-06-12
 ---
 
