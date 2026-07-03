@@ -143,7 +143,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should create the component', () => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       expect(component).toBeTruthy();
     });
 
@@ -151,7 +151,7 @@ describe('EmployeeDocumentsComponent', () => {
       fixture.detectChanges();
       expect(component.isLoading()).toBeTrue();
 
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       expect(component.isLoading()).toBeFalse();
@@ -169,7 +169,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should show empty state when no documents', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
       fixture.detectChanges();
 
@@ -184,7 +184,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should show all documents when filter is All', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.activeFilter.set('All');
@@ -193,7 +193,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should filter by Contract category', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.activeFilter.set('Contract');
@@ -203,7 +203,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should filter by ID category', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.activeFilter.set('ID');
@@ -213,7 +213,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should filter by Certificate category', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.activeFilter.set('Certificate');
@@ -223,7 +223,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should return correct category count', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       expect(component.getCategoryCount('Contract')).toBe(1);
@@ -240,7 +240,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should reject file exceeding 10 MB with correct error message', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       component.showUploadForm.set(true);
@@ -262,7 +262,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should reject disallowed MIME type with correct error message', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       component.showUploadForm.set(true);
@@ -285,7 +285,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should accept valid PDF file', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       component.showUploadForm.set(true);
@@ -307,7 +307,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should accept valid JPEG file', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       const validFile = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
@@ -323,7 +323,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should accept valid DOCX file', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       const validFile = new File(['data'], 'doc.docx', {
@@ -341,7 +341,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should accept valid XLSX file', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       const validFile = new File(['data'], 'sheet.xlsx', {
@@ -365,7 +365,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should request download URL and trigger download', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       // Return a real anchor whose click() is stubbed so the download link
@@ -404,7 +404,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should show error toast on 403 download', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.downloadDocument(mockDocs[0]);
@@ -426,7 +426,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should open delete confirmation modal', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.confirmDelete(mockDocs[0]);
@@ -436,7 +436,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should cancel delete and close modal', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.confirmDelete(mockDocs[0]);
@@ -446,7 +446,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should execute delete and remove document from list', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       expect(component.documents().length).toBe(3);
@@ -465,7 +465,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should show error toast on delete failure', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       component.confirmDelete(mockDocs[0]);
@@ -488,7 +488,7 @@ describe('EmployeeDocumentsComponent', () => {
     it('HR Officer can see upload and delete controls', fakeAsync(() => {
       setup('HR Officer');
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       expect(component.canUpload()).toBeTrue();
@@ -498,7 +498,7 @@ describe('EmployeeDocumentsComponent', () => {
     it('Employee cannot see upload or delete controls', fakeAsync(() => {
       setup('Employee');
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       expect(component.canUpload()).toBeFalse();
@@ -508,7 +508,7 @@ describe('EmployeeDocumentsComponent', () => {
     it('Manager cannot see upload or delete controls', fakeAsync(() => {
       setup('Manager');
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush(mockDocs);
+      httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
 
       expect(component.canUpload()).toBeFalse();
@@ -523,7 +523,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should toggle upload form visibility', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       expect(component.showUploadForm()).toBeFalse();
@@ -533,7 +533,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should cancel upload and reset state', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       component.showUploadForm.set(true);
@@ -555,7 +555,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should remove selected file', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       const file = new File(['data'], 'test.pdf', { type: 'application/pdf' });
@@ -578,7 +578,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should format file size correctly', () => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
 
       expect(component.formatSize(0)).toBe('0 B');
       expect(component.formatSize(500)).toBe('500 B');
@@ -588,7 +588,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should return correct MIME type icon', () => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
 
       expect(component.getMimeIcon('application/pdf')).toBe('pdf');
       expect(component.getMimeIcon('image/jpeg')).toBe('image');
@@ -600,7 +600,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should return correct file icon label', () => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
 
       expect(component.getFileIconLabel('application/pdf')).toBe('PDF');
       expect(component.getFileIconLabel('image/jpeg')).toBe('IMG');
@@ -616,7 +616,7 @@ describe('EmployeeDocumentsComponent', () => {
 
     it('should set isDragOver on dragover and clear on dragleave', fakeAsync(() => {
       fixture.detectChanges();
-      httpMock.expectOne(docsUrl).flush([]);
+      httpMock.expectOne(docsUrl).flush({ items: [], totalCount: 0 });
       tick();
 
       const mockEvent = {
