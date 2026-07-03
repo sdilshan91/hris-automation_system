@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: critical
 type: functional
-status: blocked
+status: pass
 created: 2026-06-03
 ---
 
@@ -69,3 +69,5 @@ Verify that when a tenant's MFA policy is set to "required" and the user's role 
 - [ ] Cross-browser test
 
 > **Execution 2026-07-03 (API, @test-runner):** BLOCKED — forced-enrollment code path exists (AuthService.cs:209-223) but precondition mfaPolicy=required cannot be set: PUT /tenant/auth-settings 403s even for Tenant Admin (BUG-240).
+>
+> **Re-exec 2026-07-03 (API, @test-runner) — BUG-240 fix unblocked → PASS:** Precondition now settable — PUT auth-settings {mfaPolicy:required, mfaRequiredRoles:["Tenant Admin"]} -> 200. Fresh login as tenantadmin@acme.test (Tenant Admin role, mfaEnabled=false, in-scope) returns `{accessToken:"", mfaChallenge:true, mfaMethod:"totp", mfaEnrollmentRequired:true, refreshToken:null}` (steps 1-2: forced enrollment, NO token issued). Control: employee@acme.test (role NOT in mfaRequiredRoles) login returns normal accessToken, mfaChallenge=false, enrollmentRequired=false — role-scoping correct. Enrollment-completion sub-steps (4-11, TOTP secret+verify+recovery codes) not re-driven here; the discriminating assertion (forced-enrollment gate + no-token + role scope) is confirmed. Settings restored to mfaPolicy=off post-run.

@@ -4,8 +4,8 @@ user_story: US-AUTH-010
 module: Authentication
 priority: high
 type: functional
-status: blocked
-exec_note: "2026-07-01 BLOCKED: requires an MFA-enrolled user. fntest auth-settings mfaPolicy='off' and no persona has TOTP enrolled; MFA enrollment needs an authenticator secret + valid TOTP codes (interactive). Password-based lockout at 5 fails is confirmed working (see TC-108 evidence: 5 bad logins -> locked). MFA-failure-counts-toward-lockout path not exercisable without enrolled MFA."
+status: pass
+exec_note: "2026-07-03 PASS (BUG-240 fix unblocked): enrolled employee@acme.test in MFA (real TOTP via /auth/mfa/enroll+/verify), then drove 5 consecutive invalid TOTP codes through the login-stage endpoint POST /api/v1/auth/mfa/challenge {email,code} (NOTE: TC text names /auth/mfa/verify but that is the enrollment-verify; the login challenge is /auth/mfa/challenge). All 5 -> 401 'Invalid verification code.' with NO password failures. 6th action = login with CORRECT password -> 401 'Account temporarily locked.' => 5 MFA-only failures triggered lockout (FR-10 confirmed). Minor deviation (not a defect): the 5th/threshold attempt returns the generic 'Invalid verification code.' rather than a distinct lockout message; the lock is observable on the next request (locked login) — defensible (avoids revealing lock state on the failing attempt). DB fields (failed_login_count=5, locked_until, account_locked audit) not directly queried (no psql) but behavioral lock after exactly 5 MFA-only failures proves the counter. Restored: employee MFA disabled + auth-settings mfaPolicy=off. Employee account locked_until self-heals after lockoutDurationMinutes=15."
 created: 2026-06-11
 ---
 

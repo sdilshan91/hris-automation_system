@@ -5567,7 +5567,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-240
 - **Type:** BUG (broken authorization — over-restrictive deny, blocks a primary admin flow)
 - **Severity:** HIGH
-- **Status:** OPEN (fix in PR #136 — RoleClaimType='roles'; regression test + live-verified PUT /tenant/auth-settings 200; awaiting merge)
+- **Status:** RESOLVED (PR #136, merged 2026-07-03 — RoleClaimType='roles'; regression test PASS + live-verified PUT /tenant/auth-settings 200, was 403)
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-005 / TC-AUTH-032 (also blocks TC-AUTH-029/034 which need `mfaPolicy=required` set via this endpoint)
 - **Title:** `PUT /api/v1/tenant/auth-settings` is gated with `[Authorize(Roles = "Tenant Admin,Tenant Owner,System Admin")]`. A genuine Tenant Admin (`tenantadmin@acme.test`, JWT `roles` claim = `"Tenant Admin"`) receives HTTP 403 (empty body) on every PUT, while GET (plain `[Authorize]`) returns 200. Root cause is a JWT claim-type mismatch: `JwtService` emits the role in a claim named `"roles"`, `Program.cs` sets `MapInboundClaims = false` (no remap to `ClaimTypes.Role`), and `GetTokenValidationParameters()` never sets `RoleClaimType = "roles"` — so ASP.NET's role check reads the default `ClaimTypes.Role`, which is absent → role match always fails → 403. Every `[Authorize(Roles=…)]` endpoint is affected; the Admin controllers deliberately avoided this (their XML comments note "JWT carries roles in a custom 'roles' claim (not ClaimTypes.Role), so the established permission-policy gate is used rather than `[Authorize(Roles=…)]`"), but `TenantAuthSettingsController` and `TenantUsersController` still use role-based authz and are broken.

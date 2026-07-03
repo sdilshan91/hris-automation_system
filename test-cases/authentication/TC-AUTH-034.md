@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: security
-status: blocked
+status: pass
 created: 2026-06-03
 ---
 
@@ -62,3 +62,5 @@ Verify that a user whose role is listed in the tenant's `mfaRequiredRoles` canno
 - [ ] Cross-browser test
 
 > **Execution 2026-07-03 (API, @test-runner):** BLOCKED — required-policy disable-block arm not exercisable: cannot set mfaPolicy=required (BUG-240). Control arm (disable succeeds under optional policy) confirmed via TC-AUTH-033.
+>
+> **Re-exec 2026-07-03 (API, @test-runner) — BUG-240 fix unblocked → PASS:** Enrolled employee@acme.test in MFA via /auth/mfa/enroll + /auth/mfa/verify (real TOTP). Set mfaPolicy=required, mfaRequiredRoles=["Employee"] (200, BUG-240 unblocked). **Step 2:** DELETE /api/v1/auth/mfa as employee -> **403** with exact expected message "MFA is required by tenant policy for your role and cannot be disabled." **Step 3:** /auth/me mfaEnabled still **true** (not disabled). **Control (steps 7-9):** set mfaPolicy=optional -> DELETE /auth/mfa -> **200** "MFA has been disabled." -> mfaEnabled=**false**. Both arms confirmed. Employee MFA left disabled + auth-settings restored to mfaPolicy=off post-run.

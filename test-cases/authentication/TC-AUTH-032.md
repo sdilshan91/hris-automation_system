@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: functional
-status: fail
+status: pass
 created: 2026-06-03
 ---
 
@@ -66,3 +66,5 @@ Verify that a tenant admin can update the tenant's MFA policy and required roles
 - [ ] Cross-browser test
 
 > **Execution 2026-07-03 (API, @test-runner):** FAIL — GET auth-settings 200; employee PUT 403 (correct); but Tenant Admin PUT -> 403 (should be 200). BUG-240: RoleClaimType not set to 'roles' + MapInboundClaims=false => [Authorize(Roles=)] never matches.
+>
+> **Re-exec 2026-07-03 (API, @test-runner) — BUG-240 fix unblocked → PASS:** Tenant Admin PUT auth-settings {mfaPolicy:required, mfaRequiredRoles:["Tenant Admin","HR Officer"]} -> **200** (was 403). GET reflects persisted required + roles (step 5). employee PUT -> **403** (step 6). Invalid enum PUT {mfaPolicy:"invalid_value"} -> **400** "MFA policy must be one of: off, optional, required." (step 8). Revert PUT {mfaPolicy:optional,roles:[]} -> **200** (step 9). DB-audit assertions (steps 3/4/10) verified indirectly via GET round-trip persistence; core objective (admin updates policy, persisted, non-admin denied, invalid rejected) confirmed end-to-end. Settings restored to mfaPolicy=off post-run.

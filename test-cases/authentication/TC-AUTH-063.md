@@ -5,7 +5,7 @@ module: Authentication
 priority: high
 type: functional
 status: blocked
-exec_note: "2026-07-01 BLOCKED: needs a user with active membership in a SECOND tenant whose role REQUIRES MFA, and the user NOT enrolled. No such fixture: fntest-admin has 1 tenant; switch-tenant to acme -> 403 'no active membership' (correctly rejects non-members). mfaPolicy='off' tenant-wide + no enrolled MFA persona. Re-run with a multi-tenant + MFA-required fixture."
+exec_note: "2026-07-01 BLOCKED: needs a user with active membership in a SECOND tenant whose role REQUIRES MFA, and the user NOT enrolled. No such fixture: fntest-admin has 1 tenant; switch-tenant to acme -> 403 'no active membership' (correctly rejects non-members). mfaPolicy='off' tenant-wide + no enrolled MFA persona. Re-run with a multi-tenant + MFA-required fixture. | 2026-07-03 STILL BLOCKED (BUG-240 fix does NOT unblock): BUG-240 only made the target-tenant 'MFA required for role' setting writable — but the missing precondition here is a user with ACTIVE MEMBERSHIP IN TWO tenants (source acme + target). tenantadmin@acme.test /auth/me tenantMemberships = [acme] only; no acme persona is a member of a second tenant. Needs a multi-tenant membership fixture (globex + user), unaffected by BUG-240."
 created: 2026-06-09
 ---
 

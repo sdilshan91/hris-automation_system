@@ -5,7 +5,7 @@ module: Authentication
 priority: critical
 type: functional
 status: blocked
-exec_note: "2026-07-01 BLOCKED: absolute-timeout test needs (a) tenant absoluteTimeoutHours set low + (b) DB-level manipulation of session issued_at to simulate 61+ min elapsed (or a 60-min real wait). psql access denied (no credential guessing) and can't wait 60min in a breadth run; refresh token is HTTP-only-cookie based (not body-settable). auth-settings shows absoluteTimeoutHours=8. Re-run in a time-manipulable session harness with DB access."
+exec_note: "2026-07-01 BLOCKED: absolute-timeout test needs (a) tenant absoluteTimeoutHours set low + (b) DB-level manipulation of session issued_at to simulate 61+ min elapsed (or a 60-min real wait). psql access denied (no credential guessing) and can't wait 60min in a breadth run; refresh token is HTTP-only-cookie based (not body-settable). auth-settings shows absoluteTimeoutHours=8. Re-run in a time-manipulable session harness with DB access. | 2026-07-03 STILL BLOCKED (BUG-240 fix partially helps but NOT sufficient): PUT /tenant/auth-settings absoluteTimeoutHours is NOW writable (BUG-240 fixed) — but the field's unit is HOURS with a floor of 1 (cannot set sub-hour), so exercising the timeout still requires EITHER a 60+ min real wait OR DB manipulation of the session issued_at, plus the refresh token is httpOnly-cookie-based (not body-settable). BUG-240 did not provide the time-travel/DB harness that is the true blocker. Re-run in a time-manipulable session harness with DB access."
 created: 2026-06-11
 ---
 
