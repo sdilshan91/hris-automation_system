@@ -4,8 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: medium
 type: functional
-status: blocked
-exec_note: "2026-07-01: BLOCKED — FE-UI-only arm (responsive-viewport 360px–1920px / pan-zoom / visual-render / cross-browser). Not API-testable; the single shared chromium MCP session cannot exercise a viewport matrix or multiple browser engines, and in-app SPA nav is blocked (systemic BUG-097). Not a functional/business-rule defect."
+status: pass
+exec_note: "2026-07-04 (FE, acme; BUG-099/127 fixes unblocked profile reach): PASS on the responsive/no-overflow arm. Reached the profile via real card click (Employees → John Doe → /employees/019efced-…), Personal Info section, exercised with Chrome DevTools MCP `emulate` at 360/768/1920 (no touch flag). NO horizontal overflow at ANY breakpoint (scrollWidth==clientWidth: 354@360, 768@768, 1920@1920; worst right-edge == viewport width). At 360px the 12 profile-section tabs (Personal…Compensation) use a horizontally-scrollable strip (`overflow-x:auto`) — an acceptable mobile-friendly nav per step 4 ('dropdown selector OR equivalent'). Content reflows single-column. Exact avatar-px (96→64) and dropdown-vs-scroll specifics not pixel-verified, but the core NFR-5 assertion (step 11, no h-overflow at any width; readable reflow) holds. Note: viewport re-emulation needs a settle delay before reading layout (sync read after emulate returns a stale width)."
 created: 2026-06-12
 ---
 

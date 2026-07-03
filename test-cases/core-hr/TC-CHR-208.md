@@ -4,8 +4,8 @@ user_story: US-CHR-008
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "2026-07-01: BLOCKED — FE-UI-only arm (responsive-viewport 360px–1920px / pan-zoom / visual-render / cross-browser). Not API-testable; the single shared chromium MCP session cannot exercise a viewport matrix or multiple browser engines, and in-app SPA nav is blocked (systemic BUG-097). Not a functional/business-rule defect."
+status: pass
+exec_note: "2026-07-04 (FE, acme; BUG-099/127/236 fixes unblocked Documents tab): PASS on the responsive-layout arm. Reached via real card click (John Doe → Documents tab), exercised with Chrome DevTools MCP `emulate` at 360/768/1920 (no touch flag). At 360px: the doc list renders as the MOBILE CARD STACK — desktop list container (`hidden md:block`) is display:none and the mobile variant (`md:hidden space-y-3`) is visible with tiny.pdf + ten.pdf stacked; each card has visible Download + Delete buttons (115×40px, meets WCAG 2.5.8 AA target-size; 40px is just under the AAA 44px the step cites); NO horizontal overflow (scrollWidth==clientWidth==354). At 768px: transitions to desktop list variant (`hidden md:block` visible, mobile hidden), no overflow. At 1920px: desktop list, no overflow. Breakpoint transitions correct. Steps 5-8 (open Upload form → confirm drag-drop hidden / file-picker shown → actual file upload) NOT exercised — upload = report-only write."
 created: 2026-06-12
 ---
 

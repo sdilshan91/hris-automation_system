@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: security
 status: blocked
-exec_note: "2026-07-01: BLOCKED — document-description XSS render arm requires (a) a multipart document upload and (b) a browser to confirm the description renders HTML-escaped (Angular auto-escape). API-layer stores literals safely (per 310/288). Upload+FE-render arm not driveable this pass."
+exec_note: "2026-07-04 (FE, acme; Documents tab now reachable via BUG-236 fix): STILL BLOCKED — report-only WRITE needed. Documents tab now renders, but NONE of John Doe's 2 existing docs (tiny.pdf, ten.pdf) carries a visible description, and the render arm (confirm a <script>/onerror payload displays HTML-escaped, not executed) requires a fresh malicious multipart upload = a write (barred). NOTE from the BUG-236 evidence: one stored doc description IS a raw `<script>alert(1)</script>` payload in the API 200 body — but the card-list template does not surface the description field, so it isn't rendered on this view; the escape-on-render assertion still can't be visually confirmed here. Unblocks when an upload (with a description) is permitted, or a description-bearing doc is seeded + surfaced in the list."
 created: 2026-06-12
 ---
 

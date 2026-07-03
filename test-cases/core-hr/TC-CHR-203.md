@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "2026-07-01 (API, fntest): BLOCKED — document DTO returns raw expiryDate but NO computed badge/threshold field (green>30d/amber<30d/red<7d/expired). Badge thresholds are FE-computed from expiryDate and rendered visually; needs a browser on the documents view. API layer has only the raw date."
+exec_note: "2026-07-04 (FE, acme; Documents tab now reachable via BUG-236 fix): STILL BLOCKED — report-only WRITE needed. Documents tab now renders (John Doe, real card click), but his 2 real docs (tiny.pdf, ten.pdf) both have NULL expiry — so only the 'no expiry → no badge' arm (Doc E) is satisfiable, and it holds: no expiry badge/column renders for null-expiry docs. The green(>30d)/amber(≤30d)/red(<7d)/expired arms REQUIRE docs WITH expiry dates, which means a multipart upload = a write (report-only, barred). Observation: no 'expir'-related element/text exists anywhere in the rendered Documents region (only employee-status badges present) — MAY be a missing-feature (no expiry-badge rendering) but CANNOT be confirmed without an expiry-dated doc, so not filed. Unblocks when a doc with an expiry date can be seeded."
 created: 2026-06-12
 ---
 

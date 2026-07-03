@@ -4,8 +4,8 @@ user_story: US-CHR-008
 module: Core HR
 priority: high
 type: accessibility
-status: blocked
-exec_note: "2026-07-03 (FE, acme; BUG-099 fix unblocked profile reach): BLOCKED on a NEW render defect. Employee profile now reachable via Router-nav to /employees/019efced-…; the Documents tab opens but its list body + Upload form never render — EmployeeDocuments calls .filter() on the paginated {items,totalCount} envelope → 'TypeError: this.documents(...).filter is not a function' (7×), same class as BUG-099. Logged as BUG-236 (HIGH). John Doe has 2 real docs (BE 200) but counts show 0 and Upload Document opens no modal/file-input. Only the category filter-tab shell renders (correct semantics: nav[aria-label], role=tab+aria-selected, sr-only label tied to mobile category select). Steps 3-12 (list rows/download/delete/upload-form keyboard+axe) NOT exercisable until BUG-236 fixed. Prior BUG-097 note superseded."
+status: fail
+exec_note: "2026-07-04 (FE, acme; BUG-099/127/236 fixes unblocked full flow): EXERCISED end-to-end via real card click (Employees → John Doe card → /employees/019efced-… → Documents tab). Tab now renders both real docs (tiny.pdf 69 B, ten.pdf 10.0 MB), category counts correct (Other 2), Download/Delete/Upload-Document controls all have accessible names ('Download tiny.pdf' etc.). BUT FAIL on step 12: Lighthouse a11y snapshot (desktop) = 90 with a SERIOUS axe `aria-required-parent` violation — the category filter tabs are role=tab buttons inside a <nav> with NO role=tablist parent, no aria-controls, no roving tabindex (5 nodes) → NEW BUG-238 (MED). Plus systemic contrast BUG-096 (known). Steps 5-9 (delete-confirm modal focus-return, upload-form field keyboard/label) not exercised — opening the upload form + delete = report-only write. Verdict FAIL on the a11y-audit arm (serious violation present). Prior BUG-236 blocker RESOLVED."
 created: 2026-06-12
 ---
 
