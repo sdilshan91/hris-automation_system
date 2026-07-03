@@ -7,10 +7,15 @@ import { defineConfig, devices } from '@playwright/test';
  * catches FE↔BE contract drift (wrong URLs, missing form fields, route guards) that mocked unit tests miss.
  *
  * PREREQUISITES to run (`npm run e2e`):
- *   1. `npx playwright install chromium` (one-time, downloads the browser).
+ *   1. `npx playwright install chromium firefox webkit` (one-time, downloads the browser engines).
  *   2. The full dev stack running: backend on :5000 (rebuilt so the dev-only `e2e` tenant + owner@e2e.test
  *      login is seeded) and `ng serve` on :4200.
  * Multi-tenant in dev is selected via the `?tenant=e2e` query param (see auth fixture).
+ *
+ * CROSS-BROWSER: run a single browser with `npx playwright test --project=firefox` (or `webkit`,
+ * `chromium`). Omit `--project` to run all three. The firefox/webkit engines ship with Playwright and
+ * are already installed alongside chromium — no extra MCP server or download is needed for cross-browser
+ * TCs (the Playwright MCP is chromium-only; cross-browser runs go through this test runner instead).
  */
 export default defineConfig({
   testDir: './e2e',
@@ -29,6 +34,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
 
   // To have Playwright start the dev server itself, uncomment and adjust (it must also ensure the backend
