@@ -5,7 +5,7 @@ module: Core HR
 priority: medium
 type: functional
 status: blocked
-exec_note: "S1: needs S4 (Firefox/WebKit cross-browser rig)."
+exec_note: "2026-07-03 PARTIAL: cross-browser RENDER + responsive + no-JS-error parity for the Employee Directory VERIFIED (e2e cross-browser + nav-smoke specs pass on chromium/firefox/webkit, post-BUG-099). Remaining to flip: the feature-interaction matrix (search/filter/pagination/sort/export) exercised cross-browser + the 25-employee seed precondition. Needs an interaction e2e spec on a seeded tenant."
 created: 2026-06-12
 ---
 

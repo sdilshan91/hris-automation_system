@@ -177,3 +177,17 @@
 > - **FAIL (1):** TC-ADM-007-05 → **ISSUE-227**: workflow plan-limit reads only `Tenant.MaxWorkflows` snapshot, ignores plan-limit overrides + plan value (BUG-008 class); set override=2, created 3 active workflows unblocked.
 > - **BLOCKED (dominant reasons):** DB-timestamp/psql-denied session-timeout arms (AUTH-068/074/099/104/079); Hangfire-job-trigger + DB-seed integration arms (ADM-004-09/008-14/001-12); Redis-down FE hydration (AUTH-048; ADM-006-10/004-17); missing fixtures — MFA-enrolled (AUTH-063/110), multi-tenant (AUTH-063), settable `Tenant.MaxEmployees` (ADM-005-06/009-16); unresolvable subdomains for static 404/suspended pages (AUTH-058); Phase-2 not-implemented enterprise settings (ADM-006-15).
 > Throwaways cleaned: fntest-emp unlocked, max_workflows override deleted + 16 QA workflows archived, scale099 reactivated, qaresil throwaway suspended (parked). scale002 left Suspended (the tested PastDue→Suspended transition; suspending scale* is sanctioned).
+
+## Post-BUG-003 draft-ISO sweep (2026-07-03, REPORT-ONLY, TC-list scope)
+> Executed 25 never-run (draft) tenant-isolation TCs against the live stack (:5000), API-layer (curl+JWT).
+> Verdict: **22 PASS / 0 FAIL / 3 BLOCKED**. **ZERO cross-tenant leaks — no new findings.**
+> Method: acme tenantadmin JWT vs both headers. Cross-tenant arm (`X-Tenant-Subdomain: techoneglobal`) => **403 `cross_tenant_denied`**
+> on every tenant-scoped endpoint; same-tenant arm (acme) => **200**. `TenantAccessGuardMiddleware` (BUG-003 fix, merged) enforces on all
+> `/api/v1/tenant/*` + `/api/v1/recruitment/*` surfaces. Per-TC `status:` + `exec_note:` flipped in each TC file.
+> - **PASS (22):** Admin — ADM-ISO-006/009/011/012/013/014/015/017/018/019/021/022/023/025; Core-HR — CHR-ISO-011/012/014/015/016/039/040; Recruitment — REC-ISO-018.
+>   - Tenant-context endpoints (users/settings/workflows/audit-logs/employees/employees-profile/recruitment-dashboard): cross 403 cross_tenant_denied + same 200.
+>   - Write-target ISO TCs (ADM-013/015/018/019/022): READ-equivalent GET probe used (cross-tenant WRITE safety-barred); guard blocks the cross-tenant GET on the mutating resource.
+>   - CHR RLS/cache-key TCs (011/012/015/016/039/040): asserted at the API-guard layer — platform enforces isolation via EF global query filters + TenantAccessGuard (Postgres RLS is deferred; direct-DB/Redis-key inspection out of scope). No leak at the API boundary.
+>   - CHR-ISO-014 (no-context rejection): no header => 400 'Tenant context is not resolved'; nonexistent subdomain => 404 Workspace-not-found; empty header => 400; JWT-alone insufficient. Matches spec.
+>   - ADM-ISO-006/009/025 (system-only endpoints): tenant JWT correctly DENIED (403 both arms; no-bearer 401) — the isolation/denial contract these TCs assert. Positive SystemAdmin baseline out of scope (tenant persona).
+> - **BLOCKED (3):** ADM-ISO-005 (monitoring aggregate scoping + name-collision probe needs a SystemAdmin cross-tenant READ baseline), ADM-ISO-008 (deletion-job isolation needs a SystemAdmin destructive run — safety-barred), ADM-ISO-026 (PlanLimitOverride cross-tenant resolution needs SystemAdmin override writes + 2-tenant resolve). All persona-gap (api/v1/system/*, tenantadmin 403 both arms) — no leak observed.

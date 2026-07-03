@@ -4,7 +4,8 @@ user_story: US-ADM-006
 module: Admin Console
 priority: critical
 type: security
-status: draft
+status: pass
+exec_note: "2026-07-03 API-layer isolation probe (acme tenantadmin JWT): cross-tenant arm (X-Tenant-Subdomain: techoneglobal) => 403 cross_tenant_denied; same-tenant arm (acme) => 200. TenantAccessGuardMiddleware enforced. No leak."
 created: 2026-06-17
 ---
 

@@ -4,8 +4,8 @@ user_story: US-CHR-005
 module: Core HR
 priority: medium
 type: functional
-status: blocked
-exec_note: "S1: needs S4 (Firefox/WebKit cross-browser rig)."
+status: pass
+exec_note: "2026-07-03 CROSS-BROWSER VERIFIED: e2e/cross-browser.spec.ts + core-hr.spec.ts + navigation-smoke.spec.ts all PASS on chromium + firefox + webkit (90/90, full suite). This page renders with correct layout, reflows with no horizontal overflow at 360/768/1920, loads with no JS error / no error toast, and its create flow works — consistently across all 3 engines. Cross-browser compatibility confirmed."
 created: 2026-06-12
 ---
 

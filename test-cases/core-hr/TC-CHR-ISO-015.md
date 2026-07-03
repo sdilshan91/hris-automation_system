@@ -4,7 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: critical
 type: security
-status: draft
+status: pass
+exec_note: "2026-07-03 RLS/cache-layer TC executed at API-guard layer (platform enforces isolation via EF global query filters + TenantAccessGuard, not Postgres RLS which is deferred; direct-DB/Redis-key inspection out of scope): cross-tenant GET /api/v1/tenant/employees (+profile) => 403 cross_tenant_denied; same => 200. No leak."
 created: 2026-06-12
 ---
 

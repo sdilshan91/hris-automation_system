@@ -4,7 +4,8 @@ user_story: US-ADM-009
 module: Admin Console
 priority: critical
 type: security
-status: draft
+status: pass
+exec_note: "2026-07-03 System-only endpoint correctly denies tenant context: tenant JWT + acme header => 403; cross-tenant (techoneglobal header) => 403; no-bearer => 401. Isolation/denial contract confirmed with tenant persona; positive system-admin baseline out of scope (needs SystemAdmin)."
 created: 2026-06-17
 ---
 

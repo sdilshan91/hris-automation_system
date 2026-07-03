@@ -4,7 +4,8 @@ user_story: US-ADM-002
 module: Admin Console
 priority: critical
 type: security
-status: draft
+status: blocked
+exec_note: "2026-07-03 BLOCKED persona-gap: endpoint is System-Admin/system-context only (api/v1/system/*); tenantadmin persona => 403 both arms. The TC's core assertion requires a SystemAdmin read/write baseline (aggregate scoping / deletion job / cross-tenant override resolution) not performable with a tenant persona and barred as a cross-tenant write. No leak observed."
 created: 2026-06-16
 ---
 

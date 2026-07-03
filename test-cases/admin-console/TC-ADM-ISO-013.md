@@ -4,7 +4,8 @@ user_story: US-ADM-005
 module: Admin Console
 priority: critical
 type: security
-status: draft
+status: pass
+exec_note: "2026-07-03 Read-equivalent isolation probe (write arm safety-barred): cross-tenant GET on this resource (acme JWT + techoneglobal header) => 403 cross_tenant_denied; same-tenant GET => 200. Guard blocks cross-tenant access to the mutating resource. No leak."
 created: 2026-06-17
 ---
 

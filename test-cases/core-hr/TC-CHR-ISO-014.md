@@ -4,7 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: critical
 type: security
-status: draft
+status: pass
+exec_note: "2026-07-03 No-tenant-context rejection confirmed: no X-Tenant-Subdomain header => 400 'Tenant context is not resolved'; nonexistent subdomain => 404 Workspace-not-found; empty header => 400; valid JWT alone insufficient. Matches spec."
 created: 2026-06-12
 ---
 
