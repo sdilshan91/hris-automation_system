@@ -8,6 +8,7 @@ import {
   OnDestroy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { A11yModule } from '@angular/cdk/a11y';
 import {
   ReactiveFormsModule,
   FormBuilder,
@@ -61,7 +62,7 @@ import {
 @Component({
   selector: 'app-employee-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent, EmployeeCompensationComponent],
+  imports: [CommonModule, A11yModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent, EmployeeCompensationComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -1191,6 +1192,8 @@ import {
         <div
           class="modal-overlay"
           @modalOverlay
+          cdkTrapFocus
+          [cdkTrapFocusAutoCapture]="true"
           (click)="closeManagerSelector()"
           (keydown.escape)="closeManagerSelector()"
           role="dialog"
@@ -1246,7 +1249,9 @@ import {
                 </button>
               }
 
-              <!-- Search results -->
+              <!-- Search results — aria-live announces result-count / empty-state
+                   changes to screen readers as the type-ahead updates (ISSUE-237) -->
+              <div aria-live="polite">
               @if (isSearchingManagers()) {
                 <div class="flex items-center justify-center py-6">
                   <div class="btn-spinner border-brand-300 border-t-brand-600 w-5 h-5"></div>
@@ -1296,6 +1301,7 @@ import {
               } @else {
                 <p class="text-sm text-neutral-400 text-center py-6">Type at least 2 characters to search.</p>
               }
+              </div>
 
               <!-- Assigning spinner -->
               @if (isAssigningManager()) {
@@ -1314,6 +1320,8 @@ import {
         <div
           class="modal-overlay"
           @modalOverlay
+          cdkTrapFocus
+          [cdkTrapFocusAutoCapture]="true"
           (click)="closeStatusModal()"
           (keydown.escape)="closeStatusModal()"
           role="dialog"
