@@ -5488,7 +5488,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-127
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #133, verified live 2026-07-03 — card click → /employees/{guid} loads profile; Documents tab renders, no .filter crash)
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-002 (Employee Directory/Profile) / surfaced while re-testing the BUG-099-unblocked TCs (TC-CHR-233/121/235/210/292/288/110)
 - **Title:** With BUG-099 fixed the Employee Directory list renders (20 cards, "Showing 1-20 of 35"), but **clicking any employee card does nothing and throws `RuntimeError: NG04008: The requested path contains undefined segment at index 1`** in the console. The card's click/navigation builds a router path whose employee-id segment is `undefined` (i.e. `navigate(['/employees', undefined])`), so the directory→profile flow — the whole reason the BUG-099 fix mattered — is still broken for real users. The profile page itself is fully functional (confirmed by navigating directly via the Angular Router to `/employees/{id}`), so the defect is isolated to the card's id binding, not the profile route.
@@ -5514,7 +5514,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-236
 - **Type:** BUG (FE render crash — existing data not displayed)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #133, verified live 2026-07-03 — card click → /employees/{guid} loads profile; Documents tab renders, no .filter crash)
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-008 (Employee Documents) / TC-CHR-210
 - **Title:** Opening an employee profile's **Documents** tab throws `TypeError: this.documents(...).filter is not a function` on every change-detection cycle (observed 7×). The documents API `GET /api/v1/tenant/employees/{id}/documents` returns a **paginated envelope** `{"success":true,"data":{"items":[...],"totalCount":2}}`; after the global unwrap interceptor the component receives `{items:[...], totalCount:2}` (an object) and calls `.filter(...)` on it as if it were an array. Result: the document **list body never renders** and all category-tab counts show **0** — even though John Doe (EMP-0001) has **2** real documents (`tiny.pdf`, `ten.pdf`) returned in the 200 response. The **"Upload Document"** button also opens **no** form/modal/file-input/dropzone (no overlay, no `input[type=file]` appears on click) — the broken component template can't render the upload UI either. Only the filter-tab shell (All/Contracts/IDs/Certificates/Other) and the Upload button chrome render.
