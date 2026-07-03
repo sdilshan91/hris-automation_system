@@ -328,10 +328,18 @@ export function isSectionEditable(
 
 // ─── Directory models (US-CHR-003) ──────────────────────────
 
-/** Paginated response wrapper from the backend (AC-4, FR-5) */
+/**
+ * Paginated response wrapper from the backend (AC-4, FR-5).
+ *
+ * This is the shape the component receives AFTER `apiEnvelopeInterceptor`
+ * unwraps the `{ success, data }` envelope — i.e. the backend's `PagedResult<T>`:
+ * `{ items, totalCount, page, pageSize }`. The field names MUST match the real
+ * API (`items`/`totalCount`), not `data`/`total` — mismatching them makes the
+ * directory read `undefined` and crash on `.length` (BUG-099).
+ */
 export interface IPaginatedResponse<T> {
-  data: T[];
-  total: number;
+  items: T[];
+  totalCount: number;
   page: number;
   pageSize: number;
 }

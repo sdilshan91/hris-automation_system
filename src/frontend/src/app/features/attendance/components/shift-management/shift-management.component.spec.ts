@@ -74,7 +74,7 @@ describe('ShiftManagementComponent (US-ATT-005)', () => {
     toastr = jasmine.createSpyObj<ToastrService>('ToastrService', ['success', 'error', 'warning', 'info']);
 
     employees.searchActiveEmployees.and.returnValue(
-      of({ data: [createEmployee('e1', 'Ada', 'Lovelace')], total: 1, page: 1, pageSize: 10 } as any),
+      of({ items: [createEmployee('e1', 'Ada', 'Lovelace')], totalCount: 1, page: 1, pageSize: 10 } as any),
     );
 
     TestBed.configureTestingModule({

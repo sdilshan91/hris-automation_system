@@ -105,7 +105,7 @@ describe('AdjustmentFormComponent', () => {
 
     it('debounces then queries active employees and stores the results', fakeAsync(() => {
       empService.searchActiveEmployees.and.returnValue(
-        of({ data: [makeEmployee()], total: 1, page: 1, pageSize: 8 }),
+        of({ items: [makeEmployee()], totalCount: 1, page: 1, pageSize: 8 }),
       );
       component.onSearch({ target: { value: 'al' } } as unknown as Event);
       tick(250);

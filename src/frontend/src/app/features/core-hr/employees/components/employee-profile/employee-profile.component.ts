@@ -2065,7 +2065,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
         .pipe(takeUntil(this.destroy$))
         .subscribe({
           next: (response) => {
-            this.managerSearchResults.set(response.data);
+            this.managerSearchResults.set(response.items ?? []);
             this.isSearchingManagers.set(false);
           },
           error: () => {

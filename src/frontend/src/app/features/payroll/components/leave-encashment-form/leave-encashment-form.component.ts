@@ -372,7 +372,7 @@ export class LeaveEncashmentFormComponent implements OnDestroy {
       )
       .subscribe({
         next: (page) => {
-          this.results.set(page.data ?? []);
+          this.results.set(page.items ?? []);
           this.searching.set(false);
         },
         error: () => {
