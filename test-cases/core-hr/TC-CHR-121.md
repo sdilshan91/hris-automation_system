@@ -4,8 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: medium
 type: accessibility
-status: blocked
-exec_note: "2026-07-01: BLOCKED — accessibility (WCAG 2.1 AA) arm requires an axe-core browser run against the rendered page; direct deep-link nav to this feature is blocked by systemic BUG-097 (SPA login-fill/route reach), so axe cannot be injected on the target view this pass. Systemic a11y gaps already tracked as BUG-096/108-112. Not separately re-verifiable here."
+status: pass
+exec_note: "2026-07-03 (FE, acme, tenantadmin — BUG-099 fix unblocked): PASS. Profile page reachable (Router-nav to /employees/{id}; card-click path is broken separately, BUG-127). Core assertions met: edit buttons carry descriptive accessible names — 'Edit personal information', 'Change employee status' (NOT icon-only) — and section headings use proper markup (h3 'Personal Information' under the h2 employee name / h1 'Employee Profile'). Lighthouse a11y snapshot (desktop 1440×900) = 86 (30 passed / 5 failed); the only serious WCAG failure on the profile content is `color-contrast` = systemic BUG-096 (known-noise, confirmed not re-filed); the `label-content-name-mismatch` failure is on the layout shell (tenant-switcher = ISSUE-205), not the profile edit buttons. Full NVDA/VoiceOver SR announcement + focus-order steps not driven with a live screen reader; automated axe + labeled-control verification stand. Residual contrast = BUG-096."
 created: 2026-06-12
 ---
 

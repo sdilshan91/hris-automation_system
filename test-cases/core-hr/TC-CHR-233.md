@@ -4,8 +4,8 @@ user_story: US-CHR-009
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "2026-07-01 (API, fntest): BLOCKED — status field IS present on employee list+profile (e.g. 'Active'), but the color-coding of the status badge is an FE visual-render assertion (needs browser on the profile/directory). API provides the raw status enum; badge color not verifiable at API layer."
+status: pass
+exec_note: "2026-07-03 (FE, acme, tenantadmin — BUG-099 fix unblocked): PASS. Directory now renders; status badges are color-coded pills (computed): Active = green text rgb(21,128,61) on green-50 bg, Suspended = gray text rgb(31,41,55) on gray-100 bg, both border-radius 9999px (pill). Profile header (Router-nav to /employees/{id}) shows the same color-coded Active badge. Color-coding per status verified. Notes: (a) impl uses semantic classes `.status-badge.status-active/.status-suspended` (mapped to the correct color family) rather than the literal Tailwind `bg-green-100 text-green-800` the TC lists — functionally equivalent; (b) seed only contains Active + Suspended employees, so probation/terminated/inactive colors could not be observed this pass (data limitation, not a defect) — both present statuses render the correct color. Card-click nav to profile is separately broken (BUG-127) but does not affect this display-only verdict."
 created: 2026-06-12
 ---
 

@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: accessibility
 status: blocked
-exec_note: "2026-07-01: BLOCKED — accessibility (WCAG 2.1 AA) arm requires an axe-core browser run against the rendered page; direct deep-link nav to this feature is blocked by systemic BUG-097 (SPA login-fill/route reach), so axe cannot be injected on the target view this pass. Systemic a11y gaps already tracked as BUG-096/108-112. Not separately re-verifiable here."
+exec_note: "2026-07-03 (FE, acme; BUG-099 fix unblocked profile reach): BLOCKED on a NEW render defect. Employee profile now reachable via Router-nav to /employees/019efced-…; the Documents tab opens but its list body + Upload form never render — EmployeeDocuments calls .filter() on the paginated {items,totalCount} envelope → 'TypeError: this.documents(...).filter is not a function' (7×), same class as BUG-099. Logged as BUG-236 (HIGH). John Doe has 2 real docs (BE 200) but counts show 0 and Upload Document opens no modal/file-input. Only the category filter-tab shell renders (correct semantics: nav[aria-label], role=tab+aria-selected, sr-only label tied to mobile category select). Steps 3-12 (list rows/download/delete/upload-form keyboard+axe) NOT exercisable until BUG-236 fixed. Prior BUG-097 note superseded."
 created: 2026-06-12
 ---
 

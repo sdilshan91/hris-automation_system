@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: blocked
-exec_note: "2026-07-01 (API, fntest): BLOCKED — reporting-chain breadcrumb is an FE-render arm AND the profile DTO omits any manager/chain fields (ISSUE-225), so there is no data source in /profile to render the breadcrumb; would need the FE plus separate /direct-reports/manager calls. Manager link itself is stored correctly."
+exec_note: "2026-07-03 (FE, acme; BUG-099 fix unblocked profile reach): STILL BLOCKED — profile IS now reachable (Router-nav to /employees/019efced-…) but the reporting-chain breadcrumb FEATURE IS NOT IMPLEMENTED: no breadcrumb element exists anywhere on the profile (queried [aria-label*=breadcrumb], nav[aria-label*=chain], [class*=breadcrumb/chain] → none; header shows only 'John Doe / Software Engineer / EMP-0001 / Engineering / Active'). Blocker is a missing feature + data gap (profile DTO omits manager/chain, no /reporting-chain endpoint — ISSUE-218/225), NOT the render crash. Cannot exercise steps 1-4 (no breadcrumb to verify). Keep BLOCKED; unblocks when the breadcrumb feature + backing chain API are built. Prior fntest note superseded."
 created: 2026-06-12
 ---
 

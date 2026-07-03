@@ -4,8 +4,8 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: security
-status: blocked
-exec_note: "2026-07-01 (API, fntest): BLOCKED (partial-verified) — API arm SAFE: employee search with <script> payload → 200, content-type application/json (no HTML reflection, values JSON-escaped). The 'no alert / sanitized autocomplete render' assertion is an FE browser-render check (blocked by BUG-097). No API-layer reflection defect."
+status: pass
+exec_note: "2026-07-03 (FE, acme; BUG-099 fix unblocked profile reach): PASS — FE-render arm now exercised end-to-end. Router-nav to /employees/019efced-… → Employment tab → 'Change reporting manager' opens the manager-selector modal. Typed payloads `<script>alert('xss')</script>` and `\"><img src=x onerror=alert(1)>` into the search field (native value-setter + input event): NO alert fired (window.alert hook not called), NO <script> tag injected, NO <img src=x> element injected into the DOM; the dialog showed 'No active employees found.' — payload treated as a literal, non-matching query, not reflected as HTML (Angular default escaping). Combined with the previously-verified SAFE API arm (2026-07-01: JSON-escaped, application/json, no HTML reflection) → full PASS. Prior BUG-097 FE-block superseded. (Note a11y gaps on this same modal tracked separately as ISSUE-237.)"
 created: 2026-06-12
 ---
 

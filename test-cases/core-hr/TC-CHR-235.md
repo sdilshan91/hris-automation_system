@@ -4,8 +4,8 @@ user_story: US-CHR-009
 module: Core HR
 priority: high
 type: accessibility
-status: blocked
-exec_note: "2026-07-01: BLOCKED — accessibility (WCAG 2.1 AA) arm requires an axe-core browser run against the rendered page; direct deep-link nav to this feature is blocked by systemic BUG-097 (SPA login-fill/route reach), so axe cannot be injected on the target view this pass. Systemic a11y gaps already tracked as BUG-096/108-112. Not separately re-verifiable here."
+status: fail
+exec_note: "2026-07-03 (FE, acme, tenantadmin — BUG-099 fix unblocked): FAIL → ISSUE-235. Profile reachable (Router-nav; card-click broken = BUG-127). Change-Status modal has good ARIA skeleton (role=dialog, aria-modal=true, aria-labelledby=status-modal-title, labeled required fields New Status/Effective Date/Reason, Close/Cancel/Continue), BUT on open focus is NOT moved into the dialog (activeElement stays on the 'Change employee status' trigger; dialog.contains(activeElement)=false) — fails step 2 focus-into-modal; and a dispatched Escape did not close it — fails step 5. Focus-management/keyboard-dismiss WCAG 2.1 AA failure logged as ISSUE-235 (MED). Contrast clause also hits systemic BUG-096."
 created: 2026-06-12
 ---
 

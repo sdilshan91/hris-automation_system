@@ -4,8 +4,8 @@ user_story: US-CHR-011
 module: Core HR
 priority: high
 type: accessibility
-status: blocked
-exec_note: "2026-07-01: BLOCKED — accessibility (WCAG 2.1 AA) arm requires an axe-core browser run against the rendered page; direct deep-link nav to this feature is blocked by systemic BUG-097 (SPA login-fill/route reach), so axe cannot be injected on the target view this pass. Systemic a11y gaps already tracked as BUG-096/108-112. Not separately re-verifiable here."
+status: fail
+exec_note: "2026-07-03 (FE, acme; BUG-099 fix unblocked profile reach): FAIL — manager-selector modal now reachable (Router-nav to /employees/019efced-… → Employment tab → 'Change reporting manager'). Modal is partly correct (role=dialog, aria-modal=true, aria-labelledby='manager-modal-title'; search field aria-label='Search for a manager'; Close button named) BUT 4 WCAG 2.1 AA failures found → logged ISSUE-237 (MED): (1) focus NOT moved into dialog on open (activeElement stays on the Employment tab button, dialog.contains=false); (2) Escape does NOT dismiss; (3) no aria-live region → autocomplete results ('No active employees found' / rows) not announced (step 3); (4) search is a bare input[type=search], not an ARIA combobox (no role/aria-expanded/aria-controls) and results have no role=listbox/option (steps 4,9). Steps 2,3,4,6,9 fail. Same focus/Escape class as ISSUE-235. Not fully-clean → FAIL, not BLOCKED. Prior BUG-097 note superseded."
 created: 2026-06-12
 ---
 
