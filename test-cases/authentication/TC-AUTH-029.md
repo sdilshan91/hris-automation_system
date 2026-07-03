@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: critical
 type: functional
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -67,3 +67,5 @@ Verify that when a tenant's MFA policy is set to "required" and the user's role 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — forced-enrollment code path exists (AuthService.cs:209-223) but precondition mfaPolicy=required cannot be set: PUT /tenant/auth-settings 403s even for Tenant Admin (BUG-240).

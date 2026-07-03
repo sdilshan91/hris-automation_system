@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: medium
 type: performance
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -103,3 +103,5 @@ export default function () {
 - [x] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — perf/load arm (P95<=200ms @100 VUs, 50-user pool) needs k6 harness — out of budget. Rate-limit arm observed via TC-AUTH-015 (5 attempts -> lockout; refuses further).

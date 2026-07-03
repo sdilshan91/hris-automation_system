@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -53,3 +53,5 @@ Verify that uploading a profile photo larger than 5 MB is rejected with an appro
 - [ ] Cross-browser test
 
 > **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the create wizard renders a "Upload profile photo" control (JPEG/PNG/WebP, Max 5 MB hint), but verifying EXIF-stripping / signed-URL / server-side size rejection is backend upload behavior requiring a real file POST + storage inspection, not a browser-render check. Not an FE-render defect.
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — oversized(>5MB) rejection needs a crafted 6MB file POST to profile-photo on a throwaway employee + storage inspection — out of budget. Endpoint exists.

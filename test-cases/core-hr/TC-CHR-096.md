@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: performance
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -54,3 +54,5 @@ Verify that the employee creation form (Add Employee wizard) loads completely wi
 - [ ] Cross-browser test
 
 > **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — performance TC. The `/employees/new` form renders promptly in-browser, but P95 page-load timing needs an instrumented perf harness the shared Playwright browser cannot measure. Not a functional defect.
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — employee-form page-load P95<=2.5s (+3G throttle) needs a Chrome DevTools perf-trace harness — out of budget this API run.

@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: critical
 type: security
-status: draft
+status: pass
 created: 2026-06-03
 ---
 
@@ -62,3 +62,5 @@ Verify that a recovery code that has already been used cannot be reused for a su
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — reuse of used recovery code -> 401; fresh unused code -> 200; reuse of that -> 401. Per-code single-use invariant holds.

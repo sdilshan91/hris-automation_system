@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: functional
-status: draft
+status: pass
 created: 2026-05-11
 ---
 
@@ -62,3 +62,5 @@ Verify that a user can successfully enroll in TOTP-based MFA by generating a sec
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — enroll returns Base32 secret + server-generated QR PNG data-URL + exactly 10 recovery codes; TOTP verify (RFC6238 SHA1/6/30) activates MFA. DB-level encrypted-secret/hashed-codes asserted from source (HashRecoveryCode/VerifyRecoveryCode).

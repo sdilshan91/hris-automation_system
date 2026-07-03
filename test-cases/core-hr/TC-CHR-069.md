@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: critical
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -61,3 +61,5 @@ Verify that uploading a valid profile photo (JPEG, PNG, or WebP, under 5 MB) dur
 - [ ] Cross-browser test
 
 > **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — the create wizard renders a "Upload profile photo" control (JPEG/PNG/WebP, Max 5 MB hint), but verifying EXIF-stripping / signed-URL / server-side size rejection is backend upload behavior requiring a real file POST + storage inspection, not a browser-render check. Not an FE-render defect.
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — POST /tenant/employees/{id}/profile-photo exists, but EXIF-strip + signed-URL + tenant-isolated storage-path verification needs object-storage inspection + a crafted EXIF/GPS JPEG — out of budget.

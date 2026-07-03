@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: critical
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -58,3 +58,5 @@ Verify that when an HR Officer fills custom fields configured by the Tenant Admi
 - [ ] Cross-browser test
 
 > **Execution 2026-06-30:** STILL BLOCKED for this FE per-TC pass — this is a backend/API/security-behavior TC (server-side validation, storage isolation, audit, CSRF, plan-limit, JSONB persistence), not a browser page-render check. The create wizard renders and reaches the relevant fields, but verifying this assertion requires API/DB-layer probes (curl + JWT / psql), out of scope for the FE-render sweep. Not a functional FE defect.
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — custom-fields ARE wired: create enforces required custom fields server-side (key 'nickname' accepted; then 'Shirt Size' required). Could not complete a successful create to read back the JSONB value — 'Shirt Size' key/option not discoverable (custom-fields config endpoint 403 for HR persona). Persona/discovery gap, not a defect. (Surfaced ISSUE-242.)

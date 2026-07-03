@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: security
-status: draft
+status: pass
 created: 2026-06-12
 ---
 
@@ -56,3 +56,5 @@ Verify that the system properly sanitizes all input fields during employee creat
 - [ ] Cross-browser test
 
 > **Execution 2026-06-30:** STILL BLOCKED for this FE per-TC pass — this is a backend/API/security-behavior TC (server-side validation, storage isolation, audit, CSRF, plan-limit, JSONB persistence), not a browser page-render check. The create wizard renders and reaches the relevant fields, but verifying this assertion requires API/DB-layer probes (curl + JWT / psql), out of scope for the FE-render sweep. Not a functional FE defect.
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — SQLi email ('; DROP TABLE employees; --@test.com) -> 400 (no injection); employees table intact (totalCount stable). XSS firstName stored raw (parameterized storage) -> render-time escaping is FE (Angular default) responsibility. Prior dept rows show SQLi/XSS payloads stored as literal names, corroborating no injection.

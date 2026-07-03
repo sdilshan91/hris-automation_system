@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: security
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -60,3 +60,5 @@ Verify that a user whose role is listed in the tenant's `mfaRequiredRoles` canno
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — required-policy disable-block arm not exercisable: cannot set mfaPolicy=required (BUG-240). Control arm (disable succeeds under optional policy) confirmed via TC-AUTH-033.

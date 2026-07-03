@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: critical
 type: functional
-status: draft
+status: pass
 created: 2026-05-11
 ---
 
@@ -63,3 +63,5 @@ Verify that a user with MFA enabled can complete the two-step login flow: passwo
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — login->{mfaChallenge:true,mfaMethod:totp} no token; POST /auth/mfa/challenge with valid TOTP -> full JWT (roles+15 permissions) + refreshToken cookie httpOnly;secure;samesite=strict;path=/api/v1/auth.

@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: critical
 type: security
-status: draft
+status: pass
 created: 2026-05-11
 ---
 
@@ -60,3 +60,5 @@ Verify that submitting an incorrect TOTP code during the MFA challenge returns a
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — invalid TOTP -> 401 'Invalid verification code.'; 6th attempt after 5 failures -> 401 'Account temporarily locked'; valid TOTP while locked still 401 (lockout not bypassed). Shared FailedLoginCount + mfa_challenge_failure audit confirmed in source.

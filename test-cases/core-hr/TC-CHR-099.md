@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: medium
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -55,3 +55,5 @@ Verify that the employee creation wizard renders and functions correctly across 
 - [x] Cross-browser test
 
 > **Execution 2026-06-30 (FE, acme):** STILL BLOCKED — responsive/cross-browser TC. The employee form renders correctly at the current desktop viewport; requires viewport resizing (360–1920px) / multiple browser engines not available in the fixed single shared chromium MCP session.
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — cross-browser (Chrome/Edge/Firefox/Safari) needs multi-engine execution — out of budget this API run.

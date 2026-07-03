@@ -4,7 +4,7 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
 ---
 
@@ -56,3 +56,5 @@ Verify that the employee_no auto-generation pattern is configurable per tenant (
 - [ ] Cross-browser test
 
 > **Execution 2026-06-30:** STILL BLOCKED for this FE per-TC pass — this is a backend/API/security-behavior TC (server-side validation, storage isolation, audit, CSRF, plan-limit, JSONB persistence), not a browser page-render check. The create wizard renders and reaches the relevant fields, but verifying this assertion requires API/DB-layer probes (curl + JWT / psql), out of scope for the FE-render sweep. Not a functional FE defect.
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — no employee_no-pattern configuration endpoint exists in the API surface (no tenant setting exposed); configurable-per-tenant pattern not exercisable — feature not implemented/exposed.

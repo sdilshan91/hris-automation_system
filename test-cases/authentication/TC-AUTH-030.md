@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: functional
-status: draft
+status: pass
 created: 2026-06-03
 ---
 
@@ -62,3 +62,5 @@ Verify that a user who has lost access to their authenticator app can complete t
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — recovery-code login via POST /auth/mfa/challenge {email,code:<recoveryCode>} -> 200 tokens; code marked used (single-use). Minor gap: no regenerate-codes prompt in response (ISSUE-241).

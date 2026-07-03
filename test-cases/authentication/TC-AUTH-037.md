@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: security
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -68,3 +68,5 @@ Verify the cross-tenant MFA behavior for a user who belongs to multiple tenants 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — cross-tenant MFA enforcement needs two tenants (alpha off / beta required) + a multi-tenant user (multi@example.com); only single acme persona set available.

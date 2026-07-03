@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: security
-status: draft
+status: pass
 created: 2026-06-03
 ---
 
@@ -57,3 +57,5 @@ Verify that recovery codes are displayed exactly once during the enrollment resp
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — GET /auth/me exposes only {mfaEnabled} (no recoveryCodes/secret); re-enroll while enabled -> 409 Conflict; no GET /auth/mfa/recovery-codes endpoint exists (only enroll/verify/challenge/disable). Codes hashed in source (HashRecoveryCode).

@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: functional
-status: draft
+status: fail
 created: 2026-06-03
 ---
 
@@ -64,3 +64,5 @@ Verify that a tenant admin can update the tenant's MFA policy and required roles
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** FAIL — GET auth-settings 200; employee PUT 403 (correct); but Tenant Admin PUT -> 403 (should be 200). BUG-240: RoleClaimType not set to 'roles' + MapInboundClaims=false => [Authorize(Roles=)] never matches.

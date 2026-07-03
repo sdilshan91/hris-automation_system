@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: functional
-status: draft
+status: pass
 created: 2026-06-03
 ---
 
@@ -66,3 +66,5 @@ Verify that when a tenant's MFA policy is set to "optional," a user can freely e
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** PASS — under optional policy: DELETE /auth/mfa -> 200 'MFA has been disabled', /me mfaEnabled=false, login issues token with no challenge; re-enroll returns a NEW secret (differs from original) + 10 codes.

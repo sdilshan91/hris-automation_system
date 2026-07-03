@@ -4,7 +4,7 @@ user_story: US-AUTH-005
 module: Authentication
 priority: medium
 type: accessibility
-status: draft
+status: blocked
 created: 2026-06-03
 ---
 
@@ -82,3 +82,5 @@ Verify that the MFA enrollment flow (QR code, 6-digit input, recovery code displ
 - [ ] Performance test
 - [x] Accessibility test
 - [x] Cross-browser test
+
+> **Execution 2026-07-03 (API, @test-runner):** BLOCKED — MFA enrollment/challenge UI a11y (axe + keyboard/SR + responsive) needs browser+axe-core execution — out of budget this API-focused run.
