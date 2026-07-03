@@ -188,5 +188,13 @@ public sealed class JwtService : IJwtService
         ClockSkew = TimeSpan.FromSeconds(30),
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = _validationKey,
+        // BUG-240: roles are emitted under the custom "roles" claim (GenerateAccessToken),
+        // and MapInboundClaims=false (BUG-001) keeps claim names 1:1 — so the framework
+        // never maps them to the default ClaimTypes.Role. Point role-based checks
+        // ([Authorize(Roles=...)] / User.IsInRole()) at the "roles" claim so they resolve
+        // instead of 403-ing for the correct role. (This only tells the middleware which
+        // claim is the role claim; it does NOT remap claims, so the read-only System-Support
+        // impersonation behaviour from BUG-001/106 is unaffected.)
+        RoleClaimType = "roles",
     };
 }
