@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IEmployee,
@@ -75,10 +76,14 @@ export class EmployeeService {
     params: IEmployeeDirectoryParams
   ): Observable<IPaginatedResponse<IEmployee>> {
     const httpParams = this.buildDirectoryParams(params);
-    return this.http.get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
-      params: httpParams,
-      withCredentials: true,
-    });
+    return this.http
+      .get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
+        params: httpParams,
+        withCredentials: true,
+      })
+      .pipe(
+        map((page) => ({ ...page, items: this.normalizeEmployeeIds(page.items) }))
+      );
   }
 
   /**
@@ -311,10 +316,28 @@ export class EmployeeService {
       .set('statuses', 'Active')
       .set('page', '1')
       .set('pageSize', pageSize.toString());
-    return this.http.get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(
+        map((page) => ({ ...page, items: this.normalizeEmployeeIds(page.items) }))
+      );
+  }
+
+  /**
+   * The backend directory/search DTOs expose the employee identifier as `id`
+   * (`EmployeeDirectoryItemDto.Id`), but the FE `IEmployee` model uses
+   * `employeeId`. Bridge the two so navigation, row selection and trackBy get a
+   * real id instead of `undefined` (BUG-127: card click → /employees/undefined,
+   * NG0955 duplicate track-keys). All other fields already match by name.
+   */
+  private normalizeEmployeeIds(items: IEmployee[] | undefined): IEmployee[] {
+    return (items ?? []).map((e) => ({
+      ...e,
+      employeeId: e.employeeId ?? (e as IEmployee & { id?: string }).id ?? '',
+    }));
   }
 
   // ─── Helpers ─────────────────────────────────────────────
