@@ -69,7 +69,8 @@ describe('DocumentService', () => {
       const req = httpMock.expectOne(docUrl);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush([mockDocument]);
+      // Real backend (post-envelope-unwrap): PagedResult { items, totalCount }.
+      req.flush({ items: [mockDocument], totalCount: 1 });
     });
 
     it('should return empty array when no documents exist', () => {
@@ -78,7 +79,27 @@ describe('DocumentService', () => {
       });
 
       const req = httpMock.expectOne(docUrl);
-      req.flush([]);
+      req.flush({ items: [], totalCount: 0 });
+    });
+
+    // BUG-236 regression: the endpoint returns { items, totalCount } (NOT a bare
+    // array) and each item exposes its id as `id` (not `documentId`). The service
+    // must unwrap `.items` (else the component's `.filter()` threw) and bridge
+    // `id → documentId` (else track/download/delete keyed off `undefined`).
+    it('BUG-236: unwraps the page and maps backend `id` to `documentId`', () => {
+      let received: IEmployeeDocument[] | undefined;
+      service.getDocuments(employeeId).subscribe((docs) => (received = docs));
+
+      const req = httpMock.expectOne(docUrl);
+      // Backend item shape: `id`, no `documentId`.
+      const backendItem = { ...mockDocument, id: 'doc-99' } as unknown as Record<string, unknown>;
+      delete backendItem['documentId'];
+      req.flush({ items: [backendItem], totalCount: 1 });
+
+      expect(Array.isArray(received)).toBeTrue();
+      expect(received!.length).toBe(1);
+      expect(received![0].documentId).toBe('doc-99');
+      expect(received![0].fileName).toBe('contract.pdf');
     });
   });
 

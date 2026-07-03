@@ -137,6 +137,26 @@ describe('EmployeeService', () => {
       req.flush({ items: [mockEmployee], totalCount: 1, page: 1, pageSize: 20 });
     });
 
+    // BUG-127 regression: directory items expose their id as `id`
+    // (EmployeeDirectoryItemDto.Id), but the FE model uses `employeeId`. The
+    // service must bridge `id → employeeId` so card nav / selection / trackBy get
+    // a real id instead of undefined (card click → /employees/undefined).
+    it('BUG-127: maps backend `id` to `employeeId` on directory items', () => {
+      let received: IEmployee[] | undefined;
+      service
+        .queryDirectory({ page: 1, pageSize: 20 })
+        .subscribe((r) => (received = r.items));
+
+      const req = httpMock.expectOne((r) => r.url === baseUrl);
+      const backendItem = { ...mockEmployee, id: 'real-id-99' } as unknown as Record<string, unknown>;
+      delete backendItem['employeeId'];
+      req.flush({ items: [backendItem], totalCount: 1 });
+
+      expect(received!.length).toBe(1);
+      expect(received![0].employeeId).toBe('real-id-99');
+      expect(received![0].firstName).toBe('John');
+    });
+
     it('should send multi-select filters as comma-separated values', () => {
       const params: IEmployeeDirectoryParams = {
         departments: ['Engineering', 'Sales'],

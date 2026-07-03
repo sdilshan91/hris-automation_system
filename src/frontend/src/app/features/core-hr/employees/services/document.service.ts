@@ -1,12 +1,14 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpEvent, HttpRequest } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IEmployeeDocument,
   IUploadDocumentRequest,
   IDocumentDownloadResponse,
 } from '../models/document.models';
+import { IPaginatedResponse } from '../models/employee.models';
 
 /**
  * US-CHR-008: Service for employee document management operations.
@@ -24,13 +26,30 @@ export class DocumentService {
 
   /**
    * List all documents for an employee.
-   * Backend returns IEmployeeDocument[] (tenant-scoped via interceptor).
+   *
+   * The backend returns a paginated `PagedResult` — `{ items, totalCount }`
+   * (after `apiEnvelopeInterceptor` unwraps the `{ success, data }` envelope) —
+   * NOT a bare array, and each item exposes its id as `id` (not `documentId`).
+   * Unwrap `.items` and bridge `id → documentId` so the component receives the
+   * `IEmployeeDocument[]` it expects (BUG-236: `.filter()` on the page object
+   * threw `filter is not a function`; track/download/delete keyed off an
+   * undefined `documentId`). Other fields already match by name.
    */
   getDocuments(employeeId: string): Observable<IEmployeeDocument[]> {
-    return this.http.get<IEmployeeDocument[]>(
-      `${this.baseUrl}/${employeeId}/documents`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<IPaginatedResponse<IEmployeeDocument>>(
+        `${this.baseUrl}/${employeeId}/documents`,
+        { withCredentials: true }
+      )
+      .pipe(
+        map((page) =>
+          (page.items ?? []).map((d) => ({
+            ...d,
+            documentId:
+              d.documentId ?? (d as IEmployeeDocument & { id?: string }).id ?? '',
+          }))
+        )
+      );
   }
 
   /**
