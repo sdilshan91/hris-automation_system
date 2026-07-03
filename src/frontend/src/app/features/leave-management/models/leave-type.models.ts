@@ -123,8 +123,16 @@ export const LEAVE_TYPE_COLORS: string[] = [
 /**
  * Pure helper: compute contrasting text color for a given hex background.
  * Returns 'white' or 'black' based on luminance.
+ *
+ * Guards against a null/blank color: a leave type with no `color` (legacy/QA
+ * rows) would otherwise throw `null.replace(...)` during change detection and
+ * abort the whole row's render (dropping its a11y attributes). Default to a
+ * dark-on-light contrast in that case.
  */
-export function getContrastTextColor(hex: string): string {
+export function getContrastTextColor(hex: string | null | undefined): string {
+  if (!hex) {
+    return '#000000';
+  }
   const c = hex.replace('#', '');
   const r = parseInt(c.substring(0, 2), 16);
   const g = parseInt(c.substring(2, 4), 16);

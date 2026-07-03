@@ -191,13 +191,13 @@ import { LeaveTypeFormComponent } from '../leave-type-form/leave-type-form.compo
               <table class="w-full" role="table">
                 <thead>
                   <tr class="border-b border-neutral-100">
-                    <th class="th-notion w-10"></th>
-                    <th class="th-notion text-left">Leave Type</th>
-                    <th class="th-notion text-left">Code</th>
-                    <th class="th-notion text-center">Entitlement</th>
-                    <th class="th-notion text-left">Accrual</th>
-                    <th class="th-notion text-center">Status</th>
-                    <th class="th-notion text-right">Actions</th>
+                    <th scope="col" class="th-notion w-10"><span class="sr-only">Reorder</span></th>
+                    <th scope="col" class="th-notion text-left">Leave Type</th>
+                    <th scope="col" class="th-notion text-left">Code</th>
+                    <th scope="col" class="th-notion text-center">Entitlement</th>
+                    <th scope="col" class="th-notion text-left">Accrual</th>
+                    <th scope="col" class="th-notion text-center">Status</th>
+                    <th scope="col" class="th-notion text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody
@@ -216,16 +216,17 @@ import { LeaveTypeFormComponent } from '../leave-type-form/leave-type-form.compo
                     >
                       <!-- Drag handle -->
                       <td class="td-notion text-center">
-                        <div
+                        <button
+                          type="button"
                           class="drag-handle"
                           cdkDragHandle
                           [class.drag-handle-disabled]="isSearchActive()"
-                          [attr.aria-label]="'Drag to reorder ' + lt.name"
+                          [attr.aria-label]="'Drag to reorder ' + (lt.name || 'leave type')"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
                             <path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 5A.75.75 0 0 1 2.75 9h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 9.75Zm0 5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
                           </svg>
-                        </div>
+                        </button>
                       </td>
                       <td class="td-notion cursor-pointer" (click)="openEdit(lt)">
                         <div class="flex items-center gap-2.5">
@@ -257,8 +258,8 @@ import { LeaveTypeFormComponent } from '../leave-type-form/leave-type-form.compo
                         <button
                           type="button"
                           role="switch"
-                          [attr.aria-checked]="lt.isActive"
-                          [attr.aria-label]="lt.isActive ? 'Deactivate ' + lt.name : 'Activate ' + lt.name"
+                          [attr.aria-checked]="lt.isActive ?? false"
+                          [attr.aria-label]="(lt.isActive ? 'Deactivate ' : 'Activate ') + (lt.name || 'leave type')"
                           class="toggle-switch"
                           [class.toggle-switch-on]="lt.isActive"
                           (click)="toggleActive(lt, $event)"
@@ -359,8 +360,8 @@ import { LeaveTypeFormComponent } from '../leave-type-form/leave-type-form.compo
                         <button
                           type="button"
                           role="switch"
-                          [attr.aria-checked]="lt.isActive"
-                          [attr.aria-label]="lt.isActive ? 'Deactivate ' + lt.name : 'Activate ' + lt.name"
+                          [attr.aria-checked]="lt.isActive ?? false"
+                          [attr.aria-label]="(lt.isActive ? 'Deactivate ' : 'Activate ') + (lt.name || 'leave type')"
                           class="toggle-switch"
                           [class.toggle-switch-on]="lt.isActive"
                           (click)="toggleActive(lt, $event)"

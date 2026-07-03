@@ -65,7 +65,7 @@ import {
     <!-- Category filter tabs (FR-9, UI/UX) -->
     <div class="filter-tabs mb-4">
       <!-- Desktop tabs -->
-      <nav class="hidden md:flex gap-1 overflow-x-auto pb-1" aria-label="Document category filter">
+      <nav class="hidden md:flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Document category filter">
         @for (tab of filterTabs; track tab.key) {
           <button
             type="button"
