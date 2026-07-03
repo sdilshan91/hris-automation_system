@@ -4,8 +4,8 @@ user_story: US-CHR-008
 module: Core HR
 priority: high
 type: accessibility
-status: fail
-exec_note: "2026-07-04 (FE, acme; BUG-099/127/236 fixes unblocked full flow): EXERCISED end-to-end via real card click (Employees → John Doe card → /employees/019efced-… → Documents tab). Tab now renders both real docs (tiny.pdf 69 B, ten.pdf 10.0 MB), category counts correct (Other 2), Download/Delete/Upload-Document controls all have accessible names ('Download tiny.pdf' etc.). BUT FAIL on step 12: Lighthouse a11y snapshot (desktop) = 90 with a SERIOUS axe `aria-required-parent` violation — the category filter tabs are role=tab buttons inside a <nav> with NO role=tablist parent, no aria-controls, no roving tabindex (5 nodes) → NEW BUG-238 (MED). Plus systemic contrast BUG-096 (known). Steps 5-9 (delete-confirm modal focus-return, upload-form field keyboard/label) not exercised — opening the upload form + delete = report-only write. Verdict FAIL on the a11y-audit arm (serious violation present). Prior BUG-236 blocker RESOLVED."
+status: blocked
+exec_note: "2026-07-03 (BUG-238 RESOLVED, PR #135 merged): Documents category tabs now have role=tablist (aria-required-parent gone). BUT step 12 (no critical/serious WCAG 2.1 AA violations) still fails on the SYSTEMIC contrast issue BUG-096 (serious, open platform-wide). Flips to pass when BUG-096 is fixed."
 created: 2026-06-12
 ---
 

@@ -5462,7 +5462,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-233
 - **Type:** ISSUE (accessibility contract nit)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #135, merged — departments card h3->h2 heading-order; job-titles tr role=button removed; live a11y 96)
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-004 (Departments) + US-CHR-005 (Job Titles) / TC-CHR-030, TC-CHR-061
 - **Title:** Two distinct, genuine (non-contrast) Lighthouse a11y failures on the Core-HR non-employee list pages, surfaced during the responsive/a11y rig pass on `acme.myhrm.org:4200` (hr@acme.test): (a) **Departments** (`/departments`, list view) — the department **cards use `<h3.text-base>`** for each department name with the page title as `<h1>` and no intervening `<h2>`, so Lighthouse `heading-order` fails ("Heading elements are not in a sequentially-descending order"); (b) **Job Titles** (`/job-titles`, desktop) — the list is `<table role="table">` whose descendants include `role="button"` elements, so Lighthouse `aria-required-children` fails ("Element has children which are not allowed: [role=button]"). Distinct component from BUG-110 (that is a payroll `role="tablist"` with a non-`tab` child) — same axe rule, different element/root-cause.
@@ -5475,7 +5475,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-234
 - **Type:** ISSUE (accessibility defect — WCAG 2.1 AA 4.1.2 Name/Role/Value + 1.3.1 Info & Relationships)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #135, merged — leave-types th scope=col, drag div->button, switch/drag null-data aria fallbacks; live a11y 96)
 - **Layer:** FE
 - **Module / US / TC:** Leave Management / US-LV-001 (Leave Types) / TC-LV-035, TC-LV-036
 - **Title:** The Leave Types list (`/leave-types`, component `ng-c1673730939`) fails four distinct Lighthouse/axe a11y audits beyond the known systemic noise: (1) **`aria-required-attr` + `button-name`** — each row's active/inactive toggle is a `<button type="button" role="switch" class="toggle-switch">` that has **neither `aria-checked` nor any accessible name** (no inner text, no `aria-label`), so a screen-reader user cannot tell the toggle's on/off state nor what it toggles; (2) **`aria-prohibited-attr`** — the CDK drag-reorder handles are `<div cdkdraghandle class="cdk-drag-handle" aria-label="Drag to reorder …">` with **no role**, so `aria-label` is prohibited and dropped (the reorder affordance is invisible to AT); (3) **`td-has-header`** — the leave-types `<table role="table">` has data `<td>` cells with no associated header cells. The toggle defect (1) is the material one: it is an unlabeled, state-less switch controlling whether a leave type is active.
@@ -5501,7 +5501,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-235
 - **Type:** ISSUE (accessibility defect — WCAG 2.1 AA 2.4.3 Focus Order / 2.1.2 No Keyboard Trap escape)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #134, merged — cdkTrapFocus auto-capture: focus moves into dialog + Escape closes; live-verified focusInside=true)
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-009 (Employee Status Change) / TC-CHR-235
 - **Title:** The employee-profile **Change Employee Status** modal is otherwise well-structured for a11y (`role="dialog"` + `aria-modal="true"` + `aria-labelledby="status-modal-title"`, all form fields labeled with required-indicators — New Status, Effective Date, Reason), **but on open it does NOT move keyboard focus into the dialog** — focus remains on the "Change employee status" trigger button behind the modal (`document.activeElement` = the trigger, `dialog.contains(activeElement) === false`). A screen-reader/keyboard user is not placed in the dialog and the dialog content is not announced. Additionally, **Escape did not close the modal** (dispatched keydown Escape → dialog still present), i.e. no keyboard dismiss. This fails TC-CHR-235 steps 2 (first focusable element receives focus / focus trapped) and 5 (Escape closes, focus returns).
@@ -5527,7 +5527,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-237
 - **Type:** ISSUE (accessibility defect — WCAG 2.1 AA 2.4.3 Focus Order, 2.1.2 keyboard-escape, 4.1.3 Status Messages / 4.1.2 Name-Role-Value)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED-PARTIAL (PR #134, merged — focus-trap + Escape + aria-live done; full ARIA combobox arrow-key pattern deferred as noted)
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-011 (Manager Assignment) / TC-CHR-292
 - **Title:** The **reporting-manager selector modal** (Employee profile → Employment tab → "Change reporting manager") is partially a11y-correct — `role="dialog"` + `aria-modal="true"` + `aria-labelledby="manager-modal-title"`, the search field has an accessible name (`aria-label="Search for a manager"`), and the Close button has a name ("Close manager selector") — **but it has four WCAG failures**: (1) on open, focus is **NOT moved into the dialog** — `document.activeElement` remains the "Employment" tab trigger button behind the modal (`dialog.contains(activeElement) === false`); (2) **Escape does not close** the modal (dispatched keydown Escape on dialog + document → dialog still present); (3) the type-ahead search has **no `aria-live` region** anywhere in the dialog, so result changes ("No active employees found" / result rows) are **not announced** to screen readers (TC-CHR-292 step 3); (4) the search input is a plain `<input type="search">` — **not an ARIA combobox** (no `role="combobox"`, no `aria-expanded`, no `aria-controls`) and the results container exposes **no `role="listbox"`/`role="option"`**, so arrow-key result navigation is not announced (steps 4, 9). This is the **same focus/Escape class as ISSUE-235** (status-change modal) in a different component, plus autocomplete-specific gaps.
@@ -5540,7 +5540,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-238
 - **Type:** BUG (accessibility defect — WAI-ARIA tab pattern / WCAG 2.1 AA 4.1.2 Name-Role-Value)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #135, merged — documents category nav role=tablist added; aria-required-parent gone)
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-008 (Employee Documents) / TC-CHR-210
 - **Title:** On the employee-profile **Documents** tab, the document **category filter** ("All / Contracts / IDs / Certificates / Other") is rendered as five `<button type="button" role="tab" aria-selected="…">` elements inside a plain `<nav aria-label="Document category filter">` that has **no `role="tablist"`**. WAI-ARIA requires every `role="tab"` to be contained by a `role="tablist"` parent, so axe-core/Lighthouse report a **serious `aria-required-parent`** violation (`"[role]s are not contained by their required parent element"`, 5 nodes). The tabs additionally have **no `aria-controls`** pointing at a tabpanel and **no roving `tabindex`** (all five buttons have `tabindex=null` → all five are in the tab order instead of the single-active-tab roving pattern). A screen reader will not announce these as a coherent tab set, and keyboard users get no arrow-key tab semantics. This is the **inverse rule** of BUG-110 / ISSUE-233 (those are `aria-required-children`: a `tablist` holding a non-`tab` child) — here the `tab`s are present but their required `tablist` parent is missing, on a different component.

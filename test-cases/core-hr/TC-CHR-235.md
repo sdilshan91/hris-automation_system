@@ -4,8 +4,8 @@ user_story: US-CHR-009
 module: Core HR
 priority: high
 type: accessibility
-status: fail
-exec_note: "2026-07-03 (FE, acme, tenantadmin — BUG-099 fix unblocked): FAIL → ISSUE-235. Profile reachable (Router-nav; card-click broken = BUG-127). Change-Status modal has good ARIA skeleton (role=dialog, aria-modal=true, aria-labelledby=status-modal-title, labeled required fields New Status/Effective Date/Reason, Close/Cancel/Continue), BUT on open focus is NOT moved into the dialog (activeElement stays on the 'Change employee status' trigger; dialog.contains(activeElement)=false) — fails step 2 focus-into-modal; and a dispatched Escape did not close it — fails step 5. Focus-management/keyboard-dismiss WCAG 2.1 AA failure logged as ISSUE-235 (MED). Contrast clause also hits systemic BUG-096."
+status: pass
+exec_note: "2026-07-03 PASS: ISSUE-235 fixed (PR #134, merged). Change-Status modal now traps focus into the dialog on open + closes on Escape (live-verified focusInside=true, Escape closes). The two failing steps (2 focus-trap, 5 Escape) now pass; the rest of the dialog a11y (role/aria-modal/labels) was already correct."
 created: 2026-06-12
 ---
 
