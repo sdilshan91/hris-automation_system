@@ -4,7 +4,8 @@ user_story: US-AUTH-004
 module: Authentication
 priority: critical
 type: functional
-status: fail
+status: pass
+exec_note: "2026-07-03 (API, BUG-040 verify-rerun, PR#118): PASS — reset token now validated. Injected a known SHA-256 token hash + 1h expiry for throwaway qa-lockout-1@acme.test (simulating forgot-password), then reset-password with the REAL raw token + compliant pw QaT3aValid12!x -> HTTP 200 'Password updated successfully'; login with new pw -> 200. Valid-token path works. (Single-use/forged arms in TC-AUTH-012.)"
 created: 2026-05-11
 ---
 <!-- EXECUTED 2026-06-25 (API-layer, debugger-free, on THROWAWAY user qa-reset-throwaway@acme.test;

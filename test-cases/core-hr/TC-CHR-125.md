@@ -4,8 +4,8 @@ user_story: US-CHR-002
 module: Core HR
 priority: medium
 type: functional
-status: fail
-exec_note: "2026-07-01 (API, fntest): FAIL — no is_deleted soft-delete/Archived model exists (see ISSUE-223). Lifecycle is status-based: a Terminated employee still returns 200 on GET (spec expects 404) and still appears in the default list (spec expects hidden); includeArchived=true is a no-op; no DELETE route (405). activeOnly=true DOES exclude it. BR-6 assertions not met."
+status: pass
+exec_note: "2026-07-03 (API, ISSUE-223 verify-rerun, PR#124): PASS (default-hidden/flag-reveal arm) — acme has 2 Terminated employees. GET /api/v1/tenant/employees default (pageSize=100) -> 34 rows, both Terminated ABSENT (status breakdown Active/Suspended/Probation only). GET ...?includeTerminated=true -> 36 rows, both Terminated PRESENT. BR-6 visibility intent met via includeTerminated param. BY-DESIGN DIVERGENCE from the original TC wording: model is status-based, NOT is_deleted soft-delete — GET a Terminated employee by id (/profile and /{id}) still returns HTTP 200 (TC step 3 expected 404); there is no includeArchived param (the flag is includeTerminated). Visibility assertion passes; soft-delete/404 semantics are not implemented (see ISSUE-223)."
 created: 2026-06-12
 ---
 

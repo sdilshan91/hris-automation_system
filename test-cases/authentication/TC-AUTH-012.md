@@ -4,7 +4,8 @@ user_story: US-AUTH-004
 module: Authentication
 priority: critical
 type: security
-status: fail
+status: pass
+exec_note: "2026-07-03 (API, BUG-040/BUG-004 verify-rerun, PR#118/#127): PASS — takeover blocked. FORGED token ('totally-bogus-not-a-real-token-123') + valid pw -> HTTP 400 'The reset link is invalid or has expired' (was HTTP 200 takeover). REUSE of a valid single-use token after a successful reset -> HTTP 400 (token consumed). Weak pw (11ch) -> 400 'must be at least 12 characters'; 12ch all-lowercase -> 400 complexity (tenant policy enforced on reset). Steps 1(expired)/10(history) not separately exercised. Throwaway user only."
 created: 2026-05-11
 ---
 <!-- EXECUTED 2026-06-25 (API-layer, debugger-free, THROWAWAY user; shared personas untouched). VERDICT: FAIL.

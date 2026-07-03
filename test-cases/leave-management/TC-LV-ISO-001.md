@@ -4,7 +4,8 @@ user_story: US-LV-001
 module: Leave Management
 priority: critical
 type: security
-status: fail
+status: pass
+exec_note: "2026-07-03 BUG-003 fix verification (PR#119 TenantAccessGuardMiddleware): cross-tenant probe acme JWT + X-Tenant-Subdomain:techoneglobal on GET /api/v1/tenant/leave-types -> 403 cross_tenant_denied; same-tenant control -> 200 own leave types. Leak closed."
 created: 2026-06-13
 ---
 

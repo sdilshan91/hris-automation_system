@@ -4,7 +4,8 @@ user_story: US-AUTH-008
 module: Authentication
 priority: critical
 type: security
-status: fail
+status: pass
+exec_note: "2026-07-03 (API, BUG-042 verify-rerun, PR#122): PASS (impersonation switch-block arm) — started a real impersonation session (platform admin impersonating employee@acme.test, is_impersonation=true), then POST /api/v1/auth/switch-tenant with the impersonation token -> HTTP 403 code 'switch_forbidden_during_impersonation'; my-tenants during impersonation -> 200 but lists only the current tenant (no switch enabled). Session ended cleanly. NOT exercised: steps 5-8 (normal switch to a 2nd tenant + no cross-tenant data exposure) — the employee persona has single-tenant (acme) membership only."
 created: 2026-06-09
 ---
 

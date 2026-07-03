@@ -4,8 +4,9 @@ user_story: US-LV-012
 module: Leave Management
 priority: critical
 type: integration
-status: fail
+status: pass
 created: 2026-06-14
+exec_note: "2026-07-03 VERIFICATION RE-RUN (BUG-037/086 fix PR#117): GET /api/v1/leaves/my-balance?year=2026 (employee@acme) -> HTTP 200 (was 500 on legacy 'Accrued' ledger enum). GET /api/v1/leaves/reports/BalanceSummary?year=2026 (hr@acme) -> HTTP 200. Values reconcile: EMP-0001 John Doe Annual Leave shows entitlement 2.74 / used 10.5 / balance -0.26 in BOTH the dashboard my-balance and the Balance Summary report. Accrued-enum 500 resolved; dashboard==report AC-1 reconciliation holds. PASS."
 ---
 
 # TC-LV-233: Balance Summary values match the individual employee dashboard (AC-1, Test Hint)

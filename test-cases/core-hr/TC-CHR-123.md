@@ -5,7 +5,7 @@ module: Core HR
 priority: high
 type: functional
 status: pass
-exec_note: "2026-07-01 (API, fntest): PASS — employee self-edit of permitted contact fields (phone/personalEmail/address) via PATCH /tenant/employees/{id}/profile → 200, persisted. AC-4 edit flow works. NOTE: exposed BUG-119 (Edit.Own has no owner check → any employee can edit ANY employee's profile). Audit-log verification not deep-dived."
+exec_note: "2026-07-03 (API, BUG-119 verify-rerun, PR#124): PASS — ownership now enforced. As employee@acme.test, PATCH /tenant/employees/{OWN}/profile with contactInfo.phone=555-2000 -> HTTP 200, persisted (self-edit AC-4 works). Cross-check (BUG-119): PATCH of ANOTHER employee's /profile -> HTTP 403 'You can only edit your own profile.' (was 200 pre-fix). Prior note 2026-07-01: self-edit worked but Edit.Own had no owner check — now closed. Audit-log arm still not deep-dived."
 created: 2026-06-12
 ---
 

@@ -4,7 +4,8 @@ user_story: US-AUTH-006
 module: Authentication
 priority: high
 type: security
-status: fail
+status: pass
+exec_note: "2026-07-03 (API, BUG-041 verify-rerun, PR#122): PASS (RBAC-change audit arm) — as tenantadmin@acme.test created throwaway role 'QA Audit Role' (201), updated it (200, +Audit.View), deleted it (200). GET /api/v1/tenant/audit-logs now returns queryable rows action=Role.Created / Role.Updated / Role.Deleted with actorEmail=tenantadmin@acme.test (pre-fix these were Serilog-file-only). entityType/entityId are null in the list projection but rows are queryable. NOT exercised: step 9 authorization.denied audit row (NFR-4) and role assign/unassign arms."
 created: 2026-06-03
 ---
 

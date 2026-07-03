@@ -4,8 +4,9 @@ user_story: US-CHR-001
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: blocked
 created: 2026-06-12
+exec_note: "2026-07-03 VERIFICATION RE-RUN (BUG-093 scope): create prerequisite confirmed (EMP-0035 created 201). Soft-delete (is_deleted/BR-6) assertion itself NOT exercised: DELETE /api/v1/tenant/employees/{id} returns 405 (no hard-delete verb exists — consistent with soft-delete-only design, but the is_deleted flag + query-filter exclusion need a psql DB-layer probe not run this API pass). BLOCKED: needs DB probe."
 ---
 
 # TC-CHR-080: Soft delete -- employee records use is_deleted flag (BR-6)

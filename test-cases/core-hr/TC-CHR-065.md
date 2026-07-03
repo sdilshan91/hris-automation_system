@@ -4,8 +4,9 @@ user_story: US-CHR-001
 module: Core HR
 priority: critical
 type: functional
-status: fail
+status: pass
 created: 2026-06-12
+exec_note: "2026-07-03 VERIFICATION RE-RUN (BUG-093 fix PR#114): POST /api/v1/tenant/employees as hr@acme.test -> HTTP 201, employeeNo 'EMP-0035' (well-formed, status Active, tenant Engineering/acme). Create path no longer regenerates a colliding EMP-0001. PASS."
 ---
 
 # TC-CHR-065: Create employee with all mandatory fields -- happy path (AC-2)

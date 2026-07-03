@@ -6,6 +6,7 @@ priority: critical
 type: integration
 status: pass
 created: 2026-06-14
+exec_note: "2026-07-03 VERIFICATION RE-RUN (BUG-036 fix PR#116): GET /api/v1/leaves/lop-summary?employeeId&from&to as hr@acme (HR Officer) -> HTTP 200 with totalLopDays + entries payload (was 403 pre-fix; Leave.ManageLop now granted). tenantadmin@acme also 200. Confirmed both HR Officer and Tenant Admin carry Leave.ManageLop via /auth/me. Permission gate no longer blocks the LOP surface. PASS. (NOTE: manager@acme still 403 — by design; manager lacks Leave.ManageLop, LOP is an HR/admin function per TC-LV-224 authz model — not a defect.)"
 ---
 
 # TC-LV-217: lop-summary endpoint returns the LOP data payroll consumes; deduction = (salary/working_days)*lop_days (deduction calc CONDITIONAL on Payroll module)

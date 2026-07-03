@@ -4,7 +4,8 @@ user_story: US-PRF-001
 module: Performance Management
 priority: critical
 type: security
-status: fail
+status: pass
+exec_note: "2026-07-03 BUG-003 fix verification (PR#119 TenantAccessGuardMiddleware). Route-agnostic guard exercised via the performance module representative GET /api/v1/tenant/performance/cycles: cross-tenant probe acme JWT + X-Tenant-Subdomain:techoneglobal -> 403 cross_tenant_denied; same-tenant control -> 200. The middleware blocks ALL cross-tenant reads under the /tenant/performance prefix (subsumes goals-by-ID) before the handler runs."
 created: 2026-06-16
 ---
 

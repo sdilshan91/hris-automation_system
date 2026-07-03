@@ -5,6 +5,7 @@ module: Authentication
 priority: critical
 type: security
 status: pass
+exec_note: "2026-07-03 (API, BUG-043 verify-rerun, PR#129): PASS (per-session lineage) — two independent manager@acme.test sessions (jar A, jar B). Refreshed A (rotate) -> 200 (new token A'). Reusing the OLD rotated A token -> HTTP 401 'Token reuse detected. This session has been revoked.' Independent Session B refresh -> HTTP 200 (survives A's lineage revocation). Confirms reuse-detection now revokes only the compromised token lineage, not every session for the user."
 created: 2026-05-11
 ---
 

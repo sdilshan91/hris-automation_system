@@ -4,8 +4,9 @@ user_story: US-CHR-001
 module: Core HR
 priority: critical
 type: functional
-status: fail
+status: pass
 created: 2026-06-12
+exec_note: "2026-07-03 VERIFICATION RE-RUN (BUG-093 fix PR#114): auto-employee_no generator now parses only numeric EMP-#### suffixes in memory (EmployeeService.GenerateEmployeeNoAsync). acme held a non-numeric EMP-MGR01 plus EMP-0001..EMP-0034; new create yielded EMP-0035 (correctly skipped EMP-MGR01, incremented from max numeric 0034) instead of colliding on EMP-0001. Per-tenant sequence via IgnoreQueryFilters WHERE TenantId confirmed. acme arm PASS; cross-tenant globex arm not exercised (no globex persona in this env)."
 ---
 
 # TC-CHR-066: Employee_no auto-generation pattern and per-tenant sequence isolation (FR-2, BR-1)

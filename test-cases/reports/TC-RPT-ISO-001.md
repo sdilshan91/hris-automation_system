@@ -4,8 +4,8 @@ user_story: US-RPT-001
 module: Reports & Analytics
 priority: critical
 type: security
-status: fail
-exec_note: "2026-06-30 API iso-fixture probe: BUG-003 cross-tenant read leak CONFIRMED — isoa-admin token + X-Tenant-Subdomain:isob returns isob data (employee list ISO-2b1b-*, headcount/dashboard/leave report run under isob context). Systemic, already filed (ISSUE-193 / BUG-003 class)."
+status: pass
+exec_note: "2026-06-30 API iso-fixture probe: BUG-003 cross-tenant read leak CONFIRMED (isoa token + X-Tenant-Subdomain:isob returned isob data). | 2026-07-03 BUG-003 fix verification (PR#119 TenantAccessGuardMiddleware): cross-tenant probe acme JWT + X-Tenant-Subdomain:techoneglobal on GET /api/v1/reports AND GET /api/v1/dashboard/widgets -> 403 cross_tenant_denied both; same-tenant controls -> 200 own data. Leak closed."
 created: 2026-06-17
 ---
 

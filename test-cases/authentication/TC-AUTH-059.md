@@ -6,6 +6,7 @@ priority: high
 type: functional
 status: pass
 created: 2026-06-09
+exec_note: "2026-07-03 VERIFICATION RE-RUN (BUG-121 fix PR#120, up-path): GET /api/v1/auth/my-tenants (tenantadmin@acme) -> HTTP 200 hydrated [{acme, Tenant Admin, isCurrentTenant:true}]; GET /api/v1/auth/me -> HTTP 200 hydrated (userId, tenant{acme}, roles[Tenant Admin], full permissions list). Post-login identity/tenant hydration healthy with Redis UP. Fail-soft-when-Redis-DOWN path was already verified 2026-07-02; not re-exercised here (Redis intentionally left UP to avoid disrupting other services). PASS."
 ---
 
 # TC-AUTH-059: My-tenants list and switch to tenant B

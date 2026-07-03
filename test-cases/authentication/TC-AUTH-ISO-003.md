@@ -4,7 +4,8 @@ user_story: US-AUTH-002, US-AUTH-007
 module: Authentication
 priority: critical
 type: security
-status: fail
+status: pass
+exec_note: "2026-07-03 BUG-003 fix verification (PR#119 TenantAccessGuardMiddleware). This TC's exact scenario (a request whose JWT tenant_id != resolved tenant context is rejected) is now the guard's core behavior: acme JWT + X-Tenant-Subdomain:techoneglobal on GET /api/v1/tenant/roles and /api/v1/tenant/context -> 403 cross_tenant_denied; same-tenant controls -> 200. Mismatched-tenant-context requests rejected."
 created: 2026-05-11
 ---
 
