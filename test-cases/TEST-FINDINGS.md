@@ -5567,7 +5567,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-240
 - **Type:** BUG (broken authorization — over-restrictive deny, blocks a primary admin flow)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** OPEN (fix in PR #136 — RoleClaimType='roles'; regression test + live-verified PUT /tenant/auth-settings 200; awaiting merge)
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-005 / TC-AUTH-032 (also blocks TC-AUTH-029/034 which need `mfaPolicy=required` set via this endpoint)
 - **Title:** `PUT /api/v1/tenant/auth-settings` is gated with `[Authorize(Roles = "Tenant Admin,Tenant Owner,System Admin")]`. A genuine Tenant Admin (`tenantadmin@acme.test`, JWT `roles` claim = `"Tenant Admin"`) receives HTTP 403 (empty body) on every PUT, while GET (plain `[Authorize]`) returns 200. Root cause is a JWT claim-type mismatch: `JwtService` emits the role in a claim named `"roles"`, `Program.cs` sets `MapInboundClaims = false` (no remap to `ClaimTypes.Role`), and `GetTokenValidationParameters()` never sets `RoleClaimType = "roles"` — so ASP.NET's role check reads the default `ClaimTypes.Role`, which is absent → role match always fails → 403. Every `[Authorize(Roles=…)]` endpoint is affected; the Admin controllers deliberately avoided this (their XML comments note "JWT carries roles in a custom 'roles' claim (not ClaimTypes.Role), so the established permission-policy gate is used rather than `[Authorize(Roles=…)]`"), but `TenantAuthSettingsController` and `TenantUsersController` still use role-based authz and are broken.
@@ -5593,7 +5593,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-242
 - **Type:** ISSUE (validation asymmetry / required-field bypass)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** OPEN — DEFERRED: investigation showed there is NO server-side required-custom-field presence validation in the employee-create path (handler just stores request.CustomFields). So this is not a null-skip to patch but missing validation to ADD (fetch active required defs, verify presence). Scoped as a small follow-up story, not folded into the BUG-240 fix. Confidence still ~70% pending a clean repro.
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-001 / surfaced during TC-CHR-075 execution
 - **Title:** Tenant `acme` has required custom fields ("Nickname", "Shirt Size"). `POST /api/v1/tenant/employees` with a partial `customFields` (e.g. `{"nickname":"Johnny"}`) is correctly rejected 400 ("Custom field 'Shirt Size' is required."). But the same create with `customFields` omitted altogether returns 201 Created — the required-custom-field validation appears to run only when the `customFields` payload is present/non-null, so a caller can skip all required custom fields by not sending the object, creating employees that violate the tenant's required-custom-field configuration.
