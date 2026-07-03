@@ -884,8 +884,8 @@ describe('EmployeeProfileComponent', () => {
           r.params.get('statuses') === 'Active'
       );
       searchReq.flush({
-        data: [{ ...mockProfile, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
-        total: 1,
+        items: [{ ...mockProfile, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
+        totalCount: 1,
         page: 1,
         pageSize: 10,
       });

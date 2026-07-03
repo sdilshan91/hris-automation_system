@@ -1371,8 +1371,8 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
       )
       .subscribe({
         next: (response) => {
-          this.employees.set(response.data);
-          this.totalCount.set(response.total);
+          this.employees.set(response.items ?? []);
+          this.totalCount.set(response.totalCount ?? 0);
           // Clamp page if backend returns fewer pages than current
           if (this.currentPage() > this.totalPages() && this.totalPages() > 0) {
             this.currentPage.set(this.totalPages());
@@ -1586,7 +1586,7 @@ export class EmployeeListComponent implements OnInit, OnDestroy {
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (response) => {
-            this.bulkManagerSearchResults.set(response.data);
+            this.bulkManagerSearchResults.set(response.items ?? []);
             this.isBulkSearching.set(false);
           },
           error: () => {

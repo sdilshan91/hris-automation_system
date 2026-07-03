@@ -250,7 +250,7 @@ export class ShiftManagementComponent implements OnInit, OnDestroy {
       )
       .subscribe({
         next: (res) => {
-          this.assignResults.set(res.data ?? []);
+          this.assignResults.set(res.items ?? []);
           this.assignSearching.set(false);
         },
         error: () => {

@@ -65,8 +65,8 @@ describe('EmployeeListComponent', () => {
     pageSize?: number
   ): IPaginatedResponse<IEmployee> {
     return {
-      data: employees,
-      total: total ?? employees.length,
+      items: employees,
+      totalCount: total ?? employees.length,
       page: page ?? 1,
       pageSize: pageSize ?? 20,
     };
@@ -164,6 +164,40 @@ describe('EmployeeListComponent', () => {
 
     expect(component.employees().length).toBe(0);
     expect(component.isLoading()).toBeFalse();
+  });
+
+  // ─── BUG-099 regression: real backend paginated contract ──
+  // The backend (after apiEnvelopeInterceptor unwraps the envelope) returns
+  // PagedResult<T> = { items, totalCount, page, pageSize } — NOT { data, total }.
+  // Reading the wrong field set employees() to undefined and the template
+  // crashed on `employees().length`. These pin the real field names + guard.
+
+  it('BUG-099: populates the list from the real { items, totalCount } contract', () => {
+    fixture.detectChanges();
+    const req = httpMock.expectOne(
+      (r) => r.url === baseUrl && r.method === 'GET'
+    );
+    // Flush the ACTUAL post-interceptor backend shape (items/totalCount).
+    req.flush({ items: [mockEmployee, mockEmployee], totalCount: 34, page: 1, pageSize: 20 });
+    fixture.detectChanges();
+
+    expect(component.employees()).toEqual([mockEmployee, mockEmployee]);
+    expect(component.employees().length).toBe(2);
+    expect(component.totalCount()).toBe(34);
+  });
+
+  it('BUG-099: does not crash when the response omits items (defaults to [])', () => {
+    fixture.detectChanges();
+    const req = httpMock.expectOne(
+      (r) => r.url === baseUrl && r.method === 'GET'
+    );
+    // A malformed/partial page (no items) must NOT set employees() to undefined.
+    req.flush({ page: 1, pageSize: 20 });
+
+    expect(() => fixture.detectChanges()).not.toThrow();
+    expect(component.employees()).toEqual([]);
+    expect(component.employees().length).toBe(0);
+    expect(component.totalCount()).toBe(0);
   });
 
   it('should display correct initials', () => {
@@ -686,8 +720,8 @@ describe('EmployeeListComponent', () => {
         r.params.get('statuses') === 'Active'
     );
     searchReq.flush({
-      data: [{ ...mockEmployee, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
-      total: 1,
+      items: [{ ...mockEmployee, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
+      totalCount: 1,
       page: 1,
       pageSize: 10,
     });

@@ -39,7 +39,7 @@ function employee(overrides: Partial<IEmployee> = {}): IEmployee {
 }
 
 function page(data: IEmployee[]): IPaginatedResponse<IEmployee> {
-  return { data, total: data.length, page: 1, pageSize: 10 };
+  return { items: data, totalCount: data.length, page: 1, pageSize: 10 };
 }
 
 const mockResult: ILeaveEncashmentResult = {

@@ -119,8 +119,8 @@ describe('EmployeeService', () => {
       };
 
       service.queryDirectory(params).subscribe((response) => {
-        expect(response.data.length).toBe(1);
-        expect(response.total).toBe(1);
+        expect(response.items.length).toBe(1);
+        expect(response.totalCount).toBe(1);
       });
 
       const req = httpMock.expectOne(
@@ -134,7 +134,7 @@ describe('EmployeeService', () => {
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ data: [mockEmployee], total: 1, page: 1, pageSize: 20 });
+      req.flush({ items: [mockEmployee], totalCount: 1, page: 1, pageSize: 20 });
     });
 
     it('should send multi-select filters as comma-separated values', () => {
@@ -155,7 +155,7 @@ describe('EmployeeService', () => {
           r.params.get('statuses') === 'Active,Probation' &&
           r.params.get('employmentTypes') === 'FullTime,Contract'
       );
-      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
     });
 
     it('should send date range filter params', () => {
@@ -174,7 +174,7 @@ describe('EmployeeService', () => {
           r.params.get('dateOfJoiningFrom') === '2026-01-01' &&
           r.params.get('dateOfJoiningTo') === '2026-12-31'
       );
-      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
     });
 
     it('should include includeArchived param when set', () => {
@@ -189,7 +189,7 @@ describe('EmployeeService', () => {
       const req = httpMock.expectOne(
         (r) => r.url === baseUrl && r.params.get('includeArchived') === 'true'
       );
-      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
     });
 
     it('should omit undefined/empty params', () => {
@@ -205,7 +205,7 @@ describe('EmployeeService', () => {
       expect(req.request.params.has('departments')).toBeFalse();
       expect(req.request.params.has('location')).toBeFalse();
       expect(req.request.params.has('includeArchived')).toBeFalse();
-      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
     });
   });
 
@@ -572,7 +572,7 @@ describe('EmployeeService', () => {
   describe('searchActiveEmployees (US-CHR-011)', () => {
     it('should query directory with active status filter', () => {
       service.searchActiveEmployees('John').subscribe((response) => {
-        expect(response.data.length).toBe(1);
+        expect(response.items.length).toBe(1);
       });
 
       const req = httpMock.expectOne(
@@ -583,7 +583,7 @@ describe('EmployeeService', () => {
           r.params.get('pageSize') === '10'
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ data: [mockEmployee], total: 1, page: 1, pageSize: 10 });
+      req.flush({ items: [mockEmployee], totalCount: 1, page: 1, pageSize: 10 });
     });
   });
 
