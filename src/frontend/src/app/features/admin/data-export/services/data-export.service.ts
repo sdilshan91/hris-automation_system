@@ -13,14 +13,15 @@ import {
  *
  * Serves BOTH personas off one service by parameterizing every method with an
  * optional `tenantId`:
- *  - omit it  → Tenant-Admin path  `/api/v1/tenant/exports...`  (implicit tenant
- *    via ITenantContext, AC-1). Built from `environment.apiBaseUrl` verbatim
- *    (already ends in `/v1`) + `/tenant/exports`, matching US-ADM-008
- *    (`/tenant/audit-log`) and US-ADM-006 (`/tenant/settings`).
- *  - pass it  → System-Admin path  `/api/v1/system/tenants/{id}/exports...`
+ *  - omit it  → Tenant-Admin path  `/api/v1/tenant/data-exports...`  (implicit
+ *    tenant via ITenantContext, AC-1). Built from `environment.apiBaseUrl`
+ *    verbatim (already ends in `/v1`) + `/tenant/data-exports`, matching the
+ *    US-ADM-010 backend `DataExportController` route.
+ *  - pass it  → System-Admin path  `/api/v1/system/tenants/{id}/data-exports...`
  *    (AC-6). This lives UNDER the `/v1/system` root (same root as US-ADM-003
  *    impersonation and US-ADM-009 plan-overrides), so we use `apiBaseUrl`
- *    verbatim + `/system/tenants/{id}/exports` — NOT the `/api/admin` namespace.
+ *    verbatim + `/system/tenants/{id}/data-exports` — NOT the `/api/admin`
+ *    namespace.
  *
  * ENVELOPE: the global apiEnvelopeInterceptor strips the `ApiResponse<T>`
  * wrapper, so JSON methods consume BARE payloads (matching the rest of the FE).
@@ -41,13 +42,13 @@ export class DataExportService {
 
   /**
    * Resolve the export base for the given persona.
-   *  - `tenantId` omitted → Tenant-Admin base (`/tenant/exports`).
-   *  - `tenantId` present → System-Admin base (`/system/tenants/{id}/exports`).
+   *  - `tenantId` omitted → Tenant-Admin base (`/tenant/data-exports`).
+   *  - `tenantId` present → System-Admin base (`/system/tenants/{id}/data-exports`).
    */
   private baseFor(tenantId?: string): string {
     return tenantId
-      ? `${this.apiBase}/system/tenants/${tenantId}/exports`
-      : `${this.apiBase}/tenant/exports`;
+      ? `${this.apiBase}/system/tenants/${tenantId}/data-exports`
+      : `${this.apiBase}/tenant/data-exports`;
   }
 
   /**

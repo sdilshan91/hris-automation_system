@@ -15,8 +15,19 @@ describe('DataExportService', () => {
   let service: DataExportService;
   let httpMock: HttpTestingController;
 
-  const tenantBase = `${environment.apiBaseUrl}/tenant/exports`;
-  const systemBase = `${environment.apiBaseUrl}/system/tenants/t-9/exports`;
+  // BUG-104 (US-ADM-010): the backend routes are `/tenant/data-exports` and
+  // `/system/tenants/{id}/data-exports`. The service previously omitted the
+  // `data-` segment (`/tenant/exports`), so history GETs 404'd ("No exports
+  // yet.") and Start-Export POSTed to a dead route. These bases assert the
+  // CORRECT backend path — the wrong path is guarded with `expectNone` below.
+  const tenantBase = `${environment.apiBaseUrl}/tenant/data-exports`;
+  const systemBase = `${environment.apiBaseUrl}/system/tenants/t-9/data-exports`;
+
+  // The exact buggy URLs that must NEVER be hit post-fix. Kept separate so a
+  // naive contains-check can't sneak past: `/tenant/exports` is NOT a substring
+  // of `/tenant/data-exports`, so these are genuinely distinct exact URLs.
+  const wrongTenantBase = `${environment.apiBaseUrl}/tenant/exports`;
+  const wrongSystemBase = `${environment.apiBaseUrl}/system/tenants/t-9/exports`;
 
   const initiateRes: IInitiateExportResponse = {
     exportId: 'exp-1',
@@ -123,5 +134,55 @@ describe('DataExportService', () => {
     const req = httpMock.expectOne(`${systemBase}/exp-1/download`);
     expect(req.request.responseType).toBe('blob');
     req.flush(new Blob(['zip']));
+  });
+
+  // ─── BUG-104 regression guard (TC-ADM-010-21) ───────────────
+  // The base path MUST include the `data-` segment to match the backend
+  // routes. Pre-fix the service requests `/tenant/exports` (and
+  // `/system/tenants/{id}/exports`), so each `expectOne('.../data-exports')`
+  // below finds no match and the test goes RED; the paired `expectNone` on the
+  // bare `/tenant/exports` proves the dead route is never hit post-fix.
+
+  describe('BUG-104 – data-export URL must include the "data-" segment', () => {
+    it('getExportHistory should GET /tenant/data-exports, never /tenant/exports (BUG-104)', () => {
+      service.getHistory().subscribe();
+
+      const req = httpMock.expectOne(tenantBase);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.url).toBe(tenantBase);
+      // Pre-fix the request went to the bare (dead) route — assert it is gone.
+      httpMock.expectNone(wrongTenantBase);
+      req.flush([record]);
+    });
+
+    it('startExport (initiate) should POST /tenant/data-exports, never /tenant/exports (BUG-104)', () => {
+      service.initiate({ scope: 'full' }).subscribe();
+
+      const req = httpMock.expectOne(tenantBase);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.url).toBe(tenantBase);
+      httpMock.expectNone(wrongTenantBase);
+      req.flush(initiateRes);
+    });
+
+    it('getHistory(tenantId) should GET /system/tenants/{id}/data-exports, never .../exports (BUG-104, AC-6)', () => {
+      service.getHistory('t-9').subscribe();
+
+      const req = httpMock.expectOne(systemBase);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.url).toBe(systemBase);
+      httpMock.expectNone(wrongSystemBase);
+      req.flush([record]);
+    });
+
+    it('initiate(tenantId) should POST /system/tenants/{id}/data-exports, never .../exports (BUG-104, AC-6)', () => {
+      service.initiate({ scope: 'full' }, 't-9').subscribe();
+
+      const req = httpMock.expectOne(systemBase);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.url).toBe(systemBase);
+      httpMock.expectNone(wrongSystemBase);
+      req.flush(initiateRes);
+    });
   });
 });
