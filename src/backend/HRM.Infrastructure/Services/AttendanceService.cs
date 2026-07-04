@@ -7,6 +7,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace HRM.Infrastructure.Services;
 
@@ -175,7 +176,23 @@ public sealed class AttendanceService : IAttendanceService
             before: null, after: SnapshotLog(log),
             detail: $"Clocked in at {log.ClockIn:o}"
                   + (hasCoordinates ? $" @ {log.ClockInLatitude},{log.ClockInLongitude}" : string.Empty));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsOpenClockInViolation(ex))
+        {
+            // BUG-047: two concurrent clock-ins (or a double-submit) for the same employee raced the
+            // BR-1 open-record check above and tripped the partial unique index. Return the same clean
+            // 409 as the pre-check instead of letting a 23505 bubble up as an HTTP 500. The audit row
+            // rolls back with the failed insert (ISSUE-067 — same transaction).
+            _logger.LogWarning(ex,
+                "Concurrent clock-in conflicted on the open-record unique index. "
+                + "EmployeeId={EmployeeId}, TenantId={TenantId}",
+                employee.Id, _tenantContext.TenantId);
+            return Result<AttendanceLogDto>.Failure(
+                "You have already clocked in. Please clock out first.", 409, "already_clocked_in");
+        }
 
         // FR-5 (late notification) DEFERRED — no notification infra (TODO US-NTF). The AC-4 deduction
         // FLAG is implemented via the persisted is_late field feeding the monthly summary; only the
@@ -689,4 +706,13 @@ public sealed class AttendanceService : IAttendanceService
     }
 
     private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180d;
+
+    /// <summary>
+    /// True when a <see cref="DbUpdateException"/> was caused by the partial unique index enforcing
+    /// "at most one open record per employee" (Postgres 23505 / ix_attendance_log_open_unique). Used
+    /// to translate a racing concurrent clock-in into a clean 409 instead of an HTTP 500 (BUG-047).
+    /// </summary>
+    private static bool IsOpenClockInViolation(DbUpdateException ex)
+        => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg
+            && pg.ConstraintName == "ix_attendance_log_open_unique";
 }
