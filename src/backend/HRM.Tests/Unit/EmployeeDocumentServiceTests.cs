@@ -597,6 +597,122 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
     }
 
     // ========================================================================
+    // List: authorization (BUG-019 / TC-CHR-199 regression)
+    //
+    // BUG-019 (HIGH, Core HR, US-CHR-008): EmployeeDocumentService.ListAsync
+    // returned the full document list to ANY authenticated tenant user because
+    // it never called AuthorizeDocumentAccess. Download/Delete gated correctly;
+    // only LIST leaked. BR-2 requires an Employee to list only their OWN
+    // record's documents; BR-3 requires a Manager (without doc-view permission)
+    // to be denied. These arms assert the AUTHZ decision (permission/ownership),
+    // NOT incidental empty data -- each target employee is seeded WITH a
+    // document, so "denied" is unambiguously distinct from "returned empty".
+    //
+    // Pre-fix: the denied cases wrongly return IsSuccess with the document list.
+    // Post-fix: the denied cases return an authorization failure (403 / 404).
+    // ========================================================================
+
+    [Fact]
+    public async Task ListAsync_ManagerWithoutPermission_IsDenied()
+    {
+        // BR-3: Manager without any document-view permission must be denied,
+        // even though the target employee has documents to leak.
+        var empId = await SeedEmployee();
+        await SeedDocument(empId, "contract.pdf", DocumentCategory.Contract);
+        await SeedDocument(empId, "id-copy.pdf", DocumentCategory.ID);
+
+        // Manager persona: team-scoped employee permission, NO EmployeeDocument.*
+        // and NO Employee.Edit -> falls through to the BR-3 deny branch.
+        var managerUser = Substitute.For<ICurrentUser>();
+        managerUser.UserId.Returns(Guid.NewGuid());
+        managerUser.Email.Returns("manager@test.com");
+        managerUser.IsAuthenticated.Returns(true);
+        managerUser.Permissions.Returns(new List<string> { "Employee.View.Team" });
+        managerUser.Roles.Returns(new List<string> { "Manager" });
+
+        var service = CreateService(currentUser: managerUser);
+        var result = await service.ListAsync(empId);
+
+        // Must be denied on the AUTHZ decision, NOT returned a (possibly empty) list.
+        result.IsFailure.Should().BeTrue(
+            "BUG-019: a Manager without document permission must not receive the document list");
+        result.StatusCode.Should().Be(403);
+        result.Error.Should().Contain("do not have permission");
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ListAsync_EmployeeViewingOthersDocuments_IsDenied()
+    {
+        // BR-2: an Employee may list only their OWN record's documents.
+        // The target employee is linked to a DIFFERENT user and has documents.
+        var otherUserId = Guid.NewGuid();
+        var targetEmpId = await SeedEmployee(userId: otherUserId);
+        await SeedDocument(targetEmpId, "someone-elses-contract.pdf", DocumentCategory.Contract);
+
+        // Current user is a different Employee (self-service scope only).
+        var employeeUser = Substitute.For<ICurrentUser>();
+        employeeUser.UserId.Returns(Guid.NewGuid()); // NOT the target employee's UserId
+        employeeUser.Email.Returns("intruder@test.com");
+        employeeUser.IsAuthenticated.Returns(true);
+        employeeUser.Permissions.Returns(new List<string> { "EmployeeDocument.ViewOwn" });
+        employeeUser.Roles.Returns(new List<string> { "Employee" });
+
+        var service = CreateService(currentUser: employeeUser);
+        var result = await service.ListAsync(targetEmpId);
+
+        // Cross-record access is denied. AuthorizeDocumentAccess returns 404
+        // ("Document not found") for an Employee hitting another record so as
+        // not to leak existence -- either way it must NOT be a success with data.
+        result.IsFailure.Should().BeTrue(
+            "BUG-019: an Employee must not list another employee's documents");
+        result.StatusCode.Should().Be(404);
+        result.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ListAsync_EmployeeViewingOwnDocuments_ReturnsList()
+    {
+        // Positive control: the fix must not over-restrict. The owning Employee
+        // (self-service scope) still receives their own record's documents.
+        var ownUserId = Guid.NewGuid();
+        var empId = await SeedEmployee(userId: ownUserId);
+        await SeedDocument(empId, "my-contract.pdf", DocumentCategory.Contract);
+        await SeedDocument(empId, "my-id.pdf", DocumentCategory.ID);
+
+        var employeeUser = Substitute.For<ICurrentUser>();
+        employeeUser.UserId.Returns(ownUserId); // matches the target employee's UserId
+        employeeUser.Email.Returns("john@test.com");
+        employeeUser.IsAuthenticated.Returns(true);
+        employeeUser.Permissions.Returns(new List<string> { "EmployeeDocument.ViewOwn" });
+        employeeUser.Roles.Returns(new List<string> { "Employee" });
+
+        var service = CreateService(currentUser: employeeUser);
+        var result = await service.ListAsync(empId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.TotalCount.Should().Be(2);
+        result.Value.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ListAsync_HrOfficerWithViewPermission_ReturnsList()
+    {
+        // Positive control: an authorized HR persona (EmployeeDocument.View)
+        // still receives any employee's documents after the fix.
+        var empId = await SeedEmployee();
+        await SeedDocument(empId, "contract.pdf", DocumentCategory.Contract);
+
+        // Default _currentUser is an HR Officer with EmployeeDocument.View.
+        var service = CreateService();
+        var result = await service.ListAsync(empId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.TotalCount.Should().Be(1);
+        result.Value.Items[0].FileName.Should().Be("contract.pdf");
+    }
+
+    // ========================================================================
     // Download: authorization
     // ========================================================================
 

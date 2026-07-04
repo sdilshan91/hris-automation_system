@@ -4,8 +4,9 @@ user_story: US-CHR-008
 module: Core HR
 priority: critical
 type: security
-status: fail
+status: automated
 created: 2026-06-12
+findings: BUG-019
 ---
 
 # TC-CHR-199: Role-based access -- HR uploads/deletes, Employee views/downloads own only, Manager denied
@@ -17,6 +18,12 @@ Verify the role-based access control for document operations: HR Officers can up
 - User Story: US-CHR-008
 - Functional Requirements: FR-10
 - Business Rules: BR-1, BR-2, BR-3
+- Finding: **BUG-019** (HIGH) -- `EmployeeDocumentService.ListAsync`
+  (`GET /api/v1/tenant/employees/{employeeId}/documents`) returned the full
+  document list to ANY authenticated tenant user because it never called
+  `AuthorizeDocumentAccess`. Download/Delete gated correctly; only LIST leaked.
+  This TC's steps 6 (Employee cross-record list) and 9 (Manager list) are the
+  regression arms for BUG-019.
 
 ## 3. Preconditions
 - Tenant "acme" exists with status `active`.
@@ -62,3 +69,20 @@ Verify the role-based access control for document operations: HR Officers can up
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## 8. Automation Binding (BUG-019 LIST authz regression)
+The list-authorization arms (steps 6 and 9) are bound to xUnit regression tests
+in `src/backend/HRM.Tests/Unit/EmployeeDocumentServiceTests.cs`:
+
+| Test | Arm | Expected |
+|------|-----|----------|
+| `ListAsync_ManagerWithoutPermission_IsDenied` | Step 9 -- Manager (no doc permission) lists an employee's documents | DENIED (403), not a 200 with the list |
+| `ListAsync_EmployeeViewingOthersDocuments_IsDenied` | Step 6 -- Employee lists a different employee's documents | DENIED (404, existence not leaked), not the list |
+| `ListAsync_EmployeeViewingOwnDocuments_ReturnsList` | Positive control -- owning Employee lists own record | Returns the documents (fix does not over-restrict) |
+| `ListAsync_HrOfficerWithViewPermission_ReturnsList` | Positive control -- HR with `EmployeeDocument.View` | Returns the documents |
+
+Each denied arm seeds the target employee **with** documents, so the assertion
+keys on the authorization decision (permission/ownership), not on incidental
+empty data. Pre-fix these arms return the leaked list (test fails); post-fix
+they return the authorization failure (test passes). The remaining steps
+(1-5, 7-8, 10 -- UI visibility, upload/delete/download) stay manual/E2E.
