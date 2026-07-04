@@ -69,6 +69,33 @@ public sealed class DepartmentServiceTests : IDisposable
         return dept.Id;
     }
 
+    /// <summary>
+    /// Seeds an active employee in the current tenant so managerId assignment can be
+    /// exercised against a real, same-tenant employee (BUG-014 fix requires the manager
+    /// to be an existing same-tenant employee). EmploymentType/Status use entity defaults.
+    /// </summary>
+    private async Task<Guid> SeedEmployee(string firstName, string lastName, Guid? tenantId = null)
+    {
+        using var db = CreateDbContext();
+        var emp = new Employee
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId ?? _tenantId,
+            EmployeeNo = $"EMP-{Guid.NewGuid().ToString()[..4]}",
+            FirstName = firstName,
+            LastName = lastName,
+            Email = $"{firstName}.{lastName}@test.com".ToLowerInvariant(),
+            DepartmentId = BaseEntity.NewUuidV7(),
+            JobTitleId = BaseEntity.NewUuidV7(),
+            DateOfJoining = DateTime.UtcNow.AddYears(-1),
+            IsActive = true,
+            IsDeleted = false,
+        };
+        db.Employees.Add(emp);
+        await db.SaveChangesAsync();
+        return emp.Id;
+    }
+
     // ── AC-2: Create department ──────────────────────────────────────
 
     [Fact]
@@ -107,8 +134,11 @@ public sealed class DepartmentServiceTests : IDisposable
     [Fact]
     public async Task Create_WithManagerId_ShouldSucceed()
     {
+        // BUG-014: managerId must be an existing same-tenant employee. Seed a real
+        // active employee in this tenant rather than a random Guid so the assignment
+        // is valid under the tenant-scoped manager validation.
+        var managerId = await SeedEmployee("Jane", "Smith");
         var service = CreateService();
-        var managerId = Guid.NewGuid(); // No FK constraint yet (deferred to US-CHR-001)
 
         var result = await service.CreateAsync(
             "Sales", "SALES", null, null, managerId);
