@@ -5,6 +5,7 @@ using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace HRM.Infrastructure.Services;
 
@@ -57,8 +58,13 @@ public sealed class ShiftService : IShiftService
         if (!_tenantContext.IsResolved)
             return Result<ShiftDto>.Failure("Tenant context is not resolved.", 400);
 
+        // BUG-048: trim once up front and use the trimmed value for BOTH the duplicate pre-check AND
+        // the stored value. Checking the raw name but storing the trimmed name let a whitespace-only
+        // variant (e.g. "Day Shift ") slip past the app check and trip the unique index → 500.
+        var name = request.Name.Trim();
+
         var nameExists = await _dbContext.Shifts
-            .AnyAsync(s => s.Name == request.Name, cancellationToken);
+            .AnyAsync(s => s.Name == name, cancellationToken);
         if (nameExists)
             return Result<ShiftDto>.Failure(
                 "A shift with this name already exists.", 409, "duplicate_name");
@@ -71,7 +77,7 @@ public sealed class ShiftService : IShiftService
         {
             Id = BaseEntity.NewUuidV7(),
             TenantId = _tenantContext.TenantId,
-            Name = request.Name.Trim(),
+            Name = name,
             Type = request.Type,
             StartTime = ParseTime(request.StartTime),
             EndTime = ParseTime(request.EndTime),
@@ -86,7 +92,20 @@ public sealed class ShiftService : IShiftService
         ApplyRotation(shift, request.Rotation);
 
         _dbContext.Shifts.Add(shift);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsDuplicateNameViolation(ex))
+        {
+            // Defense-in-depth (BUG-048): a concurrent racing insert tripped the unique index. Return
+            // the same clean duplicate response instead of letting a 23505 bubble up as an HTTP 500.
+            _logger.LogWarning(ex,
+                "Shift create conflicted on the unique name index. Name={Name}, TenantId={TenantId}",
+                name, _tenantContext.TenantId);
+            return Result<ShiftDto>.Failure(
+                "A shift with this name already exists.", 409, "duplicate_name");
+        }
 
         _logger.LogInformation(
             "Shift created. Id={ShiftId}, Name={Name}, Type={Type}, TenantId={TenantId}, By={User}",
@@ -107,8 +126,12 @@ public sealed class ShiftService : IShiftService
         if (shift is null)
             return Result<ShiftDto>.Failure("Shift not found.", 404);
 
+        // BUG-048: trim once up front and use the trimmed value for BOTH the duplicate pre-check AND
+        // the stored value (same check/store mismatch as CreateAsync).
+        var name = request.Name.Trim();
+
         var nameExists = await _dbContext.Shifts
-            .AnyAsync(s => s.Name == request.Name && s.Id != shiftId, cancellationToken);
+            .AnyAsync(s => s.Name == name && s.Id != shiftId, cancellationToken);
         if (nameExists)
             return Result<ShiftDto>.Failure(
                 "A shift with this name already exists.", 409, "duplicate_name");
@@ -117,7 +140,7 @@ public sealed class ShiftService : IShiftService
         if (rotationError is not null)
             return Result<ShiftDto>.Failure(rotationError, 400, "invalid_rotation");
 
-        shift.Name = request.Name.Trim();
+        shift.Name = name;
         shift.Type = request.Type;
         shift.StartTime = ParseTime(request.StartTime);
         shift.EndTime = ParseTime(request.EndTime);
@@ -132,7 +155,19 @@ public sealed class ShiftService : IShiftService
         shift.RotationSteps.Clear();
         ApplyRotation(shift, request.Rotation);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsDuplicateNameViolation(ex))
+        {
+            // Defense-in-depth (BUG-048): a concurrent racing update tripped the unique index.
+            _logger.LogWarning(ex,
+                "Shift update conflicted on the unique name index. Name={Name}, TenantId={TenantId}",
+                name, _tenantContext.TenantId);
+            return Result<ShiftDto>.Failure(
+                "A shift with this name already exists.", 409, "duplicate_name");
+        }
 
         var count = (await GetAssignedCountsAsync(new List<Guid> { shift.Id }, cancellationToken))
             .GetValueOrDefault(shift.Id, 0);
@@ -490,6 +525,15 @@ public sealed class ShiftService : IShiftService
     }
 
     private static string Truncate(string name) => name.Length <= 100 ? name : name[..100];
+
+    /// <summary>
+    /// True when a <see cref="DbUpdateException"/> was caused by the tenant/name unique index
+    /// (Postgres 23505 / ix_shift_tenant_name_unique). Used to translate a racing duplicate insert
+    /// or update into a clean 409 instead of an HTTP 500 (BUG-048).
+    /// </summary>
+    private static bool IsDuplicateNameViolation(DbUpdateException ex)
+        => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg
+            && pg.ConstraintName == "ix_shift_tenant_name_unique";
 
     private async Task<Dictionary<Guid, int>> GetAssignedCountsAsync(
         List<Guid> shiftIds, CancellationToken cancellationToken)
