@@ -20,8 +20,8 @@ import {
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
-import { Subject, forkJoin } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { Subject, forkJoin, of } from 'rxjs';
+import { catchError, takeUntil } from 'rxjs/operators';
 import { LeaveRequestService } from '../../services/leave-request.service';
 import { LeaveTypeService } from '../../services/leave-type.service';
 import { ILeaveType, getContrastTextColor } from '../../models/leave-type.models';
@@ -570,7 +570,12 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
     this.isLoading.set(true);
     forkJoin({
       leaveTypes: this.leaveTypeService.getLeaveTypes(),
-      balances: this.leaveRequestService.getMyBalances(),
+      // Defense-in-depth: a transient balances failure must NOT blank the leave-type
+      // dropdown (the form is still usable without inline balances). Only a genuine
+      // leave-types failure trips the error toast below. Preview falls back to 0.
+      balances: this.leaveRequestService.getMyBalances().pipe(
+        catchError(() => of([] as ILeaveBalance[])),
+      ),
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   ILeaveRequest,
@@ -18,12 +18,24 @@ import {
  * tenant-scoped via the tenantInterceptor (X-Tenant-Subdomain header).
  *
  * Backend endpoints (assumed contract -- backend agent building in parallel):
- *   POST /api/v1/leaves          - create a leave request (FR-5); returns ILeaveRequest
- *   GET  /api/v1/leaves/mine     - current employee's own leave requests (My Leaves list)
- *   GET  /api/v1/leaves/balances - current employee's leave balances per type (FR-2, AC-2)
+ *   POST /api/v1/leaves            - create a leave request (FR-5); returns ILeaveRequest
+ *   GET  /api/v1/leaves/mine       - current employee's own leave requests (My Leaves list)
+ *   GET  /api/v1/leaves/my-balance - current employee's leave balances per type (FR-2, AC-2)
  *
  * NOTE: `apiBaseUrl` already includes `/api/v1`, so the leaves resource is `${apiBaseUrl}/leaves`.
  */
+/**
+ * Raw balance summary as returned by `GET /api/v1/leaves/my-balance`
+ * (backend `LeaveBalanceDto`, US-LV-006). Only the fields the apply form's inline
+ * preview consumes are typed here; mapped to `ILeaveBalance` in `getMyBalances`.
+ */
+interface IMyBalanceResponse {
+  leaveTypeId: string;
+  entitlement: number;
+  used: number;
+  balance: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class LeaveRequestService {
   private readonly http = inject(HttpClient);
@@ -73,11 +85,28 @@ export class LeaveRequestService {
   /**
    * Get the current employee's leave balances per leave type (FR-2, AC-2).
    * Used for the real-time inline balance preview on the apply form.
+   *
+   * Backend route is `GET /api/v1/leaves/my-balance` (LeaveRequestsController), returning
+   * `LeaveBalanceDto[]` (US-LV-006). Its field names differ from the FE `ILeaveBalance`
+   * projection, so we map: entitlement -> entitlementDays, used -> usedDays,
+   * balance -> remainingDays. (The ApiResponse envelope is unwrapped globally by
+   * apiEnvelopeInterceptor before it reaches here.)
    */
   getMyBalances(): Observable<ILeaveBalance[]> {
-    return this.http.get<ILeaveBalance[]>(`${this.baseUrl}/balances`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<IMyBalanceResponse[]>(`${this.baseUrl}/my-balance`, {
+        withCredentials: true,
+      })
+      .pipe(
+        map((rows) =>
+          rows.map((r) => ({
+            leaveTypeId: r.leaveTypeId,
+            entitlementDays: r.entitlement,
+            usedDays: r.used,
+            remainingDays: r.balance,
+          })),
+        ),
+      );
   }
 
   // --- Error helper ------------------------------------------
