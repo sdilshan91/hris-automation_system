@@ -64,3 +64,6 @@ src/backend/HRM.Api/.claude/
 local-dev/certs/
 local-dev/nginx/
 local-dev/nginx.zip
+
+# Schemathesis contract-test cache/reports (contract/run-schemathesis.sh)
+.schemathesis/

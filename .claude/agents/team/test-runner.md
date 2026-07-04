@@ -35,6 +35,24 @@ tools:
   - mcp__chrome-devtools__take_heapsnapshot
   - mcp__chrome-devtools__evaluate_script
   - mcp__github__create_issue
+  - mcp__postgres-native__list_schemas
+  - mcp__postgres-native__list_objects
+  - mcp__postgres-native__get_object_details
+  - mcp__postgres-native__execute_sql
+  - mcp__postgres-native__explain_query
+  - mcp__postgres-native__get_top_queries
+  - mcp__postgres-native__analyze_workload_indexes
+  - mcp__postgres-native__analyze_query_indexes
+  - mcp__postgres-native__analyze_db_health
+  - mcp__postgres-docker__list_schemas
+  - mcp__postgres-docker__list_objects
+  - mcp__postgres-docker__get_object_details
+  - mcp__postgres-docker__execute_sql
+  - mcp__postgres-docker__explain_query
+  - mcp__postgres-docker__get_top_queries
+  - mcp__postgres-docker__analyze_workload_indexes
+  - mcp__postgres-docker__analyze_query_indexes
+  - mcp__postgres-docker__analyze_db_health
   - Write
   - Edit
 model: claude-opus-4-8

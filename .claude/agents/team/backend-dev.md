@@ -11,6 +11,26 @@ tools:
   - mcp__github__create_branch
   - mcp__github__push_files
   - mcp__github__create_pull_request
+  - mcp__context7__resolve-library-id
+  - mcp__context7__query-docs
+  - mcp__postgres-native__list_schemas
+  - mcp__postgres-native__list_objects
+  - mcp__postgres-native__get_object_details
+  - mcp__postgres-native__execute_sql
+  - mcp__postgres-native__explain_query
+  - mcp__postgres-native__get_top_queries
+  - mcp__postgres-native__analyze_workload_indexes
+  - mcp__postgres-native__analyze_query_indexes
+  - mcp__postgres-native__analyze_db_health
+  - mcp__postgres-docker__list_schemas
+  - mcp__postgres-docker__list_objects
+  - mcp__postgres-docker__get_object_details
+  - mcp__postgres-docker__execute_sql
+  - mcp__postgres-docker__explain_query
+  - mcp__postgres-docker__get_top_queries
+  - mcp__postgres-docker__analyze_workload_indexes
+  - mcp__postgres-docker__analyze_query_indexes
+  - mcp__postgres-docker__analyze_db_health
 model: claude-opus-4-8
 maxTurns: 60
 permissionMode: acceptEdits

@@ -11,6 +11,8 @@ tools:
   - mcp__github__create_branch
   - mcp__github__push_files
   - mcp__github__create_pull_request
+  - mcp__context7__resolve-library-id
+  - mcp__context7__query-docs
 model: claude-opus-4-8
 maxTurns: 60
 permissionMode: acceptEdits

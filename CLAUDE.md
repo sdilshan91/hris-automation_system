@@ -21,6 +21,15 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
 2. **Simplicity first.** Write the minimal code that solves the stated problem.
    No speculative abstractions, unrequested flexibility, or error handling for
    impossible cases. Self-check: *would a senior engineer call this overcomplicated?*
+   Before writing new code, climb this ladder and stop at the first rung that holds:
+   **reuse what already exists in this codebase** (a helper/util/type/pattern — look
+   before you write) → **use the platform** (stdlib, a native feature like a DB
+   constraint or `<input type="date">`, or an already-installed dependency) → **one
+   line** → only then the minimum new code that works. This shortens the *solution*,
+   never the *reading* — trace the real flow first. It never overrides the deliberate
+   abstractions this architecture requires (Clean Architecture / CQRS interfaces,
+   MediatR handlers) or the non-negotiables in **Critical Rules** (tenant isolation,
+   validation, security, a11y) — those are never simplified away.
 3. **Surgical changes.** Touch only what the task requires; match adjacent style.
    Clean up only the mess **your** change created (e.g. imports/vars *your* edit
    orphaned) — don't refactor pre-existing dead code as a side quest. When a change
@@ -127,16 +136,42 @@ Same activation rules as Playwright (attaches at session startup from `.mcp.json
 trust-prompt approval). Used by `@test-runner` (perf/a11y TC execution) and `@browser-debugger` (deep
 diagnosis). **Read-only on the codebase.**
 
+### Postgres MCP Server (read-only DB introspection)
+Two stdio servers — `postgres-native` and `postgres-docker` — both running the prebuilt
+`crystaldba/postgres-mcp` image in **`--access-mode=restricted` (read-only)** mode. They give agents
+direct schema inspection, safe SQL, query-plan/`EXPLAIN`, and DB-health/index tooling against the two dev
+databases without shelling out to `psql`. **Two targets** because both dev environments run: `postgres-native`
+→ native PostgreSQL 18 (host `:5432`), `postgres-docker` → the `docker-compose.dev.yml` Postgres (host
+`:5433`). Read-only is deliberate — it upholds Critical Rule #1 (tenant isolation) and the report-only test
+boundary; it can inspect data but never mutate it.
+
+**Why Docker, not `uvx`:** `postgres-mcp` depends on `pglast` (a C build) that fails on Windows without MSVC
+build tools, so the image is the supported runner here. It runs on the **host** and reaches both DBs via
+`host.docker.internal` — do **not** add `--add-host=host.docker.internal:host-gateway` (mis-maps to an
+unreachable IPv6 gateway on Docker Desktop for Windows). **Setup:** `DATABASE_URI_NATIVE` /
+`DATABASE_URI_DOCKER` in `.env` (libpq URI form; see `.env.example`); requires Docker running. Same
+activation rules (session restart + trust prompt). Best fit for `@test-runner` and `@backend-dev`
+(schema/state checks); `postgres-docker`'s tools error until the `:5433` compose stack is up.
+
+### Context7 MCP Server (live library docs)
+Local stdio server (`npx -y @upstash/context7-mcp@latest`, defined in `.mcp.json`) that injects
+**version-specific, up-to-date library documentation** into context on demand — so code generation targets the
+*actual* current API instead of stale training data. Relevant here because **Angular 20 and .NET 10 are newer
+than most model training cutoffs**, which is where hallucinated API calls creep in. Complements (does not
+replace) the vendored `angular/skills` and `dotnet-skills` reference packs. Keyless by default (higher rate
+limits with a free Upstash API key via `--api-key`). Best fit for `@frontend-dev` and `@backend-dev`. Same
+activation rules (session restart + trust prompt).
+
 ## Agent Team
 
 | Agent | Role | Branch | MCP Tools |
 |-------|------|--------|-----------|
 | `@business-analyst` | Analyzes docs → IEEE 830 user stories | `feature/user-stories-{module}` | create_issue, create_branch, push_files, create_pull_request |
-| `@frontend-dev` | Implements Angular 20 UI | `feature/frontend-{module}` | create_branch, push_files, create_pull_request |
-| `@backend-dev` | Implements ASP.NET Core 10 API | `feature/backend-{module}` | create_branch, push_files, create_pull_request |
+| `@frontend-dev` | Implements Angular 20 UI | `feature/frontend-{module}` | create_branch, push_files, create_pull_request, context7 (live Angular docs) |
+| `@backend-dev` | Implements ASP.NET Core 10 API | `feature/backend-{module}` | create_branch, push_files, create_pull_request, context7 (live .NET/EF docs), postgres (read-only schema/query/health) |
 | `@qa-engineer` | Writes IEEE 829 test cases | `feature/qa-{module}` | create_branch, push_files, create_pull_request, create_issue |
-| `@browser-debugger` | Drives Chrome to debug UI (console, network, DOM) — read-only investigator | _(no branch — diagnoses only)_ | playwright (navigate, console_messages, network_requests, snapshot, evaluate, screenshot, interactions) + chrome-devtools (lighthouse, perf-trace, heapsnapshot, emulate) |
-| `@test-runner` | **Executes** test cases against the running stack + **triages** findings (bug/issue/enhancement: severity, root cause, repro). **REPORT-ONLY — never fixes, never opens PRs.** Writes only to `test-cases/` ledgers. | _(no branch — diagnoses only)_ | playwright (UI/a11y/cross-browser) + chrome-devtools (lighthouse/perf-trace/memory) + create_issue (optional); runs xUnit/Karma/Playwright/axe/k6/curl via Bash |
+| `@browser-debugger` | Drives Chrome to debug UI (console, network, DOM) — read-only investigator | _(no branch — diagnoses only)_ | playwright (navigate, console_messages, network_requests, snapshot, evaluate, screenshot, interactions) + chrome-devtools (lighthouse, perf-trace, heapsnapshot, emulate) + postgres (read-only, to correlate UI↔DB state) |
+| `@test-runner` | **Executes** test cases against the running stack + **triages** findings (bug/issue/enhancement: severity, root cause, repro). **REPORT-ONLY — never fixes, never opens PRs.** Writes only to `test-cases/` ledgers. | _(no branch — diagnoses only)_ | playwright (UI/a11y/cross-browser) + chrome-devtools (lighthouse/perf-trace/memory) + postgres (read-only schema/query/health) + create_issue (optional); runs xUnit/Karma/Playwright/axe/k6/curl via Bash |
 | `@test-authenticator` | **Read-only auditor** of test quality — flags "test theater" (mock-everything, tautologies, happy-path-only, InMemory-masks-Postgres, fake isolation arms). Reports a verdict; **never edits/weakens a test.** Use after test code changes. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 | `@integration-enforcer` | **Read-only auditor** of wiring — catches orphaned code (undispatched MediatR handlers, missing DI, unrouted Angular components, entities missing tenant query filters). Reports a verdict; **never wires it itself.** Use after implementation. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 
