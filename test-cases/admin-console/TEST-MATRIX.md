@@ -775,6 +775,7 @@ status: complete
 | TC-ADM-010-18 | [DEFERRED] Bundle encrypted at rest + HTTPS in transit | Security | Medium | NFR-3 | Deferred placeholder | blocked |
 | TC-ADM-010-19 | [DEFERRED] 50k/10GB in 30 min + read-replica/streaming | Performance | Medium | NFR-1/2, FR-4 | Deferred placeholder | blocked |
 | TC-ADM-010-20 | [DEFERRED] Uploaded-documents ZIP subtree by entity | Integration | Medium | AC-2, FR-4 | Deferred placeholder | blocked |
+| TC-ADM-010-21 | Service targets `/tenant/data-exports` + `/system/.../data-exports` (BUG-104 regression) | Functional | High | AC-1, AC-6, FR-9 | Happy path / Negative | automated |
 | TC-ADM-ISO-028 | Cross-tenant — export bundle has ZERO Tenant B rows | Security | Critical | AC-5, FR-2, BR-1 | Multi-tenant isolation | draft |
 | TC-ADM-ISO-029 | Export endpoints need context; foreign tenant_id ignored; cross-tenant download -> 404 | Security | Critical | AC-5, FR-1/7, BR-1 | Multi-tenant isolation | draft |
 | TC-ADM-ISO-030 | EF query filter scopes export queries; ExportRequest + path tenant-stamped | Security | Critical | AC-5, FR-2/6 | Multi-tenant isolation | draft |
@@ -828,7 +829,7 @@ status: complete
 | FR coverage | 9/9 (FR-1..FR-9; FR-2 schema-PDF / FR-4 docs / FR-7 signed-URL portions deferred) |
 | Run-green now | 19 (TC-ADM-010-01..15 + TC-ADM-ISO-028, -029, -030) |
 | Deferred (status: blocked) | 6 (TC-ADM-010-16..20 + TC-ADM-ISO-031) |
-| Functional ID range | TC-ADM-010-01 .. TC-ADM-010-20 |
+| Functional ID range | TC-ADM-010-01 .. TC-ADM-010-21 |
 | ISO ID range | TC-ADM-ISO-028 .. TC-ADM-ISO-031 |
 
 ---
