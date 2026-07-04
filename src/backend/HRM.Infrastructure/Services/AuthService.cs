@@ -111,42 +111,56 @@ public sealed class AuthService : IAuthService
 
         if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
         {
-            // Increment failed login count
-            user.FailedLoginCount++;
-
-            // Resolve tenant lockout policy
-            var (maxAttempts, lockoutMinutes, progressiveLockoutEnabled) = await GetLockoutPolicyAsync(cancellationToken);
-
-            // Audit: login_failure with attempt count
-            await WriteAuditLogWithDetailAsync(user.Id, "login_failure", ipAddress, userAgent,
-                new { attemptCount = user.FailedLoginCount },
-                cancellationToken);
-
-            if (user.FailedLoginCount >= maxAttempts)
+            // BUG-045: run the whole failed-attempt handling as one atomic, retriable unit under a per-user
+            // row lock (see RunFailedAttemptAsync), so concurrent wrong-password logins cannot lose counter
+            // increments (classic lost-update) nor double-apply lockout. The lockout decision branches on the
+            // count committed under the lock, not a stale in-memory read. The Hangfire email is deferred to
+            // after a successful commit.
+            LockoutNotification? lockoutEmail = null;
+            await RunFailedAttemptAsync(user, async () =>
             {
-                // Calculate effective lockout duration (progressive lockout FR-9)
-                var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
-                    user, lockoutMinutes, progressiveLockoutEnabled);
+                // Increment failed login count
+                user.FailedLoginCount++;
 
-                user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
-                user.LockoutCount++;
-                user.LastLockoutAt = DateTime.UtcNow;
+                // Resolve tenant lockout policy
+                var (maxAttempts, lockoutMinutes, progressiveLockoutEnabled) = await GetLockoutPolicyAsync(cancellationToken);
 
-                _logger.LogWarning(
-                    "Account locked for user {UserId} after {Attempts} failed attempts. Duration: {Duration}m (progressive: {Progressive})",
-                    user.Id, user.FailedLoginCount, effectiveLockoutMinutes, progressiveLockoutEnabled);
-
-                // Audit: account_locked with detail
-                await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
-                    new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, durationMinutes = effectiveLockoutMinutes },
+                // Audit: login_failure with attempt count
+                await WriteAuditLogWithDetailAsync(user.Id, "login_failure", ipAddress, userAgent,
+                    new { attemptCount = user.FailedLoginCount },
                     cancellationToken);
 
-                // FR-8/NFR-3: Enqueue lockout notification email via Hangfire
-                _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                    svc => svc.SendLockoutNotificationAsync(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes, default));
-            }
+                if (user.FailedLoginCount >= maxAttempts)
+                {
+                    // Calculate effective lockout duration (progressive lockout FR-9)
+                    var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
+                        user, lockoutMinutes, progressiveLockoutEnabled);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+                    user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
+                    user.LockoutCount++;
+                    user.LastLockoutAt = DateTime.UtcNow;
+
+                    _logger.LogWarning(
+                        "Account locked for user {UserId} after {Attempts} failed attempts. Duration: {Duration}m (progressive: {Progressive})",
+                        user.Id, user.FailedLoginCount, effectiveLockoutMinutes, progressiveLockoutEnabled);
+
+                    // Audit: account_locked with detail
+                    await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
+                        new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, durationMinutes = effectiveLockoutMinutes },
+                        cancellationToken);
+
+                    // FR-8/NFR-3: capture the lockout notification; enqueued only after a successful commit.
+                    lockoutEmail = new LockoutNotification(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes);
+                }
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }, cancellationToken);
+
+            if (lockoutEmail is not null)
+            {
+                _backgroundJobClient.Enqueue<ILockoutNotificationService>(
+                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, default));
+            }
 
             _logger.LogWarning("Login failed: invalid password for user {UserId}, attempt {Attempt}",
                 user.Id, user.FailedLoginCount);
@@ -245,31 +259,44 @@ public sealed class AuthService : IAuthService
             }
             else
             {
-                // FR-10: MFA failures count toward lockout threshold (shared counter via FailedLoginCount)
-                user.MfaFailedAttemptCount++;
-                user.FailedLoginCount++;
-
-                var maxAttempts = currentTenant.MaxFailedAttempts > 0 ? currentTenant.MaxFailedAttempts : 5;
-                if (user.FailedLoginCount >= maxAttempts)
+                // BUG-045: same atomic, retriable row-lock unit as the wrong-password path — the shared
+                // failed-attempt counter increment and lockout decision must be atomic under concurrent MFA
+                // failures. Hangfire email deferred until after commit.
+                LockoutNotification? lockoutEmail = null;
+                await RunFailedAttemptAsync(user, async () =>
                 {
-                    var lockoutMinutes = currentTenant.LockoutDurationMinutes > 0 ? currentTenant.LockoutDurationMinutes : 15;
-                    var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
-                        user, lockoutMinutes, currentTenant.ProgressiveLockoutEnabled);
+                    // FR-10: MFA failures count toward lockout threshold (shared counter via FailedLoginCount)
+                    user.MfaFailedAttemptCount++;
+                    user.FailedLoginCount++;
 
-                    user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
-                    user.LockoutCount++;
-                    user.LastLockoutAt = DateTime.UtcNow;
+                    var maxAttempts = currentTenant.MaxFailedAttempts > 0 ? currentTenant.MaxFailedAttempts : 5;
+                    if (user.FailedLoginCount >= maxAttempts)
+                    {
+                        var lockoutMinutes = currentTenant.LockoutDurationMinutes > 0 ? currentTenant.LockoutDurationMinutes : 15;
+                        var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
+                            user, lockoutMinutes, currentTenant.ProgressiveLockoutEnabled);
 
-                    await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
-                        new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, source = "mfa_failure" },
-                        cancellationToken);
+                        user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
+                        user.LockoutCount++;
+                        user.LastLockoutAt = DateTime.UtcNow;
 
+                        await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
+                            new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, source = "mfa_failure" },
+                            cancellationToken);
+
+                        lockoutEmail = new LockoutNotification(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes);
+                    }
+
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                    await WriteAuditLogAsync(user.Id, "mfa_challenge_failure", ipAddress, userAgent, cancellationToken);
+                }, cancellationToken);
+
+                if (lockoutEmail is not null)
+                {
                     _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                        svc => svc.SendLockoutNotificationAsync(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes, default));
+                        svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, default));
                 }
 
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                await WriteAuditLogAsync(user.Id, "mfa_challenge_failure", ipAddress, userAgent, cancellationToken);
                 return Result<LoginResponse>.Failure("Invalid verification code.", 401);
             }
         }
@@ -969,9 +996,15 @@ public sealed class AuthService : IAuthService
         // Validate code
         if (!_totpService.ValidateCode(user.MfaSecret, code))
         {
-            user.MfaFailedAttemptCount++;
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await WriteAuditLogAsync(userId, "mfa_challenge_failure", null, null, cancellationToken);
+            // BUG-045: same lost-update class — increment the failed-attempt counter atomically under a
+            // per-user row lock (as one retriable unit) so parallel enrollment-verify failures cannot lose
+            // increments. No lockout side-effects here, so no deferred Hangfire email.
+            await RunFailedAttemptAsync(user, async () =>
+            {
+                user.MfaFailedAttemptCount++;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await WriteAuditLogAsync(userId, "mfa_challenge_failure", null, null, cancellationToken);
+            }, cancellationToken);
 
             _logger.LogWarning("MFA enrollment verification failed for user {UserId}, attempt {Attempt}",
                 userId, user.MfaFailedAttemptCount);
@@ -1065,40 +1098,52 @@ public sealed class AuthService : IAuthService
 
         if (!codeIsValid)
         {
-            // FR-10: MFA failures count toward lockout threshold (shared counter)
-            user.MfaFailedAttemptCount++;
-            user.FailedLoginCount++;
-
-            // Determine lockout policy from tenant
-            var (maxAttempts, lockoutMinutes, progressiveLockoutEnabled) = await GetLockoutPolicyAsync(cancellationToken);
-
-            // Audit: login_failure
-            await WriteAuditLogWithDetailAsync(user.Id, "login_failure", ipAddress, userAgent,
-                new { attemptCount = user.FailedLoginCount, source = "mfa" },
-                cancellationToken);
-
-            if (user.FailedLoginCount >= maxAttempts)
+            // BUG-045: run the shared failed-attempt counter increment + lockout decision as one atomic,
+            // retriable unit under a per-user row lock, decided from the authoritative post-increment count
+            // (no lost-update). Hangfire email deferred until after commit.
+            LockoutNotification? lockoutEmail = null;
+            await RunFailedAttemptAsync(user, async () =>
             {
-                var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
-                    user, lockoutMinutes, progressiveLockoutEnabled);
+                // FR-10: MFA failures count toward lockout threshold (shared counter)
+                user.MfaFailedAttemptCount++;
+                user.FailedLoginCount++;
 
-                user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
-                user.LockoutCount++;
-                user.LastLockoutAt = DateTime.UtcNow;
+                // Determine lockout policy from tenant
+                var (maxAttempts, lockoutMinutes, progressiveLockoutEnabled) = await GetLockoutPolicyAsync(cancellationToken);
 
-                _logger.LogWarning("Account locked for user {UserId} after {Attempts} failed MFA attempts. Duration: {Duration}m",
-                    user.Id, user.FailedLoginCount, effectiveLockoutMinutes);
-
-                await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
-                    new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, source = "mfa_failure" },
+                // Audit: login_failure
+                await WriteAuditLogWithDetailAsync(user.Id, "login_failure", ipAddress, userAgent,
+                    new { attemptCount = user.FailedLoginCount, source = "mfa" },
                     cancellationToken);
 
-                _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                    svc => svc.SendLockoutNotificationAsync(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes, default));
-            }
+                if (user.FailedLoginCount >= maxAttempts)
+                {
+                    var effectiveLockoutMinutes = CalculateProgressiveLockoutMinutes(
+                        user, lockoutMinutes, progressiveLockoutEnabled);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await WriteAuditLogAsync(user.Id, "mfa_challenge_failure", ipAddress, userAgent, cancellationToken);
+                    user.LockedUntil = DateTime.UtcNow.AddMinutes(effectiveLockoutMinutes);
+                    user.LockoutCount++;
+                    user.LastLockoutAt = DateTime.UtcNow;
+
+                    _logger.LogWarning("Account locked for user {UserId} after {Attempts} failed MFA attempts. Duration: {Duration}m",
+                        user.Id, user.FailedLoginCount, effectiveLockoutMinutes);
+
+                    await WriteAuditLogWithDetailAsync(user.Id, "account_locked", ipAddress, userAgent,
+                        new { attemptCount = user.FailedLoginCount, lockedUntil = user.LockedUntil, source = "mfa_failure" },
+                        cancellationToken);
+
+                    lockoutEmail = new LockoutNotification(user.Email, user.DisplayName, user.LockedUntil!.Value, effectiveLockoutMinutes);
+                }
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await WriteAuditLogAsync(user.Id, "mfa_challenge_failure", ipAddress, userAgent, cancellationToken);
+            }, cancellationToken);
+
+            if (lockoutEmail is not null)
+            {
+                _backgroundJobClient.Enqueue<ILockoutNotificationService>(
+                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, default));
+            }
 
             return Result<LoginResponse>.Failure("Invalid verification code.", 401);
         }
@@ -1893,6 +1938,57 @@ public sealed class AuthService : IAuthService
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Deferred lockout-notification email params (BUG-045): captured inside the transactional unit
+    /// but only enqueued to Hangfire AFTER a successful commit, so a rolled-back or retried attempt never
+    /// sends a spurious lockout email.</summary>
+    private sealed record LockoutNotification(string Email, string DisplayName, DateTime LockedUntil, int Minutes);
+
+    /// <summary>
+    /// BUG-045 / BUG-068: runs a failed-authentication-attempt handler as a single atomic, retriable unit.
+    /// On a relational provider (Postgres/Npgsql) the delegate executes inside the Npgsql execution strategy
+    /// — mandatory because <c>EnableRetryOnFailure</c> forbids a user-initiated <c>BeginTransactionAsync</c>
+    /// outside the strategy — and within a transaction that first takes a pessimistic
+    /// <c>SELECT ... FOR UPDATE</c> lock on the user row and reloads the tracked entity. Concurrent failed
+    /// attempts for the same user therefore serialize on the row lock and each reads the AUTHORITATIVE
+    /// counter (committed under the lock) before incrementing, closing the classic lost-update that let a
+    /// parallelized brute-force never trip the lockout threshold. On a transient fault the whole unit is
+    /// retried together; because the reload happens first, a retry re-reads fresh DB state and the counter
+    /// increment stays idempotent (rather than reusing the rolled-back attempt's value).
+    ///
+    /// The delegate MUST call <c>SaveChangesAsync</c>; the commit is handled here. Non-transactional side
+    /// effects (the Hangfire lockout email) MUST be deferred by the caller until AFTER this returns.
+    ///
+    /// On a non-relational provider (the EF InMemory provider used by some tests, which supports neither
+    /// transactions nor raw SQL) the delegate simply runs directly — the previous single-threaded behavior.
+    /// </summary>
+    private async Task RunFailedAttemptAsync(User user, Func<Task> handleAsync, CancellationToken cancellationToken)
+    {
+        if (!_dbContext.Database.IsRelational())
+        {
+            await handleAsync();
+            return;
+        }
+
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+            // Pessimistic row lock: concurrent failed-attempt handlers for this user block here until this
+            // unit commits, so each one reads a committed (not stale) counter before incrementing.
+            await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM users WHERE id = {user.Id} FOR UPDATE", cancellationToken);
+
+            // Refresh the tracked entity with the authoritative counters committed under the lock (and, on a
+            // transient retry, re-read fresh DB state instead of the rolled-back attempt's in-memory values).
+            await _dbContext.Entry(user).ReloadAsync(cancellationToken);
+
+            await handleAsync();
+
+            await transaction.CommitAsync(cancellationToken);
+        });
     }
 
     /// <summary>
