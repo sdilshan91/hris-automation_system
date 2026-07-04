@@ -30,6 +30,13 @@
 > **0 genuine open CRIT**. These are queued for Waves 1–5 of the fix plan. Ledger hygiene TODO: de-duplicate the
 > reused IDs (ISSUE-097, ISSUE-105, BUG-059 each appear twice) before trusting any automated count.
 
+> **Wave 1 fixes MERGED (2026-07-04):** all 12 genuine-open HIGH + BUG-015 are now **RESOLVED** — fixed,
+> regression-tested (each verified failing pre-fix / passing post-fix), merged as PRs **#137–#148** into
+> `test/local-subdomains`, and re-verified together on the merged tree (**81/81 backend + 52 FE** regression tests
+> green). BUG-045(#137) · BUG-019(#138) · BUG-014+BUG-015(#139) · BUG-035(#140) · BUG-048(#141) · BUG-025(#142) ·
+> BUG-055(#143) · BUG-030(#144) · BUG-102(#145) · BUG-104(#146) · ISSUE-018(#147) · ISSUE-210(#148).
+> **0 genuine open HIGH or CRIT remain** — the backlog is now MED/LOW only (plan Waves 3–5).
+
 > 2026-06-30 iso-fixture admin-isolation/lifecycle run (14 TCs): +BUG-106 (suspended-tenant admin 451-exemption broken, HIGH), +BUG-107 (impersonation FR-6 destructive-op block bypassed, HIGH), +ISSUE-217 (terminating data-export wrongly 403, MED). Cross-tenant leak via foreign `X-Tenant-Subdomain` header re-confirmed as the existing systemic **BUG-003** (not re-filed).
 
 > **3 BUGs RETRACTED 2026-06-25 as debugger artifacts** (BUG-009, BUG-011, BUG-012): the backend was running under the VS Code debugger, which broke on the first-chance `ValidationException` at `ValidationBehavior.cs:37` and waited for a human "Continue" — that pause was misread as a hang/stall. Re-verified debugger-free: all validation failures return instant 400s, no pool exhaustion. **Net genuine bugs: 10 (1 CRIT = BUG-003; the other prior CRIT count was wrong).** Lesson: run perf/availability tests WITHOUT a debugger that breaks on thrown exceptions.
@@ -492,7 +499,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-018 — Directory requires literal `Employee.View.Own`; HR Officer & Tenant Admin (who hold `Employee.View.All`, a strict superset) are denied 403 — permission check is flat-string, not hierarchical
-- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Type / Severity / Status:** ISSUE · HIGH · RESOLVED (PR #147, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-003 · TC-CHR-127/128/129/133 (HR Officer is the spec'd primary actor), TC-CHR-138 (role-based visibility)
 - **Title:** `GET …/employees/directory` is gated by `[RequirePermission("Employee.View.Own")]` (`HRM.Api/Controllers/EmployeesController.cs:152`) and the authz handler matches the claim string **exactly** with no hierarchy. HR Officer and Tenant Admin hold `Employee.View.All` (full directory visibility) but **not** the narrower literal `Employee.View.Own`, so they receive **403** on the directory — even though `Employee.View.All` is a strict superset and the directory handler itself (`GetEmployeeDirectoryQueryHandler.ResolveVisibility`) explicitly maps `Employee.View.All` → `Full` visibility. The endpoint is effectively reachable only by the **Employee** role (and any role seeded with `Employee.View.Own`), inverting the spec where HR is the primary directory user.
@@ -551,7 +558,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-014 — Department `managerId` is NOT tenant-validated: a Tenant Admin can set ANOTHER tenant's employee as their department's manager (cross-tenant FK accepted → 200)
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #139, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-020 (assign department manager; BR-2 / FR-4 / AC-1)
 - **Title:** `PUT /api/v1/tenant/departments/{id}` accepts a `managerId` that belongs to a **different tenant's** employee and persists it (HTTP 200). Unlike `parentDepartmentId` — which is validated through a tenant-scoped EF query and cleanly rejects a foreign-tenant or non-existent parent with 400 "Parent department not found or is not active." — `managerId` is written straight to `UPDATE departments SET manager_id = @p18` with **no existence/same-tenant check**. The only thing that constrains it is the global Postgres FK `fk_departments_employees_manager_id`, which is satisfied by ANY existing employee row regardless of tenant. Result: an acme department now references a techoneglobal employee as its manager (BR-2 "manager must be an employee in the same tenant" / FR-4 violated; risks leaking the foreign employee's name/avatar into acme's UI).
@@ -566,7 +573,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-015 — Non-existent `managerId` on department update returns HTTP 500 (unhandled FK violation) instead of a clean 400
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #139, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-020 (manager assign — invalid-id arm)
 - **Title:** `PUT /api/v1/tenant/departments/{id}` with a `managerId` that does not exist at all (e.g. `00000000-0000-0000-0000-0000000000aa`) returns **HTTP 500** ("An unexpected error occurred. Please try again later.") because the FK violation is thrown from the DB and bubbles up unhandled, rather than being pre-validated into a 400 like `parentDepartmentId` is. A fast 4xx on bad input would be correct; a 500 is not. (NOT a debugger artifact — this is a genuine 500 response returned in ~58ms, with the exception fully logged.)
@@ -676,7 +683,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would emit `Location.Create`/`Location.Update`/`Location.Deactivate` audit actions from `LocationService` — or via the shared audit interceptor/writer the Department/JobTitle services use — and add an assertion to TC-CHR-185's automation that the audit list/`filter-options` includes the new actions after each op.)
 
 ### BUG-019 — Employee-document LIST endpoint has NO authorization: any authenticated tenant user (Manager, or an Employee viewing someone else's record) gets a 200 with full document metadata → BR-2/BR-3 bypass, PII metadata leak
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #138, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-008 · TC-CHR-199 (RBAC: Manager denied, Employee own-only) — also weakens TC-CHR-198 / TC-CHR-ISO-029 intent for the list surface.
 - **Title:** `GET /api/v1/tenant/employees/{employeeId}/documents` returns **HTTP 200** with the full categorized document list (file names, categories, descriptions, expiry dates, uploader id, sizes) to **any** authenticated user in the tenant. A `manager@acme.test` (whom BR-3 must deny) and an `employee@acme.test` querying a **different** employee's documents (whom BR-2 restricts to own-only) both received the complete list. The download and upload/delete endpoints on the same resource correctly enforce authz (manager → 403, non-owner employee download → 404), but the **list** endpoint does not.
@@ -832,7 +839,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Trim `FieldName` and make the BR-1 uniqueness check case-insensitive — e.g. `EF.Functions.ILike` or a citext column / normalized comparison — consistent across Create and Update.)
 
 ### BUG-025 — Leave-type configuration changes (create / edit / deactivate / reactivate / reorder) write ZERO audit-log entries; only a Serilog `LogInformation` line is emitted, so the AC-2 / NFR-3 before/after change-history does not exist
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #142, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-001 · TC-LV-002 (step asserts "audit trail capturing before/after JSON snapshots") / TC-LV-017 (audit trail captures before/after JSON on configuration changes) / TC-LV-001 (NFR-3). Same **missing-audit class** as BUG-010 / BUG-018 / BUG-023 / BUG-024 / ISSUE-024 / ISSUE-025.
 - **Title:** Every mutating leave-type operation succeeds but persists no tenant audit row. AC-2 ("Changes are saved with audit trail (before/after captured)") and NFR-3 ("Configuration changes must be audit-logged with before/after JSON snapshots") are entirely unmet. The `audit_logs` table HAS `before`/`after` columns (built for exactly this), but after a create (`QA Annual Leave TC001`), an edit of `Annual Leave` (entitlement 14→25, carryForward null→8, expiry null→6), a deactivate, a reactivate, and a reorder — `SELECT … FROM audit_logs WHERE resource_type ILIKE '%leave%'` returns **0 rows**, and the new/edited leave-type IDs appear in **0** audit rows.
@@ -1020,7 +1027,7 @@
 - **Severity rationale:** LOW — a real audit row with the correct actor, resource, tenant scope, and the actual status transition IS persisted, so the change is traceable and tenant-isolated (the security/forensic minimum is met). The deviation is contract-shape: wrong `action` label and a thin (enum-int, no approver/reason) before/after, so an auditor filtering on `Leave.Approved`/`Leave.Rejected` or expecting a semantic snapshot per FR-7 will not find it. Milder than the module's "no audit at all" pattern.
 
 ### BUG-030 — Leave Balance Dashboard `balance` does NOT reconcile with the authoritative ledger `balance_after`: the dashboard substitutes the pro-rated entitlement-engine value for the Accrual ledger entries and drops the opening balance, producing a wrong (often spuriously negative) headline balance
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #144, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-006 · TC-LV-110 (step 2/4 — card balance must equal ledger; step 4 cross-check API), TC-LV-112 (step 3/4 — final balance-after reconciles to BR-1), TC-LV-115 (step 4 — running balance-after of the final entry equals the card balance). AC-1, AC-2, FR-2, BR-1.
 - **Title:** `GET /api/v1/leaves/my-balance` computes `balance = entitlement(engine) + carryForward − used − expired + adjustments`, where `entitlement` is the **US-LV-002 entitlement-engine pro-rated value** (e.g. Annual = 2.74 mid-year) — NOT the sum of the `Accrual` ledger entries. The service deliberately **excludes all `Accrual` ledger entries** from the math ("not re-added here to avoid double counting against the engine entitlement", `LeaveDashboardService.cs:316-320`). As a result the dashboard's headline `balance` diverges sharply from the `leave_ledger` running `balance_after` that the rest of the module (apply-preview, approval deduction) treats as the source of truth, and an employee with a real positive ledger balance can be shown a **negative** dashboard balance.
@@ -1167,7 +1174,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Either wrap the per-tenant call in a Polly retry policy / add `[AutomaticRetry(Attempts = 3)]` to the job classes to honor NFR-4, or correct the doc-comment + NFR-4 to describe the actual "log-and-skip, self-heal on next run" behavior.)
 
 ### BUG-035 — Team-leave-calendar scope is derived from org structure, NOT from a permission — an employee holding only `Leave.View.Own` who happens to have direct reports gets the full Manager calendar (pending + leave-type + status) of those reports (AC-2/BR-1/NFR-3 access-control bypass)
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #140, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-009 · TC-LV-171 / TC-LV-172 / TC-LV-181 / TC-LV-183 (also the reason TC-LV-176 can't be exercised) — AC-1/AC-2, BR-1/BR-2, NFR-3, FR-2/FR-3
 - **Title:** The `GET /api/v1/leaves/team-calendar` endpoint is gated only by class-level `[Authorize]` (no `[RequirePermission]`), and the handler resolves the caller's visibility scope purely from the reporting graph: `Leave.View.All` → org-wide; else **any employee with ≥1 direct report → Manager scope** (Approved **+ Pending**, full leave-type/color/status detail); else department-Approved-only suppressed scope. The `Leave.View.Team` permission is **never consulted**. So a user who holds only `Leave.View.Own` — i.e. is NOT authorized for any team view — but is listed as someone's `ReportsToEmployeeId`, receives the full manager calendar of their reports, including **pending requests and sensitive leave types** that BR-1/NFR-3 reserve for managers/HR. Verified live: `employee@acme.test` (John Doe, token permissions = `["Leave.Apply","Leave.View.Own"]`, role Employee) called the endpoint and received `scope=Manager` with his direct report **Et FullTime's Pending Annual leave** (type, color `#4CAF50`, status=Pending all populated) — exactly the data AC-2/BR-1 say an employee must never see.
@@ -1605,7 +1612,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-045 — `failed_login_count` increment is NOT atomic (EF read-modify-write, not a DB-level increment): concurrent wrong-password logins lose increments, so an attacker firing requests in parallel can brute-force WITHOUT ever tripping the lockout (NFR-2 violated; lockout defeated under concurrency / TC-098)
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #137, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-010 · TC-AUTH-098 (steps 4-5), TC-AUTH-026 (step 11)
 - **Title:** NFR-2 requires the failed-count update to be atomic so concurrent attempts cannot race. Live, firing 10 simultaneous wrong-password logins for a clean account leaves `failed_login_count` at **1-2** (not 10) and the account is **NOT locked** (`locked_until` stays null), because every concurrent request reads the same starting count and writes back `start+1`, losing the other increments (classic lost-update). This is a **security defeat**: an attacker who parallelizes guesses never trips the 5-attempt lockout — the very brute-force protection US-AUTH-010 exists to provide is bypassable by concurrency.
@@ -1801,7 +1808,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 <!-- ── US-ATT-005 Shift Management & Assignment — REPORT-ONLY API run 2026-06-26 (@test-runner) ── -->
 
 ### BUG-048 — Trailing/leading-whitespace shift name returns HTTP 500 (unhandled 23505): the duplicate-name pre-check compares the RAW name but the row is stored `.Trim()`-ed, so it slips past the app check and crashes on the unique index
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #141, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). On `POST /api/v1/attendance/shifts` as tenantadmin@acme: base `"RegTestShift"`→201, whitespace variant `" RegTestShift "`→**HTTP 500**. Live log `hrm-20260627.log` re-confirms `23505 … ix_shift_tenant_name_unique` unhandled at `ShiftService.CreateAsync:89` (line moved from prior :74, same defect). Note current route is `/api/v1/attendance/shifts` (not the `/tenant/shifts` in earlier notes), request field is `type` ∈ {SINGLE,ROTATING,FLEXIBLE} + `workingDays` required. Test shifts cleaned up (DELETE 204).
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-052 (step 3, FAIL)
@@ -2150,7 +2157,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > REPORT-ONLY API-layer run (curl + JWT) against the running stack on `acme` (tenant `019ef3ba-ffb7-7eec-b24f-7ad806ca1cb9`). FE :4200 down + platform-bound → all UI/a11y TCs BLOCKED. **Real routes:** `/api/v1/recruitment/vacancies` (list/get/create/update + `/{id}/publish`,`/{id}/close`,`/{id}/status`, `/status` bulk); public `/api/v1/careers/vacancies` (+ `/{slug}`). **Real permissions (differ from the TC text `Recruitment.Create.All`/`Read.All`):** reads = `Recruitment.View`, all writes = `Recruitment.Manage`. ID buffer chosen above the concurrent attendance run.
 
 ### BUG-055 — Vacancy create/update/publish/close write NOTHING to the tenant audit trail (FR-7 + AC-3 unmet); the only "audit" is a Serilog file line
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #143, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-001 · TC-REC-001-03 (S4 audit) + TC-REC-001-04 (S2 close audit) + TC-REC-001-06 (S8 transition audit)
 - **Title:** FR-7 ("log all vacancy create/update/publish/close actions to the tenant's audit trail") and AC-3 ("an audit log entry is created") require an `audit_logs` row per vacancy lifecycle action. `VacancyService` writes **no `audit_logs` record at all** for create/update/publish/close/status-change — it only emits a Serilog file line (`_logger.LogInformation("Vacancy ...")`) and relies on the `AuditInterceptor` stamping `CreatedBy`/`UpdatedBy`/`UpdatedAt` columns on the `vacancy` row. The dedicated audit trail (`audit_logs`, surfaced at `GET /api/v1/tenant/audit-logs`) never receives a Vacancy entry, so a tenant admin/auditor cannot see who created/published/edited/closed a vacancy.
@@ -4824,7 +4831,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — the page loads and lists the right employee×type rows, but its single purpose (showing projected carry-forward/forfeiture per employee) is defeated: numbers are always blank/0 and the totals are a literal "NaN". Contained to one HR preview screen; no data corruption (read-only preview). Same FE↔BE envelope/field-drift class as prior Leave contract notes.
 
 ### BUG-102 — "Apply for Leave" form is unusable: leave-type dropdown is empty because `GET /api/v1/leaves/balances` 404s and aborts the form's combined load (FE calls `/balances`, backend route is `/my-balance`)
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #145, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** FE (URL contract) / BE
 - **Module / US / TC:** Leave Management / US-LV-003 / TC-LV-065 (apply form)
 - **Title:** On `/leave/apply` the **Leave type** `<select>` contains only the placeholder "Select a leave type..." — no leave types load, so no leave request can be submitted, even though acme has 13 active leave types and `GET /api/v1/tenant/leave-types` returns 200.
@@ -4853,7 +4860,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — not a defect in the careers/apply UI itself (those render accessibly), but it blocks all end-to-end testing of the public application journey (browse → open vacancy → apply form → upload), leaving US-REC-002's public-facing AC unverifiable in this environment. A test-environment data fix (enable `PublicCareersEnabled` for acme + one public Open vacancy) would unblock TC-REC-002-13 and the public side of TC-REC-001-12.
 
 ### ISSUE-210 — Performance Management module is unreachable via in-app navigation for every available persona: the single "Performance" sidebar item is permission-gated to `Performance.View.Own` (so tenantadmin/HR never see it) yet routes to `/performance`, which is role-guarded to Manager/HR/Tenant Admin (so the employee who DOES see the link lands on `/forbidden`); the employee self-service `/my-review` tree has no nav entry at all
-- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Type / Severity / Status:** ISSUE · HIGH · RESOLVED (PR #148, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** FE
 - **Module / US / TC:** Performance Management / US-PRF-001..010 / discoverability of TC-PRF-001-12, TC-PRF-002-15, TC-PRF-003-13, TC-PRF-004-14, TC-PRF-005-12, TC-PRF-006-14, TC-PRF-007-12, TC-PRF-008-13, TC-PRF-009-15 (all the FE a11y/render TCs)
 - **Title:** The lone "Performance" sidebar entry advertises a screen its viewers cannot enter and is hidden from the personas who can, so no Performance screen (cycles, goals, self-assessment, manager-review, 360, PIP, dashboard, recommendations, sign-off) is reachable through normal in-app navigation.
@@ -4893,7 +4900,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — the rest of the settings UI is genuinely accessible (labeled tabs/fields, dirty-tracking Save, labeled hex/swatch), but the error-not-announced gap is a concrete WCAG 2.1 AA failure on a form a tenant admin uses, and unnamed file inputs block SR-only upload. Not HIGH because sighted-keyboard users can still operate everything.
 
 ### BUG-104 — Admin → Data Export UI is non-functional: the FE service calls `/api/v1/tenant/exports` but the backend route is `/api/v1/tenant/data-exports` (missing `data-` segment), so the history list 404s into a false "No exports yet" and Start Export POSTs to a dead route
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #146, merged into test/local-subdomains 2026-07-04; regression test green pre-fix->post-fix; combined merged-tree run green (81/81 backend, 52 FE))
 - **Layer:** FE (wrong API base path)
 - **Module / US / TC:** Admin Console / US-ADM-010 / Data Export UI (TC-ADM-010 FE render/history arms; the deferred TC-010-17 is a separate schema-PDF concern)
 - **Title:** Every Data Export screen call targets `…/tenant/exports` / `…/system/tenants/{id}/exports`, but the controller is routed at `…/tenant/data-exports` / `…/system/tenants/{id}/data-exports`, so the page renders its form but the export-history list always 404s (shows the empty-state even though acme has prior exports) and starting an export hits a 404 route.
