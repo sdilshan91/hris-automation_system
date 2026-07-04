@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.DTOs;
@@ -158,6 +159,12 @@ public sealed class ApplicantService : IApplicantService
         };
 
         _dbContext.Applicants.Add(applicant);
+        // ISSUE-104 (US-REC-005 audit): write a queryable tenant audit row for the public application
+        // submission (with an after-snapshot), not just an ILogger line. Public/anonymous path ⇒ UserId is
+        // null (system/applicant actor); TenantId is stamped from the resolved tenant context (the guard at
+        // the top of SubmitAsync already required _tenantContext.IsResolved).
+        AddApplicantAudit("Application.Submitted", applicant.Id, after: SnapshotApplicant(applicant),
+            $"Application {applicant.ApplicationReferenceNumber} submitted to vacancy {applicant.VacancyId}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -694,6 +701,50 @@ public sealed class ApplicantService : IApplicantService
         warnings = warn;
         return Result.Success();
     }
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-104 (US-REC-005): appends a queryable tenant audit row (structured Action/ResourceType/before/
+    /// after) to the shared audit_log table. Tenant is stamped from context; the actor is the authenticated
+    /// user when present and null on the public/anonymous application-submission path. Mirrors
+    /// <c>LeaveTypeService.AddLeaveTypeAudit</c>; the row is added to the change tracker and persisted by the
+    /// caller's SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddApplicantAudit(string action, Guid resourceId, string? after, string detail, string? before = null)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "Applicant",
+            ResourceId = resourceId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of an applicant/application to a JSON snapshot.</summary>
+    private static string SnapshotApplicant(Applicant a) => JsonSerializer.Serialize(new
+    {
+        a.ApplicationReferenceNumber,
+        a.VacancyId,
+        a.FirstName,
+        a.LastName,
+        a.Email,
+        a.Phone,
+        Stage = a.Stage.ToString(),
+        Source = a.Source.ToString(),
+        a.IsInternal,
+        a.LinkedEmployeeId,
+        a.ResumeFileName,
+        a.AppliedAt,
+    }, AuditJsonOptions);
 
     /// <summary>AC-2: record a tenant-scoped audit-log entry for the stage transition.</summary>
     private void WriteStageChangeAuditLog(ApplicantStageHistory row)

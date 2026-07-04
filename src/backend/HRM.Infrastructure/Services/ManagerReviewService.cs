@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
@@ -134,6 +135,10 @@ public sealed class ManagerReviewService : IManagerReviewService
 
         var review = await LoadReviewWithItemsAsync(input.EmployeeId, input.CycleId, tracking: true, cancellationToken);
 
+        // ISSUE-111 (US-PRF-005 FR-7 audit): snapshot the pre-mutation state (null for a first-time draft) so
+        // the audit row can capture before/after. Captured BEFORE the merge loop mutates items/scores.
+        var beforeSnapshot = review is null ? null : SnapshotReview(review);
+
         // AC-5/BR-1: a submitted review is locked. HR can reopen it explicitly via ReopenAsync first.
         if (review is not null && review.Status == ManagerReviewStatus.Submitted)
             return Result<ManagerReviewDto>.Failure(
@@ -253,6 +258,13 @@ public sealed class ManagerReviewService : IManagerReviewService
                     selfScore.Value, managerScore, cycle.SelfWeightPercent, cycle.ManagerWeightPercent);
             }
         }
+
+        // ISSUE-111 (US-PRF-005 FR-7 audit): write a queryable tenant audit row for the rating submission.
+        // FR-7 requires the manager's user id + timestamp — the standard actor (UserId) + CreatedAt fields
+        // carry that. Distinguish save vs submit by the resulting status; a submit is the audit-critical event.
+        var action = submit ? "ManagerReview.Submitted" : "ManagerReview.Saved";
+        AddManagerReviewAudit(action, review.Id, before: beforeSnapshot, after: SnapshotReview(review),
+            $"Manager review {(submit ? "submitted" : "saved")} for employee {input.EmployeeId}, cycle {input.CycleId}.");
 
         try
         {
@@ -476,6 +488,54 @@ public sealed class ManagerReviewService : IManagerReviewService
         }
         return totalWeight == 0m ? 0m : Math.Round(weightedSum / totalWeight, 2, MidpointRounding.AwayFromZero);
     }
+
+    // ── Audit (FR-7) ─────────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-111 (US-PRF-005 FR-7): appends a queryable tenant audit row (with before/after JSON snapshots)
+    /// to the shared audit_log table. Tenant + the reviewing manager's user id are stamped from context, and
+    /// CreatedAt supplies the submission timestamp FR-7 requires. Mirrors
+    /// <c>LeaveTypeService.AddLeaveTypeAudit</c>; persisted by the caller's SaveChanges.
+    /// </summary>
+    private void AddManagerReviewAudit(string action, Guid resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "ManagerReview",
+            ResourceId = resourceId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of a manager review (incl. per-goal ratings) to JSON.</summary>
+    private static string SnapshotReview(ManagerReview r) => JsonSerializer.Serialize(new
+    {
+        r.CycleId,
+        r.EmployeeId,
+        r.ReviewerEmployeeId,
+        Status = r.Status.ToString(),
+        Flag = r.Flag.ToString(),
+        r.SummaryComment,
+        r.WeightedManagerScore,
+        r.SelfScoreAtSubmit,
+        r.FinalScore,
+        r.SubmittedAt,
+        Items = r.Items
+            .Where(i => !i.IsDeleted)
+            .OrderBy(i => i.GoalId)
+            .Select(i => new { i.GoalId, i.ManagerRating, i.ManagerComment })
+            .ToList(),
+    }, AuditJsonOptions);
 
     // ── Authorization (BR-2/BR-3) ────────────────────────────────────
 

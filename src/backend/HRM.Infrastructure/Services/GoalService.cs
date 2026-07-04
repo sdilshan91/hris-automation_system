@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
@@ -97,6 +98,10 @@ public sealed class GoalService : IGoalService
         };
 
         _dbContext.Goals.Add(goal);
+        // ISSUE-097 (US-PRF-001 FR-6): write a queryable tenant audit row with an after-snapshot, not just
+        // an ILogger line / the interceptor's CreatedBy stamp.
+        AddGoalAudit("Goal.Created", goal.Id, before: null, after: SnapshotGoal(goal),
+            $"Goal '{goal.Title}' created for employee {goal.EmployeeId}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -139,6 +144,9 @@ public sealed class GoalService : IGoalService
                 $"Goal weights for this employee would total {newTotal}%, which exceeds 100%.",
                 422, "weight_exceeds_100");
 
+        // ISSUE-097 (US-PRF-001 FR-6): snapshot the pre-mutation state so the audit row captures before/after.
+        var beforeSnapshot = SnapshotGoal(goal);
+
         goal.Title = input.Title.Trim();
         goal.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
         goal.Category = input.Category;
@@ -147,6 +155,9 @@ public sealed class GoalService : IGoalService
         goal.MeasurementUnit = input.MeasurementUnit.Trim();
         goal.DueDate = input.DueDate;
         goal.ParentGoalId = input.ParentGoalId;
+
+        AddGoalAudit("Goal.Updated", goal.Id, before: beforeSnapshot, after: SnapshotGoal(goal),
+            $"Goal '{goal.Title}' updated.");
 
         try
         {
@@ -185,7 +196,11 @@ public sealed class GoalService : IGoalService
         if (cycleResult.IsFailure)
             return Result.Failure(cycleResult.Error!, cycleResult.StatusCode ?? 400, cycleResult.ErrorCode);
 
+        // ISSUE-097 (US-PRF-001 FR-6): snapshot before the soft-delete so the audit row captures before/after.
+        var beforeSnapshot = SnapshotGoal(goal);
         goal.IsDeleted = true;
+        AddGoalAudit("Goal.Deleted", goal.Id, before: beforeSnapshot, after: SnapshotGoal(goal),
+            $"Goal '{goal.Title}' deleted.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -346,6 +361,51 @@ public sealed class GoalService : IGoalService
         if (goals.All(g => g.Status is GoalStatus.Submitted or GoalStatus.Acknowledged)) return "Submitted";
         return "Draft";
     }
+
+    // ── Audit (FR-6) ─────────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-097 (US-PRF-001 FR-6): appends a queryable tenant audit row (with before/after JSON snapshots)
+    /// to the shared audit_log table. Tenant/actor are stamped from context. Mirrors
+    /// <c>LeaveTypeService.AddLeaveTypeAudit</c>; added to the change tracker and persisted by the caller's
+    /// SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddGoalAudit(string action, Guid resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "Goal",
+            ResourceId = resourceId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of a goal to a JSON snapshot.</summary>
+    private static string SnapshotGoal(Goal g) => JsonSerializer.Serialize(new
+    {
+        g.CycleId,
+        g.EmployeeId,
+        g.Title,
+        g.Description,
+        Category = g.Category.ToString(),
+        g.Weight,
+        g.TargetValue,
+        g.MeasurementUnit,
+        g.DueDate,
+        g.ParentGoalId,
+        Status = g.Status.ToString(),
+        g.IsDeleted,
+    }, AuditJsonOptions);
 
     private static GoalDto ToDto(Goal g) => new()
     {
