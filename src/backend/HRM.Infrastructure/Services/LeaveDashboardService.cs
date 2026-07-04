@@ -15,10 +15,16 @@ namespace HRM.Infrastructure.Services;
 /// ITenantContext + EF global query filters and resolve the acting employee from the current user
 /// (self-service: an employee can only ever read their own data).
 ///
-/// Balances are computed component-wise from the LeaveLedger (BR-1):
-///   Balance = Entitlement + CarryForward - Used - Expired + Adjustments
-/// The entitlement value reuses the US-LV-002 entitlement engine (override &gt; rule &gt; default,
-/// pro-rated) via ILeaveEntitlementService.ComputeEffectiveEntitlementAsync.
+/// The headline Balance is the AUTHORITATIVE running balance from the LeaveLedger — the
+/// BalanceAfter of the latest ledger entry for (employee, leave-type, year). This is the exact
+/// same derivation the rest of the module treats as the source of truth: apply-preview
+/// (LeaveRequestService.GetBalancePreviewAsync) and approval both read
+/// LeaveRequestService.GetLedgerBalanceAsync, i.e. the latest BalanceAfter. Reconciling the
+/// dashboard to that value (which already folds in the Accrual/opening entries) keeps the card,
+/// the apply-preview, and the ledger consistent (BR-1, TC-LV-110/112/115). The component fields
+/// (Used/CarryForward/Expired/Adjustments) remain a breakdown for display only.
+/// The Entitlement value is informational and reuses the US-LV-002 entitlement engine
+/// (override &gt; rule &gt; default, pro-rated) via ILeaveEntitlementService.ComputeEffectiveEntitlementAsync.
 ///
 /// Leave-year boundary (BR-4): the codebase has no tenant fiscal-year config entity, so the
 /// established calendar-year convention from US-LV-002..005 is reused (the year a request/ledger
@@ -92,13 +98,14 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
 
         var leaveTypeIds = leaveTypes.Select(lt => lt.Id).ToList();
 
-        // One pass over the employee's ledger for the year: component sums per leave type (BR-1).
+        // One pass over the employee's ledger for the year: component sums per leave type (BR-1),
+        // plus the running BalanceAfter needed for the authoritative headline balance.
         var ledgerEntries = await _dbContext.LeaveLedgerEntries
             .AsNoTracking()
             .Where(l => l.EmployeeId == employee.Id
                         && l.LeaveYear == leaveYear
                         && leaveTypeIds.Contains(l.LeaveTypeId))
-            .Select(l => new { l.LeaveTypeId, l.EntryType, l.Amount })
+            .Select(l => new { l.LeaveTypeId, l.EntryType, l.Amount, l.BalanceAfter, l.OccurredAt, l.CreatedAt })
             .ToListAsync(cancellationToken);
 
         var components = ledgerEntries
@@ -106,6 +113,20 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             .ToDictionary(
                 g => g.Key,
                 g => LedgerComponents.From(g.Select(e => (e.EntryType, e.Amount))));
+
+        // Authoritative running balance per leave type = BalanceAfter of the LATEST ledger entry
+        // (ordered OccurredAt desc, then CreatedAt desc). This is the identical derivation used by
+        // LeaveRequestService.GetLedgerBalanceAsync — the single source of truth that apply-preview
+        // and approval read — so the dashboard card reconciles to the ledger (TC-LV-110/112/115).
+        // A leave type with no ledger activity for the year resolves to 0 (nothing realised yet);
+        // its engine Entitlement is still surfaced separately on the card.
+        var ledgerBalanceByType = ledgerEntries
+            .GroupBy(l => l.LeaveTypeId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(e => e.OccurredAt)
+                      .ThenByDescending(e => e.CreatedAt)
+                      .First().BalanceAfter);
 
         // BR-2: pending days per leave type from the employee's currently Pending requests.
         // Pending is shown separately and NOT subtracted from balance.
@@ -127,14 +148,17 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             var c = components.TryGetValue(lt.Id, out var comp) ? comp : LedgerComponents.Empty;
 
             // Entitlement reuses the US-LV-002 engine (override > rule > default, pro-rated).
+            // It is INFORMATIONAL only (the "resolved entitlement" the card shows) and is NOT added
+            // into the balance — doing so would double-count against the ledger's Accrual entries.
             decimal entitlement = await ResolveEntitlementAsync(employee.Id, lt.Id, leaveYear, cancellationToken);
 
-            // BR-1: Balance = Entitlement + CarryForward - Used - Expired + Adjustments.
-            // The entitlement engine's value is the granted allowance; the ledger Accrual entries
-            // realise it. We surface the engine entitlement (the story's "resolved entitlement") and
-            // derive the balance from the ledger components so the displayed math is self-consistent
-            // with the running ledger the rest of the module uses.
-            decimal balance = entitlement + c.CarryForward - c.Used - c.Expired + c.Adjustments;
+            // BR-1: the headline balance is the AUTHORITATIVE ledger running balance (BalanceAfter of
+            // the latest entry), which already folds in Accrual + CarryForward + Adjustments - Used -
+            // Expired. Reusing the same source as apply-preview/approval keeps the card, the preview,
+            // and the ledger in lock-step (TC-LV-110/112/115). Types with no ledger activity -> 0.
+            decimal balance = ledgerBalanceByType.TryGetValue(lt.Id, out var ledgerBalance)
+                ? ledgerBalance
+                : 0m;
 
             decimal pending = pendingByType.TryGetValue(lt.Id, out var p) ? p : 0m;
 
@@ -315,8 +339,10 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
                         break;
                     case LedgerEntryType.Accrual:
                     default:
-                        // Accrual realises the entitlement, which is sourced from the engine value;
-                        // not re-added here to avoid double counting against the engine entitlement.
+                        // Accrual is the realised opening/accrued balance. It is NOT a separate
+                        // DTO breakdown field, and it is already captured in the authoritative
+                        // headline balance (the latest ledger BalanceAfter), so it is not summed
+                        // into these display-only component totals.
                         break;
                 }
             }
