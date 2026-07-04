@@ -42,6 +42,15 @@ describe('LeaveRequestService', () => {
     remainingDays: 10,
   };
 
+  // Raw wire shape returned by GET /leaves/my-balance (backend LeaveBalanceDto).
+  // getMyBalances maps entitlement->entitlementDays, used->usedDays, balance->remainingDays.
+  const mockRawBalance = {
+    leaveTypeId: 'lt-1',
+    entitlement: 14,
+    used: 4,
+    balance: 10,
+  };
+
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -121,16 +130,35 @@ describe('LeaveRequestService', () => {
   });
 
   describe('getMyBalances', () => {
-    it('should GET the current employee balances', () => {
+    // BUG-102 (TC-LV-256): the balances call must target the real backend route
+    // `/leaves/my-balance`. It previously requested `/leaves/balances`, which 404s
+    // and made the apply-leave forkJoin error out, blanking the leave-type dropdown.
+    it('should GET the current employee balances and map the wire shape', () => {
       service.getMyBalances().subscribe((balances) => {
         expect(balances.length).toBe(1);
+        // Mapping from the raw {entitlement,used,balance} contract.
+        expect(balances[0]).toEqual(mockBalance);
         expect(balances[0].remainingDays).toBe(10);
       });
 
-      const req = httpMock.expectOne(`${baseUrl}/balances`);
+      const req = httpMock.expectOne(`${baseUrl}/my-balance`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush([mockBalance]);
+      req.flush([mockRawBalance]);
+    });
+
+    it('getMyBalances should GET /leaves/my-balance not /leaves/balances (BUG-102)', () => {
+      service.getMyBalances().subscribe();
+
+      // The real requested URL must be the backend route, not the legacy path.
+      const req = httpMock.expectOne(`${baseUrl}/my-balance`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.url.endsWith('/leaves/my-balance')).toBeTrue();
+      expect(req.request.url.endsWith('/leaves/balances')).toBeFalse();
+      req.flush([mockRawBalance]);
+
+      // The retired path must never be hit.
+      httpMock.expectNone(`${baseUrl}/balances`);
     });
   });
 

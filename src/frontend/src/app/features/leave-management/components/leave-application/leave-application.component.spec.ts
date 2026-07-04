@@ -374,9 +374,51 @@ describe('LeaveApplicationComponent', () => {
   });
 
   it('should show an error toast when loading fails', () => {
-    leaveRequestServiceSpy.getMyBalances.and.returnValue(throwError(() => new Error('boom')));
+    // A genuine load failure = the leave TYPES call fails (the form cannot render
+    // without types). This is the unambiguous total-failure path and must always
+    // surface an error toast, regardless of the BUG-102 balances-resilience change.
+    leaveTypeServiceSpy.getLeaveTypes.and.returnValue(throwError(() => new Error('boom')));
     fixture.detectChanges();
     expect(component.isLoading()).toBeFalse();
     expect(toastrSpy.error).toHaveBeenCalled();
+  });
+
+  // ─── BUG-102 (TC-LV-256): apply-leave dropdown must load ──────────────────
+  describe('BUG-102: apply-leave leave-type dropdown', () => {
+    // 13 distinct active leave types — mirrors a realistic tenant catalogue and
+    // makes an "empty dropdown" regression unmistakable (length 13 vs 0).
+    const thirteenTypes: ILeaveType[] = Array.from({ length: 13 }, (_, i) => ({
+      ...annualLeave,
+      leaveTypeId: `lt-${i + 1}`,
+      name: `Leave Type ${i + 1}`,
+      code: `L${i + 1}`,
+      displayOrder: i,
+      isActive: true,
+    }));
+
+    it('should populate leaveTypes (dropdown non-empty) after load (BUG-102)', () => {
+      leaveTypeServiceSpy.getLeaveTypes.and.returnValue(of(thirteenTypes));
+      leaveRequestServiceSpy.getMyBalances.and.returnValue(of(balances));
+
+      fixture.detectChanges();
+
+      expect(component.leaveTypes().length).toBe(13);
+      expect(component.isLoading()).toBeFalse();
+    });
+
+    it('dropdown still populates when getMyBalances errors — guards catchError resilience (BUG-102)', () => {
+      // The reported failure mode: getMyBalances() hit a 404 route, the forkJoin
+      // errored, and leaveTypes was never set (empty dropdown). Post-fix, a balances
+      // failure must degrade gracefully and leave the type dropdown populated.
+      leaveTypeServiceSpy.getLeaveTypes.and.returnValue(of(thirteenTypes));
+      leaveRequestServiceSpy.getMyBalances.and.returnValue(
+        throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
+      );
+
+      fixture.detectChanges();
+
+      expect(component.leaveTypes().length).toBe(13);
+      expect(component.isLoading()).toBeFalse();
+    });
   });
 });
