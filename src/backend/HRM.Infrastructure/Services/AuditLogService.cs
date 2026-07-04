@@ -211,16 +211,49 @@ public sealed class AuditLogService : IAuditLogService
 
         if (!string.IsNullOrWhiteSpace(filter.SearchQuery))
         {
-            // BUG-007: Before/After are jsonb columns — `string.Contains` on them is not translatable by
-            // Npgsql and 500s on Postgres (it only "worked" on the InMemory tests). Search the human-readable
-            // text/structured columns instead (Detail + the standardized action/resource fields).
             var q = filter.SearchQuery.Trim();
-            query = query.Where(a =>
-                (a.Detail != null && a.Detail.Contains(q)) ||
-                (a.Action != null && a.Action.Contains(q)) ||
-                a.EventType.Contains(q) ||
-                (a.ResourceType != null && a.ResourceType.Contains(q)) ||
-                (a.ResourceId != null && a.ResourceId.Contains(q)));
+
+            // The human-readable text/structured columns are searched identically on both providers
+            // (`.Contains` → LIKE on Postgres, client-side match on InMemory — both case-sensitive).
+            if (_db.Database.IsNpgsql())
+            {
+                // US-NTF-005 FR-2 / BUG-241: keyword search MUST also cover the before/after JSONB content.
+                // Before/After are `jsonb` on Postgres, and a bare `.Contains`/ILIKE on a jsonb column is NOT
+                // translatable — it 500s with `operator does not exist: jsonb ~~ text` (that was BUG-007, why
+                // before/after were dropped from the predicate). LINQ has no jsonb→text cast operator, so we
+                // express `before::text ILIKE '%q%' OR after::text ILIKE '%q%'` via a parameterized, tenant-scoped
+                // FromSql fragment that yields the matching row ids, and OR that into the predicate. ILIKE ⇒ the
+                // jsonb-content match is case-INsensitive (the other text fields stay case-sensitive via LIKE).
+                // LIKE wildcards in the term (`%`/`_`, common in jsonb keys like "bank_account_number") are escaped
+                // so they match literally, mirroring EF's auto-escaping of `.Contains`.
+                var pattern = "%" + EscapeLikePattern(q) + "%";
+                var jsonbMatchIds = _db.AuditLogs
+                    .FromSql($@"SELECT * FROM audit_logs WHERE tenant_id = {tenantId} AND (before::text ILIKE {pattern} OR after::text ILIKE {pattern})")
+                    .Select(a => a.Id);
+
+                query = query.Where(a =>
+                    (a.Detail != null && a.Detail.Contains(q)) ||
+                    (a.Action != null && a.Action.Contains(q)) ||
+                    a.EventType.Contains(q) ||
+                    (a.ResourceType != null && a.ResourceType.Contains(q)) ||
+                    (a.ResourceId != null && a.ResourceId.Contains(q)) ||
+                    jsonbMatchIds.Contains(a.Id));
+            }
+            else
+            {
+                // InMemory (test) provider: Before/After are plain strings here (not jsonb), so match them
+                // client-side with `.Contains`. NOTE the case-sensitivity seam: this `.Contains` is case-SENSITIVE
+                // whereas the Postgres branch above uses case-INsensitive ILIKE for before/after. FromSql is not
+                // supported by the InMemory provider, hence the separate branch.
+                query = query.Where(a =>
+                    (a.Detail != null && a.Detail.Contains(q)) ||
+                    (a.Action != null && a.Action.Contains(q)) ||
+                    a.EventType.Contains(q) ||
+                    (a.ResourceType != null && a.ResourceType.Contains(q)) ||
+                    (a.ResourceId != null && a.ResourceId.Contains(q)) ||
+                    (a.Before != null && a.Before.Contains(q)) ||
+                    (a.After != null && a.After.Contains(q)));
+            }
         }
 
         // US-NTF-005 FR-9/BR-5: the AuditLog.View meta-audit rows (written on every list view) are accountability
@@ -328,6 +361,14 @@ public sealed class AuditLogService : IAuditLogService
         }
         return values.Distinct(StringComparer.Ordinal).ToList();
     }
+
+    /// <summary>
+    /// Escapes the SQL-LIKE wildcard metacharacters (<c>\</c>, <c>%</c>, <c>_</c>) in a raw search term so the
+    /// FromSql <c>ILIKE</c> pattern (BUG-241 before/after jsonb search) matches them literally — mirroring EF's
+    /// automatic escaping of translated <c>string.Contains</c>. Uses the PostgreSQL default LIKE escape char (<c>\</c>).
+    /// </summary>
+    private static string EscapeLikePattern(string term)
+        => term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     private static int NormalizePageSize(int pageSize)
     {
