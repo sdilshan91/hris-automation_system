@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -92,6 +93,10 @@ public sealed class ShiftService : IShiftService
         ApplyRotation(shift, request.Rotation);
 
         _dbContext.Shifts.Add(shift);
+        // ISSUE-075: queryable tenant audit row (after-snapshot) for the shift create, same transaction.
+        // If the racing unique-index insert below throws, the whole SaveChanges rolls back (audit too).
+        AddShiftAudit("Shift.Created", shift.Id, before: null, after: SnapshotShift(shift),
+            detail: $"Shift '{shift.Name}' ({shift.Type}) created.");
         try
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -140,6 +145,9 @@ public sealed class ShiftService : IShiftService
         if (rotationError is not null)
             return Result<ShiftDto>.Failure(rotationError, 400, "invalid_rotation");
 
+        // ISSUE-075: snapshot the pre-mutation state so the audit row captures before/after.
+        var beforeSnapshot = SnapshotShift(shift);
+
         shift.Name = name;
         shift.Type = request.Type;
         shift.StartTime = ParseTime(request.StartTime);
@@ -154,6 +162,10 @@ public sealed class ShiftService : IShiftService
             existing.IsDeleted = true;
         shift.RotationSteps.Clear();
         ApplyRotation(shift, request.Rotation);
+
+        // ISSUE-075: queryable tenant audit row (before/after) for the shift update, same transaction.
+        AddShiftAudit("Shift.Updated", shift.Id, before: beforeSnapshot, after: SnapshotShift(shift),
+            detail: $"Shift '{shift.Name}' updated.");
 
         try
         {
@@ -205,10 +217,14 @@ public sealed class ShiftService : IShiftService
                 $"This shift is assigned to {assignedCount} employees. Please reassign them before deleting.",
                 409, "shift_in_use");
 
+        var beforeSnapshot = SnapshotShift(shift);
         shift.IsDeleted = true;
         foreach (var step in shift.RotationSteps)
             step.IsDeleted = true;
 
+        // ISSUE-075: queryable tenant audit row (before-snapshot) for the shift delete, same transaction.
+        AddShiftAudit("Shift.Deleted", shift.Id, before: beforeSnapshot, after: null,
+            detail: $"Shift '{shift.Name}' deleted.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -266,6 +282,9 @@ public sealed class ShiftService : IShiftService
         }
 
         _dbContext.Shifts.Add(clone);
+        // ISSUE-075: queryable tenant audit row (after-snapshot) for the shift clone, same transaction.
+        AddShiftAudit("Shift.Cloned", clone.Id, before: null, after: SnapshotShift(clone),
+            detail: $"Shift '{clone.Name}' cloned from {source.Id} ('{source.Name}').");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -344,6 +363,17 @@ public sealed class ShiftService : IShiftService
         }
 
         _dbContext.EmployeeShifts.AddRange(newAssignments);
+        // ISSUE-075: queryable tenant audit row (after-snapshot) for the assignment, same transaction.
+        // Captures the assigned employees + shift + effective date.
+        AddShiftAudit("Shift.Assigned", shiftId, before: null,
+            after: JsonSerializer.Serialize(new
+            {
+                ShiftId = shiftId,
+                EffectiveFrom = effectiveFrom,
+                EmployeeIds = validEmployeeIds,
+                AssignedCount = newAssignments.Count,
+            }, AuditJsonOptions),
+            detail: $"Assigned {newAssignments.Count} employee(s) to shift {shiftId} effective {effectiveFrom}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -550,6 +580,49 @@ public sealed class ShiftService : IShiftService
             .Select(g => new { ShiftId = g.Key, Count = g.Select(es => es.EmployeeId).Distinct().Count() })
             .ToDictionaryAsync(g => g.ShiftId, g => g.Count, cancellationToken);
     }
+
+    // ── Audit (ISSUE-075) ──────────────────────────────────────────────
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-075: appends a queryable tenant audit row (with before/after JSON snapshots) to the shared
+    /// audit_log table for shift create/update/delete/assign/clone. Tenant/actor stamped from context.
+    /// Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>; added to the change tracker and persisted by the
+    /// caller's SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddShiftAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "Shift",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    private static string SnapshotShift(Shift s) => JsonSerializer.Serialize(new
+    {
+        s.Name,
+        s.Type,
+        StartTime = s.StartTime?.ToString("HH:mm"),
+        EndTime = s.EndTime?.ToString("HH:mm"),
+        s.BreakDurationMinutes,
+        s.GracePeriodMinutes,
+        s.MinimumHours,
+        WorkingDays = s.WorkingDays,
+        s.IsDefault,
+        s.IsActive,
+        s.RotationCycleLengthDays,
+        s.RotationReferenceStartDate,
+    }, AuditJsonOptions);
 
     private static void ApplyRotation(Shift shift, RotationRequest? rotation)
     {

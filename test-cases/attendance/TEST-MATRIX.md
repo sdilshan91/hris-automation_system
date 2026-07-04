@@ -1,7 +1,7 @@
 ---
 module: Attendance
 total_user_stories: 10
-total_test_cases: 154
+total_test_cases: 155
 created: 2026-06-14
 updated: 2026-06-15
 status: module-complete
@@ -9,14 +9,14 @@ status: module-complete
 
 # Attendance -- Test Matrix
 
-> **MODULE COMPLETE.** US-ATT-010 (Attendance Dashboard and Reports for HR) is the final Attendance story. All 10 user stories (US-ATT-001..010) now have test coverage -- 154 test cases (141 functional/security/perf/a11y/integration + 13 dedicated multi-tenant isolation), 50/50 acceptance criteria covered.
+> **MODULE COMPLETE.** US-ATT-010 (Attendance Dashboard and Reports for HR) is the final Attendance story. All 10 user stories (US-ATT-001..010) now have test coverage -- 155 test cases (142 functional/security/perf/a11y/integration + 13 dedicated multi-tenant isolation), 50/50 acceptance criteria covered. TC-ATT-142 adds the cross-cutting missing-audit-write regression cluster (ISSUE-067/069/071/073/075/089/093).
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Total User Stories Covered | 10 (US-ATT-001, US-ATT-002, US-ATT-003, US-ATT-004, US-ATT-005, US-ATT-006, US-ATT-007, US-ATT-008, US-ATT-009, US-ATT-010) |
-| Total Test Cases | 154 (141 functional/security/perf/a11y/integration + 13 dedicated multi-tenant isolation) |
+| Total Test Cases | 155 (142 functional/security/perf/a11y/integration + 13 dedicated multi-tenant isolation) |
 | Critical Priority | 64 |
 | High Priority | 84 |
 | Medium Priority | 4 |
@@ -49,6 +49,7 @@ status: module-complete
 | Cross-cutting (ATT-009) | Multi-tenant isolation (attendance_period_lock table + payroll-data/reconciliation reads) | TC-ATT-ISO-012 (+ reuses TC-ATT-ISO-001..004 for context/cache isolation) | 1 |
 | US-ATT-010 | Attendance Dashboard and Reports for HR | TC-ATT-129, TC-ATT-130, TC-ATT-131, TC-ATT-132, TC-ATT-133, TC-ATT-134, TC-ATT-135, TC-ATT-136, TC-ATT-137, TC-ATT-138, TC-ATT-139, TC-ATT-140, TC-ATT-141 | 13 |
 | Cross-cutting (ATT-010) | Multi-tenant isolation (scheduled_report_config table + dashboard/report aggregation reads) | TC-ATT-ISO-013 (+ reuses TC-ATT-ISO-001..004 for context/cache isolation) | 1 |
+| Cross-cutting (ATT-001/003/004/005/009/010) | Missing-audit-write regression cluster — every Attendance write appends a tenant-scoped, actor-attributed `audit_logs` row (guards ISSUE-067/069/071/073/075/089/093) | TC-ATT-142 (15 automated arms in `AttendanceAuditWriteTests`) | 1 |
 
 ## Test Type Distribution
 

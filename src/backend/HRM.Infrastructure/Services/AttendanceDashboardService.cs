@@ -467,6 +467,9 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         };
 
         _dbContext.ScheduledReportConfigs.Add(entity);
+        // ISSUE-093: queryable tenant audit row (after-snapshot) for the config create, same transaction.
+        AddScheduledReportAudit("ScheduledReport.Created", entity.Id, before: null, after: SnapshotConfig(entity),
+            detail: $"Scheduled report '{entity.ReportType}' ({entity.Frequency}/{entity.Format}) created.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -491,6 +494,9 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         if (validation is not null)
             return Result<ScheduledReportConfigDto>.Failure(validation.Value.Message, 400, validation.Value.Code);
 
+        // ISSUE-093: snapshot the pre-mutation state so the audit row captures before/after.
+        var beforeSnapshot = SnapshotConfig(entity);
+
         entity.ReportType = dto.ReportType.Trim();
         entity.Frequency = frequency;
         entity.Format = format;
@@ -499,6 +505,9 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         entity.Recipients = dto.Recipients.ToList();
         entity.IsActive = dto.IsActive;
 
+        // ISSUE-093: queryable tenant audit row (before/after) for the config update, same transaction.
+        AddScheduledReportAudit("ScheduledReport.Updated", entity.Id, before: beforeSnapshot, after: SnapshotConfig(entity),
+            detail: $"Scheduled report '{entity.ReportType}' updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result<ScheduledReportConfigDto>.Success(MapToDto(entity));
     }
@@ -513,7 +522,11 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         if (entity is null)
             return Result.Failure("Scheduled report not found.", 404, "not_found");
 
+        var beforeSnapshot = SnapshotConfig(entity);
         entity.IsDeleted = true;
+        // ISSUE-093: queryable tenant audit row (before-snapshot) for the config delete, same transaction.
+        AddScheduledReportAudit("ScheduledReport.Deleted", entity.Id, before: beforeSnapshot, after: null,
+            detail: $"Scheduled report '{entity.ReportType}' deleted.");
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
@@ -769,6 +782,42 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
             return new();
         }
     }
+
+    // ── Audit (ISSUE-093) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// ISSUE-093: appends a queryable tenant audit row (with before/after JSON snapshots) to the shared
+    /// audit_log table for scheduled-report-config create/update/delete. Tenant/actor stamped from context.
+    /// Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>; persisted by the caller's SaveChanges (same tx).
+    /// </summary>
+    private void AddScheduledReportAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "ScheduledReport",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    private static string SnapshotConfig(ScheduledReportConfig c) => JsonSerializer.Serialize(new
+    {
+        c.ReportType,
+        c.Frequency,
+        c.Format,
+        DeliveryTime = c.DeliveryTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+        c.Recipients,
+        c.IsActive,
+        c.FiltersJson,
+    }, JsonOpts);
 
     private static ScheduledReportConfigDto MapToDto(ScheduledReportConfig c) => new()
     {
