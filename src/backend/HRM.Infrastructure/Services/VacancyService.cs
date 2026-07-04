@@ -7,14 +7,17 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace HRM.Infrastructure.Services;
 
 /// <summary>
 /// Vacancy lifecycle service (US-REC-001). All queries are tenant-scoped via ITenantContext + the EF
-/// global query filter (AC-4 cross-tenant isolation). HTML is sanitized before persist (NFR-4). Audit
-/// of create/update/publish/close (FR-7) is provided by the AuditInterceptor (CreatedBy/UpdatedBy
-/// stamping on every SaveChanges) plus structured Serilog entries on each lifecycle action.
+/// global query filter (AC-4 cross-tenant isolation). HTML is sanitized before persist (NFR-4). Each
+/// create/update/publish/close/status-change writes a queryable <c>audit_logs</c> row (FR-7, AC-3) with
+/// Before/After JSON snapshots, tenant-scoped and actor-attributed, committed in the same transaction as
+/// the mutation. The AuditInterceptor's CreatedBy/UpdatedBy column stamping and the Serilog entries are
+/// complementary but do NOT by themselves satisfy FR-7's requirement for a queryable audit trail.
 /// </summary>
 public sealed class VacancyService : IVacancyService
 {
@@ -77,6 +80,8 @@ public sealed class VacancyService : IVacancyService
         };
 
         _dbContext.Vacancies.Add(vacancy);
+        AddVacancyAudit("Vacancy.Created", vacancy.Id, before: null, after: Snapshot(vacancy),
+            $"Vacancy '{vacancy.ReferenceNumber}' created in Draft.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -103,6 +108,8 @@ public sealed class VacancyService : IVacancyService
         if (refCheck is not null)
             return Result<VacancyDto>.Failure(refCheck.Value.error, 400, refCheck.Value.code);
 
+        var before = Snapshot(vacancy);
+
         vacancy.Title = input.Title.Trim();
         vacancy.DepartmentId = input.DepartmentId;
         vacancy.JobTitleId = input.JobTitleId;
@@ -118,6 +125,8 @@ public sealed class VacancyService : IVacancyService
         vacancy.ApplicationDeadline = input.ApplicationDeadline;
         vacancy.PublishToPublicCareers = input.PublishToPublicCareers;
 
+        AddVacancyAudit("Vacancy.Updated", vacancy.Id, before, Snapshot(vacancy),
+            $"Vacancy '{vacancy.ReferenceNumber}' updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -147,6 +156,8 @@ public sealed class VacancyService : IVacancyService
                 $"Cannot publish: the following are required — {string.Join(", ", missing)}.",
                 400, "publish_requirements");
 
+        var before = Snapshot(vacancy);
+
         vacancy.Status = VacancyStatus.Open;
         vacancy.PublishedAt = DateTime.UtcNow;
 
@@ -154,6 +165,8 @@ public sealed class VacancyService : IVacancyService
         if (string.IsNullOrEmpty(vacancy.Slug))
             vacancy.Slug = await GenerateUniqueSlugAsync(vacancy.Title, vacancy.Id, cancellationToken);
 
+        AddVacancyAudit("Vacancy.Published", vacancy.Id, before, Snapshot(vacancy),
+            $"Vacancy '{vacancy.ReferenceNumber}' published (Draft -> Open).");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -172,10 +185,16 @@ public sealed class VacancyService : IVacancyService
         if (vacancy is null)
             return Result<VacancyDto>.Failure("Vacancy not found.", 404);
 
+        var before = Snapshot(vacancy);
+        var fromStatus = vacancy.Status;
+
         var transition = ApplyTransition(vacancy, newStatus);
         if (transition.IsFailure)
             return Result<VacancyDto>.Failure(transition.Error!, transition.StatusCode ?? 400, transition.ErrorCode);
 
+        var action = newStatus == VacancyStatus.Closed ? "Vacancy.Closed" : "Vacancy.StatusChanged";
+        AddVacancyAudit(action, vacancy.Id, before, Snapshot(vacancy),
+            $"Vacancy '{vacancy.ReferenceNumber}' status changed {fromStatus} -> {newStatus}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -209,10 +228,21 @@ public sealed class VacancyService : IVacancyService
                 continue;
             }
 
+            var before = Snapshot(vacancy);
+            var fromStatus = vacancy.Status;
+
             var transition = ApplyTransition(vacancy, newStatus);
-            results.Add(transition.IsSuccess
-                ? new BulkStatusChangeItemResult { VacancyId = id, Success = true }
-                : new BulkStatusChangeItemResult { VacancyId = id, Success = false, Error = transition.Error, ErrorCode = transition.ErrorCode });
+            if (transition.IsSuccess)
+            {
+                var action = newStatus == VacancyStatus.Closed ? "Vacancy.Closed" : "Vacancy.StatusChanged";
+                AddVacancyAudit(action, vacancy.Id, before, Snapshot(vacancy),
+                    $"Vacancy '{vacancy.ReferenceNumber}' status changed {fromStatus} -> {newStatus} (bulk).");
+                results.Add(new BulkStatusChangeItemResult { VacancyId = id, Success = true });
+            }
+            else
+            {
+                results.Add(new BulkStatusChangeItemResult { VacancyId = id, Success = false, Error = transition.Error, ErrorCode = transition.ErrorCode });
+            }
         }
 
         // Single atomic SaveChanges for all successful in-memory mutations.
@@ -305,6 +335,57 @@ public sealed class VacancyService : IVacancyService
             Page = page,
             PageSize = pageSize,
             TotalCount = totalCount,
+        });
+    }
+
+    // ── Audit trail (FR-7, AC-3) ─────────────────────────────────────
+
+    /// <summary>
+    /// Serializes the audit-relevant config/status fields of a vacancy to JSON for Before/After snapshots.
+    /// Enums are stored as their names so the audit trail stays human-readable.
+    /// </summary>
+    private static string Snapshot(Vacancy v) => JsonSerializer.Serialize(new
+    {
+        v.ReferenceNumber,
+        v.Title,
+        Status = v.Status.ToString(),
+        v.DepartmentId,
+        v.JobTitleId,
+        v.LocationId,
+        v.HiringManagerId,
+        EmploymentType = v.EmploymentType.ToString(),
+        v.Headcount,
+        v.FilledCount,
+        v.SalaryMin,
+        v.SalaryMax,
+        v.SalaryCurrency,
+        v.ApplicationDeadline,
+        v.Slug,
+        v.PublishToPublicCareers,
+        v.PublishedAt,
+        v.ClosedAt,
+    });
+
+    /// <summary>
+    /// BUG-055 (FR-7, AC-3): appends a queryable vacancy audit row to the shared audit_logs table. Tenant and
+    /// actor are stamped from context; Before/After hold JSON snapshots. Added to the change tracker so it is
+    /// persisted in the SAME SaveChanges transaction as the mutation it records.
+    /// </summary>
+    private void AddVacancyAudit(string action, Guid vacancyId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "Vacancy",
+            ResourceId = vacancyId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
         });
     }
 
