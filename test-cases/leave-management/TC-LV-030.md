@@ -19,6 +19,7 @@ Verify that when an HR Officer modifies an existing entitlement rule and saves, 
 - Acceptance Criteria: AC-5
 - Functional Requirements: FR-5
 - Non-Functional Requirements: NFR-1
+- Related Finding: **BUG-028** (US-LV-002) — the audit before/after side of this TC (steps 11-13) was not produced. The `audit_logs` write is now covered by the dedicated regression **TC-LV-257** (`HRM.Tests.Unit.LeaveEntitlementAuditRegressionTests`). The Hangfire recalculation side (steps 5-10) remains tracked under BUG-118.
 
 ## 3. Preconditions
 - Tenant "acme" exists with status `active`.
