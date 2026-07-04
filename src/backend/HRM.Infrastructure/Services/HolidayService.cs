@@ -91,6 +91,9 @@ public sealed class HolidayService : IHolidayService
         };
 
         _dbContext.Holidays.Add(holiday);
+        // BUG-031 (US-LV-007): write a queryable tenant audit row (after-snapshot), not just an ILogger line.
+        AddHolidayAudit("Holiday.Created", holiday.Id, before: null, after: SnapshotHoliday(holiday),
+            $"Holiday '{holiday.Name}' created on {holiday.Date:yyyy-MM-dd}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -131,6 +134,9 @@ public sealed class HolidayService : IHolidayService
             return Result<HolidayDto>.Failure(
                 BuildDuplicateMessage(request.Date, request.LocationId), 400);
 
+        // BUG-031 (US-LV-007): snapshot the pre-mutation state for the audit before/after.
+        var beforeSnapshot = SnapshotHoliday(holiday);
+
         holiday.Name = request.Name.Trim();
         holiday.Date = request.Date;
         holiday.Type = type;
@@ -138,6 +144,8 @@ public sealed class HolidayService : IHolidayService
         holiday.Description = request.Description?.Trim();
         holiday.IsRecurring = request.IsRecurring;
 
+        AddHolidayAudit("Holiday.Updated", holiday.Id, before: beforeSnapshot, after: SnapshotHoliday(holiday),
+            $"Holiday '{holiday.Name}' updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -168,8 +176,12 @@ public sealed class HolidayService : IHolidayService
         // can only be deactivated. No payroll module exists yet, so we always soft-deactivate.
         // TODO(payroll): once payroll periods exist, block hard-delete inside a locked period and
         //   permit deactivation as the safe alternative.
+        // BUG-031 (US-LV-007): snapshot the pre-mutation state for the audit before/after.
+        var beforeSnapshot = SnapshotHoliday(holiday);
         holiday.IsActive = false;
 
+        AddHolidayAudit("Holiday.Deactivated", holiday.Id, before: beforeSnapshot, after: SnapshotHoliday(holiday),
+            $"Holiday '{holiday.Name}' deactivated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -346,13 +358,16 @@ public sealed class HolidayService : IHolidayService
             });
         }
 
-        if (toCreate.Count > 0)
-        {
-            _dbContext.Holidays.AddRange(toCreate);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-
         int failedRows = errors.Select(e => e.RowNumber).Distinct().Count();
+
+        if (toCreate.Count > 0)
+            _dbContext.Holidays.AddRange(toCreate);
+
+        // BUG-031 (US-LV-007): one summary audit row per import (consistent with the bulk-import decision),
+        // Detail records the imported/skipped counts. Persisted in the same transaction as the created rows.
+        AddHolidayAudit("Holiday.Imported", resourceId: null, before: null, after: null,
+            $"Holiday CSV import '{fileName}': {toCreate.Count} imported, {failedRows} skipped of {rows.Count} row(s).");
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
             "Holiday CSV import completed. File={FileName}, Total={Total}, Created={Created}, Failed={Failed}, TenantId={TenantId}",
@@ -429,6 +444,11 @@ public sealed class HolidayService : IHolidayService
         if (toCreate.Count > 0)
         {
             _dbContext.Holidays.AddRange(toCreate);
+            // BUG-031 (US-LV-007): one summary audit row per recurrence-generation run. Runs in a Hangfire
+            // scope that may not have a resolved tenant context, so stamp TenantId from the tenantId param
+            // (matches the holiday rows written here). Persisted in the same transaction.
+            AddHolidayAudit(tenantId, "Holiday.RecurrenceGenerated", resourceId: null, before: null, after: null,
+                $"Generated {toCreate.Count} recurring holiday entr(ies) for year {targetYear}.");
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -565,6 +585,54 @@ public sealed class HolidayService : IHolidayService
 
     private static HolidayImportRowError Err(int rowNumber, string field, string error)
         => new() { RowNumber = rowNumber, Field = field, Error = error };
+
+    // ── BUG-031 (US-LV-007): queryable tenant audit rows (mirror LeaveTypeService.AddLeaveTypeAudit) ──
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// Appends a queryable tenant audit row (with before/after JSON snapshots) for a holiday. Tenant/actor
+    /// stamped from context. Added to the change tracker and persisted by the caller's SaveChanges (same
+    /// transaction as the write). Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>.
+    /// </summary>
+    private void AddHolidayAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+        => AddHolidayAudit(_tenantContext.TenantId, action, resourceId, before, after, detail);
+
+    /// <summary>
+    /// Tenant-explicit overload for background/Hangfire scopes (e.g. recurrence generation) where the
+    /// scoped <see cref="ITenantContext"/> may not be resolved. Stamps the given <paramref name="tenantId"/>
+    /// so the audit row's tenant matches the holiday rows written in the same transaction.
+    /// </summary>
+    private void AddHolidayAudit(Guid tenantId, string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "Holiday",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of a holiday to a JSON snapshot.</summary>
+    private static string SnapshotHoliday(Holiday h) => JsonSerializer.Serialize(new
+    {
+        h.Name,
+        Date = h.Date.ToString("yyyy-MM-dd"),
+        Type = h.Type.ToString(),
+        h.LocationId,
+        h.Description,
+        h.IsRecurring,
+        h.IsActive,
+        h.IsDeleted,
+    }, AuditJsonOptions);
 
     // ── CSV parsing (reuses CsvHelper, the library already used by bulk employee import) ──
 

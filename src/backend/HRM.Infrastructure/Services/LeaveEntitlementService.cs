@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveEntitlements.DTOs;
@@ -71,6 +72,9 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         };
 
         _dbContext.LeaveEntitlementRules.Add(rule);
+        // BUG-028 (US-LV-002): write a queryable tenant audit row (after-snapshot), not just an ILogger line.
+        AddRuleAudit("LeaveEntitlementRule.Created", rule.Id, before: null, after: SnapshotRule(rule),
+            $"Leave entitlement rule created for leave type {rule.LeaveTypeId} ({rule.EntitlementDays} days).");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -96,6 +100,9 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         if (validationResult != null)
             return Result<LeaveEntitlementRuleDto>.Failure(validationResult, 400);
 
+        // BUG-028 (US-LV-002): snapshot the pre-mutation state for the audit before/after.
+        var beforeSnapshot = SnapshotRule(rule);
+
         rule.LeaveTypeId = request.LeaveTypeId;
         rule.DepartmentId = request.DepartmentId;
         rule.JobTitleId = request.JobTitleId;
@@ -108,6 +115,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         rule.EffectiveFrom = request.EffectiveFrom;
         rule.EffectiveTo = request.EffectiveTo;
 
+        AddRuleAudit("LeaveEntitlementRule.Updated", rule.Id, before: beforeSnapshot, after: SnapshotRule(rule),
+            $"Leave entitlement rule {rule.Id} updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -128,8 +137,14 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         if (rule == null)
             return Result.Failure("Leave entitlement rule not found.", 404);
 
+        // BUG-028 (US-LV-002): capture the pre-delete state (delete audit is before-only).
+        var beforeSnapshot = SnapshotRule(rule);
+
         rule.IsDeleted = true;
         rule.IsActive = false;
+
+        AddRuleAudit("LeaveEntitlementRule.Deleted", rule.Id, before: beforeSnapshot, after: null,
+            $"Leave entitlement rule {rule.Id} soft-deleted.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -234,8 +249,12 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
                 o.LeaveYear == request.LeaveYear,
                 cancellationToken);
 
+        // BUG-028 (US-LV-002): distinguish insert vs update and snapshot before/after for the audit.
+        var wasInsert = existing == null;
+        string? beforeSnapshot = null;
         if (existing != null)
         {
+            beforeSnapshot = SnapshotOverride(existing);
             existing.EntitlementDays = request.EntitlementDays;
             existing.Reason = request.Reason;
         }
@@ -254,6 +273,9 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
             _dbContext.LeaveEntitlementOverrides.Add(existing);
         }
 
+        AddOverrideAudit("LeaveEntitlementOverride.Upserted", existing.Id, before: beforeSnapshot,
+            after: SnapshotOverride(existing),
+            $"Leave entitlement override {(wasInsert ? "created" : "updated")} for employee {existing.EmployeeId}, leave type {existing.LeaveTypeId}, year {existing.LeaveYear}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -286,7 +308,13 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         if (entity == null)
             return Result.Failure("Leave entitlement override not found.", 404);
 
+        // BUG-028 (US-LV-002): capture the pre-delete state (delete audit is before-only).
+        var beforeSnapshot = SnapshotOverride(entity);
+
         entity.IsDeleted = true;
+
+        AddOverrideAudit("LeaveEntitlementOverride.Deleted", entity.Id, before: beforeSnapshot, after: null,
+            $"Leave entitlement override {entity.Id} soft-deleted.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -697,4 +725,79 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
             return null;
         return Enum.TryParse<EmploymentType>(value, true, out var result) ? result : null;
     }
+
+    // ── BUG-028 (US-LV-002): queryable tenant audit rows (mirror LeaveTypeService.AddLeaveTypeAudit) ──
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// Appends a queryable tenant audit row (with before/after JSON snapshots) for a leave entitlement
+    /// rule. Tenant/actor stamped from context. Added to the change tracker and persisted by the caller's
+    /// SaveChanges (same transaction as the write). Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>.
+    /// </summary>
+    private void AddRuleAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "LeaveEntitlementRule",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Appends a queryable tenant audit row for a leave entitlement override.</summary>
+    private void AddOverrideAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "LeaveEntitlementOverride",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of an entitlement rule to a JSON snapshot.</summary>
+    private static string SnapshotRule(LeaveEntitlementRule r) => JsonSerializer.Serialize(new
+    {
+        r.LeaveTypeId,
+        r.DepartmentId,
+        r.JobTitleId,
+        r.JobLevelId,
+        EmploymentType = r.EmploymentType?.ToString(),
+        r.TenureMinMonths,
+        r.TenureMaxMonths,
+        r.EntitlementDays,
+        r.Priority,
+        r.EffectiveFrom,
+        r.EffectiveTo,
+        r.IsActive,
+        r.IsDeleted,
+    }, AuditJsonOptions);
+
+    /// <summary>Serializes the audit-relevant fields of an entitlement override to a JSON snapshot.</summary>
+    private static string SnapshotOverride(LeaveEntitlementOverride o) => JsonSerializer.Serialize(new
+    {
+        o.EmployeeId,
+        o.LeaveTypeId,
+        o.LeaveYear,
+        o.EntitlementDays,
+        o.Reason,
+        o.IsDeleted,
+    }, AuditJsonOptions);
 }

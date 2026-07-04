@@ -17,6 +17,7 @@ Verify the full CRUD lifecycle scoped to the tenant: a holiday can be updated (n
 - User Story: US-LV-007
 - Functional Requirements: FR-1, FR-2
 - Business Rules: BR-4
+- Related Finding: **BUG-031** (US-LV-007) — holiday update/deactivate (steps 1, 3) previously stamped only entity audit fields and wrote no queryable `audit_logs` row. The `audit_logs` write is now covered by the dedicated regression **TC-LV-258** (`HRM.Tests.Unit.HolidayAuditRegressionTests`).
 
 ## 3. Preconditions
 - Tenant "acme" active; HR Officer "Priya" authenticated with `Holiday.Edit` / `Holiday.Deactivate` / `Holiday.View`.
