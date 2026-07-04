@@ -45,6 +45,12 @@ Verify that when a user logs out, the refresh token is revoked, the httpOnly coo
 - The access token is technically valid until natural expiry but the client has cleared it.
 - A `logout` audit event is recorded.
 
+## 6a. Automated Regression Coverage
+- **Finding:** BUG-039 — `LogoutAsync` was Serilog-only; no `logout` row reached `audit_logs` (step 5 gap).
+- **Bound test:** `HRM.Tests.Unit.AuthAuditWriteTests.Logout_WritesAuditRow_BUG039` (`src/backend/HRM.Tests/Unit/AuthAuditWriteTests.cs`).
+- **Covers:** step 5 — asserts exactly one tenant-scoped `logout` audit row for the acting user after a real login+logout. Fails pre-fix (row absent), passes post-fix.
+- **Scope note:** unit test covers the audit-write acceptance only; the SPA/cookie E2E (steps 2-3, 6-7) still requires `@test-runner` re-verification before the TC status flips.
+
 ## 7. Test Category Tags
 - [x] Happy path
 - [ ] Negative test
