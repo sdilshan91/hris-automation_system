@@ -189,6 +189,11 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         if (!_tenantContext.IsResolved)
             return Result<EmployeeDocumentListResult>.Failure("Tenant context is not resolved.", 400);
 
+        // Authorization check (FR-10, BR-1, BR-2, BR-3)
+        var authResult = await AuthorizeDocumentAccess(employeeId, cancellationToken);
+        if (authResult.IsFailure)
+            return Result<EmployeeDocumentListResult>.Failure(authResult.Error!, authResult.StatusCode ?? 403);
+
         // Verify employee exists
         var employeeExists = await _dbContext.Employees
             .AnyAsync(e => e.Id == employeeId, cancellationToken);
