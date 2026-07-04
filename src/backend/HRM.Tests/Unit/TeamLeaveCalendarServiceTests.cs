@@ -2,6 +2,9 @@
 // US-LV-009: Team Leave Calendar (manager / employee / HR views) unit tests.
 //
 // Covers the row-level scope resolution and the BR-1 data-suppression rule:
+//   - Scope is gated by the Leave.View.Team PERMISSION, not merely the reporting graph
+//     (BUG-035 regression: an employee holding only Leave.View.Own who happens to have a
+//      direct report must NOT be elevated to the Manager calendar). See the *_BUG035 tests.
 //   - Manager sees direct reports' Approved + Awaiting with full detail (AC-1, BR-2).
 //   - Employee sees only own-department Approved leaves with leave-type/status SUPPRESSED
 //     and NO Awaiting entries -- the key BR-1 data-leak guard (AC-2).
@@ -195,7 +198,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(2), LeaveRequestStatus.Approved);
         SeedAwaiting(_report2Id, _sickLeaveTypeId, Base.AddDays(5), Base.AddDays(6));
 
-        var result = await CreateService(User(_managerUserId)).GetTeamLeaveCalendarAsync(Params());
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam)).GetTeamLeaveCalendarAsync(Params());
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Scope.Should().Be("Manager");
@@ -216,7 +219,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(2), LeaveRequestStatus.Approved);
         SeedRequest(_otherReportId, _annualLeaveTypeId, Base, Base.AddDays(2), LeaveRequestStatus.Approved);
 
-        var result = await CreateService(User(_managerUserId)).GetTeamLeaveCalendarAsync(Params());
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam)).GetTeamLeaveCalendarAsync(Params());
 
         result.Value!.Entries.Should().OnlyContain(e => e.EmployeeId == _report1Id);
     }
@@ -289,7 +292,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedRequest(_report1Id, _annualLeaveTypeId, Base.AddDays(5), Base.AddDays(6), LeaveRequestStatus.Cancelled);
         SeedRequest(_report2Id, _annualLeaveTypeId, Base.AddDays(8), Base.AddDays(9), LeaveRequestStatus.Rejected);
 
-        var result = await CreateService(User(_managerUserId)).GetTeamLeaveCalendarAsync(Params());
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam)).GetTeamLeaveCalendarAsync(Params());
 
         result.Value!.Entries.Should().HaveCount(1);
         result.Value.Entries.Single().Status.Should().Be("Approved");
@@ -305,7 +308,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedHoliday(Base.AddDays(100), "Out of range");          // outside [from, to]
         SeedHoliday(Base.AddDays(11), "Restricted", HolidayType.Restricted); // not Public
 
-        var result = await CreateService(User(_managerUserId)).GetTeamLeaveCalendarAsync(Params());
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam)).GetTeamLeaveCalendarAsync(Params());
 
         result.Value!.Holidays.Should().ContainSingle(h => h.Name == "Midsummer");
         result.Value.Holidays.Should().OnlyContain(h => h.Date >= Base && h.Date <= Base.AddDays(30));
@@ -319,7 +322,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base, LeaveRequestStatus.Approved,
             isHalfDay: true, halfDaySession: "AM", totalDays: 0.5m);
 
-        var result = await CreateService(User(_managerUserId)).GetTeamLeaveCalendarAsync(Params());
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam)).GetTeamLeaveCalendarAsync(Params());
 
         var row = result.Value!.Entries.Single();
         row.IsHalfDay.Should().BeTrue();
@@ -335,7 +338,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(1), LeaveRequestStatus.Approved);
         SeedRequest(_report2Id, _sickLeaveTypeId, Base, Base.AddDays(1), LeaveRequestStatus.Approved);
 
-        var result = await CreateService(User(_managerUserId))
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam))
             .GetTeamLeaveCalendarAsync(Params(leaveTypeId: _sickLeaveTypeId));
 
         result.Value!.Entries.Should().OnlyContain(e => e.LeaveTypeName == "Sick Leave");
@@ -349,7 +352,7 @@ public sealed class TeamLeaveCalendarServiceTests
         SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(2), LeaveRequestStatus.Approved);    // in range
         SeedRequest(_report2Id, _annualLeaveTypeId, Base.AddDays(60), Base.AddDays(62), LeaveRequestStatus.Approved); // out
 
-        var result = await CreateService(User(_managerUserId))
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam))
             .GetTeamLeaveCalendarAsync(Params(from: Base, to: Base.AddDays(30)));
 
         result.Value!.Entries.Should().OnlyContain(e => e.EmployeeId == _report1Id);
@@ -374,10 +377,97 @@ public sealed class TeamLeaveCalendarServiceTests
     [Fact]
     public async Task ToBeforeFrom_Fails()
     {
-        var result = await CreateService(User(_managerUserId))
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam))
             .GetTeamLeaveCalendarAsync(Params(from: Base.AddDays(10), to: Base));
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  BUG-035 regression (HIGH · US-LV-009 AC-2 / BR-1 / BR-2 / NFR-3)
+    //  Team-calendar scope MUST be gated by the Leave.View.Team permission,
+    //  not merely by the reporting graph. An employee who holds only
+    //  Leave.View.Own but is listed as someone's manager (ReportsToEmployeeId)
+    //  must NOT receive the Manager calendar, which would leak the direct
+    //  report's PENDING + sensitive leave-type detail (AC-2/BR-1 data-leak).
+    //
+    //  The trigger and the positive control below use the SAME manager (Mary),
+    //  the SAME direct report (Rita), and the SAME approved + pending requests.
+    //  They differ ONLY by the Leave.View.Team permission, so the tests prove
+    //  the permission — not the org graph or empty data — is what gates scope.
+    // ══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task TeamCalendar_EmployeeWithReportsButNoViewTeam_IsSuppressed_BUG035()
+    {
+        // Mary has direct reports (Rita, Raj) but the caller holds ONLY Leave.View.Own.
+        // Rita (a direct report, same Engineering dept) has an APPROVED Annual leave AND a
+        // PENDING sensitive-type (Sick) leave in range. Seeding BOTH makes "suppressed vs
+        // leaked" unambiguous: the query still returns Rita's approved row (proving it ran on
+        // real data), but detail must be suppressed and the pending row must not appear.
+        SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(1), LeaveRequestStatus.Approved);
+        SeedAwaiting(_report1Id, _sickLeaveTypeId, Base.AddDays(5), Base.AddDays(6));
+
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewOwn))
+            .GetTeamLeaveCalendarAsync(Params());
+
+        result.IsSuccess.Should().BeTrue();
+
+        // BUG-035: without Leave.View.Team the caller must NOT be elevated to Manager scope.
+        // (Pre-fix the org-graph check returns "Manager" here → this line fails.)
+        result.Value!.Scope.Should().NotBe("Manager");
+
+        // The direct report's PENDING request must NOT leak to an unauthorized employee (BR-1).
+        result.Value.Entries.Should().NotContain(e => e.Status == "Pending");
+        // The sensitive leave TYPE of the direct report must NOT leak either (AC-2/BR-1).
+        result.Value.Entries.Should().NotContain(e =>
+            e.EmployeeId == _report1Id && e.LeaveTypeName == "Sick Leave");
+
+        // Sanity — the query DID run against real data (Rita's approved leave is present) and
+        // it is the SUPPRESSED (Employee-scope) view: type/colour/status are stripped. This is
+        // what makes the assertion key on the permission rather than on an empty result set.
+        var row = result.Value.Entries.Single(e => e.EmployeeId == _report1Id);
+        row.LeaveTypeName.Should().BeNull();
+        row.Color.Should().BeNull();
+        row.Status.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TeamCalendar_ManagerWithViewTeam_SeesPendingReports_BUG035()
+    {
+        // Positive control: identical reporting graph + identical approved & pending requests as
+        // the suppressed case above; the ONLY difference is that this caller holds
+        // Leave.View.Team (mirroring the Manager built-in role). This proves the BUG-035 fix does
+        // NOT break real managers — they still see direct reports' pending + full detail (BR-2).
+        SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(1), LeaveRequestStatus.Approved);
+        SeedAwaiting(_report1Id, _sickLeaveTypeId, Base.AddDays(5), Base.AddDays(6));
+
+        var result = await CreateService(User(_managerUserId, PermissionCatalog.Leave.ViewTeam))
+            .GetTeamLeaveCalendarAsync(Params());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Scope.Should().Be("Manager");
+        result.Value.Entries.Should().Contain(e =>
+            e.EmployeeId == _report1Id && e.Status == "Pending"
+            && e.LeaveTypeName == "Sick Leave" && e.Color == "#F44336");
+    }
+
+    [Fact]
+    public async Task TeamCalendar_ViewAll_RemainsOrgWide_BUG035()
+    {
+        // Control: Leave.View.All is unaffected by the fix — the HR/org-wide scope still
+        // resolves to "All" and spans employees outside the caller's reporting line.
+        SeedRequest(_report1Id, _annualLeaveTypeId, Base, Base.AddDays(1), LeaveRequestStatus.Approved);
+        SeedAwaiting(_otherReportId, _sickLeaveTypeId, Base.AddDays(5), Base.AddDays(6));
+
+        var result = await CreateService(User(_hrUserId, PermissionCatalog.Leave.ViewAll))
+            .GetTeamLeaveCalendarAsync(Params());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Scope.Should().Be("All");
+        result.Value.Entries.Should().Contain(e => e.EmployeeId == _report1Id);
+        result.Value.Entries.Should().Contain(e =>
+            e.EmployeeId == _otherReportId && e.Status == "Pending");
     }
 }

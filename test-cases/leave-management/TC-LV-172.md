@@ -20,6 +20,7 @@ Verify the data-leak prevention is enforced server-side, not just hidden in the 
 - Functional Requirements: FR-3, FR-4
 - Non-Functional Requirements: NFR-3
 - Business Rules: BR-1
+- Regression (BUG-035, HIGH): server-side scope resolution must consult the **`Leave.View.Team`** permission, not merely the reporting graph, so a `Leave.View.Own`-only employee with a direct report cannot read the report's pending/sensitive-type leave via the raw payload. Guarded by xUnit `TeamLeaveCalendarServiceTests.TeamCalendar_EmployeeWithReportsButNoViewTeam_IsSuppressed_BUG035` (+ `TeamCalendarIntegrationTests` variant); positive control `TeamCalendar_ManagerWithViewTeam_SeesPendingReports_BUG035`.
 
 ## 3. Preconditions
 - Tenant "acme"; Employee "Nina" authenticated (employee context, no team-view permission).

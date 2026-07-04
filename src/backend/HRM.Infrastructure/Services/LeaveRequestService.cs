@@ -536,14 +536,21 @@ public sealed class LeaveRequestService : ILeaveRequestService
         }
         else
         {
-            // Manager scope: this employee has direct reports (BR-2).
-            var directReportIds = await _dbContext.Employees
-                .AsNoTracking()
-                .Where(e => e.ReportsToEmployeeId == employee.Id)
-                .Select(e => e.Id)
-                .ToListAsync(cancellationToken);
+            // Manager scope (BR-2, AC-2, NFR-3): requires the Leave.View.Team permission AND at
+            // least one direct report. Having direct reports alone is NOT sufficient — an employee
+            // holding only Leave.View.Own must never see reports' Pending requests or leave-type
+            // detail (BUG-035). The Manager built-in role is seeded with Leave.View.Team.
+            bool canViewTeam = _currentUser.Permissions.Contains(PermissionCatalog.Leave.ViewTeam);
 
-            if (directReportIds.Count > 0)
+            var directReportIds = canViewTeam
+                ? await _dbContext.Employees
+                    .AsNoTracking()
+                    .Where(e => e.ReportsToEmployeeId == employee.Id)
+                    .Select(e => e.Id)
+                    .ToListAsync(cancellationToken)
+                : new List<Guid>();
+
+            if (canViewTeam && directReportIds.Count > 0)
             {
                 scope = TeamCalendarScope.Manager;
                 employeeIdFilter = directReportIds;

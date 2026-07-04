@@ -10,6 +10,11 @@
 //   - Employee-scope suppression end-to-end: a regular employee never receives
 //     Awaiting entries nor leave-type/status detail (BR-1).
 //   - Holidays returned for the range (FR-7).
+//   - BUG-035 regression end-to-end: scope is gated by the Leave.View.Team
+//     permission, not the reporting graph — an employee holding only
+//     Leave.View.Own who has a direct report is NOT elevated to Manager scope
+//     (no pending / leave-type leak). Manager persona pipelines therefore now
+//     grant Leave.View.Team (mirroring the Manager built-in role).
 //
 // PROVIDER NOTE: same rationale as PendingLeaveQueueIntegrationTests -- the verify
 // gate runs `dotnet test` with no PostgreSQL bound, so these use the InMemory
@@ -176,7 +181,7 @@ public sealed class TeamLeaveCalendarIntegrationTests
     [Fact]
     public async Task TeamCalendar_HappyPath_ManagerSeesTeamWithDetailAndHolidays()
     {
-        var mediator = BuildPipeline(_tenantA, _managerAUser);
+        var mediator = BuildPipeline(_tenantA, _managerAUser, PermissionCatalog.Leave.ViewTeam);
 
         var result = await mediator.Send(Query());
 
@@ -195,8 +200,8 @@ public sealed class TeamLeaveCalendarIntegrationTests
     [Fact]
     public async Task TeamCalendar_DoesNotLeakOtherTenantLeaves()
     {
-        var managerA = BuildPipeline(_tenantA, _managerAUser);
-        var managerB = BuildPipeline(_tenantB, _managerBUser);
+        var managerA = BuildPipeline(_tenantA, _managerAUser, PermissionCatalog.Leave.ViewTeam);
+        var managerB = BuildPipeline(_tenantB, _managerBUser, PermissionCatalog.Leave.ViewTeam);
 
         var calA = await managerA.Send(Query());
         var calB = await managerB.Send(Query());
@@ -227,6 +232,33 @@ public sealed class TeamLeaveCalendarIntegrationTests
         // Suppressed fields must NOT be present in the employee response.
         row.LeaveTypeName.Should().BeNull();
         row.Color.Should().BeNull();
+        row.Status.Should().BeNull();
+    }
+
+    // -- BUG-035 regression end-to-end (HIGH · US-LV-009 AC-2/BR-1/NFR-3) --
+    // Mary IS a manager in the org graph (reportA1 reports to her, and reportA1 has an Approved
+    // AND a Pending leave), but this caller holds ONLY Leave.View.Own. Team-calendar scope must
+    // be gated by the Leave.View.Team permission, so she must fall to the suppressed Employee
+    // scope — NOT the Manager view — and the report's Pending / leave-type detail must not leak.
+    // This is the SAME manager + graph + requests as the happy-path control above; only the
+    // permission differs. Pre-fix the handler resolves scope from the graph → returns "Manager"
+    // with the pending row → this test fails.
+    [Fact]
+    public async Task TeamCalendar_EmployeeWithReportsButNoViewTeam_IsSuppressed_BUG035()
+    {
+        var mediator = BuildPipeline(_tenantA, _managerAUser, PermissionCatalog.Leave.ViewOwn);
+
+        var result = await mediator.Send(Query());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Scope.Should().NotBe("Manager");
+        // The direct report's PENDING request must not leak to a caller without Leave.View.Team.
+        result.Value.Entries.Should().NotContain(e => e.Status == "Pending");
+        // Sanity: the query still ran on real data (reportA1's Approved leave is present) but is
+        // the suppressed Employee view — no leave-type/status detail — so the assertion keys on
+        // the permission, not on an empty result.
+        var row = result.Value.Entries.Single(e => e.EmployeeId == _reportA1);
+        row.LeaveTypeName.Should().BeNull();
         row.Status.Should().BeNull();
     }
 }

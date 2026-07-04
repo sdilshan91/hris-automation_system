@@ -20,6 +20,7 @@ Verify the KEY access-control rule: when a non-manager Employee opens the Team L
 - Functional Requirements: FR-3
 - Non-Functional Requirements: NFR-3
 - Business Rules: BR-1
+- Regression (BUG-035, HIGH): the calendar scope must be gated by the **`Leave.View.Team`** permission, NOT by the reporting graph. An employee holding only `Leave.View.Own` who happens to have ≥1 direct report must NOT be elevated to the Manager view (which would leak the report's pending + sensitive leave-type detail). Guarded by xUnit `TeamLeaveCalendarServiceTests.TeamCalendar_EmployeeWithReportsButNoViewTeam_IsSuppressed_BUG035` (+ `TeamCalendarIntegrationTests` variant), with `TeamCalendar_ManagerWithViewTeam_SeesPendingReports_BUG035` as the positive control.
 
 ## 3. Preconditions
 - Tenant "acme"; Employee "Nina" (no manager/team-view permission), department "Engineering".
