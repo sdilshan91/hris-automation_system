@@ -66,6 +66,10 @@ public sealed class ReportingStructureService : IReportingStructureService
             RecordManagerChangeHistory(employee, previousManagerId, previousManagerName,
                 null, "Not Assigned", request.Reason);
 
+            // BUG-023 (FR-7): queryable tenant audit row for the reporting-line change (unassign).
+            AddManagerAudit(employeeId, previousManagerId, previousManagerName, null, "Not Assigned",
+                $"Manager unassigned for employee {employeeId}.");
+
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -138,6 +142,11 @@ public sealed class ReportingStructureService : IReportingStructureService
             ChangedByUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
             ChangedBy = _currentUser.IsAuthenticated ? _currentUser.Email : "system",
         });
+
+        // BUG-023 (FR-7): queryable tenant audit row for the reporting-line change (assign).
+        AddManagerAudit(employeeId, previousManagerId, previousManagerName,
+            request.ManagerEmployeeId.Value, newManagerName,
+            $"Manager assigned for employee {employeeId} -> {newManagerName}.");
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -270,6 +279,35 @@ public sealed class ReportingStructureService : IReportingStructureService
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// BUG-023 (FR-7): appends a queryable tenant audit row (with before/after JSON snapshots of the manager
+    /// reference) to the shared audit_log table. Tenant/actor are stamped from context. Mirrors
+    /// <c>RoleService.AddRbacAudit</c>; persisted by the caller's SaveChanges (same transaction as the change).
+    /// </summary>
+    private void AddManagerAudit(
+        Guid employeeId,
+        Guid? previousManagerId, string? previousManagerName,
+        Guid? newManagerId, string? newManagerName,
+        string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.ManagerAssigned",
+            Action = "Employee.ManagerAssigned",
+            ResourceType = "Employee",
+            ResourceId = employeeId.ToString(),
+            Before = JsonSerializer.Serialize(new { ManagerId = previousManagerId, ManagerName = previousManagerName }, AuditJsonOptions),
+            After = JsonSerializer.Serialize(new { ManagerId = newManagerId, ManagerName = newManagerName }, AuditJsonOptions),
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
 
     /// <summary>
     /// Detects circular reporting chains by walking the proposed manager's

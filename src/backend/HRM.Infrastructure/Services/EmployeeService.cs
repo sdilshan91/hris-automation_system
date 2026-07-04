@@ -290,6 +290,40 @@ public sealed class EmployeeService : IEmployeeService
         Guid employeeId,
         CancellationToken cancellationToken = default)
     {
+        var result = await LoadProfileAsync(employeeId, cancellationToken);
+        if (result.IsFailure)
+            return result;
+
+        // BUG-010 (FR-7 / TC-CHR-118): a profile view exposes PII and must leave a queryable access-audit row,
+        // not just a Serilog line. The employee was loaded AsNoTracking (untracked) inside LoadProfileAsync, so
+        // adding this new AuditLog + SaveChanges persists ONLY the audit row. Written after the projection
+        // succeeds so a 404 is not audited. The internal post-update re-read uses LoadProfileAsync (no audit),
+        // so an edit does not masquerade as a view.
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.ProfileViewed",
+            Action = "Employee.ProfileViewed",
+            ResourceType = "Employee",
+            ResourceId = employeeId.ToString(),
+            Detail = $"Employee profile {employeeId} viewed.",
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Loads and projects the full employee profile without writing an access audit. Shared by the public
+    /// (audited) <see cref="GetProfileAsync"/> and the internal post-update re-read in UpdateProfileAsync.
+    /// </summary>
+    private async Task<Result<EmployeeProfileDto>> LoadProfileAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
         if (!_tenantContext.IsResolved)
             return Result<EmployeeProfileDto>.Failure("Tenant context is not resolved.", 400);
 
@@ -659,8 +693,8 @@ public sealed class EmployeeService : IEmployeeService
             "Employee profile updated. Id={EmployeeId}, Sections={Sections}, TenantId={TenantId}, By={User}",
             employeeId, string.Join(",", beforeSnapshots.Keys), _tenantContext.TenantId, _currentUser.Email);
 
-        // Reload the full profile to return the updated state
-        return await GetProfileAsync(employeeId, cancellationToken);
+        // Reload the full profile to return the updated state (LoadProfileAsync: no view-audit — this is an edit).
+        return await LoadProfileAsync(employeeId, cancellationToken);
     }
 
     // ── Private helpers ──────────────────────────────────────────────
