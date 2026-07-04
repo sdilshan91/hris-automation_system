@@ -6,8 +6,9 @@ priority: high
 type: functional
 status: fail
 created: 2026-06-11
-updated: 2026-06-12
+updated: 2026-07-04
 unblocked_by: US-CHR-001
+regression_for: BUG-014
 ---
 
 # TC-CHR-020: Assign department manager
@@ -15,12 +16,15 @@ unblocked_by: US-CHR-001
 ## 1. Test Objective
 Verify that a department can have a manager assigned via the `manager_employee_id` FK to the employee table, and that the manager field displays the employee's name and avatar in the department list and form. Previously BLOCKED on US-CHR-001 -- now unblocked.
 
+**Regression scope (BUG-014, HIGH):** additionally verify that `managerId` is **tenant-validated** on both the create and update paths. A `managerId` that belongs to **another tenant's** employee (or does not exist) must be rejected with **400** — mirroring the existing `parentDepartmentId` validation (BR-2 / FR-4). Pre-fix, the cross-tenant `managerId` was accepted and persisted with HTTP 200, leaking a foreign-tenant employee reference (name/avatar) into the wrong tenant's UI.
+
 ## 2. Related Requirements
 - User Story: US-CHR-004
 - Acceptance Criteria: AC-1 (Department Manager optional employee picker)
 - Functional Requirements: FR-4
-- Business Rules: BR-2
+- Business Rules: BR-2 (manager must be an employee in the same tenant)
 - Dependencies: US-CHR-001 (Employees) -- now available
+- Defect: BUG-014 (Department `managerId` not tenant-validated; cross-tenant FK accepted)
 
 ## 3. Preconditions
 - Tenant "acme" exists with status `active`.
@@ -50,17 +54,36 @@ Verify that a department can have a manager assigned via the `manager_employee_i
 | 10 | Clear the manager field and save | `manager_employee_id` is set to null. Manager column shows "-" or empty. |
 | 11 | Verify database: `manager_employee_id` is null | Nullable FK confirmed. |
 
+### 5a. BUG-014 regression arm — cross-tenant manager rejected (Multi-tenant isolation)
+Preconditions: a real active employee **E_B** exists in tenant B; the acting admin operates in tenant A with department **D_A** (initially managed by same-tenant employee **E_A**).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| R1 | As tenant A, `PUT /api/v1/tenant/departments/{D_A}` with `managerId = E_A` (same tenant) | **200 OK**; `manager_id = E_A` persisted (control passes). |
+| R2 | As tenant A, `PUT …/departments/{D_A}` with `managerId = E_B` (tenant B's employee) | **400** rejected (BR-2/FR-4); `manager_id` **unchanged** (still `E_A`, no cross-tenant FK written). |
+| R3 | As tenant A, `POST …/departments` with `managerId = E_B` | **400** rejected; department not created with a foreign-tenant manager. |
+| R4 | As tenant A, `PUT …/departments/{D_A}` with `managerId = null` | **200 OK**; manager cleared (clearing remains allowed). |
+
 ## 6. Postconditions
 - Department manager assignment works correctly.
 - At most one manager per department (BR-2).
 - Manager field is nullable and can be cleared.
+- `managerId` is tenant-validated: only a same-tenant employee is accepted; a cross-tenant or non-existent employee is rejected with 400 (BUG-014 closed).
 
 ## 7. Test Category Tags
 - [x] Happy path
-- [ ] Negative test
+- [x] Negative test
 - [ ] Boundary test
-- [ ] Security test
-- [ ] Multi-tenant isolation
+- [x] Security test
+- [x] Multi-tenant isolation
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## 8. Automated Regression (BUG-014)
+xUnit unit tests (EF InMemory, honours the tenant global query filter) in
+`src/backend/HRM.Tests/Unit/DepartmentManagerTenantValidationTests.cs`:
+- `Update_CrossTenantManagerId_IsRejected` — arm R2 (trigger; fails pre-fix, passes post-fix).
+- `Update_SameTenantManagerId_Succeeds` — arm R1 (control; passes both pre- and post-fix).
+- `Update_NullManagerId_IsAllowed` — arm R4 (clearing stays allowed).
+- `Create_CrossTenantManagerId_IsRejected` / `Create_SameTenantManagerId_Succeeds` — arm R3 create-path trigger + control.

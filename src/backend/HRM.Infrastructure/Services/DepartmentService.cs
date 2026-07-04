@@ -67,6 +67,16 @@ public sealed class DepartmentService : IDepartmentService
                 return Result<DepartmentDto>.Failure("Parent department not found or is not active.", 400);
         }
 
+        // BR-2 / FR-4: manager must be an active employee in the same tenant (the global filter ensures this)
+        if (managerId.HasValue)
+        {
+            var managerExists = await _dbContext.Employees
+                .AnyAsync(e => e.Id == managerId.Value && e.IsActive, cancellationToken);
+
+            if (!managerExists)
+                return Result<DepartmentDto>.Failure("Manager not found or is not an active employee in this tenant.", 400);
+        }
+
         var department = new Department
         {
             Id = BaseEntity.NewUuidV7(),
@@ -140,6 +150,16 @@ public sealed class DepartmentService : IDepartmentService
             var circularCheckResult = await DetectCycleAsync(departmentId, parentDepartmentId.Value, cancellationToken);
             if (circularCheckResult.IsFailure)
                 return Result<DepartmentDto>.Failure(circularCheckResult.Error!, 400);
+        }
+
+        // BR-2 / FR-4: manager must be an active employee in the same tenant (the global filter ensures this)
+        if (managerId.HasValue)
+        {
+            var managerExists = await _dbContext.Employees
+                .AnyAsync(e => e.Id == managerId.Value && e.IsActive, cancellationToken);
+
+            if (!managerExists)
+                return Result<DepartmentDto>.Failure("Manager not found or is not an active employee in this tenant.", 400);
         }
 
         department.Name = name;
