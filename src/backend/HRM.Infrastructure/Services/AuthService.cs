@@ -461,6 +461,11 @@ public sealed class AuthService : IAuthService
             storedToken.RevokedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
 
+            // BUG-039 (US-AUTH-003 FR-4/AC-1/NFR-4): audit the logout as a security event. The token row is
+            // authoritative for the subject + tenant (logout may run without a resolved tenant context); no
+            // ip/userAgent is threaded into this seam, so pass null as the existing session_revoked_* audits do.
+            await WriteAuditLogAsync(storedToken.UserId, "logout", null, null, cancellationToken, storedToken.TenantId);
+
             _logger.LogInformation("User {UserId} logged out from tenant {TenantId}", storedToken.UserId, storedToken.TenantId);
         }
 
@@ -504,6 +509,12 @@ public sealed class AuthService : IAuthService
                     user.Id, _tenantContext.TenantId, user.PasswordResetTokenExpiresAt);
             }
         }
+
+        // ISSUE-051 (US-AUTH-004 FR-8): audit the reset REQUEST event. Written for every request — including an
+        // unknown email — so the security trail is complete, but the subject is the resolved user id or null
+        // when the email doesn't map to a user; the row is server-side only and never surfaces existence to the
+        // caller (the response is unconditionally success, matching the no-enumeration contract above).
+        await WriteAuditLogAsync(user?.Id, "password_reset_requested", null, null, cancellationToken);
 
         // Always return success regardless of whether user exists
         return Result.Success();
@@ -613,6 +624,11 @@ public sealed class AuthService : IAuthService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // ISSUE-051 (US-AUTH-004 FR-8): audit the successful reset completion. Reached only after the reset
+        // token is validated, so the user id is a real, authorized subject; no ip/userAgent is threaded into
+        // this seam, so pass null as the other credential-management audits do.
+        await WriteAuditLogAsync(user.Id, "password_reset_completed", null, null, cancellationToken);
 
         _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
 
@@ -1764,6 +1780,11 @@ public sealed class AuthService : IAuthService
 
         _dbContext.RefreshTokens.Add(refreshTokenEntity);
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // ISSUE-048 (US-AUTH-001 FR-9): this is the single success exit for password, MFA, SSO, and
+        // tenant-switch logins, so one audit row here covers every authenticated-login path. Actor + tenant +
+        // ip/userAgent mirror the failure-path (login_failure/account_locked) audits.
+        await WriteAuditLogAsync(user.Id, "login_success", ipAddress, userAgent, cancellationToken, tenant.Id);
 
         _logger.LogInformation("User {UserId} logged in to tenant {TenantId}", user.Id, tenant.Id);
 

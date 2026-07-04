@@ -55,6 +55,12 @@ Verify that a tenant user with valid credentials and an active membership in the
 - An audit log entry of type `login_success` has been recorded.
 - `failed_login_count` for the user is 0.
 
+## 6a. Automated Regression Coverage
+- **Finding:** ISSUE-048 — `IssueTokensAsync` (the single success exit for every login path) was Serilog-only; no `login_success` row reached `audit_logs` (step 11 gap).
+- **Bound test:** `HRM.Tests.Unit.AuthAuditWriteTests.LoginSuccess_WritesAuditRow_ISSUE048` (`src/backend/HRM.Tests/Unit/AuthAuditWriteTests.cs`).
+- **Covers:** step 11 — asserts exactly one tenant-scoped `login_success` audit row after a genuinely successful login. Fails pre-fix (row absent), passes post-fix. A sibling guard (`LoginFailure_StillWritesAuditRow_ISSUE048Guard`) proves the pre-existing `login_failure` audit was not regressed.
+- **Scope note:** unit test covers the audit-write acceptance only; the full login E2E remains covered by the existing TC execution.
+
 ## 7. Test Category Tags
 - [x] Happy path
 - [ ] Negative test

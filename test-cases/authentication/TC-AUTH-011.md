@@ -65,6 +65,12 @@ Verify that a user can successfully reset their password using a valid reset tok
 - The user can log in only with the new password.
 - Lockout state is cleared.
 
+## 6a. Automated Regression Coverage
+- **Finding:** ISSUE-051 — `ResetPasswordAsync` was Serilog-only; no `password_reset_completed` row reached `audit_logs` (step 9 gap).
+- **Bound test:** `HRM.Tests.Unit.AuthAuditWriteTests.PasswordReset_WritesRequestedAndCompletedAuditRows_ISSUE051` (`src/backend/HRM.Tests/Unit/AuthAuditWriteTests.cs`), phase 2.
+- **Covers:** step 9 — installs a known valid single-use token (SHA-256 hash + 1h expiry, the way the existing reset tests seed one), runs the real `ResetPasswordAsync` (token validation not bypassed), and asserts one tenant-scoped `password_reset_completed` audit row. Fails pre-fix (row absent), passes post-fix.
+- **Scope note:** the valid-token side-effects (steps 4-8, 10-11) remain covered by the existing TC execution; this test isolates the audit-write gap.
+
 ## 7. Test Category Tags
 - [x] Happy path
 - [ ] Negative test
