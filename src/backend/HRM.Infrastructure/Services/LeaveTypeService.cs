@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveTypes.DTOs;
@@ -94,6 +95,9 @@ public sealed class LeaveTypeService : ILeaveTypeService
         };
 
         _dbContext.LeaveTypes.Add(leaveType);
+        // BUG-025 (AC-2/NFR-3): write a queryable tenant audit row with an after-snapshot, not just an ILogger line.
+        AddLeaveTypeAudit("LeaveType.Created", leaveType.Id, before: null, after: Snapshot(leaveType),
+            $"Leave type '{leaveType.Name}' created.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -134,6 +138,9 @@ public sealed class LeaveTypeService : ILeaveTypeService
         if (!Enum.TryParse<LeaveTypeGender>(request.Gender, true, out var gender))
             return Result<LeaveTypeDto>.Failure("Invalid gender value.", 400);
 
+        // BUG-025 (AC-2/NFR-3): snapshot the pre-mutation state so the audit row can capture before/after.
+        var beforeSnapshot = Snapshot(leaveType);
+
         leaveType.Name = request.Name.Trim();
         leaveType.Code = request.Code?.Trim();
         leaveType.Color = request.Color?.Trim();
@@ -154,6 +161,8 @@ public sealed class LeaveTypeService : ILeaveTypeService
         leaveType.NegativeBalanceAllowed = request.NegativeBalanceAllowed;
         leaveType.NegativeBalanceLimit = request.NegativeBalanceLimit;
 
+        AddLeaveTypeAudit("LeaveType.Updated", leaveType.Id, before: beforeSnapshot, after: Snapshot(leaveType),
+            $"Leave type '{leaveType.Name}' updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -188,8 +197,11 @@ public sealed class LeaveTypeService : ILeaveTypeService
         if (!leaveType.IsActive)
             return Result.Failure("Leave type is already deactivated.", 400);
 
+        var beforeSnapshot = Snapshot(leaveType);
         leaveType.IsActive = false;
 
+        AddLeaveTypeAudit("LeaveType.Deactivated", leaveType.Id, before: beforeSnapshot, after: Snapshot(leaveType),
+            $"Leave type '{leaveType.Name}' deactivated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -218,8 +230,11 @@ public sealed class LeaveTypeService : ILeaveTypeService
         if (leaveType.IsActive)
             return Result.Failure("Leave type is already active.", 400);
 
+        var beforeSnapshot = Snapshot(leaveType);
         leaveType.IsActive = true;
 
+        AddLeaveTypeAudit("LeaveType.Reactivated", leaveType.Id, before: beforeSnapshot, after: Snapshot(leaveType),
+            $"Leave type '{leaveType.Name}' reactivated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -285,6 +300,9 @@ public sealed class LeaveTypeService : ILeaveTypeService
 
         var leaveTypeMap = leaveTypes.ToDictionary(lt => lt.Id);
 
+        // BUG-025 (AC-2/NFR-3): snapshot the ordering before/after so the audit row captures the reorder.
+        var beforeOrder = SerializeOrder(leaveTypes);
+
         for (var i = 0; i < leaveTypeIds.Count; i++)
         {
             if (!leaveTypeMap.TryGetValue(leaveTypeIds[i], out var lt))
@@ -293,6 +311,9 @@ public sealed class LeaveTypeService : ILeaveTypeService
             lt.DisplayOrder = i + 1;
         }
 
+        AddLeaveTypeAudit("LeaveType.Reordered", resourceId: null,
+            before: beforeOrder, after: SerializeOrder(leaveTypes),
+            $"Reordered {leaveTypeIds.Count} leave type(s).");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -370,6 +391,65 @@ public sealed class LeaveTypeService : ILeaveTypeService
     }
 
     // -- Private helpers --
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// BUG-025 (AC-2/NFR-3): appends a queryable tenant audit row (with before/after JSON snapshots) to the
+    /// shared audit_log table. Tenant/actor are stamped from context. Mirrors <c>RoleService.AddRbacAudit</c>;
+    /// added to the change tracker and persisted by the caller's SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddLeaveTypeAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "LeaveType",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant configuration fields of a leave type to a JSON snapshot.</summary>
+    private static string Snapshot(LeaveType lt) => JsonSerializer.Serialize(new
+    {
+        lt.Name,
+        lt.Code,
+        lt.Color,
+        lt.Description,
+        lt.AnnualEntitlement,
+        AccrualFrequency = lt.AccrualFrequency.ToString(),
+        lt.CarryForwardLimit,
+        lt.CarryForwardExpiryMonths,
+        lt.ProbationEligible,
+        lt.DocumentsRequired,
+        lt.DocumentDayThreshold,
+        lt.Encashable,
+        lt.MaxEncashDays,
+        lt.HalfDayAllowed,
+        lt.HourlyAllowed,
+        Gender = lt.Gender.ToString(),
+        lt.MaxConsecutiveDays,
+        lt.NegativeBalanceAllowed,
+        lt.NegativeBalanceLimit,
+        lt.DisplayOrder,
+        lt.IsActive,
+        SystemCategory = lt.SystemCategory.ToString(),
+    }, AuditJsonOptions);
+
+    /// <summary>Serializes the id → display-order map for a set of leave types (used by the reorder audit).</summary>
+    private static string SerializeOrder(IEnumerable<LeaveType> leaveTypes) => JsonSerializer.Serialize(
+        leaveTypes
+            .OrderBy(lt => lt.DisplayOrder)
+            .ToDictionary(lt => lt.Id.ToString(), lt => lt.DisplayOrder),
+        AuditJsonOptions);
 
     private static LeaveTypeDto ToDto(LeaveType lt) => new()
     {

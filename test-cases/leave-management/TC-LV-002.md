@@ -4,7 +4,7 @@ user_story: US-LV-001
 module: Leave Management
 priority: critical
 type: functional
-status: fail
+status: automated
 created: 2026-06-13
 ---
 
@@ -19,6 +19,13 @@ Verify that an HR Officer can edit an existing leave type's entitlement and carr
 - Functional Requirements: FR-1, FR-2
 - Non-Functional Requirements: NFR-3
 - Business Rules: BR-5
+- Related Finding: **BUG-025** (HIGH) — `LeaveTypeService` mutating ops persisted no `audit_logs` row (only a Serilog line), violating AC-2 / NFR-3.
+
+## Automated Coverage
+- Runner: xUnit (`HRM.Tests`), EF Core InMemory. Traceability tag: `@TC-LV-002`.
+- Bound test: `HRM.Tests.Unit.LeaveTypeServiceAuditTests.UpdateLeaveType_WritesBeforeAfterAuditRow`
+  (asserts an `audit_logs` row exists for the leave type, is tenant-scoped, carries an update action, and its **before** JSON shows entitlement 14 while **after** shows 25 — not null/empty).
+- Regression for BUG-025: FAILS pre-fix (no audit row is written → "row exists" assertion fails), PASSES post-fix.
 
 ## 3. Preconditions
 - Tenant "acme" exists with an active leave type "Annual Leave" with annual_entitlement = 20.00, carry_forward_limit = 5.00, carry_forward_expiry_months = 3.
