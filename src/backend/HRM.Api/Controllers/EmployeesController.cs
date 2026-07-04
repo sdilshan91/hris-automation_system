@@ -150,7 +150,11 @@ public sealed class EmployeesController : ControllerBase
     /// Extended directory search with multi-select filters, sorting, and role-based visibility (US-CHR-003).
     /// </summary>
     [HttpGet("directory")]
-    [RequirePermission("Employee.View.Own")]
+    // ISSUE-018: accept any Employee.View.* permission (any-of semantics). HR Officer/Tenant Admin hold
+    // Employee.View.All and Managers hold Employee.View.Team — both strict supersets of View.Own — yet were
+    // 403'd by the single literal. The directory handler (ResolveVisibility) already scopes results per the
+    // permission the caller actually holds (Own/Team/All), so listing all three is correct, not a widening.
+    [RequirePermission("Employee.View.Own", "Employee.View.Team", "Employee.View.All")]
     [ProducesResponseType(typeof(ApiResponse<EmployeeDirectoryResult>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetDirectory(
         [FromQuery] string? search = null,
