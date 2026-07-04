@@ -4,19 +4,26 @@ user_story: US-AUTH-010
 module: Authentication
 priority: critical
 type: security
-status: fail
+status: automated
 created: 2026-06-11
 ---
 
 # TC-AUTH-098: Atomic increment of failed_login_count under concurrent login attempts
 
 ## 1. Test Objective
-Verify that the `failed_login_count` update is atomic at the database level (NFR-2) when multiple concurrent login attempts with wrong passwords are fired simultaneously. No race condition should occur -- the final counter value must exactly equal the number of failed attempts.
+Verify that the `failed_login_count` update is atomic at the database level (NFR-2) when multiple concurrent login attempts with wrong passwords are fired simultaneously. No race condition should occur -- the final counter value must exactly equal the number of failed attempts, and the account must lock once the threshold is crossed. This closes **BUG-045** (HIGH): the in-memory read-modify-write increment (`user.FailedLoginCount++` then `SaveChangesAsync`) loses increments under concurrency, so 10 parallel wrong-password attempts leave the count at 1-2 and the account UNLOCKED -- making the brute-force lockout bypassable by parallelising requests.
 
 ## 2. Related Requirements
 - User Story: US-AUTH-010
 - Non-Functional Requirements: NFR-2
 - Functional Requirements: FR-1
+- Defect: BUG-045 (HIGH, Authentication) -- brute-force lockout bypass via concurrent login race
+
+## Automated Test Binding
+- Runner: xUnit + Testcontainers (real PostgreSQL) -- `@TC-AUTH-098`
+- Test: `HRM.Tests.Integration.AuthConcurrentLockoutPostgresTests.LoginAsync_ConcurrentWrongPasswords_AllIncrementsCounted_AccountLocks`
+- File: `src/backend/HRM.Tests/Integration/AuthConcurrentLockoutPostgresTests.cs`
+- Note: MUST run on real Postgres with independent per-request transactions. An EF InMemory provider serialises writes and would NOT reproduce the lost update (test theater) -- it would pass even against the buggy code. Fails pre-fix (count lands at 1-2, not locked); passes post-fix (atomic DB increment).
 
 ## 3. Preconditions
 - User `alice@acme.com` has `failed_login_count = 0`, `locked_until = null`.
