@@ -1,4 +1,6 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -85,12 +87,43 @@ public sealed class SelfAssessmentReminderService : ISelfAssessmentReminderServi
                 if (submittedSet.Contains(employeeId))
                     continue;
                 await _notifications.NotifySelfAssessmentReminderAsync(employeeId, cycle.Id, daysOut, cancellationToken);
+                // ISSUE-106 (US-PRF-004 FR-7/AC-5): record a queryable tenant audit row for each reminder
+                // dispatched. This is a system/background sweep (no user actor ⇒ UserId is null); TenantId is
+                // stamped from the resolved tenant the recurring job set before invoking this service.
+                AddReminderAudit(employeeId, cycle.Id, daysOut);
                 sent++;
             }
         }
 
+        if (sent > 0)
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
         _logger.LogInformation(
             "Self-assessment reminders dispatched. Count={Count}, TenantId={TenantId}", sent, _tenantContext.TenantId);
         return sent;
+    }
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-106 (US-PRF-004): appends a queryable tenant audit row for a dispatched self-assessment
+    /// reminder. Background sweep ⇒ no user actor (UserId null); TenantId is stamped from the resolved tenant
+    /// context. Added to the change tracker and persisted by the single SaveChanges at the end of the sweep.
+    /// </summary>
+    private void AddReminderAudit(Guid employeeId, Guid cycleId, int daysOut)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = null,
+            EventType = "SelfAssessment.ReminderSent",
+            Action = "SelfAssessment.ReminderSent",
+            ResourceType = "SelfAssessment",
+            ResourceId = employeeId.ToString(),
+            After = JsonSerializer.Serialize(new { employeeId, cycleId, daysOut }, AuditJsonOptions),
+            Detail = $"Self-assessment reminder sent to employee {employeeId} for cycle {cycleId} ({daysOut} day(s) before deadline).",
+            CreatedAt = DateTime.UtcNow,
+        });
     }
 }

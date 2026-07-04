@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
@@ -120,6 +121,10 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
 
         var assessment = await LoadAssessmentWithItemsAsync(employee.Id, input.CycleId, tracking: true, cancellationToken);
 
+        // ISSUE-106 (US-PRF-004 audit): snapshot the pre-mutation state (null for a first-time draft) so the
+        // audit row can capture before/after. Captured BEFORE the merge loop mutates items.
+        var beforeSnapshot = assessment is null ? null : SnapshotAssessment(assessment);
+
         // BR-3: a submitted assessment is locked.
         if (assessment is not null && assessment.Status == SelfAssessmentStatus.Submitted)
             return Result<SelfAssessmentDto>.Failure(
@@ -190,6 +195,12 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
             assessment.WeightedSelfScore = ComputeWeightedScore(goals, assessment.Items);
         }
 
+        // ISSUE-106 (US-PRF-004 audit): write a queryable tenant audit row. Distinguish save vs submit by the
+        // resulting status — a submit is the audit-critical event; a draft-save is also recorded (.Saved).
+        var action = submit ? "SelfAssessment.Submitted" : "SelfAssessment.Saved";
+        AddSelfAssessmentAudit(action, assessment.Id, before: beforeSnapshot, after: SnapshotAssessment(assessment),
+            $"Self-assessment {(submit ? "submitted" : "saved")} for cycle {input.CycleId}.");
+
         try
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -230,6 +241,48 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
             return 0m;
         return Math.Round(weightedSum / totalWeight, 2, MidpointRounding.AwayFromZero);
     }
+
+    // ── Audit (ISSUE-106) ────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-106 (US-PRF-004): appends a queryable tenant audit row (with before/after JSON snapshots) to the
+    /// shared audit_log table. Tenant/actor (the self-assessing employee's user) are stamped from context.
+    /// Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>; persisted by the caller's SaveChanges.
+    /// </summary>
+    private void AddSelfAssessmentAudit(string action, Guid resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "SelfAssessment",
+            ResourceId = resourceId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of a self-assessment (incl. per-goal ratings) to JSON.</summary>
+    private static string SnapshotAssessment(SelfAssessment a) => JsonSerializer.Serialize(new
+    {
+        a.CycleId,
+        a.EmployeeId,
+        Status = a.Status.ToString(),
+        a.WeightedSelfScore,
+        a.SubmittedAt,
+        Items = a.Items
+            .Where(i => !i.IsDeleted)
+            .OrderBy(i => i.GoalId)
+            .Select(i => new { i.GoalId, i.SelfRating, i.AchievementPercentage, i.Comment })
+            .ToList(),
+    }, AuditJsonOptions);
 
     // ── Helpers ──────────────────────────────────────────────────────
 
