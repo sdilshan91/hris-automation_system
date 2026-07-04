@@ -169,6 +169,12 @@ public sealed class AttendanceService : IAttendanceService
         }
 
         _dbContext.AttendanceLogs.Add(log);
+        // ISSUE-067: write a queryable tenant audit row (after-snapshot) for the clock-in, in the SAME
+        // transaction as the punch — not just an ILogger line.
+        AddAttendanceAudit("Attendance.ClockedIn", "Attendance", log.Id,
+            before: null, after: SnapshotLog(log),
+            detail: $"Clocked in at {log.ClockIn:o}"
+                  + (hasCoordinates ? $" @ {log.ClockInLatitude},{log.ClockInLongitude}" : string.Empty));
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // FR-5 (late notification) DEFERRED — no notification infra (TODO US-NTF). The AC-4 deduction
@@ -231,6 +237,9 @@ public sealed class AttendanceService : IAttendanceService
         // FR-2/FR-3/FR-4/FR-7, BR-2/BR-3/BR-4/BR-6: minute-accurate work-hours calculation.
         var calc = AttendanceCalculator.Calculate(openLog.ClockIn, clockOut, settings);
 
+        // ISSUE-069: snapshot the pre-clock-out state so the audit row captures before/after.
+        var beforeSnapshot = SnapshotLog(openLog);
+
         openLog.ClockOut = clockOut;
         openLog.ClockOutLatitude = hasCoordinates ? data.Latitude : null;
         openLog.ClockOutLongitude = hasCoordinates ? data.Longitude : null;
@@ -271,6 +280,11 @@ public sealed class AttendanceService : IAttendanceService
             openLog, employee, settings, calc.TotalWorkMinutes, cancellationToken);
         if (overtimeRecord is not null)
             _dbContext.OvertimeRecords.Add(overtimeRecord);
+
+        // ISSUE-069: queryable tenant audit row (before/after) for the clock-out, in the SAME transaction.
+        AddAttendanceAudit("Attendance.ClockedOut", "Attendance", openLog.Id,
+            before: beforeSnapshot, after: SnapshotLog(openLog),
+            detail: $"Clocked out at {clockOut:o} ({calc.TotalWorkMinutes} min worked).");
 
         // NFR-3 / NFR-1: single atomic SaveChanges (closed log + overtime record together);
         // the AuditInterceptor stamps updated_at/updated_by.
@@ -422,6 +436,11 @@ public sealed class AttendanceService : IAttendanceService
 
         _dbContext.AttendanceRegularizations.Add(regularization);
 
+        // ISSUE-071: queryable tenant audit row (after-snapshot) for the regularization SUBMIT, same tx.
+        AddAttendanceAudit("AttendanceRegularization.Submitted", "AttendanceRegularization", regularization.Id,
+            before: null, after: SnapshotRegularization(regularization),
+            detail: $"Regularization ({type}) submitted for {regularization.Date}.");
+
         // NFR-3: single SaveChanges; the AuditInterceptor stamps created_at/created_by.
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -458,6 +477,61 @@ public sealed class AttendanceService : IAttendanceService
         IReadOnlyList<RegularizationDto> dtos = rows.Select(MapToDto).ToList();
         return Result<IReadOnlyList<RegularizationDto>>.Success(dtos);
     }
+
+    // ── Audit (ISSUE-067/069/071) ──────────────────────────────────────
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-067/069/071: appends a queryable tenant audit row (with before/after JSON snapshots) to the
+    /// shared audit_log table. Tenant/actor are stamped from context (the actor is the self-service
+    /// employee for clock-in/out/regularization). Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>; added
+    /// to the change tracker and persisted by the caller's SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddAttendanceAudit(
+        string action, string resourceType, Guid? resourceId, string? before, string? after, string? detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = resourceType,
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    private static string SnapshotLog(AttendanceLog log) => JsonSerializer.Serialize(new
+    {
+        log.EmployeeId,
+        log.ClockIn,
+        log.ClockOut,
+        log.TotalWorkMinutes,
+        log.OvertimeMinutes,
+        log.Status,
+        log.IsLate,
+        log.LateMinutes,
+        log.IsEarlyDeparture,
+        log.EarlyDepartureMinutes,
+        log.Source,
+    }, AuditJsonOptions);
+
+    private static string SnapshotRegularization(AttendanceRegularization r) => JsonSerializer.Serialize(new
+    {
+        r.EmployeeId,
+        r.Date,
+        r.RegularizationType,
+        r.RequestedClockIn,
+        r.RequestedClockOut,
+        r.Reason,
+        r.Status,
+        r.AttendanceLogId,
+    }, AuditJsonOptions);
 
     private static RegularizationDto MapToDto(AttendanceRegularization r) => new()
     {

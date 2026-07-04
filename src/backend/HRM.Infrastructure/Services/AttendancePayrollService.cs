@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -217,6 +218,10 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         };
 
         _dbContext.AttendancePeriodLocks.Add(entity);
+        // ISSUE-089: queryable tenant audit row (after-snapshot) for the period LOCK, same transaction —
+        // the AuditInterceptor only stamps created_at/updated_at, not a searchable audit_log row.
+        AddPeriodLockAudit("AttendancePeriod.Locked", entity.Id, before: null, after: SnapshotLock(entity),
+            detail: $"Attendance period {periodStart}..{periodEnd} locked.");
         // FR-4 / NFR-2: single atomic SaveChanges; the AuditInterceptor stamps created_at/created_by.
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -245,10 +250,16 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         var now = DateTime.UtcNow;
         var actingUser = _currentUser.IsAuthenticated ? _currentUser.UserId : (Guid?)null;
 
+        // ISSUE-089: snapshot the locked state before unlocking so the audit captures before/after.
+        var beforeSnapshot = SnapshotLock(entity);
+
         entity.IsLocked = false;
         entity.UnlockedBy = actingUser;
         entity.UnlockedAt = now;
 
+        // ISSUE-089: queryable tenant audit row (before/after) for the period UNLOCK, same transaction.
+        AddPeriodLockAudit("AttendancePeriod.Unlocked", entity.Id, before: beforeSnapshot, after: SnapshotLock(entity),
+            detail: $"Attendance period {entity.PeriodStart}..{entity.PeriodEnd} unlocked.");
         // FR-4: single atomic SaveChanges; the AuditInterceptor stamps updated_at/updated_by.
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -399,6 +410,43 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     /// </summary>
     private static decimal LateDeductionPortion(EmployeeMonthlySummaryDto s)
         => Math.Max(0m, s.LopDays - s.AbsentDays);
+
+    // ── Audit (ISSUE-089) ──────────────────────────────────────────────
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-089: appends a queryable tenant audit row (with before/after JSON snapshots) to the shared
+    /// audit_log table for the period lock/unlock. Tenant/actor stamped from context (the HR admin acting).
+    /// Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>; persisted by the caller's SaveChanges (same tx).
+    /// </summary>
+    private void AddPeriodLockAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "AttendancePeriod",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    private static string SnapshotLock(AttendancePeriodLock e) => JsonSerializer.Serialize(new
+    {
+        e.PeriodStart,
+        e.PeriodEnd,
+        e.IsLocked,
+        e.LockedBy,
+        e.LockedAt,
+        e.UnlockedBy,
+        e.UnlockedAt,
+    }, AuditJsonOptions);
 
     private static PeriodLockDto MapLock(AttendancePeriodLock e) => new()
     {

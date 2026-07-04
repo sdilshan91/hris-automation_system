@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -152,11 +153,19 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         var regularization = ctx.Regularization!;
         var manager = ctx.Manager!;
 
+        // ISSUE-073: snapshot the pending state before the decision so the audit captures before/after.
+        var beforeSnapshot = SnapshotRegularization(regularization);
+
         // AC-2 / FR-3: status -> REJECTED, store the reason. The attendance_log is NOT touched.
         regularization.Status = RegularizationStatus.Rejected;
 
         var history = NewHistory(regularization.Id, manager.Id, RegularizationApprovalAction.Rejected, trimmed);
         _dbContext.RegularizationApprovalHistories.Add(history);
+
+        // ISSUE-073: queryable tenant audit row (before/after) for the reject, same transaction.
+        AddRegularizationAudit("AttendanceRegularization.Rejected", regularization.Id,
+            before: beforeSnapshot, after: SnapshotRegularization(regularization),
+            detail: $"Rejected by manager {manager.Id}. Reason: {trimmed}");
 
         // NFR-2: single atomic SaveChanges (status + immutable history together).
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -274,6 +283,9 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
 
         var log = logResult.Value!;
 
+        // ISSUE-073: snapshot the pending state before the decision so the audit captures before/after.
+        var beforeSnapshot = SnapshotRegularization(regularization);
+
         // AC-1: final single-level approve. workflow_instance_id stays null (no engine — US-ADM-007).
         regularization.Status = RegularizationStatus.Approved;
         regularization.AttendanceLogId = log.Id;
@@ -282,6 +294,13 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
             regularization.Id, manager.Id, RegularizationApprovalAction.Approved,
             string.IsNullOrWhiteSpace(comment) ? null : comment.Trim());
         _dbContext.RegularizationApprovalHistories.Add(history);
+
+        // ISSUE-073: queryable tenant audit row (before/after) for the approve, same transaction.
+        AddRegularizationAudit("AttendanceRegularization.Approved", regularization.Id,
+            before: beforeSnapshot, after: SnapshotRegularization(regularization),
+            detail: $"Approved by manager {manager.Id} → attendance_log {log.Id} "
+                  + $"({log.TotalWorkMinutes} min, status {log.Status})."
+                  + (string.IsNullOrWhiteSpace(comment) ? string.Empty : $" Comment: {comment.Trim()}"));
 
         // NFR-2: a SINGLE atomic SaveChanges commits the regularization status, the linked-log id, the
         // attendance_log create/update, AND the immutable history row together — or none of them.
@@ -505,6 +524,45 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         log.IsEarlyDeparture = result.IsEarlyDeparture;
         log.EarlyDepartureMinutes = result.EarlyDepartureMinutes;
     }
+
+    // ── Audit (ISSUE-073) ──────────────────────────────────────────────
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-073: appends a queryable tenant audit row (with before/after JSON snapshots) to the shared
+    /// audit_log table for the approve/reject decision. Tenant/actor stamped from context (the actor is
+    /// the acting manager). Mirrors <c>LeaveTypeService.AddLeaveTypeAudit</c>; added to the change tracker
+    /// and persisted by the caller's SaveChanges (same transaction as the decision + history).
+    /// </summary>
+    private void AddRegularizationAudit(
+        string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "AttendanceRegularization",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    private static string SnapshotRegularization(AttendanceRegularization r) => JsonSerializer.Serialize(new
+    {
+        r.EmployeeId,
+        r.Date,
+        r.RegularizationType,
+        r.Status,
+        r.AttendanceLogId,
+        r.RequestedClockIn,
+        r.RequestedClockOut,
+    }, AuditJsonOptions);
 
     private RegularizationApprovalHistory NewHistory(
         Guid regularizationId, Guid approverEmployeeId, string action, string? comment) => new()
