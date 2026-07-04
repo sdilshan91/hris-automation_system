@@ -4,7 +4,7 @@ user_story: US-LV-001
 module: Leave Management
 priority: high
 type: functional
-status: fail
+status: automated
 created: 2026-06-13
 ---
 
@@ -17,6 +17,15 @@ Verify that every configuration change to a leave type produces an audit log ent
 - User Story: US-LV-001
 - Non-Functional Requirements: NFR-3
 - Acceptance Criteria: AC-2
+- Related Finding: **BUG-025** (HIGH) — `LeaveTypeService` create/update/deactivate/reactivate/reorder persisted no `audit_logs` row (only a Serilog line), violating AC-2 / NFR-3.
+
+## Automated Coverage
+- Runner: xUnit (`HRM.Tests`), EF Core InMemory. Traceability tag: `@TC-LV-017`.
+- Bound tests: `HRM.Tests.Unit.LeaveTypeServiceAuditTests` —
+  `CreateLeaveType_WritesAuditRow`, `UpdateLeaveType_WritesBeforeAfterAuditRow`,
+  `DeactivateLeaveType_WritesAuditRow`, `ReactivateLeaveType_WritesAuditRow`.
+  Each asserts a persisted, tenant-scoped `audit_logs` row keyed on the leave type id with the correct action; the update test additionally asserts the **before** (entitlement 14) and **after** (entitlement 25) JSON snapshots are present, differ, and are not null/empty.
+- Regression for BUG-025: FAILS pre-fix (no audit rows are written → the "row exists" assertions fail), PASSES post-fix.
 
 ## 3. Preconditions
 - Tenant "acme" has an active leave type "Annual Leave" with known configuration.
