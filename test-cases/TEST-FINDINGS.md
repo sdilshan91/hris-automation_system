@@ -467,7 +467,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-010 — Viewing an employee profile writes NO PII-access audit entry: the `GET /employees/{id}/profile` read is unaudited — AC + FR-7 / TC-CHR-118 PII-access-logging contract unmet
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #151, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-002 · TC-CHR-118 (PII access recorded in audit log when viewing employee profile)
 - **Title:** TC-CHR-118 requires that every read of an employee profile (a PII access) records an audit entry (`action: employee_profile_viewed` or equivalent, with `user_id`=viewer, `entity_id`=employee, `tenant_id`, timestamp) — for both HR-officer views and self-service views. Live: as `hr@acme.test` the baseline audit-row count referencing employee `019efced-88a9-…` (EMP-0001) was **0**; after `GET /api/v1/tenant/employees/019efced-88a9-…/profile` → **HTTP 200**, the count was still **0**. No `employee_profile_viewed` (or any read-access) action exists anywhere in `audit_logs` (`SELECT DISTINCT action … ilike '%view%'` returns only `Monitoring.Viewed`, `AuditLog.View`, `Monitoring.TenantViewed`, `tenant_settings.org_profile_updated` — none for employee PII reads). Profile reads are therefore completely untracked.
@@ -669,7 +669,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would `name = name.Trim()` on Create/Update and compare case-insensitively — e.g. `EF.Functions.ILike` or a normalized `LOWER(name)` column/`citext` — backed by a case-insensitive unique index, mirroring whatever fix lands for [[BUG-013]].)
 
 ### BUG-018 — Office-location create/update/deactivate are NEVER written to the audit log: no `Location.*` audit action exists, only a `LogInformation` Serilog line → AC/TC-185 "audit entries for create, update, and deactivate" unmet
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #151, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-007 · TC-CHR-185 (audit log entries for create/update/deactivate) — also weakens the audit-trail intent of TC-CHR-172 step 13 / TC-CHR-174.
 - **Title:** Performing `POST /api/v1/tenant/locations` (create), `PUT .../locations/{id}` (update), and `POST .../locations/{id}/deactivate` produces **zero** rows in the tenant audit log. The audit `filter-options` action catalog for `acme` lists `Department.Create/Update`, `JobTitle.Create/Update`, `tenant_settings.*`, etc. but **no `Location.*` action of any kind** — so location lifecycle changes are invisible to the audit trail (TC-CHR-185 expects create/update/deactivate to each be recorded).
@@ -712,7 +712,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Fix is the shared BUG-003 remediation: `TenantResolutionMiddleware`/auth pipeline must reject any request whose resolved tenant ≠ the authenticated token's tenant — fail-closed — which closes this and all other BUG-003 surfaces at once.)
 
 ### ISSUE-024 — Employee-document upload/download/delete are NOT written to the audit log: only Serilog `LogInformation` lines exist, no `EmployeeDocument.*` audit action (PII-access/mutation not audited — BUG-010/BUG-018 class)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #151, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-008 · TC-CHR-207 ("document view and download events logged").
 - **Title:** Uploading, downloading (signed-URL generation), and soft-deleting an employee document produces **zero** rows in the tenant audit log. A `GET /api/v1/tenant/audit-logs?pageSize=50` after performing several uploads + a download + a delete returns no document-related entries, and no `EmployeeDocument.*` action exists in the audit catalog — so document access/mutation (a PII-sensitive surface) leaves no forensic trail in the queryable audit store. TC-CHR-207 expects view/download events to be logged.
@@ -754,7 +754,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would either also emit a generic tenant-audit-log action for status changes, or add a read endpoint over `EmployeeFieldAuditLog`/`Section="StatusChange"`, and assert its retrievability in TC-CHR-230 automation.)
 
 ### BUG-022 — Bulk employee import is NEVER written to the audit log: importing N employees (and the bulk-import job itself) produces no `EmployeeImport.*`/`Employee.Create` audit action, only a `LogInformation` Serilog line → TC-CHR-251 (AC) "audit log records the import operation with file name, row count, success count, and failure count" unmet
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #151, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-010 · TC-CHR-251 (audit log records import operation → FAIL). Missing-audit/forensic-gap class — same as [[BUG-010]]/[[BUG-018]]/[[ISSUE-024]]/[[ISSUE-025]], now on the bulk-import surface.
 - **Title:** A successful bulk import (and every employee it creates) leaves NO entry in the queryable tenant audit log. Across three live imports at 06:58–06:59 that created ~14 employees in `acme`, `GET /api/v1/tenant/audit-logs?fromDate=2026-06-25T06:55:00Z&pageSize=50` returned **0** rows whose action references import or employee-create (only `JobTitle.Create/Update` and `concurrent_session_oldest_revoked`). The import writes a `BulkImportJob` *tracking* row (file name, total/success/failed counts, initiatedBy) and a Serilog `LogInformation` line, but neither is the tenant audit trail TC-CHR-251 requires, and there is no read endpoint over `BulkImportJob` beyond per-job `/status`.
@@ -781,7 +781,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Fix is the shared BUG-003 remediation: the tenant-resolution/auth pipeline must reject any request whose resolved tenant ≠ the authenticated token's tenant claim — fail-closed — closing the import write surface and every other BUG-003 surface at once. A targeted negative test should attempt an acme-token import with a foreign subdomain into a *disposable* tenant and assert rejection.)
 
 ### BUG-023 — Manager-assignment writes NO audit-log entry: `POST /employees/{id}/manager` and `POST /employees/bulk-assign-manager` succeed (FK persisted, before/after returned in the response) but emit zero tenant audit rows, so the reporting-structure change history (AC-2 / FR-6 / NFR-5) does not exist
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #151, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-011 · TC-CHR-268 (step 8 audit before/after) / TC-CHR-271 (step 9: 5 individual audit entries) / TC-CHR-278 (2 audit + 2 employment-history entries). Same **missing-audit class** as BUG-018 / ISSUE-024 / ISSUE-025.
 - **Title:** Assigning, reassigning, or bulk-assigning a reporting manager does not produce any audit-log record. The assign succeeds and the API response itself carries `previousManagerId/previousManagerName → newManagerId/newManagerName` (so the before/after data is computed and available), but it is never written to the audit store. After ~10 successful assignments in this run (1 single + 3 bulk + 1 cross-dept + 2 cycle-setup + the 268 happy path), `GET /audit-logs?pageSize=100` shows only `concurrent_session_oldest_revoked`, `Department.Update`, `JobTitle.Create/Update` — **zero** Employee/manager/reports_to actions.
@@ -809,7 +809,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Add `reportsToEmployeeId` + resolved `managerName` to `EmployeeDetailDto`; populate `EmployeesBulkAssignManagerItemResult.EmployeeName` with the actual name and move the sentence to a `message` field.)
 
 ### BUG-024 — Custom-field definition changes (create/update/deactivate/reactivate/reorder) emit ZERO audit-log entries; only a Serilog `LogInformation` line is written, so the required change-history (NFR-5) does not exist
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #151, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-012 · TC-CHR-313 (all 6 steps assert audit entries for create/update/deactivate/reactivate/reorder). Same **missing-audit class** as BUG-010 / BUG-018 / BUG-023 / ISSUE-024 / ISSUE-025.
 - **Title:** Every mutating custom-field operation succeeds but writes no tenant audit row. After creating 9 fields, one update (rename + add option), one reorder, one deactivate and one reactivate as `tenantadmin@acme.test`, `GET /api/v1/tenant/audit-logs?pageSize=50` and `?action=CustomField.Create` both return **zero** custom-field entries (the only actions present are `JobTitle.Update` and `concurrent_session_oldest_revoked`).
@@ -929,7 +929,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Either add `Leave.ConfigurePolicy` to the `HROfficer` role permission list, or change the controller to accept a permission HR Officer holds — and reconcile with the deliberate `Leave.ManageLop` workaround so the two leave-config surfaces use a consistent rule. Confirm with product whether HR Officer is truly meant to configure entitlements or whether the US persona should read "HR Manager".)
 
 ### BUG-028 — Leave entitlement rule/override create·update·delete write ZERO audit-log rows, violating AC-5 ("changes are audit-logged"); the service only emits Serilog info, never calls IAuditService
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #152, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-002 · TC-LV-026 (step 12), TC-LV-030 (steps 11-13 before/after snapshots), TC-LV-037 (step 11). AC-5.
 - **Title:** AC-5 requires that when an entitlement rule is modified, "changes are audit-logged"; TC-026/030/037 assert an audit record (with before/after snapshots for updates) exists for rule create/update and bulk operations. The implementation never records any audit entry for entitlement rules or overrides. After creating 13 rules and 2 overrides during this test pass, `audit_logs` contained 0 rows referencing entitlements — while audit logging is demonstrably active everywhere else (Department.Create/Update, JobTitle.Create, Plan.Created, Impersonation.Started, etc. all write rows).
@@ -1064,7 +1064,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Batch entitlement resolution for all of an employee's leave types in one engine call/query, and/or land the deferred `tenant:{tenantId}:leave_balance:{employeeId}:{leaveTypeId}` cache.)
 
 ### BUG-031 — Holiday calendar config (create / update / deactivate / CSV-import) writes ZERO audit-log entries; the entire Holidays feature never calls IAuditService, so US-LV-007 holiday changes have no before/after change-history
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #152, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-007 · TC-LV-143 (step 1 asserts "audit fields stamped" — partially true: row UpdatedBy/UpdatedAt are set by AuditInterceptor, but no audit_logs change-history row is written), TC-LV-129/134/140 (create/import/deactivate produce no audit trail). FR-1, and the module-wide audit expectation.
 - **Title:** None of the holiday config write paths (CreateHoliday, UpdateHoliday, DeactivateHoliday, ImportHolidays/CSV bulk-create) emit an `audit_logs` entry. `grep -rln -i "audit" HRM.Application/Features/Holidays/` returns nothing, and `HolidayService.cs` has no `IAuditService` dependency. After ~20 holiday create/update/deactivate/import operations in this run, the 50 most-recent `GET /api/v1/tenant/audit-logs` rows contained **0** holiday-related entries. This is the same systemic class as BUG-025 (leave-types) and BUG-028 (leave-entitlements): the whole leave module's config services never call IAuditService.
@@ -1338,7 +1338,7 @@
 - **Suggested direction (NOT applied):** Decide the intended policy. Either (a) grant a narrower report permission (e.g. `Leave.Reports.Team` / self) to Manager/Employee roles and switch the controller to accept it, so the existing scope branches activate; or (b) if reports are deliberately HR-only, update US-LV-012 BR-2 and retire TC-LV-246/247 (or re-scope them to the my-balance/team-calendar endpoints that DO serve managers/employees). Report-only — no change applied.
 
 ### ISSUE-048 — Successful logins are NOT written to the audit log (`login_success` event missing); only `login_failure` is audited — FR-9 and TC-AUTH-001 step 11 / postcondition unmet
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #150, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-001 · TC-AUTH-001 (step 11 + postcondition "An audit log entry of type `login_success` has been recorded"), FR-9 ("Login success **and** failure events SHALL be written to the tenant audit log")
 - **Title:** The login flow audits failures (`login_failure`, `account_locked`, `account_unlocked_by_timeout`, `concurrent_session_*`, `mfa_challenge_*`) but emits **no `login_success` audit row** on a successful authentication. On success the code path runs `LoginAsync → IssueTokensAsync`, which writes only a Serilog `Information` line (`"User {UserId} logged in to tenant {TenantId}"`) and persists the refresh-token row — it never calls `WriteAuditLogAsync`/`WriteAuditLogWithDetailAsync` with a `login_success` action. Confirmed live: the tenant audit-read API (`GET /api/v1/tenant/audit-logs`) contains `login_failure` rows for my probes but **zero** `login_success` rows across many successful logins in the same window. So the forensic/compliance record of *who logged in successfully, when, from which IP* (explicitly required by AC-1 step 11, the postcondition, and FR-9, with the IP/user-agent already captured for the failure path) does not exist in the audit log — only in the rolling Serilog file, which is not the queryable tenant audit trail.
@@ -1367,7 +1367,7 @@
 - **EXTENDED 2026-06-25 (US-AUTH-002 run, TC-AUTH-ISO-003 step 4) — re-confirmed, NOT re-filed:** the same gap is the reason TC-AUTH-ISO-003 step 4 ("acme refresh token presented at globex/other subdomain → 401") FAILS. Live: `POST /api/v1/auth/refresh` with `X-Tenant-Subdomain: z76` + a fresh `hr@acme.test` refresh cookie → **HTTP 200**, and the issued access token's `tenant_id` is **acme** (`019ef3ba-…`), not z76 — i.e. a cross-subdomain refresh succeeds and rotates the acme session, but mints an acme-scoped token (no foreign-tenant token, no foreign data), matching the LOW calibration above. **No "mismatch"/security event is logged** for the cross-subdomain refresh in `Logs/hrm-20260625.log` (so TC-AUTH-ISO-003 step 8 "mismatch logged as a security event" is also unmet). Reuse/rotation protection remains intact (the consumed cookie → 401 on replay; reuse logged as `WRN ... Refresh token reuse detected ... Revoking all tokens`).
 
 ### BUG-039 — Logout writes NO audit-log row (FR-4 / AC-1 / NFR-4 unmet) — only a Serilog INF line
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #150, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-003 · TC-AUTH-008 (step 5)
 - **Title:** A successful `POST /api/v1/auth/logout` revokes the refresh token and clears the cookie correctly, but **never persists a `logout` audit record**. FR-4 requires "a `logout` event in the tenant audit log with user ID, IP address, user agent, and timestamp"; NFR-4 requires it written synchronously before the response. The audit infrastructure works (login/leave/session paths write rows) — logout simply does not call it.
@@ -1414,7 +1414,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would generate a cryptographically-random single-use token on forgot-password, store it hashed with an expiry (`reset_tokens` table or `users` columns), email/log the link, and in reset-password look the token up by email, verify hash + unexpired + unused, then consume it atomically before changing the password. Until then the endpoint should arguably fail-closed.)
 
 ### ISSUE-051 — Password-reset events write NO audit-log rows: `password_reset_requested` and `password_reset_completed` (FR-8) are emitted as Serilog INF only
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #150, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-004 · TC-AUTH-010 (step 6), TC-AUTH-011 (step 9)
 - **Title:** FR-8 / Data-Requirements §7 require two audited events — `password_reset_requested` (email, IP, tenant_id) on forgot-password and `password_reset_completed` (user_id, tenant_id, IP) on a successful reset. Neither is written to `audit_logs`; both surfaces emit only a Serilog `INF` line. Given BUG-040 (reset accepts any token), the absence of a durable audit trail means a takeover via the reset endpoint leaves **no queryable forensic record** (only app logs).
@@ -1706,7 +1706,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-067 — Clock-in writes no audit_logs entry (only a Serilog Information line); audit trail gap
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-001 (audit field intent)
 - **Title:** A successful clock-in records IP/user-agent/created_by **on the attendance_log row** (FR-5 satisfied) but emits **no `audit_logs` entry** for the action — only `_logger.LogInformation`. The tenant-wide audit infrastructure is active (Department/LeaveRequest/JobTitle/DataExport actions all write audit rows) but attendance punches are absent from it, so there is no queryable audit trail of clock-in/out events. Consistent with the systemic missing-audit-on-writes theme seen across modules.
@@ -1733,7 +1733,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Module / why it matters:** Attendance / US-ATT-001 — exposing `tenant_id` (and optionally the captured IP/UA) in the response would let the FE/QA assert tenant-stamping and audit capture without a DB round-trip, matching the test-case expectation.
 
 ### ISSUE-069 — Clock-out writes no `audit_logs` entry, and the no-active-clock-in reject returns 404 instead of the TC-spec'd 409/422 (two contained nits)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-002 · TC-ATT-013 (audit), TC-ATT-014 / TC-ATT-015 (status code)
 - **Title:** Two contained nits on the clock-out path. (a) **No clock-out audit_logs entry** — a successful clock-out stamps `updated_at`/`updated_by` **on the attendance_log row** (NFR-3 audit fields, verified) but emits **no `audit_logs` action row** for the mutation; only a `_logger.LogInformation` line. This is the clock-out twin of **ISSUE-067** (clock-in) and the same systemic missing-audit-on-writes theme; the tenant audit infra is wired (other modules write rows) but attendance punches opt out, so there is no queryable trail of clock-out events. (b) **404 for no-open-record** — clock-out with no open record (TC-ATT-014) and a second clock-out on an already-closed record (TC-ATT-015) both return **HTTP 404** `no_active_clock_in`; the TCs expect 409 Conflict (or 422). The **exact AC-2 message** ("No active clock-in found. Please clock in first or submit a regularization request.") is returned correctly, so the contractual part is met; only the HTTP status differs.
@@ -1761,7 +1761,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** consider adding `tenantId` to the response DTO; IP/UA may be intentionally withheld from the client for privacy — leave to product. Report only.
 
 ### ISSUE-071 — Regularization submission writes no `audit_logs` entry (NFR-3 "submit … must be recorded in the audit log" unmet); attendance-write audit-gap extends to regularization
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-003 · TC-ATT-033 (NFR-3 audit)
 - **Title:** A successful regularization submit creates the `attendance_regularization` row (with `created_at`/`created_by` stamped by the `AuditInterceptor`) and emits a `_logger.LogInformation` line, but writes **no `audit_logs` action row**. NFR-3 explicitly requires "All regularization actions (submit, approve, reject) must be recorded in the audit log" — for **submit** this is unmet. This is the regularization twin of **ISSUE-067** (clock-in) / **ISSUE-069** (clock-out) and the same systemic missing-audit-on-attendance-writes theme. Unlike clock-in/out, here the user story carries an **explicit NFR-3 audit requirement**, so the gap is more than forensic completeness — it is a stated NFR left unmet (hence MED, not LOW).
@@ -1783,7 +1783,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-073 — Regularization approve/reject writes no `audit_logs` entry (FR-6 / NFR-4 / AC-1-step6 unmet); decisions land only in `attendance_regularization_history` + a Serilog INF line
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-004 · TC-ATT-048 (FAIL), TC-ATT-037 step6, TC-ATT-038 step5, TC-ATT-041 step5, TC-ATT-042 step5, TC-ATT-043 step5
 - **Title:** US-ATT-004 FR-6 requires "log the approval/rejection action in the audit log with the manager's user ID, timestamp, and comment" and NFR-4 requires those audit entries be immutable. Live, **zero rows are written to the `audit_logs` table** for any approve, reject, or bulk-approve. The decision is persisted to the dedicated `attendance_regularization_history` table (approver_employee_id, approval_level, action, comment, actioned_at) and emitted as a Serilog **Information** line (`Attendance.Regularization.Approved/Rejected`), but neither is the tenant `audit_logs` trail FR-6/NFR-4 name. There is no read endpoint surfacing these decisions via the audit-log API either.
@@ -1832,7 +1832,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only. (Same fix family as BUG-013/016/017: normalize on `LOWER(TRIM(name))` in both the app pre-check and the unique index.)
 
 ### ISSUE-075 — No shift create/update/delete/assign/clone operation writes an `audit_logs` entry (only a Serilog Information line); shift management is absent from the queryable tenant audit trail
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-051 (step5), TC-ATT-056 (step5), TC-ATT-060 (step6), TC-ATT-061 (step6) — audit steps unmet
 - **Title:** US-ATT-005 AC-1/§7 (shift rows carry `created_by/updated_by` audit fields) and the module-wide expectation that management actions are auditable are only half-met: each shift create/update/delete/assign/clone emits a Serilog `LogInformation` line, but **no row is written to `audit_logs`**. The shift-management surface is invisible to the canonical, queryable, compliance-facing tenant audit trail.
@@ -2065,7 +2065,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-089 — Lock / unlock actions write no `audit_logs` entry (FR-4 "log lock/unlock in the audit log with HR id + timestamp" only half-met — in-row attribution + Serilog only)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-009 · TC-ATT-122 (S7) / TC-ATT-123 (S1) / TC-ATT-127 (S7) — FR-4
 - **Title:** Locking and unlocking a period stamps `locked_by/locked_at` (and `unlocked_by/unlocked_at`) on the `attendance_period_lock` row and emits a `_logger.LogInformation` line, but writes **no queryable `audit_logs` action row**. FR-4 explicitly states "The system shall log the lock/unlock actions in the audit log with the HR Officer's ID and timestamp." The in-row columns satisfy attribution but are not the central, queryable, immutable audit trail FR-4 names — `GET /api/v1/tenant/audit-logs?action=lock` returns 0 rows after a lock+unlock+re-lock cycle.
@@ -2129,7 +2129,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-093 — Scheduled-report-config create/update/delete writes NO audit_logs entry (TC-ATT-140 S7 unmet); plus spec→impl permission drift (`Reports.View.All`/`Attendance.Read.All` named by the story do not exist — gate is `Attendance.View.All`) and missing recipients/report-type validation
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #153, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-010 · TC-ATT-140 (S5/S7) + TC-ATT-136 (S8) + TC-ATT-129/137 (precondition permission strings)
 - **Title:** Three contained nits on the scheduled-report-config + permission surface: **(a)** `POST/PUT/DELETE /api/v1/attendance/reports/scheduled` mutate a `scheduled_report_config` row with **no audit-log write** — the Create/Update/Delete service methods only `SaveChangesAsync` (+ an INFO Serilog line on create) and never call an audit service, so TC-ATT-140 S7 ("create/update/delete of a scheduled_report_config is recorded with actor + timestamp") is unmet; this matches the module-wide missing-audit-on-config-writes theme (BUG-025/028/031, etc.). **(b)** Spec→impl permission drift: the story preconditions/§2 name `Attendance.Read.All` and `Reports.View.All`; neither exists in `PermissionCatalog` (only `Reports.View`), and the actual gate on the whole surface is `Attendance.View.All`. Functionally HR works (HR holds `Attendance.View.All`), so this is documentation/spec drift, not a break. **(c)** `ValidateScheduledDto` does not validate `recipients` (an empty `recipients:[]` is accepted — TC-ATT-136 S8 expects empty recipients rejected) nor that `reportType` is a known type (any non-empty string accepted).
@@ -2236,7 +2236,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-097 — Goal create/update/delete are NOT written to the central `audit_logs` trail (FR-6) — only `created_by`/`updated_by` stamping + Serilog
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #154, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-01 (FR-6)
 - **Title:** FR-6 requires the system to "log all goal create/update/delete operations in the **tenant audit trail**." After creating 3 goals, the `audit_logs` table has **no** rows with `resource_type='Goal'` (only auth/session events `concurrent_session_oldest_revoked` and `AuditLog.View` in the same window). Goal writes are traced only by the `AuditInterceptor` stamping `created_by`/`updated_by` on the row (verified: `created_by='manager@acme.test'`) plus a structured Serilog "Goal created/updated/deleted" line. There is no queryable, tenant-scoped audit record of the goal mutation — so the FR-6 audit trail is not satisfied via the platform's central audit facility.
@@ -2335,7 +2335,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-104 — Application submission writes NO `audit_logs` entry (only a Serilog line); the create event is unauditable in the tenant audit trail (same systemic missing-audit theme as BUG-055/025/028)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #154, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-002 · TC-REC-002-01 (AC-1 application saved/traceable)
 - **Title:** A successful application submission emits a Serilog `Application submitted (Applied)` INF line and fires the FR-5/FR-7 notification seams, but writes **no `audit_logs` row**. `ApplicantService` only writes `audit_logs` on *stage changes* (`WriteStageChangeAuditLog`, US-REC-003) — the initial Applied creation is not recorded in the queryable tenant audit trail. US-REC-002 does not list an explicit audit AC (unlike US-REC-001 FR-7), so this is a consistency/traceability gap rather than a spec violation, but it mirrors the systemic "missing-audit-on-writes" theme flagged across Recruitment (BUG-055), Leave (BUG-025/028/031) and Core-HR.
@@ -2381,7 +2381,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-106 — Self-assessment save/submit/reminder write NO `audit_logs` entry (only Serilog); the create/submit events are unauditable in the tenant audit trail
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #154, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-002 · TC-PRF-002-01 (submit), TC-PRF-002-05 (draft)
 - **Title:** A self-assessment submit (a material performance-record event) and draft saves produce only a structured Serilog line ("Self-assessment submitted/saved (draft)…") plus `created_by`/`updated_by` row stamping — no row in the central `audit_logs` table. The same recurring missing-central-audit theme as the goals surface (ISSUE-097) and the attendance/leave/recruitment modules (ISSUE-067/069/071, BUG-025/028, ISSUE-104). US-PRF-002 doesn't have an explicit FR-6-style audit requirement (unlike US-PRF-001), so this is an ISSUE rather than a spec-violation BUG, but submission of a self-rating that feeds the final appraisal score should be in the queryable audit trail.
@@ -2489,7 +2489,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Routes: `/api/v1/tenant/performance/reviews/*` — `GET cycles/{cycleId}/employees/{employeeId}` (workspace, AC-1), `GET cycles/{cycleId}/team` (dashboard, AC-4), `PUT reviews/draft`, `POST reviews/submit`, `POST reviews/cycles/{cycleId}/employees/{employeeId}/reopen` (HR-only). Reads/writes require `Performance.Review.Team` (direct manager) OR `Performance.Review.All` (HR override); reopen requires `Performance.Review.All`. BR-2 direct-report scope, BR-1 window gate→409 `manager_review_closed`, AC-3 all-goals-rated→422 `incomplete_ratings` (LISTS unrated goal ids), comment≥20→422 `comment_too_short`, BR-4 final = (self×selfW)+(manager×mgrW) rounded 2dp, AC-5/BR-3 HR reopen. Personas: `manager@acme.test`→EMP-MGR01 (reports John Doe EMP-0001 + Et Contract EMP-0014), `hr@acme.test`+`tenantadmin@acme.test` hold `Review.All`. 17 TCs executed: 12 PASS / 4 FAIL / 1... (12 PASS / 4 FAIL / 1 BLOCKED-pair = 2 BLOCKED). Correction: **12 PASS / 4 FAIL / 2 BLOCKED**. NEW finding: ISSUE-111. Extends: BUG-057 (concurrency) + BUG-003 (cross-tenant) to this surface.
 
 ### ISSUE-111 — FR-7 "all rating submissions shall be audit-logged with the manager's user ID + timestamp" is NOT written to the central `audit_logs` trail (only `created_by`/`updated_by` row stamping + Serilog)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #154, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-003 · TC-PRF-003-11 (FR-7), also touches TC-PRF-003-08 step 5 (reopen audited)
 - **Title:** FR-7 explicitly requires that **all** manager rating submissions (and per TC-11 the reopen + re-submit) be audit-logged with the acting user's id + timestamp, queryable + tenant-scoped. After a submit + an HR reopen, the central `audit_logs` table has **zero** rows referencing the review (no `resource_type`/`action`/`event_type` containing "review"). The acting user + timestamp ARE captured, but only via (a) `created_by`/`updated_by` row stamping (verified: `created_by=manager@acme.test`, `updated_by=hr@acme.test` after the HR reopen) and (b) structured Serilog lines ("Manager review submitted/reopened. Id=… By=manager@acme.test / By=hr@acme.test"). There is no entry in the queryable tenant audit trail, so TC-11 step 4 (a globex user must not see acme's review audit entries) is moot — there are none to scope. Same recurring missing-central-audit theme as ISSUE-097 (goals FR-6), ISSUE-106 (self-assessment), and the attendance/leave/recruitment modules (ISSUE-067/069/104, BUG-025/028).
@@ -5622,7 +5622,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 ### BUG-241 — Audit-log keyword search does NOT cover `before`/`after` JSONB content (US-NTF-005 FR-2 unmet; regression introduced by the BUG-007 fix)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #149, merged 2026-07-05; regression-tested (red pre-fix / green post-fix); merged into test/local-subdomains 2026-07-05; combined merged-tree audit suite green)
 - **Layer:** BE
 - **Module / US / TC:** Notifications & Audit · US-NTF-005 · `AuditLogServiceTests.List_SearchMatchesBeforeAfterAndDetail` + `List_KeywordSearch_MatchesBeforeAndAfterJson` (both FAIL against the merged tree)
 - **Title:** US-NTF-005 **FR-2** requires "keyword search (full-text across `before`/`after` JSONB)". The BUG-007 fix (PR #125) removed `Before`/`After` from the `SearchQuery` predicate (`AuditLogService.cs:212-223`) because `string.Contains` on a `jsonb` column isn't translatable by Npgsql (it 500'd on Postgres). Correct for avoiding the 500, but it silently dropped the required change-content search: a keyword that appears only inside the before/after JSON (e.g. an employee name in the after-snapshot) now returns 0 results. Search still matches `Detail`/`Action`/`EventType`/`ResourceType`/`ResourceId`, so it's partially functional.
