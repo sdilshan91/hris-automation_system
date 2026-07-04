@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Locations.DTOs;
@@ -68,6 +69,9 @@ public sealed class LocationService : ILocationService
         };
 
         _dbContext.Locations.Add(location);
+        // BUG-018 (FR-7): write a queryable tenant audit row with an after-snapshot, not just an ILogger line.
+        AddLocationAudit("OfficeLocation.Created", location.Id, before: null, after: Snapshot(location),
+            $"Location '{location.Name}' created.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -102,6 +106,9 @@ public sealed class LocationService : ILocationService
         if (nameExists)
             return Result<LocationDto>.Failure("A location with this name already exists.", 400);
 
+        // BUG-018 (FR-7): snapshot the pre-mutation state so the audit row can capture before/after.
+        var beforeSnapshot = Snapshot(location);
+
         location.Name = name;
         location.AddressLine1 = addressLine1;
         location.AddressLine2 = addressLine2;
@@ -112,6 +119,8 @@ public sealed class LocationService : ILocationService
         location.TimeZone = timeZone;
         location.Phone = phone;
 
+        AddLocationAudit("OfficeLocation.Updated", location.Id, before: beforeSnapshot, after: Snapshot(location),
+            $"Location '{location.Name}' updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -150,8 +159,11 @@ public sealed class LocationService : ILocationService
                 $"This location has {activeEmployeeCount} active employee(s). Reassign them before deactivating.",
                 400);
 
+        var beforeSnapshot = Snapshot(location);
         location.IsActive = false;
 
+        AddLocationAudit("OfficeLocation.Deactivated", location.Id, before: beforeSnapshot, after: Snapshot(location),
+            $"Location '{location.Name}' deactivated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -211,6 +223,46 @@ public sealed class LocationService : ILocationService
     }
 
     // -- Private helpers --
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// BUG-018 (FR-7): appends a queryable tenant audit row (with before/after JSON snapshots) to the shared
+    /// audit_log table. Tenant/actor are stamped from context. Mirrors <c>RoleService.AddRbacAudit</c>;
+    /// added to the change tracker and persisted by the caller's SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddLocationAudit(string action, Guid resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "OfficeLocation",
+            ResourceId = resourceId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of a location to a JSON snapshot.</summary>
+    private static string Snapshot(Location l) => JsonSerializer.Serialize(new
+    {
+        l.Name,
+        l.AddressLine1,
+        l.AddressLine2,
+        l.City,
+        l.StateProvince,
+        l.Country,
+        l.PostalCode,
+        l.TimeZone,
+        l.Phone,
+        l.IsActive,
+    }, AuditJsonOptions);
 
     private static LocationDto ToDto(Location l, int? employeeCount = null) => new()
     {

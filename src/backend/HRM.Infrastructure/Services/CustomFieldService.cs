@@ -206,6 +206,9 @@ public sealed class CustomFieldService : ICustomFieldService
         };
 
         _dbContext.CustomFieldDefinitions.Add(definition);
+        // BUG-024 (FR-7): write a queryable tenant audit row with an after-snapshot, not just an ILogger line.
+        AddCustomFieldAudit("CustomField.Created", definition.Id, before: null, after: Snapshot(definition),
+            $"Custom field '{definition.FieldName}' ({definition.FieldKey}) created for entity '{definition.EntityType}'.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -256,6 +259,9 @@ public sealed class CustomFieldService : ICustomFieldService
                 return Result<CustomFieldDefinitionDto>.Failure(removedInUseCheck.Error!, 400);
         }
 
+        // BUG-024 (FR-7): snapshot the pre-mutation state so the audit row can capture before/after.
+        var beforeSnapshot = Snapshot(definition);
+
         definition.FieldName = request.FieldName;
         definition.IsRequired = request.IsRequired;
 
@@ -265,6 +271,8 @@ public sealed class CustomFieldService : ICustomFieldService
         if (request.DisplayOrder.HasValue)
             definition.DisplayOrder = request.DisplayOrder.Value;
 
+        AddCustomFieldAudit("CustomField.Updated", definition.Id, before: beforeSnapshot, after: Snapshot(definition),
+            $"Custom field '{definition.FieldName}' ({definition.FieldKey}) updated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -290,7 +298,10 @@ public sealed class CustomFieldService : ICustomFieldService
         if (!definition.IsActive)
             return Result.Failure("Custom field is already deactivated.", 400);
 
+        var beforeSnapshot = Snapshot(definition);
         definition.IsActive = false;
+        AddCustomFieldAudit("CustomField.Deactivated", definition.Id, before: beforeSnapshot, after: Snapshot(definition),
+            $"Custom field '{definition.FieldName}' ({definition.FieldKey}) deactivated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -316,7 +327,10 @@ public sealed class CustomFieldService : ICustomFieldService
         if (definition.IsActive)
             return Result.Failure("Custom field is already active.", 400);
 
+        var beforeSnapshot = Snapshot(definition);
         definition.IsActive = true;
+        AddCustomFieldAudit("CustomField.Reactivated", definition.Id, before: beforeSnapshot, after: Snapshot(definition),
+            $"Custom field '{definition.FieldName}' ({definition.FieldKey}) reactivated.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -343,6 +357,9 @@ public sealed class CustomFieldService : ICustomFieldService
 
         var definitionMap = definitions.ToDictionary(d => d.Id);
 
+        // BUG-024 (FR-7): snapshot the ordering before/after so the audit row captures the reorder.
+        var beforeOrder = SerializeOrder(definitions);
+
         for (var i = 0; i < fieldIds.Count; i++)
         {
             if (!definitionMap.TryGetValue(fieldIds[i], out var def))
@@ -351,6 +368,9 @@ public sealed class CustomFieldService : ICustomFieldService
             def.DisplayOrder = i + 1;
         }
 
+        AddCustomFieldAudit("CustomField.Reordered", resourceId: null,
+            before: beforeOrder, after: SerializeOrder(definitions),
+            $"Reordered {fieldIds.Count} custom field(s) for entity '{entityType}'.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -432,6 +452,51 @@ public sealed class CustomFieldService : ICustomFieldService
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// BUG-024 (FR-7): appends a queryable tenant audit row (with before/after JSON snapshots) to the shared
+    /// audit_log table. Tenant/actor are stamped from context. Mirrors <c>RoleService.AddRbacAudit</c>;
+    /// added to the change tracker and persisted by the caller's SaveChanges (same transaction as the write).
+    /// </summary>
+    private void AddCustomFieldAudit(string action, Guid? resourceId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "CustomField",
+            ResourceId = resourceId?.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant fields of a custom field definition to a JSON snapshot.</summary>
+    private static string Snapshot(CustomFieldDefinition d) => JsonSerializer.Serialize(new
+    {
+        d.EntityType,
+        d.FieldName,
+        d.FieldKey,
+        d.FieldType,
+        d.IsRequired,
+        d.Options,
+        d.DisplayOrder,
+        d.IsActive,
+    }, AuditJsonOptions);
+
+    /// <summary>Serializes the id → display-order map for a set of definitions (used by the reorder audit).</summary>
+    private static string SerializeOrder(IEnumerable<CustomFieldDefinition> definitions) => JsonSerializer.Serialize(
+        definitions
+            .OrderBy(d => d.DisplayOrder)
+            .ToDictionary(d => d.Id.ToString(), d => d.DisplayOrder),
+        AuditJsonOptions);
 
     /// <summary>
     /// Validates a single field value against its definition type.

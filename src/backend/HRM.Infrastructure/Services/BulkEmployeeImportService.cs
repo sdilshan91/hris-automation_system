@@ -305,6 +305,8 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
             job.CompletedAt = DateTime.UtcNow;
             job.ProcessedRows = rows.Count;
             job.ErrorDetails = allErrors.Count > 0 ? JsonSerializer.Serialize(allErrors) : null;
+            // BUG-022 (FR-10): one queryable audit row per import operation (not per employee).
+            AddImportAudit(job);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -827,6 +829,8 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         job.Status = BulkImportStatus.Completed;
         job.CompletedAt = DateTime.UtcNow;
         job.ErrorDetails = errors.Count > 0 ? JsonSerializer.Serialize(errors) : null;
+        // BUG-022 (FR-10): one queryable audit row per import operation (not per employee).
+        AddImportAudit(job);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -1020,6 +1024,27 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// BUG-022 (FR-10): appends ONE queryable audit row for the whole import operation (not one per imported
+    /// employee) to the shared audit_log table. Tenant is taken from the job (reliable in the Hangfire
+    /// background context); actor from context. Added to the change tracker; persisted by the caller's SaveChanges.
+    /// </summary>
+    private void AddImportAudit(BulkImportJob job)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = job.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.BulkImported",
+            Action = "Employee.BulkImported",
+            ResourceType = "EmployeeImport",
+            ResourceId = job.Id.ToString(),
+            Detail = $"Bulk import '{job.FileName}' completed: {job.TotalRows} total, {job.SuccessCount} succeeded, {job.FailedCount} failed.",
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
 
     /// <summary>
     /// Gets the next employee sequence number for the tenant.

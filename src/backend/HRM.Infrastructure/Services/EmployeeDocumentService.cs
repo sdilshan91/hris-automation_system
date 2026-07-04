@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
@@ -170,6 +171,9 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         };
 
         _dbContext.EmployeeDocuments.Add(document);
+        // ISSUE-024 (FR-7): write a queryable tenant audit row with an after-snapshot, not just an ILogger line.
+        AddDocumentAudit("EmployeeDocument.Uploaded", document.Id, employeeId, before: null, after: Snapshot(document),
+            $"Document '{document.FileName}' ({category}) uploaded for employee {employeeId}.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -252,6 +256,13 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         var signedUrl = _fileStorage.GetSignedUrl(
             _tenantContext.TenantId, document.StorageKey, SignedUrlExpiry);
 
+        // ISSUE-024 (FR-7): PII access-audit — a download is a read that must be audited. The document was
+        // loaded AsNoTracking (untracked), so adding this new AuditLog + SaveChanges persists ONLY the audit
+        // row and does not re-write the document. Written after the signed URL is successfully produced.
+        AddDocumentAudit("EmployeeDocument.Downloaded", document.Id, employeeId, before: null, after: null,
+            $"Signed download URL issued for document '{document.FileName}' of employee {employeeId}.");
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         _logger.LogInformation(
             "Document download URL generated. DocumentId={DocumentId}, EmployeeId={EmployeeId}, " +
             "TenantId={TenantId}, By={User}",
@@ -287,8 +298,11 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
             return Result.Failure("Document not found.", 404);
 
         // FR-7 / BR-5: Soft-delete (file remains in storage for retention)
+        var beforeSnapshot = Snapshot(document);
         document.IsDeleted = true;
 
+        AddDocumentAudit("EmployeeDocument.Deleted", document.Id, employeeId, before: beforeSnapshot, after: null,
+            $"Document '{document.FileName}' of employee {employeeId} soft-deleted.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -300,6 +314,45 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
+
+    /// <summary>
+    /// ISSUE-024 (FR-7): appends a queryable tenant audit row (with optional before/after JSON snapshots) to
+    /// the shared audit_log table. Tenant/actor are stamped from context. Mirrors <c>RoleService.AddRbacAudit</c>;
+    /// added to the change tracker and persisted by the caller's SaveChanges.
+    /// </summary>
+    private void AddDocumentAudit(string action, Guid documentId, Guid employeeId, string? before, string? after, string detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "EmployeeDocument",
+            ResourceId = documentId.ToString(),
+            Before = before,
+            After = after,
+            Detail = detail,
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
+    /// <summary>Serializes the audit-relevant metadata of a document to a JSON snapshot.</summary>
+    private static string Snapshot(EmployeeDocument d) => JsonSerializer.Serialize(new
+    {
+        d.EmployeeId,
+        d.FileName,
+        d.StorageKey,
+        d.FileSizeBytes,
+        d.MimeType,
+        Category = d.Category.ToString(),
+        d.Description,
+        d.ExpiryDate,
+        d.IsDeleted,
+    }, AuditJsonOptions);
 
     /// <summary>
     /// Authorization check for document access (FR-10, BR-1, BR-2, BR-3).
