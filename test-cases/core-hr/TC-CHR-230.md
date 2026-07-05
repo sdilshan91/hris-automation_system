@@ -46,6 +46,12 @@ Verify that every status change operation is fully audited with before and after
 - Two audit log entries exist with correct before/after snapshots.
 - Actor identity is recorded in both entries.
 
+## 6a. Automated Regression Coverage
+- **Finding:** ISSUE-025 — a status change wrote only the `employee_field_audit_logs` row; nothing reached the central `audit_logs` table, so the change was not queryable via the standard audit-log API (step 2 "general audit log table" gap).
+- **Bound test:** `HRM.Tests.Unit.EmployeeStatusServiceTests.StatusChange_WritesCentralAuditRow_ISSUE025` (`src/backend/HRM.Tests/Unit/EmployeeStatusServiceTests.cs`).
+- **Covers:** step 2 (central-audit-log branch) — asserts a single central `audit_logs` row (`Employee.StatusChanged`, `ResourceId` == employee id, `Before` = Active / `After` = Suspended, actor stamped) is written alongside the still-present `employee_field_audit_log` row. Fails pre-fix (central row absent), passes post-fix.
+- **Scope note:** unit test covers the central-row acceptance only; the second-transition timeline check (step 6) and the E2E API path (step 1) still require `@test-runner` re-verification before the TC status flips.
+
 ## 7. Test Category Tags
 - [x] Happy path
 - [ ] Negative test

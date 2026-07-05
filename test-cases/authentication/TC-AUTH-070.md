@@ -55,6 +55,12 @@ Verify that a tenant admin can (a) revoke a specific session by providing a `ses
 - Audit log contains records of both the specific and bulk revocations.
 - Notifications were delivered per BR-5.
 
+## 6a. Automated Regression Coverage
+- **Finding:** ISSUE-058 — the specific-revoke audit row was attributed to the victim (session owner), not the acting admin (step 5 gap: `admin_user_id` vs `target_user_id`).
+- **Bound test:** `HRM.Tests.Unit.AuthSessionRevokeAuditTests.RevokeSession_ByAdmin_AuditActorIsAdmin_ISSUE058` (`src/backend/HRM.Tests/Unit/AuthSessionRevokeAuditTests.cs`).
+- **Covers:** step 5 — an admin (a user distinct from the victim) revokes the victim's session; asserts the `session_revoked_by_admin` audit actor (`UserId`) is the acting admin (not the victim), and the victim + revoked session id remain traceable in the audit detail. Fails pre-fix (actor == victim, no detail), passes post-fix.
+- **Scope note:** unit test covers the actor-attribution acceptance of step 5 only; revoke-all (steps 7-11), the forced re-auth (steps 3-4, 9-10), and BR-5 notifications (steps 6, 12) still require `@test-runner` re-verification before the TC status flips.
+
 ## 7. Test Category Tags
 - [x] Happy path
 - [ ] Negative test

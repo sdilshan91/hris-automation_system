@@ -352,6 +352,56 @@ public sealed class EmployeeStatusServiceTests : IDisposable
         audit.AfterSnapshot.Should().Contain("Terminated");
     }
 
+    /// <summary>
+    /// ISSUE-025 (US-CHR-009, NFR-5): a status change must ALSO write a row to the CENTRAL audit_logs table
+    /// (queryable via the standard audit-log API), in addition to the existing employee_field_audit_log row.
+    /// Pre-fix (see <c>git show HEAD:EmployeeStatusService.cs</c>) only the employee_field_audit_log row was
+    /// written, so the central-row query below returned nothing and the assertion failed. Post-fix
+    /// ApplyStatusChangeAsync adds an <c>Employee.StatusChanged</c> AuditLog row (ResourceId == employee id,
+    /// before/after status snapshots).
+    /// </summary>
+    [Fact]
+    public async Task StatusChange_WritesCentralAuditRow_ISSUE025()
+    {
+        var empId = await SeedEmployee(EmployeeStatus.Active);
+        var service = CreateService();
+        var request = new ChangeEmployeeStatusRequest
+        {
+            NewStatus = EmployeeStatus.Suspended,
+            Reason = "Central audit-trail regression (ISSUE-025)",
+            EffectiveDate = DateTime.UtcNow.Date,
+        };
+
+        var result = await service.ChangeStatusAsync(empId, request, null);
+        result.IsSuccess.Should().BeTrue();
+
+        await using var db = CreateDbContext();
+
+        // A central audit_logs row exists for this employee's status change (the crux of ISSUE-025).
+        var central = await db.AuditLogs
+            .IgnoreQueryFilters()
+            .Where(a => a.ResourceId == empId.ToString()
+                && ((a.Action != null && a.Action.Contains("StatusChanged"))
+                    || a.EventType.Contains("StatusChanged")))
+            .ToListAsync();
+
+        central.Should().ContainSingle(
+            "US-CHR-009 status changes must also write one central audit_logs row (ISSUE-025)");
+        var row = central[0];
+        row.ResourceId.Should().Be(empId.ToString());
+
+        // The before/after status must be captured and must differ.
+        row.Before.Should().NotBeNull();
+        row.After.Should().NotBeNull();
+        row.Before!.Should().Contain("Active");
+        row.After!.Should().Contain("Suspended");
+        row.Before.Should().NotBe(row.After);
+
+        // The legacy employee_field_audit_log row is still written alongside (unchanged behavior).
+        (await db.EmployeeFieldAuditLogs.CountAsync(a => a.EmployeeId == empId && a.Section == "StatusChange"))
+            .Should().Be(1);
+    }
+
     [Fact]
     public async Task ChangeStatus_InvalidTransition_Returns400()
     {

@@ -53,6 +53,12 @@ Verify that tenant switching rejects unauthorized membership, inactive membershi
 - No unauthorized, suspended, or terminated target session exists.
 - Source session remains valid.
 
+## 6a. Automated Regression Coverage
+- **Finding:** ISSUE-055 — a DENIED tenant switch returned 403 but wrote no audit row (step 9 gap: denials were not logged).
+- **Bound test:** `HRM.Tests.Unit.AuthTenantSwitchTests.SwitchTenant_Denied_WritesSecurityAudit_ISSUE055` (`src/backend/HRM.Tests/Unit/AuthTenantSwitchTests.cs`).
+- **Covers:** step 9 (non-member denial path) — asserts exactly one `tenant_switch_denied` audit row attributed to the requesting user, with the attempted target tenant recorded in the detail. Fails pre-fix (no row written), passes post-fix.
+- **Scope note:** unit test covers the denial-audit acceptance only; the suspended/terminated/inactive-membership denial paths (steps 3-5) and the UI behavior (steps 6-7) still require `@test-runner` re-verification before the TC status flips.
+
 ## 7. Test Category Tags
 - [ ] Happy path
 - [x] Negative test
