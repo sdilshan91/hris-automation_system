@@ -2,6 +2,7 @@ using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Performance;
@@ -220,6 +221,107 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
                 assessment.Id, employee.Id, input.CycleId, cancellationToken);
 
         return Result<SelfAssessmentDto>.Success(BuildDto(cycle, employee.Id, assessment, goals));
+    }
+
+    // ── Reopen (US-PRF-004 BR-3/AC-2 — BUG-059) ──────────────────────
+    // Manager/HR-only: transitions a Submitted self-assessment back to Draft so the employee can edit and
+    // re-submit. An employee can NEVER self-reopen. Allowed only while the cycle's self-assessment window is
+    // still open. Writes a SelfAssessment.Reopened audit row (actor + reason).
+    public async Task<Result<SelfAssessmentDto>> ReopenAsync(
+        Guid employeeId, Guid cycleId, string? reason, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<SelfAssessmentDto>.Failure("Tenant context is not resolved.", 400);
+
+        // BR-3: only a manager (of this employee) or HR may reopen — never the employee themselves.
+        var authz = await AuthorizeReopenAsync(employeeId, cancellationToken);
+        if (authz.IsFailure)
+            return Result<SelfAssessmentDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        var cycle = await _dbContext.AppraisalCycles
+            .FirstOrDefaultAsync(c => c.Id == cycleId, cancellationToken);
+        if (cycle is null)
+            return Result<SelfAssessmentDto>.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
+
+        // BR-1/AC-4: reopen only while the self-assessment window is still open.
+        if (!cycle.IsSelfAssessmentOpen(DateTime.UtcNow))
+            return Result<SelfAssessmentDto>.Failure(
+                "The self-assessment period for this cycle has ended; it can no longer be reopened.",
+                409, "self_assessment_closed");
+
+        var assessment = await LoadAssessmentWithItemsAsync(employeeId, cycleId, tracking: true, cancellationToken);
+        if (assessment is null)
+            return Result<SelfAssessmentDto>.Failure("Self-assessment not found.", 404, "assessment_not_found");
+
+        if (assessment.Status != SelfAssessmentStatus.Submitted)
+            return Result<SelfAssessmentDto>.Failure(
+                "Only a submitted self-assessment can be reopened.", 409, "not_submitted");
+
+        var beforeSnapshot = SnapshotAssessment(assessment);
+
+        assessment.Status = SelfAssessmentStatus.Draft;
+        assessment.SubmittedAt = null;
+        // Keep the computed weighted score visible; it is recomputed on the next submit.
+
+        AddSelfAssessmentAudit(
+            "SelfAssessment.Reopened", assessment.Id, before: beforeSnapshot, after: SnapshotAssessment(assessment),
+            $"Self-assessment reopened for cycle {cycleId}, employee {employeeId}." +
+            (string.IsNullOrWhiteSpace(reason) ? string.Empty : $" Reason: {reason.Trim()}"));
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<SelfAssessmentDto>.Failure(
+                "This self-assessment was modified by another session. Reload and try again.", 409, "concurrency_conflict");
+        }
+
+        _logger.LogInformation(
+            "Self-assessment reopened. Id={Id}, EmployeeId={EmployeeId}, CycleId={CycleId}, TenantId={TenantId}, By={User}",
+            assessment.Id, employeeId, cycleId, _tenantContext.TenantId, _currentUser.Email);
+
+        var goals = await LoadGoalsAsync(employeeId, cycleId, cancellationToken);
+        return Result<SelfAssessmentDto>.Success(BuildDto(cycle, employeeId, assessment, goals));
+    }
+
+    /// <summary>
+    /// BR-3 (BUG-059): the caller may reopen <paramref name="employeeId"/>'s self-assessment if they hold
+    /// Performance.Review.All (HR override) OR Performance.Review.Team AND are the employee's direct manager.
+    /// Mirrors <c>ManagerReviewService.AuthorizeForEmployeeAsync</c> so a manager can only reopen their own
+    /// reports and an employee can never self-reopen. The target must exist in-tenant (global filter).
+    /// </summary>
+    private async Task<Result> AuthorizeReopenAsync(Guid employeeId, CancellationToken cancellationToken)
+    {
+        var target = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+        if (target is null)
+            return Result.Failure("Employee not found.", 404, "employee_not_found");
+
+        var permissions = _currentUser.Permissions;
+
+        // HR override.
+        if (permissions.Contains(PermissionCatalog.Performance.ReviewAll))
+            return Result.Success();
+
+        if (!permissions.Contains(PermissionCatalog.Performance.ReviewTeam))
+            return Result.Failure(
+                "You do not have permission to reopen a self-assessment.", 403, "reopen_forbidden");
+
+        var manager = await GetCurrentEmployeeAsync(cancellationToken);
+        if (manager is null)
+            return Result.Failure(
+                "The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        // A manager may only reopen their direct reports (and thus never their own — an employee cannot
+        // report to themselves).
+        if (target.ReportsToEmployeeId != manager.Id)
+            return Result.Failure(
+                "You can only reopen the self-assessment of your direct reports.", 403, "not_direct_report");
+
+        return Result.Success();
     }
 
     // ── Weighted self-score (FR-4) ───────────────────────────────────

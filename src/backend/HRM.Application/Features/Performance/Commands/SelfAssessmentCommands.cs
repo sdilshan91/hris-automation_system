@@ -40,3 +40,22 @@ public sealed class SubmitSelfAssessmentCommandHandler
     public Task<Result<SelfAssessmentDto>> Handle(SubmitSelfAssessmentCommand request, CancellationToken cancellationToken)
         => _service.SubmitAsync(new SaveSelfAssessmentInput(request.CycleId, request.Items), cancellationToken);
 }
+
+// ── Reopen (BR-3/AC-2, manager/HR only — BUG-059) ──────────────────────
+
+/// <summary>
+/// Reopens a submitted self-assessment back to Draft so the employee can edit and re-submit
+/// (US-PRF-004 BR-3/AC-2 — BUG-059). Manager/HR-only; an employee can never self-reopen.
+/// </summary>
+public sealed record ReopenSelfAssessmentCommand(Guid EmployeeId, Guid CycleId, string? Reason)
+    : IRequest<Result<SelfAssessmentDto>>;
+
+public sealed class ReopenSelfAssessmentCommandHandler
+    : IRequestHandler<ReopenSelfAssessmentCommand, Result<SelfAssessmentDto>>
+{
+    private readonly ISelfAssessmentService _service;
+    public ReopenSelfAssessmentCommandHandler(ISelfAssessmentService service) => _service = service;
+
+    public Task<Result<SelfAssessmentDto>> Handle(ReopenSelfAssessmentCommand request, CancellationToken cancellationToken)
+        => _service.ReopenAsync(request.EmployeeId, request.CycleId, request.Reason, cancellationToken);
+}

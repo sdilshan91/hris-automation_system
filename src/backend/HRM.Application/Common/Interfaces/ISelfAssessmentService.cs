@@ -32,4 +32,13 @@ public interface ISelfAssessmentService
     /// manager (AC-2). Fails 409 if the window is closed (BR-1) or already submitted.
     /// </summary>
     Task<Result<SelfAssessmentDto>> SubmitAsync(SaveSelfAssessmentInput input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reopens a submitted self-assessment back to <c>Draft</c> so the employee can edit and re-submit
+    /// (US-PRF-004 BR-3/AC-2 — BUG-059). Manager/HR-only: the caller must hold <c>Performance.Review.All</c>
+    /// (HR override) OR <c>Performance.Review.Team</c> AND be the target employee's direct manager — an
+    /// employee can never reopen their own. Allowed only while the cycle's self-assessment window is still
+    /// open (409 otherwise). Writes a <c>SelfAssessment.Reopened</c> audit row (actor + reason).
+    /// </summary>
+    Task<Result<SelfAssessmentDto>> ReopenAsync(Guid employeeId, Guid cycleId, string? reason, CancellationToken cancellationToken = default);
 }
