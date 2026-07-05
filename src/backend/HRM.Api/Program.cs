@@ -9,11 +9,13 @@ using HRM.Infrastructure.Identity;
 using HRM.Infrastructure.Persistence;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Polly;
 using Polly.Extensions.Http;
 using Serilog;
+using System.Threading.RateLimiting;
 
 // ===== Serilog Bootstrap =====
 Log.Logger = new LoggerConfiguration()
@@ -342,6 +344,45 @@ try
         });
     });
 
+    // ===== Rate Limiting (ISSUE-052 / ISSUE-102) =====
+    // Framework-native fixed-window limiter (no extra package, no Redis). Two named policies guard the
+    // unauthenticated abuse vectors: password-reset email-bombing/enumeration and public application spam.
+    // Partitioned by CLIENT IP. NOTE: the store is in-memory, so limits are PER API INSTANCE — acceptable
+    // for this threat model (a coarse anti-abuse throttle, not a distributed quota). Move to a Redis-backed
+    // partitioned limiter if/when multi-instance precision is required.
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        // ISSUE-052 (US-AUTH-004 FR-9): throttle POST /api/v1/auth/forgot-password. FR-9 specifies "max
+        // 5/email/hour"; per-email would require reading the request body here, so the practical primary
+        // defense is 5/hour/IP. TODO(FR-9 follow-up): add a per-email counter (body-inspected) on top of this.
+        options.AddPolicy("forgot-password", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ResolveClientIp(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                }));
+
+        // ISSUE-102 (US-REC-002): throttle the anonymous public application-submit endpoint. 10/hour/IP is a
+        // defensible anti-spam / anti-bot ceiling for a legitimate applicant (who submits a handful of apps),
+        // while blunting rapid unauthenticated write + disk-write DoS.
+        options.AddPolicy("public-application", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ResolveClientIp(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 10,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                }));
+    });
+
     // ===== Build App =====
     var app = builder.Build();
 
@@ -385,6 +426,10 @@ try
 
     // Session activity tracking — debounced last_active_at update (US-AUTH-009 FR-4)
     app.UseMiddleware<SessionActivityMiddleware>();
+
+    // Rate limiting (ISSUE-052 / ISSUE-102): after routing + auth so the matched endpoint's
+    // [EnableRateLimiting("...")] metadata is resolved, before the endpoints execute.
+    app.UseRateLimiter();
 
     // Health check endpoint
     app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
@@ -590,6 +635,14 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+// ===== Rate-limit partition key =====
+// Resolves the client IP for rate-limit partitioning. No ForwardedHeaders/UseForwardedHeaders middleware is
+// configured in this app, so Connection.RemoteIpAddress is the direct socket peer (correct behind no proxy).
+// If a reverse proxy is introduced later, add ForwardedHeaders middleware so this reflects the real client.
+// Fall back to a single shared bucket when the IP is unavailable, so the limit still applies (fail-closed).
+static string ResolveClientIp(HttpContext httpContext)
+    => httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
 // ===== Polly Policies =====
 static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()

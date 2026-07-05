@@ -6,6 +6,7 @@ using HRM.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HRM.Api.Controllers;
 
@@ -70,6 +71,7 @@ public sealed class CareersController : ControllerBase
     /// at stage Applied (FR-6), and returns the confirmation reference number (§8).
     /// </summary>
     [HttpPost("{vacancyId:guid}/apply")]
+    [EnableRateLimiting("public-application")] // ISSUE-102: 10/hour/IP anti-spam / anti-bot DoS on the anon write
     [ProducesResponseType(typeof(ApiResponse<ApplicationConfirmationDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
