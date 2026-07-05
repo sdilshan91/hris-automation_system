@@ -241,7 +241,17 @@ public sealed class UserManagementService : IUserManagementService
 
         var outcome = await InviteOneAsync(email, validRoleIds, cancellationToken);
         if (outcome.Error is not null)
+        {
+            // ISSUE-005: audit an over-plan-limit invite denial (BR-5). InviteOneAsync fails before staging
+            // the user/invitation, so nothing else is pending — this persists only the denial audit row.
+            if (outcome.ErrorCode == "plan_limit_reached")
+            {
+                WriteInviteDeniedAudit(email, "plan_limit");
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+
             return Result.Failure<InviteResultDto>(outcome.Error.Error ?? "Invite failed.", outcome.StatusCode ?? 400, outcome.ErrorCode);
+        }
 
         await _db.SaveChangesAsync(cancellationToken);
         await DispatchInvitationAsync(outcome.Invitation!, outcome.RawToken!, cancellationToken);
@@ -272,6 +282,7 @@ public sealed class UserManagementService : IUserManagementService
         var created = new List<UserInvitation>();
         var rawTokens = new List<string>();
         var errors = new List<InviteRowErrorDto>();
+        var deniedAudits = 0; // ISSUE-005: count of staged plan-limit denial audit rows.
 
         foreach (var row in rows)
         {
@@ -307,6 +318,14 @@ public sealed class UserManagementService : IUserManagementService
             var outcome = await InviteOneAsync(email, resolvedRoleIds.Distinct().ToList(), cancellationToken);
             if (outcome.Error is not null)
             {
+                // ISSUE-005: audit an over-plan-limit invite denial (BR-5). Staged here and persisted by the
+                // batch SaveChanges below (which now also runs when the batch produced only denials).
+                if (outcome.ErrorCode == "plan_limit_reached")
+                {
+                    WriteInviteDeniedAudit(email, "plan_limit");
+                    deniedAudits++;
+                }
+
                 errors.Add(new InviteRowErrorDto(email, outcome.Error.Error!));
                 continue;
             }
@@ -315,7 +334,7 @@ public sealed class UserManagementService : IUserManagementService
             rawTokens.Add(outcome.RawToken!);
         }
 
-        if (created.Count > 0)
+        if (created.Count > 0 || deniedAudits > 0)
         {
             await _db.SaveChangesAsync(cancellationToken);
             for (var i = 0; i < created.Count; i++)
@@ -448,8 +467,22 @@ public sealed class UserManagementService : IUserManagementService
             var currentlyOwner = beforeRoleIds.Contains(tenantOwnerRole.Id);
             var newSetOwner = roleIds.Contains(tenantOwnerRole.Id);
             if (currentlyOwner && !newSetOwner)
+            {
+                // ISSUE-005: a BR-2 denial (owner-strip) must leave a security-audit trail, not just fail
+                // silently. Nothing has been mutated yet on this path, so this SaveChanges persists only the
+                // denial audit row (actor = the requesting admin, via WriteAudit's _currentUser).
+                WriteAudit("User.RoleChangeDenied", "UserTenant", userTenant.Id,
+                    before: new { RoleIds = beforeRoleIds },
+                    after: new
+                    {
+                        AttemptedRoleIds = roleIds.Distinct().OrderBy(g => g).ToList(),
+                        Reason = "owner_role_protected",
+                    });
+                await _db.SaveChangesAsync(cancellationToken);
+
                 return Result.Failure(
                     "The Tenant Owner role cannot be removed. Transfer ownership first.", 400, "owner_role_protected");
+            }
         }
 
         // Replace the role set.
@@ -495,7 +528,16 @@ public sealed class UserManagementService : IUserManagementService
 
         // BR-3: cannot deactivate your OWN membership.
         if (userTenant.UserId == _currentUser.UserId)
+        {
+            // ISSUE-005: audit the DENIED self-deactivation before rejecting. Nothing has been mutated yet,
+            // so this SaveChanges persists only the denial audit row.
+            WriteAudit("User.DeactivateDenied", "UserTenant", userTenant.Id,
+                before: new { Status = userTenant.Status.ToString() },
+                after: new { Reason = "self_deactivation" });
+            await _db.SaveChangesAsync(cancellationToken);
+
             return Result.Failure("You cannot deactivate your own account.", 400, "self_deactivation");
+        }
 
         var beforeStatus = userTenant.Status.ToString();
         userTenant.Status = UserTenantStatus.Disabled;
@@ -689,6 +731,14 @@ public sealed class UserManagementService : IUserManagementService
                 invitation.Id);
         }
     }
+
+    /// <summary>
+    /// ISSUE-005: security-audit row for a DENIED invite (BR-5 plan-limit). No invitation row is created, so
+    /// the resource id is <see cref="Guid.Empty"/> and the target email + reason are recorded in the detail.
+    /// </summary>
+    private void WriteInviteDeniedAudit(string email, string reason)
+        => WriteAudit("User.InviteDenied", "UserInvitation", Guid.Empty,
+            before: null, after: new { Email = email, Reason = reason });
 
     private void WriteAudit(string action, string resourceType, Guid resourceId, object? before, object? after)
     {

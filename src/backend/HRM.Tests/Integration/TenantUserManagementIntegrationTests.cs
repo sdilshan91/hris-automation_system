@@ -394,6 +394,84 @@ public sealed class TenantUserManagementIntegrationTests
         result.ErrorCode.Should().Be("self_deactivation");
     }
 
+    // ── ISSUE-005: denied BR mutations MUST still write a denial audit row ─────
+    // Pre-fix: every guarded path `return Result.Failure(...)` BEFORE any WriteAudit,
+    // so NO audit_log row is written for the denied attempt → these fail (zero rows).
+    // Post-fix: the denial is audited (actor, denied, reason) → these pass.
+    // The action string the fix picks is not fixed by the finding (AuthService uses
+    // "*_denied"; this service uses "User.*"), so we assert on naming-tolerant invariants:
+    // the operation is still rejected + state unchanged (denial held), AND a NEW audit row
+    // now exists for (this admin actor, the target membership) whose content NAMES the reason.
+
+    [Fact]
+    public async Task Deactivate_Self_WritesDenialAudit_ISSUE005()
+    {
+        var mediator = BuildPipeline(_tenantA, _adminUserA);
+
+        var result = await mediator.Send(new DeactivateUserCommand(_adminUtA));
+
+        // Unchanged behaviour: BR-3 still rejects self-deactivation.
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("self_deactivation");
+
+        using var db = ReadDb(_tenantA);
+
+        // Denial held — the admin's own membership was NOT disabled.
+        db.UserTenants.IgnoreQueryFilters().Single(ut => ut.Id == _adminUtA).Status
+            .Should().Be(UserTenantStatus.Active);
+
+        // The seed writes NO successful op against the admin's own membership, so any audit row
+        // scoped to (actor = this admin, resource = _adminUtA) is necessarily the denial row.
+        var denialRows = db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.UserId == _adminUserA && a.ResourceId == _adminUtA.ToString())
+            .ToList();
+
+        denialRows.Should().NotBeEmpty(
+            "ISSUE-005: a self-deactivation rejected by BR-3 must still be audited (pre-fix: no row is written)");
+
+        var blob = AuditBlob(denialRows);
+        (blob.Contains("self") || blob.Contains("own")).Should().BeTrue(
+            "the denial audit must NAME the reason (self-deactivation), not just record that something happened");
+    }
+
+    [Fact]
+    public async Task EditRoles_OwnerStrip_WritesDenialAudit_ISSUE005()
+    {
+        var mediator = BuildPipeline(_tenantA, _adminUserA);
+
+        // BR-2: strip the Tenant Owner role from the owner (replace with Manager only).
+        var result = await mediator.Send(new EditUserRolesCommand(_ownerUtA, new[] { _managerRoleA }));
+
+        // Unchanged behaviour: BR-2 still rejects the owner-role strip.
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("owner_role_protected");
+
+        using var db = ReadDb(_tenantA);
+
+        // Denial held — the owner still holds the Tenant Owner role.
+        db.UserTenantRoles.Where(utr => utr.UserTenantId == _ownerUtA).Select(utr => utr.RoleId)
+            .Should().Contain(_ownerRoleA);
+
+        // No successful op touches _ownerUtA in the seed, so any (admin actor, _ownerUtA) audit row is the denial.
+        var denialRows = db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.UserId == _adminUserA && a.ResourceId == _ownerUtA.ToString())
+            .ToList();
+
+        denialRows.Should().NotBeEmpty(
+            "ISSUE-005: an owner-role strip rejected by BR-2 must still be audited (pre-fix: no row is written)");
+
+        AuditBlob(denialRows).Should().Contain("owner",
+            "the denial audit must NAME the reason (Tenant Owner role protected)");
+    }
+
+    // Flattens every text field of the matched audit rows to one lower-case blob so the reason
+    // assertion is tolerant of WHERE the fix records the reason (Action / EventType / Detail /
+    // Before / After) and of the exact wording (reason code vs human message).
+    private static string AuditBlob(IEnumerable<AuditLog> rows) => string.Join(
+        " | ",
+        rows.Select(r => $"{r.EventType} {r.Action} {r.Detail} {r.Before} {r.After}"))
+        .ToLowerInvariant();
+
     [Fact]
     public async Task Deactivate_DoesNotAffectOtherTenantMembership()
     {
