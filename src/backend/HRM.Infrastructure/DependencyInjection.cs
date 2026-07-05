@@ -371,6 +371,11 @@ public static class DependencyInjection
         services.AddScoped<ISelfAssessmentService, SelfAssessmentService>();
         services.AddScoped<ISelfAssessmentReminderService, SelfAssessmentReminderService>();
 
+        // US-PRF-002 (FR-5 / ISSUE-105): self-assessment evidence-file attachments (upload / list / download).
+        // Kept SEPARATE from ISelfAssessmentService so the ratings service constructor is untouched. Reuses the
+        // existing IFileStorage + IVirusScanner seams; scoped to the caller's own self-assessment + tenant.
+        services.AddScoped<ISelfAssessmentAttachmentService, SelfAssessmentAttachmentService>();
+
         // US-PRF-003: Performance — manager performance review (workspace / save-draft / submit / reopen /
         // team dashboard). The manager-review-window gate (BR-1/AC-5), the direct-report scope (BR-2) and
         // HR-override + reopen (BR-3/AC-5), the all-goals-rated + comment-length submit rules (AC-3/FR-3), the
@@ -590,9 +595,20 @@ public static class DependencyInjection
             return new LocalFileStorage(basePath, logger);
         });
 
-        // Virus scanner (US-CHR-001 NFR-3)
-        // TODO(prod): Wire ClamAV or equivalent production scanner.
-        services.AddSingleton<IVirusScanner, AllowWithLogVirusScanner>();
+        // Virus scanner (US-CHR-001 NFR-3 / ISSUE-101). Pluggable + config-gated: when a ClamAV daemon host
+        // is configured (VirusScanning:ClamAv:Host) we wire the real ClamAvVirusScanner (INSTREAM over TCP,
+        // fail-closed by default); otherwise we keep the AllowWithLogVirusScanner allow-stub so unconfigured
+        // environments/tests behave exactly as before. Mirrors the optional-Redis gate below.
+        var clamAvHost = configuration[$"{ClamAvOptions.SectionName}:Host"];
+        if (!string.IsNullOrWhiteSpace(clamAvHost))
+        {
+            services.Configure<ClamAvOptions>(configuration.GetSection(ClamAvOptions.SectionName));
+            services.AddSingleton<IVirusScanner, ClamAvVirusScanner>();
+        }
+        else
+        {
+            services.AddSingleton<IVirusScanner, AllowWithLogVirusScanner>();
+        }
 
         // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
         services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
