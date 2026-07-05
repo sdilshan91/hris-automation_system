@@ -390,6 +390,18 @@ public sealed class SalaryAssignmentService : ISalaryAssignmentService
             return Result<CtcBreakdownDto>.Failure($"A component formula could not be evaluated: {ex.Message}", 400, "invalid_formula");
         }
 
+        // BUG-070: when the caller overrides a SUBSET of components, absorb the leftover (target CTC − sum of
+        // all other earnings) into a single designated RESIDUAL earning component (Special Allowance, else
+        // Basic) instead of rejecting the partial override. Gated on overrides being present so a structure
+        // with no overrides that genuinely mismatches still fails FR-6 (ctc_sum_mismatch) unchanged.
+        if (overrides.Count > 0)
+        {
+            var balance = CtcResidualBalancer.Balance(resolved, annualCtc, overrides.Keys.ToHashSet(), CtcTolerance);
+            if (!balance.Success)
+                return Result<CtcBreakdownDto>.Failure(balance.Error!, 400, balance.ErrorCode);
+            resolved = balance.Components;
+        }
+
         var lines = resolved.Select((r, i) =>
         {
             components.TryGetValue(r.ComponentId, out var component);

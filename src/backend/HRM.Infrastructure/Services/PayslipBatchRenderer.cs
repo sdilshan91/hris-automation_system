@@ -90,8 +90,20 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             ? await BuildYtdAsync(run.PayYear, run.PayMonth, employeeIds, cancellationToken)
             : null;
 
-        var companyName = string.IsNullOrWhiteSpace(_tenantContext.Subdomain) ? "Company" : _tenantContext.Subdomain;
         var tenantId = _tenantContext.TenantId;
+
+        // ISSUE-158: per-tenant branding (name/address/colour + logo) applied to every slip in the run. The
+        // Tenant row is NOT covered by the global query filter (it IS the tenant), so it is loaded strictly by
+        // the resolved tenant id — no cross-tenant access. Logo bytes are resolved ONCE (shared across slips).
+        var tenant = await _dbContext.Tenants.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        var logoBytes = tenant is not null ? await ResolveLogoBytesAsync(tenant, cancellationToken) : null;
+        var branding = tenant is not null
+            ? PayslipBranding.From(tenant, logoBytes, _tenantContext.Subdomain)
+            : new PayslipBranding
+            {
+                CompanyName = string.IsNullOrWhiteSpace(_tenantContext.Subdomain) ? "Company" : _tenantContext.Subdomain!,
+            };
 
         var generated = 0;
         var failed = 0;
@@ -110,7 +122,7 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
                     var details = detailsBySlip.GetValueOrDefault(slip.Id, new List<PayrollSlipDetail>());
 
                     var model = BuildModel(
-                        slip, employee, details, companyName, departments, jobTitles, showYtd,
+                        slip, employee, details, branding, departments, jobTitles, showYtd,
                         ytdByComponent?.GetValueOrDefault((slip.EmployeeId, false)),
                         ytdByComponent?.GetValueOrDefault((slip.EmployeeId, true)));
 
@@ -212,7 +224,7 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
         PayrollSlip slip,
         Employee? employee,
         List<PayrollSlipDetail> details,
-        string companyName,
+        PayslipBranding branding,
         IReadOnlyDictionary<Guid, string> departments,
         IReadOnlyDictionary<Guid, string> jobTitles,
         bool showYtd,
@@ -236,10 +248,11 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
 
         return new PayslipDocumentModel
         {
-            CompanyName = companyName,
-            CompanyAddress = null, // basic per-tenant branding only (logo/name) — address config deferred (module note).
-            CompanyLogoUrl = null,
-            BrandPrimaryColor = null,
+            CompanyName = branding.CompanyName,
+            CompanyAddress = branding.CompanyAddress, // ISSUE-158: tenant registered address (org.address).
+            CompanyLogoUrl = null,                    // logo carried as bytes below (renderer never fetches a URL).
+            CompanyLogoBytes = branding.LogoBytes,    // ISSUE-158: pre-resolved tenant logo (PNG/JPEG) or null.
+            BrandPrimaryColor = branding.PrimaryColor, // ISSUE-158: tenant primary colour for header/accents.
             FooterDisclaimer = DefaultDisclaimer, // BR-3: tenant-configurable footer deferred — see module note.
             PayMonth = slip.PayMonth,
             PayYear = slip.PayYear,
@@ -264,6 +277,90 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
     private static bool IsDeductionSide(string componentType) =>
         string.Equals(componentType, nameof(SalaryComponentType.Deduction), StringComparison.OrdinalIgnoreCase)
         || string.Equals(componentType, nameof(SalaryComponentType.Statutory), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// ISSUE-158: resolves the tenant logo bytes from tenant-scoped storage for the payslip header. The stored
+    /// <see cref="Tenant.LogoUrl"/> is the app-internal storage path ("/{tenantId}/branding/logo.png"), so the
+    /// bytes are loaded via <see cref="IFileStorage"/> — NO outbound HTTP fetch is performed inside the renderer.
+    /// Degrades gracefully to null on any failure (missing/blank URL, external URL, missing file, unreadable or
+    /// non-decodable image) so the payslip renders without a logo rather than failing the slip.
+    /// </summary>
+    private async Task<byte[]?> ResolveLogoBytesAsync(Tenant tenant, CancellationToken ct)
+    {
+        var relativePath = ToStorageRelativePath(tenant.Id, tenant.LogoUrl);
+        if (relativePath is null)
+            return null;
+
+        try
+        {
+            await using var stream = await _fileStorage.OpenReadAsync(tenant.Id, relativePath, ct);
+            if (stream is null)
+                return null;
+
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer, ct);
+            var bytes = buffer.ToArray();
+            if (bytes.Length == 0)
+                return null;
+
+            // Validate the bytes are a decodable image up front so a corrupt asset degrades to "no logo"
+            // rather than throwing mid-render (which would fail the whole slip). Decoding once here also
+            // fails fast before the per-slip loop re-uses the bytes.
+            if (!IsRenderableImage(bytes))
+            {
+                _logger.LogWarning(
+                    "Payslip logo bytes were not a decodable image; rendering without a logo. Tenant={TenantId}, Path={Path}",
+                    tenant.Id, relativePath);
+                return null;
+            }
+
+            return bytes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Payslip logo could not be loaded; rendering without a logo. Tenant={TenantId}, Path={Path}",
+                tenant.Id, relativePath);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Maps the tenant <see cref="Tenant.LogoUrl"/> to an <see cref="IFileStorage"/> relative path. Uploads are
+    /// stored as "/{tenantId}/{relativePath}" (see LocalFileStorage.UploadAsync), so the tenant prefix is
+    /// stripped. Returns null for a blank URL or an absolute http(s) URL (which the renderer must NOT fetch).
+    /// </summary>
+    private static string? ToStorageRelativePath(Guid tenantId, string? logoUrl)
+    {
+        if (string.IsNullOrWhiteSpace(logoUrl))
+            return null;
+
+        var url = logoUrl.Trim();
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return null; // external asset — no outbound fetch from the renderer (ISSUE-158 constraint).
+
+        var prefix = $"/{tenantId}/";
+        if (url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            url = url[prefix.Length..];
+
+        var relative = url.TrimStart('/');
+        return string.IsNullOrWhiteSpace(relative) ? null : relative;
+    }
+
+    /// <summary>True when the bytes decode as an image QuestPDF can render (defensive graceful-degrade check).</summary>
+    private static bool IsRenderableImage(byte[] bytes)
+    {
+        try
+        {
+            _ = QuestPDF.Infrastructure.Image.FromBinaryData(bytes);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// BR-4: tenant YTD-display flag. No per-tenant config surface exists yet, so this DEFAULTS OFF. The

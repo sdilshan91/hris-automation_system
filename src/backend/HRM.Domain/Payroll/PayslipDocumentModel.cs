@@ -12,6 +12,12 @@ public sealed record PayslipDocumentModel
     public required string CompanyName { get; init; }
     public string? CompanyAddress { get; init; }
     public string? CompanyLogoUrl { get; init; }
+    /// <summary>
+    /// Tenant logo image bytes (PNG/JPEG) rendered in the header (ISSUE-158). Resolved from the tenant's
+    /// stored branding asset via IFileStorage by the generation service — NOT fetched over HTTP by the pure
+    /// renderer. Null = render without a logo (graceful degrade).
+    /// </summary>
+    public byte[]? CompanyLogoBytes { get; init; }
     /// <summary>Tenant primary colour (hex, e.g. "#1d4ed8") applied to header/footer accents (§8). Null = default.</summary>
     public string? BrandPrimaryColor { get; init; }
     /// <summary>BR-3 disclaimer/footer text. Defaults to the system disclaimer when the tenant has none.</summary>
