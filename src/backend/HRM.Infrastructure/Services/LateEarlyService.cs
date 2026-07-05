@@ -174,19 +174,18 @@ public sealed class LateEarlyService : ILateEarlyService
                 && a.ClockIn >= rangeStart && a.ClockIn < rangeEnd)
             .Select(a => new
             {
-                a.EmployeeId, a.IsLate, a.LateMinutes, a.IsEarlyDeparture, a.EarlyDepartureMinutes,
+                a.EmployeeId, a.ClockIn, a.IsLate, a.LateMinutes, a.IsEarlyDeparture, a.EarlyDepartureMinutes,
             })
             .ToListAsync(cancellationToken);
 
+        // ISSUE-084: derive the counts from the single shared CountLateEarly definition (distinct days)
+        // so this report reconciles with the self-score and the monthly summary for the same employee.
         var byEmp = logs
             .GroupBy(l => l.EmployeeId)
             .ToDictionary(
                 g => g.Key,
-                g => (
-                    LateCount: g.Count(x => x.IsLate),
-                    LateMinutes: g.Where(x => x.IsLate).Sum(x => x.LateMinutes),
-                    EarlyCount: g.Count(x => x.IsEarlyDeparture),
-                    EarlyMinutes: g.Where(x => x.IsEarlyDeparture).Sum(x => x.EarlyDepartureMinutes)));
+                g => CountLateEarly(g.Select(x => new LateEarlyLogRow(
+                    x.ClockIn, x.IsLate, x.LateMinutes, x.IsEarlyDeparture, x.EarlyDepartureMinutes))));
 
         // Chronic threshold (FR-7) from the tenant policy; 0 / no-policy → never chronic.
         var policy = await _dbContext.LatePolicies.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
@@ -244,23 +243,65 @@ public sealed class LateEarlyService : ILateEarlyService
 
         var logs = await _dbContext.AttendanceLogs.AsNoTracking()
             .Where(a => a.EmployeeId == employee.Id && a.ClockIn >= rangeStart && a.ClockIn < rangeEnd)
-            .Select(a => new { a.IsLate, a.IsEarlyDeparture })
+            .Select(a => new { a.ClockIn, a.IsLate, a.LateMinutes, a.IsEarlyDeparture, a.EarlyDepartureMinutes })
             .ToListAsync(cancellationToken);
 
         var policy = await _dbContext.LatePolicies.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
 
+        // ISSUE-084: same shared CountLateEarly definition (distinct days) as GetReportAsync, so the
+        // self-score and the manager/HR report never disagree for the same employee/period.
+        var counts = CountLateEarly(logs.Select(l => new LateEarlyLogRow(
+            l.ClockIn, l.IsLate, l.LateMinutes, l.IsEarlyDeparture, l.EarlyDepartureMinutes)));
+
         return Result<LatenessScoreDto>.Success(new LatenessScoreDto
         {
             YearMonth = $"{year:D4}-{month:D2}",
-            LateCount = logs.Count(l => l.IsLate),
+            LateCount = counts.LateCount,
             AllowedLates = policy?.ChronicThreshold ?? 0,
-            EarlyDepartureCount = logs.Count(l => l.IsEarlyDeparture),
+            EarlyDepartureCount = counts.EarlyCount,
         });
     }
 
     // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// ISSUE-084: the SINGLE canonical late/early COUNT definition shared by the manager/HR report
+    /// (AC-5/FR-6) and the employee self-score (§8). Counts the number of DISTINCT DAYS on which the
+    /// employee was late / left early — matching the monthly summary's visible "Late Count" /
+    /// "Early Departure Count" (US-ATT-007, one per calendar day) so the same employee shows identical
+    /// counts on every US-ATT-008 surface. Counting distinct days (rather than raw logs) prevents a
+    /// second same-day punch from double-counting. The day basis is the UTC calendar day of clock-in —
+    /// the same basis the monthly summary buckets by. Late/early MINUTES stay additive across all logs.
+    /// </summary>
+    private static (int LateCount, int LateMinutes, int EarlyCount, int EarlyMinutes) CountLateEarly(
+        IEnumerable<LateEarlyLogRow> logs)
+    {
+        var lateDays = new HashSet<DateOnly>();
+        var earlyDays = new HashSet<DateOnly>();
+        int lateMinutes = 0, earlyMinutes = 0;
+
+        foreach (var log in logs)
+        {
+            var day = DateOnly.FromDateTime(log.ClockIn);
+            if (log.IsLate)
+            {
+                lateDays.Add(day);
+                lateMinutes += log.LateMinutes;
+            }
+            if (log.IsEarlyDeparture)
+            {
+                earlyDays.Add(day);
+                earlyMinutes += log.EarlyDepartureMinutes;
+            }
+        }
+
+        return (lateDays.Count, lateMinutes, earlyDays.Count, earlyMinutes);
+    }
+
+    private readonly record struct LateEarlyLogRow(
+        DateTime ClockIn, bool IsLate, int LateMinutes, bool IsEarlyDeparture, int EarlyDepartureMinutes);
 
     private async Task<Dictionary<Guid, string>> DepartmentNamesAsync(
         IReadOnlyList<Employee> employees, CancellationToken ct)

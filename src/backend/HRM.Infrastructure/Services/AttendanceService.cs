@@ -155,8 +155,11 @@ public sealed class AttendanceService : IAttendanceService
             employee.Id, DateOnly.FromDateTime(log.ClockIn), settings, cancellationToken);
         if (shiftSignals is { } ss)
         {
+            // ISSUE-065: the punch instant is stored in UTC, but the shift start is configured in the
+            // tenant's local time zone — compare LOCAL wall-clock to local shift start (UTC fallback).
+            var tenantTimeZone = await ResolveTenantTimeZoneAsync(cancellationToken);
             var lateEarly = LateEarlyCalculator.Evaluate(
-                clockInTime: TimeOnly.FromDateTime(log.ClockIn),
+                clockInTime: ToLocalTimeOfDay(log.ClockIn, tenantTimeZone),
                 clockOutTime: null,
                 shiftStart: ss.Start,
                 shiftEnd: ss.End,
@@ -273,9 +276,12 @@ public sealed class AttendanceService : IAttendanceService
             openLog.EmployeeId, DateOnly.FromDateTime(openLog.ClockIn), settings, cancellationToken);
         if (shiftSignals is { } ss)
         {
+            // ISSUE-065: compare LOCAL wall-clock times (tenant time zone) to the local shift start/end.
+            // Both instants are stored in UTC; only the late/early comparison uses local time (UTC fallback).
+            var tenantTimeZone = await ResolveTenantTimeZoneAsync(cancellationToken);
             var lateEarly = LateEarlyCalculator.Evaluate(
-                clockInTime: TimeOnly.FromDateTime(openLog.ClockIn),
-                clockOutTime: TimeOnly.FromDateTime(clockOut),
+                clockInTime: ToLocalTimeOfDay(openLog.ClockIn, tenantTimeZone),
+                clockOutTime: ToLocalTimeOfDay(clockOut, tenantTimeZone),
                 shiftStart: ss.Start,
                 shiftEnd: ss.End,
                 gracePeriodMinutes: ss.Grace,
@@ -632,6 +638,36 @@ public sealed class AttendanceService : IAttendanceService
 
     private static TimeOnly? ParseTime(string? hhmm)
         => TimeOnly.TryParse(hhmm, out var t) ? t : null;
+
+    /// <summary>
+    /// ISSUE-065: resolves the tenant's configured IANA time zone (locale.time_zone, validated on write —
+    /// BUG-005) so a UTC punch instant can be compared against the shift's local start/end for late/early
+    /// detection. Falls back to UTC when the tenant has no (or an unrecognized) time zone — preserving the
+    /// prior behavior rather than throwing.
+    /// </summary>
+    private async Task<TimeZoneInfo> ResolveTenantTimeZoneAsync(CancellationToken cancellationToken)
+    {
+        var tzId = await _dbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.TimeZone)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return !string.IsNullOrWhiteSpace(tzId)
+            && TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var tz)
+                ? tz
+                : TimeZoneInfo.Utc;
+    }
+
+    /// <summary>
+    /// ISSUE-065: projects a UTC instant to the tenant-local wall-clock time-of-day used by
+    /// <see cref="LateEarlyCalculator"/>. The record continues to store the instant in UTC; only the
+    /// late/early comparison uses the local time.
+    /// </summary>
+    private static TimeOnly ToLocalTimeOfDay(DateTime utcInstant, TimeZoneInfo tenantTimeZone)
+        => TimeOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc), tenantTimeZone));
 
     private async Task TryRecordIdempotencyAsync(
         string key, AttendanceLogDto dto, CancellationToken cancellationToken)
