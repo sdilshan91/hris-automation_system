@@ -47,6 +47,12 @@ public static class PayslipPdfRenderer
                 {
                     header.Item().BorderBottom(2).BorderColor(accent).PaddingBottom(6).Row(row =>
                     {
+                        // ISSUE-158: tenant logo (when resolved). Bounded to a 110x48 box, aspect preserved.
+                        if (model.CompanyLogoBytes is { Length: > 0 } logo)
+                        {
+                            row.ConstantItem(110).AlignMiddle().Height(48).Image(logo).FitArea();
+                            row.ConstantItem(12);
+                        }
                         row.RelativeItem().Column(c =>
                         {
                             c.Item().Text(model.CompanyName).FontSize(18).Bold().FontColor(accent);
