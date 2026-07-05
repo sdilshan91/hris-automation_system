@@ -157,6 +157,55 @@ public sealed class PermissionCatalogTests
         perms.Should().NotContain(PermissionCatalog.Leave.ManageLop);
     }
 
+    // ── BUG-027 / BUG-034: HR Officer must be able to CONFIGURE leave policy — i.e. set up leave ──
+    // ── entitlements (BUG-027) and run the carry-forward PREVIEW (BUG-034). Both endpoints are gated ──
+    // ── by Leave.ConfigurePolicy, which was granted to Tenant Owner / Tenant Admin / HR Manager but ──
+    // ── NOT to HR Officer, so an HR Officer was 403'd from the entitlement-config + carry-forward     ──
+    // ── preview surfaces. Fix: add Leave.ConfigurePolicy to the HR Officer role map. These tests key  ──
+    // ── on the REAL catalog role→permission map (DefaultPermissionsFor), so pre-fix the HR Officer arm ──
+    // ── is red and post-fix it is green; the negative arm proves the fix is not a blanket grant.       ──
+
+    [Fact]
+    public void HrOfficer_HasLeaveConfigurePolicy_BUG027_034()
+    {
+        // KEY REGRESSION: pre-fix HR Officer's default permission set LACKS Leave.ConfigurePolicy -> red.
+        // Post-fix it is present -> green. Keyed on the real catalog map, not a hand-copied literal.
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.HROfficer);
+
+        perms.Should().Contain(PermissionCatalog.Leave.ConfigurePolicy,
+            "HR Officer configures leave entitlements (BUG-027) and runs the carry-forward preview (BUG-034)");
+    }
+
+    [Theory]
+    [InlineData("Tenant Admin")]
+    [InlineData("HR Manager")]
+    [InlineData("HR Officer")]
+    public void DefaultPermissionsFor_HrAdminRoles_HaveLeaveConfigurePolicy_BUG027_034(string roleName)
+    {
+        // The full set of HR-administrative roles that must hold Leave.ConfigurePolicy. Tenant Admin /
+        // HR Manager pass both pre- and post-fix; HR Officer is the arm that flips red -> green.
+        var perms = PermissionCatalog.DefaultPermissionsFor(roleName);
+
+        perms.Should().Contain(PermissionCatalog.Leave.ConfigurePolicy,
+            $"role '{roleName}' administers leave and must configure leave policy (BUG-027/BUG-034)");
+    }
+
+    [Theory]
+    [InlineData("Manager")]
+    [InlineData("Employee")]
+    [InlineData("Recruiter")]
+    [InlineData("Auditor")]
+    public void DefaultPermissionsFor_NonLeaveAdminRoles_DoNotHaveLeaveConfigurePolicy_BUG027_034(string roleName)
+    {
+        // NEGATIVE ARM (proves the fix is not a blanket grant): roles that do NOT administer leave
+        // policy must still NOT hold Leave.ConfigurePolicy. Passes both pre- and post-fix; it exists so
+        // a fix that over-granted the permission would be caught.
+        var perms = PermissionCatalog.DefaultPermissionsFor(roleName);
+
+        perms.Should().NotContain(PermissionCatalog.Leave.ConfigurePolicy,
+            $"role '{roleName}' does not configure leave policy — the fix must add it to HR Officer only, not broadly (BUG-027/BUG-034)");
+    }
+
     [Fact]
     public void DefaultPermissionsFor_AllBuiltInRoles_ShouldContainOnlyValidPermissions()
     {

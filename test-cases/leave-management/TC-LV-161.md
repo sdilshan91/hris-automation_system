@@ -6,6 +6,16 @@ priority: critical
 type: security
 status: fail
 created: 2026-06-14
+defect:
+  - BUG-034
+automated_by:
+  # Unit-level regression guarding the ROOT CAUSE: the carry-forward preview is gated by
+  # Leave.ConfigurePolicy, which HR Officer lacked (403 for the config persona in §5 step 1).
+  # These assert HR Officer now holds Leave.ConfigurePolicy on the real catalog map. The live
+  # 200/403 preview matrix in §5 remains for /verify-fix to confirm; status stays `fail` until then.
+  - HRM.Tests.Unit.PermissionCatalogTests.HrOfficer_HasLeaveConfigurePolicy_BUG027_034
+  - HRM.Tests.Unit.PermissionCatalogTests.DefaultPermissionsFor_HrAdminRoles_HaveLeaveConfigurePolicy_BUG027_034
+  - HRM.Tests.Unit.PermissionCatalogTests.DefaultPermissionsFor_NonLeaveAdminRoles_DoNotHaveLeaveConfigurePolicy_BUG027_034
 ---
 
 # TC-LV-161: Preview API authorization -- only leave-config permission holders may preview carry-forward (AC-5, NFR-2)

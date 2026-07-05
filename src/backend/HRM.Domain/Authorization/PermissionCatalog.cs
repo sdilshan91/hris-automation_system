@@ -650,7 +650,7 @@ public static class PermissionCatalog
             LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
             Holiday.View, Holiday.Create, Holiday.Edit, Holiday.Deactivate, Holiday.Import,
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
-            Leave.ViewAll, Leave.ApproveAll, Leave.ManageLop, Leave.Reports,
+            Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
