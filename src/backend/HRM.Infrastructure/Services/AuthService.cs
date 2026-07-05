@@ -30,6 +30,10 @@ public sealed class AuthService : IAuthService
     private readonly IDistributedCache _cache;
     private readonly ILogger<AuthService> _logger;
     private readonly IBackgroundJobClient _backgroundJobClient;
+    // ISSUE-058: needed to attribute admin session-revoke audits to the ACTING admin, not the victim.
+    // Optional (nullable, default null) so isolated unit construction that omits it still compiles; the DI
+    // container injects the registered scoped ICurrentUser in production.
+    private readonly ICurrentUser? _currentUser;
 
     public AuthService(
         AppDbContext dbContext,
@@ -39,7 +43,8 @@ public sealed class AuthService : IAuthService
         IConfiguration configuration,
         IDistributedCache cache,
         ILogger<AuthService> logger,
-        IBackgroundJobClient backgroundJobClient)
+        IBackgroundJobClient backgroundJobClient,
+        ICurrentUser? currentUser = null)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
@@ -49,6 +54,7 @@ public sealed class AuthService : IAuthService
         _cache = cache;
         _logger = logger;
         _backgroundJobClient = backgroundJobClient;
+        _currentUser = currentUser;
     }
 
     public async Task<Result<LoginResponse>> LoginAsync(
@@ -838,6 +844,9 @@ public sealed class AuthService : IAuthService
 
         if (targetTenant is null)
         {
+            // ISSUE-055 (US-AUTH-008): a DENIED switch must leave a security-audit trail, not just succeed silently.
+            await WriteTenantSwitchDeniedAuditAsync(
+                userId, sourceTenantId, targetTenantId, "target_tenant_not_found", ipAddress, userAgent, cancellationToken);
             return Result<SwitchTenantResponse>.Failure(
                 "You do not have an active membership in this organization.",
                 403);
@@ -845,6 +854,9 @@ public sealed class AuthService : IAuthService
 
         if (targetTenant.Status is not (TenantStatus.Active or TenantStatus.Trial))
         {
+            // ISSUE-055 (US-AUTH-008): audit the denial (target tenant not in an accessible state).
+            await WriteTenantSwitchDeniedAuditAsync(
+                userId, sourceTenantId, targetTenantId, $"target_tenant_{targetTenant.Status}", ipAddress, userAgent, cancellationToken);
             return Result<SwitchTenantResponse>.Failure(
                 $"The target organization is unavailable ({targetTenant.Status}).",
                 403);
@@ -861,6 +873,9 @@ public sealed class AuthService : IAuthService
 
         if (userTenant is null || userTenant.Status != UserTenantStatus.Active)
         {
+            // ISSUE-055 (US-AUTH-008): audit the denial (no active membership in the target tenant — non-member).
+            await WriteTenantSwitchDeniedAuditAsync(
+                userId, sourceTenantId, targetTenantId, "not_a_member", ipAddress, userAgent, cancellationToken);
             return Result<SwitchTenantResponse>.Failure(
                 "You do not have an active membership in this organization.",
                 403);
@@ -871,6 +886,9 @@ public sealed class AuthService : IAuthService
             && userTenant.UserTenantRoles.Any(utr =>
                 targetTenant.MfaRequiredRoles.Contains(utr.Role.Name)))
         {
+            // ISSUE-055 (US-AUTH-008): audit the denial (MFA enrollment required by target-tenant policy).
+            await WriteTenantSwitchDeniedAuditAsync(
+                userId, sourceTenantId, targetTenantId, "mfa_enrollment_required", ipAddress, userAgent, cancellationToken);
             return Result<SwitchTenantResponse>.Failure(
                 "MFA enrollment is required before accessing this organization.",
                 403);
@@ -1455,7 +1473,18 @@ public sealed class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var eventType = isAdminAction ? "session_revoked_by_admin" : "session_revoked_by_user";
-        await WriteAuditLogAsync(userId, eventType, null, null, cancellationToken, tenantId);
+        // ISSUE-058 (US-AUTH-009): stamp the ACTING user as the audit actor. For an admin revoke that is the
+        // acting admin (_currentUser), NOT the session owner (`userId`, the victim); the victim + revoked
+        // session id are carried in the detail so the trail still records WHOSE session was revoked. The
+        // self-revoke path keeps actor == owner (there _currentUser.UserId == userId anyway). If no current
+        // user is resolved (isolated construction), fall back to `userId` so the row is still attributed.
+        var actorUserId = isAdminAction && _currentUser?.IsAuthenticated == true
+            ? _currentUser.UserId
+            : userId;
+        await WriteAuditLogWithDetailAsync(
+            actorUserId, eventType, null, null,
+            new { targetUserId = userId, sessionId },
+            cancellationToken, tenantId);
 
         _logger.LogInformation("Session {SessionId} revoked for user {UserId} in tenant {TenantId} by {Actor}",
             sessionId, userId, tenantId, isAdminAction ? "admin" : "user");
@@ -1903,6 +1932,30 @@ public sealed class AuthService : IAuthService
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// ISSUE-055 (US-AUTH-008): writes a security-audit row for a DENIED tenant switch (non-member,
+    /// unavailable target, MFA-required, etc.). Actor is the requesting user; the attempted target tenant and
+    /// the denial reason are recorded in the detail. Scoped to the source tenant the user is authenticated in.
+    /// </summary>
+    private async Task WriteTenantSwitchDeniedAuditAsync(
+        Guid userId,
+        Guid sourceTenantId,
+        Guid targetTenantId,
+        string reason,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken)
+    {
+        await WriteAuditLogWithDetailAsync(
+            userId,
+            "tenant_switch_denied",
+            ipAddress,
+            userAgent,
+            new { sourceTenantId, targetTenantId, reason },
+            cancellationToken,
+            sourceTenantId);
     }
 
     /// <summary>

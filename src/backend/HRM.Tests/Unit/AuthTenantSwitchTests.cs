@@ -127,6 +127,43 @@ public sealed class AuthTenantSwitchTests
         result.Error.Should().Be("You do not have an active membership in this organization.");
     }
 
+    /// <summary>
+    /// ISSUE-055 (US-AUTH-008, AC audit): a DENIED tenant switch must leave a security-audit trail, not fail
+    /// silently. Pre-fix (see <c>git show HEAD:AuthService.cs</c>) the non-member denial path returned 403 and
+    /// wrote NO audit row, so the assertion below found zero rows and failed. Post-fix the denial path calls
+    /// <c>WriteTenantSwitchDeniedAuditAsync</c>, emitting a <c>tenant_switch_denied</c> row attributed to the
+    /// requesting user with the attempted target tenant in the detail.
+    /// </summary>
+    [Fact]
+    public async Task SwitchTenant_Denied_WritesSecurityAudit_ISSUE055()
+    {
+        // Arrange: the user belongs to the SOURCE tenant but has NO membership in the TARGET (a denied switch).
+        await SeedUserWithTenantsAsync(TenantStatus.Active, includeTargetMembership: false);
+        var service = CreateService();
+
+        // Act
+        var result = await service.SwitchTenantAsync(
+            _userId, _sourceTenantId, _targetTenantId, "203.0.113.10", "unit-test");
+
+        // Assert: the switch is denied ...
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+
+        // ... AND a security-audit row is recorded for the requesting user (the crux of ISSUE-055).
+        using var db = CreateDbContext();
+        var denialAudit = db.AuditLogs
+            .IgnoreQueryFilters()
+            .Where(a => a.EventType.Contains("tenant_switch_denied") && a.UserId == _userId)
+            .ToList();
+
+        denialAudit.Should().ContainSingle(
+            "a denied tenant switch must leave exactly one security-audit row for the requesting user");
+        denialAudit[0].Detail.Should().NotBeNullOrWhiteSpace();
+        denialAudit[0].Detail!.Should().Contain(
+            _targetTenantId.ToString(),
+            "the audited denial should record which target tenant was attempted");
+    }
+
     [Fact]
     public async Task SwitchTenantAsync_SuspendedTargetTenant_ReturnsUnavailableForbidden()
     {

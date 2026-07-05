@@ -183,6 +183,25 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
             ChangedBy = changedBy,
         });
 
+        // ISSUE-025 (US-CHR-009): also record the status change on the CENTRAL audit trail (audit_logs) so it
+        // is queryable via the standard audit-log API — the employee_field_audit_log write above alone is not.
+        // Mirrors the AuditLogs.Add pattern used by RoleService / LeaveTypeService (tenant + actor stamped,
+        // before/after JSON snapshots). The employee_field_audit_log row is intentionally kept alongside.
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = employee.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.StatusChanged",
+            Action = "Employee.StatusChanged",
+            ResourceType = "Employee",
+            ResourceId = employee.Id.ToString(),
+            Before = JsonSerializer.Serialize(new { Status = previousStatus.ToString() }),
+            After = JsonSerializer.Serialize(new { Status = newStatus.ToString() }),
+            Detail = $"Employee status changed from {previousStatus} to {newStatus}.",
+            CreatedAt = DateTime.UtcNow,
+        });
+
         // Side effects (FR-5, AC-3)
         await ApplySideEffectsAsync(employee, newStatus, cancellationToken);
 
