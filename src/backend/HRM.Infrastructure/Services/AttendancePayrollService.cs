@@ -90,6 +90,13 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         // Approved overtime in the period grouped by employee (FR-8) for the multiplier breakdown.
         var overtimeByEmp = await ApprovedOvertimeByEmployeeAsync(monthStart, monthEnd, cancellationToken);
 
+        // ISSUE-090: employees with ANY real attendance record in the period. A non-terminated employee
+        // with ZERO records would otherwise be fabricated as fully absent by the materialized monthly
+        // summary (GetMonthlyAsync generates an all-absent row for every non-terminated employee). Such
+        // employees are OMITTED below — "no data" is not "absent". Employees with partial data keep their
+        // real present/absent computation.
+        var employeesWithRecords = await EmployeesWithAttendanceRecordsAsync(monthStart, monthEnd, cancellationToken);
+
         var rows = new List<AttendancePayrollRowDto>();
         foreach (var emp in employees)
         {
@@ -107,6 +114,12 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
             }
             if (terminatedBeforeMonth)
                 continue;   // terminated before this period — no payroll data.
+
+            // ISSUE-090: a non-terminated employee with no attendance records for the period would be
+            // reported as fully absent by the summary row. Omit them — no data ≠ absent. (Terminated
+            // employees are handled by the BR-7 branch below, which never fabricates absent days.)
+            if (emp.Status != EmployeeStatus.Terminated && !employeesWithRecords.Contains(emp.Id))
+                continue;
 
             int workingDays = await WorkingDaysAsync(emp.Id, monthStart, effectiveEnd, cancellationToken);
 
@@ -319,6 +332,45 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     // ══════════════════════════════════════════════════════════════
 
     private sealed record OvertimeAgg(int TotalMinutes, Dictionary<string, int> ByMultiplier);
+
+    /// <summary>
+    /// ISSUE-090: the set of employees with ANY real attendance record in the period — an attendance log,
+    /// an approved leave overlapping the period, an approved regularization, or approved overtime. Used to
+    /// distinguish a genuinely-empty month (no data) from a real, partially-attended one, so the payroll
+    /// pull never fabricates a full-month-absent row for an employee who simply has no data yet.
+    /// Tenant-scoped via the global query filter.
+    /// </summary>
+    private async Task<HashSet<Guid>> EmployeesWithAttendanceRecordsAsync(
+        DateOnly monthStart, DateOnly monthEnd, CancellationToken ct)
+    {
+        var startUtc = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var endUtc = monthEnd.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var withLogs = await _dbContext.AttendanceLogs.AsNoTracking()
+            .Where(a => a.ClockIn >= startUtc && a.ClockIn < endUtc)
+            .Select(a => a.EmployeeId).Distinct().ToListAsync(ct);
+
+        var withLeave = await _dbContext.LeaveRequests.AsNoTracking()
+            .Where(lr => lr.Status == LeaveRequestStatus.Approved
+                && lr.StartDate <= monthEnd && lr.EndDate >= monthStart)
+            .Select(lr => lr.EmployeeId).Distinct().ToListAsync(ct);
+
+        var withRegularizations = await _dbContext.AttendanceRegularizations.AsNoTracking()
+            .Where(r => r.Status == RegularizationStatus.Approved
+                && r.Date >= monthStart && r.Date <= monthEnd)
+            .Select(r => r.EmployeeId).Distinct().ToListAsync(ct);
+
+        var withOvertime = await _dbContext.OvertimeRecords.AsNoTracking()
+            .Where(o => o.Status == OvertimeStatus.Approved
+                && o.Date >= monthStart && o.Date <= monthEnd)
+            .Select(o => o.EmployeeId).Distinct().ToListAsync(ct);
+
+        var set = new HashSet<Guid>(withLogs);
+        set.UnionWith(withLeave);
+        set.UnionWith(withRegularizations);
+        set.UnionWith(withOvertime);
+        return set;
+    }
 
     /// <summary>
     /// FR-8: approved overtime minutes per employee in the range, with a breakdown by multiplier rate.

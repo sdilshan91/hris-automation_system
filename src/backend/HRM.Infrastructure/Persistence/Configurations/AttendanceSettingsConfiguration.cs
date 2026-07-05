@@ -110,6 +110,12 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .HasDefaultValue(false)
             .IsRequired();
 
+        // US-LV-011 absenteeism report threshold (BR-4) — unplanned LOP days per month.
+        builder.Property(s => s.AbsenteeismThresholdDays)
+            .HasColumnType("numeric(5,2)")
+            .HasDefaultValue(3m)
+            .IsRequired();
+
         builder.Property(s => s.IsDeleted)
             .HasDefaultValue(false)
             .IsRequired();

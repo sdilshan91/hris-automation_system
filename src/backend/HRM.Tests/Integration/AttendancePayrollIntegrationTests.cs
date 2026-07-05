@@ -128,6 +128,26 @@ public sealed class AttendancePayrollIntegrationTests
         EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
     };
 
+    /// <summary>Seeds a completed attendance log so the employee has REAL tracked data for the day.</summary>
+    private void SeedLog(Guid tenantId, Guid employeeId, DateOnly date, int workMinutes = 480)
+    {
+        using var db = Db(tenantId);
+        var clockIn = new DateTime(date.Year, date.Month, date.Day, 9, 0, 0, DateTimeKind.Utc);
+        db.AttendanceLogs.Add(new AttendanceLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            EmployeeId = employeeId,
+            ClockIn = clockIn,
+            ClockOut = clockIn.AddMinutes(workMinutes),
+            TotalWorkMinutes = workMinutes,
+            OvertimeMinutes = 0,
+            Status = "COMPLETE",
+            Source = "WEB",
+        });
+        db.SaveChanges();
+    }
+
     private static ClockInCommand ClockIn() => new(null, null, null, "WEB", "127.0.0.1", "test-agent", null);
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
@@ -221,6 +241,10 @@ public sealed class AttendancePayrollIntegrationTests
     [Fact]
     public async Task GetPayrollData_ReturnsRowPerEmployee()
     {
+        // Give empA a REAL tracked day so it is a genuine (has-data) employee — the row must not depend
+        // on the phantom full-month-absent fabrication that ISSUE-090 removes (2026-04-06 is a Monday).
+        SeedLog(_tenantA, _empA, new DateOnly(2026, 4, 6));
+
         var (mediator, _) = BuildPipeline(_tenantA, _userA);
 
         var result = await mediator.Send(new GetPayrollDataQuery(2026, 4, null));
@@ -228,6 +252,48 @@ public sealed class AttendancePayrollIntegrationTests
         result.IsSuccess.Should().BeTrue();
         result.Value!.Period.Should().Be("2026-04");
         result.Value.Rows.Should().Contain(r => r.EmployeeId == _empA);
+    }
+
+    [Fact]
+    public async Task PayrollData_EmployeeWithNoRecords_NotFullyAbsent_ISSUE090()
+    {
+        // ISSUE-090: payroll-data must NOT fabricate a full-month-absent row for an employee who has NO
+        // attendance records for the period. Seed two Tenant-A employees in the SAME period: empA has one
+        // real tracked day (present), _empNoRecords has none. April 2026 (fully past) has 22 Mon–Fri
+        // working days, so the pre-fix on-demand generation defaults every one of those to ABSENT+LOP for
+        // the no-records employee.
+        var empNoRecords = Guid.NewGuid();
+        using (var db = Db(_tenantA))
+        {
+            db.Employees.Add(Emp(empNoRecords, _tenantA, Guid.NewGuid(), "A-NO-REC"));
+            db.SaveChanges();
+        }
+        SeedLog(_tenantA, _empA, new DateOnly(2026, 4, 6));   // empA: real data (present)
+
+        int workingDays = 0;
+        for (var d = new DateOnly(2026, 4, 1); d <= new DateOnly(2026, 4, 30); d = d.AddDays(1))
+            if (d.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
+                workingDays++;
+        workingDays.Should().Be(22);   // guard the scenario really exercises a "full month" of absences
+
+        var (mediator, _) = BuildPipeline(_tenantA, _userA);
+        var result = await mediator.Send(new GetPayrollDataQuery(2026, 4, null));
+
+        result.IsSuccess.Should().BeTrue();
+
+        // The no-records employee must NOT be reported as absent/LOP for the whole period. Robust to the
+        // fix's chosen representation: either OMITTED (no row) or a no-data marker (row present but not
+        // full-month absent). Pre-fix a fabricated row with AbsentDays == LopDays == 22 exists → fails.
+        var noRec = result.Value!.Rows.Where(r => r.EmployeeId == empNoRecords).ToList();
+        noRec.Should().NotContain(r => r.TotalAbsentDays >= workingDays,
+            "an employee with zero attendance records must not be fabricated as absent for the whole period");
+        noRec.Should().NotContain(r => r.LopDays >= workingDays);
+
+        // Prove the fix did not simply empty the feed: the employee WITH real data is still reported and
+        // is not itself fabricated as full-month absent.
+        var withRec = result.Value.Rows.Single(r => r.EmployeeId == _empA);
+        withRec.TotalPresentDays.Should().BeGreaterThan(0m);
+        withRec.TotalAbsentDays.Should().BeLessThan(workingDays);
     }
 
     // ── Multi-tenant isolation (NFR-3) ──────────────────────────────────────

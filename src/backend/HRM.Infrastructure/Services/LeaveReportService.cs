@@ -905,12 +905,17 @@ public sealed class LeaveReportService : ILeaveReportService
     }
 
     /// <summary>
-    /// BR-4: tenant-configurable absenteeism threshold (unplanned leaves per month). No tenant-settings
-    /// entity exists, so the story default (3) is used.
-    /// TODO(tenant-settings): read the per-tenant threshold from tenant configuration when it exists.
+    /// BR-4: tenant-configurable absenteeism threshold (unplanned LOP days per month). Read from the
+    /// tenant's <see cref="AttendanceSettings.AbsenteeismThresholdDays"/> (tenant-scoped via the global
+    /// query filter); falls back to the story default (3) when the tenant has no settings row yet.
     /// </summary>
-    private Task<decimal> ResolveAbsenteeismThresholdAsync(CancellationToken ct)
-        => Task.FromResult(3m);
+    private async Task<decimal> ResolveAbsenteeismThresholdAsync(CancellationToken ct)
+    {
+        var configured = await _dbContext.AttendanceSettings.AsNoTracking()
+            .Select(s => (decimal?)s.AbsenteeismThresholdDays)
+            .FirstOrDefaultAsync(ct);
+        return configured ?? 3m;
+    }
 
     // ══════════════════════════════════════════════════════════════
     //  Sort / paging / formatting helpers

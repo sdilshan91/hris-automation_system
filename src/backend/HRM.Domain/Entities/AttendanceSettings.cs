@@ -146,4 +146,14 @@ public sealed class AttendanceSettings : BaseEntity
     /// count any qualifying worked day as a full present day; half-day is opt-in per tenant policy.
     /// </summary>
     public bool HalfDayEnabled { get; set; }
+
+    // ── Absenteeism reporting policy (US-LV-011 BR-4) ──────────────────
+
+    /// <summary>
+    /// US-LV-011 BR-4: tenant-configurable absenteeism threshold — the average unplanned-absence (LOP)
+    /// days per month above which an employee is flagged in the Absenteeism report. Default 3. Lives on
+    /// the per-tenant attendance-policy row (this entity) since absenteeism is an attendance concept;
+    /// the leave-module Absenteeism report (US-LV-011) reads it.
+    /// </summary>
+    public decimal AbsenteeismThresholdDays { get; set; } = 3m;
 }

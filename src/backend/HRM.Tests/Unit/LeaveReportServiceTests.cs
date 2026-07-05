@@ -165,6 +165,25 @@ public sealed class LeaveReportServiceTests
         ReportsToEmployeeId = reportsTo, IsActive = true,
     };
 
+    /// <summary>
+    /// BUG-038: seeds the per-tenant absenteeism threshold. The fix reads the configurable threshold from
+    /// <see cref="AttendanceSettings.AbsenteeismThresholdDays"/> (the per-tenant attendance-policy row) —
+    /// absenteeism is an attendance concept — instead of returning a hardcoded 3, so the report's flag
+    /// and its rendered "Threshold" column both reflect this value. Tenant-scoped via the global query
+    /// filter, so the row is stamped with the test's tenant id.
+    /// </summary>
+    private void SeedAbsenteeismThreshold(decimal threshold)
+    {
+        using var db = CreateDbContext();
+        db.AttendanceSettings.Add(new AttendanceSettings
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantId,
+            AbsenteeismThresholdDays = threshold,
+        });
+        db.SaveChanges();
+    }
+
     private void AddLedger(Guid employeeId, Guid leaveTypeId, LedgerEntryType type, decimal amount,
         int year = Year)
     {
@@ -393,6 +412,36 @@ public sealed class LeaveReportServiceTests
         var report = result.Value!;
         report.Rows.Should().HaveCount(1);
         Cell(report.Rows.Single(), report, "Employee No").Should().Be("EMP-0001");
+    }
+
+    [Fact]
+    public async Task Absenteeism_UsesTenantThreshold_BUG038()
+    {
+        // BUG-038: the AC-3/BR-4 absenteeism flag must compare against the TENANT-CONFIGURED threshold,
+        // not the hardcoded 3. Scenario: 4 unplanned (LOP) days in a single-month window (avg 4/month),
+        // with the tenant threshold RAISED to 5. Because 4 does NOT exceed 5, the employee must NOT be
+        // flagged, and the rendered "Threshold" column must reflect the configured 5.
+        //
+        // Pre-fix (ResolveAbsenteeismThresholdAsync => Task.FromResult(3m), tenant config ignored): the
+        // report uses 3, so 4 > 3 → Flagged "Yes" and Threshold "3" → the assertions below fail. The
+        // same 4-day load would correctly flag at the OLD default of 3, proving the two arms straddle
+        // the 3-vs-5 boundary.
+        SeedAbsenteeismThreshold(5m);
+
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        for (int d = 1; d <= 4; d++)
+            AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.HrAssigned,
+                new DateOnly(Year, 3, d), new DateOnly(Year, 3, d), totalDays: 1m, isLop: true);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.Absenteeism,
+            Params(from: new DateOnly(Year, 3, 1), to: new DateOnly(Year, 3, 31)));
+
+        var report = result.Value!;
+        var aliceRow = report.Rows.Single(r => Cell(r, report, "Employee No") == "EMP-0001");
+        Cell(aliceRow, report, "Unplanned Days").Should().Be("4");
+        Cell(aliceRow, report, "Threshold").Should().Be("5");   // configured, not the hardcoded 3
+        Cell(aliceRow, report, "Flagged").Should().Be("No");    // 4 does not exceed the configured 5
     }
 
     // ══════════════════════════════════════════════════════════════

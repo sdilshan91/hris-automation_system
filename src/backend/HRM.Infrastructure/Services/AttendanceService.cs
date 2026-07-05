@@ -630,8 +630,45 @@ public sealed class AttendanceService : IAttendanceService
         var grace = shift.GracePeriodMinutes > 0 ? shift.GracePeriodMinutes : settings.GracePeriodMinutes;
         var minimumMinutes = shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0;
 
+        // US-ATT-008 BR-8: an approved HALF-DAY leave means only half the shift is expected. Evaluate
+        // late/early against the WORKED half only — halve the minimum-hours gate, and move the expected
+        // boundary to the shift midpoint for the on-leave half so that half is never flagged late/short:
+        //   AM leave → employee works the PM half → expected START moves to the midpoint.
+        //   PM leave → employee works the AM half → expected END moves to the midpoint.
+        // Full-day-leave and no-leave paths are unchanged (no half-day row → this block is skipped).
+        var halfDaySession = await ResolveHalfDayLeaveSessionAsync(employeeId, date, cancellationToken);
+        if (halfDaySession is not null)
+        {
+            minimumMinutes /= 2;   // half a day expected (0 stays 0 = no minimum gate).
+            if (start is { } s && end is { } e && e > s)
+            {
+                var mid = TimeOnly.FromTimeSpan(s.ToTimeSpan() + (e.ToTimeSpan() - s.ToTimeSpan()) / 2);
+                if (string.Equals(halfDaySession, "AM", StringComparison.OrdinalIgnoreCase))
+                    start = mid;
+                else if (string.Equals(halfDaySession, "PM", StringComparison.OrdinalIgnoreCase))
+                    end = mid;
+            }
+        }
+
         return new ShiftLateEarlySignals(start, end, Math.Max(0, grace), minimumMinutes);
     }
+
+    /// <summary>
+    /// US-ATT-008 BR-8: the session ("AM"/"PM") of an APPROVED half-day leave covering <paramref name="date"/>
+    /// for the employee, or null when there is none. Tenant-scoped via the global query filter. A half-day
+    /// request has StartDate == EndDate; the range predicate covers that single day.
+    /// </summary>
+    private async Task<string?> ResolveHalfDayLeaveSessionAsync(
+        Guid employeeId, DateOnly date, CancellationToken cancellationToken)
+        => await _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Where(lr => lr.EmployeeId == employeeId
+                && lr.Status == LeaveRequestStatus.Approved
+                && lr.IsHalfDay
+                && lr.StartDate <= date && lr.EndDate >= date)
+            .OrderByDescending(lr => lr.RequestedAt)
+            .Select(lr => lr.HalfDaySession)
+            .FirstOrDefaultAsync(cancellationToken);
 
     private readonly record struct ShiftLateEarlySignals(
         TimeOnly? Start, TimeOnly? End, int Grace, int MinimumMinutes);

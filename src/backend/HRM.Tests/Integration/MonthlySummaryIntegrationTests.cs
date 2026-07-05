@@ -218,6 +218,24 @@ public sealed class MonthlySummaryIntegrationTests
         db.SaveChanges();
     }
 
+    private void SeedApprovedHalfDayLeave(Guid tenantId, Guid employeeId, DateOnly date, string session = "PM")
+    {
+        using var db = Db(tenantId);
+        db.LeaveRequests.Add(new LeaveRequest
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            EmployeeId = employeeId,
+            LeaveTypeId = Guid.NewGuid(),
+            StartDate = date, EndDate = date,   // single-date + IsHalfDay => a HALF-day leave (BR-6)
+            IsHalfDay = true,
+            HalfDaySession = session,
+            TotalDays = 0.5m,
+            Status = LeaveRequestStatus.Approved,
+        });
+        db.SaveChanges();
+    }
+
     private void SeedHoliday(Guid tenantId, DateOnly date)
     {
         using var db = Db(tenantId);
@@ -377,6 +395,43 @@ public sealed class MonthlySummaryIntegrationTests
 
         var row = result.Value!.Rows.Single(r => r.EmployeeId == _empA1);
         row.PresentDays.Should().Be(1m);
+    }
+
+    [Fact]
+    public async Task HalfDayLeave_EvaluatedAgainstHalfSchedule_ISSUE086()
+    {
+        // ISSUE-086: a half-day-leave employee who works their obligated half must NOT be penalised for the
+        // on-leave half. The finding's scope is the SCHEDULE ADJUSTMENT — the on-leave half is not flagged
+        // absent or docked as LOP ("short") — NOT the leave-days accounting field. (The actual signal fix
+        // lives in AttendanceService.ResolveShiftSignalsAsync, which halves the minimum-hours gate and
+        // moves the expected boundary to the shift midpoint for the on-leave half at clock-out; the
+        // monthly summary reads the persisted flags and classifies the worked half.)
+        //
+        // Setup: an approved HALF-day leave on a working day, and the employee works their obligated
+        // half (5h — at/above the 240-min half of the 480-min standard). With HalfDayEnabled the worked
+        // sub-standard day is classified HALF_DAY → 0.5 present, and — crucially — 0 absent and 0 LOP:
+        // the on-leave half is not treated as an absence/short day. The pre-existing test asserted
+        // LeaveDays == 0.5, but the summary does not credit leave-days for a *logged* half-leave day and
+        // ISSUE-086 never changed that field — so that assertion targeted the wrong quantity.
+        SeedSettings(_tenantA, halfDayEnabled: true);   // standard 480 => half schedule = 240 min
+        var day = Weekday(0);
+
+        SeedApprovedHalfDayLeave(_tenantA, _empA1, day);
+        SeedLog(_tenantA, _empA1, day, 9, 0, 300);   // 5h worked: >= 240 (half), < 480 (full)
+        // Fill the rest of the month with full present days so the monthly AGGREGATE isolates the
+        // half-day-leave day: any absence/LOP in the row can only come from that day (mirrors the
+        // Reconciles_ApprovedLeave_NotAbsent setup).
+        foreach (var wd in Enumerable.Range(1, 21).Select(Weekday))
+            SeedLog(_tenantA, _empA1, wd, 9, 0, 480);
+
+        var (mediator, _) = BuildPipeline(_tenantA);
+        await mediator.Send(new GenerateMonthlySummaryCommand(Year, Month));
+        var result = await mediator.Send(new GetMonthlySummaryQuery(Year, Month, NoFilter));
+
+        var row = result.Value!.Rows.Single(r => r.EmployeeId == _empA1);
+        row.PresentDays.Should().Be(21.5m);   // 21 full days + the worked half (0.5) credited
+        row.AbsentDays.Should().Be(0m);       // the on-leave half is NOT flagged absent
+        row.LopDays.Should().Be(0m);          // NOT docked / "short" for the on-leave half
     }
 
     // ════════════════════════════════════════════════════════════════
