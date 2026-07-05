@@ -544,7 +544,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Same systemic fix locus as BUG-011 — make the validation-failure path on MVC-bound write actions return a 400 without holding the request open; root-cause why the `ValidationException`/`ValidationFilter` short-circuit deadlocks for these request shapes.)
 
 ### BUG-013 — Department name uniqueness is CASE-SENSITIVE: "engineering" is accepted alongside existing "Engineering" → BR-1/AC-3 case-insensitive-uniqueness contract unmet
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #161, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-022 (case-insensitive duplicate within tenant), relates to TC-CHR-003 (exact-dup, which PASSES)
 - **Title:** Per BR-1/AC-3 and TC-CHR-022, department-name uniqueness within a tenant must be **case-insensitive** ("Engineering", "engineering", "ENGINEERING" are the same name). The exact-match dup check works (creating a second "Engineering" → HTTP 400 "A department with this name already exists."), but creating **"engineering"** (lowercase) while acme already has **"Engineering"** was **accepted — HTTP 201**, producing two departments that differ only by case. The uniqueness guard is a case-sensitive equality, not a case-insensitive one.
@@ -614,7 +614,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-016 — Job title name uniqueness is CASE-SENSITIVE (create AND update): "software engineer" / "SOFTWARE ENGINEER" are accepted alongside existing "Software Engineer" → AC-3/BR-1 case-insensitive-uniqueness contract unmet (same class as BUG-013)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #161, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-005 · TC-CHR-047 (case-insensitive dup; also weakens TC-CHR-045 update-path uniqueness)
 - **Title:** The `title_name` uniqueness check is an exact, case-sensitive string compare. With existing `Software Engineer`, both `POST {"titleName":"software engineer"}` and `POST {"titleName":"SOFTWARE ENGINEER"}` succeed (HTTP 201) — three distinct rows that AC-3/BR-1 (and TC-CHR-047) require to be treated as duplicates of one name. The same hole exists on the **update** path: renaming a title to `senior engineer` succeeds (200) despite an existing `Senior Engineer` (the exact-case rename is correctly rejected 400 — TC-CHR-045 primary arm PASSes — but the case variant leaks).
@@ -654,7 +654,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Make `reportingViewAvailable` a view-independent tenant capability, or document that it is view-relative so clients don't gate the toggle on the department-view value.)
 
 ### BUG-017 — Office-location name uniqueness is CASE-SENSITIVE and not TRIMMED: "colombo head office" / "  Colombo Head Office  " are both accepted alongside existing "Colombo Head Office" → BR-1/FR-2 per-tenant unique-name contract trivially bypassable
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #161, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE (DB-interaction)
 - **Module / US / TC:** Core HR · US-CHR-007 · TC-CHR-175 (duplicate-name rejection) — also touches TC-CHR-172 (whitespace stored verbatim). Same class as [[BUG-013]] (Department case-sensitive uniqueness) + [[ISSUE-022]] (whitespace not trimmed).
 - **Title:** With location "Colombo Head Office" already present in tenant `acme`, `POST /api/v1/tenant/locations` with `name:"colombo head office"` → **HTTP 201** (case-variant accepted) and with `name:"  Colombo Head Office  "` → **HTTP 201** (whitespace-padded duplicate accepted, AND stored with the leading/trailing spaces verbatim). The exact-match duplicate is correctly rejected (400 "A location with this name already exists."), so uniqueness exists but is defeated by case or surrounding whitespace — three rows that are the "same" business name now coexist in one tenant.
@@ -918,7 +918,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Deliver the US-PLT-002 RLS phase: enable `ROW LEVEL SECURITY` + `tenant_isolation_select/modify` policies on `leave_types` (and siblings) reading a per-request `app.tenant_id` GUC set from the validated token claim — which also requires the BUG-003 token-vs-subdomain fix to be the source of that GUC.)
 
 ### BUG-027 — US-LV-002's named persona "HR Officer" cannot configure leave entitlements at all: the entire `/leave-entitlements` controller requires `Leave.ConfigurePolicy`, which is granted to Tenant Owner / Tenant Admin / HR Manager but NOT HR Officer (the story's AC-1 persona) — HR Officer gets 403 on every endpoint, including GET
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #160, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-002 · TC-LV-039 (authz matrix), AC-1/§2 persona
 - **Title:** The story is written for an HR Officer ("As an HR Officer … User has `Leave.Configure` permission"). The implementation gates `LeaveEntitlementsController` (rules + overrides + effective, 11 endpoints) entirely behind `[RequirePermission("Leave.ConfigurePolicy")]`. The `HR Officer` built-in role's permission set does NOT include `Leave.ConfigurePolicy` — so an HR Officer is denied 403 on GET/POST/PUT/DELETE for rules and overrides. Only Tenant Owner, Tenant Admin, and HR Manager can configure entitlements. The story's primary actor is locked out of the feature it was written for.
@@ -1120,7 +1120,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Either default `activeOnly` to true in `GetAllAsync` / the calendar query, or amend TC-143 to pass `activeOnly=true` explicitly for the default view — a spec-vs-impl decision for the human.)
 
 ### BUG-033 — Carry-forward preview throws an unhandled 500 (ArgumentOutOfRangeException) for out-of-range `year` values (`year=99999`, `year=-1`); the `year` query param has no range validation so a constructed DateTime overflows
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #155, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-008 · TC-LV-163 (step 3 — out-of-range / non-numeric years must return "400 with a generic validation message; no stack trace or internal detail leaked"). FR-5, NFR-2.
 - **Title:** `GET /api/v1/leaves/carry-forward-preview?year={year}` accepts any 32-bit integer and feeds it unchecked into entitlement resolution, which constructs a `DateTime` from the year. For `year=99999` (and `year=-1`, which becomes `toYear=0`) the constructor throws `System.ArgumentOutOfRangeException: Year, Month, and Day parameters describe an un-representable DateTime`, surfacing as an unhandled **HTTP 500** rather than a clean **400**. SQLi/XSS payloads in `year` are correctly rejected at model-binding with a 400 (the param is `int?`, so non-integers never bind) and `leave_ledger` is intact — the only failing arm of TC-163 is the *valid-integer-but-out-of-domain* year, which is unvalidated.
@@ -1134,7 +1134,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Add a validator bounding `year` to a sane range, e.g. 2000–2100, returning 400; or guard the DateTime construction in `LeaveEntitlementService`.)
 
 ### BUG-034 — Carry-forward preview is gated on `Leave.ConfigurePolicy`, which is NOT granted to the HR Officer role; the US-LV-008 primary persona ("HR Officer / Tenant Admin") and the controller's own XML-doc ("Tenant Admin / HR") both expect HR to be authorized, but HR Officer gets 403
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #160, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-008 · TC-LV-161 (step 1 — "Priya (leave-config permission / HR Officer) calls the preview → 200 OK"). US-LV-008 frontmatter `persona: HR Officer / Tenant Admin`; AC-5; NFR-2.
 - **Title:** `LeaveCarryForwardController.GetCarryForwardPreview` is decorated `[RequirePermission("Leave.ConfigurePolicy")]`. The built-in **HR Officer** role's default permission set (`PermissionCatalog.DefaultPermissionsFor(HROfficer)`) does **not** include `Leave.ConfigurePolicy` — it holds `Leave.View.All`, `Leave.Approve.All`, `Leave.Reports`, and `LeaveType.*`, but `ConfigurePolicy` is granted only to Tenant Owner / Tenant Admin / HR Manager. As a result `hr@acme.test` (HR Officer) receives **403** on the preview, even though US-LV-008's stated persona is "HR Officer / Tenant Admin" (AC-5 is written from the HR Officer's POV: "HR Officer previews the carry-forward impact"), and the controller's own summary comment claims it is gated for "Tenant Admin / HR." There is an internal contradiction: the story + TC + controller-doc say HR can preview; the permission catalog says HR cannot. (Tenant Admin works correctly — 200.)
@@ -1203,7 +1203,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev could default an omitted range to the current month and reject spans beyond a sane cap, e.g. 1 year, with a 400.)
 
 ### ISSUE-043 — Leave-cancel response `balanceAfter` (ledger running total) does NOT reconcile with the `my-balance` / dashboard balance the FE shows; the same employee's "balance after cancellation" differs by ~17 days between the two surfaces
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (resolved-by-#144 BUG-030; invariant-lock test #158, merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-010 · TC-LV-190, TC-LV-191, TC-LV-205 (AC-2 / FR-3 balance-restoration; dependency US-LV-006 dashboard)
 - **Title:** The `POST /api/v1/leaves/{id}/cancel` success DTO returns `balanceAfter` computed from the raw `LeaveLedger` running total (`GetLedgerBalanceAsync + totalDays`), but the authoritative `GET /api/v1/leaves/my-balance` dashboard computes `balance` from the entitlement engine (entitlement − used + adjustments). For the same Annual-Leave cancellation these disagree dramatically: the cancel response reported `balanceAfter = 14.50` then `15.00` then `18.00` across three sequential approved cancels, while `my-balance` for the same employee+type read `-2.76 → -2.26 → 0.74`. The **restoration delta is identical and correct in both** (+2.0, +0.5, +3.0), but the absolute number a UI would display from the cancel toast/response is off by ~17 days from the dashboard. This is the same ledger-vs-engine reconciliation gap already filed as **BUG-030** for the dashboard, surfacing on the cancel write path's response contract.
@@ -1428,7 +1428,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-052 — Forgot-password has NO rate limiting (FR-9): 6+ requests for the same email all return 200, enabling email-bombing / reset-token spam
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #157, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-004 · TC-AUTH-010 (step 10)
 - **Title:** FR-9 requires `forgot-password` rate-limited per IP and per email (e.g. max 5 / email / hour); BR-/Assumptions call it "essential to prevent email-bombing". The endpoint has no throttling — six rapid requests for the same email all return HTTP 200 (no 429). With real SMTP wired this is an email-bomb vector; today (log-only seam) it is an unbounded reset-attempt vector that compounds BUG-040.
@@ -1667,7 +1667,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-047 — Concurrent clock-in race returns HTTP 500 (unhandled 23505) instead of a graceful 409
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #155, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). 5 parallel clock-ins for `employee@acme.test` → one 201, one **500**, three 409. Live log `hrm-20260627.log` re-confirms `23505 duplicate key … ix_attendance_log_open_unique` unhandled at `AttendanceService.ClockInAsync:172`.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-012 (step 3 — DB-guard-not-translated)
@@ -1820,7 +1820,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only. (Fix locus: trim before the duplicate pre-check, or compare case/whitespace-insensitively — see ISSUE-074.)
 
 ### ISSUE-074 — Shift-name uniqueness is case-SENSITIVE and whitespace-exact (no LOWER/citext/trim normalization): "day shift" and "Day Shift" both persist as distinct shifts in the same tenant
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #161, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). `"RegTestShift"` and `"regtestshift"` both created → both 201 (distinct rows, same tenant). No LOWER/citext normalization.
 - **Layer:** BE (+ DB index)
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-052 (step 3, FAIL)
@@ -2117,7 +2117,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 ## Findings (US-ATT-010 — Attendance Dashboard and Reports for HR, 2026-06-26)
 
 ### BUG-050 — Manager persona is fully locked out of the attendance dashboard/reports (403 on everything); BR-4 "managers see their team" is unreachable because every US-ATT-010 endpoint is gated by `Attendance.View.All`, which Managers do not hold
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #160, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). Manager persona → `GET /attendance/dashboard` **403**, `GET /attendance/dashboard/live-board` **403**, `GET /attendance/custom-report` **403**. HR (`Attendance.View.All`) gets 200 on all. BR-4 team view still unreachable.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-010 · TC-ATT-137 (S2/S3/S4/S5 manager team scope) + TC-ATT-140 (S3)
@@ -2313,7 +2313,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-102 — Public application endpoint has NO rate limiting or CAPTCHA: 15 rapid anonymous submits all succeed (S10 spam/bot constraint unmet; unauthenticated write+disk-write DoS vector)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #157, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-002 · TC-REC-002-11 (S2 burst / S3 CAPTCHA)
 - **Title:** The US constraint S10 (and TC-REC-002-11) require the anonymous public application form to be protected from automated abuse via rate limiting and/or CAPTCHA. `POST /api/v1/careers/vacancies/{id}/apply` is `[AllowAnonymous]` with no throttling middleware, no per-IP limit, and no CAPTCHA token check. A burst of 15 rapid submissions (distinct emails) from one client **all returned HTTP 201** — zero 429s. Each accepted request creates an `applicant` DB row and writes a resume file to disk, so the endpoint is an unauthenticated amplification vector for DB-row + disk-space spam (and confirmation-notification fan-out).
@@ -4821,7 +4821,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** HIGH — the entire Custom Fields management feature is non-functional in the UI: the list crashes on render and the only creation entry point (Add Custom Field) is dead, so no custom field can be defined, edited, reordered, or its usage viewed from the browser. Compounds ISSUE-206 (the employee form's `/custom-fields/active` 404), leaving the whole US-CHR-012 surface unusable end-to-end.
 
 ### BUG-101 — Carry-forward preview totals render `NaN` and every row shows 0: FE↔BE field-name contract mismatch (`carryForward`/`forfeited` vs `projectedCarryForward`/`projectedForfeiture`)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #159, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** FE (DATA contract)
 - **Module / US / TC:** Leave Management / US-LV-008 / TC-LV-168 (also visible on TC-LV-164/165 carry-forward-preview page)
 - **Title:** On `/leave-types/carry-forward-preview` the summary strip shows **Carry-forward: NaN** and **Forfeited: NaN** (while "Employees × types: 55" is correct), and every one of the 55 employee×leave-type rows shows `0`/blank for both numeric columns — the HR carry-forward/forfeiture preview report is non-functional even though it renders.
@@ -4870,7 +4870,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** HIGH — the entire Performance Management module (10 user stories of HR/manager/employee functionality) has no working in-app entry point for any of the standard acme personas: the authorized HR/admin can't see the link, and the persona who can see it is dead-ended at `/forbidden`, while the employee self-service goals/self-assessment screens are completely unlinked. Not CRIT only because the routes themselves resolve when reached by URL (and the backend guards still hold). Blocks clean in-app execution of all 9 Performance FE a11y/render TCs.
 
 ### BUG-103 — Admin → Users page: pagination footer renders `Showing 1–NaN of {{total}}` / `1 / NaN` and the role filter is empty because `GET /api/v1/tenant/users/assignable-roles` returns 405 Method Not Allowed
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #159, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** FE (pagination binding) + BE (assignable-roles route verb)
 - **Module / US / TC:** Admin Console / US-ADM-005 / Users list UI (TC-ADM-005 FE render arms; no dedicated a11y TC bound)
 - **Title:** The Users list footer shows broken pagination text (`Showing 1–NaN of {{total}}`, page `1 / NaN`, Next enabled with one page) and the "Filter by role" dropdown only offers "All roles" because its backing call 405s.
@@ -4890,7 +4890,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** LOW — cosmetic; status is still distinguishable by the raw key text, no functional impact, but it is user-visible polish failure on a primary admin screen.
 
 ### ISSUE-212 — Company Settings (Branding tab): the invalid-hex validation error is shown visually but NOT programmatically associated with the field (no `aria-invalid` / `aria-describedby`), and the three file-upload inputs have no accessible name — WCAG 2.1 AA error-association + name failures (TC-ADM-006-17)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #159, merged 2026-07-05; regression-tested red pre-fix/green post-fix; merged into test/local-subdomains 2026-07-05)
 - **Layer:** FE (a11y)
 - **Module / US / TC:** Admin Console / US-ADM-006 / **TC-ADM-006-17** (Settings UI WCAG 2.1 AA — step 6 error-association, step 3 upload accessible names)
 - **Title:** Entering a bad hex colour renders a visible "Enter a valid hex colour" message, but the hex `<input>` carries neither `aria-invalid="true"` nor `aria-describedby` pointing at that message, so a screen-reader user is never told the field is invalid or why; separately the logo/email-logo/favicon file inputs have no accessible name.
