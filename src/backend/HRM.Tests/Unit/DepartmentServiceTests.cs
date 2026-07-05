@@ -162,6 +162,64 @@ public sealed class DepartmentServiceTests : IDisposable
         result.Error.Should().Be("A department with this name already exists.");
     }
 
+    // ── BUG-013: case-insensitive name uniqueness ───────────────────
+    // Regression for the case-insensitive uniqueness cluster. Pre-fix the duplicate
+    // check compared `d.Name == name` (case-sensitive), so a case-variant slipped past
+    // and a second row persisted. Post-fix the check is `d.Name.ToLower() == name.Trim().ToLower()`.
+
+    [Fact]
+    public async Task CreateDepartment_CaseVariantName_IsRejected_BUG013()
+    {
+        // Arrange: a department "Engineering" already exists in this tenant.
+        await SeedDepartment("Engineering", "ENG");
+        var service = CreateService();
+
+        // Act: attempt to create a case-variant "engineering" (distinct code so only
+        // the name check can reject it).
+        var result = await service.CreateAsync("engineering", "ENG2", null, null, null);
+
+        // Assert: rejected as a duplicate (pre-fix this SUCCEEDED — the bug).
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be("A department with this name already exists.");
+
+        // And no second row persisted — still exactly one department in the tenant.
+        using var db = CreateDbContext();
+        db.Departments.Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateDepartment_CaseVariantOfAnother_IsRejected_BUG013()
+    {
+        // Arrange: two departments in this tenant.
+        await SeedDepartment("Engineering", "ENG");
+        var hrId = await SeedDepartment("HR", "HR");
+        var service = CreateService();
+
+        // Act: rename HR to a case-variant of the existing "Engineering".
+        var result = await service.UpdateAsync(hrId, "ENGINEERING", "HR", null, null, null);
+
+        // Assert: rejected (excluding-self clause must be case-insensitive too).
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be("A department with this name already exists.");
+    }
+
+    [Fact]
+    public async Task CreateDepartment_GenuinelyDistinctName_Succeeds_BUG013()
+    {
+        // Positive control: a truly different name still creates (the fix must not
+        // over-reject). Guards against a tautological "always rejects" test.
+        await SeedDepartment("Engineering", "ENG");
+        var service = CreateService();
+
+        var result = await service.CreateAsync("Marketing", "MKT", null, null, null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Name.Should().Be("Marketing");
+
+        using var db = CreateDbContext();
+        db.Departments.Count().Should().Be(2);
+    }
+
     [Fact]
     public async Task Create_DuplicateCodeSameTenant_ShouldFail()
     {

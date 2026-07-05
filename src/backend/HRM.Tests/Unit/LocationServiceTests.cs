@@ -204,6 +204,63 @@ public sealed class LocationServiceTests : IDisposable
         result.Error.Should().Be("A location with this name already exists.");
     }
 
+    // -- BUG-017: case-insensitive name uniqueness --
+    // Regression for the case-insensitive uniqueness cluster. Pre-fix the duplicate
+    // check compared `l.Name == name` (case-sensitive), so a case-variant slipped past
+    // and a second row persisted. Post-fix it is `l.Name.ToLower() == name.Trim().ToLower()`.
+
+    [Fact]
+    public async Task CreateLocation_CaseVariantName_IsRejected_BUG017()
+    {
+        // Arrange: "Head Office" already exists in this tenant.
+        await SeedLocation("Head Office");
+        var service = CreateService();
+
+        // Act: attempt a case-variant "head office".
+        var result = await service.CreateAsync(
+            "head office", null, null, null, null, null, null, "UTC", null);
+
+        // Assert: rejected as a duplicate (pre-fix this SUCCEEDED — the bug).
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be("A location with this name already exists.");
+
+        // And no second row persisted.
+        using var db = CreateDbContext();
+        db.Locations.Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateLocation_CaseVariantOfAnother_IsRejected_BUG017()
+    {
+        await SeedLocation("Head Office");
+        var branchId = await SeedLocation("Branch Office");
+        var service = CreateService();
+
+        // Rename "Branch Office" to a case-variant of the existing "Head Office".
+        var result = await service.UpdateAsync(
+            branchId, "HEAD OFFICE", null, null, null, null, null, null, "UTC", null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be("A location with this name already exists.");
+    }
+
+    [Fact]
+    public async Task CreateLocation_GenuinelyDistinctName_Succeeds_BUG017()
+    {
+        // Positive control: a truly different name still creates.
+        await SeedLocation("Head Office");
+        var service = CreateService();
+
+        var result = await service.CreateAsync(
+            "Warehouse", null, null, null, null, null, null, "UTC", null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Name.Should().Be("Warehouse");
+
+        using var db = CreateDbContext();
+        db.Locations.Count().Should().Be(2);
+    }
+
     // -- BR-1: Same name allowed cross-tenant --
 
     [Fact]

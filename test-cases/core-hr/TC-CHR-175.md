@@ -4,8 +4,13 @@ user_story: US-CHR-007
 module: Core HR
 priority: critical
 type: functional
-status: fail
+status: automated
 created: 2026-06-12
+defect: BUG-017
+automated_by:
+  - HRM.Tests.Unit.LocationServiceTests.CreateLocation_CaseVariantName_IsRejected_BUG017
+  - HRM.Tests.Unit.LocationServiceTests.UpdateLocation_CaseVariantOfAnother_IsRejected_BUG017
+  - HRM.Tests.Unit.LocationServiceTests.CreateLocation_GenuinelyDistinctName_Succeeds_BUG017
 ---
 
 # TC-CHR-175: Duplicate location name within same tenant is rejected
@@ -47,6 +52,19 @@ Verify that the system rejects creation of a location with a name that already e
 ## 6. Postconditions
 - No duplicate location record was created.
 - The existing "Colombo Head Office" location is unchanged.
+
+## Automated Coverage
+Bound to the xUnit + EF Core InMemory unit suite (`HRM.Tests/Unit/LocationServiceTests.cs`). The bound
+tests assert the **case-insensitive** strengthening of this uniqueness rule (BUG-017): the fix is an
+app-level `l.Name.ToLower() == name.Trim().ToLower()` comparison, faithfully evaluated by InMemory (no DB
+unique index dependency).
+- `CreateLocation_CaseVariantName_IsRejected_BUG017` — create "head office" over "Head Office" is rejected; only one row remains.
+- `UpdateLocation_CaseVariantOfAnother_IsRejected_BUG017` — rename to a case-variant of another location is rejected.
+- `CreateLocation_GenuinelyDistinctName_Succeeds_BUG017` — positive control: a distinct name still creates.
+
+Pre-fix (case-sensitive `l.Name == name`) the case-variant slips the check and a second row persists, so
+the "rejected" assertion fails. Post-fix they pass. (The exact-duplicate + per-tenant scope of Steps 1–8
+are also covered by the API-layer suite / TC-CHR-176.)
 
 ## 7. Test Category Tags
 - [ ] Happy path

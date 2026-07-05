@@ -43,9 +43,13 @@ public sealed class DepartmentService : IDepartmentService
         if (!_tenantContext.IsResolved)
             return Result<DepartmentDto>.Failure("Tenant context is not resolved.", 400);
 
-        // FR-2 / BR-1: name uniqueness within tenant
+        // BUG-013: trim once and store the trimmed value; the duplicate pre-check is case-INsensitive
+        // (LOWER(name) = LOWER(@p)) so "Engineering" and "engineering" cannot both persist.
+        name = name.Trim();
+
+        // FR-2 / BR-1: name uniqueness within tenant (trimmed + case-insensitive)
         var nameExists = await _dbContext.Departments
-            .AnyAsync(d => d.Name == name, cancellationToken);
+            .AnyAsync(d => d.Name.ToLower() == name.ToLower(), cancellationToken);
 
         if (nameExists)
             return Result<DepartmentDto>.Failure("A department with this name already exists.", 400);
@@ -119,9 +123,12 @@ public sealed class DepartmentService : IDepartmentService
         if (department is null)
             return Result<DepartmentDto>.Failure("Department not found.", 404);
 
-        // Name uniqueness (excluding self)
+        // BUG-013: trim once and store the trimmed value; the duplicate pre-check is case-INsensitive.
+        name = name.Trim();
+
+        // Name uniqueness (excluding self) — trimmed + case-insensitive
         var nameExists = await _dbContext.Departments
-            .AnyAsync(d => d.Name == name && d.Id != departmentId, cancellationToken);
+            .AnyAsync(d => d.Name.ToLower() == name.ToLower() && d.Id != departmentId, cancellationToken);
 
         if (nameExists)
             return Result<DepartmentDto>.Failure("A department with this name already exists.", 400);

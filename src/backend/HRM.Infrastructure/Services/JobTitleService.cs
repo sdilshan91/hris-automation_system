@@ -41,9 +41,13 @@ public sealed class JobTitleService : IJobTitleService
         if (!_tenantContext.IsResolved)
             return Result<JobTitleDto>.Failure("Tenant context is not resolved.", 400);
 
-        // FR-2 / BR-1: title_name uniqueness within tenant
+        // BUG-016: trim once and store the trimmed value; the duplicate pre-check is case-INsensitive
+        // (LOWER(title_name) = LOWER(@p)) so "Engineer" and "engineer" cannot both persist.
+        titleName = titleName.Trim();
+
+        // FR-2 / BR-1: title_name uniqueness within tenant (trimmed + case-insensitive)
         var nameExists = await _dbContext.JobTitles
-            .AnyAsync(j => j.TitleName == titleName, cancellationToken);
+            .AnyAsync(j => j.TitleName.ToLower() == titleName.ToLower(), cancellationToken);
 
         if (nameExists)
             return Result<JobTitleDto>.Failure("A job title with this name already exists.", 400);
@@ -85,9 +89,12 @@ public sealed class JobTitleService : IJobTitleService
         if (jobTitle is null)
             return Result<JobTitleDto>.Failure("Job title not found.", 404);
 
-        // Title name uniqueness (excluding self)
+        // BUG-016: trim once and store the trimmed value; the duplicate pre-check is case-INsensitive.
+        titleName = titleName.Trim();
+
+        // Title name uniqueness (excluding self) — trimmed + case-insensitive
         var nameExists = await _dbContext.JobTitles
-            .AnyAsync(j => j.TitleName == titleName && j.Id != jobTitleId, cancellationToken);
+            .AnyAsync(j => j.TitleName.ToLower() == titleName.ToLower() && j.Id != jobTitleId, cancellationToken);
 
         if (nameExists)
             return Result<JobTitleDto>.Failure("A job title with this name already exists.", 400);
