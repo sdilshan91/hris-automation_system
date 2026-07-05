@@ -165,6 +165,8 @@ public sealed class EmployeesController : ControllerBase
         [FromQuery] string[]? locations = null,
         [FromQuery] DateTime? dateOfJoiningFrom = null,
         [FromQuery] DateTime? dateOfJoiningTo = null,
+        [FromQuery] string? sort = null,
+        [FromQuery] string? sortDirection = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] bool sortDescending = false,
         [FromQuery] int page = 1,
@@ -172,6 +174,9 @@ public sealed class EmployeesController : ControllerBase
         [FromQuery] bool showArchived = false,
         CancellationToken cancellationToken = default)
     {
+        var (effectiveSortBy, effectiveSortDescending) =
+            ResolveSort(sort, sortDirection, sortBy, sortDescending);
+
         var query = new GetEmployeeDirectoryQuery(
             Search: search,
             DepartmentIds: departmentIds?.Length > 0 ? departmentIds : null,
@@ -181,8 +186,8 @@ public sealed class EmployeesController : ControllerBase
             Locations: locations?.Length > 0 ? locations : null,
             DateOfJoiningFrom: dateOfJoiningFrom,
             DateOfJoiningTo: dateOfJoiningTo,
-            SortBy: sortBy,
-            SortDescending: sortDescending,
+            SortBy: effectiveSortBy,
+            SortDescending: effectiveSortDescending,
             Page: page,
             PageSize: pageSize,
             ShowArchived: showArchived);
@@ -213,11 +218,16 @@ public sealed class EmployeesController : ControllerBase
         [FromQuery] string[]? locations = null,
         [FromQuery] DateTime? dateOfJoiningFrom = null,
         [FromQuery] DateTime? dateOfJoiningTo = null,
+        [FromQuery] string? sort = null,
+        [FromQuery] string? sortDirection = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] bool sortDescending = false,
         [FromQuery] bool showArchived = false,
         CancellationToken cancellationToken = default)
     {
+        var (effectiveSortBy, effectiveSortDescending) =
+            ResolveSort(sort, sortDirection, sortBy, sortDescending);
+
         var query = new ExportEmployeeDirectoryQuery(
             Format: format,
             Search: search,
@@ -228,8 +238,8 @@ public sealed class EmployeesController : ControllerBase
             Locations: locations?.Length > 0 ? locations : null,
             DateOfJoiningFrom: dateOfJoiningFrom,
             DateOfJoiningTo: dateOfJoiningTo,
-            SortBy: sortBy,
-            SortDescending: sortDescending,
+            SortBy: effectiveSortBy,
+            SortDescending: effectiveSortDescending,
             ShowArchived: showArchived);
 
         var result = await _mediator.Send(query, cancellationToken);
@@ -239,6 +249,22 @@ public sealed class EmployeesController : ControllerBase
 
         var export = result.Value!;
         return File(export.FileBytes, export.ContentType, export.FileName);
+    }
+
+    /// <summary>
+    /// ISSUE-019: reconcile the directory sort contract. The documented FE/spec params are
+    /// <c>sort</c> (name | employee_no | date_of_joining | department) + <c>sortDirection</c> (asc | desc);
+    /// the original <c>sortBy</c>/<c>sortDescending</c> params are kept for backward-compat. The documented
+    /// names win when supplied, so the handler's internal SortBy/SortDescending is honored either way.
+    /// </summary>
+    private static (string? SortBy, bool SortDescending) ResolveSort(
+        string? sort, string? sortDirection, string? sortBy, bool sortDescending)
+    {
+        var effectiveSortBy = !string.IsNullOrWhiteSpace(sort) ? sort : sortBy;
+        var effectiveSortDescending = sortDirection is not null
+            ? string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase)
+            : sortDescending;
+        return (effectiveSortBy, effectiveSortDescending);
     }
 
     // ── Status Management (US-CHR-009) ──────────────────────────

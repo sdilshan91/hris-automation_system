@@ -56,6 +56,20 @@ public sealed class ApplicantService : IApplicantService
         if (!_tenantContext.IsResolved)
             return Result<ApplicationConfirmationDto>.Failure("Tenant context is not resolved.", 400);
 
+        // ISSUE-095 / US-REC-002 BR-5: the anonymous public path is only open when the tenant's
+        // PublicCareersEnabled toggle is on. Mirrors the public list/detail (which return empty/404 when
+        // off) — return 404 rather than disclose that a vacancy exists. The internal path is unaffected.
+        if (input.Source == ApplicationSource.Public)
+        {
+            var careersEnabled = await _dbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Id == _tenantContext.TenantId)
+                .Select(t => t.PublicCareersEnabled)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!careersEnabled)
+                return Result<ApplicationConfirmationDto>.Failure("Vacancy not found.", 404, "vacancy_not_found");
+        }
+
         // Defensive re-validation of the file (the FluentValidation validator is the primary gate, but
         // the anonymous public path and tests can call the service directly). AC-2 / BR-4.
         if (input.ResumeFileSize <= 0 || string.IsNullOrWhiteSpace(input.ResumeFileName))

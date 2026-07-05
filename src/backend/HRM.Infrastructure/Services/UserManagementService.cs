@@ -71,10 +71,17 @@ public sealed class UserManagementService : IUserManagementService
         // Tenant-scoped by the global query filter on UserTenant; the User/Role joins resolve names.
         var query = _db.UserTenants.AsNoTracking();
 
-        if (!string.IsNullOrWhiteSpace(input.Status)
-            && Enum.TryParse<UserTenantStatus>(input.Status, ignoreCase: true, out var status))
+        // Status filter (FR-1). A UserTenant only ever has Active/Disabled/Suspended — the "Invited" state is
+        // NOT a membership status: it is modeled as a UserInvitation row (no UserTenant), surfaced by
+        // ListInvitationsAsync / the user-detail invitations list, never by this membership query. So an
+        // unrecognized status value (including "Invited" and any garbage) matches no membership and yields an
+        // empty page — mirroring how the RoleId filter returns empty for a non-matching value. It must NOT be
+        // silently dropped (the old code fell through to "return ALL users" when the value failed to parse).
+        if (!string.IsNullOrWhiteSpace(input.Status))
         {
-            query = query.Where(ut => ut.Status == status);
+            query = Enum.TryParse<UserTenantStatus>(input.Status, ignoreCase: true, out var status)
+                ? query.Where(ut => ut.Status == status)
+                : query.Where(_ => false);
         }
 
         if (input.RoleId is { } roleId)

@@ -46,14 +46,16 @@ public sealed class AdminTenantsController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, ApiResponse<ProvisionTenantResultDto>.Ok(result.Value!));
     }
 
-    /// <summary>GET /api/v1/system/tenants — the System Admin tenant directory (AC-4). System Admin only.</summary>
+    /// <summary>GET /api/v1/system/tenants — the System Admin tenant directory (AC-4). System Admin only.
+    /// Optional <c>?search=</c> filters case-insensitively on tenant name/subdomain (US-ADM-002 AC-2).</summary>
     [HttpGet]
     [RequirePermission("Tenant.Provision")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<TenantListItemDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> List(CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        [FromQuery] string? search, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new ListTenantsQuery(), cancellationToken);
+        var result = await _mediator.Send(new ListTenantsQuery(search), cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 

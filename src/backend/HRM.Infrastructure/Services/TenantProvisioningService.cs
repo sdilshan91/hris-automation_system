@@ -236,11 +236,22 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
     }
 
     public async Task<Result<IReadOnlyList<TenantListItemDto>>> ListTenantsAsync(
-        CancellationToken cancellationToken = default)
+        string? search = null, CancellationToken cancellationToken = default)
     {
-        var tenants = await _db.Tenants
+        var query = _db.Tenants
             .IgnoreQueryFilters()
-            .Where(t => !t.IsDeleted)
+            .Where(t => !t.IsDeleted);
+
+        // US-ADM-002 AC-2: case-insensitive match on tenant name/subdomain. ToLower() translates on both
+        // Npgsql (→ lower()) and the InMemory provider.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(t =>
+                t.Name.ToLower().Contains(term) || t.Subdomain.ToLower().Contains(term));
+        }
+
+        var tenants = await query
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new TenantListItemDto(
                 t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, t.CreatedAt))

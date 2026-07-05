@@ -1,17 +1,22 @@
 // ============================================================================
-// ISSUE-104 (US-REC-005) — Applicant submission MUST write an audit_logs row.
+// ISSUE-095 (US-REC-002 BR-5) — the anonymous PUBLIC apply path must honour the
+// tenant's PublicCareersEnabled toggle.
 //
-// Regression tests for the "missing-audit-write" cluster. ApplicantService.SubmitAsync
-// persists a new Applicant at stage Applied but (pre-fix) writes NO audit row for the
-// submission itself — only later stage-moves are audited. The fix adds an
-// "Application.Submitted" audit_logs row (LeaveTypeService.AddLeaveTypeAudit pattern):
-// tenant stamped from context/vacancy, ResourceId == the applicant, actor = the user
-// when authenticated and NULL on the public/anonymous submission path.
+// ApplicantService.SubmitAsync, for ApplicationSource.Public ONLY, reads the
+// tenant's PublicCareersEnabled flag and returns 404 vacancy_not_found when it is
+// off — mirroring the public list/detail (which hide vacancies when careers are
+// disabled) rather than disclosing that a vacancy exists. The internal /
+// authenticated apply path is unaffected by the toggle.
 //
-// These tests drive the REAL ApplicantService (same InMemory harness as
-// ApplicantSubmissionIntegrationTests) and assert the audit row is present. They FAIL
-// pre-fix (no row) and PASS post-fix. Audit rows are plain inserts, so InMemory is a
-// faithful check of row PRESENCE + action + resourceId (+ actor).
+// PRE-FIX: SubmitAsync had no toggle check, so a Public submission against a
+// disabled tenant fell through to the normal vacancy lookup and SUCCEEDED — the
+// CareersDisabled test's 404 assertion FAILS. POST-FIX it returns 404 first.
+//
+// These tests drive the REAL ApplicantService on the same InMemory harness as
+// ApplicantSubmissionAuditTests. Both cases seed the SAME published, open vacancy;
+// the ONLY difference is PublicCareersEnabled, so the change in outcome is keyed
+// squarely on the toggle (no theater). InMemory is faithful here — the toggle is a
+// plain column read + a branch.
 // ============================================================================
 
 using FluentAssertions;
@@ -27,7 +32,7 @@ using NSubstitute;
 
 namespace HRM.Tests.Unit;
 
-public sealed class ApplicantSubmissionAuditTests
+public sealed class PublicCareersToggleIssue095Tests
 {
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _userId = Guid.NewGuid();
@@ -36,7 +41,7 @@ public sealed class ApplicantSubmissionAuditTests
     private readonly ITenantContext _tenantContext;
     private readonly Guid _vacancyId = Guid.NewGuid();
 
-    public ApplicantSubmissionAuditTests()
+    public PublicCareersToggleIssue095Tests()
     {
         _tenantContext = Substitute.For<ITenantContext>();
         _tenantContext.TenantId.Returns(_tenantId);
@@ -72,19 +77,23 @@ public sealed class ApplicantSubmissionAuditTests
         return u;
     }
 
-    private void SeedOpenVacancy()
+    private void SeedTenant(bool publicCareersEnabled)
     {
         using var db = Db();
-        // ISSUE-095: public apply now requires the tenant's PublicCareersEnabled toggle ON.
-        // Seed the tenant with it enabled so the public submission path is not 404-gated.
         db.Tenants.Add(new Tenant
         {
             Id = _tenantId,
             Subdomain = "acme",
             Name = "Acme Corp",
             Status = TenantStatus.Active,
-            PublicCareersEnabled = true,
+            PublicCareersEnabled = publicCareersEnabled,
         });
+        db.SaveChanges();
+    }
+
+    private void SeedOpenVacancy()
+    {
+        using var db = Db();
         db.Vacancies.Add(new Vacancy
         {
             Id = _vacancyId,
@@ -124,61 +133,55 @@ public sealed class ApplicantSubmissionAuditTests
             new MemoryStream([1, 2, 3, 4]), "resume.pdf", "application/pdf", 4,
             source, linkedEmployeeId);
 
-    private static bool ActionContains(AuditLog a, string s)
-        => (a.Action?.Contains(s) ?? false) || (a.EventType?.Contains(s) ?? false);
-
-    // ── Public/anonymous submission: audit row present, tenant-scoped, actor NULL ──
+    // ── Public apply, careers DISABLED → rejected with 404 vacancy_not_found ──
 
     [Fact]
-    public async Task SubmitApplication_Public_WritesAuditRow_ISSUE104()
+    public async Task PublicApply_CareersDisabled_Returns404_ISSUE095()
     {
+        SeedTenant(publicCareersEnabled: false);
         SeedOpenVacancy();
 
         var result = await Service(AnonymousUser()).SubmitAsync(Apply(_vacancyId, "ada@example.com"));
-        result.IsSuccess.Should().BeTrue();
 
-        using var db = Db();
-        var applicant = await db.Applicants.AsNoTracking()
-            .SingleAsync(a => a.Email == "ada@example.com");
-
-        var audits = await db.AuditLogs.AsNoTracking()
-            .Where(a => a.ResourceId == applicant.Id.ToString())
-            .ToListAsync();
-
-        // Pre-fix: no submission audit row exists -> this FAILS. Post-fix: exactly the row below.
-        audits.Should().ContainSingle(a => ActionContains(a, "Submitted"),
-            "the submission must write an Application.Submitted audit row (ISSUE-104)");
-
-        var row = audits.Single(a => ActionContains(a, "Submitted"));
-        ActionContains(row, "Application").Should().BeTrue();
-        row.ResourceId.Should().Be(applicant.Id.ToString());
-        row.TenantId.Should().Be(_tenantId);           // tenant from the resolved/vacancy tenant
-        row.UserId.Should().BeNull();                  // public path: actor may be (and here is) null
+        // Pre-fix: no toggle check → falls through to the open vacancy → succeeds → this FAILS.
+        // Post-fix: the disabled toggle short-circuits with a 404 before any vacancy disclosure.
+        result.IsFailure.Should().BeTrue("the public path is closed when PublicCareersEnabled is off");
+        result.StatusCode.Should().Be(404);
+        result.ErrorCode.Should().Be("vacancy_not_found");
     }
 
-    // ── Internal (authenticated) submission: same audit row, actor = the user ──
+    // ── Public apply, careers ENABLED → NOT blocked by the toggle (reaches normal
+    //    processing). Same seeded vacancy as above, so the toggle is the only variable. ──
 
     [Fact]
-    public async Task SubmitApplication_Internal_WritesAuditRow_WithActor_ISSUE104()
+    public async Task PublicApply_CareersEnabled_NotBlockedByToggle_ISSUE095()
     {
+        SeedTenant(publicCareersEnabled: true);
+        SeedOpenVacancy();
+
+        var result = await Service(AnonymousUser()).SubmitAsync(Apply(_vacancyId, "ada@example.com"));
+
+        // With the toggle on and the vacancy present/open, the submission proceeds to a
+        // successful application — it is NOT rejected by the toggle 404.
+        result.IsSuccess.Should().BeTrue(
+            "an enabled tenant with an open vacancy must not be blocked by the careers toggle");
+    }
+
+    // ── Internal (authenticated) apply is unaffected by the toggle even when OFF ──
+
+    [Fact]
+    public async Task InternalApply_CareersDisabled_NotBlockedByToggle_ISSUE095()
+    {
+        SeedTenant(publicCareersEnabled: false);
         SeedOpenVacancy();
         var employeeId = SeedEmployee();
 
         var result = await Service(AuthenticatedUser()).SubmitAsync(
             Apply(_vacancyId, "intern@acme.com", ApplicationSource.Internal, employeeId));
-        result.IsSuccess.Should().BeTrue();
 
-        using var db = Db();
-        var applicant = await db.Applicants.AsNoTracking()
-            .SingleAsync(a => a.Email == "intern@acme.com");
-
-        var row = await db.AuditLogs.AsNoTracking()
-            .SingleOrDefaultAsync(a => a.ResourceId == applicant.Id.ToString()
-                && (a.Action!.Contains("Submitted") || a.EventType.Contains("Submitted")));
-
-        row.Should().NotBeNull("an authenticated internal submission must also be audited (ISSUE-104)");
-        row!.TenantId.Should().Be(_tenantId);
-        row.UserId.Should().Be(_userId);               // authenticated path stamps the actor
+        // The toggle guards ONLY ApplicationSource.Public — the internal path succeeds
+        // despite PublicCareersEnabled being off.
+        result.IsSuccess.Should().BeTrue("the toggle must not affect the internal apply path");
     }
 
     // In-memory IFileStorage stub — avoids the filesystem while still exercising the
