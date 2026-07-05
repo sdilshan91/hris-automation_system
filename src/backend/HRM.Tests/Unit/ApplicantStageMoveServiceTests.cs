@@ -465,4 +465,174 @@ public sealed class ApplicantStageMoveServiceTests
             ApplicantStage.Applied.ToString(), ApplicantStage.Screening.ToString(),
             Arg.Any<CancellationToken>());
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // Regression: recruitment stage-transition gate rules (US-REC-004; the fix
+    // commit labels these US-REC-008 — see TC-REC-004-13/14 for the trace note).
+    //   BUG-059 (BR-3, Hired terminal) — Hired is a TERMINAL stage: no move OUT
+    //     of Hired is allowed. @TC-REC-004-13
+    //   BUG-060 (BR-2, controlled reactivation) — a Rejected applicant may only
+    //     re-enter the funnel at an early stage (Applied/Screening); jumping
+    //     FORWARD to a later stage (Interview/Offer/Hired) is rejected. @TC-REC-004-14
+    // Both guards live in ApplicantService.ApplyStageMove. Pre-fix (HEAD), the
+    // service lets both moves succeed (backward move + reason passes every existing
+    // gate), so these reject-tests fail pre-fix and pass once the guards land.
+    // ════════════════════════════════════════════════════════════════════
+
+    /// <summary>The current (read-time) xmin token for an applicant, so the guarded
+    /// stage-move UPDATE is not rejected on the ISSUE-109 concurrency check.</summary>
+    private uint RowVersionOf(Guid id)
+    {
+        using var db = CreateDbContext();
+        return db.Applicants.AsNoTracking().First(a => a.Id == id).RowVersion;
+    }
+
+    /// <summary>Seeds a Rejected applicant together with an Applied → Rejected stage-history
+    /// row, so the "intended reactivation target" is unambiguously the initial Applied stage
+    /// whether the fix hard-codes Applied or reconstructs the prior stage from history.</summary>
+    private Guid SeedRejectedApplicantWithHistory(string email = "rex@example.com")
+    {
+        var id = SeedApplicant(ApplicantStage.Rejected, email);
+        using var db = CreateDbContext();
+        var a = db.Applicants.First(x => x.Id == id);
+        a.RejectionReason = RejectionReason.NotQualified;
+        db.ApplicantStageHistories.Add(new ApplicantStageHistory
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantId,
+            ApplicantId = id,
+            FromStage = ApplicantStage.Applied,
+            ToStage = ApplicantStage.Rejected,
+            ChangedByUserId = _userId,
+            Reason = "Initial rejection.",
+            RejectionReason = RejectionReason.NotQualified,
+            ChangedAt = DateTime.UtcNow.AddDays(-1),
+            IsDeleted = false,
+        });
+        db.SaveChanges();
+        return id;
+    }
+
+    // ── BUG-059: Hired is terminal ────────────────────────────────────
+
+    [Fact]
+    public async Task MoveStage_FromHired_IsRejected_BUG059()
+    {
+        // Hired is terminal (convert-to-employee is the only forward path, US-REC-010).
+        // Attempting to move a Hired applicant to another stage must be rejected.
+        var id = SeedApplicant(ApplicantStage.Hired);
+        var rv = RowVersionOf(id);
+
+        // Offer (3) < Hired (4) is a backward move + reason supplied, so ONLY the new
+        // terminal guard can block it — pre-fix this move succeeds.
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Offer, reason: "Reconsidering the hire.", notes: null,
+            expectedRowVersion: rv);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("hired_is_terminal");
+
+        // Stage unchanged, no history row written.
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).Stage.Should().Be(ApplicantStage.Hired);
+        (await db.ApplicantStageHistories.CountAsync(h => h.ApplicantId == id)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task MoveStage_FromHired_ToRejected_IsRejected_BUG059()
+    {
+        // Even a rejection cannot move an applicant OUT of the terminal Hired stage.
+        var id = SeedApplicant(ApplicantStage.Hired);
+        var rv = RowVersionOf(id);
+
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Rejected, reason: "Changed our mind after hiring.", notes: null,
+            expectedRowVersion: rv, rejectionReason: RejectionReason.PositionFilled);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("hired_is_terminal");
+
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).Stage.Should().Be(ApplicantStage.Hired);
+    }
+
+    [Fact]
+    public async Task MoveStage_NonHiredForwardTransition_StillSucceeds_BUG059Control()
+    {
+        // Control: the terminal guard is scoped to fromStage == Hired. A normal
+        // forward transition that does not originate from Hired is unaffected.
+        var id = SeedApplicant(ApplicantStage.Screening);
+        var rv = RowVersionOf(id);
+
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Interview, reason: null, notes: null, expectedRowVersion: rv);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.FromStage.Should().Be(ApplicantStage.Screening);
+        result.Value.ToStage.Should().Be(ApplicantStage.Interview);
+    }
+
+    [Fact]
+    public async Task MoveStage_IntoHired_FromOffer_StillSucceeds_BUG059Control()
+    {
+        // Control: moving INTO Hired (Offer -> Hired) remains allowed — the guard blocks
+        // moves OUT of Hired, not moves into it.
+        var id = SeedApplicant(ApplicantStage.Offer);
+        var rv = RowVersionOf(id);
+
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Hired, reason: null, notes: null, expectedRowVersion: rv);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ToStage.Should().Be(ApplicantStage.Hired);
+    }
+
+    // ── BUG-060: Rejected reactivation only to the intended target ─────
+
+    [Fact]
+    public async Task MoveStage_RejectedForwardJump_IsRejected_BUG060()
+    {
+        // A Rejected applicant cannot be reactivated by jumping FORWARD to an arbitrary
+        // later pipeline stage (Offer). Only the intended reactivation target is allowed.
+        var id = SeedRejectedApplicantWithHistory();
+        var rv = RowVersionOf(id);
+
+        // Reason supplied (reactivation requires one), so ONLY the new reactivation-target
+        // guard can block it — pre-fix this forward jump succeeds.
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Offer, reason: "Bringing them straight back for an offer.", notes: null,
+            expectedRowVersion: rv);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("invalid_reactivation_target");
+
+        // Stage unchanged; no forward-jump history row written.
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).Stage.Should().Be(ApplicantStage.Rejected);
+        (await db.ApplicantStageHistories.CountAsync(
+            h => h.ApplicantId == id && h.ToStage == ApplicantStage.Offer)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task MoveStage_RejectedReactivation_ToApplied_Succeeds_BUG060Control()
+    {
+        // Control: the ALLOWED reactivation — re-entering the pipeline at the initial
+        // Applied stage — still succeeds and clears the structured rejection reason (BR-2).
+        var id = SeedRejectedApplicantWithHistory();
+        var rv = RowVersionOf(id);
+
+        var result = await CreateService().MoveStageAsync(
+            id, ApplicantStage.Applied, reason: "Reconsidering after a strong referral.", notes: null,
+            expectedRowVersion: rv);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.FromStage.Should().Be(ApplicantStage.Rejected);
+        result.Value.ToStage.Should().Be(ApplicantStage.Applied);
+
+        await using var db = CreateDbContext();
+        (await db.Applicants.FirstAsync(a => a.Id == id)).RejectionReason.Should().BeNull();
+    }
 }

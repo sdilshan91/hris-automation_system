@@ -37,9 +37,9 @@ status: complete
 | Critical Priority (REC-005) | 3 (TC-REC-005-01, TC-REC-005-02, TC-REC-005-11, TC-REC-ISO-014) |
 | High Priority (REC-005) | 9 (TC-REC-005-03, -04, -05, -06, -07, -08, -09, -10, -12, -13) |
 | Medium Priority (REC-005) | 0 |
-| US-REC-004 Test Cases | 13 (TC-REC-004-01..12 + TC-REC-ISO-013; reuses TC-REC-ISO-009..011) |
+| US-REC-004 Test Cases | 15 (TC-REC-004-01..14 + TC-REC-ISO-013; reuses TC-REC-ISO-009..011). TC-REC-004-13 (BUG-059 Hired terminal) + TC-REC-004-14 (BUG-060 controlled reactivation) are regression additions. |
 | Critical Priority (REC-004) | 3 (TC-REC-004-01, TC-REC-004-02, TC-REC-ISO-013) |
-| High Priority (REC-004) | 8 (TC-REC-004-03, -05, -06, -07, -08, -09, -11, -12) |
+| High Priority (REC-004) | 10 (TC-REC-004-03, -05, -06, -07, -08, -09, -11, -12, -13, -14) |
 | Medium Priority (REC-004) | 1 (TC-REC-004-10) |
 | US-REC-002 Test Cases | 21 (TC-REC-002-01..13 + TC-REC-ISO-005..008) |
 | Critical Priority (REC-002) | 6 (TC-REC-002-01, -04, -09, -10, TC-REC-ISO-005, -006, -007) |
@@ -60,7 +60,7 @@ status: complete
 | Cross-cutting (REC-002) | Multi-tenant isolation (applicant) | TC-REC-ISO-005, TC-REC-ISO-006, TC-REC-ISO-007, TC-REC-ISO-008 | 4 |
 | US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14 | 14 |
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 |
-| US-REC-004 | Move Applicant Through Pipeline Stages with Gates | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 |
+| US-REC-004 | Move Applicant Through Pipeline Stages with Gates | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12, TC-REC-004-13 (BUG-059), TC-REC-004-14 (BUG-060) | 14 |
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
 | US-REC-005 | Schedule Interviews and Notify Participants | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | 13 |
 | Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 |
@@ -245,8 +245,8 @@ status: complete
 | BR | Covered By |
 |----|------------|
 | BR-1 (gate criteria configurable per tenant per stage; defaults) | TC-REC-004-04 |
-| BR-2 (rejected applicant cannot advance until Manage reactivation) | TC-REC-004-03, TC-REC-004-06 |
-| BR-3 (Hired terminal + irreversible -> convert-to-employee) | TC-REC-004-07 (full workflow owned by US-REC-010) |
+| BR-2 (rejected applicant cannot advance until Manage reactivation) | TC-REC-004-03, TC-REC-004-06, TC-REC-004-14 (BUG-060: reactivation is a controlled early re-entry, not a forward jump to Interview/Offer/Hired) |
+| BR-3 (Hired terminal + irreversible -> convert-to-employee) | TC-REC-004-07 (full workflow owned by US-REC-010), TC-REC-004-13 (BUG-059: no stage move OUT of Hired -- terminal invariant enforced) |
 | BR-4 (headcount-filled warning before Offer/Hired at capacity) | TC-REC-004-09 |
 | BR-5 (transition emails use tenant templates + variable substitution) | TC-REC-004-10 |
 | BR-6 (bulk transitions apply gates per applicant; per-applicant failure report) | Covered by TC-REC-003-10 (bulk move); REC-004 gate-per-applicant CONDITIONAL on bulk being delivered |
