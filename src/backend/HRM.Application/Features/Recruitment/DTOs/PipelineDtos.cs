@@ -137,6 +137,12 @@ public sealed record MoveApplicantStageRequest
     /// Rejected; ignored for any other target stage.
     /// </summary>
     public RejectionReason? RejectionReason { get; init; }
+
+    /// <summary>
+    /// Optimistic concurrency token (ISSUE-109): the applicant-detail xmin the client read. Echoed back
+    /// to guard the stage move; a stale value yields 409 Conflict. Mirrors the employee-profile PATCH.
+    /// </summary>
+    public uint RowVersion { get; init; }
 }
 
 /// <summary>

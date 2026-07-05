@@ -88,4 +88,12 @@ public sealed class Applicant : BaseEntity
 
     /// <summary>Id of the user who performed the conversion (US-REC-010 FR-6 converted_by). Null until converted.</summary>
     public Guid? ConvertedByUserId { get; set; }
+
+    /// <summary>
+    /// Optimistic concurrency token (ISSUE-109). On PostgreSQL this maps to the xmin system column via the
+    /// Npgsql row-version convention (no schema DDL — xmin exists on every table); the InMemory test
+    /// provider ignores it. Guards concurrent stage moves against lost updates. Mirrors
+    /// <c>Goal.Version</c> / <c>Employee.RowVersion</c>.
+    /// </summary>
+    public uint RowVersion { get; set; }
 }

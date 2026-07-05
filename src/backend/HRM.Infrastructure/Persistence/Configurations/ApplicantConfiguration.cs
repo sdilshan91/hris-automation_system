@@ -85,6 +85,13 @@ public sealed class ApplicantConfiguration : IEntityTypeConfiguration<Applicant>
 
         builder.Property(a => a.IsDeleted).HasDefaultValue(false).IsRequired();
 
+        // ISSUE-109 optimistic concurrency: a uint marked IsRowVersion() is mapped to the PostgreSQL xmin
+        // system column by Npgsql's convention (NO schema DDL — xmin exists on every table). We must NOT
+        // override the column name/type, or a spurious ADD COLUMN xmin is scaffolded. The InMemory test
+        // provider ignores this annotation. Mirrors Goal.Version / LeaveRequest.Version. Concurrent stage
+        // moves on the same applicant raise DbUpdateConcurrencyException -> 409 in MoveStageAsync.
+        builder.Property(a => a.RowVersion).IsRowVersion();
+
         // §7 reference number is unique per tenant (partial — exclude soft-deleted).
         builder.HasIndex(a => new { a.TenantId, a.ApplicationReferenceNumber })
             .IsUnique()

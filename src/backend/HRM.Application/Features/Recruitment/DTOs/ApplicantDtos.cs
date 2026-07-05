@@ -27,6 +27,13 @@ public sealed record ApplicantDto
     public Guid? LinkedEmployeeId { get; init; }
     public DateTime AppliedAt { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// Optimistic concurrency token (ISSUE-109). Maps to the applicant row's PostgreSQL xmin. Clients
+    /// must echo this back on a stage move; a stale value yields 409 Conflict. Mirrors
+    /// <c>EmployeeProfileDto.RowVersion</c>.
+    /// </summary>
+    public uint RowVersion { get; init; }
 }
 
 /// <summary>

@@ -21,6 +21,13 @@ public sealed record GoalDto
     public string StatusName { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Optimistic concurrency token (NFR-4, BUG-057). Maps to the goal row's PostgreSQL xmin. Clients
+    /// must echo this back on update; a stale value yields 409 Conflict. Mirrors
+    /// <c>EmployeeProfileDto.RowVersion</c>.
+    /// </summary>
+    public uint RowVersion { get; init; }
 }
 
 /// <summary>
@@ -80,7 +87,9 @@ public sealed record UpdateGoalRequest(
     string TargetValue,
     string MeasurementUnit,
     DateOnly DueDate,
-    Guid? ParentGoalId);
+    Guid? ParentGoalId,
+    // BUG-057: optimistic concurrency token (the xmin the client read). Echoed back to guard the UPDATE.
+    uint RowVersion = 0);
 
 /// <summary>Service-layer input for create/update of a single goal (decouples handler records from the service).</summary>
 public sealed record GoalInput(
@@ -93,4 +102,6 @@ public sealed record GoalInput(
     string TargetValue,
     string MeasurementUnit,
     DateOnly DueDate,
-    Guid? ParentGoalId);
+    Guid? ParentGoalId,
+    // BUG-057: expected concurrency token for update (ignored on create). 0 = not supplied.
+    uint RowVersion = 0);

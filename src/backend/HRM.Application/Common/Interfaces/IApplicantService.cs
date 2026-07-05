@@ -75,8 +75,13 @@ public interface IApplicantService
     /// US-REC-005/006). Hired is allowed; the convert-to-employee workflow is out of scope (US-REC-010).
     /// Tenant-scoped.
     /// </summary>
+    /// <remarks>
+    /// ISSUE-109: <paramref name="expectedRowVersion"/> is the applicant's optimistic concurrency token
+    /// (xmin) the caller read; a stale value raises DbUpdateConcurrencyException, returned as 409.
+    /// </remarks>
     Task<Result<MoveApplicantStageResultDto>> MoveStageAsync(
         Guid applicantId, ApplicantStage toStage, string? reason, string? notes,
+        uint expectedRowVersion = 0,
         RejectionReason? rejectionReason = null,
         CancellationToken cancellationToken = default);
 

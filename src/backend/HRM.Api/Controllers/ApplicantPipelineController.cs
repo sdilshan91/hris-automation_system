@@ -124,7 +124,7 @@ public sealed class ApplicantPipelineController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new MoveApplicantStageCommand(applicantId, request.ToStage, request.Reason, request.Notes, request.RejectionReason),
+            new MoveApplicantStageCommand(applicantId, request.ToStage, request.Reason, request.Notes, request.RejectionReason, request.RowVersion),
             cancellationToken);
 
         if (result.IsFailure)

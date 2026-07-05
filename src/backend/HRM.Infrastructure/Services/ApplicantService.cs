@@ -419,6 +419,7 @@ public sealed class ApplicantService : IApplicantService
 
     public async Task<Result<MoveApplicantStageResultDto>> MoveStageAsync(
         Guid applicantId, ApplicantStage toStage, string? reason, string? notes,
+        uint expectedRowVersion = 0,
         RejectionReason? rejectionReason = null,
         CancellationToken cancellationToken = default)
     {
@@ -430,6 +431,12 @@ public sealed class ApplicantService : IApplicantService
 
         if (applicant is null)
             return Result<MoveApplicantStageResultDto>.Failure("Applicant not found.", 404, "applicant_not_found");
+
+        // ISSUE-109 (NFR): guard the stage move with the client's read-time concurrency token. Without
+        // this, EF's OriginalValue equals the just-read DB xmin, so the guarded UPDATE always matches and
+        // a concurrent stage move silently clobbers. Setting OriginalValue to the client's token makes a
+        // stale write raise DbUpdateConcurrencyException -> 409. Mirrors EmployeeService.UpdateProfileAsync.
+        _dbContext.Entry(applicant).Property(a => a.RowVersion).OriginalValue = expectedRowVersion;
 
         // FR-8/BR-4: load the owning vacancy (tenant-scoped) for the Closed/Cancelled gate and the
         // headcount-filled warning.
@@ -449,7 +456,16 @@ public sealed class ApplicantService : IApplicantService
 
         WriteStageChangeAuditLog(historyRow!);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // ISSUE-109: a concurrent stage move changed the applicant's xmin since we read it.
+            return Result<MoveApplicantStageResultDto>.Failure(
+                "This applicant was modified by another session. Reload and try again.", 409, "concurrency_conflict");
+        }
 
         await NotifyStageChangedSafeAsync(applicant, historyRow!, cancellationToken);
 
@@ -917,5 +933,6 @@ public sealed class ApplicantService : IApplicantService
         LinkedEmployeeId = a.LinkedEmployeeId,
         AppliedAt = a.AppliedAt,
         CreatedAt = a.CreatedAt,
+        RowVersion = a.RowVersion,
     };
 }
