@@ -44,8 +44,9 @@ Summary table in the ledger annotated with a reconciliation note. **Net effect: 
 open HIGH ≈ 12** (BUG-014, BUG-019, BUG-025, BUG-030, BUG-035, BUG-045, BUG-048, BUG-055, BUG-102, BUG-104,
 ISSUE-018, ISSUE-210 — all re-confirmed OPEN). Everything else open is MED/LOW.
 
-**Ledger-hygiene follow-ups (not blocking, deferred):** de-duplicate reused IDs (ISSUE-097, ISSUE-105, BUG-059 each
-appear twice); `TEST-STATUS.md` per-US re-test flips belong to `/verify-fix`, not this pass.
+**Ledger-hygiene follow-ups:** de-duplicate reused IDs — **DONE 2026-07-05** (still-open occurrences renumbered
+ISSUE-097→ISSUE-243, ISSUE-105→ISSUE-244, BUG-059→BUG-242; mapping banner at the top of TEST-FINDINGS.md).
+`TEST-STATUS.md` per-US re-test flips belong to `/verify-fix`, not this pass.
 
 ### (original Wave 0 plan, for reference)
 
