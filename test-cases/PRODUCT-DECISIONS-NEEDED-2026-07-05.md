@@ -54,5 +54,11 @@ Real defects, but "correct behavior" isn't settled in the story — coding them 
 
 ---
 
+## Test-environment / seed items (not code defects)
+
+### ISSUE-209 — public careers not exercisable for `acme` (DATA / tenant-config)
+The `/careers` public page renders correctly but shows "No open positions" for `acme` because **`Tenant.PublicCareersEnabled = false`** for that tenant (and/or its Open vacancies don't have `PublishToPublicCareers`). This is **not a UI defect** — it's a data/config state that blocks end-to-end testing of the public application journey (browse → open vacancy → apply). Note ISSUE-095 (#164) now *enforces* this toggle (public apply → 404 when disabled), so enabling it is a deliberate tenant action.
+**Decision/action needed:** to make the public careers journey demo/testable for `acme`, set `PublicCareersEnabled = true` on the `acme` tenant and ensure at least one Open vacancy has `PublishToPublicCareers = true` — either as a one-off data update on the dev DB, or by seeding it in `DbInitializer` for the demo tenant. No `src/` code fix; just a config/seed choice.
+
 ## Ledger-hygiene TODO (independent, safe — I can do this without decisions)
 Duplicate reused IDs still exist: **ISSUE-097** (vacancy-is_deleted L2195 vs goal-audit L2239 — goal one now RESOLVED), **ISSUE-105** (×2), **BUG-059** (×2). Recommend renumbering the still-open second occurrences to fresh IDs (updating any references) so automated counts are trustworthy. I deferred this during the campaign because renumbering an ID that's already referenced in a merged PR is risky — safe to do now for the unreferenced open ones. Say the word.
