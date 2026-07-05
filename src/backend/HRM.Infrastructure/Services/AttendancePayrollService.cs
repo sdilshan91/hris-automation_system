@@ -190,6 +190,13 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     {
         if (!_tenantContext.IsResolved)
             return Result<PeriodLockDto>.Failure("Tenant context is not resolved.", 400);
+        // ISSUE-088: reject an empty/missing body — an omitted request deserializes both bounds to
+        // default(DateOnly) (0001-01-01), which previously slipped past the range check and created a garbage
+        // lock. Both bounds must be real calendar dates (floor: year 2000).
+        var minReasonableDate = new DateOnly(2000, 1, 1);
+        if (periodStart < minReasonableDate || periodEnd < minReasonableDate)
+            return Result<PeriodLockDto>.Failure(
+                "A valid period start and end date are required.", 400, "invalid_period");
         if (periodEnd < periodStart)
             return Result<PeriodLockDto>.Failure(
                 "Period end must be on or after period start.", 400, "invalid_range");
