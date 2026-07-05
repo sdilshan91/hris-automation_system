@@ -33,8 +33,12 @@ public sealed class TerminateTenantValidator : AbstractValidator<TerminateTenant
             .NotEmpty().WithMessage("A termination reason is required.")
             .MinimumLength(10).WithMessage("The reason must be at least 10 characters.")
             .MaximumLength(500).WithMessage("The reason cannot exceed 500 characters.");
+        // BUG-002: an OMITTED grace period (null) is allowed — the service applies the plan default. A
+        // SUPPLIED value is still range-checked 7-90 (BR-4). Kept on the GraceDays selector (not .Value) so
+        // the validation-error property path stays "GraceDays".
         RuleFor(x => x.GraceDays)
-            .InclusiveBetween(7, 90).WithMessage("The grace period must be between 7 and 90 days.");
+            .Must(g => g is null or (>= 7 and <= 90))
+            .WithMessage("The grace period must be between 7 and 90 days.");
     }
 }
 

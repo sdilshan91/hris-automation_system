@@ -25,6 +25,10 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
 {
     private const int MinGraceDays = 7;   // BR-4
     private const int MaxGraceDays = 90;  // BR-4
+    // US-ADM-004 AC-3/FR-2: default grace period when the caller omits one. The story calls it
+    // "plan-configurable"; no per-plan grace-days column is wired on the Tenant/plan model, so the documented
+    // 30-day default is used (BUG-002). Wire a plan-configured value here once the billing/plan model carries one.
+    private const int DefaultGraceDays = 30;
 
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
@@ -95,7 +99,12 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         if (reason.Length is < 10 or > 500)
             return Result.Failure<TenantLifecycleResultDto>("The reason must be between 10 and 500 characters.", 400, "reason_invalid");
 
-        if (input.GraceDays is < MinGraceDays or > MaxGraceDays) // BR-4
+        // BUG-002: an omitted grace period — null, or the 0 a non-nullable DTO/JSON default deserializes to —
+        // applies the plan default. A supplied positive value is range-checked 7-90 (BR-4). (In the HTTP
+        // pipeline the validator already rejects a supplied out-of-range value before the service is reached;
+        // this keeps the rule intact for direct/service-level callers too.)
+        var graceDays = input.GraceDays is > 0 ? input.GraceDays.Value : DefaultGraceDays;
+        if (graceDays is < MinGraceDays or > MaxGraceDays)
             return Result.Failure<TenantLifecycleResultDto>(
                 $"The grace period must be between {MinGraceDays} and {MaxGraceDays} days.", 400, "grace_days_invalid");
 
@@ -105,7 +114,7 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
             return Result.Failure<TenantLifecycleResultDto>(error.Message, error.StatusCode, error.Code);
 
         var now = DateTime.UtcNow;
-        var scheduledAt = now.AddDays(input.GraceDays);
+        var scheduledAt = now.AddDays(graceDays);
         tenant!.Status = TenantStatus.Terminating;
         tenant.TerminationScheduledAt = scheduledAt;
         tenant.UpdatedAt = now;
@@ -134,7 +143,7 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         {
             tenant.Subdomain,
             Reason = reason,
-            input.GraceDays,
+            GraceDays = graceDays,
             TerminationScheduledAt = scheduledAt,
         });
         WriteLifecycleEvent(tenant.Id, "termination_initiated", detail, now);

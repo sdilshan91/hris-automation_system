@@ -111,5 +111,8 @@ public sealed class AdminTenantLifecycleController : ControllerBase
 /// <summary>Request body for suspend (US-ADM-004 AC-1). Tenant id comes from the route.</summary>
 public sealed record TenantReasonRequest(string Reason);
 
-/// <summary>Request body for terminate (US-ADM-004 AC-3). Tenant id comes from the route.</summary>
-public sealed record TerminateTenantRequest(string Reason, int GraceDays);
+/// <summary>
+/// Request body for terminate (US-ADM-004 AC-3). Tenant id comes from the route. <c>GraceDays</c> is nullable
+/// so an OMITTED value applies the plan default (BUG-002); a supplied value is still range-checked (BR-4).
+/// </summary>
+public sealed record TerminateTenantRequest(string Reason, int? GraceDays);

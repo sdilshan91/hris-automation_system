@@ -21,8 +21,11 @@ public sealed class SuspendTenantCommandHandler : IRequestHandler<SuspendTenantC
 
 // ── Terminate (AC-3/FR-2) ───────────────────────────────────────────────────
 
-/// <summary>Terminates a tenant into the grace period (US-ADM-004 AC-3/FR-2).</summary>
-public sealed record TerminateTenantCommand(Guid TenantId, string Reason, int GraceDays)
+/// <summary>
+/// Terminates a tenant into the grace period (US-ADM-004 AC-3/FR-2). <c>GraceDays</c> is nullable: an omitted
+/// value applies the plan default (BUG-002); a supplied value is range-checked 7-90 (BR-4).
+/// </summary>
+public sealed record TerminateTenantCommand(Guid TenantId, string Reason, int? GraceDays)
     : IRequest<Result<TenantLifecycleResultDto>>;
 
 public sealed class TerminateTenantCommandHandler : IRequestHandler<TerminateTenantCommand, Result<TenantLifecycleResultDto>>

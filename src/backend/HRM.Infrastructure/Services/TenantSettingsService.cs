@@ -101,6 +101,23 @@ public sealed class TenantSettingsService : ITenantSettingsService
                 $"Unsupported language '{request.DefaultLanguage}'. Supported: {string.Join(", ", SupportedLanguages.Codes)}.",
                 400);
 
+        // BUG-005: validate the remaining localization fields, not just the language. Previously any
+        // date-format token, time zone, or currency string was persisted verbatim.
+        if (!SupportedDateFormats.IsSupported(request.DateFormat))
+            return Result<LocalizationDto>.Failure(
+                $"Unsupported date format '{request.DateFormat}'. Supported: {string.Join(", ", SupportedDateFormats.Formats)}.",
+                400);
+
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById((request.TimeZone ?? string.Empty).Trim(), out _))
+            return Result<LocalizationDto>.Failure(
+                $"Unknown time zone '{request.TimeZone}'. Expected an IANA time-zone id (e.g. 'Asia/Colombo').",
+                400);
+
+        if (!IsoCurrencyCodes.IsValid(request.Currency))
+            return Result<LocalizationDto>.Failure(
+                $"Unknown currency '{request.Currency}'. Expected a valid ISO-4217 code (e.g. 'USD').",
+                400);
+
         var tenant = await LoadCurrentTenantAsync(cancellationToken);
         if (tenant is null)
             return Result<LocalizationDto>.Failure("Tenant not found.", 404);
