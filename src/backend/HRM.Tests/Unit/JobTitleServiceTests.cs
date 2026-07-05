@@ -142,6 +142,61 @@ public sealed class JobTitleServiceTests : IDisposable
         result.Error.Should().Be("A job title with this name already exists.");
     }
 
+    // ── BUG-016: case-insensitive title_name uniqueness ─────────────
+    // Regression for the case-insensitive uniqueness cluster. Pre-fix the duplicate
+    // check compared `j.TitleName == titleName` (case-sensitive), so a case-variant
+    // slipped past and a second row persisted. Post-fix it is
+    // `j.TitleName.ToLower() == titleName.Trim().ToLower()`.
+
+    [Fact]
+    public async Task CreateJobTitle_CaseVariantName_IsRejected_BUG016()
+    {
+        // Arrange: "Software Engineer" already exists in this tenant.
+        await SeedJobTitle("Software Engineer");
+        var service = CreateService();
+
+        // Act: attempt a case-variant "software engineer".
+        var result = await service.CreateAsync("software engineer", "Different description", null);
+
+        // Assert: rejected as a duplicate (pre-fix this SUCCEEDED — the bug).
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be("A job title with this name already exists.");
+
+        // And no second row persisted.
+        using var db = CreateDbContext();
+        db.JobTitles.Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateJobTitle_CaseVariantOfAnother_IsRejected_BUG016()
+    {
+        await SeedJobTitle("Software Engineer");
+        var hrId = await SeedJobTitle("HR Manager");
+        var service = CreateService();
+
+        // Rename "HR Manager" to a case-variant of the existing "Software Engineer".
+        var result = await service.UpdateAsync(hrId, "SOFTWARE ENGINEER", null, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be("A job title with this name already exists.");
+    }
+
+    [Fact]
+    public async Task CreateJobTitle_GenuinelyDistinctName_Succeeds_BUG016()
+    {
+        // Positive control: a truly different name still creates.
+        await SeedJobTitle("Software Engineer");
+        var service = CreateService();
+
+        var result = await service.CreateAsync("Product Manager", null, null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.TitleName.Should().Be("Product Manager");
+
+        using var db = CreateDbContext();
+        db.JobTitles.Count().Should().Be(2);
+    }
+
     // ── BR-1: Same name allowed cross-tenant ─────────────────────────
 
     [Fact]

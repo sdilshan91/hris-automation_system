@@ -4,13 +4,16 @@ user_story: US-ATT-005
 module: Attendance
 priority: high
 type: functional
-status: fail
+status: automated
 created: 2026-06-14
-defect: BUG-048
+defect: BUG-048, ISSUE-074
 automated_by:
   - HRM.Tests.Integration.ShiftNameTrimDuplicatePostgresTests.CreateShift_WhitespaceDuplicateName_ReturnsDuplicateNot500
   - HRM.Tests.Integration.ShiftNameTrimDuplicatePostgresTests.UpdateShift_WhitespaceDuplicateName_ReturnsDuplicateNot500
   - HRM.Tests.Integration.ShiftNameTrimDuplicatePostgresTests.CreateShift_DistinctTrimmedName_StillCreates
+  - HRM.Tests.Unit.ShiftServiceTests.CreateShift_CaseVariantName_IsRejected_ISSUE074
+  - HRM.Tests.Unit.ShiftServiceTests.UpdateShift_CaseVariantOfAnother_IsRejected_ISSUE074
+  - HRM.Tests.Unit.ShiftServiceTests.CreateShift_GenuinelyDistinctName_Succeeds_ISSUE074
 ---
 
 # TC-ATT-052: Duplicate shift name (incl. whitespace-trimmed variants) within the same tenant is rejected cleanly; the same name is allowed in a different tenant (negative + tenant-scoped uniqueness)
@@ -60,6 +63,17 @@ Bound to the Testcontainers/Postgres integration suite (`HRM.Tests/Integration/S
 - `CreateShift_DistinctTrimmedName_StillCreates` — Step 4 (positive control).
 
 Pre-fix these fail (SaveChanges throws `DbUpdateException`/`23505`). Post-fix they pass (clean 409). Steps 1 and 6 (exact duplicate, per-tenant scope) are covered by the API-layer suite.
+
+**Case-insensitivity (ISSUE-074).** Beyond the whitespace-trim of BUG-048, the duplicate pre-check must also be
+**case-insensitive** — the fix makes it `s.Name.ToLower() == name.Trim().ToLower()`. This is an app-level
+comparison (not a DB-index behavior), so it is bound to the EF Core InMemory unit suite
+(`HRM.Tests/Unit/ShiftServiceTests.cs`), which evaluates `.ToLower()` faithfully:
+- `CreateShift_CaseVariantName_IsRejected_ISSUE074` — create "DAY SHIFT" over "Day Shift" is rejected with 409 `duplicate_name`; only one row remains.
+- `UpdateShift_CaseVariantOfAnother_IsRejected_ISSUE074` — rename to a case-variant of another shift is rejected with 409.
+- `CreateShift_GenuinelyDistinctName_Succeeds_ISSUE074` — positive control: a distinct name still creates.
+
+Pre-fix (case-sensitive `s.Name == name`) the case-variant slips the app check, so the "rejected" assertion
+fails. Post-fix they pass.
 
 ## 8. Test Category Tags
 - [ ] Happy path

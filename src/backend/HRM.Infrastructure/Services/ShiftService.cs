@@ -64,8 +64,10 @@ public sealed class ShiftService : IShiftService
         // variant (e.g. "Day Shift ") slip past the app check and trip the unique index → 500.
         var name = request.Name.Trim();
 
+        // ISSUE-074: the trimmed duplicate pre-check is also case-INsensitive
+        // (LOWER(name) = LOWER(@p)) so "Day Shift" and "day shift" cannot both persist.
         var nameExists = await _dbContext.Shifts
-            .AnyAsync(s => s.Name == name, cancellationToken);
+            .AnyAsync(s => s.Name.ToLower() == name.ToLower(), cancellationToken);
         if (nameExists)
             return Result<ShiftDto>.Failure(
                 "A shift with this name already exists.", 409, "duplicate_name");
@@ -135,8 +137,9 @@ public sealed class ShiftService : IShiftService
         // the stored value (same check/store mismatch as CreateAsync).
         var name = request.Name.Trim();
 
+        // ISSUE-074: the trimmed duplicate pre-check (excluding self) is also case-INsensitive.
         var nameExists = await _dbContext.Shifts
-            .AnyAsync(s => s.Name == name && s.Id != shiftId, cancellationToken);
+            .AnyAsync(s => s.Name.ToLower() == name.ToLower() && s.Id != shiftId, cancellationToken);
         if (nameExists)
             return Result<ShiftDto>.Failure(
                 "A shift with this name already exists.", 409, "duplicate_name");

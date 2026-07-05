@@ -129,6 +129,62 @@ public sealed class ShiftServiceTests
         dup.ErrorCode.Should().Be("duplicate_name");
     }
 
+    // ── ISSUE-074: case-insensitive name uniqueness ────────────────────
+    // Regression for the case-insensitive uniqueness cluster. The BUG-048 trim + 23505
+    // catch already exist; this targets case-INsensitivity specifically. Pre-fix the
+    // duplicate pre-check compared `s.Name == name` (case-sensitive), so a case-variant
+    // "DAY SHIFT" slipped the app check. Post-fix it is
+    // `s.Name.ToLower() == name.Trim().ToLower()` → clean 409 instead of relying on the
+    // unique-index 23505 (which InMemory does not enforce anyway).
+
+    [Fact]
+    public async Task CreateShift_CaseVariantName_IsRejected_ISSUE074()
+    {
+        // Arrange: a shift "Day Shift" already exists in this tenant.
+        await CreateService().CreateAsync(SingleShift("Day Shift"));
+
+        // Act: attempt a case-variant "DAY SHIFT".
+        var dup = await CreateService().CreateAsync(SingleShift("DAY SHIFT"));
+
+        // Assert: rejected as a duplicate (pre-fix this SUCCEEDED under InMemory — the bug).
+        dup.IsFailure.Should().BeTrue();
+        dup.StatusCode.Should().Be(409);
+        dup.ErrorCode.Should().Be("duplicate_name");
+
+        // And no second row persisted — still exactly one shift in the tenant.
+        using var db = CreateDbContext();
+        db.Shifts.Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateShift_CaseVariantOfAnother_IsRejected_ISSUE074()
+    {
+        await CreateService().CreateAsync(SingleShift("Day Shift"));
+        var night = await CreateService().CreateAsync(SingleShift("Night Shift"));
+
+        // Rename "Night Shift" to a case-variant of the existing "Day Shift".
+        var result = await CreateService().UpdateAsync(night.Value!.Id, SingleShift("DAY SHIFT"));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("duplicate_name");
+    }
+
+    [Fact]
+    public async Task CreateShift_GenuinelyDistinctName_Succeeds_ISSUE074()
+    {
+        // Positive control: a truly different name still creates.
+        await CreateService().CreateAsync(SingleShift("Day Shift"));
+
+        var result = await CreateService().CreateAsync(SingleShift("Weekend Shift"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Name.Should().Be("Weekend Shift");
+
+        using var db = CreateDbContext();
+        db.Shifts.Count().Should().Be(2);
+    }
+
     // ── Delete prevention (AC-4/FR-6) ──────────────────────────────────
 
     [Fact]

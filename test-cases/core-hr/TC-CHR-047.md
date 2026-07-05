@@ -4,8 +4,13 @@ user_story: US-CHR-005
 module: Core HR
 priority: high
 type: functional
-status: fail
+status: automated
 created: 2026-06-12
+defect: BUG-016
+automated_by:
+  - HRM.Tests.Unit.JobTitleServiceTests.CreateJobTitle_CaseVariantName_IsRejected_BUG016
+  - HRM.Tests.Unit.JobTitleServiceTests.UpdateJobTitle_CaseVariantOfAnother_IsRejected_BUG016
+  - HRM.Tests.Unit.JobTitleServiceTests.CreateJobTitle_GenuinelyDistinctName_Succeeds_BUG016
 ---
 
 # TC-CHR-047: Duplicate title name check is case-insensitive within tenant
@@ -44,6 +49,17 @@ Verify that the uniqueness constraint on `title_name` within a tenant is case-in
 ## 6. Postconditions
 - The uniqueness constraint prevents case-variant duplicates.
 - Only the original "Software Engineer" record exists.
+
+## Automated Coverage
+Bound to the xUnit + EF Core InMemory unit suite (`HRM.Tests/Unit/JobTitleServiceTests.cs`).
+The fix is an app-level `j.TitleName.ToLower() == titleName.Trim().ToLower()` comparison (BUG-016),
+faithfully evaluated by InMemory (no DB unique index dependency).
+- `CreateJobTitle_CaseVariantName_IsRejected_BUG016` — create "software engineer" over "Software Engineer" is rejected; only one row remains.
+- `UpdateJobTitle_CaseVariantOfAnother_IsRejected_BUG016` — rename to a case-variant of another title is rejected.
+- `CreateJobTitle_GenuinelyDistinctName_Succeeds_BUG016` — positive control: a distinct name still creates.
+
+Pre-fix (case-sensitive `j.TitleName == titleName`) the case-variant slips the check and a second row
+persists, so the "rejected" assertion fails. Post-fix they pass.
 
 ## 7. Test Category Tags
 - [ ] Happy path

@@ -44,9 +44,13 @@ public sealed class LocationService : ILocationService
         if (!_tenantContext.IsResolved)
             return Result<LocationDto>.Failure("Tenant context is not resolved.", 400);
 
-        // FR-2 / BR-1: name uniqueness within tenant
+        // BUG-017: trim once and store the trimmed value (was untrimmed); the duplicate pre-check is
+        // case-INsensitive (LOWER(name) = LOWER(@p)) so "Head Office" and "head office" cannot both persist.
+        name = name.Trim();
+
+        // FR-2 / BR-1: name uniqueness within tenant (trimmed + case-insensitive)
         var nameExists = await _dbContext.Locations
-            .AnyAsync(l => l.Name == name, cancellationToken);
+            .AnyAsync(l => l.Name.ToLower() == name.ToLower(), cancellationToken);
 
         if (nameExists)
             return Result<LocationDto>.Failure("A location with this name already exists.", 400);
@@ -99,9 +103,12 @@ public sealed class LocationService : ILocationService
         if (location is null)
             return Result<LocationDto>.Failure("Location not found.", 404);
 
-        // Name uniqueness (excluding self)
+        // BUG-017: trim once and store the trimmed value (was untrimmed); the duplicate pre-check is case-INsensitive.
+        name = name.Trim();
+
+        // Name uniqueness (excluding self) — trimmed + case-insensitive
         var nameExists = await _dbContext.Locations
-            .AnyAsync(l => l.Name == name && l.Id != locationId, cancellationToken);
+            .AnyAsync(l => l.Name.ToLower() == name.ToLower() && l.Id != locationId, cancellationToken);
 
         if (nameExists)
             return Result<LocationDto>.Failure("A location with this name already exists.", 400);
