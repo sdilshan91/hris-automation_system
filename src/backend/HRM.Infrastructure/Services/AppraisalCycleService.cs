@@ -123,6 +123,18 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             return Result<CycleDto>.Failure(
                 $"A {cycle.Status} cycle can no longer be edited.", 409, "cycle_terminal");
 
+        // ISSUE-118 / BR-5: the 360 anonymity flag freezes once any 360 feedback has been submitted for this
+        // cycle — flipping it would retroactively de-anonymize (or expose) already-submitted feedback. The check
+        // is tenant-scoped via the EF global query filter on Feedback360. Other cycle fields stay editable.
+        if (input.IsAnonymousFeedback != cycle.IsAnonymousFeedback)
+        {
+            var hasFeedback = await _dbContext.Feedback360s
+                .AnyAsync(f => f.CycleId == cycle.Id, cancellationToken);
+            if (hasFeedback)
+                return Result<CycleDto>.Failure(
+                    "Anonymity cannot be changed after feedback has been submitted.", 409, "anonymity_locked");
+        }
+
         cycle.Name = input.Name.Trim();
         cycle.StartDate = input.StartDate;
         cycle.EndDate = input.EndDate;

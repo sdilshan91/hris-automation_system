@@ -98,11 +98,11 @@ public sealed class AttendanceService : IAttendanceService
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
 
-        // AC-5 / FR-4: IP allowlist enforcement.
+        // AC-5 / FR-4: IP allowlist enforcement. Each entry is an exact IP or a CIDR range (ISSUE-066).
         if (settings.IpAllowlistEnabled)
         {
             var ip = data.IpAddress;
-            if (string.IsNullOrWhiteSpace(ip) || !settings.IpAllowlist.Contains(ip))
+            if (string.IsNullOrWhiteSpace(ip) || !IpAllowlistMatcher.IsAllowed(ip, settings.IpAllowlist))
                 return Result<AttendanceLogDto>.Failure(
                     "Clock-in is only allowed from authorized network locations.", 403, "ip_not_allowed");
         }

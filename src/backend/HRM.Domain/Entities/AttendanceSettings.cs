@@ -41,8 +41,9 @@ public sealed class AttendanceSettings : BaseEntity
     public bool IpAllowlistEnabled { get; set; }
 
     /// <summary>
-    /// Allowed source IP addresses (exact match) when <see cref="IpAllowlistEnabled"/> is true (FR-4).
-    /// Stored as a PostgreSQL text[] column.
+    /// Allowed source IPs when <see cref="IpAllowlistEnabled"/> is true (FR-4). Each entry is either an exact IP
+    /// address or a CIDR range (ISSUE-066), evaluated by <c>IpAllowlistMatcher</c>. Stored as a PostgreSQL
+    /// text[] column.
     /// </summary>
     public List<string> IpAllowlist { get; set; } = new();
 

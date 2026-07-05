@@ -277,6 +277,13 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.OfferExpiryJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOfferExpiryScheduler, HRM.Api.Jobs.HangfireOfferExpiryScheduler>();
 
+    // US-PRF-004 FR-5/AC-2/AC-5: tenant-aware cycle phase-transition job + the Hangfire-backed scheduler seam
+    // (bound to ICyclePhaseScheduler so the Infrastructure AppraisalCycleService can schedule/cancel by
+    // interface). A daily recurring job per cycle is (re)scheduled on activate/edit, cancelled on terminal
+    // states. BUG-063: without this binding the optional scheduler param resolved to null and silently no-op'd.
+    builder.Services.AddScoped<HRM.Api.Jobs.CyclePhaseTransitionJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.ICyclePhaseScheduler, HRM.Api.Jobs.HangfireCyclePhaseScheduler>();
+
     // US-PAY-003 FR-2/FR-3: tenant-aware payroll-run processing job + the Hangfire-backed scheduler seam
     // (bound to IPayrollRunJobScheduler so the Infrastructure PayrollRunService can enqueue by interface).
     // The job is enqueued by InitiatePayrollRun and restores the tenant context before computing.
