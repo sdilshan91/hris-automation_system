@@ -33,7 +33,8 @@ describe('UserManagementService', () => {
         lastLoginAt: '2026-06-01T10:00:00Z',
       },
     ],
-    total: 1,
+    totalCount: 1,
+    totalPages: 1,
     page: 1,
     pageSize: 20,
   };
@@ -69,7 +70,7 @@ describe('UserManagementService', () => {
           roleId: 'r-1',
         })
         .subscribe((res) => {
-          expect(res.total).toBe(1);
+          expect(res.totalCount).toBe(1);
           expect(res.items[0].displayName).toBe('Jane Doe');
         });
 

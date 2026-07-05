@@ -74,6 +74,45 @@ describe('BrandingSectionComponent', () => {
     httpMock.expectNone(colorUrl);
   });
 
+  /**
+   * ISSUE-212 regression (US-ADM-006 / TC-ADM-006-22, WCAG 2.1 AA — 3.3.1 / 4.1.2).
+   *
+   * The invalid-hex error must be programmatically associated with the field so
+   * a screen reader announces it: aria-invalid="true" on the input and
+   * aria-describedby pointing at the error element's id. Pre-fix the error <p>
+   * had no id and neither aria attribute existed on the input.
+   */
+  it('brandingHex_invalid_setsAriaInvalidAndDescribedby_ISSUE212', () => {
+    // Valid baseline: field is not flagged invalid and no error element renders.
+    component.onColorChange('#123456');
+    fixture.detectChanges();
+    const hexBefore = fixture.nativeElement.querySelector(
+      'input.color-hex'
+    ) as HTMLInputElement;
+    expect(hexBefore).toBeTruthy();
+    expect(hexBefore.getAttribute('aria-invalid')).not.toBe('true');
+    expect(fixture.nativeElement.querySelector('p.cs-error')).toBeNull();
+
+    // Enter an invalid hex -> the error message renders and must be wired up.
+    component.onColorChange('nope');
+    fixture.detectChanges();
+    expect(component.colorInvalid()).toBeTrue();
+
+    const hex = fixture.nativeElement.querySelector(
+      'input.color-hex'
+    ) as HTMLInputElement;
+    const error = fixture.nativeElement.querySelector('p.cs-error') as HTMLElement;
+
+    expect(error)
+      .withContext('invalid-hex error message should render')
+      .toBeTruthy();
+    expect(error.id)
+      .withContext('error element must expose an id for aria-describedby')
+      .toBeTruthy();
+    expect(hex.getAttribute('aria-invalid')).toBe('true');
+    expect(hex.getAttribute('aria-describedby')).toBe(error.id);
+  });
+
   it('uploads to the right slot and stores the returned url', () => {
     const file = new File(['x'], 'email.png', { type: 'image/png' });
     component.onFilePicked(

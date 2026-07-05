@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideToastr, ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
@@ -194,5 +194,93 @@ describe('CarryForwardPreviewComponent (US-LV-008)', () => {
     expect(component.allRows().length).toBe(0);
     expect(component.isLoading()).toBeFalse();
     expect(toastrSpy.error).toHaveBeenCalled();
+  });
+});
+
+/**
+ * BUG-101 regression (US-LV-008, AC-5 / TC-LV-260).
+ *
+ * The other describe above mocks CarryForwardPreviewService and hands the
+ * component FE-shaped rows — it therefore CANNOT catch the FE↔BE shape drift.
+ * This block wires the REAL service through HttpClientTesting and flushes the
+ * actual backend wire shape (`carryForward` / `forfeited`, NOT the FE model's
+ * `projectedCarryForward` / `projectedForfeiture`, and no `departmentName`).
+ *
+ * Pre-fix the service typed the GET as ICarryForwardPreviewRow[] and returned
+ * the raw body untouched, so the component read `r.projectedCarryForward` ===
+ * undefined: the row's `> 0` branch never rendered (cell absent) and
+ * sumTotals() summed undefined -> the summary strip showed `NaN`. The fix maps
+ * the BE fields at the service boundary, so the real non-zero numbers flow
+ * through to the row and the totals.
+ */
+describe('CarryForwardPreviewComponent — BUG-101 regression (real service, BE-shaped payload)', () => {
+  let fixture: ComponentFixture<CarryForwardPreviewComponent>;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [CarryForwardPreviewComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideAnimationsAsync(),
+        provideToastr(),
+      ],
+    });
+    fixture = TestBed.createComponent(CarryForwardPreviewComponent);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('carryForwardPreview_rendersRealTotals_notNaN_BUG101', () => {
+    fixture.detectChanges(); // ngOnInit -> getPreview(currentYear) -> HTTP GET
+
+    const req = httpMock.expectOne((r) =>
+      r.url.includes('/leaves/carry-forward-preview')
+    );
+    expect(req.request.method).toBe('GET');
+
+    // Exactly the backend DTO shape: numeric fields are carryForward/forfeited,
+    // there is NO projectedCarryForward/projectedForfeiture and NO departmentName.
+    req.flush([
+      {
+        employeeId: 'emp-1',
+        employeeName: 'Alice Anderson',
+        employeeNo: 'E-001',
+        leaveTypeId: 'lt-1',
+        leaveTypeName: 'Annual Leave',
+        fromYear: 2026,
+        toYear: 2027,
+        unusedBalance: 15,
+        carryForward: 12,
+        forfeited: 3,
+        wouldEncash: false,
+      },
+    ]);
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+
+    // Component-level: the non-zero BE values reach the FE model fields.
+    expect(fixture.componentInstance.totals().carryForward).toBe(12);
+    expect(fixture.componentInstance.totals().forfeiture).toBe(3);
+
+    // Row cells only exist in the `> 0` branch, so pre-fix (undefined) they are
+    // absent — asserting they render the real numbers fails pre-fix.
+    const cf = el.querySelector('[data-testid="cf-amount"]');
+    const ff = el.querySelector('[data-testid="ff-amount"]');
+    expect(cf)
+      .withContext('carry-forward cell should render for a non-zero value')
+      .toBeTruthy();
+    expect(cf?.textContent?.trim()).toBe('+12');
+    expect(ff).toBeTruthy();
+    expect(ff?.textContent?.trim()).toBe('3');
+
+    // Summary strip shows the real totals and never the pre-fix `NaN`.
+    const totals = el.querySelector('[data-testid="totals"]');
+    expect(totals?.textContent).toContain('12');
+    expect(totals?.textContent).toContain('3');
+    expect(totals?.textContent).not.toContain('NaN');
   });
 });

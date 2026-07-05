@@ -1,11 +1,36 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   ICarryForwardPreviewRow,
   ICarryForwardPreviewError,
 } from '../models/carry-forward-preview.models';
+
+/**
+ * Raw carry-forward preview row exactly as the backend serializes it
+ * (CarryForwardPreviewDto). The numeric fields are `carryForward` / `forfeited`
+ * (NOT the FE model's `projectedCarryForward` / `projectedForfeiture`) and the
+ * DTO carries no `departmentName`. We map this to ICarryForwardPreviewRow at the
+ * service boundary (BUG-101, same FE↔BE shape-drift class as BUG-099/102) so the
+ * component + pure helpers keep reading the FE-friendly field names.
+ */
+interface IBackendCarryForwardPreviewRow {
+  employeeId: string;
+  employeeName: string;
+  employeeNo?: string | null;
+  leaveTypeId: string;
+  leaveTypeName: string;
+  fromYear: number;
+  toYear: number;
+  unusedBalance: number;
+  carryForward: number;
+  forfeited: number;
+  wouldEncash: boolean;
+  // Optional/denormalized — the DTO does not currently emit it, kept for forward-compat.
+  departmentName?: string | null;
+}
 
 /**
  * US-LV-008: Service for the HR-facing carry-forward / expiry preview report.
@@ -39,10 +64,29 @@ export class CarryForwardPreviewService {
    */
   getPreview(year: number): Observable<ICarryForwardPreviewRow[]> {
     const params = new HttpParams().set('year', String(year));
-    return this.http.get<ICarryForwardPreviewRow[]>(`${this.baseUrl}/carry-forward-preview`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<IBackendCarryForwardPreviewRow[]>(`${this.baseUrl}/carry-forward-preview`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(CarryForwardPreviewService.toRow)));
+  }
+
+  /**
+   * Map the backend DTO shape to the FE row model (BUG-101). The BE numeric
+   * fields `carryForward` / `forfeited` become `projectedCarryForward` /
+   * `projectedForfeiture`; `?? 0` guards a missing field so totals never render NaN.
+   */
+  private static toRow(r: IBackendCarryForwardPreviewRow): ICarryForwardPreviewRow {
+    return {
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      departmentName: r.departmentName ?? null,
+      leaveTypeId: r.leaveTypeId,
+      leaveTypeName: r.leaveTypeName,
+      projectedCarryForward: r.carryForward ?? 0,
+      projectedForfeiture: r.forfeited ?? 0,
+    };
   }
 
   /** Parse an error response into a typed preview error. */
