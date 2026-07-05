@@ -3,8 +3,10 @@
 > Phase 3 of `FIX-FINDINGS-PLAN-2026-07-04.md`. After Wave 1 (12 HIGH, PRs #137–148) and Phase 2
 > (audit-write cluster, 22 findings, PRs #149–154), **0 genuine open CRIT/HIGH remain**. This triages the
 > remaining MED/LOW long tail into **FIX-NOW · BATCH · WONTFIX/BACKLOG**, each with a recommendation.
-> Counts are approximate — the ledger has duplicate reused IDs (ISSUE-097, ISSUE-105, BUG-059 ×2) and
-> "STAYS OPEN" notes that defeat automated counting; clusters below are by theme, not exhaustive lists.
+> Counts are approximate. (The former duplicate reused IDs were de-duplicated on 2026-07-05: the still-open
+> occurrences became ISSUE-243 / ISSUE-244 / BUG-242 — see the mapping banner in TEST-FINDINGS.md. Some older
+> mentions in this triage doc predate the renumber.) "STAYS OPEN" notes still defeat naive automated counting;
+> clusters below are by theme, not exhaustive lists.
 
 ## Recommendation at a glance
 
@@ -73,11 +75,11 @@
 - **Recommendation:** these are feature work, not regressions. Convert to backlog/ENH items with product sign-off; don't fold into a bug-fix sweep.
 
 ### W2 — Product-decision-needed (surface, don't guess)
-- **BUG-029** (leave approval + `negative_balance_limit` semantics), **BUG-059** ("Hired is terminal" enforcement + self-assessment reopen flow), **BUG-060** (Rejected→forward transition policy), **ISSUE-086** (half-day-leave vs half-day-shift evaluation), **ISSUE-090** (phantom full-month-absent auto-generation), **BUG-038** (absenteeism threshold hardcoded).
+- **BUG-029** (leave approval + `negative_balance_limit` semantics), **BUG-059** ("Hired is terminal" enforcement) + **BUG-242** (self-assessment reopen flow, formerly the second BUG-059), **BUG-060** (Rejected→forward transition policy), **ISSUE-086** (half-day-leave vs half-day-shift evaluation), **ISSUE-090** (phantom full-month-absent auto-generation), **BUG-038** (absenteeism threshold hardcoded).
 - **Recommendation:** each needs an AC/business-rule decision before coding. Batch a short "product questions" doc for the owner.
 
 ### W3 — Data-anomaly investigations (not code-clearable yet)
-- **ISSUE-097** (24/26 acme vacancies `is_deleted=true`, cause unpinned, LOW confidence — needs a repro), **BUG-058** (resume MIME content-sniffing — real but needs a magic-byte check lib decision).
+- **ISSUE-243** (formerly ISSUE-097 — 24/26 acme vacancies `is_deleted=true`, cause unpinned, LOW confidence — needs a repro), **BUG-058** (resume MIME content-sniffing — real but needs a magic-byte check lib decision).
 
 ### W4 — Cosmetic / defense-in-depth nits (LOW — batch cheaply or WONTFIX)
 - **BUG-044** (threshold lockout message one request late), **ISSUE-056** (my-tenants cache invalidation), **BUG-006** (workflow restore edge), **ISSUE-057/060/061/063/064** and the bulk of the ~75 LOW (404-vs-400 codes, favicon-404, WCAG contrast **BUG-096** systemic, empty audit-summary fields, `created_by` email-vs-UUID **ISSUE-015**).
@@ -92,4 +94,4 @@
 4. **W4** → one cosmetic sweep + a WONTFIX pass to clean the ledger.
 
 ## Ledger-hygiene TODO (independent, cheap, high-signal)
-De-duplicate the reused IDs (**ISSUE-097, ISSUE-105, BUG-059** each defined twice) and strip stale "STAYS OPEN" phrasing from RESOLVED notes so automated counts become trustworthy. ~30 min, unblocks accurate reporting.
+De-duplicate the reused IDs — **DONE 2026-07-05** (ISSUE-097→ISSUE-243, ISSUE-105→ISSUE-244, BUG-059→BUG-242 for the still-open occurrences; see the mapping banner in TEST-FINDINGS.md). Still outstanding: strip stale "STAYS OPEN" phrasing from RESOLVED notes so automated counts become fully trustworthy.
