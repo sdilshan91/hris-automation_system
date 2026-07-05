@@ -584,12 +584,26 @@ public sealed class AccountLockoutTests
         await SeedUserAndTenantAsync(maxFailedAttempts: 3);
         await LockUserAsync();
 
-        // Set progressive lockout state
+        // BUG-040 (#118) made the reset token a mandatory single-use, expiring credential:
+        // ResetPasswordAsync now rejects (400) any request whose token does not match a stored,
+        // unexpired PasswordResetTokenHash. This test predates that fix and never seeded one, so it
+        // was failing at the token gate BEFORE ever reaching the lockout-clear logic under test.
+        // Seed a valid, unexpired token exactly as ForgotPasswordAsync does (SHA-256 hex of the raw
+        // token) so the reset actually runs and BR-2's lockout-clear is genuinely exercised.
+        const string rawToken = "valid-token";
+        var tokenHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(rawToken)))
+            .ToLowerInvariant();
+
+        // Set progressive lockout state (+ the valid reset token)
         using (var db = CreateDbContext())
         {
             var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == _userId);
             user.LockoutCount = 3;
             user.LastLockoutAt = DateTime.UtcNow;
+            user.PasswordResetTokenHash = tokenHash;
+            user.PasswordResetTokenExpiresAt = DateTime.UtcNow.AddHours(1);
             await db.SaveChangesAsync();
         }
 
@@ -597,7 +611,7 @@ public sealed class AccountLockoutTests
 
         // Act: reset password (BR-2)
         var result = await service.ResetPasswordAsync(
-            "test@test.local", "valid-token", "NewPassword456!", default);
+            "test@test.local", rawToken, "NewPassword456!", default);
 
         // Assert: success, lockout cleared
         result.IsSuccess.Should().BeTrue();
