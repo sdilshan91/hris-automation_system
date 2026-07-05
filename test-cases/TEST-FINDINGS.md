@@ -96,7 +96,7 @@
 
 ---
 ### ISSUE-002 — `GET /api/v1/system/tenants` ignores `search=` and returns the full unpaged tenant list
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #164, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-001 (surfaced during US-ADM-002 run) · TC-ADM-002-02 (searchable tenant table context; see note)
 - **Title:** System Admin tenant directory has no server-side search or pagination — every request returns all rows.
@@ -131,7 +131,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-002 — Terminate with `graceDays` OMITTED returns 400 instead of applying the plan default (30) — AC-3/FR-2/BR-4 default-grace contract unimplementable via API
-- **Type / Severity / Status:** BUG · MED · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27)**: throwaway tenant `POST /api/v1/system/tenants/{id}/lifecycle/terminate` body `{reason}` (no graceDays) → 400 "The grace period must be between 7 and 90 days."; same body + `graceDays:30` → 200 Terminating (scheduledAt=now+30d). Unchanged.
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #162, regression-tested red pre-fix/green post-fix; merged 2026-07-05) — **STILL PRESENT (regression re-confirmed 2026-06-27)**: throwaway tenant `POST /api/v1/system/tenants/{id}/lifecycle/terminate` body `{reason}` (no graceDays) → 400 "The grace period must be between 7 and 90 days."; same body + `graceDays:30` → 200 Terminating (scheduledAt=now+30d). Unchanged.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-004 · TC-ADM-004-16 (step 6 — "Terminate omitting grace_period_days → default 30 applied")
 - **Title:** `POST /api/v1/system/tenants/{id}/lifecycle/terminate` with the `graceDays` field absent from the body is rejected with HTTP 400 `grace_days_invalid` ("The grace period must be between 7 and 90 days."), instead of falling back to the documented plan default of 30 days. The AC-3 / FR-2 / BR-4 "default 30 days, plan-configurable" / "default from plan" contract therefore cannot be exercised through the API — a spec-compliant client that omits the optional grace value never gets a termination.
@@ -151,7 +151,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would make `GraceDays` an `int?`, resolve `null → 30` (or a plan-level grace column) before the 7-90 validation, and add a service test asserting an omitted grace yields `TerminationScheduledAt = now + 30d`.)
 
 ### ISSUE-004 — User-list `status=Invited` filter silently returns ALL users (no `Invited` membership state); FR-1 "invited" list facet is unimplementable
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #164, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-005 · TC-ADM-005-02 (step 6) / TC-ADM-005-01 (FR-1 "membership status invited/active/disabled")
 - **Title:** `GET /api/v1/tenant/users?status=Invited` returns the full active-user list instead of the pending invitees, because `UserTenantStatus` has no `Invited` member and the unparseable value is silently dropped (no filter applied). FR-1 says the list must surface membership status as `invited`/`active`/`disabled`, but there is no `Invited` `user_tenant` state at all — pending invitees live only in `user_invitations` and never appear in the user list.
@@ -253,7 +253,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev should introduce a tenant-policy-aware password validator consulted by reset/change paths, add an authenticated change-password endpoint, and implement history + max-age checks; add an integration test that sets `minLength: 20` and asserts a 12-char reset is rejected.)
 
 ### BUG-005 — Localization update validates ONLY the language; invalid date-format, IANA time zone, and ISO-4217 currency are silently accepted and stored — FR-4 "no silent acceptance of an unrenderable value" unmet
-- **Type / Severity / Status:** BUG · MED · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27)**: acme PUT `/tenant/settings/localization` with `dateFormat:"QQ-WW-ZZ", timeZone:"Mars/Olympus", currency:"ZZZ"` → 200 "Localization settings updated." stored verbatim. Reverted to sane values after probe. Unchanged.
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #162, regression-tested red pre-fix/green post-fix; merged 2026-07-05) — **STILL PRESENT (regression re-confirmed 2026-06-27)**: acme PUT `/tenant/settings/localization` with `dateFormat:"QQ-WW-ZZ", timeZone:"Mars/Olympus", currency:"ZZZ"` → 200 "Localization settings updated." stored verbatim. Reverted to sane values after probe. Unchanged.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-006 · TC-ADM-006-09 (steps 2/3/4)
 - **Title:** `PUT /api/v1/tenant/settings/localization` rejects an unsupported `defaultLanguage` (good) but performs NO validation on `dateFormat`, `timeZone`, or `currency` — a garbage date-format token (`QQ-WW-ZZ`), a non-existent IANA zone (`Mars/Olympus`), and a non-ISO currency (`ZZZ`) are all accepted with HTTP 200 and persisted verbatim, becoming the tenant-wide default that downstream rendering cannot honor.
@@ -514,7 +514,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-019 — Directory sort param-name contract mismatch: spec/TCs send `sort`/`sortDirection`, API binds `sortBy`/`sortDescending` → sort silently ignored, no error
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #164, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-003 · TC-CHR-127 (step 7 asserts `?sort=name&sortDirection=asc`), TC-CHR-136 (sort options)
 - **Title:** The TCs and the directory spec express sort as `?sort=name&sortDirection=asc` (and `…&sort=date_of_joining&sortDirection=desc`), but the controller action binds `[FromQuery] string? sortBy` and `[FromQuery] bool sortDescending` (`EmployeesController.cs:163-164`). A client sending `sort`/`sortDirection` has those params **silently ignored** — the endpoint falls back to default (name asc) with no 400/warning, so requested sorts (e.g. DOJ-desc per TC-CHR-136) are not honored while the call still returns 200. Easy to mistake for "sort works" because default-asc happens to match many test expectations.
@@ -600,7 +600,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-021 — Job title `gradeId` is accepted with NO validation: any arbitrary GUID is persisted as the grade link (no SalaryGrade subsystem / FK exists) — AC-4 grade-link integrity unverifiable
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · DEFERRED (feature-blocked: no SalaryGrade entity — see PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-005 · TC-CHR-037 (create job title with salary-grade link; AC-4)
 - **Title:** `POST /api/v1/tenant/job-titles` (and PUT) stores the `gradeId` field verbatim with **zero validation** — no existence check, no tenant-scope check, no FK constraint. A wholly fabricated GUID (`00000000-0000-0000-0000-0000000000ff`) is accepted and returned on the created record (HTTP 201). There is no SalaryGrade entity, DbSet, controller, or `grade_id` foreign key anywhere in the backend, so AC-4 ("link to an existing salary grade") cannot be satisfied or verified, and any value the client sends becomes a dangling reference.
@@ -740,7 +740,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Fix is the shared BUG-003 remediation: the tenant-resolution/auth pipeline must reject any request whose resolved tenant ≠ the authenticated token's tenant claim — fail-closed — closing this and every other BUG-003 surface at once.)
 
 ### ISSUE-025 — Status-change before/after audit snapshot is written to `employee_field_audit_logs` (write-only) but is NOT in the queryable generic `/audit-logs` and has no read endpoint — NFR-5 audit trail is not retrievable
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #165, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-009 · TC-CHR-230 (audit log records before/after snapshot for status change → FAIL). Missing-audit/forensic-gap class (BUG-010/BUG-018/ISSUE-024).
 - **Title:** A status change DOES write a before/after audit row (`EmployeeFieldAuditLog`, `Section="StatusChange"`, before=`{Status,IsActive}` / after=`{Status,IsActive}`) — so NFR-5 is *partially* met at the write layer — but that row is **not** surfaced anywhere a verifier or auditor can read it: it is absent from the queryable tenant `GET /api/v1/tenant/audit-logs` store, and no `EmployeeFieldAuditLog` read/list endpoint exists on the Employees controller (only `/profile` exposes the separate `EmploymentHistory` timeline, which carries actor/reason/previous-value/new-value but NOT the structured before/after snapshot the NFR-5/TC-230 audit-log entry describes). So the dedicated audit before/after snapshot is effectively write-only.
@@ -1496,7 +1496,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-055 — Denied/unauthorized tenant-switch attempts write NO audit/security event (TC-AUTH-023 step 8, TC-AUTH-060 step 9 unmet)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #165, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-008 · TC-AUTH-023 (step 8), TC-AUTH-060 (step 9)
 - **Title:** TC-023/TC-060 require that unauthorized switch attempts (non-member tenant, fabricated tenant id, suspended/terminated target, inactive membership) be logged as security events with user id, attempted tenant id, and reason. In practice every denied switch returns 403 but writes **zero** `audit_logs` rows — only successful switches are audited (`tenant_switch`). There is no detection trail for tenant-switch probing/enumeration or repeated unauthorized-switch abuse.
@@ -1551,7 +1551,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-058 — Admin session-revoke audit row is attributed to the VICTIM, not the admin actor: `session_revoked_by_admin` records the target user as `actor`, so the audit trail cannot answer "which admin revoked this session" (AC-5/FR-9 actor-accountability gap)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #165, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-009 · TC-AUTH-070 (step 5), TC-AUTH-078
 - **Title:** AC-5/FR-9 require admin session revocations to be audited with the admin actor (spec Data Requirements: `admin_user_id` + `target_user_id`). Live, the `session_revoked_by_admin` row surfaces in `GET /api/v1/tenant/audit-logs` with `actorUserId`/`actorName`/`actorEmail` = the **target/victim** user, never the admin who performed the action. The admin actor is absent from the record, so the audit cannot attribute the revoke to a person.
@@ -2054,7 +2054,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > **Run context (REPORT-ONLY, API-layer):** 12 owned TCs executed — TC-ATT-118..128 + TC-ATT-ISO-012. Routes discovered on `AttendanceController`: `GET /api/v1/attendance/payroll-data?month=yyyy-MM&employeeIds=<csv>` (`Attendance.View.All`), `GET /period-lock?month=` (`Attendance.View.All`), `POST /period-lock` + `POST /period-lock/{id}/unlock` (`Attendance.Lock.Manage`), `GET /reconciliation?month=` (`Attendance.View.All`). The attendance→payroll **feed is well-built and accurate**: payroll-data reuses the US-ATT-007 monthly summary, so present/absent/lop/work-minutes **reconcile exactly** with the summary AND the reconciliation view (John Doe 2026-06: present 3.0 / absent 13 / lop 13 / work 13057 / OT 360 — identical across all three surfaces). **Approved-OT-only is honored** (John: approved 360, pending 1591, rejected 120 → feed shows only 360, multiplier breakdown `{"1.5":360}`). **Lock lifecycle works** (lock → blocks regularization with exact AC-4 string; overlap → 409; unlock HR-only; re-lock). **Authz clean** (unauth 401, employee/manager 403, HR 200; reads gated `Attendance.View.All`, writes `Attendance.Lock.Manage`). Findings below are the gaps. No 500s in `hrm-20260626.log`. AC-2/AC-3 salary math + FR-5 payroll-input column + BR-8 configurable cutoff are PAYROLL-MODULE / DEFERRED per the TCs' own notes.
 
 ### ISSUE-088 — Empty / missing-date `POST /period-lock` body creates a garbage lock for `0001-01-01` (no required-field or sane-date validation on `LockPeriodRequest`)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #162, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-009 · TC-ATT-122 / TC-ATT-127 (S6 lock validation)
 - **Title:** A `POST /api/v1/attendance/period-lock` with an empty body `{}` (or omitting either date) returns **200 and persists a real active lock with `periodStart=periodEnd=0001-01-01`** instead of a 400 validation error. `LockPeriodRequest.PeriodStart/PeriodEnd` are non-nullable `DateOnly`, so absent fields bind to `DateOnly.MinValue` (`0001-01-01`); the only guard is `periodEnd < periodStart` (passes, equal) and the overlap check (passes, no other 0001 lock), so a meaningless lock is created.
@@ -2168,7 +2168,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-095 — The tenant-level public-careers toggle (`Tenant.PublicCareersEnabled`) has NO writer anywhere in the product; FR-4/S35.2.9 "if enabled in tenant module configuration" is unreachable, so the public careers page can never be turned on for a real tenant
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #164, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-001 · TC-REC-001-02 (precondition: public page enabled) + TC-REC-001-10 (tenant toggle)
 - **Title:** `PublicCareersService` correctly gates the anonymous careers listing/detail on `Tenant.PublicCareersEnabled` (off ⇒ empty list / 404). But a repo-wide search shows the flag is only ever **read** (PublicCareersService) and only ever **set in an integration test fixture** — there is **no controller, command, settings DTO, or admin endpoint** that lets a tenant admin enable it. The column defaults to `false` for every seeded/created tenant. Consequently FR-4 ("publish ... to the tenant's public careers page if enabled in tenant module configuration — see S35.2.9") and FR-5 (public SEO slug page) are dead on arrival for any real tenant: an Open, public-toggled vacancy is never publicly visible because the tenant master switch can't be flipped through the product.
@@ -2210,7 +2210,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Routes: `/api/v1/tenant/performance/*` (NOT `/api/v1/performance/*` as the TCs spec — FE-spec drift, see ISSUE-100). Single-goal POST (no batch). Permissions: writes/reads admit `Performance.SetGoal.Team` (direct manager) OR `Performance.SetGoal.All` (HR override); BR-4 direct-report check + BR-1/AC-5 window gate + BR-2 count + ≤100% weight all enforced in `GoalService`. Personas: `manager@acme.test` (SetGoal.Team → EMP-MGR01, reports John Doe EMP-0001 + Et Contract EMP-0014), `hr@acme.test` (SetGoal.All, NOT employee-linked), `tenantadmin@acme.test` (SetGoal.All). Seeded 3 acme cycles (QA-PRF001-OPEN/CLOSED/FUTURE) + 1 techoneglobal cycle for isolation; all residue cleaned (see report). 16 TCs executed: 10 PASS / 4 FAIL / 2 BLOCKED.
 
 ### BUG-056 — AC-3 / FR-3 "weights must total exactly 100%" is NOT enforced server-side: an under-allocated (<100%) goal set persists silently and the AC-3 error string is never emitted
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · DEFERRED (feature-blocked: no goal-set finalize seam — see PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-02 (also weakens the AC-2 "weights summing to 100%" guarantee)
 - **Title:** AC-3/FR-3 require that goal weights for an employee+cycle sum to **exactly** 100%, with the validation error "Goal weights must total 100%" on violation. The server only enforces the **upper** bound (running total > 100% → 422 `weight_exceeds_100`); it never enforces the lower bound. A manager can create goals summing to 95% (or any value < 100%) and every create returns 201 — the employee is left with an under-weighted goal set indefinitely, and the AC-3 message "Goal weights must total 100%" is **never produced by any endpoint**. The exact-100 invariant is delegated entirely to the (currently-down, untestable) UI via the `EmployeeGoalsDto.TotalWeight` rollup.
@@ -4841,7 +4841,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** HIGH — breaks the primary employee flow of the module: with an empty leave-type list the user cannot pick a type and therefore cannot submit any leave request from the UI. Affects every persona on the apply screen (tenantadmin reproduced; the same forkJoin/route applies to employee/manager/HR). Not data-destructive but blocks the core action of US-LV-003.
 
 ### ISSUE-208 — Attendance module sub-pages are orphaned from in-app navigation (no menu/link to regularization, shifts, overtime, monthly-summary, approvals, late-policy, reconciliation, lateness-score)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #166, regression-tested red pre-fix/green post-fix; merged 2026-07-05)
 - **Layer:** FE
 - **Module / US / TC:** Attendance / US-ATT-003..009 / discoverability of TC-ATT-035/050/066/083/099/116/128 surfaces
 - **Title:** The Attendance feature exposes a single flat sidebar item **"Attendance" → `/attendance`** (which redirects to `/attendance/clock-in`). None of the other 11 attendance routes are reachable through any in-app menu, tab, or soft link: `regularization`, `regularization-approvals`, `shifts`, `overtime`, `overtime-approvals`, `overtime-report`, `monthly-summary`, `lateness-score`, `late-early-report`, `late-policy`, `payroll-integration`. The HR dashboard/reports pages are only reachable via the home **"Today's Attendance"** KPI card (`/attendance/dashboard ↔ /attendance/reports` cross-link each other, nothing else).
@@ -4851,7 +4851,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — no crash and the pages work when reached, but the bulk of the Attendance module (regularization request/approve, shift management, overtime, monthly summary, late policy, payroll reconciliation) is effectively undiscoverable in the UI, so end users cannot reach these features through normal navigation. Not CRIT/HIGH only because clock-in (the daily core action) and the HR dashboard are reachable.
 
 ### ISSUE-209 — Public careers page + apply form not exercisable for acme: public-careers is disabled, so an Open vacancy is invisible to the anonymous careers list/detail
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · WONTFIX-CODE (DATA/tenant-config test-blocker, not a defect — enable acme PublicCareersEnabled; see PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 - **Layer:** DATA (tenant config) / FE-test-blocker
 - **Module / US / TC:** Recruitment / US-REC-001, US-REC-002 / TC-REC-002-13 (apply-form a11y/responsive), blocks public side of TC-REC-001-12
 - **Title:** On `http://acme.myhrm.org:4200/careers` the public careers page renders but shows "No open positions"; the anonymous vacancy-detail `/careers/{openId}` shows "This position is no longer available" — even though acme has **two Open vacancies** (VAC-2026-0027, VAC-2026-0028) visible in the authenticated admin list. The public application form (drag-drop upload, the subject of TC-REC-002-13) therefore never mounts and cannot be a11y/responsive-tested.
