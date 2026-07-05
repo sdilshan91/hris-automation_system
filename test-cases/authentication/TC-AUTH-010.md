@@ -65,7 +65,10 @@ Verify that the forgot-password endpoint accepts an email address and always ret
 - **Finding:** ISSUE-051 — `ForgotPasswordAsync` was Serilog-only; no `password_reset_requested` row reached `audit_logs` (step 6 gap).
 - **Bound test:** `HRM.Tests.Unit.AuthAuditWriteTests.PasswordReset_WritesRequestedAndCompletedAuditRows_ISSUE051` (`src/backend/HRM.Tests/Unit/AuthAuditWriteTests.cs`), phase 1.
 - **Covers:** step 6 — drives the real `ForgotPasswordAsync` for a tenant member and asserts one tenant-scoped `password_reset_requested` audit row for the user. Fails pre-fix (row absent), passes post-fix.
-- **Not covered here:** email delivery/branding (steps 2-4, deferred SMTP seam) and rate-limiting (step 10, ISSUE-052) are out of this test's scope.
+- **Finding:** ISSUE-052 — no rate limiting on forgot-password; 6 rapid same-client requests all returned 200, none 429 (step 10 gap; FR-9).
+- **Bound test:** `HRM.Tests.Integration.Http.RateLimitClusterApiTests.ForgotPassword_ExceedingLimitFromSameClient_Returns429_ISSUE052` (`src/backend/HRM.Tests/Integration/Http/RateLimitClusterApiTests.cs`).
+- **Covers:** step 10 — live behavioral 429 via `WebApplicationFactory`: fires 6 requests from one client and asserts the first 5 are not throttled and the 6th returns HTTP 429. Fails pre-fix (no `"forgot-password"` policy / `[EnableRateLimiting]` attribute, so the 6th also returns 200), passes post-fix.
+- **Not covered here:** email delivery/branding (steps 2-4, deferred SMTP seam) are out of the automated tests' scope.
 
 ## 7. Test Category Tags
 - [x] Happy path
