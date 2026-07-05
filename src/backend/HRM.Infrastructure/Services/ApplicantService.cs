@@ -624,6 +624,11 @@ public sealed class ApplicantService : IApplicantService
     /// the caller batches the save (so bulk moves are atomic). Hard rules (failure):
     /// <list type="bullet">
     /// <item>A no-op move (same stage) is rejected (409).</item>
+    /// <item>BUG-059 (US-REC-004): Hired is a terminal stage — any move OUT of Hired is rejected (400,
+    /// <c>hired_is_terminal</c>).</item>
+    /// <item>BUG-060 (US-REC-004, BR-2): a reactivation out of Rejected may only re-enter at an early
+    /// pipeline stage (Applied/Screening); a forward leap to Interview/Offer/Hired is rejected (400,
+    /// <c>invalid_reactivation_target</c>).</item>
     /// <item>US-REC-004 AC-4/FR-3: moving to Rejected requires a structured <paramref name="rejectionReason"/>
     /// AND the free-text reason (BR-3).</item>
     /// <item>BR-4 / BR-2: a backward move, OR moving OUT of Rejected to an active stage (reactivation),
@@ -633,8 +638,9 @@ public sealed class ApplicantService : IApplicantService
     /// </list>
     /// Soft, overridable warnings (success, never blocking) are returned for: BR-4 headcount-filled when
     /// moving to Offer/Hired at/over capacity, and the FR-1/BR-1 interview/scorecard gates (stubbed —
-    /// always passes, pending US-REC-005/006). Hired is allowed (convert-to-employee is US-REC-010, out of
-    /// scope). Backward/forward permission (BR-2) is enforced at the API layer (the endpoint requires
+    /// always passes, pending US-REC-005/006). Moving INTO Hired is allowed but is terminal thereafter
+    /// (convert-to-employee is US-REC-010, out of scope). Backward/forward permission (BR-2) is enforced at
+    /// the API layer (the endpoint requires
     /// Recruitment.Manage), so any caller here already holds Manage.
     /// </summary>
     private Result ApplyStageMove(
@@ -650,9 +656,25 @@ public sealed class ApplicantService : IApplicantService
         if (fromStage == toStage)
             return Result.Failure("The applicant is already in this stage.", 409, "stage_unchanged");
 
+        // BUG-059 (US-REC-004): Hired is a HARD terminal stage. Once an applicant is Hired they cannot
+        // change stage in either direction — the pipeline is finished. (Onward handling of a hire is the
+        // convert-to-employee flow, US-REC-010, not a pipeline move.) Mirrors the other hard-rule guards.
+        if (fromStage == ApplicantStage.Hired)
+            return Result.Failure("A hired applicant cannot change stage.", 400, "hired_is_terminal");
+
         var isBackward = (int)toStage < (int)fromStage;
         var isReactivation = fromStage == ApplicantStage.Rejected && toStage != ApplicantStage.Rejected;
         var isRejection = toStage == ApplicantStage.Rejected;
+
+        // BUG-060 (US-REC-004, BR-2): reactivating a Rejected applicant is a CONTROLLED RE-ENTRY, not a
+        // forward jump. A rejected applicant may only re-enter the funnel at its early stages (Applied or
+        // Screening) and must then progress normally; leaping straight to Interview/Offer/Hired — skipping
+        // the flow — is rejected. (The pre-rejection stage is not tracked on the applicant, only in the
+        // history rows, so the defensible re-entry point is the early screening portion of the pipeline.)
+        if (isReactivation && toStage >= ApplicantStage.Interview)
+            return Result.Failure(
+                "A reactivated applicant must re-enter the pipeline at Applied or Screening, not a later stage.",
+                400, "invalid_reactivation_target");
 
         // BR-3: moving to Rejected requires the free-text reason (the audit trail/email carry context).
         if (isRejection && string.IsNullOrWhiteSpace(reason))
