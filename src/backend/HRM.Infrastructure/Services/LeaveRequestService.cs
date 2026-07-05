@@ -724,6 +724,20 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 400);
         }
 
+        // BUG-029 (US-LV-006): even when the leave type permits a negative balance, enforce a hard
+        // floor at approval time. The balance may go negative only down to -NegativeBalanceLimit; an
+        // approval that would push it past the configured floor is rejected (400). A null limit on a
+        // negative-allowed type means "no floor" (unbounded negative), so the check is skipped.
+        if (projected < 0m && leaveType.NegativeBalanceAllowed && leaveType.NegativeBalanceLimit is decimal negativeLimit
+            && projected < -negativeLimit)
+        {
+            return Result<LeaveApprovalResultDto>.Failure(
+                $"negative_balance_limit_exceeded: Approving would exceed the allowed negative balance. " +
+                $"Available: {currentBalance} day(s), requested: {request.TotalDays} day(s), " +
+                $"negative-balance limit: {negativeLimit} day(s).",
+                400);
+        }
+
         // FR-3 / AC-1: append a LeaveLedger "Used" deduction, linked to the request, computing
         // balance_after from the running total (reuses the US-LV-002 accrual ledger-append logic).
         var ledgerEntry = new LeaveLedger

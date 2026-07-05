@@ -81,3 +81,9 @@ public sealed record SaveSelfAssessmentRequest(
 public sealed record SaveSelfAssessmentInput(
     Guid CycleId,
     IReadOnlyList<SelfAssessmentItemInput> Items);
+
+/// <summary>
+/// Reopen request body (US-PRF-004 BR-3/AC-2 — BUG-059). The optional reason is recorded on the
+/// SelfAssessment.Reopened audit row; the target employee + cycle come from the route.
+/// </summary>
+public sealed record ReopenSelfAssessmentRequest(string? Reason);

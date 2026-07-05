@@ -82,4 +82,28 @@ public sealed class SelfAssessmentController : ControllerBase
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
         return Ok(ApiResponse<SelfAssessmentDto>.Ok(result.Value!));
     }
+
+    /// <summary>
+    /// POST /api/v1/tenant/performance/self-assessments/cycles/{cycleId}/employees/{employeeId}/reopen
+    /// Reopens a submitted self-assessment back to Draft so the employee can edit and re-submit
+    /// (US-PRF-004 BR-3/AC-2 — BUG-059). Manager/HR-only: requires Performance.Review.Team (direct manager)
+    /// or Performance.Review.All (HR); the service enforces the manager-of-record check and rejects if the
+    /// cycle's self-assessment window has closed. An employee can never self-reopen.
+    /// </summary>
+    [HttpPost("cycles/{cycleId:guid}/employees/{employeeId:guid}/reopen")]
+    [RequirePermission("Performance.Review.Team", "Performance.Review.All")]
+    [ProducesResponseType(typeof(ApiResponse<SelfAssessmentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Reopen(
+        Guid cycleId, Guid employeeId, [FromBody] ReopenSelfAssessmentRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ReopenSelfAssessmentCommand(employeeId, cycleId, request?.Reason), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<SelfAssessmentDto>.Ok(result.Value!));
+    }
 }

@@ -10,7 +10,7 @@ public enum SelfAssessmentStatus
 
     /// <summary>
     /// Submitted by the employee (AC-2). All goals rated, comments ≥20 chars, weighted self-score computed.
-    /// Locked against further edits unless a manager/HR reopens it (BR-3 — reopen flow is a later story).
+    /// Locked against further edits unless a manager/HR reopens it back to Draft (BR-3 — see ReopenAsync).
     /// </summary>
     Submitted = 1,
 }
