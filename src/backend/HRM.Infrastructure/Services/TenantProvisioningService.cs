@@ -27,7 +27,8 @@ namespace HRM.Infrastructure.Services;
 /// here.</para>
 ///
 /// <para><b>Seeded master data (§7):</b> built-in roles (reusing <see cref="PermissionCatalog.BuiltInRoles"/>),
-/// default leave types (Annual/Sick/Casual) and a default General Shift are seeded. The "1-step manager-approval
+/// the canonical FR-4 default leave-type set (via <see cref="LeaveTypeService.GetDefaultLeaveTypes"/>) and a
+/// default General Shift are seeded. The "1-step manager-approval
 /// leave workflow" has NO configurable-workflow entity in the codebase yet (only the per-request
 /// <c>LeaveApprovalHistory</c> audit), so it is intentionally skipped — manager approval is the built-in default
 /// of the leave-request flow. The holiday-calendar TEMPLATE is likewise not seeded (no template entity exists).</para>
@@ -170,7 +171,13 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
         });
 
         // ── Default master data (§7) ────────────────────────────────────────
-        SeedDefaultLeaveTypes(tenant.Id, now, actor);
+        // ISSUE-029 (US-LV-001 FR-4): seed the CANONICAL default leave-type set (the same set
+        // LeaveTypeService/DbInitializer use) instead of a divergent inline 3-type list. These rows are
+        // only Add()-ed here — the single atomic SaveChanges below persists them in the provisioning
+        // transaction (FR-3), so we call the pure builder rather than SeedDefaultsForTenantAsync (which
+        // would issue its own SaveChanges mid-transaction). A brand-new tenant has no existing leave
+        // types (subdomain uniqueness is enforced above), so there is no double-seed risk.
+        _db.LeaveTypes.AddRange(LeaveTypeService.GetDefaultLeaveTypes(tenant.Id));
         SeedDefaultShift(tenant.Id, now, actor);
 
         // ── Lifecycle event (AC-4) + structured audit (NFR-3) ───────────────
@@ -331,37 +338,6 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
             roles.Add(role);
         }
         return roles;
-    }
-
-    private void SeedDefaultLeaveTypes(Guid tenantId, DateTime now, string actor)
-    {
-        // §7 seeded data: Annual / Sick / Casual. Minimal sensible defaults; tenants edit via US-LV-001.
-        var defaults = new (string Name, string Code, string Color, decimal Entitlement, int Order)[]
-        {
-            ("Annual Leave", "AL", "#4CAF50", 14m, 1),
-            ("Sick Leave", "SL", "#F44336", 7m, 2),
-            ("Casual Leave", "CL", "#2196F3", 7m, 3),
-        };
-
-        foreach (var (name, code, color, entitlement, order) in defaults)
-        {
-            _db.LeaveTypes.Add(new LeaveType
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = tenantId,
-                Name = name,
-                Code = code,
-                Color = color,
-                AnnualEntitlement = entitlement,
-                AccrualFrequency = AccrualFrequency.Upfront,
-                Gender = LeaveTypeGender.All,
-                SystemCategory = LeaveTypeSystemCategory.None,
-                DisplayOrder = order,
-                IsActive = true,
-                CreatedAt = now,
-                CreatedBy = actor,
-            });
-        }
     }
 
     private void SeedDefaultShift(Guid tenantId, DateTime now, string actor)

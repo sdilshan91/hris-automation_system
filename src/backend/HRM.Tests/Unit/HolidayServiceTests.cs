@@ -299,6 +299,49 @@ public sealed class HolidayServiceTests
         result.Value!.Should().ContainSingle(h => h.Id == keep.Value!.Id);
     }
 
+    // ── BUG-032 (US-LV-007, AC-1): a location filter must ALSO return tenant-wide holidays ──
+
+    [Fact]
+    public async Task GetHolidays_ByLocation_IncludesTenantWide_BUG032()
+    {
+        // A SECOND location so the assertion proves the filter is scoped, not just "return everything".
+        var otherLocationId = Guid.NewGuid();
+        using (var db = CreateDbContext())
+        {
+            db.Locations.Add(new Location
+            {
+                Id = otherLocationId,
+                TenantId = _tenantId,
+                Name = "London",
+                TimeZone = "Europe/London",
+                IsActive = true,
+            });
+            db.SaveChanges();
+        }
+
+        // Three real rows: one tenant-wide (LocationId == null), one for the target location,
+        // and one for a DIFFERENT location (must be excluded). Distinct dates avoid the BR-1 clash.
+        (await CreateService().CreateAsync(Req(new DateOnly(2026, 5, 25), "Spring Bank (tenant-wide)")))
+            .IsSuccess.Should().BeTrue();
+        (await CreateService().CreateAsync(Req(new DateOnly(2026, 11, 26), "Thanksgiving (NY)", locationId: _locationId)))
+            .IsSuccess.Should().BeTrue();
+        (await CreateService().CreateAsync(Req(new DateOnly(2026, 8, 31), "Summer Bank (London)", locationId: otherLocationId)))
+            .IsSuccess.Should().BeTrue();
+
+        // Filter by the target (New York) location.
+        var result = await CreateService().GetAllAsync(null, null, null, _locationId, null, default);
+
+        result.IsSuccess.Should().BeTrue();
+        var names = result.Value!.Select(h => h.Name).ToList();
+
+        // Post-fix contract: the target location's holidays PLUS tenant-wide holidays.
+        names.Should().Contain("Thanksgiving (NY)");         // location-specific row
+        names.Should().Contain("Spring Bank (tenant-wide)"); // BUG-032: the tenant-wide row was omitted pre-fix
+        // Still scoped: a DIFFERENT location's holiday must not leak into this location's view.
+        names.Should().NotContain("Summer Bank (London)");
+        result.Value.Should().HaveCount(2);
+    }
+
     // ── CSV import (FR-4, AC-3, NFR-3) ─────────────────────────────
 
     private static Stream Csv(string content)

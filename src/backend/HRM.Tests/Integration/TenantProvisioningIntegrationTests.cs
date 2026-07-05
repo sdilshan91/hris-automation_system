@@ -12,7 +12,8 @@
 //   - BR-3:      plan TrialDays>0 ⇒ status Trial + TrialEndsAt set; TrialDays=0 ⇒ status Active + no trial end.
 //   - NFR-2/BR-2: a second provision with the same subdomain fails (never duplicates).
 //   - plan gate: an inactive plan is rejected.
-//   - §7:        default master data (Annual/Sick/Casual leave types + a default General Shift) is seeded.
+//   - §7:        default master data (the canonical FR-4 default leave-type set + a default General Shift)
+//                is seeded (ISSUE-029: was a partial Annual/Sick/Casual-only inline set).
 //
 // PROVIDER: InMemory — same rationale as the sibling integration tests (the verify gate runs `dotnet test`
 // with no PostgreSQL / Docker). Real-PG behaviour is validated by the `migrations` CI job.
@@ -286,11 +287,56 @@ public sealed class TenantProvisioningIntegrationTests
         using var db = Db();
         var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
 
-        var leaveTypes = await db.LeaveTypes.IgnoreQueryFilters()
+        var leaveTypeCodes = await db.LeaveTypes.IgnoreQueryFilters()
             .Where(lt => lt.TenantId == tenant.Id).Select(lt => lt.Code).ToListAsync();
-        leaveTypes.Should().BeEquivalentTo(new[] { "AL", "SL", "CL" });
+        // ISSUE-029: provisioning seeds the canonical FR-4 default set — was the partial AL/SL/CL only.
+        // (A system LOP type may additionally be seeded, hence the superset + count-floor assertions.)
+        leaveTypeCodes.Should().Contain(new[] { "AL", "SL", "CL", "MAT", "PAT", "BL", "UL" });
+        leaveTypeCodes.Should().HaveCountGreaterThanOrEqualTo(7);
 
         (await db.Shifts.IgnoreQueryFilters().CountAsync(s => s.TenantId == tenant.Id && s.IsDefault))
             .Should().Be(1);
+    }
+
+    // ── ISSUE-029 (US-LV-001 FR-4): provisioning seeds the CANONICAL default leave-type set ─────
+
+    [Fact]
+    public async Task ProvisionTenant_SeedsCanonicalDefaults_ISSUE029()
+    {
+        var planId = await SeedPlanAsync();
+        var (service, _) = Service();
+
+        await service.ProvisionAsync(Input(planId));
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+
+        var names = await db.LeaveTypes.IgnoreQueryFilters()
+            .Where(lt => lt.TenantId == tenant.Id)
+            .Select(lt => lt.Name)
+            .ToListAsync();
+
+        // FR-4 canonical default set (US-LV-001; authoritative builder LeaveTypeService.GetDefaultLeaveTypes).
+        // Pre-fix, provisioning inline-seeded only Annual/Sick/Casual, so the last four were absent.
+        names.Should().Contain(new[]
+        {
+            "Annual Leave", "Sick Leave", "Casual Leave",
+            "Maternity Leave", "Paternity Leave", "Bereavement Leave", "Unpaid Leave",
+        });
+        // Regression discriminator: the types missing from the partial 3-type set are now present.
+        names.Should().Contain("Maternity Leave");
+        names.Should().Contain("Unpaid Leave");
+        // At least the seven canonical FR-4 defaults (a system LOP type may additionally be seeded).
+        names.Should().HaveCountGreaterThanOrEqualTo(7);
+
+        // Real seeded data, not just names: the gender-specific default carries its applicability (BR-4),
+        // and the unpaid default keeps a zero entitlement (BR-3).
+        var maternity = await db.LeaveTypes.IgnoreQueryFilters()
+            .SingleAsync(lt => lt.TenantId == tenant.Id && lt.Name == "Maternity Leave");
+        maternity.Gender.Should().Be(LeaveTypeGender.Female);
+
+        var unpaid = await db.LeaveTypes.IgnoreQueryFilters()
+            .SingleAsync(lt => lt.TenantId == tenant.Id && lt.Name == "Unpaid Leave");
+        unpaid.AnnualEntitlement.Should().Be(0m);
     }
 }
