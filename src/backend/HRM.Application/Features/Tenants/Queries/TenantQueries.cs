@@ -7,8 +7,9 @@ namespace HRM.Application.Features.Tenants.Queries;
 
 // ── Tenant list (AC-4) ─────────────────────────────────────────────────────
 
-/// <summary>Lists all tenants for the System Admin console (US-ADM-001 AC-4).</summary>
-public sealed record ListTenantsQuery : IRequest<Result<IReadOnlyList<TenantListItemDto>>>;
+/// <summary>Lists all tenants for the System Admin console (US-ADM-001 AC-4). Optional case-insensitive
+/// <paramref name="Search"/> filters on tenant name/subdomain (US-ADM-002 AC-2).</summary>
+public sealed record ListTenantsQuery(string? Search = null) : IRequest<Result<IReadOnlyList<TenantListItemDto>>>;
 
 public sealed class ListTenantsQueryHandler
     : IRequestHandler<ListTenantsQuery, Result<IReadOnlyList<TenantListItemDto>>>
@@ -18,7 +19,7 @@ public sealed class ListTenantsQueryHandler
 
     public Task<Result<IReadOnlyList<TenantListItemDto>>> Handle(
         ListTenantsQuery request, CancellationToken cancellationToken)
-        => _service.ListTenantsAsync(cancellationToken);
+        => _service.ListTenantsAsync(request.Search, cancellationToken);
 }
 
 // ── Subdomain availability (FR-2) ──────────────────────────────────────────

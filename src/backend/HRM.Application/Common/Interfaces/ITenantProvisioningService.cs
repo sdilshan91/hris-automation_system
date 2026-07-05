@@ -16,8 +16,10 @@ public interface ITenantProvisioningService
     Task<Result<ProvisionTenantResultDto>> ProvisionAsync(
         ProvisionTenantInput input, CancellationToken cancellationToken = default);
 
-    /// <summary>Lists all tenants for the System Admin console (AC-4), newest first.</summary>
-    Task<Result<IReadOnlyList<TenantListItemDto>>> ListTenantsAsync(CancellationToken cancellationToken = default);
+    /// <summary>Lists all tenants for the System Admin console (AC-4), newest first. Optional
+    /// case-insensitive <paramref name="search"/> filters on tenant name/subdomain (US-ADM-002 AC-2).</summary>
+    Task<Result<IReadOnlyList<TenantListItemDto>>> ListTenantsAsync(
+        string? search = null, CancellationToken cancellationToken = default);
 
     /// <summary>Checks whether a subdomain is available (FR-2): not reserved, valid format, not already taken.</summary>
     Task<Result<SubdomainAvailabilityDto>> CheckSubdomainAvailabilityAsync(
