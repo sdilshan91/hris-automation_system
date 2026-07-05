@@ -159,8 +159,12 @@ public sealed class LeaveDashboardServiceTests
     [Fact]
     public async Task GetMyBalances_NoLedgerOrRequests_ReturnsActiveTypesWithZeroAndEntitlement()
     {
-        // A new joiner with no ledger entries still sees their active types with the resolved
-        // entitlement (engine returns it) and a balance equal to the entitlement.
+        // A new joiner with no ledger entries sees their active types with the resolved engine
+        // entitlement surfaced separately, but a headline Balance of 0. Post-BUG-030 (#144) the
+        // dashboard Balance is the AUTHORITATIVE ledger running balance_after — which is 0 until an
+        // Accrual/opening ledger entry is written — NOT the engine entitlement. This keeps the card,
+        // the apply-preview, and the ledger in lock-step (TC-LV-110/112/115: the card MUST equal the
+        // ledger balance_after). The engine entitlement (14) is still shown as an informational field.
         var result = await CreateService().GetMyBalancesAsync(Year);
 
         result.IsSuccess.Should().BeTrue();
@@ -168,9 +172,10 @@ public sealed class LeaveDashboardServiceTests
         result.Value!.Should().HaveCount(2);
         result.Value.Should().OnlyContain(b => !b.IsArchived);
         var annual = result.Value.Single(b => b.LeaveTypeId == _annualLeaveTypeId);
-        annual.Entitlement.Should().Be(14m);
+        annual.Entitlement.Should().Be(14m); // engine entitlement still surfaced (informational only)
         annual.Used.Should().Be(0m);
-        annual.Balance.Should().Be(14m);
+        // BUG-030 (#144) ledger-truth: no ledger entry yet -> Balance is 0, NOT the 14 entitlement.
+        annual.Balance.Should().Be(0m);
     }
 
     [Fact]

@@ -164,6 +164,19 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         return result.Value!.Id;
     }
 
+    /// <summary>
+    /// Links a seeded employee record to a user id so a self-service Employee-role caller with the
+    /// matching UserId is recognised as the record's OWNER (BUG-119 ownership check). Employees are
+    /// created without a linked UserId by default, so this establishes the self-edit scenario.
+    /// </summary>
+    private async Task LinkEmployeeToUser(Guid employeeId, Guid userId)
+    {
+        using var db = CreateDbContext();
+        var emp = await db.Employees.FirstAsync(e => e.Id == employeeId);
+        emp.UserId = userId;
+        await db.SaveChangesAsync();
+    }
+
     // ── AC-1: View comprehensive profile ──────────────────────────
 
     [Fact]
@@ -345,9 +358,17 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         var jtId = await SeedJobTitle();
         var empId = await SeedEmployee(deptId, jtId);
 
+        // BUG-119 (#124) restricts a self-service Employee-role caller to editing ONLY their own
+        // record (employee.UserId must equal the caller's UserId) — closing a horizontal privilege
+        // escalation. This test predates that fix and used an unrelated random UserId, so the caller
+        // was correctly rejected with 403. Link the seeded employee to the caller so this genuinely
+        // represents an employee editing their OWN profile (the scenario under test).
+        var ownerUserId = Guid.NewGuid();
+        await LinkEmployeeToUser(empId, ownerUserId);
+
         var employeeUser = Substitute.For<ICurrentUser>();
         employeeUser.Email.Returns("john@test.com");
-        employeeUser.UserId.Returns(Guid.NewGuid());
+        employeeUser.UserId.Returns(ownerUserId);
         employeeUser.IsAuthenticated.Returns(true);
         employeeUser.Permissions.Returns(new List<string> { "Employee.Edit.Own", "Employee.View.Own" });
         employeeUser.Roles.Returns(new List<string> { "Employee" });
@@ -370,9 +391,14 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         var jtId = await SeedJobTitle();
         var empId = await SeedEmployee(deptId, jtId);
 
+        // BUG-119 (#124): a self-service Employee-role caller may edit only their OWN record. Link
+        // the seeded employee to the caller (see UpdateProfile_AsEmployee_ContactInfo_ShouldSucceed).
+        var ownerUserId = Guid.NewGuid();
+        await LinkEmployeeToUser(empId, ownerUserId);
+
         var employeeUser = Substitute.For<ICurrentUser>();
         employeeUser.Email.Returns("john@test.com");
-        employeeUser.UserId.Returns(Guid.NewGuid());
+        employeeUser.UserId.Returns(ownerUserId);
         employeeUser.IsAuthenticated.Returns(true);
         employeeUser.Permissions.Returns(new List<string> { "Employee.Edit.Own", "Employee.View.Own" });
         employeeUser.Roles.Returns(new List<string> { "Employee" });
