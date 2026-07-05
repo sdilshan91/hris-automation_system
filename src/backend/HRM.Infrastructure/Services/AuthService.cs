@@ -170,6 +170,20 @@ public sealed class AuthService : IAuthService
 
             _logger.LogWarning("Login failed: invalid password for user {UserId}, attempt {Attempt}",
                 user.Id, user.FailedLoginCount);
+
+            // BUG-044: if THIS failing attempt is the one that tripped the lockout, return the lockout
+            // message immediately (the same message/shape the already-locked path returns on the next
+            // request), rather than the generic message that would otherwise delay lockout feedback by one
+            // request. LockedUntil is only set here when this attempt just crossed the threshold — an
+            // already-expired lockout was cleared at step 2, and a still-active one returned earlier at step 2.
+            // Below-threshold attempts leave LockedUntil null and still return the generic message (no
+            // account enumeration).
+            if (user.LockedUntil.HasValue)
+            {
+                return Result<LoginResponse>.Failure(
+                    "Account temporarily locked. Try again later or contact your administrator.", 401);
+            }
+
             return Result<LoginResponse>.Failure("Invalid email or password.", 401);
         }
 

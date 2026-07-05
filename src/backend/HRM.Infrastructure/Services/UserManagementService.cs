@@ -9,6 +9,7 @@ using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Services;
@@ -40,6 +41,11 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IPermissionCache _permissionCache;
     private readonly IUserManagementNotificationService _notifications;
     private readonly ILogger<UserManagementService> _logger;
+    // ISSUE-056: the distributed cache backing AuthService.GetMyTenantsAsync, used to invalidate a user's
+    // cached my-tenants entry when their membership/roles change. Optional (nullable, default null) so
+    // isolated unit construction that omits it still compiles (mirrors AuthService's optional ICurrentUser);
+    // the DI container injects the registered IDistributedCache in production.
+    private readonly IDistributedCache? _cache;
 
     public UserManagementService(
         AppDbContext db,
@@ -47,7 +53,8 @@ public sealed class UserManagementService : IUserManagementService
         ICurrentUser currentUser,
         IPermissionCache permissionCache,
         IUserManagementNotificationService notifications,
-        ILogger<UserManagementService> logger)
+        ILogger<UserManagementService> logger,
+        IDistributedCache? cache = null)
     {
         _db = db;
         _tenantContext = tenantContext;
@@ -55,6 +62,7 @@ public sealed class UserManagementService : IUserManagementService
         _permissionCache = permissionCache;
         _notifications = notifications;
         _logger = logger;
+        _cache = cache;
     }
 
     // ── List users (AC-1 / FR-1) ────────────────────────────────────────────
@@ -466,6 +474,9 @@ public sealed class UserManagementService : IUserManagementService
         await _db.SaveChangesAsync(cancellationToken);
         await _permissionCache.InvalidateAsync(_tenantContext.TenantId, userTenant.UserId, cancellationToken);
 
+        // ISSUE-056: a role change alters GetMyTenantsAsync's cached roles list for this user.
+        await InvalidateMyTenantsCacheAsync(userTenant.UserId, cancellationToken);
+
         return Result.Success();
     }
 
@@ -499,6 +510,9 @@ public sealed class UserManagementService : IUserManagementService
 
         await _db.SaveChangesAsync(cancellationToken);
         await _permissionCache.InvalidateAsync(_tenantContext.TenantId, userTenant.UserId, cancellationToken);
+
+        // ISSUE-056: the membership was disabled — invalidate the user's cached my-tenants list.
+        await InvalidateMyTenantsCacheAsync(userTenant.UserId, cancellationToken);
 
         return Result.Success();
     }
@@ -691,6 +705,28 @@ public sealed class UserManagementService : IUserManagementService
             After = after is null ? null : JsonSerializer.Serialize(after),
             CreatedAt = DateTime.UtcNow,
         });
+    }
+
+    /// <summary>
+    /// ISSUE-056: drop the cached my-tenants entry (<c>user:{userId}:tenants</c>) for a user whose tenant
+    /// membership just changed, using the same key + IDistributedCache abstraction as
+    /// <c>AuthService.GetMyTenantsAsync</c>. Best-effort (fail-soft): a cache outage must not fail the
+    /// membership mutation — the entry then expires on its own TTL (mirrors the BUG-121 cache handling).
+    /// </summary>
+    private async Task InvalidateMyTenantsCacheAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (_cache is null)
+            return;
+
+        try
+        {
+            await _cache.RemoveAsync($"user:{userId}:tenants", cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "my-tenants cache invalidation failed for user {UserId}; entry will expire on its TTL", userId);
+        }
     }
 
     private static (string RawToken, string TokenHash) GenerateToken()
