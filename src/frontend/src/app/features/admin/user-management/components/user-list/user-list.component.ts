@@ -154,7 +154,7 @@ export class UserListComponent implements OnInit {
     this.service.getUsers(params).subscribe({
       next: (res) => {
         this.users.set(res.items);
-        this.total.set(res.total);
+        this.total.set(res.totalCount);
         this.loading.set(false);
       },
       error: () => {

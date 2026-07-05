@@ -155,6 +155,8 @@ const FAVICON_MAX_BYTES = 500 * 1024; // 500KB
               [disabled]="colorLocked()"
               placeholder="#4f46e5"
               aria-label="Primary colour hex"
+              [attr.aria-invalid]="colorInvalid()"
+              [attr.aria-describedby]="colorInvalid() ? 'branding-color-error' : null"
             />
             <div class="shade-row" aria-hidden="true">
               <span class="shade" [style.background]="theme().dark" title="Dark"></span>
@@ -163,7 +165,9 @@ const FAVICON_MAX_BYTES = 500 * 1024; // 500KB
             </div>
           </div>
           @if (colorInvalid()) {
-            <p class="cs-error">{{ 'admin.companySettings.branding.invalidColor' | translate }}</p>
+            <p id="branding-color-error" class="cs-error" role="alert">
+              {{ 'admin.companySettings.branding.invalidColor' | translate }}
+            </p>
           }
         </div>
 

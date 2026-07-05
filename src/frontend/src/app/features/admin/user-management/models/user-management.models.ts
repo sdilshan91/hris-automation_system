@@ -29,12 +29,19 @@ export interface IUserSummary {
   employeeId?: string | null;
 }
 
-/** Pagination metadata wrapper returned by the user list endpoint. */
+/**
+ * Pagination metadata wrapper returned by the user list endpoint. Mirrors the
+ * backend canonical `PagedResult<T>` shape exactly — { items, page, pageSize,
+ * totalCount, totalPages }. NOTE: the total row count is `totalCount` (NOT
+ * `total`); reading the wrong name yields `undefined` → `NaN` in the footer
+ * (BUG-103, same FE↔BE shape-drift class as BUG-099).
+ */
 export interface IUserListResponse {
   items: IUserSummary[];
-  total: number;
   page: number;
   pageSize: number;
+  totalCount: number;
+  totalPages: number;
 }
 
 /** Query parameters for the user list (paginated/searchable/filterable). */

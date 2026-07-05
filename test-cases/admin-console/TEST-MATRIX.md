@@ -336,6 +336,7 @@ status: complete
 | TC-ADM-005-19 | [DEFERRED] real invitation/reset email DELIVERY | Integration | High | AC-2/5, NFR-3 (DEFERRED: US-NTF) | Deferred |
 | TC-ADM-005-20 | [DEFERRED] list <= 1.5s @ 5,000 users | Performance | Medium | AC-1, FR-1, NFR-1 (DEFERRED: perf env) | Deferred |
 | TC-ADM-005-21 | [DEFERRED] Postgres RLS isolation layer | Security | Medium | AC-6, NFR-5 (DEFERRED: RLS) | Deferred |
+| TC-ADM-005-22 | Users pagination footer shows real `totalCount` (not 1–NaN) — BUG-103 regression | Functional | High | AC-1, FR-1 | automated |
 | TC-ADM-ISO-010 | User list tenant-scoped (EF query-filter READ block) | Security | Critical | AC-1/6, FR-1, BR-1 | Multi-tenant isolation |
 | TC-ADM-ISO-011 | Cross-tenant param manipulation -> 404 not 403 | Security | Critical | AC-6, BR-1 | Multi-tenant isolation |
 | TC-ADM-ISO-012 | Mutating endpoints require tenant context + TenantAdmin authz; writes stamped | Security | Critical | AC-6, FR-1/2/4, BR-1 | Multi-tenant isolation |
@@ -386,7 +387,7 @@ status: complete
 | FR coverage | 6/6 (FR-1..FR-6) |
 | Run-green now | 22 (TC-ADM-005-01..18 + TC-ADM-ISO-010..013) |
 | Deferred (status: blocked) | 3 (TC-ADM-005-19, -20, -21) |
-| Functional ID range | TC-ADM-005-01 .. TC-ADM-005-21 |
+| Functional ID range | TC-ADM-005-01 .. TC-ADM-005-22 (TC-ADM-005-22 = BUG-103 regression) |
 | ISO ID range | TC-ADM-ISO-010 .. TC-ADM-ISO-013 |
 
 ---
@@ -426,6 +427,7 @@ status: complete
 | TC-ADM-006-19 | [DEFERRED] Redis config-cache invalidation + SignalR <60s propagation | Integration | Medium | FR-7, NFR-3 | Deferred placeholder | blocked |
 | TC-ADM-006-20 | [DEFERRED] settings page load < 1.5s incl. logo preview | Performance | Low | NFR-1 | Deferred placeholder | blocked |
 | TC-ADM-006-21 | [DEFERRED] custom CSS / white-label / login-page customization | Functional | Low | §10, BR-3 | Deferred placeholder | blocked |
+| TC-ADM-006-22 | Branding invalid-hex error a11y wiring (aria-invalid + aria-describedby) — ISSUE-212 regression | Accessibility | Medium | AC-3, WCAG 3.3.1/4.1.2 | automated |
 | TC-ADM-ISO-014 | Settings tenant-scoped via ITenantContext; cross-tenant → 404/empty | Security | Critical | AC-5, FR-1, BR-1/6, Test Hints | Multi-tenant isolation | draft |
 | TC-ADM-ISO-015 | Branding file storage tenant-scoped; B cannot reach A's path | Security | Critical | AC-2/5, FR-2, BR-6, Test Hints | Multi-tenant isolation | draft |
 | TC-ADM-ISO-016 | [DEFERRED] PostgreSQL RLS DB-layer isolation for settings | Security | Medium | AC-5 (DEFERRED: RLS) | Multi-tenant isolation | blocked |
@@ -474,7 +476,7 @@ status: complete
 | FR coverage | 7/7 (FR-1..FR-7; FR-7 DEFERRED) |
 | Run-green now | 20 (TC-ADM-006-01..17 + TC-ADM-ISO-014, -015) |
 | Deferred (status: blocked) | 4 (TC-ADM-006-18..21) + 1 (TC-ADM-ISO-016) |
-| Functional ID range | TC-ADM-006-01 .. TC-ADM-006-21 |
+| Functional ID range | TC-ADM-006-01 .. TC-ADM-006-22 (TC-ADM-006-22 = ISSUE-212 a11y regression) |
 | ISO ID range | TC-ADM-ISO-014 .. TC-ADM-ISO-016 |
 
 ---

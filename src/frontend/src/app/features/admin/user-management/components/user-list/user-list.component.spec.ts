@@ -7,7 +7,7 @@ import {
 } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideToastr } from 'ngx-toastr';
-import { provideTranslateService } from '@ngx-translate/core';
+import { provideTranslateService, TranslateService } from '@ngx-translate/core';
 import { UserListComponent } from './user-list.component';
 import {
   IUserListResponse,
@@ -48,7 +48,8 @@ describe('UserListComponent', () => {
         lastLoginAt: null,
       },
     ],
-    total: 45,
+    totalCount: 45,
+    totalPages: 3,
     page: 1,
     pageSize: 20,
   };
@@ -107,7 +108,7 @@ describe('UserListComponent', () => {
     httpMock.expectOne(`${usersUrl}/assignable-roles`).flush(mockRoles);
     httpMock
       .expectOne((r) => r.url === usersUrl && r.method === 'GET')
-      .flush({ items: [], total: 0, page: 1, pageSize: 20 });
+      .flush({ items: [], totalCount: 0, totalPages: 0, page: 1, pageSize: 20 });
     fixture.detectChanges();
     expect(
       fixture.nativeElement.querySelector('[data-testid="users-empty"]')
@@ -238,5 +239,89 @@ describe('UserListComponent', () => {
       .flush('boom', { status: 500, statusText: 'Server Error' });
     expect(component.error()).toBeTruthy();
     expect(component.loading()).toBeFalse();
+  });
+});
+
+/**
+ * BUG-103 regression (US-ADM-005, AC-1 / TC-ADM-005-22).
+ *
+ * The backend user-list envelope carries the page total as `totalCount`, NOT
+ * `total`. This block loads the REAL i18n "showing" string so the translate
+ * pipe actually interpolates, then flushes the real wire shape and asserts the
+ * rendered pagination footer.
+ *
+ * Pre-fix the component read `res.total` (undefined) -> total() undefined ->
+ * rangeEnd = Math.min(pageSize, undefined) = NaN, so the footer rendered
+ * "Showing 1–NaN of ". The fix binds `totalCount` and computes the range.
+ */
+describe('UserListComponent — BUG-103 pagination footer regression (BE totalCount)', () => {
+  let fixture: ComponentFixture<UserListComponent>;
+  let httpMock: HttpTestingController;
+
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [UserListComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideAnimationsAsync(),
+        provideToastr(),
+        provideTranslateService(),
+      ],
+    }).compileComponents();
+
+    httpMock = TestBed.inject(HttpTestingController);
+
+    // Load the REAL footer string so the pipe interpolates the params instead
+    // of echoing the translation key.
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('en', {
+      userManagement: { showing: 'Showing {{start}}–{{end}} of {{total}}' },
+    });
+    translate.use('en');
+
+    fixture = TestBed.createComponent(UserListComponent);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('usersList_paginationFooter_showsRealTotal_notNaN_BUG103', () => {
+    fixture.detectChanges(); // ngOnInit -> GET assignable-roles + GET users
+    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush([]);
+
+    // BE-shaped list envelope: page total under `totalCount`, NOT `total`.
+    httpMock.expectOne((r) => r.url === usersUrl && r.method === 'GET').flush({
+      items: [
+        {
+          userTenantId: 'ut-1',
+          userId: 'u-1',
+          displayName: 'Jane Doe',
+          email: 'jane@acme.com',
+          roles: [],
+          status: 'active',
+          lastLoginAt: null,
+        },
+      ],
+      totalCount: 42,
+      page: 1,
+      pageSize: 20,
+    } as unknown as IUserListResponse);
+    fixture.detectChanges();
+
+    const footer: HTMLElement | null = fixture.nativeElement.querySelector(
+      '[data-testid="pagination-range"]'
+    );
+    expect(footer).toBeTruthy();
+    const text = footer!.textContent?.trim() ?? '';
+
+    expect(text).toContain('42'); // the real server total
+    expect(text).toContain('Showing 1'); // computed range start
+    expect(text).toContain('20'); // computed range end = min(pageSize, total)
+    expect(text).not.toContain('NaN'); // pre-fix symptom
+    expect(text).not.toContain('{{total}}'); // un-interpolated literal
+    expect(fixture.componentInstance.total()).toBe(42);
   });
 });
