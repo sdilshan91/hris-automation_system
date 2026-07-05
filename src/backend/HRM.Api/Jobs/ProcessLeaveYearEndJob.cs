@@ -2,6 +2,8 @@ using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Polly;
+using Polly.Retry;
 using Serilog;
 
 namespace HRM.Api.Jobs;
@@ -15,12 +17,25 @@ namespace HRM.Api.Jobs;
 /// type it computes the unused balance, carries forward MIN(unused, limit), forfeits (expires or
 /// encashes) the remainder, and writes a carry-forward tracking row.
 ///
-/// Idempotent (NFR-3): a re-run skips any pair already tracked for the closing year. The existing
-/// Hangfire/Polly setup provides retry. Mirrors LeaveAccrualJob / HolidayRecurrenceJob.
+/// Idempotent (NFR-3): a re-run skips any pair already tracked for the closing year. Per-tenant
+/// work is wrapped in a Polly retry policy (NFR-4: max 3 retries, exponential backoff) so a
+/// transient failure for one tenant is retried before the loop logs it and moves on — one tenant's
+/// permanent failure never aborts the batch (NFR-2). Mirrors LeaveAccrualJob / HolidayRecurrenceJob.
 /// </summary>
 public sealed class ProcessLeaveYearEndJob
 {
     private readonly IServiceScopeFactory _scopeFactory;
+
+    // NFR-4: retry transient per-tenant failures with exponential backoff (2^n s), max 3 attempts.
+    // Mirrors the canonical Polly idiom in PayslipDistributionRunner / Program.cs ResilientClient.
+    private static readonly AsyncRetryPolicy RetryPolicy = Policy
+        .Handle<Exception>()
+        .WaitAndRetryAsync(
+            retryCount: 3,
+            sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)),
+            onRetry: (ex, delay, attempt, _) => Log.Warning(ex,
+                "ProcessLeaveYearEndJob: transient failure, retry {Attempt}/3 in {DelaySeconds}s",
+                attempt, delay.TotalSeconds));
 
     public ProcessLeaveYearEndJob(IServiceScopeFactory scopeFactory)
     {
@@ -52,24 +67,29 @@ public sealed class ProcessLeaveYearEndJob
         {
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-
-                var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
+                // Retry the per-tenant unit of work (fresh scope each attempt) on transient failure.
+                await RetryPolicy.ExecuteAsync(async () =>
                 {
-                    mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-                }
+                    using var scope = _scopeFactory.CreateScope();
 
-                var service = scope.ServiceProvider.GetRequiredService<ILeaveCarryForwardService>();
-                var result = await service.ProcessYearEndAsync(fromYear);
+                    var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+                    if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
+                    {
+                        mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
+                    }
 
-                Log.Information(
-                    "ProcessLeaveYearEndJob: Tenant {TenantId} carried forward {Count} pairs for year {Year}",
-                    tenantId, result.IsSuccess ? result.Value : 0, fromYear);
+                    var service = scope.ServiceProvider.GetRequiredService<ILeaveCarryForwardService>();
+                    var result = await service.ProcessYearEndAsync(fromYear);
+
+                    Log.Information(
+                        "ProcessLeaveYearEndJob: Tenant {TenantId} carried forward {Count} pairs for year {Year}",
+                        tenantId, result.IsSuccess ? result.Value : 0, fromYear);
+                });
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "ProcessLeaveYearEndJob: Failed to process tenant {TenantId}", tenantId);
+                Log.Error(ex,
+                    "ProcessLeaveYearEndJob: Failed to process tenant {TenantId} after retries", tenantId);
                 // Continue with other tenants; don't fail the whole job.
             }
         }

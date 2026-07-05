@@ -4,7 +4,8 @@ user_story: US-LV-007
 module: Leave Management
 priority: high
 type: functional
-status: fail
+status: automated
+exec_note: "2026-07-05 BUG-032 fixed (HolidayService.GetAllAsync location filter now OR-includes tenant-wide LocationId==null rows). Bound to automated regression @TC-LV-130 -> HRM.Tests.Unit.HolidayServiceTests.GetHolidays_ByLocation_IncludesTenantWide_BUG032 (seeds a location row + a tenant-wide row + a different-location row; asserts the location filter returns location + tenant-wide but excludes the other location)."
 created: 2026-06-14
 ---
 
@@ -12,6 +13,8 @@ created: 2026-06-14
 
 ## 1. Test Objective
 Verify that a holiday scoped to a specific location is saved with that `locationId` and that the list endpoint's `locationId` filter returns tenant-wide holidays plus that location's holidays, so employees at the location see it (AC-1, FR-1, FR-2, FR-6).
+
+> **Regression automation (BUG-032):** `@TC-LV-130` -> `HRM.Tests.Unit.HolidayServiceTests.GetHolidays_ByLocation_IncludesTenantWide_BUG032`. Pre-fix the filter matched `LocationId == locationId` exactly, omitting tenant-wide rows; post-fix it OR-includes `LocationId == null`.
 
 ## 2. Related Requirements
 - User Story: US-LV-007

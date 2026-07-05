@@ -243,8 +243,10 @@ public sealed class HolidayService : IHolidayService
             query = query.Where(h => h.Date >= start && h.Date <= end);
         }
 
+        // BUG-032 (US-LV-007): a location-scoped request must also include tenant-wide holidays
+        // (LocationId == null), which apply to every location — not just those matching the id.
         if (locationId.HasValue)
-            query = query.Where(h => h.LocationId == locationId.Value);
+            query = query.Where(h => h.LocationId == locationId.Value || h.LocationId == null);
 
         if (activeOnly == true)
             query = query.Where(h => h.IsActive);
