@@ -119,7 +119,7 @@ public sealed class MyPayslipService : IMyPayslipService
             .ToListAsync(cancellationToken);
 
         // FR-7: YTD column only when the tenant enables it (defaults off — see module note, shared scaffold with US-PAY-004).
-        var showYtd = TenantYtdEnabled();
+        var showYtd = await TenantYtdEnabledAsync(cancellationToken);
         var ytdByComponent = showYtd
             ? await BuildYtdAsync(slip.PayYear, slip.PayMonth, employeeId.Value, cancellationToken)
             : null;
@@ -290,9 +290,13 @@ public sealed class MyPayslipService : IMyPayslipService
     }
 
     /// <summary>
-    /// FR-7: tenant YTD-display flag. No per-tenant config surface exists yet, so this DEFAULTS OFF (shared
-    /// scaffold + deferral with US-PAY-004 PayslipBatchRenderer.TenantYtdEnabled). Flip on once a tenant
-    /// payroll-settings entity lands — one line here.
+    /// FR-7 / ISSUE-160: per-tenant YTD-display flag, read from <see cref="Tenant.PayslipYtdEnabled"/> (defaults
+    /// off — a tenant opts in). The Tenant row is NOT covered by the global query filter (it IS the tenant), so
+    /// it is loaded strictly by the resolved tenant id — no cross-tenant access is possible.
     /// </summary>
-    private static bool TenantYtdEnabled() => false;
+    private async Task<bool> TenantYtdEnabledAsync(CancellationToken ct)
+        => await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.PayslipYtdEnabled)
+            .FirstOrDefaultAsync(ct);
 }

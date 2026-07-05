@@ -154,6 +154,15 @@ public sealed class Tenant
     /// </summary>
     public bool PublicCareersEnabled { get; set; }
 
+    /// <summary>
+    /// Tenant-level toggle for the year-to-date column on employee payslips (US-PAY-005 FR-7 / ISSUE-160). When
+    /// false, the YTD earning/deduction totals are not surfaced on the self-service payslip detail; a tenant
+    /// opts in. Defaults to false to preserve the prior behaviour. TODO(admin-console): surface this in tenant
+    /// payroll configuration once that subsystem exists; for now a plain boolean on the tenant (mirrors
+    /// <see cref="PublicCareersEnabled"/>). US-PAY-004's PDF renderer shares the same scaffold (still gated off).
+    /// </summary>
+    public bool PayslipYtdEnabled { get; set; }
+
     // Password policy
     public int MinPasswordLength { get; set; } = 12;
     public bool RequireUppercase { get; set; } = true;
