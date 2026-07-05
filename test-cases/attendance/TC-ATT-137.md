@@ -6,6 +6,20 @@ priority: critical
 type: security
 status: fail
 created: 2026-06-15
+defect:
+  - BUG-050
+automated_by:
+  # Unit-level regression guarding the ROOT CAUSE of the manager's 403 (§5 steps 2/4): the
+  # dashboard + live-board READ endpoints were gated by Attendance.View.All only, so a Manager
+  # (Attendance.View.Team) could not reach them at all. These derive the required-permission SET
+  # from the real AttendanceController attribute via reflection and run the real
+  # PermissionAuthorizationHandler. The server-side DATA-SCOPING assertions (team subset, filter
+  # injection) in §5 remain for /verify-fix to confirm live; status stays `fail` until that re-run.
+  - HRM.Tests.Unit.AttendanceDashboardAuthorizationTests.AttendanceDashboard_RequiredPermissionSet_IncludesViewTeam_BUG050
+  - HRM.Tests.Unit.AttendanceDashboardAuthorizationTests.AttendanceDashboard_ViewTeamPrincipal_IsAuthorized_BUG050
+  - HRM.Tests.Unit.AttendanceDashboardAuthorizationTests.AttendanceDashboard_ViewAllPrincipal_IsAuthorized_BUG050
+  - HRM.Tests.Unit.AttendanceDashboardAuthorizationTests.AttendanceDashboard_NoAttendanceViewPrincipal_IsDenied_BUG050
+  - HRM.Tests.Unit.AttendanceDashboardAuthorizationTests.AttendanceDashboard_PreFixViewAllOnlyRequirement_WouldDenyViewTeamPrincipal_BUG050
 ---
 
 # TC-ATT-137: Permission scoping -- Manager sees only their team (Attendance.Approve.Team), HR sees all (Attendance.Read.All); scope enforced server-side across dashboard / live-board / reports

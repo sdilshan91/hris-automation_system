@@ -1016,10 +1016,11 @@ public sealed class AttendanceController : ControllerBase
 
     // ══════════════════════════════════════════════════════════════
     //  US-ATT-010: Attendance dashboard + reports for HR.
-    //  Reads use Attendance.View.All (HR read). scope=team narrows to the acting manager's direct
-    //  reports (BR-4) and is admitted by Attendance.Approve.Team — but since these endpoints are gated
-    //  by Attendance.View.All (HR), team scope is for HR users who are also managers; the service
-    //  enforces that scope=all requires Attendance.View.All (BR-3).
+    //  The scope-aware surfaces (dashboard, live-board) accept Attendance.View.Team OR Attendance.View.All
+    //  so a Manager (View.Team only) can load scope=team narrowed to their direct reports (BR-4, BUG-050);
+    //  the service still enforces that scope=all requires Attendance.View.All (BR-3). The tenant-wide
+    //  reports (department-comparison, custom, trends, scheduled-config) have no team scoping and stay
+    //  gated on Attendance.View.All (HR read) so a Manager cannot pull tenant-wide data.
     //  DEFERRALS: SignalR live push (live board is polled, §10), Redis KPI cache, scheduled-report
     //  email delivery — all documented in the service. RLS not used (EF global filters).
     // ══════════════════════════════════════════════════════════════
@@ -1030,7 +1031,7 @@ public sealed class AttendanceController : ControllerBase
     /// (US-ATT-010 AC-1/FR-1, BR-1/BR-2/BR-3/BR-4). Defaults to today (UTC) and scope=all.
     /// </summary>
     [HttpGet("dashboard")]
-    [RequirePermission("Attendance.View.All")]
+    [RequirePermission("Attendance.View.Team", "Attendance.View.All")]
     [ProducesResponseType(typeof(ApiResponse<DashboardKpiDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
@@ -1054,7 +1055,7 @@ public sealed class AttendanceController : ControllerBase
     /// (US-ATT-010 AC-2/FR-2). SignalR push is DEFERRED (US-NTF) — the FE polls this endpoint (§10).
     /// </summary>
     [HttpGet("dashboard/live-board")]
-    [RequirePermission("Attendance.View.All")]
+    [RequirePermission("Attendance.View.Team", "Attendance.View.All")]
     [ProducesResponseType(typeof(ApiResponse<LiveBoardResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]

@@ -6,6 +6,15 @@ priority: critical
 type: security
 status: fail
 created: 2026-06-13
+defect:
+  - BUG-027
+automated_by:
+  # Unit-level regression guarding the ROOT CAUSE (HR Officer role→permission map): HR Officer
+  # must hold Leave.ConfigurePolicy to manage entitlement rules. Full live CRUD/403 matrix in §5
+  # remains for /verify-fix to confirm post-merge; status stays `fail` until that live re-run.
+  - HRM.Tests.Unit.PermissionCatalogTests.HrOfficer_HasLeaveConfigurePolicy_BUG027_034
+  - HRM.Tests.Unit.PermissionCatalogTests.DefaultPermissionsFor_HrAdminRoles_HaveLeaveConfigurePolicy_BUG027_034
+  - HRM.Tests.Unit.PermissionCatalogTests.DefaultPermissionsFor_NonLeaveAdminRoles_DoNotHaveLeaveConfigurePolicy_BUG027_034
 ---
 
 # TC-LV-039: Only Leave.Configure permission can manage entitlement rules
