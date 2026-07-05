@@ -16,7 +16,9 @@ public sealed record MoveApplicantStageCommand(
     ApplicantStage ToStage,
     string? Reason,
     string? Notes,
-    RejectionReason? RejectionReason = null
+    RejectionReason? RejectionReason = null,
+    // ISSUE-109: optimistic concurrency token the client read; round-trips to guard the move.
+    uint RowVersion = 0
 ) : IRequest<Result<MoveApplicantStageResultDto>>;
 
 public sealed class MoveApplicantStageCommandHandler
@@ -27,5 +29,5 @@ public sealed class MoveApplicantStageCommandHandler
     public MoveApplicantStageCommandHandler(IApplicantService service) => _service = service;
 
     public Task<Result<MoveApplicantStageResultDto>> Handle(MoveApplicantStageCommand request, CancellationToken cancellationToken)
-        => _service.MoveStageAsync(request.ApplicantId, request.ToStage, request.Reason, request.Notes, request.RejectionReason, cancellationToken);
+        => _service.MoveStageAsync(request.ApplicantId, request.ToStage, request.Reason, request.Notes, request.RowVersion, request.RejectionReason, cancellationToken);
 }

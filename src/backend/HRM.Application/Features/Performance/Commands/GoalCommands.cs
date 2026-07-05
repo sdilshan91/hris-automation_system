@@ -49,7 +49,9 @@ public sealed record UpdateGoalCommand(
     string TargetValue,
     string MeasurementUnit,
     DateOnly DueDate,
-    Guid? ParentGoalId
+    Guid? ParentGoalId,
+    // BUG-057: optimistic concurrency token the client read; round-trips to guard the UPDATE.
+    uint RowVersion = 0
 ) : IRequest<Result<GoalDto>>;
 
 public sealed class UpdateGoalCommandHandler : IRequestHandler<UpdateGoalCommand, Result<GoalDto>>
@@ -62,7 +64,7 @@ public sealed class UpdateGoalCommandHandler : IRequestHandler<UpdateGoalCommand
         => _service.UpdateAsync(request.GoalId, new GoalInput(
             Guid.Empty, Guid.Empty, request.Title, request.Description, request.Category,
             request.Weight, request.TargetValue, request.MeasurementUnit, request.DueDate,
-            request.ParentGoalId), cancellationToken);
+            request.ParentGoalId, request.RowVersion), cancellationToken);
 }
 
 // ── Delete ───────────────────────────────────────────────────────────────

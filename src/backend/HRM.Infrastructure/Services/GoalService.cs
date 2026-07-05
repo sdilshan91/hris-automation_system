@@ -144,6 +144,12 @@ public sealed class GoalService : IGoalService
                 $"Goal weights for this employee would total {newTotal}%, which exceeds 100%.",
                 422, "weight_exceeds_100");
 
+        // BUG-057 (NFR-4): guard the UPDATE with the client's read-time concurrency token. Without this,
+        // EF's OriginalValue equals the just-read DB xmin, so the guarded UPDATE always matches and a
+        // concurrent edit silently clobbers. Setting OriginalValue to the client's token makes a stale
+        // write raise DbUpdateConcurrencyException -> 409. Mirrors EmployeeService.UpdateProfileAsync.
+        _dbContext.Entry(goal).Property(g => g.Version).OriginalValue = input.RowVersion;
+
         // ISSUE-097 (US-PRF-001 FR-6): snapshot the pre-mutation state so the audit row captures before/after.
         var beforeSnapshot = SnapshotGoal(goal);
 
@@ -425,5 +431,6 @@ public sealed class GoalService : IGoalService
         StatusName = g.Status.ToString(),
         CreatedAt = g.CreatedAt,
         UpdatedAt = g.UpdatedAt,
+        RowVersion = g.Version,
     };
 }

@@ -110,7 +110,8 @@ public sealed class GoalsController : ControllerBase
     {
         var command = new UpdateGoalCommand(
             id, request.Title, request.Description, request.Category, request.Weight,
-            request.TargetValue, request.MeasurementUnit, request.DueDate, request.ParentGoalId);
+            request.TargetValue, request.MeasurementUnit, request.DueDate, request.ParentGoalId,
+            request.RowVersion);
 
         var result = await _mediator.Send(command, cancellationToken);
         if (result.IsFailure)
