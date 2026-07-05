@@ -24,8 +24,8 @@ public sealed class OvertimeApprovalHistoryConfiguration
         builder.Property(h => h.OvertimeRecordId)
             .IsRequired();
 
-        builder.Property(h => h.ApproverEmployeeId)
-            .IsRequired();
+        // BUG-049: nullable — an employee-less HR approver (permission-holder) records a null approver.
+        builder.Property(h => h.ApproverEmployeeId);
 
         builder.Property(h => h.ApprovalLevel)
             .HasDefaultValue(1)

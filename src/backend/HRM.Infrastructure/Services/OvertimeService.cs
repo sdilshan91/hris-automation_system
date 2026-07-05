@@ -1,6 +1,7 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -312,7 +313,7 @@ public sealed class OvertimeService : IOvertimeService
             return ctx.Failure;
 
         var record = ctx.Record!;
-        var manager = ctx.Manager!;
+        var approverEmployeeId = ctx.ApproverEmployeeId;   // BUG-049: null for an employee-less HR approver.
 
         // FR-6/AC-4: approved minutes default to the recorded overtime; a manager adjustment must be
         // between 0 and the recorded overtime (cannot approve MORE than was worked).
@@ -328,7 +329,7 @@ public sealed class OvertimeService : IOvertimeService
         record.IsPayrollReady = true;   // FR-7: approved overtime is payroll-ready.
 
         var history = NewHistory(
-            record.Id, manager.Id, OvertimeApprovalAction.Approved,
+            record.Id, approverEmployeeId, OvertimeApprovalAction.Approved,
             finalApproved, record.ManagerComment, record.CalculationBasis);
         _dbContext.OvertimeApprovalHistories.Add(history);
 
@@ -338,9 +339,10 @@ public sealed class OvertimeService : IOvertimeService
         // FR-8 (notify employee of approval): DEFERRED — no notification infra (TODO US-NTF).
 
         _logger.LogInformation(
-            "Overtime {Id} APPROVED by manager {ManagerId} for employee {EmployeeId}: " +
+            "Overtime {Id} APPROVED by approver {ApproverEmployeeId} (user {UserId}) for employee {EmployeeId}: " +
             "{ApprovedMinutes} min @ {Multiplier}x (tenant {TenantId}).",
-            record.Id, manager.Id, record.EmployeeId, finalApproved, record.Multiplier, _tenantContext.TenantId);
+            record.Id, approverEmployeeId, _currentUser.UserId, record.EmployeeId, finalApproved,
+            record.Multiplier, _tenantContext.TenantId);
 
         return Result<OvertimeDecisionDto>.Success(new OvertimeDecisionDto
         {
@@ -366,7 +368,7 @@ public sealed class OvertimeService : IOvertimeService
             return ctx.Failure;
 
         var record = ctx.Record!;
-        var manager = ctx.Manager!;
+        var approverEmployeeId = ctx.ApproverEmployeeId;   // BUG-049: null for an employee-less HR approver.
 
         record.Status = OvertimeStatus.Rejected;
         record.ApprovedMinutes = null;
@@ -374,7 +376,7 @@ public sealed class OvertimeService : IOvertimeService
         record.IsPayrollReady = false;
 
         var history = NewHistory(
-            record.Id, manager.Id, OvertimeApprovalAction.Rejected,
+            record.Id, approverEmployeeId, OvertimeApprovalAction.Rejected,
             null, trimmed, record.CalculationBasis);
         _dbContext.OvertimeApprovalHistories.Add(history);
 
@@ -383,8 +385,8 @@ public sealed class OvertimeService : IOvertimeService
         // FR-8 (notify employee of rejection with reason): DEFERRED — no notification infra (TODO US-NTF).
 
         _logger.LogInformation(
-            "Overtime {Id} REJECTED by manager {ManagerId} for employee {EmployeeId} (tenant {TenantId}).",
-            record.Id, manager.Id, record.EmployeeId, _tenantContext.TenantId);
+            "Overtime {Id} REJECTED by approver {ApproverEmployeeId} (user {UserId}) for employee {EmployeeId} (tenant {TenantId}).",
+            record.Id, approverEmployeeId, _currentUser.UserId, record.EmployeeId, _tenantContext.TenantId);
 
         return Result<OvertimeDecisionDto>.Success(new OvertimeDecisionDto
         {
@@ -464,8 +466,14 @@ public sealed class OvertimeService : IOvertimeService
         if (!_tenantContext.IsResolved)
             return DecisionContext.Fail("Tenant context is not resolved.", 400);
 
+        // BUG-049: authorization is PERMISSION-driven, not employee-record-driven. An approver holding
+        // Attendance.Approve.Team (the permission the controller already gates on — granted to managers AND
+        // to the HR roles) may reach the decision even with NO linked employee record (an HR persona). The
+        // approver's own employee record, when present, still drives the manager-of-record path plus the
+        // self-approval (BR-8) and direct-report (FR-5/AC-3) checks below.
+        var hasApprovePermission = _currentUser.Permissions.Contains(PermissionCatalog.Attendance.ApproveTeam);
         var manager = await GetCurrentEmployeeAsync(cancellationToken);
-        if (manager is null)
+        if (manager is null && !hasApprovePermission)
             return DecisionContext.Fail("No employee record is linked to the current user.", 403);
 
         var record = await _dbContext.OvertimeRecords
@@ -473,17 +481,28 @@ public sealed class OvertimeService : IOvertimeService
         if (record is null)
             return DecisionContext.Fail("Overtime record not found.", 404);
 
-        // BR-8: a manager cannot approve their OWN overtime — checked before the team check.
-        if (record.EmployeeId == manager.Id)
+        // BR-8: an approver cannot approve their OWN overtime — checked before the team check. Only
+        // relevant when the approver has an employee record (an employee-less HR actor has no "own" record).
+        if (manager is not null && record.EmployeeId == manager.Id)
             return DecisionContext.Fail(
                 "You cannot approve your own overtime. It must be approved by your manager or HR.",
                 403, "self_approval");
 
-        // FR-5/AC-3: direct reports only.
+        // FR-5/AC-3: direct reports only for the manager-of-record path. BUG-049: an all-scope HR approver
+        // (Attendance.View.All) OR an approver with no reporting line (no employee record but holding the
+        // approve permission — the HR persona) may approve beyond their direct reports; a plain manager
+        // (an employee record + the approve permission but no all-scope) stays limited to direct reports.
         var requester = await _dbContext.Employees
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == record.EmployeeId, cancellationToken);
-        if (requester is null || requester.ReportsToEmployeeId != manager.Id)
+        if (requester is null)
+            return DecisionContext.Fail(
+                "You are not authorized to approve overtime for this employee.", 403, "not_team_member");
+
+        var isDirectManager = manager is not null && requester.ReportsToEmployeeId == manager.Id;
+        var hasAllScope = _currentUser.Permissions.Contains(PermissionCatalog.Attendance.ViewAll);
+        var isPermissionOnlyApprover = manager is null && hasApprovePermission;
+        if (!isDirectManager && !hasAllScope && !isPermissionOnlyApprover)
             return DecisionContext.Fail(
                 "You are not authorized to approve overtime for this employee.", 403, "not_team_member");
 
@@ -494,7 +513,7 @@ public sealed class OvertimeService : IOvertimeService
                 $"This overtime record has already been actioned (status: {record.Status}).",
                 409, "already_actioned");
 
-        return new DecisionContext { Record = record, Manager = manager };
+        return new DecisionContext { Record = record, ApproverEmployeeId = manager?.Id };
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -510,13 +529,21 @@ public sealed class OvertimeService : IOvertimeService
     }
 
     /// <summary>
-    /// Resolves the employee's standard work minutes for a date: the assigned shift (US-ATT-005)
-    /// converted from its start/end span minus break, else the tenant
-    /// <see cref="AttendanceSettings.StandardWorkMinutes"/>. FLEXIBLE shifts use their MinimumHours.
+    /// Resolves the employee's standard work minutes for a date. ISSUE-078: the tenant
+    /// <see cref="AttendanceSettings.StandardWorkMinutes"/> is the CANONICAL standard workday and is used
+    /// whenever configured (&gt; 0), so auto-detected overtime uses the SAME baseline as the monthly report
+    /// / summary (US-ATT-006 AC-5 / US-ATT-007 / US-ATT-008 define the standard as a tenant setting) and the
+    /// two reconcile. The employee's assigned shift span (US-ATT-005, start/end minus break; FLEXIBLE uses
+    /// MinimumHours) is only a FALLBACK for tenants that have not configured a standard.
     /// </summary>
     private async Task<int> ResolveStandardMinutesAsync(
         Guid employeeId, DateOnly date, AttendanceSettings settings, CancellationToken cancellationToken)
     {
+        // ISSUE-078: canonical — the tenant standard, matching the report/summary. Falls through to the
+        // shift-derived span only when no tenant standard is configured.
+        if (settings.StandardWorkMinutes > 0)
+            return settings.StandardWorkMinutes;
+
         var assignment = await _dbContext.EmployeeShifts
             .AsNoTracking()
             .Where(es => es.EmployeeId == employeeId
@@ -619,7 +646,7 @@ public sealed class OvertimeService : IOvertimeService
     }
 
     private OvertimeApprovalHistory NewHistory(
-        Guid overtimeRecordId, Guid approverEmployeeId, string action,
+        Guid overtimeRecordId, Guid? approverEmployeeId, string action,
         int? approvedMinutes, string? comment, string? calculationBasis) => new()
     {
         Id = BaseEntity.NewUuidV7(),
@@ -653,7 +680,13 @@ public sealed class OvertimeService : IOvertimeService
     private sealed class DecisionContext
     {
         public OvertimeRecord? Record { get; init; }
-        public Employee? Manager { get; init; }
+
+        /// <summary>
+        /// BUG-049: the approver's employee id, or null when the approver is a permission-holder with no
+        /// linked employee record (an HR persona). Written to the immutable decision history.
+        /// </summary>
+        public Guid? ApproverEmployeeId { get; init; }
+
         public Result<OvertimeDecisionDto>? Failure { get; init; }
 
         public static DecisionContext Fail(string error, int statusCode, string? errorCode = null) => new()

@@ -18,8 +18,13 @@ public sealed class OvertimeApprovalHistory : BaseEntity
     /// <summary>FK to the <see cref="OvertimeRecord"/> this decision applies to.</summary>
     public Guid OvertimeRecordId { get; set; }
 
-    /// <summary>FK to the employee record of the approver (manager) who took the action (FR-6).</summary>
-    public Guid ApproverEmployeeId { get; set; }
+    /// <summary>
+    /// FK to the employee record of the approver (manager) who took the action (FR-6). BUG-049: nullable,
+    /// because a permission-holding HR approver (Attendance.Approve.Team) may action overtime without a
+    /// linked employee record — in that case this is null and the actor is captured in the audit log / by
+    /// the acting user id. When the approver is an employee (the manager-of-record path) it is set.
+    /// </summary>
+    public Guid? ApproverEmployeeId { get; set; }
 
     /// <summary>Approval level (1-based). Always 1 (single-level direct-report approval).</summary>
     public int ApprovalLevel { get; set; } = 1;
