@@ -49,7 +49,7 @@ public sealed record SelfAssessmentItemDto
     public IReadOnlyList<SelfAssessmentAttachmentDto> Attachments { get; init; } = [];
 }
 
-/// <summary>Evidence-file metadata attached to a goal item (FR-5).</summary>
+/// <summary>Evidence-file metadata attached to a goal item (FR-5). Never carries the file bytes.</summary>
 public sealed record SelfAssessmentAttachmentDto
 {
     public Guid Id { get; init; }
@@ -57,6 +57,9 @@ public sealed record SelfAssessmentAttachmentDto
     public string FileName { get; init; } = string.Empty;
     public string ContentType { get; init; } = string.Empty;
     public long SizeBytes { get; init; }
+
+    /// <summary>UTC timestamp the evidence file was uploaded (ISSUE-105).</summary>
+    public DateTime UploadedAt { get; init; }
 }
 
 // ── Request bodies ─────────────────────────────────────────────────────

@@ -444,6 +444,7 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
                         FileName = a.FileName,
                         ContentType = a.ContentType,
                         SizeBytes = a.SizeBytes,
+                        UploadedAt = a.CreatedAt,
                     }).ToList(),
             };
         }).ToList();
