@@ -103,6 +103,13 @@ public sealed class ApplicantSubmissionIntegrationTests
         _vacancyA = Guid.NewGuid();
         _vacancyB = Guid.NewGuid();
 
+        // ISSUE-095: public application submission now requires the tenant's PublicCareersEnabled
+        // toggle ON. Seed both tenants with it enabled so the (public-source) submissions here
+        // are not 404-gated.
+        db.Tenants.AddRange(
+            new Tenant { Id = _tenantA, Subdomain = "tenant-a", Name = "Tenant A", Status = TenantStatus.Active, PublicCareersEnabled = true },
+            new Tenant { Id = _tenantB, Subdomain = "tenant-b", Name = "Tenant B", Status = TenantStatus.Active, PublicCareersEnabled = true });
+
         db.Vacancies.AddRange(
             OpenVacancy(_vacancyA, _tenantA, "Backend Engineer (A)"),
             OpenVacancy(_vacancyB, _tenantB, "Backend Engineer (B)"));
