@@ -321,8 +321,17 @@ public sealed class WorkflowService : IWorkflowService
 
         var before = ToAuditSnapshot(workflow);
 
-        // BR-2: archive any currently active workflow for the same entity type before reactivating this one.
+        // BR-2 / BUG-006: archive any currently-active workflow for this entity type and PERSIST that archive
+        // FIRST, before activating the restored one. The partial unique index
+        // ix_workflow_definitions_tenant_entitytype_active — (tenant_id, entity_type) WHERE is_active = true —
+        // is non-deferrable, so the archive (true→false) and the activate (false→true) must NOT land in the
+        // same SaveChanges batch: EF does not guarantee it emits the archive UPDATE before the activate
+        // UPDATE, so a single batch can momentarily leave two rows active for the type and Postgres rejects it
+        // with 23505 (the reported 500). Splitting the saves guarantees the previous active is is_active=false
+        // in the DB before the restored row is set is_active=true. (InMemory does not enforce the partial
+        // index, which is why the unit suite never surfaced this.)
         await ArchiveActiveForEntityTypeAsync(workflow.EntityType, cancellationToken, excludeId: workflow.Id);
+        await _db.SaveChangesAsync(cancellationToken);
 
         workflow.IsActive = true;
         workflow.Status = WorkflowStatus.Active;
