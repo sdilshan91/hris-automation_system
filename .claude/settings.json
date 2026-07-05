@@ -123,6 +123,16 @@
     "aspire-integration-testing": "off",
     "aspire-mailpit-integration": "off",
     "aspire-service-defaults": "off",
-    "playwright-blazor": "off"
+    "playwright-blazor": "off",
+    "playwright-ci-caching": "off",
+    "mjml-email-templates": "off",
+    "verify-email-snapshots": "off",
+    "r3-reactive-extensions": "off",
+    "ilspy-decompile": "off",
+    "dotnet-devcert-trust": "off",
+    "local-tools": "off",
+    "marketplace-publishing": "off",
+    "skills-index-snippets": "off",
+    "slopwatch": "off"
   }
 }
