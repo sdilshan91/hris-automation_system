@@ -47,6 +47,17 @@
 > BUG-055(#143) · BUG-030(#144) · BUG-102(#145) · BUG-104(#146) · ISSUE-018(#147) · ISSUE-210(#148).
 > **0 genuine open HIGH or CRIT remain** — the backlog is now MED/LOW only (plan Waves 3–5).
 
+> **Waves C/D/E fixes MERGED + closed out (2026-07-06):** the remaining fixable MED backlog was fixed across
+> PRs **#168–#178** (all merged into `test/local-subdomains`) and the **29** findings below are now flipped
+> **OPEN → RESOLVED** with their PR#: #168 ISSUE-065/078/084 + BUG-049 · #169 BUG-057 + ISSUE-109 ·
+> #170 BUG-032 + ISSUE-029/041 · #171 BUG-044/046 + ISSUE-056 · #172 ISSUE-005 + BUG-006 · #173 BUG-038 +
+> ISSUE-086/090 · #174 BUG-059 + BUG-060 · #175 BUG-029 + BUG-242 · #176 ISSUE-066/118/160 + BUG-063 ·
+> #177 ISSUE-101/105 · #178 ISSUE-158 + BUG-070. Each was regression-tested (red pre-fix / green post-fix); the
+> full merged-tree suite is green. **Still genuinely OPEN (not fixed):** ISSUE-243 (vacancy is_deleted — needs a
+> repro), ISSUE-244 (resume-blob-key LOW), BUG-058 (resume magic-byte) — plus the LOW cosmetic tail and the
+> decision/feature-blocked items. **The larger completeness backlog** (unbuilt ACs across ~25 done stories, net-new
+> capabilities) is catalogued in [COMPLETION-PLAN-2026-07-06.md](COMPLETION-PLAN-2026-07-06.md) Part II, not here.
+
 > 2026-06-30 iso-fixture admin-isolation/lifecycle run (14 TCs): +BUG-106 (suspended-tenant admin 451-exemption broken, HIGH), +BUG-107 (impersonation FR-6 destructive-op block bypassed, HIGH), +ISSUE-217 (terminating data-export wrongly 403, MED). Cross-tenant leak via foreign `X-Tenant-Subdomain` header re-confirmed as the existing systemic **BUG-003** (not re-filed).
 
 > **3 BUGs RETRACTED 2026-06-25 as debugger artifacts** (BUG-009, BUG-011, BUG-012): the backend was running under the VS Code debugger, which broke on the first-chance `ValidationException` at `ValidationBehavior.cs:37` and waited for a human "Continue" — that pause was misread as a hang/stall. Re-verified debugger-free: all validation failures return instant 400s, no pool exhaustion. **Net genuine bugs: 10 (1 CRIT = BUG-003; the other prior CRIT count was wrong).** Lesson: run perf/availability tests WITHOUT a debugger that breaks on thrown exceptions.
@@ -176,7 +187,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Either reject an unparseable/unsupported `status` with 400, and/or reconcile FR-1's "invited" facet with the pending-membership model — e.g. union the invitations into the list or document that "invited" is served only by the invitations endpoint.)
 
 ### ISSUE-005 — Denied user-management mutations (BR-2 owner-strip, BR-3 self-deactivate, BR-5 plan-limit) write NO audit row — NFR-2 "log the denied action" unmet
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #172, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-005 · TC-ADM-005-09 (step 4) / TC-ADM-005-13 (step 5) / TC-ADM-005-06 (step 5) / TC-ADM-005-17 (NFR-2)
 - **Title:** When a user-management mutation is rejected by a business rule — removing the Tenant Owner role (BR-2), self-deactivation (BR-3), or an over-plan-limit invite (BR-5) — the service returns the failure **before** any audit write, so no `audit_log` row is created. TC-09/-13/-06 each require the *denied* attempt to be audited (actor, denied, reason); it is not.
@@ -310,7 +321,7 @@
 > **Audit-completeness theme (recurrence, not re-filed):** US-ADM-006 settings audit rows (`tenant_settings.*`) written by `TenantSettingsService.PersistAsync` (`TenantSettingsService.cs:267-288`) carry actor/action/before/after/timestamp/tenant correctly, but — like [[ISSUE-006]] for US-ADM-005's `UserManagementService.WriteAudit` — leave `ip_address` and `user_agent` NULL (no `IHttpContextAccessor` sourced). Verified in psql across all six `tenant_settings.*` event types. Per the run instruction, this is referenced against ISSUE-006 (same forensic-envelope gap, distinct service) rather than re-filed. Denied/unauthenticated settings attempts correctly wrote NO settings-change audit row (TC-14 step 6 / TC-16 step 8 satisfied).
 
 ### BUG-006 — Restoring an archived workflow while another active workflow exists for the same entity type throws HTTP 500 (BR-2 auto-archive-on-restore collides with the partial unique index) — FR-6/BR-2 restore path broken on real Postgres
-- **Type / Severity / Status:** BUG · MED · OPEN — **STILL PRESENT (regression re-confirmed 2026-06-27)**: in acme, created Leave workflow A (`activate:true`), archived it, created Leave workflow B (`activate:true`), then `POST /tenant/workflows/{A}/restore` → 500. Serilog: `SqlState: 23505 … duplicate key value violates unique constraint "ix_workflow_definitions_tenant_entitytype_active"` (`hrm-20260627.log` RequestId 0HNMJGENHI1IC). Both test workflows deleted afterward; acme back to 0-workflow baseline. NOTE the create request now carries an explicit `activate` bool (workflows are created Draft/inactive unless `activate:true`) and step approver is `approverIdentifier` (Guid role/user id) — a contract refinement vs the baseline pass. Unchanged defect.
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #172, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out) — **(historical pre-fix note, since fixed by #172; regression re-confirmed 2026-06-27)**: in acme, created Leave workflow A (`activate:true`), archived it, created Leave workflow B (`activate:true`), then `POST /tenant/workflows/{A}/restore` → 500. Serilog: `SqlState: 23505 … duplicate key value violates unique constraint "ix_workflow_definitions_tenant_entitytype_active"` (`hrm-20260627.log` RequestId 0HNMJGENHI1IC). Both test workflows deleted afterward; acme back to 0-workflow baseline. NOTE the create request now carries an explicit `activate` bool (workflows are created Draft/inactive unless `activate:true`) and step approver is `approverIdentifier` (Guid role/user id) — a contract refinement vs the baseline pass. Unchanged defect.
 - **Layer:** BE (DB-interaction)
 - **Module / US / TC:** Admin Console · US-ADM-007 · TC-ADM-007-09 (step 5 — restore governed by the same one-active-per-entity-type/BR-2 rule)
 - **Title:** `POST /api/v1/tenant/workflows/{id}/restore` returns **HTTP 500 "An unexpected error occurred. Please try again later."** when the archived workflow being restored has the same entity type as a currently-ACTIVE workflow. The restore is supposed to auto-archive the conflicting active workflow (BR-2) and reactivate the target; instead it crashes. Restore with NO same-type conflict works correctly (200).
@@ -879,7 +890,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Shared BUG-003 remediation: the tenant-resolution/auth pipeline must reject any request whose subdomain-resolved tenant ≠ the authenticated token's `tenant_id` claim — fail-closed — closing this and every other BUG-003 surface at once.)
 
 ### ISSUE-029 — FR-4 default leave-type seeding is incomplete and duplicated: tenant provisioning seeds only 3 types (Annual/Sick/Casual) — missing the spec's Maternity/Paternity/Bereavement/Unpaid and the system LOP type — while the spec-complete 8-type seeder (`LeaveTypeService.SeedDefaultsForTenantAsync`) exists but is DEAD CODE with zero callers
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #170, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-001 · TC-LV-021 (new tenant gets default leave types on provisioning — marked DEFERRED in spec) / FR-4. Also affects TC-LV-218 (LOP auto-created at tenant setup) — no LOP exists in any tenant.
 - **Title:** Two competing default-seed implementations diverge from FR-4. The one actually wired at provisioning — `TenantProvisioningService.SeedDefaultLeaveTypes` (`src/backend/HRM.Infrastructure/Services/TenantProvisioningService.cs:325`, called at `:173`) — seeds only **3** types: Annual Leave, Sick Leave, Casual Leave (`:330-332`), with `SystemCategory.None`. The spec-complete seeder — `LeaveTypeService.GetDefaultLeaveTypes`/`SeedDefaultsForTenantAsync` (`LeaveTypeService.cs:309/407`) — defines the full FR-4 set (Annual, Sick, Casual, Maternity, Paternity, Bereavement, Unpaid + the system **Loss of Pay** type, 8 total) but has **zero callers** (grep for `SeedDefaultsForTenantAsync` finds only the interface + its own definition). Net effect: every provisioned tenant (verified across all 21 tenants in the DB) has exactly 3 leave types and **no** Maternity/Paternity/Bereavement/Unpaid and **no** LOP system type. FR-4 says onboarding must seed the default set "that the tenant admin can customize" — the delivered subset is materially smaller than the spec's enumerated list (FR-2/FR-4) and the gender-specific (Maternity/Paternity, BR-4) and unpaid (BR-3 zero-entitlement) examples called out throughout US-LV-001 are not seeded.
@@ -1011,7 +1022,7 @@
 - **Suggested direction (NOT applied):** none — report only. (When blob storage is implemented, add a per-file 5MB cap and server-side tenant-scoped path `{tenantId}/leaves/{requestId}/`, then TC-LV-063 steps 1-3 become executable end-to-end.)
 
 ### BUG-029 — Leave approval ignores `negative_balance_limit`: a negative-allowed leave type can be driven arbitrarily past its configured limit
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #175, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-005 · TC-LV-093 (step 5 — "approval is blocked with a limit-exceeded error; no ledger entry created"). AC-3, BR-5, FR-3.
 - **Title:** When a leave type has `negative_balance_allowed = true`, the approve handler permits the deduction to take the running balance **arbitrarily below** the leave type's `negative_balance_limit`. The only gate is the boolean `NegativeBalanceAllowed`; the numeric limit is never compared. AC-3/BR-5 require approval to be **blocked** once the projected balance would exceed the configured negative limit.
@@ -1090,7 +1101,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Inject `IAuditService` into `HolidayService` and record create/update/deactivate/import with before/after values, consistent with the fix shape for BUG-025/BUG-028.)
 
 ### BUG-032 — Holiday LIST endpoint's `locationId` filter EXCLUDES tenant-wide (null-location) holidays: `GET /api/v1/holidays?locationId={loc}` returns ONLY that location's holidays and drops all tenant-wide public holidays, contradicting AC-1 (location employees must still see tenant-wide holidays)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #170, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-007 · TC-LV-130 (steps 2-3 — location filter must return location-specific PLUS tenant-wide holidays). AC-1, FR-2, FR-6.
 - **Title:** The calendar list query applies the location filter as a strict equality `h.LocationId == locationId`, so a request scoped to a location returns only that location's rows and silently omits every tenant-wide (LocationId IS NULL) holiday. Per AC-1 ("visible to all employees (or location-filtered employees)") and the location semantics, an employee/calendar filtering by their location must see **both** their location's holidays **and** the tenant-wide ones. Observed: with one NY-only holiday (Thanksgiving) and three tenant-wide holidays (New Year, Spring Bank, QA seed), `?locationId=NY` returned ONLY Thanksgiving, and `?locationId=London` (no London-specific holidays) returned an EMPTY list — i.e. a London employee's location-filtered calendar shows no public holidays at all. Notably the leave-day-exclusion provider gets this right (see Evidence), so the bug is isolated to the calendar/list read surface.
@@ -1173,7 +1184,7 @@
 - **Severity rationale:** CRIT (inherited from canonical BUG-003) — the token-vs-subdomain check is absent platform-wide; on read surfaces with foreign data present this is a cross-tenant disclosure (a full GDPR-relevant dump was demonstrated on other surfaces). Here it happens to disclose nothing because the foreign tenant has no eligible data, but the missing authorization boundary is identical. Not re-filed as a new number per policy (systemic, referenced as EXTENDED).
 
 ### ISSUE-041 — US-LV-008 carry-forward/expiry jobs claim "Hangfire/Polly setup provides retry" (NFR-4: retry via Polly, max 3, exponential backoff) but neither job is wrapped in Polly nor decorated with Hangfire `[AutomaticRetry]`; a per-tenant failure is caught, logged, and silently skipped until the next scheduled run
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #170, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-008 · TC-LV-160 (NFR-4 — transient failure retried via Polly max 3 with exponential backoff; persistent failure surfaced after retries). FR-2, FR-3.
 - **Title:** `ProcessLeaveYearEndJob` and `ProcessCarryForwardExpiryJob` each wrap their per-tenant work in a `try/catch` that logs `Log.Error(ex, …)` and *continues to the next tenant* ("don't fail the whole job"). There is **no Polly retry policy** around the per-tenant call and **no `[AutomaticRetry]` Hangfire attribute** on either job class. So a transient fault for tenant X is not retried with exponential backoff (NFR-4) — tenant X is simply skipped for that run and only re-attempted on the next monthly (expiry) / annual (year-end) schedule. The year-end job's XML-doc explicitly claims "The existing Hangfire/Polly setup provides retry," which is not borne out by the code: the registered Polly `ResilientClient` is an outbound-HttpClient policy, unrelated to these jobs, and Hangfire's default retry is not opted into here.
@@ -1313,7 +1324,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Same fix as BUG-037: correct `leave_ledger.entry_type='Accrued'` → `'Accrual'` and the writer that emits it; optionally a fail-soft enum converter so one bad row doesn't 500 an entire tenant report.)
 
 ### BUG-038 — Absenteeism report flagging is broken two ways: the BR-4 threshold is hardcoded (not tenant-configurable) AND the flag compares unplanned-days averaged over the WHOLE range (not "unplanned leaves per month"), so a genuinely high-absenteeism employee is never flagged
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #173, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-012 · TC-LV-237 (AC-3/BR-4 4-vs-3 flag boundary + tenant-configurable threshold), TC-LV-236 (AC-3 flag presence)
 - **Title:** AC-3/BR-4 require flagging employees who exceed a **tenant-configurable** absenteeism threshold (default 3+ unplanned leaves per month). The implementation (a) hardcodes the threshold to `3` with no tenant lookup, and (b) computes `avgPerMonth = unplannedDays / monthsSpanned` over the **entire** report range (default = the full 12-month calendar year) and flags only when `avgPerMonth > threshold` (strict `>`). For the default year-long range, an employee with 12 LOP days spread across the year yields avg 1.0 < 3 → **never flagged**, even though they have substantial absence. The "per month" intent (peak month ≥ threshold) is not implemented; the metric is diluted across the whole span and the threshold cannot be changed, so TC-LV-237's "4>3 → flagged" and "raise threshold → un-flag" arms cannot pass with the live default range.
@@ -1517,7 +1528,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-056 — `my-tenants` per-user cache is never invalidated on membership change (NFR-2 unimplemented); stale list served for up to the 5-minute TTL
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #171, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-008 · TC-AUTH-064 (steps 5-8)
 - **Title:** NFR-2 requires the `my-tenants` list to be cached per user (`user:{userId}:tenants`) **with invalidation on membership changes**. The cache write exists (5-minute absolute TTL) but there is **no invalidation call anywhere** — adding, removing, suspending, or terminating a membership does not evict `user:{userId}:tenants`, so `GET /api/v1/auth/my-tenants` (and `/auth/me`, which composes it) serves stale memberships/roles/status for up to 5 minutes after a change. TC-064 steps 5-8 (mutate membership → fresh data without waiting for expiry) cannot pass.
@@ -1611,7 +1622,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Representative API-layer pass (curl + JWT + psql), debugger-free backend. Destructive lockout arms run on **throwaway** users `qa-lockout-1@acme.test` / `qa-lockout-2@acme.test` (seeded in acme as Employee, pw `Admin@123!`), never on the shared personas. The core lockout mechanism is **largely correct and well-built** (threshold, duration, auto-unlock, admin-unlock, count-reset, global/cross-tenant scope, progressive doubling, timing-resistant dummy-hash, complete `login_failure`/`account_locked`/`account_unlocked_by_*` audit trail, BR-3 tenant-scoped admin unlock, BR-7 session preservation). The findings below are the gaps.
 
 ### BUG-044 — The threshold-triggering failed attempt (the Nth/5th) returns the GENERIC "Invalid email or password." message instead of the spec-required lockout message; the lockout message only appears on the *next* attempt (AC-2 / TC-084 step 4 unmet)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #171, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-010 · TC-AUTH-084 (step 4), TC-AUTH-026 (step 6), TC-AUTH-103 (step 4)
 - **Title:** AC-2 requires that on the attempt that *reaches* `maxFailedAttempts` the system returns 401 with "Account temporarily locked. Try again later or contact your administrator." Live, that threshold attempt sets `locked_until` correctly AND logs `account_locked` correctly, but still returns the generic **"Invalid email or password."** The lockout-specific message is only surfaced on the **following** request (when the top-of-method `LockedUntil` check fires). So the user is locked silently and is never told *on the locking attempt* that they have been locked.
@@ -1633,7 +1644,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-046 — No system-admin cross-tenant unlock path exists (BR-4 unimplemented): the ONLY unlock endpoint is tenant-scoped (`Tenant Admin/Owner` role + caller's token tenant), so a System Admin cannot unlock a locked user in an arbitrary tenant (TC-094 not implemented)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #171, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-010 · TC-AUTH-094 (BR-4), FR-6
 - **Title:** BR-4 / TC-094 require a System Admin to be able to unlock *any* locked user regardless of tenant. The codebase exposes exactly one unlock route — `POST /api/v1/tenant/users/{id}/unlock` — gated by `[Authorize(Roles = "Tenant Admin,Tenant Owner")]` and scoped to `_currentUser.TenantId` (the caller's **token** tenant) with a BR-3 membership check. A System Admin (role `SystemAdmin`, authenticated on `platform`) holds neither the "Tenant Admin"/"Tenant Owner" role nor a membership in the target tenant, so every attempt returns 403. There is no system-level unlock controller/endpoint.
@@ -1693,7 +1704,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only. (A dev would wrap the line-172 SaveChanges in a `catch (DbUpdateException)` that maps the 23505 to the same `Result.Failure("You have already clocked in. Please clock out first.", 409, "already_clocked_in")`, mirroring `TryRecordIdempotencyAsync`.)
 
 ### ISSUE-065 — Late-arrival detection compares UTC time-of-day against the shift start, ignoring tenant timezone (FR-7)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #168, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). A clock-in at 14:47 server-local (+05:30) was stored `clockIn:2026-06-27T09:17:14Z` and flagged `isLate:true, lateMinutes:17` — i.e. compared 09:17 **UTC** against the 09:00 shift start with no tenant-tz conversion. Headline tz defect of the module; do not mis-file as a calc bug.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-006 (step 5 — tenant-tz late determination)
@@ -1705,7 +1716,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-066 — IP allowlist does exact-string match only; CIDR ranges are not supported (FR-4 / BR-3)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #176, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-005 (step 5 — CIDR `203.0.113.0/24`)
 - **Title:** When `ip_allowlist_enabled = true`, the request IP is validated with a plain list-membership check (`ip_allowlist.Contains(ip)`), so only **exact** IP strings match. A CIDR entry such as `203.0.113.0/24` will only ever match the literal string `203.0.113.0/24`, never an address *within* the block (e.g. `203.0.113.77`). FR-4/BR-3 and TC-ATT-005 step 5 expect CIDR-range enforcement.
@@ -1882,7 +1893,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — optionally align clone to 201, add an `isWorkingDay`/`isOnDate` flag to `ResolvedShiftDto`, and reconcile the minimum_hours TC boundary to the 24h cap.
 
 ### BUG-049 — Overtime approval has no working HR / fallback approver path; an HR Officer cannot approve ANY overtime, and a top-level manager's own overtime is un-approvable (BR-8 "or HR" unmet)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #168, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Regression re-test 2026-06-27:** STILL PRESENT (unchanged). HR's `GET /attendance/overtime/pending` queue is EMPTY (`totalCount:0`) while the Manager's queue holds the same tenant's pending OT — HR sees nothing to approve. HR `POST /attendance/overtime/{id}/approve` → **403 "No employee record is linked to the current user."** (fail-closed, no mutation). BR-8 "or HR" still unmet.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-077 (step 5) / TC-ATT-082 (step 7 HR)
@@ -1898,7 +1909,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — either (a) allow an `Attendance.Approve.All`/HR persona to approve overtime tenant-wide without the direct-report check (and tolerate HR users without an employee row), or (b) add an explicit supervisor-up-the-chain / HR fallback queue for records whose owner has no eligible direct manager.
 
 ### ISSUE-078 — Overtime auto-detection uses the shift-derived standard (420) while the same clock-out's attendance_log overtime uses the tenant StandardWorkMinutes (480): one transaction, two different overtime values
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #168, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-067 / TC-ATT-068 / TC-ATT-080
 - **Title:** On a single clock-out, `attendance_log.overtime_minutes` (US-ATT-002 path) is computed against `AttendanceSettings.StandardWorkMinutes` (480), but the **`overtime_record`** (US-ATT-006 payroll surface) is computed against the **shift-derived** standard (`ResolveStandardMinutesAsync` → 420 for John's assigned "Day Shift" 09:00–17:00 less 60 break). A net-540 day yields **log OT = 60** but **overtime_record OT = 120** — the two surfaces disagree, and the record (which feeds payroll/approval) uses 420.
@@ -1998,7 +2009,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 ## Findings (US-ATT-008 — Late arrival & early departure tracking, 2026-06-26)
 
 ### ISSUE-084 — Late/early counts diverge across the three US-ATT-008 surfaces: the report + my-score count raw late LOG ROWS (per-punch) while the monthly summary counts late DAYS (one log/day) — three different numbers for the same employee/month, and the deduction is fed by the deduped count
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #168, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-008 · TC-ATT-107 (deduction feed), TC-ATT-112 (report counts), TC-ATT-113 (my-score)
 - **Title:** For the same employee and month, `late-early/report` and `late-early/my-score` report **57** lates, while `summary/monthly` reports **1** late and the true distinct-late-day count is **3**. The three US-ATT-008 read surfaces use two incompatible aggregation grains (per-log vs per-day), so they cannot agree whenever an employee has more than one attendance_log row on any date.
@@ -2024,7 +2035,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — zero `late_minutes`/`late_by_minutes` when `is_late` is false (and `early_departure_minutes` is already correctly gated), so the persisted fields match the FR-3 "0 if not late" contract.
 
 ### ISSUE-086 — BR-8 (half-day-leave employees evaluated against a half-day shift schedule) is NOT implemented in late/early detection; the full shift's start/end is always used
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #173, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-008 · TC-ATT-111
 - **Title:** When an employee is on approved half-day leave, BR-8 requires late/early to be judged against the **half-day** schedule (e.g. a morning-half employee's effective start/end shift). The detection path never consults leave at all — it resolves the full assigned shift and compares against its full start/end, so a half-day employee is flagged late/early against the wrong window.
@@ -2086,7 +2097,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-090 — `payroll-data` / `reconciliation` auto-generate phantom full-month-absent data for any UNTRACKED period, contradicting the story precondition that the summary must already be generated (TC-ATT-118 S5)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #173, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-009 · TC-ATT-118 (S5 — month with no generated summary)
 - **Title:** The story (Preconditions §2, AC-1) requires the monthly attendance summary to be **generated** before payroll pulls it, and TC-ATT-118 S5 expects a clear "summary not generated" contract so payroll cannot proceed on un-generated data. Instead, requesting **any** month (incl. arbitrary past/future periods that were never tracked) returns **200 with a fully-populated row per employee showing every working day as ABSENT and the entire month as LOP** — because the underlying summary service generates on demand. E.g. `month=2025-01` → every acme employee `present 0 / absent 23 / lop 23`; `month=2026-05` (untracked) → `present 0 / absent 20 / lop 20`. There is no "not generated" signal; payroll consuming this would compute a full-month LOP deduction from phantom absences.
@@ -2236,7 +2247,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### BUG-057 — NFR-4 optimistic concurrency is NOT surfaced to the client on goal edit: the cross-session lost-update the spec describes succeeds silently (no version token in the PUT contract)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #169, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-10
 - **Title:** NFR-4 requires goal edits to be protected by optimistic concurrency so a stale second save is rejected (409) rather than silently overwriting. The `Goal.Version` xmin row-version IS mapped (`GoalConfiguration.cs:60`) and the service DOES catch `DbUpdateConcurrencyException` → 409 (`GoalService.cs:155-160`), but the **HTTP contract (`UpdateGoalRequest`) carries no client-supplied concurrency token** (no ETag / If-Match / version field — see `GoalDtos.cs:75-83`). Each PUT runs in its own scoped DbContext that re-reads the current row immediately before saving, so the xmin check can only ever fire for a race *inside one request's* read→save window — never for the "two sessions both loaded V1, both save" scenario NFR-4/TC-10 specify. Result: a stale second save returns **200** and silently clobbers the first session's change. The "lost update" NFR-4 was meant to prevent is reproducible.
@@ -2313,7 +2324,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-101 — Virus scanning (FR-3/NFR-4) is a no-op stub: every file (incl. EICAR) passes and is persisted; "scan before storing the URL" is not actually enforced
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #177, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-002 · TC-REC-002-10 (S1 EICAR reject / S3 clean accept)
 - **Title:** FR-3 ("perform virus scanning (ClamAV or cloud service) on uploaded files before persisting the storage URL") and NFR-4 require an infected upload to be rejected with no row/blob created. The registered `IVirusScanner` is `AllowWithLogVirusScanner`, which returns `VirusScanResult.Clean()` for **every** file and emits a Warning log. An EICAR-signature `eicar.pdf` is **accepted (HTTP 201)** and stored. The scan IS invoked in the correct order (before persistence) and the seam is real + DI-wired + visibly logged — but no actual malware detection occurs. (FR-4 EXIF-strip is correctly N/A: resumes are PDF/DOC(X), documented in `ApplicantService.cs:124-125`.)
@@ -2370,7 +2381,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Routes: `/api/v1/tenant/performance/self-assessments/*` — `GET cycles/{cycleId}/me`, `PUT draft`, `POST submit`. All require `Performance.Read.Self`; the service self-resolves the CALLING employee (UserId→employee) and tenant-filters every read/write, so an employee only ever touches their own record (NFR-2). Window gate (BR-1/AC-4)→409 `self_assessment_closed`; all-goals-rated+comment≥20→422 `incomplete_ratings`/`comment_too_short`; submitted-lock (BR-3)→409 `already_submitted`; weighted score = Σ(rating×weight)/Σweight rounded 2dp (FR-4). Hangfire reminder job `performance-self-assessment-reminders` (7/3/1-day thresholds, excludes submitters, log-only seam). Personas: `employee@acme.test`→John Doe (EMP-0001, 3 goals seeded in QA-SA-OPEN). 19 TCs executed: 12 PASS / 1 FAIL / 6 BLOCKED. **Self-assessment isolation is CLEAN — BUG-003 does NOT extend here** (the surface admits only `Read.Self` + always self-resolves the employee, so a spoofed `X-Tenant-Subdomain` yields 403 `no_employee_record`, not a leak — unlike the goals surface where `.All` holders bypassed it).
 
 ### BUG-242 — Submitted self-assessment cannot be reopened: the manager/HR reopen flow (BR-3 / AC-2 "unless reopened") is not implemented, so a submitted assessment is permanently locked
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #175, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Note:** renumbered from BUG-059 on 2026-07-05 (ledger ID-hygiene) — the ID collided with the US-REC-003/004 "Hired is terminal" BUG-059. This US-PRF-002 self-assessment-reopen occurrence took the fresh ID; its fix is PR #175 (regression TC-PRF-004-16). The recruitment finding keeps BUG-059 (fix PR #174).
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-002 · TC-PRF-002-13
@@ -2382,7 +2393,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-105 — File-attachment evidence (FR-5/NFR-4) has a data model but NO API: no upload/list/delete endpoint, so attachments cannot be added at all
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #177, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-002 · TC-PRF-002-10 (FR-5 limits), TC-PRF-002-11 (NFR-4 scan/storage)
 - **Title:** FR-5 ("file attachments per goal, max 5 files, 10MB each") and NFR-4 (virus scan + tenant-scoped storage) describe an evidence-upload feature. The `SelfAssessmentAttachment` entity, its EF configuration, and the read-side `SelfAssessmentAttachmentDto` all exist, but there is **no upload/list/delete endpoint** on `SelfAssessmentController` (no `IFormFile` action, no attachment route) and the save/submit request DTO (`SaveSelfAssessmentRequest`) has no file field. So an employee cannot attach evidence at all — the 5-file/10MB limits (TC-10), the virus-scan seam, the tenant-scoped storage path, and cross-tenant file retrieval (TC-11) are untestable because the capability is unimplemented at the API.
@@ -2420,7 +2431,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > **Route-prefix drift (ISSUE-100 class) applies to US-PRF-002 too, not re-filed.** The TCs reference `.../self-assessments/{id}` and `.../employees/{id}/self-assessment?cycleId=` style paths; the live API is `GET/PUT/POST /api/v1/tenant/performance/self-assessments/{cycles/{id}/me | draft | submit}` only (no by-id or by-employeeId read route exists — which is why the TC-002-09 IDOR-by-id arms return 404 and cross-employee read is structurally impossible). Recorded under ISSUE-100; TC objective/steps were NOT edited (REPORT-ONLY).
 
 ### BUG-059 — BR-6 "Hired is terminal" is NOT enforced and the convert-to-employee seam never fires: an applicant can be moved OUT of Hired (forward to Rejected or backward to Offer), and moving INTO Hired triggers no US-REC-010 conversion signal
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #174, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-003 · TC-REC-003-09 (BR-6)
 - **Title:** US-REC-003 BR-6 states the "Hired" stage is **terminal** (no further forward transition) and that moving an applicant to Hired **triggers the convert-to-employee workflow** (US-REC-010). Neither half is implemented. Live: a Hired applicant was moved Hired→Rejected (HTTP 200) AND Hired→Offer (HTTP 200) — Hired is freely exitable in both directions. Moving Offer→Hired logged only the generic stage-move + a stage-changed notification; **no convert-to-employee trigger/signal/queue entry** is emitted. The single hard guard in `ApplyStageMove` is the same-stage no-op (409) and the Closed/Cancelled-vacancy block — there is no terminal-stage rule and no conversion seam.
@@ -2450,7 +2461,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > **US-REC-004 (Move Applicant Through Pipeline Stages) -- REPORT-ONLY API run (curl + JWT) on `acme` (tenant `019ef3ba-ffb7-7eec-b24f-7ad806ca1cb9`), 2026-06-26.** FE :4200 down + platform-bound -> no UI/a11y TCs in scope. **Real route for stage moves:** `POST /api/v1/recruitment/applicants/{applicantId}/move-stage` (body `{toStage, reason, notes, rejectionReason}`; toStage/rejectionReason accept enum name or int) + `POST /api/v1/recruitment/applicants/bulk-move-stage`; reads `GET .../applicants/{id}/detail` (timeline) and `GET .../vacancies/{id}/pipeline`. **Real permissions** (differ from TC text Recruitment.Manage.All / Read.All): all writes = `Recruitment.Manage`, reads = `Recruitment.View`. The TCs assume `PATCH .../stage`; the live verb/path is `POST .../move-stage`. **RejectionReason enum** = NotQualified/PositionFilled/Withdrew/Other. **Solid:** full forward pipeline + 4 history rows (each from/to/changed_by/changed_at/tenant stamped); structured rejection-reason validation (no-reason 400, reason-only-no-dropdown 400, out-of-enum string/int 400, valid -> stored as queryable enum); reject from every active stage; backward move (Manage-gated + mandatory reason, regressive history row); Closed/Cancelled vacancy blocks advancement but allows rejection; headcount-filled soft warning on Offer/Hired; Offer-scorecard soft warning; non-Manage -> 403; stage-change audit_logs written (recruitment.applicant.stage_changed, summary carries from->to + reason, tenant-scoped); transition latency P95 ~24 ms (NFR-1 <=800 ms) with stage+history in one SaveChangesAsync transaction (atomic). **Hired-not-terminal + no conversion seam = already-filed BUG-059** (TC-REC-004-07 and TC-REC-004-03 step 6 map to it -- re-confirmed live: Hired->Offer/Screening/Rejected all 200). Findings BUG-060, ISSUE-108/109/110 below.
 
 ### BUG-060 -- BR-2 not enforced: a Rejected applicant can be advanced FORWARD directly (Rejected->Interview/Offer) with only a reason, instead of being required to first reactivate back to an active stage
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #174, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-004 · TC-REC-004-06 (BR-2, step 1)
 - **Title:** BR-2 / TC-REC-004-06 step 1 require that a Rejected applicant CANNOT be advanced to a forward stage directly -- they must first be reactivated (moved BACK to an active stage) by a Manage user, after which normal forward transitions resume. Live, a Rejected applicant was moved straight Rejected->Interview (HTTP 200) (and Rejected->Offer is likewise reachable), skipping the reactivation-to-active-stage step and bypassing the intervening Screening/Interview gates entirely.
@@ -2472,7 +2483,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none -- report only.
 
 ### ISSUE-109 -- No optimistic-concurrency token on the Applicant record: concurrent stage moves never return 409 (story assumption #10.3 unmet)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #169, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-004 · TC-REC-004-11 (NFR-3 / assumption #10.3) -- TC marked BLOCKED
 - **Title:** Story assumption #10.3 states "Concurrent stage transitions on the same applicant are handled with optimistic concurrency (EF Core concurrency token on the applicant record)." The Applicant entity / ApplicantConfiguration define NO [Timestamp]/xmin/IsConcurrencyToken mapping, so two concurrent moves on the same applicant both return 200 (no 409 conflict) -- the second winner overwrites the first's outcome (serialized last-write-wins, not optimistic-conflict).
@@ -2648,7 +2659,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Routes: `/api/v1/tenant/performance/cycles*` — list / `cycles/active` / `cycles/{id}` / `cycles/{id}/dashboard` / POST `cycles` / PUT `cycles/{id}` / POST `cycles/clone` / POST `cycles/{id}/status` / DELETE `cycles/{id}`. Every endpoint (read + write) requires `Performance.SetGoal.All` OR `Performance.Publish.All` (BR-1). Validation: phases sequential/non-overlapping/in-window + ≥3 core phases (FR-1/FR-2/BR-3, 400); FR-7 status state machine (`IsValidTransition`, 409 `invalid_status_transition`); BR-4 active-same-type conflict (409); BR-5 rating-scale lock on Active (409 `rating_scale_locked`); BR-2 delete-only-empty-Draft (409 `cycle_has_reviews`/`cycle_not_draft`); BR-6 cancel needs reason (400/422). Personas: `hr@acme.test`+`tenantadmin@acme.test` hold `.All`; `manager@acme.test` (.Team) + `employee@acme.test` blocked. 19 TCs executed: **12 PASS / 4 FAIL / 3 BLOCKED**. NEW finding: BUG-063. Extends: BUG-003 (cross-tenant) to the cycle surface.
 
 ### BUG-063 — FR-5/AC-2/AC-4 Hangfire per-cycle job scheduling is implemented but NOT wired into DI: `HangfireCyclePhaseScheduler` is never registered, so cycle creation/edit/activation schedules NO phase-start/reminder/phase-close/overdue jobs (dead code; the scheduler call is a silent no-op)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #176, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE / INFRA
 - **Module / US / TC:** Performance · US-PRF-004 · TC-PRF-004-07 (deadline reminders), also weakens TC-PRF-004-01 step5, TC-PRF-004-06 step3, TC-PRF-ISO-016 steps1-2
 - **Title:** FR-5 / AC-2 require that creating a cycle "schedules Hangfire background jobs for phase-transition notifications and deadline reminders", AC-4 requires the reminder job to fire to non-completers, and AC-5 requires reschedule-on-edit. A concrete `HangfireCyclePhaseScheduler : ICyclePhaseScheduler` exists (`src/backend/HRM.Api/Jobs/HangfireCyclePhaseScheduler.cs`, registers a daily recurring `cycle-phase-{cycleId}` job running `CyclePhaseTransitionJob`), BUT it is **never registered in DI** — `grep` for `AddScoped/AddSingleton/AddTransient<ICyclePhaseScheduler>` / `: ICyclePhaseScheduler` registration across `Program.cs` + `DependencyInjection.cs` finds nothing. `AppraisalCycleService` takes `ICyclePhaseScheduler? scheduler = null` (optional, defaults null) and calls `_scheduler?.ScheduleCycleJobs(...)`, so at runtime the null-conditional makes every scheduling call a **silent no-op**. Consequence: no per-cycle Hangfire job is EVER registered on create/activate/edit; no phase-transition, deadline-reminder, phase-close or overdue-escalation notification will fire for ANY cycle. The cycle itself persists correctly and the date-driven window gates (US-PRF-001/002/003) still work (they read the phase dates directly), but the entire FR-5/AC-4 proactive-notification surface is inert.
@@ -2767,7 +2778,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Routes: `/api/v1/tenant/performance/360/*` — reviewer config (`GET .../reviewers`), add/remove reviewer, `notify`, `submit feedback`, `results`, `report`. Config/results/report/notify/remove are **HR-only** (`Performance.Review.All`); **submit** is open to any authenticated user but self-resolves the reviewer from the caller + requires a Pending assignment (so all four categories self-submit, no IDOR). BR-2 (no self-as-peer), BR-3 (one feedback per reviewer/reviewee/cycle, 409 `already_submitted`), FR-4 rating-range (422), FR-6 composite via `ThreeSixtyScoreCalculator` (normalizes by weight of categories WITH data), BR-4 peer-threshold = **warn not block** (`releaseWarning`), anonymity captured per-row at submit (BR-5) + enforced in the projection (NFR-3 → `reviewerEmployeeId`/`reviewerName` null). Reminder job `performance-360-reviewer-reminders` IS DI-registered + tenant-iterates (unlike the US-PRF-004 cycle scheduler, BUG-063). Personas: `hr@acme.test`/`tenantadmin@acme.test` (Review.All); reviewers submitted AS `employee@acme.test` (John, Peer) + `manager@acme.test` (EMP-MGR01, Manager); reviewee = Et Contract (EMP-0014, no user). 18 TCs executed: **13 PASS / 4 FAIL / 1 BLOCKED-pair (= 2 BLOCKED)** → **13 PASS / 4 FAIL / 2 BLOCKED... wait** correction below. Actual: **12 PASS / 4 FAIL / 2 BLOCKED**. NEW finding: ISSUE-118. Extends: BUG-003.
 
 ### ISSUE-118 — BR-5 anonymity lock is NOT enforced at the cycle level: an HR user can flip a cycle's `isAnonymousFeedback` from ON→OFF after anonymous feedback exists (mitigated — already-submitted rows stay anonymous via per-row capture, but the documented toggle-lock is missing and it enables the §10-prohibited mixed-mode state)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #176, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-005 · TC-PRF-005-07 (BR-5)
 - **Title:** BR-5 ("Anonymous feedback anonymity cannot be retroactively disabled after feedback has been submitted") and TC-007 step 1/2 require the cycle anonymity toggle to be locked (UI disabled + server 409/422) once anonymous feedback exists. Live, after John submitted anonymous 360 feedback under an anonymity-ON cycle, `PUT /api/v1/tenant/performance/cycles/{id}` with `isAnonymousFeedback:false` **succeeded (HTTP 200)** and the cycle's `is_anonymous_feedback` flipped to `false` — there is NO BR-5 guard in `AppraisalCycleService.UpdateAsync` (it sets `cycle.IsAnonymousFeedback = input.IsAnonymousFeedback` unconditionally, `:131`). **Mitigation that prevents an actual data-protection breach:** the already-submitted feedback is self-protected — `Feedback360.IsAnonymous` is captured per-row AT SUBMIT TIME (`Feedback360Service.cs:102`) and the results projection keys off the per-row flag, NOT the cycle flag — so after the cycle flips to OFF, the existing anonymous feedback's `reviewerEmployeeId` STAYS null in results (verified: `entry isAnon=True, reviewerId=None` even with `cycle.isAnonymousFeedback=false`). So no submitted reviewer is de-anonymized. BUT: (a) the explicit BR-5 control (block the ON→OFF toggle) is unimplemented, and (b) any NEW feedback submitted after the flip would be non-anonymous while the old feedback stays anonymous — a per-cycle mixed-mode state that §10 explicitly says "is not supported in the initial release."
@@ -3267,7 +3278,7 @@ Scope: 12 functional TCs (TC-PAY-002-01..12) + 4 isolation TCs (TC-PAY-ISO-005..
 - **Severity rationale:** Cosmetic/contract-only; clients keying off `success:true` work fine; no functional impact.
 
 ### BUG-070 — No automatic CTC balancer: a single component override (AC-3) is rejected unless the user manually re-balances another component
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · RESOLVED (PR #178, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-002 / TC-PAY-002-02 (AC-3); also affects TC-PAY-002-01/-06 premises
 - **Title:** The spec (FR-2 "auto-calculate component values from CTC", AC-3 override of one component, UI/UX S8 "CTC breakdown … balancer", multiple TCs referencing a "Special Allowance / CTC balancer") implies a residual/balancer component that absorbs the difference so the sum always equals CTC. The implementation has NO balancer — `CtcBreakdownCalculator` resolves each component from its own fixed/percentage rule and `AssignInternalAsync` hard-rejects (400 `ctc_sum_mismatch`) when the resulting sum deviates >±1 from CTC. Overriding just HRA (60000 vs calculated 48000) on FT_IN → sum 612000 vs CTC 600000 → 400. The HR user must manually override a SECOND component (e.g. SPECIAL) to re-balance, defeating the point of a single targeted override.
@@ -3373,7 +3384,7 @@ Scope: 12 TC-PAY-003-* + 4 TC-PAY-ISO-009..012, API-layer (curl + JWT) on acme t
 Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl+JWT, acme tenant) — FE/Docker/Playwright down so UI/a11y/cross-browser/Testcontainers TCs BLOCKED. Discovered routes: `POST runs/{runId}/payslips/generate`, `/regenerate`, `GET runs/{runId}/payslips`, `/payslips/status`, `/payslips/{employeeId}/download`, `/payslips/download-all|download-zip`. **Perm = `Payroll.Run` (NOT `Payroll.*.All` as TCs assume)**. No per-employee retry endpoint; no preview endpoint. Path is GUID-derived (employeeId `:guid`-constrained) → traversal structurally impossible.
 
 ### ISSUE-158 — Payslip PDF omits per-tenant branding (logo, company address, colour scheme, custom fields) — FR-2/FR-3 deferred
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #178, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-004 / TC-PAY-004-01, TC-PAY-004-11
 - **Title:** `PayslipBatchRenderer.BuildModel` hardcodes `CompanyAddress=null`, `CompanyLogoUrl=null`, `BrandPrimaryColor=null` — FR-2 (company address) + FR-3 (tenant logo/colour/custom fields) are not implemented.
@@ -3393,7 +3404,7 @@ Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl
 - **Severity rationale:** BR-3 disclaimer IS present (default), only the per-tenant override is missing — minor.
 
 ### ISSUE-160 — YTD column (BR-4) is permanently disabled; no per-tenant YTD-enable flag (FR-2 YTD)
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (PR #176, merged 2026-07-06; fixed + regression-tested; fix-campaign close-out)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-004 / TC-PAY-004-06 (YTD arm), TC-PAY-004-11
 - **Title:** `TenantYtdEnabled()` always returns `false`, so the BR-4 year-to-date column never renders for any tenant.
