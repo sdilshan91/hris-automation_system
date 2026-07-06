@@ -89,3 +89,8 @@ acceptance_criteria_count: 4
 - Test cross-tenant isolation: verify Tenant B cannot access Tenant A's scorecards via API.
 - Test mobile layout at 360px: verify the rating controls are usable with touch input.
 - Test that scorecard submission satisfies the Offer stage gate criterion (US-REC-004).
+
+---
+## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
+> Attached here rather than as a net-new epic. Track in STATUS.md.
+- **AC-K1 — Scorecard versioning.** Scorecard templates are not versioned; edits mutate in place and change historical scorecards' meaning. Add template versioning so submitted scorecards retain the version they were scored under. **Status: not built.**

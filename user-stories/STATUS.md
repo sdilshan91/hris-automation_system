@@ -106,6 +106,8 @@
   3. *Flip `Rls:Enabled=true` + add CI RLS integration tests.*
   - ***Env precondition now MET*** *(native PG18 :5432 + Docker both up — the original "no Docker/Postgres" deferral reason is stale). QA-verified 2026-06-30: live DB has **0 policies / 0 RLS-enabled tables**, flag `false` → genuinely unimplemented (DB availability is NOT the blocker; the migration is). Completing it unblocks the `[DEFERRED]` isolation TCs ADM-ISO-016/020/024/027/031 + ADM-005-21. Run via `/implement-story US-PLT-002` (deliberate dev+review — RLS touches every tenant query).)*
 - [x] US-PLT-003 — Serialize API enums as strings + reconcile FE enum casing *(PR #57: global JsonStringEnumConverter + recruitment FE casing; PR #111: leave-management + core-hr FE enum casing reconciled — **COMPLETE**)*
+- [ ] US-PLT-004 — Observability & platform NFRs (OTel, health live/ready, per-tenant usage, SLOs) *(**net-new STUB, reconciliation 2026-07-06, Theme I** — no tracing/metrics; US-ADM-002 KPIs hardcoded null. Underpins US-ADM-002 + US-ADM-012.)*
+- [ ] US-PLT-005 — Encryption-at-rest for sensitive PII & MFA secrets (pgcrypto/KEK) *(**net-new STUB, reconciliation 2026-07-06, Themes A/D** — plaintext TOTP MFA secret (HIGH) + no column-level PII/tenant-secret encryption. Ref tech-doc §6. RLS half is the existing US-PLT-002.)*
 
 ### QA-Surfaced Dev Backlog (from 2026-06-30 isolation + FE testing — fixes/implementations needed to unblock tests)
 > These are dev tasks (fixes or unbuilt features) found during the P3 testing campaign. Full detail in [test-cases/TEST-FINDINGS.md](../test-cases/TEST-FINDINGS.md). Hand to a fix cycle / `/implement-story`; not auto-picked.
@@ -150,6 +152,7 @@
 - [x] US-PRF-008 — Performance improvement plan (PIP) *(PR #82)*
 - [x] US-PRF-009 — Goal tracking with progress updates *(PR #83)*
 - [x] US-PRF-010 — Performance-based recommendations *(PR #84)*
+- [ ] US-PRF-011 — Performance calibration workspace *(**net-new STUB, reconciliation 2026-07-06, Theme E** — execution surface for the calibration phase; removes the calibration dead-end trap that permanently locks US-PRF-010.)*
 
 ## 8. Admin Console (10 stories) — COMPLETE ✅
 - [x] US-ADM-001 — System Admin provisions new tenant *(PR #85)*
@@ -162,6 +165,8 @@
 - [x] US-ADM-008 — View audit logs *(PR #92)*
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
 - [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
+- [ ] US-ADM-011 — Approval-workflow RUNTIME engine (instances/routing/SLA-escalation/delegation) *(**net-new, reconciliation 2026-07-06, Theme C** — US-ADM-007 built design-time only; runtime is inert. FULL story authored. Unblocks US-LV-005 AC-4, US-ATT-004 AC-4, US-REC-007 FR-10.)*
+- [ ] US-ADM-012 — Plan/module governance enforcement (runtime gating + usage limits) *(**net-new STUB, reconciliation 2026-07-06, Theme H** — US-ADM-009 config not enforced; disabled-module APIs not 403'd, limits config-only (BUG-114).)*
 
 ## 9. Onboarding / Offboarding (6 stories) — COMPLETE ✅
 - [x] US-ONB-001 — Create onboarding checklist template *(PR #95)*
@@ -177,6 +182,7 @@
 - [x] US-NTF-003 — Notification preferences per user *(PR #103)*
 - [x] US-NTF-004 — Audit trail for all data changes *(PR #104)*
 - [x] US-NTF-005 — Audit log viewer with filters *(PR #105)*
+- [ ] US-NTF-006 — Notification delivery layer (SMTP email + SignalR/in-app dispatch) *(**net-new, reconciliation 2026-07-06, Theme B** — real delivery replacing ~30 `LogOnly*` seams; unblocks the deferred delivery ACs on ~25 done stories. FULL story authored.)*
 
 ## 11. Reports & Analytics (5 stories)
 - [x] US-RPT-001 — Pre-built HR reports
@@ -185,14 +191,86 @@
 - [x] US-RPT-004 — Export reports to CSV/PDF/Excel
 - [x] US-RPT-005 — Dashboard with KPI widgets
 
+## 12. Training & Benefits (epic + 3 core stories) — NET-NEW, backlog
+> **Reconciliation 2026-07-06, Theme M** — module had ZERO coverage (no stories/test-cases, never executed). Stubs authored to put it in the backlog; flesh out before build.
+- [ ] US-TRN-EPIC — Training & Benefits module epic *(STUB)*
+- [ ] US-TRN-001 — Training catalog & course enrollment *(STUB)*
+- [ ] US-TRN-002 — Benefits plan administration *(STUB)*
+- [ ] US-TRN-003 — Benefit eligibility & employee enrollment *(STUB)*
+
 ---
 
 ## Tally
-- Total stories: **105** (incl. 3 Platform/tech-debt)
-- Done: **103** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012 COMPLETE** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010 COMPLETE** (#75–#84), **Admin Console US-ADM-001..010 COMPLETE** (#85–#94), **Onboarding US-ONB-001..006 COMPLETE** (#95–#100), **Notifications & Audit US-NTF-001..005 COMPLETE** (#101–#105), **Reports & Analytics US-RPT-001..005 COMPLETE** (#106–#110)
-- In progress: **1** (US-PLT-002 RLS Phase 4 deferred)
-- Pending: **0** — all 12 feature modules COMPLETE 🎉 (only the 2 deferred platform tech-debt stories remain)
-- **All feature modules done. Remaining: US-PLT-002 (RLS Phase 4) and US-PLT-003 (FE enum-casing) — platform tech-debt, run with `/implement-all platform` if desired.**
+- Total stories: **105 spine-done** + **10 net-new backlog** (reconciliation 2026-07-06) = **115 tracked**.
+- Done spine: **103** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010** (#75–#84), **Admin Console US-ADM-001..010** (#85–#94), **Onboarding US-ONB-001..006** (#95–#100), **Notifications & Audit US-NTF-001..005** (#101–#105), **Reports & Analytics US-RPT-001..005** (#106–#110).
+  - ⚠️ **BUT** ~40 of these `[x]` stories carry **unbuilt ACs** — see the **Deferred-AC Reconciliation** table below. They are not fully done; the spine is.
+- In progress: **1** (US-PLT-002 RLS Phase 4 deferred).
+- **Net-new backlog (2026-07-06 reconciliation): 10** — US-NTF-006 (full), US-ADM-011 (full), US-ADM-012/US-PRF-011/US-PLT-004/US-PLT-005 (stubs), US-TRN-EPIC/001/002/003 (Training & Benefits stubs). All `[ ]`.
+- **Recommended next build order:** US-NTF-006 (delivery layer — unblocks the most deferred ACs) → US-ADM-011 (workflow runtime) → US-PLT-005 (MFA-secret encryption, HIGH) → US-PLT-002 (RLS) → US-PRF-011/US-ADM-012/US-PLT-004 → Training & Benefits.
+
+## Deferred-AC Reconciliation (2026-07-06) — `[x]`-done stories with UNBUILT acceptance criteria
+
+> Source: [test-cases/COMPLETION-PLAN-2026-07-06.md](../test-cases/COMPLETION-PLAN-2026-07-06.md) **PART II** (Themes A–M).
+> These stories stay `[x]` — their **data-layer spine is built and wired** — but the listed ACs/FRs are
+> genuinely unimplemented (almost all *outward delivery* or *cross-module seams* stubbed before the dependency
+> existed and never rewired). This is a **status-integrity** annotation, not a re-open. Where a deferred AC is
+> unblocked by a net-new story, that story is named. **Do not re-mark these fully done until the noted ACs ship.**
+
+| Story | Deferred AC / FR (unbuilt) | Why / Theme | Unblocked by |
+|---|---|---|---|
+| US-AUTH-001 | password-reset + lockout email delivery; login **not** rate-limited | LogOnly delivery (B); rate-limit absent (D) | US-NTF-006 |
+| US-AUTH-002 | AC-7 JWT key rotation/overlap — single static signing key | no rotation (D) | — |
+| US-AUTH-004 | reset-email delivery; password-history configured-but-**unenforced** | B; D | US-NTF-006 |
+| US-AUTH-005 | MFA-challenge delivery; challenge **not** rate-limited; MFA secret stored **plaintext** | B; D; A/D | US-NTF-006, US-PLT-005 |
+| US-AUTH-007 | FR-9 subdomain cache **not** invalidated on tenant status change (suspended tenant resolves Active for TTL) | D | — |
+| US-AUTH-015 | per-tenant SSO gating + `sso_only` UX deferred | lands with US-AUTH-012/016 | US-AUTH-012/016 |
+| US-CHR-001 | BUG-113 `LocationId` not wired (employee↔location link impossible); probation-notification delivery | E functional gap; B | US-NTF-006 |
+| US-CHR-008 | doc-expiry notification delivery; EXIF not stripped from photos; magic-byte sniff (BUG-058) | B; D | US-NTF-006 |
+| US-CHR-009 | status-change / manager-reassignment reminder delivery | B | US-NTF-006 |
+| US-CHR-010 | import-completion notification; **custom-field columns in import (FR-11)** — see story AC-K1 | B; K | US-NTF-006 |
+| US-CHR-011 | manager-reassignment notification delivery; reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218) | B; E | US-NTF-006 |
+| US-CHR-012 | custom-field **cap not enforced**; custom-fields absent from bulk import | H; K | US-ADM-012 |
+| US-LV-002 | **FTE proration (BR-2)** + **accrual-frequency scheduling (FR-5)** — see story AC-K1/K2 | K | — |
+| US-LV-005 | **AC-4 multi-level routing inert** (`WorkflowInstanceId` null); **BR-4 payroll-lock hardcoded false**; approval-email delivery | C/E; E; B | US-ADM-011, US-NTF-006 |
+| US-LV-010 | AC-4 cancellation ignores payroll lock (always "not locked") | E | US-ADM-011 |
+| US-LV-011 | **AC-2 auto-LOP inert** — behind `NoOpAttendanceProvider` | E | (attendance provider wiring) |
+| US-LV-012 | **FR-1 Dept Leave-Coverage report returns empty** — see story AC-K1 | K | — |
+| US-ATT-003 | UTC-only day-boundary/late detection (wrong for non-UTC tenants); request-notification delivery | J (ISSUE-065); B | US-NTF-006 |
+| US-ATT-004 | **AC-4 multi-level regularization approval inert**; approval-notification delivery | C; B | US-ADM-011, US-NTF-006 |
+| US-ATT-008 | UTC-only late/early detection (ISSUE-065); late-arrival alert delivery | J; B | US-NTF-006 |
+| US-ATT-010 | scheduled-report + alert delivery | B | US-NTF-006 |
+| US-REC-002 | application-confirmation email; resume magic-byte sniff (BUG-058) | B; D | US-NTF-006 |
+| US-REC-004 | stage-change email delivery | B | US-NTF-006 |
+| US-REC-005 | interview-schedule notify delivery; **interview-guide attachment (FR-8)** | B; K | US-NTF-006 |
+| US-REC-006 | scorecard email delivery; **scorecard versioning** — see story AC-K1 | B; K | US-NTF-006 |
+| US-REC-007 | offer email-with-PDF + magic-link delivery; **FR-10 offer-approval routing inert** | B; C/E | US-NTF-006, US-ADM-011 |
+| US-REC-008 | status-tracking magic-link email delivery | B | US-NTF-006 |
+| US-REC-010 | **AC-3 no user-account creation, AC-2 no salary persistence, AC-4 no "Converted" badge (ISSUE-232)**; welcome-email/onboarding trigger (ISSUE-140) | E | US-NTF-006 |
+| US-PAY-009 | **year-end tax-statement PDF (ISSUE-177)** + report PDF export | F | — |
+| US-PAY-011 | **entire story purpose unbuilt** — bulk payslip email is LogOnly, nothing delivered | B | US-NTF-006 |
+| US-PRF-001 | goals-set notification delivery; **goal-set finalize == 100% (BUG-056)** — see story AC-K1 | B; K | US-NTF-006 |
+| US-PRF-002 | self-rating notification delivery | B | US-NTF-006 |
+| US-PRF-003 | rating notification delivery | B | US-NTF-006 |
+| US-PRF-005 | **360 report PDF**; 360 notifications delivery | F; B | US-NTF-006 |
+| US-PRF-006 | **review meeting PDF** | F | — |
+| US-PRF-007 | **dashboard PDF export** | F | — |
+| US-PRF-008 | **PIP PDF**; PIP notification delivery | F; B | US-NTF-006 |
+| US-PRF-010 | **recommendation PDF**; **calibration dead-end trap** (permanent lockout) | F; E | US-PRF-011 |
+| US-ADM-002 | monitoring KPIs (error-rate/latency/SLA/usage) **hardcoded null** | I | US-PLT-004 |
+| US-ADM-006 | plan-gated enterprise-only settings absent (#17) | H | US-ADM-012 |
+| US-ADM-009 | module-gating **not enforced** (disabled-module API not 403'd, no FE guard); usage limits config-only (BUG-114) | H | US-ADM-012 |
+
+### Theme-K follow-up ACs attached to existing stories (see each story's "Follow-up ACs" section)
+| Existing story | Attached follow-up | Finding |
+|---|---|---|
+| US-PAY-001 | AC-K1 SalaryGrade entity | ISSUE-021 |
+| US-PRF-001 | AC-K1 goal-set finalize (==100%) | BUG-056 |
+| US-LV-002 | AC-K1 FTE proration · AC-K2 accrual-frequency scheduling | LV-002 BR-2/FR-5 |
+| US-CHR-010 | AC-K1 custom-field columns in bulk import (spans US-CHR-012) | CHR-010/012 FR-11 |
+| US-LV-012 | AC-K1 Dept Leave-Coverage report (empty stub) | LV-012 FR-1 |
+| US-REC-006 | AC-K1 scorecard versioning | REC-006 |
+
+---
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |
@@ -208,4 +286,5 @@
 | `onboarding` | `user-stories/onboarding/` | US-ONB |
 | `notifications` | `user-stories/notifications/` | US-NTF |
 | `reports` | `user-stories/reports/` | US-RPT |
+| `training` / `training-benefits` | `user-stories/training-benefits/` | US-TRN |
 | `platform` | `user-stories/platform/` | US-PLT |
