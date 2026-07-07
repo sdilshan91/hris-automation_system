@@ -87,18 +87,25 @@ export class CycleService {
     cycleId: string,
     request: ICycleTransitionRequest,
   ): Observable<ICycle> {
+    // BUG-243: the backend route is POST cycles/{id}/status (not /transition).
     return this.http.post<ICycle>(
-      `${this.baseUrl}/${cycleId}/transition`,
+      `${this.baseUrl}/${cycleId}/status`,
       request,
       { withCredentials: true },
     );
   }
 
-  /** Clone a cycle as a template for the next period (FR-8). */
+  /**
+   * Clone a cycle as a template for the next period (FR-8). BUG-243: the backend
+   * route is POST cycles/clone with the source id carried in the body as
+   * `sourceCycleId` (CloneCycleInput) — not a path segment.
+   */
   clone(cycleId: string, request: ICloneCycleRequest): Observable<ICycle> {
-    return this.http.post<ICycle>(`${this.baseUrl}/${cycleId}/clone`, request, {
-      withCredentials: true,
-    });
+    return this.http.post<ICycle>(
+      `${this.baseUrl}/clone`,
+      { sourceCycleId: cycleId, ...request },
+      { withCredentials: true },
+    );
   }
 
   /**
@@ -106,6 +113,8 @@ export class CycleService {
    * the whole cycle contract reconciles in one place. Tolerates a `{ data }` page.
    */
   ratingScales(): Observable<IRatingScaleOption[]> {
+    // BUG-243: no backend route — CyclesController exposes no rating-scales
+    // endpoint. Needs a BE endpoint (see COMPLETION-PLAN Theme F/K).
     return this.http
       .get<IRatingScaleOption[] | { data: IRatingScaleOption[] }>(
         `${this.baseUrl}/rating-scales`,

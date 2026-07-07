@@ -685,7 +685,6 @@ export class PipDetailComponent implements OnInit {
     this.service
       .recordCheckpoint(
         this.pipId,
-        this.activeCheckpoint.checkpointId,
         { status, notes: this.checkpointForm.value.notes },
         this.checkpointFile,
       )

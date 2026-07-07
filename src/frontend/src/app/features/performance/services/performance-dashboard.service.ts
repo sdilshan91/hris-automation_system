@@ -73,8 +73,10 @@ export class PerformanceDashboardService {
     if (cycleId) {
       params = params.set('cycleId', cycleId);
     }
+    // BUG-243: the backend drill-down route is GET dashboard/department/{id}
+    // (singular), not /departments/{id}.
     return this.http.get<IDepartmentDrilldown>(
-      `${this.baseUrl}/departments/${departmentId}`,
+      `${this.baseUrl}/department/${departmentId}`,
       { params, withCredentials: true },
     );
   }

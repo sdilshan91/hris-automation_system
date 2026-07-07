@@ -31,7 +31,9 @@ import {
 @Injectable({ providedIn: 'root' })
 export class GoalProgressService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/goal-progress`;
+  // BUG-243: the backend serves these under /tenant/performance directly (no
+  // 'goal-progress' segment) — see GoalProgressController [Route].
+  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance`;
 
   /** AC-1: the employee's "My Goals" screen (cycle window, overall %, goal cards). */
   getMyGoals(): Observable<IMyGoals> {
@@ -48,7 +50,7 @@ export class GoalProgressService {
     return this.http
       .get<
         IGoalUpdate[] | { data: IGoalUpdate[] }
-      >(`${this.baseUrl}/goals/${goalId}/updates`, { withCredentials: true })
+      >(`${this.baseUrl}/goals/${goalId}/timeline`, { withCredentials: true })
       .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
   }
 
@@ -62,7 +64,7 @@ export class GoalProgressService {
     request: IAddGoalUpdateRequest,
     files?: readonly File[] | null,
   ): Observable<IGoalUpdate> {
-    const url = `${this.baseUrl}/goals/${goalId}/updates`;
+    const url = `${this.baseUrl}/goals/${goalId}/progress`;
     if (files && files.length > 0) {
       const form = new FormData();
       form.append('progressPercent', String(request.progressPercent));
@@ -76,11 +78,19 @@ export class GoalProgressService {
     return this.http.post<IGoalUpdate>(url, request, { withCredentials: true });
   }
 
-  /** FR-8: a manager/HR posts a comment on an employee's progress update. */
-  addComment(updateId: string, comment: string): Observable<IGoalComment> {
+  /**
+   * FR-8: a manager/HR posts a comment on an employee's progress update. BUG-243:
+   * the backend keys the comment thread by GOAL (`goals/{goalId}/comments`) and takes
+   * the update id in the body as `progressUpdateId` — the caller must pass the goal id.
+   */
+  addComment(
+    goalId: string,
+    updateId: string,
+    comment: string,
+  ): Observable<IGoalComment> {
     return this.http.post<IGoalComment>(
-      `${this.baseUrl}/updates/${updateId}/comments`,
-      { comment },
+      `${this.baseUrl}/goals/${goalId}/comments`,
+      { progressUpdateId: updateId, body: comment },
       { withCredentials: true },
     );
   }
@@ -93,14 +103,14 @@ export class GoalProgressService {
     return this.http
       .get<
         ITeamGoalProgressRow[] | { data: ITeamGoalProgressRow[] }
-      >(`${this.baseUrl}/team`, { withCredentials: true })
+      >(`${this.baseUrl}/team-goals`, { withCredentials: true })
       .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
   }
 
   /** AC-4 drill-down: one direct report's goals + progress (for the manager). */
   getEmployeeProgress(employeeId: string): Observable<IEmployeeGoalProgress> {
     return this.http.get<IEmployeeGoalProgress>(
-      `${this.baseUrl}/team/${employeeId}`,
+      `${this.baseUrl}/team-goals/employees/${employeeId}`,
       { withCredentials: true },
     );
   }

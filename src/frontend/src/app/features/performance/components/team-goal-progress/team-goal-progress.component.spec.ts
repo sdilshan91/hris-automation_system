@@ -160,6 +160,7 @@ describe('TeamGoalProgressComponent (US-PRF-009 manager)', () => {
     component.postComment(update);
 
     expect(serviceSpy.addComment).toHaveBeenCalledWith(
+      'g-1',
       'u-1',
       'Let’s sync on the blocker',
     );

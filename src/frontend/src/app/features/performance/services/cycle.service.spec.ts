@@ -179,7 +179,7 @@ describe('CycleService', () => {
     };
     service.transition('cyc-1', body).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/cyc-1/transition`);
+    const req = httpMock.expectOne(`${baseUrl}/cyc-1/status`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     req.flush({ ...cycle, status: 'Cancelled', cancelledReason: 'Reorg' });
@@ -193,9 +193,9 @@ describe('CycleService', () => {
     };
     service.clone('cyc-1', body).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/cyc-1/clone`);
+    const req = httpMock.expectOne(`${baseUrl}/clone`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual(body);
+    expect(req.request.body).toEqual({ sourceCycleId: 'cyc-1', ...body });
     req.flush({ ...cycle, id: 'cyc-2' });
   });
 

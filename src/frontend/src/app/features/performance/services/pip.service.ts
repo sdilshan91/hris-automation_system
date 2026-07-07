@@ -63,6 +63,8 @@ export class PipService {
     if (reviewId) {
       params['reviewId'] = reviewId;
     }
+    // BUG-243: no backend route — PipController exposes no draft/pre-fill endpoint.
+    // Needs a BE endpoint (see COMPLETION-PLAN Theme F/K).
     return this.http.get<IPipDraft>(`${this.baseUrl}/draft`, {
       params,
       withCredentials: true,
@@ -87,11 +89,12 @@ export class PipService {
    */
   recordCheckpoint(
     pipId: string,
-    checkpointId: string,
     request: IRecordCheckpointRequest,
     file?: File | null,
   ): Observable<IPip> {
-    const url = `${this.baseUrl}/${pipId}/checkpoints/${checkpointId}`;
+    // BUG-243: the backend keys the checkpoint by CheckpointDate in the body, not a
+    // checkpointId path segment — route is POST pips/{pipId}/checkpoints.
+    const url = `${this.baseUrl}/${pipId}/checkpoints`;
     if (file) {
       const form = new FormData();
       form.append('status', request.status);
@@ -118,9 +121,12 @@ export class PipService {
    * NotMet. Records an immutable audit entry and notifies stakeholders.
    */
   escalate(pipId: string, request: IEscalateRequest): Observable<IPip> {
-    return this.http.post<IPip>(`${this.baseUrl}/${pipId}/escalate`, request, {
-      withCredentials: true,
-    });
+    // BUG-243: the backend route is POST pips/{pipId}/escalation (not /escalate).
+    return this.http.post<IPip>(
+      `${this.baseUrl}/${pipId}/escalation`,
+      request,
+      { withCredentials: true },
+    );
   }
 
   /**

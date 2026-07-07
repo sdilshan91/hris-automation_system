@@ -47,7 +47,7 @@ export class PerformanceGoalService {
   getTeamStatus(cycleId: string): Observable<ITeamGoalStatus[]> {
     return this.http
       .get<ITeamGoalStatus[] | { data: ITeamGoalStatus[] }>(
-        `${this.baseUrl}/cycles/${cycleId}/team`,
+        `${this.baseUrl}/cycles/${cycleId}/team-dashboard`,
         { withCredentials: true },
       )
       .pipe(map((res) => this.toArray(res)));
@@ -60,7 +60,7 @@ export class PerformanceGoalService {
   ): Observable<IGoal[]> {
     return this.http
       .get<IGoal[] | { data: IGoal[] }>(
-        `${this.baseUrl}/cycles/${cycleId}/employees/${employeeId}/goals`,
+        `${this.baseUrl}/employees/${employeeId}/cycles/${cycleId}/goals`,
         { withCredentials: true },
       )
       .pipe(map((res) => this.toArray(res)));
@@ -76,9 +76,12 @@ export class PerformanceGoalService {
     employeeId: string,
     request: ISaveGoalsRequest,
   ): Observable<IGoal[]> {
+    // BUG-243: no backend route — GoalsController exposes only per-goal CRUD
+    // (POST goals, PUT/DELETE goals/{id}), NOT a bulk full-replace PUT. Needs a BE
+    // endpoint (see COMPLETION-PLAN Theme F/K) before this can work end-to-end.
     return this.http
       .put<IGoal[] | { data: IGoal[] }>(
-        `${this.baseUrl}/cycles/${cycleId}/employees/${employeeId}/goals`,
+        `${this.baseUrl}/employees/${employeeId}/cycles/${cycleId}/goals`,
         request,
         { withCredentials: true },
       )

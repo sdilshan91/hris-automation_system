@@ -84,7 +84,7 @@ describe('PerformanceGoalService', () => {
     let result: ITeamGoalStatus[] | undefined;
     service.getTeamStatus('cyc-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/team`);
+    const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/team-dashboard`);
     expect(req.request.method).toBe('GET');
     req.flush(mockTeam);
 
@@ -95,7 +95,7 @@ describe('PerformanceGoalService', () => {
     let result: ITeamGoalStatus[] | undefined;
     service.getTeamStatus('cyc-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/team`);
+    const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/team-dashboard`);
     req.flush({ data: mockTeam });
 
     expect(result).toEqual(mockTeam);
@@ -106,7 +106,7 @@ describe('PerformanceGoalService', () => {
     service.getEmployeeGoals('cyc-1', 'e-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(
-      `${baseUrl}/cycles/cyc-1/employees/e-1/goals`,
+      `${baseUrl}/employees/e-1/cycles/cyc-1/goals`,
     );
     expect(req.request.method).toBe('GET');
     req.flush([mockGoal]);
@@ -132,7 +132,7 @@ describe('PerformanceGoalService', () => {
     service.saveGoals('cyc-1', 'e-1', request).subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(
-      `${baseUrl}/cycles/cyc-1/employees/e-1/goals`,
+      `${baseUrl}/employees/e-1/cycles/cyc-1/goals`,
     );
     expect(req.request.method).toBe('PUT');
     expect(req.request.body).toEqual(request);
@@ -146,7 +146,7 @@ describe('PerformanceGoalService', () => {
     service.getEmployeeGoals('cyc-1', 'e-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(
-      `${baseUrl}/cycles/cyc-1/employees/e-1/goals`,
+      `${baseUrl}/employees/e-1/cycles/cyc-1/goals`,
     );
     req.flush(null);
 
