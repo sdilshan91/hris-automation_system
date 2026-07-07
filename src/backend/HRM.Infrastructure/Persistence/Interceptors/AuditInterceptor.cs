@@ -1,7 +1,9 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Net.Http.Headers;
 
 namespace HRM.Infrastructure.Persistence.Interceptors;
 
@@ -12,10 +14,15 @@ namespace HRM.Infrastructure.Persistence.Interceptors;
 public sealed class AuditInterceptor : SaveChangesInterceptor
 {
     private readonly ICurrentUser _currentUser;
+    // ISSUE-006: optional (nullable) so isolated unit/integration construction (`new AuditInterceptor(cu)`)
+    // still compiles; the DI container injects the registered IHttpContextAccessor in production. Null (or a
+    // null HttpContext) means "no request in scope" — e.g. a Hangfire background job — and is handled safely.
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public AuditInterceptor(ICurrentUser currentUser)
+    public AuditInterceptor(ICurrentUser currentUser, IHttpContextAccessor? httpContextAccessor = null)
     {
         _currentUser = currentUser;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public override InterceptionResult<int> SavingChanges(
@@ -60,7 +67,37 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             }
         }
 
+        StampRequestContext(context);
         StampImpersonationAttribution(context);
+    }
+
+    /// <summary>
+    /// ISSUE-006: populate <see cref="AuditLog.IpAddress"/> / <see cref="AuditLog.UserAgent"/> from the current
+    /// request on any NEWLY-ADDED audit row that didn't set them explicitly. This centralizes the fields for
+    /// the many audit-write sites (TenantLifecycleService, EmployeeService, etc.) that don't thread them
+    /// through, while never overwriting the values the auth flows already set. Additive and null-safe: when
+    /// there is no HttpContext (background jobs) it is a no-op. <see cref="AuditLog"/> is not a
+    /// <see cref="BaseEntity"/>, so it is handled here directly.
+    /// </summary>
+    private void StampRequestContext(DbContext context)
+    {
+        var httpContext = _httpContextAccessor?.HttpContext;
+        if (httpContext is null)
+            return;
+
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = httpContext.Request.Headers[HeaderNames.UserAgent].ToString();
+
+        foreach (var entry in context.ChangeTracker.Entries<AuditLog>())
+        {
+            if (entry.State != EntityState.Added)
+                continue;
+
+            if (string.IsNullOrEmpty(entry.Entity.IpAddress) && !string.IsNullOrEmpty(ip))
+                entry.Entity.IpAddress = ip;
+            if (string.IsNullOrEmpty(entry.Entity.UserAgent) && !string.IsNullOrEmpty(userAgent))
+                entry.Entity.UserAgent = userAgent;
+        }
     }
 
     /// <summary>
