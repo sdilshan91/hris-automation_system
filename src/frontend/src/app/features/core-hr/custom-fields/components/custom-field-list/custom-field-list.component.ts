@@ -167,7 +167,7 @@ import {
       <!-- Field definitions list -->
       @if (!isLoading() && definitions().length > 0) {
         <div class="space-y-3" @fadeIn>
-          @for (field of definitions(); track field.customFieldId; let i = $index; let first = $first; let last = $last) {
+          @for (field of definitions(); track field.id; let i = $index; let first = $first; let last = $last) {
             <div
               class="field-card"
               [class.field-card-inactive]="!field.isActive"
@@ -225,17 +225,17 @@ import {
 
               <!-- Active toggle (AC-5) -->
               <div class="field-actions">
-                <label class="toggle-label" [for]="'toggle-' + field.customFieldId">
+                <label class="toggle-label" [for]="'toggle-' + field.id">
                   <span class="sr-only">{{ field.isActive ? 'Deactivate' : 'Activate' }} {{ field.fieldName }}</span>
                   <button
                     type="button"
                     role="switch"
-                    [id]="'toggle-' + field.customFieldId"
+                    [id]="'toggle-' + field.id"
                     [attr.aria-checked]="field.isActive"
                     class="toggle-switch"
                     [class.toggle-switch-on]="field.isActive"
                     (click)="toggleActive(field)"
-                    [disabled]="isTogglingField() === field.customFieldId"
+                    [disabled]="isTogglingField() === field.id"
                   >
                     <span
                       class="toggle-knob"
@@ -893,9 +893,9 @@ export class CustomFieldListComponent implements OnInit, OnDestroy {
     this.definitions.set(defs);
 
     // Persist
-    const orderedIds = defs.map(d => d.customFieldId);
+    const fieldIds = defs.map(d => d.id);
     this.customFieldService
-      .reorderCustomFields({ orderedIds })
+      .reorderCustomFields({ fieldIds })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         error: () => {
@@ -908,11 +908,11 @@ export class CustomFieldListComponent implements OnInit, OnDestroy {
   // ─── Deactivate / Activate toggle (AC-5) ─────────────────
 
   toggleActive(field: ICustomFieldDefinition): void {
-    this.isTogglingField.set(field.customFieldId);
+    this.isTogglingField.set(field.id);
 
     const action$ = field.isActive
-      ? this.customFieldService.deactivateCustomField(field.customFieldId)
-      : this.customFieldService.activateCustomField(field.customFieldId);
+      ? this.customFieldService.deactivateCustomField(field.id)
+      : this.customFieldService.activateCustomField(field.id);
 
     action$
       .pipe(takeUntil(this.destroy$))
@@ -920,7 +920,7 @@ export class CustomFieldListComponent implements OnInit, OnDestroy {
         next: (updated) => {
           this.isTogglingField.set(null);
           const defs = this.definitions().map(d =>
-            d.customFieldId === updated.customFieldId ? updated : d
+            d.id === updated.id ? updated : d
           );
           this.definitions.set(defs);
           this.toastr.success(

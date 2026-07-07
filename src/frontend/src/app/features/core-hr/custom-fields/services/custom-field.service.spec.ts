@@ -7,7 +7,7 @@ import { provideHttpClient, HttpErrorResponse } from '@angular/common/http';
 import { CustomFieldService } from './custom-field.service';
 import {
   ICustomFieldDefinition,
-  ICustomFieldListResponse,
+  ICustomFieldListResult,
   ICreateCustomFieldRequest,
 } from '../models/custom-field.models';
 import { environment } from '../../../../../environments/environment';
@@ -19,7 +19,7 @@ describe('CustomFieldService', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/custom-fields`;
 
   const mockDefinition: ICustomFieldDefinition = {
-    customFieldId: 'cf-1',
+    id: 'cf-1',
     tenantId: 'tenant-1',
     entityType: 'employee',
     fieldName: 'T-Shirt Size',
@@ -34,10 +34,15 @@ describe('CustomFieldService', () => {
     updatedAt: '2026-06-01T00:00:00Z',
   };
 
-  const mockListResponse: ICustomFieldListResponse = {
-    definitions: [mockDefinition],
-    planLimits: { currentCount: 1, maxAllowed: 5 },
-  };
+  // The backend returns an ARRAY of grouped results ({ entityType, fields[], totalCount, maxAllowed }).
+  const mockListResult: ICustomFieldListResult[] = [
+    {
+      entityType: 'employee',
+      fields: [mockDefinition],
+      totalCount: 1,
+      maxAllowed: 5,
+    },
+  ];
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -61,17 +66,28 @@ describe('CustomFieldService', () => {
   });
 
   describe('getCustomFields', () => {
-    it('should return definitions with plan limits', () => {
+    it('should map the BE grouped array into definitions + plan limits', () => {
       service.getCustomFields('employee').subscribe((response) => {
         expect(response.definitions.length).toBe(1);
         expect(response.definitions[0].fieldName).toBe('T-Shirt Size');
+        expect(response.definitions[0].id).toBe('cf-1');
         expect(response.planLimits.currentCount).toBe(1);
         expect(response.planLimits.maxAllowed).toBe(5);
       });
 
       const req = httpMock.expectOne(`${baseUrl}?entityType=employee`);
       expect(req.request.method).toBe('GET');
-      req.flush(mockListResponse);
+      req.flush(mockListResult);
+    });
+
+    it('should fall back to an empty group when the entity type is absent', () => {
+      service.getCustomFields('employee').subscribe((response) => {
+        expect(response.definitions).toEqual([]);
+        expect(response.planLimits.currentCount).toBe(0);
+        expect(response.planLimits.maxAllowed).toBeNull();
+      });
+
+      httpMock.expectOne(`${baseUrl}?entityType=employee`).flush([]);
     });
   });
 
@@ -102,7 +118,7 @@ describe('CustomFieldService', () => {
 
       const response: ICustomFieldDefinition = {
         ...mockDefinition,
-        customFieldId: 'cf-2',
+        id: 'cf-2',
         fieldName: 'Project Code',
         fieldKey: 'project_code',
         fieldType: 'text',
@@ -152,11 +168,11 @@ describe('CustomFieldService', () => {
 
   describe('reorderCustomFields', () => {
     it('should POST ordered IDs', () => {
-      service.reorderCustomFields({ orderedIds: ['cf-2', 'cf-1'] }).subscribe();
+      service.reorderCustomFields({ fieldIds: ['cf-2', 'cf-1'] }).subscribe();
 
       const req = httpMock.expectOne(`${baseUrl}/reorder`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body.orderedIds).toEqual(['cf-2', 'cf-1']);
+      expect(req.request.body.fieldIds).toEqual(['cf-2', 'cf-1']);
       req.flush(null);
     });
   });

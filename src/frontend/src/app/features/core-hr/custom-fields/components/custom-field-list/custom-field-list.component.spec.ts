@@ -8,7 +8,7 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { ToastrService } from 'ngx-toastr';
 import { CustomFieldListComponent } from './custom-field-list.component';
 import {
-  ICustomFieldListResponse,
+  ICustomFieldListResult,
   ICustomFieldDefinition,
 } from '../../models/custom-field.models';
 import { environment } from '../../../../../../environments/environment';
@@ -22,7 +22,7 @@ describe('CustomFieldListComponent', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/custom-fields`;
 
   const mockDef1: ICustomFieldDefinition = {
-    customFieldId: 'cf-1',
+    id: 'cf-1',
     tenantId: 'tenant-1',
     entityType: 'employee',
     fieldName: 'T-Shirt Size',
@@ -38,7 +38,7 @@ describe('CustomFieldListComponent', () => {
   };
 
   const mockDef2: ICustomFieldDefinition = {
-    customFieldId: 'cf-2',
+    id: 'cf-2',
     tenantId: 'tenant-1',
     entityType: 'employee',
     fieldName: 'Project Code',
@@ -53,10 +53,15 @@ describe('CustomFieldListComponent', () => {
     updatedAt: '2026-06-02T00:00:00Z',
   };
 
-  const mockResponse: ICustomFieldListResponse = {
-    definitions: [mockDef1, mockDef2],
-    planLimits: { currentCount: 2, maxAllowed: 5 },
-  };
+  // The backend returns an ARRAY of grouped results ({ entityType, fields[], totalCount, maxAllowed }).
+  const mockResponse: ICustomFieldListResult[] = [
+    {
+      entityType: 'employee',
+      fields: [mockDef1, mockDef2],
+      totalCount: 2,
+      maxAllowed: 5,
+    },
+  ];
 
   beforeEach(async () => {
     toastrSpy = jasmine.createSpyObj('ToastrService', [
@@ -81,7 +86,7 @@ describe('CustomFieldListComponent', () => {
     component = fixture.componentInstance;
   });
 
-  function flushListData(response?: ICustomFieldListResponse): void {
+  function flushListData(response?: ICustomFieldListResult[]): void {
     fixture.detectChanges();
     const req = httpMock.expectOne(`${baseUrl}?entityType=employee`);
     req.flush(response ?? mockResponse);
@@ -118,20 +123,22 @@ describe('CustomFieldListComponent', () => {
   });
 
   it('should detect when at plan limit', () => {
-    const atLimitResponse: ICustomFieldListResponse = {
-      definitions: [mockDef1, mockDef2],
-      planLimits: { currentCount: 5, maxAllowed: 5 },
-    };
+    const atLimitResponse: ICustomFieldListResult[] = [
+      {
+        entityType: 'employee',
+        fields: [mockDef1, mockDef2],
+        totalCount: 5,
+        maxAllowed: 5,
+      },
+    ];
     flushListData(atLimitResponse);
     expect(component.isAtPlanLimit()).toBeTrue();
   });
 
   it('should not be at plan limit when maxAllowed is null (unlimited)', () => {
-    const unlimitedResponse: ICustomFieldListResponse = {
-      definitions: [mockDef1],
-      planLimits: { currentCount: 1, maxAllowed: null },
-    };
-    flushListData(unlimitedResponse);
+    // No group for the requested entity type -> service maps to an unlimited (null) plan.
+    flushListData([]);
+    expect(component.planLimits()!.maxAllowed).toBeNull();
     expect(component.isAtPlanLimit()).toBeFalse();
   });
 
@@ -270,10 +277,14 @@ describe('CustomFieldListComponent', () => {
 
     it('should reactivate an inactive field', fakeAsync(() => {
       const inactiveDef = { ...mockDef1, isActive: false };
-      const responseWithInactive: ICustomFieldListResponse = {
-        definitions: [inactiveDef, mockDef2],
-        planLimits: { currentCount: 2, maxAllowed: 5 },
-      };
+      const responseWithInactive: ICustomFieldListResult[] = [
+        {
+          entityType: 'employee',
+          fields: [inactiveDef, mockDef2],
+          totalCount: 2,
+          maxAllowed: 5,
+        },
+      ];
       flushListData(responseWithInactive);
 
       const activated = { ...mockDef1, isActive: true };
@@ -302,7 +313,7 @@ describe('CustomFieldListComponent', () => {
 
       const req = httpMock.expectOne(`${baseUrl}/reorder`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body.orderedIds).toEqual(['cf-2', 'cf-1']);
+      expect(req.request.body.fieldIds).toEqual(['cf-2', 'cf-1']);
       req.flush(null);
       tick();
     }));
