@@ -1,9 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   ICustomFieldDefinition,
+  ICustomFieldListResult,
   ICustomFieldListResponse,
   ICreateCustomFieldRequest,
   IUpdateCustomFieldRequest,
@@ -29,13 +31,42 @@ export class CustomFieldService {
 
   /**
    * List custom field definitions for the current tenant, scoped to entity type.
-   * Response includes plan limits for the UI progress bar.
+   *
+   * The backend returns an ARRAY of `CustomFieldDefinitionListResult` grouped by entity
+   * type (`{ entityType, fields[], totalCount, maxAllowed }`). We pick the group for the
+   * requested `entityType` (Phase 1 is employee-only) and map it to the FE-facing
+   * `{ definitions, planLimits }` shape the UI consumes (definitions come from `fields`,
+   * and the plan-limit progress bar from `totalCount` / `maxAllowed`).
    */
   getCustomFields(entityType = 'employee'): Observable<ICustomFieldListResponse> {
-    return this.http.get<ICustomFieldListResponse>(this.baseUrl, {
-      params: { entityType },
-      withCredentials: true,
-    });
+    return this.http
+      .get<ICustomFieldListResult[]>(this.baseUrl, {
+        params: { entityType },
+        withCredentials: true,
+      })
+      .pipe(map((results) => this.toListResponse(results, entityType)));
+  }
+
+  /**
+   * Map the backend grouped-array result to the FE-facing list response. Falls back to
+   * an empty group (no fields, unlimited plan) when the entity type isn't present.
+   */
+  private toListResponse(
+    results: ICustomFieldListResult[] | null | undefined,
+    entityType: string,
+  ): ICustomFieldListResponse {
+    const group =
+      results?.find((r) => r.entityType === entityType) ?? results?.[0];
+    if (!group) {
+      return { definitions: [], planLimits: { currentCount: 0, maxAllowed: null } };
+    }
+    return {
+      definitions: group.fields ?? [],
+      planLimits: {
+        currentCount: group.totalCount,
+        maxAllowed: group.maxAllowed,
+      },
+    };
   }
 
   /**

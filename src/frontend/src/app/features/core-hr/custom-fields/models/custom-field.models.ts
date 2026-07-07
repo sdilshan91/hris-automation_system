@@ -40,9 +40,9 @@ export const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string; icon: 
 
 // ─── Entity ─────────────────────────────────────────────────
 
-/** Custom field definition returned by the API */
+/** Custom field definition returned by the API (BE `CustomFieldDefinitionDto`; JSON `id`) */
 export interface ICustomFieldDefinition {
-  customFieldId: string;
+  id: string;
   tenantId: string;
   entityType: string;
   fieldName: string;
@@ -63,7 +63,20 @@ export interface ICustomFieldPlanLimits {
   maxAllowed: number | null; // null = unlimited
 }
 
-/** List response wrapping definitions + plan info */
+/**
+ * Raw list item as returned by the backend `GET /tenant/custom-fields`
+ * (`CustomFieldDefinitionListResult`, grouped per entity type). The definitions live
+ * under `fields` (not `items`/`data`), and the plan limit is carried per-group as
+ * `totalCount` / `maxAllowed`. The endpoint returns an ARRAY of these.
+ */
+export interface ICustomFieldListResult {
+  entityType: string;
+  fields: ICustomFieldDefinition[];
+  totalCount: number;
+  maxAllowed: number;
+}
+
+/** FE-facing list shape (mapped from `ICustomFieldListResult` at the service boundary) */
 export interface ICustomFieldListResponse {
   definitions: ICustomFieldDefinition[];
   planLimits: ICustomFieldPlanLimits;
@@ -89,7 +102,8 @@ export interface IUpdateCustomFieldRequest {
 }
 
 export interface IReorderCustomFieldsRequest {
-  orderedIds: string[];
+  // BE binds `ReorderCustomFieldsRequest.FieldIds` -> JSON `fieldIds`; `orderedIds` never bound (reorder no-op).
+  fieldIds: string[];
 }
 
 // ─── Error responses ────────────────────────────────────────

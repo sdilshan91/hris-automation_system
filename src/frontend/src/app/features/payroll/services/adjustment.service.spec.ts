@@ -64,6 +64,16 @@ describe('AdjustmentService', () => {
     expect(rows).toEqual([sample]);
   });
 
+  it('listAdjustments reads items from the PayrollAdjustmentPageDto envelope', () => {
+    let rows: IAdjustment[] | undefined;
+    service.listAdjustments().subscribe((r) => (rows = r));
+
+    httpMock
+      .expectOne(baseUrl)
+      .flush({ items: [sample], totalCount: 1, page: 1, pageSize: 25 });
+    expect(rows).toEqual([sample]);
+  });
+
   it('listAdjustments tolerates a { data } page envelope', () => {
     let rows: IAdjustment[] | undefined;
     service.listAdjustments().subscribe((r) => (rows = r));

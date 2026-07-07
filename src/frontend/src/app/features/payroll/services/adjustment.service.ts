@@ -24,7 +24,8 @@ import {
  *
  * Envelope: the global ApiResponse unwrap interceptor (US-PLT-001) strips the
  * `{ data }` wrapper, so the JSON methods consume BARE payloads (and `listAdjustments`
- * tolerates either a bare array or a `{ data }` page). Enums arrive as PascalCase
+ * reads `items` from the `PayrollAdjustmentPageDto` page, tolerating a bare array or a
+ * legacy `{ data }` page too). Enums arrive as PascalCase
  * STRINGS (US-PLT-003) — see adjustment.models.ts.
  *
  * Binary methods use `responseType: 'blob'` + `observe: 'response'` so the caller
@@ -39,7 +40,8 @@ export class AdjustmentService {
   /**
    * List adjustments, optionally filtered by Status, Type, Period (`YYYY-MM`), and
    * Employee (§8 table). Empty/null filters are omitted so the backend returns
-   * everything. Tolerates a bare array or a `{ data }` page.
+   * everything. Reads `items` from the backend `PayrollAdjustmentPageDto` envelope,
+   * and also tolerates a bare array or a legacy `{ data }` page.
    */
   listAdjustments(filters: IAdjustmentFilters = {}): Observable<IAdjustment[]> {
     let params = new HttpParams();
@@ -56,7 +58,11 @@ export class AdjustmentService {
       params = params.set('employeeId', filters.employeeId);
     }
     return this.http
-      .get<IAdjustment[] | { data: IAdjustment[] }>(this.baseUrl, {
+      .get<
+        | IAdjustment[]
+        | { items: IAdjustment[] }
+        | { data: IAdjustment[] }
+      >(this.baseUrl, {
         params,
         withCredentials: true,
       })
@@ -141,10 +147,19 @@ export class AdjustmentService {
     ].join('\n');
   }
 
-  /** Accept either a bare array or a `{ data }` page; default to []. */
-  private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
+  /**
+   * Accept the backend `PayrollAdjustmentPageDto` envelope (`{ items, totalCount, … }`,
+   * after the global ApiResponse unwrap), or a bare array / legacy `{ data }` page;
+   * default to []. `items` is the real shape the List endpoint returns.
+   */
+  private toArray<T>(
+    res: T[] | { items: T[] } | { data: T[] } | null | undefined,
+  ): T[] {
     if (Array.isArray(res)) {
       return res;
+    }
+    if (res && Array.isArray((res as { items: T[] }).items)) {
+      return (res as { items: T[] }).items;
     }
     if (res && Array.isArray((res as { data: T[] }).data)) {
       return (res as { data: T[] }).data;
