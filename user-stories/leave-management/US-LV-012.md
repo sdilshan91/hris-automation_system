@@ -92,3 +92,8 @@ acceptance_criteria_count: 5
 - Test filters: Filter by department "Engineering"; verify only engineering employees appear.
 - Test tenant isolation: HR in Tenant A must not see any data from Tenant B in reports.
 - Test role access: Manager sees only their team's data; employee sees only their own.
+
+---
+## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
+> Attached here rather than as a net-new epic. Track in STATUS.md.
+- **AC-K1 — Department Leave Calendar Coverage report (FR-1).** `LeaveReportService` returns empty for this report — the story's FR-1 silently yields nothing. Implement the dept coverage aggregation. **Status: stubbed / returns empty.**

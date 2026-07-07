@@ -83,3 +83,9 @@ acceptance_criteria_count: 5
 - Test part-time FTE: Employee at 0.5 FTE with 20-day entitlement should receive 10 days.
 - Test tenant isolation: Verify rules in Tenant A do not affect employees in Tenant B.
 - Test Hangfire job: Trigger accrual job and verify ledger entries are created correctly.
+
+---
+## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
+> Attached here rather than as net-new epics. Track in STATUS.md.
+- **AC-K1 — Part-time FTE proration (BR-2).** Entitlements are not prorated by FTE — there is no `Employee.Fte`. Add an FTE attribute and prorate entitlement accordingly. **Status: not built.**
+- **AC-K2 — Accrual-frequency scheduling (FR-5).** Entitlement is always granted upfront; the configured accrual frequency (monthly/quarterly) is not scheduled. Add periodic accrual scheduling. **Status: not built.**

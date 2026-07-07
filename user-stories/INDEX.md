@@ -1,8 +1,12 @@
 # HRM SaaS — User Stories Index (IEEE 830)
 
-> Generated: 2026-05-11
+> Generated: 2026-05-11 · Reconciled: 2026-07-06
 > Standard: IEEE 830-1998 / ISO/IEC/IEEE 29148:2018
-> Total Stories: 108 | Total Acceptance Criteria: ~567
+> Total Stories: 108 + **10 net-new (reconciliation 2026-07-06)** | Total Acceptance Criteria: ~567+
+>
+> **Reconciliation note (2026-07-06):** 10 net-new stories added from [COMPLETION-PLAN Part II](../test-cases/COMPLETION-PLAN-2026-07-06.md) —
+> US-NTF-006 & US-ADM-011 (FULL); US-ADM-012, US-PRF-011, US-PLT-004, US-PLT-005 (STUBS); US-TRN-EPIC/001/002/003 (Training & Benefits, STUBS).
+> Additionally ~40 `[x]`-done stories carry unbuilt ACs — see the **Deferred-AC Reconciliation** table in [STATUS.md](STATUS.md).
 
 ## Summary
 
@@ -14,11 +18,13 @@
 | 4 | [Attendance](#4-attendance) | `attendance/` | 10 | 7 Must, 3 Should |
 | 5 | [Recruitment](#5-recruitment) | `recruitment/` | 10 | 8 Must, 2 Should |
 | 6 | [Payroll](#6-payroll) | `payroll/` | 12 | 10 Must, 2 Should |
-| 7 | [Performance Management](#7-performance-management) | `performance/` | 10 | 4 Must, 5 Should, 1 Could |
-| 8 | [Admin Console](#8-admin-console) | `admin-console/` | 10 | 8 Must, 2 Should |
+| 7 | [Performance Management](#7-performance-management) | `performance/` | 11 | 4 Must, 6 Should, 1 Could |
+| 8 | [Admin Console](#8-admin-console) | `admin-console/` | 12 | 9 Must, 3 Should |
 | 9 | [Onboarding / Offboarding](#9-onboarding--offboarding) | `onboarding/` | 6 | 4 Must, 2 Should |
-| 10 | [Notifications & Audit](#10-notifications--audit) | `notifications/` | 5 | 4 Must, 1 Should |
+| 10 | [Notifications & Audit](#10-notifications--audit) | `notifications/` | 6 | 5 Must, 1 Should |
 | 11 | [Reports & Analytics](#11-reports--analytics) | `reports/` | 5 | 4 Must, 1 Should |
+| 12 | [Training & Benefits](#12-training--benefits) *(net-new stubs)* | `training-benefits/` | 4 | 4 Should |
+| — | [Platform / Cross-Cutting](#platform--cross-cutting) | `platform/` | 5 | 3 Must, 2 Should |
 
 ---
 
@@ -140,6 +146,7 @@
 | [US-PRF-008](performance/US-PRF-008.md) | Performance improvement plan (PIP) | Should Have | HR Officer |
 | [US-PRF-009](performance/US-PRF-009.md) | Goal tracking with progress updates | Should Have | Employee |
 | [US-PRF-010](performance/US-PRF-010.md) | Performance-based recommendations | Could Have | HR Officer |
+| [US-PRF-011](performance/US-PRF-011.md) | Performance calibration workspace *(net-new STUB)* | Should Have | HR Officer |
 
 ## 8. Admin Console
 
@@ -155,6 +162,8 @@
 | [US-ADM-008](admin-console/US-ADM-008.md) | View audit logs | Must Have | Tenant Admin |
 | [US-ADM-009](admin-console/US-ADM-009.md) | Manage subscription plans | Must Have | System Admin |
 | [US-ADM-010](admin-console/US-ADM-010.md) | Tenant data export on demand | Should Have | Tenant Admin |
+| [US-ADM-011](admin-console/US-ADM-011.md) | Approval-workflow RUNTIME engine *(net-new FULL)* | Must Have | Tenant Admin / System |
+| [US-ADM-012](admin-console/US-ADM-012.md) | Plan/module governance enforcement *(net-new STUB)* | Must Have | System Admin / Tenant Admin |
 
 ## 9. Onboarding / Offboarding
 
@@ -176,6 +185,7 @@
 | [US-NTF-003](notifications/US-NTF-003.md) | Notification preferences per user | Should Have | Employee |
 | [US-NTF-004](notifications/US-NTF-004.md) | Audit trail for all data changes | Must Have | Tenant Admin |
 | [US-NTF-005](notifications/US-NTF-005.md) | Audit log viewer with filters | Must Have | Tenant Admin |
+| [US-NTF-006](notifications/US-NTF-006.md) | Notification delivery layer (SMTP + SignalR dispatch) *(net-new FULL)* | Must Have | Tenant Admin / System |
 
 ## 11. Reports & Analytics
 
@@ -186,3 +196,26 @@
 | [US-RPT-003](reports/US-RPT-003.md) | Payroll reports and summaries | Must Have | HR Officer |
 | [US-RPT-004](reports/US-RPT-004.md) | Export reports to CSV/PDF/Excel | Must Have | HR Officer |
 | [US-RPT-005](reports/US-RPT-005.md) | Dashboard with KPI widgets | Should Have | HR Officer |
+
+## 12. Training & Benefits
+
+> **Net-new (reconciliation 2026-07-06, COMPLETION-PLAN Theme M)** — module previously had zero coverage. All STUBS to flesh out before build.
+
+| ID | Title | Priority | Persona |
+|----|-------|----------|---------|
+| [US-TRN-EPIC](training-benefits/US-TRN-EPIC.md) | Training & Benefits module epic | Should Have | HR Officer / Employee |
+| [US-TRN-001](training-benefits/US-TRN-001.md) | Training catalog & course enrollment | Should Have | HR Officer / Employee |
+| [US-TRN-002](training-benefits/US-TRN-002.md) | Benefits plan administration | Should Have | Tenant Admin / HR Officer |
+| [US-TRN-003](training-benefits/US-TRN-003.md) | Benefit eligibility & employee enrollment | Should Have | HR Officer / Employee |
+
+## Platform / Cross-Cutting
+
+> Cross-cutting tech-debt + reconciliation stories. US-PLT-004/005 are net-new (2026-07-06); US-PLT-001/002/003 predate this INDEX.
+
+| ID | Title | Priority | Persona |
+|----|-------|----------|---------|
+| [US-PLT-001](platform/US-PLT-001.md) | Global API response envelope unwrapping | Must Have | System |
+| [US-PLT-002](platform/US-PLT-002.md) | PostgreSQL Row-Level Security (defense-in-depth) | Must Have | System / Security |
+| [US-PLT-003](platform/US-PLT-003.md) | Serialize API enums as strings + FE enum casing | Should Have | System |
+| [US-PLT-004](platform/US-PLT-004.md) | Observability & platform NFRs (OTel/health/usage/SLO) *(net-new STUB)* | Should Have | System Admin / Operator |
+| [US-PLT-005](platform/US-PLT-005.md) | Encryption-at-rest for PII & MFA secrets (pgcrypto/KEK) *(net-new STUB)* | Must Have | System / Security |

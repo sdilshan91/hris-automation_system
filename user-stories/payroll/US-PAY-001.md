@@ -135,3 +135,8 @@ acceptance_criteria_count: 6
 - Integration test: Verify Redis cache is invalidated when a salary component is updated.
 - E2E (Playwright): Create a salary structure, add components, reorder via drag-and-drop, verify display order persists.
 - Performance test: Load 200 salary components for a tenant and verify API response <= 200ms.
+
+---
+## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
+> Attached here rather than as a net-new epic. Track in STATUS.md.
+- **AC-K1 — SalaryGrade entity (ISSUE-021).** Introduce a tenant-scoped `SalaryGrade` entity (grade bands/ranges) so job-title `gradeId` references resolve to a real record. Once it exists, job-title `gradeId` validation (US-CHR-005) becomes a trivial FK check; reconcile the tests that currently assert an arbitrary `gradeId` succeeds. **Status: not built.**

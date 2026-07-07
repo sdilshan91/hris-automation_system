@@ -87,3 +87,8 @@ acceptance_criteria_count: 5
 - Verify notification delivery: check in-app notification and email are sent on goal assignment.
 - Test mobile responsiveness at 360px, 768px, and 1920px breakpoints.
 - Test goal cascading: link employee goal to a department goal and verify the hierarchy displays correctly.
+
+---
+## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
+> Attached here rather than as a net-new epic. Track in STATUS.md.
+- **AC-K1 — Goal-set finalize/submit (BUG-056).** Add a finalize/submit endpoint that enforces `sum(weights) == 100%` at finalize time. The running `≤ 100%` cap already exists; the exact-100% gate at submission does not. **Status: not built.**

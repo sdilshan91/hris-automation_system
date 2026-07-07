@@ -115,3 +115,8 @@ acceptance_criteria_count: 5
 - **Tenant isolation:** Import employees in Tenant A; verify they are not visible from Tenant B.
 - **Template download:** Download CSV and Excel templates; verify headers match the expected schema.
 - **Memory:** Upload a 10,000-row file; monitor server memory; verify no excessive allocation.
+
+---
+## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
+> Attached here rather than as a net-new epic. Track in STATUS.md.
+- **AC-K1 — Custom-field columns in bulk import (FR-11, spans US-CHR-012).** Bulk import does not accept tenant custom-field columns; only standard fields import. Extend the CSV/Excel importer to map and validate custom-field columns defined in US-CHR-012. **Status: not built.**
