@@ -199,7 +199,8 @@ public sealed class SelfAssessmentAttachmentIntegrationTests
     private static UploadSelfAssessmentAttachmentCommand UploadCmd(
         Guid cycleId, Guid goalId, byte[]? bytes = null, string fileName = "evidence.pdf", string contentType = "application/pdf")
     {
-        bytes ??= [10, 20, 30, 40, 50];
+        // BUG-058: uploads now sniff magic bytes — default to a valid header for the content type.
+        bytes ??= HRM.Tests.Unit.Helpers.UploadTestBytes.For(contentType);
         return new(cycleId, goalId, new MemoryStream(bytes), fileName, contentType, bytes.Length);
     }
 
@@ -210,7 +211,7 @@ public sealed class SelfAssessmentAttachmentIntegrationTests
     {
         var spy = new WriteSpyFileStorage();
         var mediator = BuildPipeline(_tenantA, _userOwner, new AllowVirusScanner(), spy);
-        var bytes = new byte[] { 1, 2, 3, 4, 5, 6, 7 };
+        var bytes = HRM.Tests.Unit.Helpers.UploadTestBytes.Prefixed("application/pdf", 1, 2, 3, 4, 5, 6, 7);
 
         var result = await mediator.Send(UploadCmd(_cycleId, _goalId, bytes));
 
@@ -358,7 +359,7 @@ public sealed class SelfAssessmentAttachmentIntegrationTests
     [Fact]
     public async Task Download_NonOwnerRejected_ISSUE105()
     {
-        var payload = new byte[] { 9, 8, 7, 6, 5 };
+        var payload = HRM.Tests.Unit.Helpers.UploadTestBytes.Prefixed("application/pdf", 9, 8, 7, 6, 5);
         var spy = new WriteSpyFileStorage();
 
         // Owner uploads.

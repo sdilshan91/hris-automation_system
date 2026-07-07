@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -41,15 +42,6 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
     private static readonly HashSet<string> BlockedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".exe", ".bat", ".sh", ".js", ".cmd", ".ps1", ".vbs", ".msi",
-    };
-
-    /// <summary>
-    /// Image MIME types eligible for EXIF stripping (FR-5).
-    /// </summary>
-    private static readonly HashSet<string> ImageMimeTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "image/jpeg",
-        "image/png",
     };
 
     /// <summary>
@@ -119,6 +111,15 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         if (!employeeExists)
             return Result<EmployeeDocumentDto>.Failure("Employee not found.", 404);
 
+        // BUG-058: sniff the real magic bytes BEFORE the virus scan — the AllowedMimeTypes check above only
+        // trusts the client-supplied Content-Type, so a renamed .exe with an allowed MIME string would
+        // otherwise be accepted. Reject (400 invalid_file_type) when the bytes don't match. Resets the stream.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(contentType, fileStream, cancellationToken);
+        if (signature.IsFailure)
+            return Result<EmployeeDocumentDto>.Failure(
+                "File content does not match its type. Supported: PDF, JPEG, PNG, DOCX, XLSX.",
+                400, FileSignatureValidator.ErrorCode);
+
         // FR-4: Virus scan before persistence
         var scanResult = await _virusScanner.ScanAsync(fileStream, fileName, cancellationToken);
         if (!scanResult.IsClean)
@@ -135,14 +136,10 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         if (fileStream.CanSeek)
             fileStream.Position = 0;
 
-        // FR-5: Strip EXIF data from images (reusing the same stub pattern as profile photo)
-        if (ImageMimeTypes.Contains(contentType))
-        {
-            StripExifData(contentType);
-
-            if (fileStream.CanSeek)
-                fileStream.Position = 0;
-        }
+        // FR-5: Strip EXIF/IPTC/XMP metadata (GPS, camera PII) from raster images before storage. Returns a
+        // cleaned copy for JPEG/PNG; non-image types (PDF/DOCX/XLSX) pass through unchanged.
+        var (uploadStream, exifReplaced) = await ImageMetadataStripper.StripAsync(
+            fileStream, contentType, _logger, cancellationToken);
 
         // FR-3 / AC-2: Build storage path: core-hr/{employeeId}/{yyyy}/{mm}/{filename}
         var now = DateTime.UtcNow;
@@ -151,7 +148,10 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
 
         // Upload to tenant-isolated storage
         var storageKey = await _fileStorage.UploadAsync(
-            _tenantContext.TenantId, relativePath, fileStream, contentType, cancellationToken);
+            _tenantContext.TenantId, relativePath, uploadStream, contentType, cancellationToken);
+
+        if (exifReplaced)
+            await uploadStream.DisposeAsync();
 
         // Create metadata row
         var document = new EmployeeDocument
@@ -395,17 +395,6 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
 
         // BR-3: Managers and others are blocked
         return Result.Failure("You do not have permission to access employee documents.", 403);
-    }
-
-    /// <summary>
-    /// EXIF stripping stub (FR-5). Same pattern as profile photo upload.
-    /// </summary>
-    private void StripExifData(string contentType)
-    {
-        _logger.LogWarning(
-            "EXIF stripping SKIPPED (stub). ContentType={ContentType}. " +
-            "TODO: Add SixLabors.ImageSharp for real EXIF stripping.",
-            contentType);
     }
 
     /// <summary>

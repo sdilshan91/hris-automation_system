@@ -212,11 +212,11 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
         };
     }
 
-    private static MemoryStream MakeStream(int sizeBytes = 1024)
-    {
-        var data = new byte[sizeBytes];
-        return new MemoryStream(data);
-    }
+    // BUG-058: uploads are now magic-byte validated, so the fixture must lead with the real signature for
+    // the declared content type (zero bytes are correctly rejected as invalid_file_type). Padded to the
+    // requested size for size-boundary tests.
+    private static MemoryStream MakeStream(int sizeBytes = 1024, string contentType = "application/pdf")
+        => UploadTestBytes.Stream(contentType, sizeBytes);
 
     // ========================================================================
     // Upload: valid file
@@ -266,7 +266,7 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
         var empId = await SeedEmployee();
         var service = CreateService();
 
-        using var stream = MakeStream();
+        using var stream = MakeStream(contentType: "image/png");
         var result = await service.UploadAsync(
             empId, stream, "id_card.png", "image/png", 2048,
             MakeMetadata("ID"));
@@ -282,7 +282,8 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
         var empId = await SeedEmployee();
         var service = CreateService();
 
-        using var stream = MakeStream();
+        using var stream = MakeStream(
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         var result = await service.UploadAsync(
             empId, stream, "resume.docx",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 5000,

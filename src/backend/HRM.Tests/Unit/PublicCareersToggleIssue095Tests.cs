@@ -130,7 +130,7 @@ public sealed class PublicCareersToggleIssue095Tests
         Guid? linkedEmployeeId = null)
         => new(
             vacancyId, "Ada", "Lovelace", email, "+1-555-0100", "Cover letter.",
-            new MemoryStream([1, 2, 3, 4]), "resume.pdf", "application/pdf", 4,
+            new MemoryStream(HRM.Tests.Unit.Helpers.UploadTestBytes.Pdf), "resume.pdf", "application/pdf", HRM.Tests.Unit.Helpers.UploadTestBytes.Pdf.Length,
             source, linkedEmployeeId);
 
     // ── Public apply, careers DISABLED → rejected with 404 vacancy_not_found ──

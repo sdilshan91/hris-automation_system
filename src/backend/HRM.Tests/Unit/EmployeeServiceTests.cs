@@ -456,7 +456,7 @@ public sealed class EmployeeServiceTests : IDisposable
         createResult.IsSuccess.Should().BeTrue();
 
         service = CreateService();
-        using var stream = new MemoryStream(new byte[1024]); // 1KB test file
+        using var stream = UploadTestBytes.Stream("image/jpeg", 1024); // BUG-058: real JPEG magic bytes
         var result = await service.UploadProfilePhotoAsync(
             createResult.Value!.Id, stream, "photo.jpg", "image/jpeg", 1024);
 
@@ -511,7 +511,7 @@ public sealed class EmployeeServiceTests : IDisposable
 
         var createResult = await service.CreateAsync(MakeRequest(deptId, jtId));
         service = CreateService();
-        using var stream = new MemoryStream(new byte[1024]);
+        using var stream = UploadTestBytes.Stream("image/png", 1024); // BUG-058: real PNG magic bytes
         await service.UploadProfilePhotoAsync(
             createResult.Value!.Id, stream, "photo.png", "image/png", 1024);
 
@@ -533,7 +533,7 @@ public sealed class EmployeeServiceTests : IDisposable
 
         var createResult = await service.CreateAsync(MakeRequest(deptId, jtId));
         service = CreateService();
-        using var stream = new MemoryStream(new byte[1024]);
+        using var stream = UploadTestBytes.Stream("image/jpeg", 1024); // BUG-058: real JPEG magic bytes
         var result = await service.UploadProfilePhotoAsync(
             createResult.Value!.Id, stream, "infected.jpg", "image/jpeg", 1024);
 
