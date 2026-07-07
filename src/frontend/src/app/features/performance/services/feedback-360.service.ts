@@ -35,6 +35,19 @@ import {
 export class Feedback360Service {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/feedback-360`;
+  // BUG-243: CANNOT FIX FE-ONLY. Feedback360Controller keys every route by an
+  // explicit cycleId (+ employeeId), whereas this service + its components only hold
+  // an employeeId / assignmentId (route params) under an "active cycle" abstraction —
+  // never a cycleId. Several FE methods also have NO backend equivalent at all.
+  //   getReviewerConfig()  -> GET    360/cycles/{cycleId}/employees/{employeeId}/reviewers  (lacks cycleId)
+  //   saveReviewers()      -> NO BE ROUTE (BE has POST add-one + DELETE reviewers/{id}, no full-replace PUT)
+  //   getTracker()         -> NO BE ROUTE (completion tracker is embedded in the results payload)
+  //   getFeedbackForm()    -> NO BE ROUTE (no get-form-by-assignmentId; BE keys by cycle+employee)
+  //   submitFeedback()     -> POST   360/cycles/{cycleId}/employees/{employeeId}/feedback  (needs cycleId+employeeId, not assignmentId)
+  //   getResults()         -> GET    360/cycles/{cycleId}/employees/{employeeId}/results   (lacks cycleId)
+  //   exportResultsPdf()   -> GET    360/cycles/{cycleId}/employees/{employeeId}/report    (lacks cycleId)
+  // Reconciling needs a BE "current cycle" resolver + new BE endpoints (tracker /
+  // form-by-assignment / reviewer full-replace) or a FE re-model. See COMPLETION-PLAN Theme F/K.
 
   /**
    * Reviewer-nomination screen for an employee in the active 360-enabled cycle (AC-1):

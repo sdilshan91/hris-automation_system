@@ -29,6 +29,19 @@ import {
 export class ReviewSignoffService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/sign-off`;
+  // BUG-243: CANNOT FIX FE-ONLY. ReviewSignoffController keys every route by
+  // cycleId + employeeId, whereas this service + its components are keyed by a single
+  // reviewId (route/query param) with no cycleId or employeeId in scope. The correct
+  // BE routes (all under reviews/cycles/{cycleId}/employees/{employeeId}/…) are:
+  //   getSignoff()      -> GET  …/notes
+  //   saveNotes()       -> PUT  …/notes
+  //   requestSignoff()  -> POST …/request-signoff   (FE currently posts …/request)
+  //   acknowledge()     -> POST …/acknowledge
+  //   dispute()         -> POST …/dispute
+  //   resolveDispute()  -> POST …/resolve-dispute   (FE currently posts …/resolve)
+  //   exportPdf()       -> GET  …/export
+  // Reconciling needs the reviewId->{cycleId,employeeId} mapping surfaced FE-side (a
+  // BE resolver or a FE re-model keyed by cycle+employee). See COMPLETION-PLAN Theme F/K.
 
   /** Load the full sign-off record for a review (drives every US-PRF-006 screen). */
   getSignoff(reviewId: string): Observable<IReviewSignoff> {

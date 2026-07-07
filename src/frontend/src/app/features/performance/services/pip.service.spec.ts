@@ -153,9 +153,9 @@ describe('PipService', () => {
 
   it('recordCheckpoint() POSTs JSON when no file is attached', () => {
     const body = { status: 'OnTrack' as const, notes: 'good progress' };
-    service.recordCheckpoint('pip-1', 'cp-1', body).subscribe();
+    service.recordCheckpoint('pip-1', body).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/pip-1/checkpoints/cp-1`);
+    const req = httpMock.expectOne(`${baseUrl}/pip-1/checkpoints`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     req.flush(mockPip);
@@ -164,15 +164,10 @@ describe('PipService', () => {
   it('recordCheckpoint() POSTs multipart FormData when a file is attached', () => {
     const file = new File(['x'], 'evidence.pdf', { type: 'application/pdf' });
     service
-      .recordCheckpoint(
-        'pip-1',
-        'cp-1',
-        { status: 'AtRisk', notes: 'note' },
-        file,
-      )
+      .recordCheckpoint('pip-1', { status: 'AtRisk', notes: 'note' }, file)
       .subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/pip-1/checkpoints/cp-1`);
+    const req = httpMock.expectOne(`${baseUrl}/pip-1/checkpoints`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body instanceof FormData).toBeTrue();
     const form = req.request.body as FormData;
@@ -196,7 +191,7 @@ describe('PipService', () => {
     const body = { action: 'TerminationRecommendation' as const, note: 'n' };
     service.escalate('pip-1', body).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/pip-1/escalate`);
+    const req = httpMock.expectOne(`${baseUrl}/pip-1/escalation`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     req.flush({ ...mockPip, status: 'NotMet' });

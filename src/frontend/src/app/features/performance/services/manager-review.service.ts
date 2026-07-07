@@ -29,6 +29,18 @@ import {
 export class ManagerReviewService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/manager-review`;
+  // BUG-243: CANNOT FIX FE-ONLY. ManagerReviewController keys every route by an
+  // explicit cycleId (+ employeeId), whereas this service + its components
+  // (TeamReviewsComponent, ManagerReviewComponent) are built on an "active cycle"
+  // abstraction and only ever hold an employeeId (route param) — never a cycleId.
+  // The correct BE routes are:
+  //   getTeam()            -> GET  reviews/cycles/{cycleId}/team
+  //   getEmployeeReview()  -> GET  reviews/cycles/{cycleId}/employees/{employeeId}
+  //   saveDraft()          -> PUT  reviews/draft   (cycleId+employeeId+items in BODY)
+  //   submit()             -> POST reviews/submit  (cycleId+employeeId+items in BODY)
+  // Reconciling needs a BE "current cycle" resolver (or a FE cycle-selection re-model)
+  // to supply cycleId, plus a request-body remodel for draft/submit (goals -> items).
+  // See COMPLETION-PLAN Theme F/K.
 
   /**
    * The manager's direct reports for the active cycle with their review status

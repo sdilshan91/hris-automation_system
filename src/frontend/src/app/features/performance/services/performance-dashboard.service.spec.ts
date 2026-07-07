@@ -137,7 +137,7 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
       .getDepartmentDrilldown('d1', 'c1')
       .subscribe((d) => (result = d));
 
-    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/departments/d1`);
+    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/department/d1`);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('cycleId')).toBe('c1');
     req.flush(drill);
@@ -146,7 +146,7 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
 
   it('getDepartmentDrilldown() omits cycleId when not provided', () => {
     service.getDepartmentDrilldown('d2').subscribe();
-    const req = httpMock.expectOne(`${baseUrl}/departments/d2`);
+    const req = httpMock.expectOne(`${baseUrl}/department/d2`);
     expect(req.request.params.has('cycleId')).toBeFalse();
     req.flush({
       departmentId: 'd2',

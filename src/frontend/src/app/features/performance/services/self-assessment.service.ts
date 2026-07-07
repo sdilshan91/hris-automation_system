@@ -43,6 +43,17 @@ export type IAttachmentUploadEvent =
 export class SelfAssessmentService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/self-assessments`;
+  // BUG-243: CANNOT FIX FE-ONLY. SelfAssessmentController keys reads by an explicit
+  // cycleId and keys draft/submit by cycleId-in-BODY (no assessmentId path segment),
+  // whereas this service + MyReviewComponent are built on an "active cycle" abstraction
+  // keyed by assessmentId. The correct BE routes are:
+  //   getActive()          -> GET    cycles/{cycleId}/me         (lacks cycleId; chicken/egg on first load)
+  //   saveDraft()          -> PUT    draft                       (cycleId+items in BODY; drop assessmentId)
+  //   submit()             -> POST   submit                      (cycleId+items in BODY; drop assessmentId)
+  //   uploadAttachment()   -> POST   cycles/{cycleId}/goals/{goalId}/attachments  (needs cycleId; drop assessmentId)
+  //   deleteAttachment()   -> NO BE ROUTE (attachments are GET-only server-side)
+  // Reconciling needs a BE "current cycle" resolver + a request-body remodel + a BE
+  // attachment-delete endpoint, or a FE re-model. See COMPLETION-PLAN Theme F/K.
 
   /**
    * Load the authenticated employee's self-assessment for the active cycle: the

@@ -403,7 +403,9 @@ export class TeamGoalProgressComponent implements OnInit {
       return;
     }
     this.commenting.set(true);
-    this.service.addComment(update.updateId, text).subscribe({
+    this.service
+      .addComment(this.expandedGoalId() ?? '', update.updateId, text)
+      .subscribe({
       next: (comment) => {
         this.commenting.set(false);
         this.history.set(

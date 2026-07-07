@@ -185,16 +185,22 @@ describe('RecommendationService (US-PRF-010)', () => {
     req.flush(row);
   });
 
-  it('decide() POSTs the approver decision', () => {
+  it('decide() POSTs to the approve route with the comment body', () => {
     service.decide('r-1', 'Approve', 'looks good').subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/r-1/decision`);
+    const req = httpMock.expectOne(`${baseUrl}/r-1/approve`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({
-      decision: 'Approve',
-      comment: 'looks good',
-    });
+    expect(req.request.body).toEqual({ comment: 'looks good' });
     req.flush({ ...row, status: 'Approved' });
+  });
+
+  it('decide() POSTs to the reject route when rejecting', () => {
+    service.decide('r-1', 'Reject').subscribe();
+
+    const req = httpMock.expectOne(`${baseUrl}/r-1/reject`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ comment: null });
+    req.flush({ ...row, status: 'Rejected' });
   });
 
   it('getBudget() GETs the budget for a cycle', () => {
@@ -251,7 +257,7 @@ describe('RecommendationService (US-PRF-010)', () => {
     let response: HttpResponse<Blob> | undefined;
     service.export('Excel', 'c-1').subscribe((r) => (response = r));
 
-    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/export`);
+    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/summary/export`);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('format')).toBe('Excel');
     expect(req.request.params.get('cycleId')).toBe('c-1');

@@ -42,6 +42,8 @@ export class RecommendationService {
       .get<
         ICompletedCycleOption[] | { data: ICompletedCycleOption[] }
       >(`${this.baseUrl}/cycles/completed`, { withCredentials: true })
+      // BUG-243: no backend route — RecommendationController exposes no
+      // completed-cycles picker. Needs a BE endpoint (see COMPLETION-PLAN Theme F/K).
       .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
   }
 
@@ -105,6 +107,10 @@ export class RecommendationService {
     recommendationId: string,
     request: IUpdateRecommendationRequest,
   ): Observable<IRecommendationRow> {
+    // BUG-243: no backend route — an override is a POST to the collection root
+    // (SaveRecommendationRequest with employee/cycle/justification), NOT a
+    // PUT /{recommendationId}. Reconciling needs a BE endpoint or a FE re-model
+    // (see COMPLETION-PLAN Theme F/K).
     return this.http.put<IRecommendationRow>(
       `${this.baseUrl}/${recommendationId}`,
       request,
@@ -130,9 +136,13 @@ export class RecommendationService {
     decision: 'Approve' | 'Reject',
     comment?: string,
   ): Observable<IRecommendationRow> {
+    // BUG-243: the backend has separate approve/reject routes (not a single
+    // /decision endpoint); the decision selects the path and the body carries only
+    // the comment (DecideRecommendationRequest).
+    const action = decision === 'Approve' ? 'approve' : 'reject';
     return this.http.post<IRecommendationRow>(
-      `${this.baseUrl}/${recommendationId}/decision`,
-      { decision, comment: comment ?? null },
+      `${this.baseUrl}/${recommendationId}/${action}`,
+      { comment: comment ?? null },
       { withCredentials: true },
     );
   }
@@ -166,6 +176,10 @@ export class RecommendationService {
       .get<
         IRecommendationRow[] | { data: IRecommendationRow[] }
       >(`${this.baseUrl}/team`, { params, withCredentials: true })
+      // BUG-243: no backend route — there is no dedicated manager "team
+      // recommendations" endpoint; a manager uses the workspace GET scoped to direct
+      // reports server-side (Performance.Review.Team). Needs a BE endpoint or a FE
+      // re-model (see COMPLETION-PLAN Theme F/K).
       .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
   }
 
@@ -181,7 +195,9 @@ export class RecommendationService {
     const params = new HttpParams()
       .set('format', format)
       .set('cycleId', cycleId);
-    return this.http.get(`${this.baseUrl}/export`, {
+    // BUG-243: the backend export route is GET recommendations/summary/export
+    // (ExportSummary), not a bare /export.
+    return this.http.get(`${this.baseUrl}/summary/export`, {
       params,
       withCredentials: true,
       responseType: 'blob',

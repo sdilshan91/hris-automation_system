@@ -16,7 +16,7 @@ import {
 describe('GoalProgressService (US-PRF-009)', () => {
   let service: GoalProgressService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/goal-progress`;
+  const baseUrl = `${environment.apiBaseUrl}/tenant/performance`;
 
   const mockMyGoals: IMyGoals = {
     cycleId: 'c-1',
@@ -68,7 +68,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
     let result: IGoalUpdate[] | undefined;
     service.getGoalUpdates('g-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/updates`);
+    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/timeline`);
     expect(req.request.method).toBe('GET');
     req.flush([mockUpdate]);
 
@@ -79,7 +79,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
     let result: IGoalUpdate[] | undefined;
     service.getGoalUpdates('g-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/updates`);
+    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/timeline`);
     req.flush({ data: [] });
 
     expect(result).toEqual([]);
@@ -89,7 +89,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
     const body = { progressPercent: 60, status: 'InProgress' as const, notes: 'n' };
     service.addGoalUpdate('g-1', body).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/updates`);
+    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/progress`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     expect(req.request.body instanceof FormData).toBeFalse();
@@ -102,7 +102,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
     const f2 = new File(['b'], 'b.png', { type: 'image/png' });
     service.addGoalUpdate('g-1', body, [f1, f2]).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/updates`);
+    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/progress`);
     expect(req.request.method).toBe('POST');
     const form = req.request.body as FormData;
     expect(form instanceof FormData).toBeTrue();
@@ -113,12 +113,15 @@ describe('GoalProgressService (US-PRF-009)', () => {
     req.flush(mockUpdate);
   });
 
-  it('addComment() POSTs a comment to the update', () => {
-    service.addComment('u-1', 'nice work').subscribe();
+  it('addComment() POSTs a comment to the goal thread', () => {
+    service.addComment('g-1', 'u-1', 'nice work').subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/updates/u-1/comments`);
+    const req = httpMock.expectOne(`${baseUrl}/goals/g-1/comments`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ comment: 'nice work' });
+    expect(req.request.body).toEqual({
+      progressUpdateId: 'u-1',
+      body: 'nice work',
+    });
     req.flush({
       commentId: 'c-1',
       authorName: 'Sam Lead',
@@ -142,7 +145,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
     let result: ITeamGoalProgressRow[] | undefined;
     service.getTeamProgress().subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/team`);
+    const req = httpMock.expectOne(`${baseUrl}/team-goals`);
     expect(req.request.method).toBe('GET');
     req.flush(rows);
 
@@ -153,7 +156,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
     let result: ITeamGoalProgressRow[] | undefined;
     service.getTeamProgress().subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/team`);
+    const req = httpMock.expectOne(`${baseUrl}/team-goals`);
     req.flush({ data: [] });
 
     expect(result).toEqual([]);
@@ -162,7 +165,7 @@ describe('GoalProgressService (US-PRF-009)', () => {
   it('getEmployeeProgress() GETs one report’s goals', () => {
     service.getEmployeeProgress('e-1').subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/team/e-1`);
+    const req = httpMock.expectOne(`${baseUrl}/team-goals/employees/e-1`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush({
