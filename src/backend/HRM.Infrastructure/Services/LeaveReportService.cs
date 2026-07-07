@@ -108,7 +108,7 @@ public sealed class LeaveReportService : ILeaveReportService
             LeaveReportType.Absenteeism => await BuildAbsenteeismAsync(queryParams, scope, cancellationToken),
             LeaveReportType.CarryForwardSummary => await BuildCarryForwardSummaryAsync(queryParams, scope, cancellationToken),
             LeaveReportType.LopSummary => await BuildLopSummaryAsync(queryParams, scope, cancellationToken),
-            LeaveReportType.DepartmentCalendarCoverage => BuildDepartmentCalendarCoverageStub(),
+            LeaveReportType.DepartmentCalendarCoverage => await BuildDepartmentCalendarCoverageAsync(queryParams, scope, cancellationToken),
             _ => (new List<LeaveReportRow>(), new List<string>(), (string?)null),
         };
 
@@ -556,17 +556,95 @@ public sealed class LeaveReportService : ILeaveReportService
     }
 
     /// <summary>
-    /// FR-1 "Department Leave Calendar Coverage" — STUBBED. A coverage/heat-map report (who is off on
-    /// which day per department) is a sizeable additional aggregation; it is deferred to keep this large
-    /// story focused on the AC-named reports. Returns an empty result with a documented note.
-    /// TODO(US-LV-012 coverage): build per-department per-day coverage (count off / headcount) from the
-    ///   leave_request range data, reusing the US-LV-009 team-calendar overlap logic.
+    /// FR-1 "Department Leave Calendar Coverage": per-department, per-day count of employees on approved
+    /// leave versus the department headcount, so a manager can spot coverage gaps. One row per
+    /// (department × day) on which at least one scoped employee is on approved leave, within the requested
+    /// range (respecting the BR-2 role scope and the FR-2 filters). Half-day leave counts as 0.5 — the same
+    /// TotalDays convention the sibling reports use. Coverage % is the AVAILABLE headcount as a percentage
+    /// of the department headcount (i.e. 100% = nobody off; a low value flags a coverage gap).
+    ///
+    /// Days with zero absences are omitted (like the sibling reports skip zero-activity rows) so the report
+    /// stays focused on the gaps and bounded; the result is paged/sorted by the shared pipeline.
+    /// Tenant isolation (BR-1): every query runs under the EF global query filter.
     /// </summary>
-    private static (List<LeaveReportRow> Rows, List<string> Columns, string? Note) BuildDepartmentCalendarCoverageStub()
-        => (new List<LeaveReportRow>(),
-            new List<string> { "Department", "Date", "On Leave", "Headcount", "Coverage %" },
-            "Department Leave Calendar Coverage is not yet implemented (deferred per US-LV-012). "
-            + "TODO(coverage): compute per-department per-day coverage from leave_request ranges.");
+    private async Task<(List<LeaveReportRow> Rows, List<string> Columns, string? Note)> BuildDepartmentCalendarCoverageAsync(
+        LeaveReportQueryParams qp, ReportScope scope, CancellationToken ct)
+    {
+        var columns = new List<string>
+        {
+            "Department", "Date", "On Leave", "Headcount", "Coverage %",
+        };
+
+        var (from, to) = ResolveRange(qp);
+        if (to < from)
+            return (new List<LeaveReportRow>(), columns, null);
+
+        var employees = await ScopedEmployeesQuery(qp, scope).ToListAsync(ct);
+        if (employees.Count == 0)
+            return (new List<LeaveReportRow>(), columns, null);
+
+        var employeeIds = employees.Select(e => e.Id).ToList();
+        var deptNames = await DepartmentNamesAsync(employees, ct);
+        var deptByEmp = employees.ToDictionary(e => e.Id, e => e.DepartmentId);
+
+        // Headcount denominator per department = the scoped, non-terminated employee set.
+        var headcountByDept = employees
+            .GroupBy(e => e.DepartmentId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        // Approved leave overlapping the range for the scoped employees (optional leave-type filter).
+        // Cancelled/Rejected are excluded by the Approved-only status match (mirrors the sibling reports).
+        var leaves = await _dbContext.LeaveRequests.AsNoTracking()
+            .Where(lr => employeeIds.Contains(lr.EmployeeId)
+                         && lr.Status == LeaveRequestStatus.Approved
+                         && lr.StartDate <= to && lr.EndDate >= from
+                         && (qp.LeaveTypeId == null || lr.LeaveTypeId == qp.LeaveTypeId))
+            .Select(lr => new { lr.EmployeeId, lr.StartDate, lr.EndDate, lr.IsHalfDay })
+            .ToListAsync(ct);
+
+        // Accumulate on-leave headcount per (department, day). Each leave is clamped to [from, to];
+        // a half-day request contributes 0.5, a full day 1 (same TotalDays convention as the siblings).
+        var onLeaveByDeptDay = new Dictionary<(Guid Dept, DateOnly Day), decimal>();
+        foreach (var lv in leaves)
+        {
+            if (!deptByEmp.TryGetValue(lv.EmployeeId, out var dept))
+                continue;
+            var spanStart = lv.StartDate < from ? from : lv.StartDate;
+            var spanEnd = lv.EndDate > to ? to : lv.EndDate;
+            decimal perDay = lv.IsHalfDay ? 0.5m : 1m;
+            for (var d = spanStart; d <= spanEnd; d = d.AddDays(1))
+            {
+                var key = (dept, d);
+                onLeaveByDeptDay[key] = onLeaveByDeptDay.GetValueOrDefault(key, 0m) + perDay;
+            }
+        }
+
+        // One row per (department, day) with at least one person on leave — the coverage-gap rows.
+        var rows = onLeaveByDeptDay
+            .OrderBy(kv => deptNames.GetValueOrDefault(kv.Key.Dept, string.Empty), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(kv => kv.Key.Day)
+            .Select(kv =>
+            {
+                int headcount = headcountByDept.GetValueOrDefault(kv.Key.Dept, 0);
+                decimal onLeave = kv.Value;
+                decimal available = Math.Max(0m, headcount - onLeave);
+                decimal coverage = headcount > 0 ? Math.Round(available / headcount * 100m, 2) : 0m;
+                return new LeaveReportRow
+                {
+                    Cells =
+                    [
+                        deptNames.GetValueOrDefault(kv.Key.Dept, string.Empty),
+                        kv.Key.Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        Num(onLeave),
+                        headcount.ToString(CultureInfo.InvariantCulture),
+                        Num(coverage),
+                    ],
+                };
+            })
+            .ToList();
+
+        return (rows, columns, null);
+    }
 
     // ══════════════════════════════════════════════════════════════
     //  Analytics builders (FR-7)

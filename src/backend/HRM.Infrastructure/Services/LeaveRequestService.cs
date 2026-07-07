@@ -705,9 +705,12 @@ public sealed class LeaveRequestService : ILeaveRequestService
         var leaveType = ctx.LeaveType!;
         var manager = ctx.Manager!;
 
-        // BR-4: payroll-lock check is DEFERRED — no payroll module exists yet.
-        // TODO(payroll): block approval when the request period falls in a payroll-locked period
-        //   ("Cannot approve leave for a payroll-locked period.").
+        // BR-4 / AC-4 (payroll): block approval when the request period overlaps a locked payroll
+        // period (the canonical AttendancePeriodLock — see IsPayrollLockedAsync). Approving a leave
+        // in a finalized period would desync attendance→payroll.
+        if (await IsPayrollLockedAsync(request, cancellationToken))
+            return Result<LeaveApprovalResultDto>.Failure(
+                "Cannot approve leave for a payroll-locked period. Please contact HR.", 400);
 
         // BR-5 / AC-3: recompute balance at approval time (not at request time). If insufficient
         // and the leave type does NOT allow a negative balance -> block (400). If negative is
@@ -914,10 +917,8 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 return Result<LeaveCancellationResultDto>.Failure(
                     "Cannot cancel leave that has already started. Please contact HR for assistance.", 400);
 
-            // AC-4 / BR-4 (payroll): block when the leave period falls in a payroll-locked period.
-            // No payroll module exists yet — this is a no-op stub that always reports "not locked".
-            // TODO(payroll): when the payroll module exists, block with
-            //   "Cannot cancel leave for a payroll-locked period. Please contact HR." (AC-4).
+            // AC-4 / BR-4 (payroll): block when the leave period overlaps a locked payroll period
+            // (the canonical AttendancePeriodLock — see IsPayrollLockedAsync).
             if (await IsPayrollLockedAsync(request, cancellationToken))
                 return Result<LeaveCancellationResultDto>.Failure(
                     "Cannot cancel leave for a payroll-locked period. Please contact HR.", 400);
@@ -1010,11 +1011,19 @@ public sealed class LeaveRequestService : ILeaveRequestService
     }
 
     /// <summary>
-    /// AC-4 / BR-4 payroll-lock seam (US-LV-010). No payroll module exists yet, so this always
-    /// reports "not locked". TODO(payroll): replace with a real payroll-period-lock lookup.
+    /// AC-4 / BR-4 payroll-lock check (US-LV-010 / US-LV-005 BR-4). The leave falls in a locked payroll
+    /// period when its date range [<see cref="LeaveRequest.StartDate"/>, <see cref="LeaveRequest.EndDate"/>]
+    /// overlaps any ACTIVE payroll period lock for the tenant. Reuses the canonical
+    /// <c>AttendancePeriodLock</c> — the same mechanism <c>AttendancePayrollService.GetPeriodLockAsync</c>
+    /// reports (US-ATT-009) — rather than inventing a new lock store. Tenant isolation via the EF global
+    /// query filter.
     /// </summary>
     private Task<bool> IsPayrollLockedAsync(LeaveRequest request, CancellationToken cancellationToken)
-        => Task.FromResult(false);
+        => _dbContext.AttendancePeriodLocks.AsNoTracking()
+            .AnyAsync(p => p.IsLocked
+                           && p.PeriodStart <= request.EndDate
+                           && p.PeriodEnd >= request.StartDate,
+                cancellationToken);
 
     /// <summary>
     /// Shared load + authorization + state checks for approve/reject (BR-1, BR-3).
