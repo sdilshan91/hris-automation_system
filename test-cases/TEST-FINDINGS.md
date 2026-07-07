@@ -3842,7 +3842,7 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 ### ISSUE-181 — BUG-003 EXTENDS to the US-PAY-010 reconciliation report (subdomain-header override yields cross-tenant read); encashment write-path is self-protected
 - **Type:** ISSUE
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-010 / TC-PAY-ISO-037, -038, -039, -040
 - **Title:** The pre-payroll reconciliation report (`GET /api/v1/payroll/reconciliation`) is reachable cross-tenant via the systemic BUG-003 subdomain-header override — an acme JWT + `X-Tenant-Subdomain: techoneglobal` returns techoneglobal's reconciliation rows. This is the known systemic BUG-003 (root locus US-AUTH-007 / TenantResolutionMiddleware), recorded here as extends-to-this-surface, NOT re-filed.
@@ -4009,7 +4009,7 @@ Acme token + `X-Tenant-Subdomain: techoneglobal` results:
 - **ID:** ISSUE-187
 - **Type:** ISSUE (cross-tenant read leak — extension of the systemic BUG-003; root locus already filed as BUG-003 / US-AUTH-007, NOT re-filed)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-012 / TC-PAY-ISO-045 + TC-PAY-ISO-046 (AC-5, FR-3/FR-4)
 - **Title:** `GET /payroll/audit-trail` and `/payroll/audit-trail/export` return ANOTHER tenant's payroll audit rows when an authenticated user supplies that tenant's `X-Tenant-Subdomain` header — the JWT tenant claim is never validated against the resolved subdomain
@@ -4447,7 +4447,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-087
 - **Type:** BUG (multi-tenant isolation bypass — instance of the systemic BUG-003)
 - **Severity:** CRIT
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB-001 / TC-ONB-ISO-001, TC-ONB-ISO-002, TC-ONB-ISO-003
 - **Title:** An authenticated tenant-A principal can operate in tenant B's onboarding-template context simply by sending tenant B's subdomain header; the JWT `tenant_id` is never validated against the resolved tenant
@@ -4477,7 +4477,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-089
 - **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003)
 - **Severity:** CRIT
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB-002 / TC-ONB-ISO-005, TC-ONB-ISO-006, TC-ONB-ISO-007
 - **Title:** A tenant-A principal can create an onboarding-checklist assignment in tenant B (and read it back) by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
@@ -4494,7 +4494,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-090
 - **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003)
 - **Severity:** CRIT
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB-004 / TC-ONB-ISO-012, TC-ONB-ISO-013, TC-ONB-ISO-014
 - **Title:** A tenant-A principal can create/assign an asset register row in tenant B by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
@@ -4514,7 +4514,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-091
 - **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003)
 - **Severity:** CRIT
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB-005 / TC-ONB-ISO-016, TC-ONB-ISO-017, TC-ONB-ISO-018
 - **Title:** A tenant-A principal can change a tenant-B employee's status AND initiate a tenant-B offboarding (generating clearance tasks) by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
@@ -4527,7 +4527,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-092
 - **Type:** BUG (multi-tenant isolation bypass — instance of systemic BUG-003; highest sensitivity surface)
 - **Severity:** CRIT
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — verified 2026-07-06 fixed by the GLOBAL `TenantAccessGuardMiddleware` (#119); live cross-tenant probes — acme JWT + spoofed `X-Tenant-Subdomain` on non-`/tenant/*` routes payroll/onboarding/recruitment reads AND writes — all returned 403 `cross_tenant_denied`. The guard is not path-scoped; the original `/tenant/*`-only concern was incorrect.)
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB-006 / TC-ONB-ISO-020, TC-ONB-ISO-021, TC-ONB-ISO-022
 - **Title:** A tenant-A principal can create a tenant-B exit interview (incl. free-text PII / additional comments) by sending tenant B's subdomain header; the JWT tenant_id is never validated against the resolved tenant
@@ -5654,3 +5654,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction:** create any audited change whose only occurrence of a term is inside the before/after JSON; `GET /api/v1/tenant/audit-logs?search=<term>` → the row is missing from results (FR-2 keyword search misses JSONB content). Unit repro: run `AuditLogServiceTests.List_SearchMatchesBeforeAfterAndDetail` → FAIL (`"Wolverine"` → 0 items, expected 1).
 - **Evidence:** `AuditLogService.cs:214-216` comment "Before/After are jsonb columns — `string.Contains` on them is not translatable … [search] text/structured columns instead"; US-NTF-005 FR-2 (keyword search full-text across before/after JSONB); 2 deterministic test failures (`SearchQuery="Wolverine"` → 0).
 - **Severity rationale:** MED — a stated FR is unmet and audit change-content is unsearchable (an auditor searching for "what changed" misses hits), but the audit trail itself is complete/queryable by the other filters and the data isn't lost or exposed. Fix: restore before/after search via a Postgres `jsonb::text ILIKE` cast (provider-aware: `IsNpgsql()` → cast+ILIKE; InMemory → `.Contains`), regression-tested on Testcontainers/Postgres (InMemory can't represent jsonb).
+
+---
+
+### BUG-243 — Performance module FE↔BE route contract is broadly broken: ~9 of 10 Angular Performance services call URLs the backend does not expose → empty-body 404 end-to-end
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** FE↔BE contract (Angular services vs ASP.NET controller routes)
+- **Module / US / TC:** Performance · US-PRF-001..010 · (verify-first pass 2026-07-06)
+- **Title:** The backend Performance controllers are built and correct, and the FE base prefix (`/api/v1/tenant/performance/*`) matches — but the **path segments** in most Angular Performance services do not match the controller routes, so the calls 404 at routing (empty body) before reaching a handler. **The Performance module is broadly non-functional through the UI even though the backend works.** This is the systemic FE↔BE route-drift class (see [[fe-be-shape-drift-null-guard-class]] / the `/tenant/`-prefix drift memory), here at module scale. No URL-rewriting exists: `api-envelope.interceptor.ts` rewrites only the response **body**, `proxy.conf.json` is a plain host forward — FE paths hit the BE verbatim.
+- **Root cause (~95%, live-verified):** FE service URLs diverge from the controller `[Route]`/`[Http*]` templates. **Fully dead services (every call 404):** `manager-review` (FE `manager-review/…` vs BE `reviews/…`), `feedback-360` (FE `feedback-360/employees/{id}/…` vs BE `360/cycles/{cycleId}/employees/{employeeId}/…`), `goal-progress` (FE `goal-progress/…` — no such BE segment), `review-signoff` (FE `sign-off/reviews/{reviewId}/…` vs BE `reviews/cycles/{cycleId}/employees/{employeeId}/…`), `self-assessment` (FE `self-assessments/active`, `{id}/draft|submit` vs BE `cycles/{cycleId}/me`, bare `draft`/`submit`). **Partially broken:** `cycle` (`{id}/transition`→BE `{id}/status`, `{id}/clone`→BE `cycles/clone`, `rating-scales`→none), `performance-goal` (`cycles/{id}/team`→`…/team-dashboard`, employee/cycle path-order swap), `pip` (`draft`→none, `checkpoints/{id}`→`checkpoints`, `escalate`→`escalation`), `recommendation` (`cycles/completed`→none, `{id}/decision`→`approve`/`reject`, `export`→`summary/export`, `team`→none), `performance-dashboard` (`departments/{id}` plural→BE `department/{id}` singular).
+- **Reproduction (live, acme, :5000, 2026-07-06):** FE `…/performance/goal-progress/my-goals` → empty-body 404, while BE `…/performance/my-goals` → 403 (route exists, authz). FE `…/performance/manager-review/draft` → 404; BE `…/performance/reviews/draft` exists. Confirmed across the services above.
+- **Evidence:** static FE-service-URL vs controller-route diff (files: `src/frontend/src/app/features/performance/**/services/*.service.ts` vs `src/backend/HRM.Api/Controllers/{ManagerReview,Feedback360,GoalProgress,ReviewSignoff,SelfAssessment,Cycles,Pip,Recommendation,PerformanceDashboard,Goals}Controller.cs`) + live 404/403 probes distinguishing "route missing" (empty-body 404) from "route exists, authz/no-data" (403 / coded 404).
+- **Severity rationale:** HIGH — a whole priced module is unusable via its own UI (primary flows dead E2E), yet backend + tests are green so it reads "done"; no data/security impact (it fails closed, 404). Fix is contained but broad: align each FE service's path segments to the controller routes (FE-only change, ~10 services), then a smoke pass per service. Prefer fixing the FE to match BE (the BE routes are the tested contract). Surfaced by the 2026-07-06 verify-first pass; matches COMPLETION-PLAN Part II Theme G.
+- **Suggested direction (NOT applied):** none — report only.
