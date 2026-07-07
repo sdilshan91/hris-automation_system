@@ -108,11 +108,11 @@ Make the ledger honest so every later count is trustworthy.
 > the dependency existed and never rewired. This is a **status-integrity** problem, not scattered bugs. Gaps below are
 > grouped by cross-cutting theme; each theme is a candidate epic. **Story/STATUS corrections → `@business-analyst`.**
 
-### Theme A — Tenant isolation & RLS  🔴 verify-first, highest risk
-- **RLS absent** — `Rls:Enabled=false`, 0 `CREATE POLICY` in any migration; the spec's "critical second isolation layer" doesn't exist. Isolation rests on the single EF `HasQueryFilter` layer → any `IgnoreQueryFilters()`/raw-SQL/untenanted-job path has no safety net. **[NEW-spec]**
-- **Cross-tenant WRITE leaks outside `/tenant/*`** (BUG-087/089/090/091/092, onboarding/payroll/some recruitment) — **VERIFY against the #119 guard**: the prior ISO re-run passed all 11 modules, so these are *likely stale-not-closed*, but confirm before downgrading (if live = CRIT).
-- **`EmployeeFieldAuditLog`** — tenant table with **no** query filter + write-only (no read endpoint): latent BUG-003 trap + orphaned US-CHR-002 field-audit feature. **[NEW]**
-- **BUG-040 password-reset takeover** — census flags present; **VERIFY** (likely fixed by the reset-policy work).
+### Theme A — Tenant isolation & RLS  🔴 highest risk
+- **RLS absent** — `Rls:Enabled=false`, 0 `CREATE POLICY` in any migration; the spec's "critical second isolation layer" doesn't exist. Isolation rests on the single EF `HasQueryFilter` layer → any `IgnoreQueryFilters()`/raw-SQL/untenanted-job path has no safety net. **[NEW-spec — this is the one that stands]**
+- ~~Cross-tenant WRITE leaks outside `/tenant/*`~~ **→ STALE (verify-first 2026-07-06, PR #184).** `TenantAccessGuardMiddleware` (#119) is **global**, not path-scoped; live probes on payroll/onboarding/recruitment reads+writes all `403 cross_tenant_denied`. BUG-087/089/090/091/092 + ISSUE-181/187 closed.
+- **`EmployeeFieldAuditLog`** — tenant table with **no** query filter + write-only (no read endpoint): latent BUG-003 trap + orphaned US-CHR-002 field-audit feature. **[NEW — still open]** (Note: harmless today precisely because the app-guard above is global and there's no read path; add a `HasQueryFilter` before any read endpoint is added.)
+- ~~BUG-040 password-reset takeover~~ **→ STALE.** Already RESOLVED (#118); reset is single-use + constant-time token-validated; live-confirmed no takeover.
 
 ### Theme B — Outbound delivery: Notifications / Email / SignalR  ← the single dominant gap
 Every email + in-app/SignalR path is a `LogOnly*` stub (ISSUE-188/221/228). Nothing is ever delivered. Contradicts an AC in **~25 `[x]`-done stories**: password-reset/lockout/break-glass (Auth); doc-expiry/probation/import/manager-reassignment (Core-HR); leave queue/approval; **payslip email PAY-011** (entire story purpose); payroll+performance notifications (PAY-003/008, PRF-001/002/003/005/008/009); all recruitment emails (confirmation/interview/offer-with-PDF/scorecard/magic-link/stage — REC-002/004/005/006/007/008); attendance alerts/escalations/scheduled-reports (ATT-004/008/010); impersonation; export-ready. **→ build the US-NTF delivery layer (SMTP sender + SignalR hub) + rewire the ~30 seams.**
@@ -130,7 +130,7 @@ REC-010 convert: **no user-account creation** (AC-3), **no salary persistence** 
 PRF-005 (360 report), PRF-006 (review), PRF-007 (dashboard), PRF-008 (PIP), PRF-010 (recommendation), REC-009 (dashboard — with a **dead FE button** that always toasts "Export failed"), PAY-009 year-end tax (ISSUE-177). CSV/XLSX exist; the AC-named PDF does not.
 
 ### Theme G — FE↔BE contract drift
-**3 NEW shape bugs:** payroll adjustments list renders empty (`{items,totalCount}` as `{data}`), custom-fields list broken (array-as-object), custom-fields `id` read as `customFieldId` → `.../undefined` requests. Plus **Performance module systematic route mismatch** (FE calls `/manager-review/{id}`, `/feedback-360`, `/rating-scales`, `/pip/draft` that don't match BE routes) → likely 404 E2E module-wide — **VERIFY**.
+**3 NEW shape bugs:** payroll adjustments list renders empty (`{items,totalCount}` as `{data}`), custom-fields list broken (array-as-object), custom-fields `id` read as `customFieldId` → `.../undefined` requests. Plus **Performance module route mismatch → CONFIRMED LIVE (verify-first 2026-07-06) = BUG-243 (HIGH), PR #184**: ~9 of 10 Angular Performance services call path segments the backend doesn't expose → 404 end-to-end (5 services 100% dead, 5 partial). Backend routes are correct/tested; **fix the FE to match** (~10 services, FE-only). **This is the top open *functional* defect** — a whole priced module is unusable via its UI while reading "done."
 
 ### Theme H — Plan / tenant governance not enforced
 Module-gating deferred (ADM-009 #17: a disabled module's API isn't 403'd, no FE route guard) · usage limits storage/API/email config-only (ADM-009 #16; storage quota BUG-114) · plan-gated enterprise-only settings absent (ADM-006 #17).
@@ -151,7 +151,7 @@ Part-time **FTE proration** (LV-002 BR-2, no `Employee.Fte`) · **accrual-freque
 **Training & Benefits — ZERO coverage** (no stories, no test-cases, never executed) · Platform Admin Console UI never UI-tested (admin-subdomain 404) · the 4 `IsRelational()`-gated transactional paths not Postgres-tested (BUG-068 class) · k6/perf harness out-of-tree.
 
 ## How Part II maps onto the phases
-- **Verify-first** (before anything): Theme A cross-tenant-outside-`/tenant/*` + BUG-040 + Theme G Performance-route-mismatch — these are *"is it actually broken or just stale-in-ledger?"* questions; a short `@test-runner` pass answers them.
+- **Verify-first pass — ✅ DONE (2026-07-06, PR #184):** of the 3 ambiguous items, **2 were ghosts** (cross-tenant-outside-`/tenant/*` and BUG-040 both STALE/already-fixed) and **1 was real** (Performance routes = BUG-243 HIGH, now the top functional item). Net: don't spend on Theme-A cross-tenant or BUG-040; **do** prioritize the BUG-243 FE route fix.
 - **Phase 1 (security):** Themes A (RLS + EmployeeFieldAuditLog filter), D.
 - **Phase 2 (correctness):** Themes E, J, and the Theme-K quick ones.
 - **Phase 3 (features):** Themes B (Notifications — biggest), C (workflow runtime), F (PDF), H, and the Theme-K stories.
