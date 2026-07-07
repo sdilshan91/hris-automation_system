@@ -6,6 +6,7 @@ using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -36,6 +37,7 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
     private readonly IConfiguration _configuration;
     private readonly ILogger<TenantLifecycleService> _logger;
     private readonly ITenantDeletionScheduler? _scheduler; // optional Hangfire seam (null in tests)
+    private readonly IDistributedCache? _cache; // optional Redis seam (null in tests); same seam the middleware writes
 
     public TenantLifecycleService(
         AppDbContext db,
@@ -43,7 +45,8 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         ITenantLifecycleNotificationService notification,
         IConfiguration configuration,
         ILogger<TenantLifecycleService> logger,
-        ITenantDeletionScheduler? scheduler = null)
+        ITenantDeletionScheduler? scheduler = null,
+        IDistributedCache? cache = null)
     {
         _db = db;
         _currentUser = currentUser;
@@ -51,6 +54,7 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         _configuration = configuration;
         _logger = logger;
         _scheduler = scheduler;
+        _cache = cache;
     }
 
     private string Actor => _currentUser.IsAuthenticated ? _currentUser.UserId.ToString() : "system";
@@ -83,6 +87,10 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         WriteAudit(tenant.Id, "Tenant.Suspended", detail, now);
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // FR-9: drop the subdomain-resolution cache so the tenant stops resolving as Active within the TTL
+        // window, closing the login-block bypass.
+        await InvalidateTenantSubdomainCacheAsync(tenant.Subdomain, cancellationToken);
 
         await DispatchNotificationAsync(tenant, "suspended", reason, null, cancellationToken);
 
@@ -151,6 +159,9 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
 
         await _db.SaveChangesAsync(cancellationToken);
 
+        // FR-9: the tenant is now Terminating — invalidate the cached (Active) resolution.
+        await InvalidateTenantSubdomainCacheAsync(tenant.Subdomain, cancellationToken);
+
         await DispatchNotificationAsync(tenant, "termination_initiated", reason, scheduledAt, cancellationToken);
 
         _logger.LogInformation(
@@ -182,6 +193,9 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         WriteAudit(tenant.Id, "Tenant.Reactivated", detail, now);
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // FR-9: refresh the cached status so the reactivated tenant resolves as Active immediately.
+        await InvalidateTenantSubdomainCacheAsync(tenant.Subdomain, cancellationToken);
 
         await DispatchNotificationAsync(tenant, "reactivated", null, null, cancellationToken);
 
@@ -222,6 +236,9 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         WriteAudit(tenant.Id, "Tenant.Restored", detail, now);
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // FR-9: the status changed (back to Suspended/Active) — invalidate the cached resolution.
+        await InvalidateTenantSubdomainCacheAsync(tenant.Subdomain, cancellationToken);
 
         await DispatchNotificationAsync(tenant, "restored", null, null, cancellationToken);
 
@@ -280,6 +297,28 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
                 409, "invalid_transition"));
 
         return (tenant, null);
+    }
+
+    /// <summary>
+    /// FR-9: removes the subdomain-resolution cache entry that <c>TenantResolutionMiddleware</c> writes
+    /// (key "t:subdomain:{subdomain}", subdomain lowercased) so a status change is visible before the 5-min
+    /// TTL elapses. Non-fatal: a cache miss/outage just means the middleware re-reads from the database.
+    /// The key format MUST stay in sync with <c>TenantResolutionMiddleware.TenantCacheKeyPrefix</c>.
+    /// </summary>
+    private async Task InvalidateTenantSubdomainCacheAsync(string subdomain, CancellationToken cancellationToken)
+    {
+        if (_cache is null || string.IsNullOrEmpty(subdomain))
+            return;
+
+        var cacheKey = $"t:subdomain:{subdomain.ToLowerInvariant()}";
+        try
+        {
+            await _cache.RemoveAsync(cacheKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to invalidate tenant subdomain cache for {Subdomain}; it will expire on TTL.", subdomain);
+        }
     }
 
     private async Task RevokeAllRefreshTokensAsync(Guid tenantId, DateTime now, CancellationToken cancellationToken)

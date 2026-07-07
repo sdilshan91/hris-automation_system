@@ -344,6 +344,16 @@ public sealed class AuthService : IAuthService
             return Result<RefreshTokenResponse>.Failure("Invalid refresh token.", 401);
         }
 
+        // ISSUE-049: a refresh token is bound to its owning tenant. Reject it when presented on a different
+        // tenant's resolved subdomain, so a token minted for tenant A cannot be rotated under tenant B. Uses
+        // the SAME generic message/status as an unknown token, so the response doesn't leak which check failed
+        // (existence vs cross-tenant). Checked BEFORE reuse detection so a cross-tenant request can never
+        // trigger lineage revocation against another tenant's tokens.
+        if (_tenantContext.IsResolved && storedToken.TenantId != _tenantContext.TenantId)
+        {
+            return Result<RefreshTokenResponse>.Failure("Invalid refresh token.", 401);
+        }
+
         // Check if token was already revoked (reuse detection)
         if (storedToken.RevokedAt is not null)
         {
@@ -355,6 +365,13 @@ public sealed class AuthService : IAuthService
                 storedToken.UserId, storedToken.TenantId);
 
             await RevokeTokenLineageAsync(storedToken, cancellationToken);
+
+            // ISSUE-050: a detected reuse (a rotated/revoked token replayed) is a security event that belongs
+            // in the queryable audit trail, not just a Serilog line. Actor = the token's owning user; scoped
+            // to the token's tenant. Written after the lineage revocation commit (best-effort, additive).
+            await WriteAuditLogAsync(storedToken.UserId, "security.refresh_token_reuse_detected",
+                ipAddress, userAgent, cancellationToken, storedToken.TenantId);
+
             return Result<RefreshTokenResponse>.Failure("Token reuse detected. This session has been revoked.", 401);
         }
 

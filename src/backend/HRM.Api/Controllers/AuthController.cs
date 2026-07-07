@@ -38,6 +38,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth-login")] // US-AUTH-001 NFR-4: 10/min/IP anti credential-stuffing
     [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
@@ -332,6 +333,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPost("mfa/challenge")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth-login")] // US-AUTH-005 NFR-4: 10/min/IP anti MFA-code brute force / stuffing
     [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> MfaChallenge([FromBody] MfaLoginVerifyRequest request, CancellationToken cancellationToken)

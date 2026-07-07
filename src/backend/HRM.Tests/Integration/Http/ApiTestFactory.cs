@@ -50,6 +50,11 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         // is honoured (subdomain-based resolution can't work against the in-memory test server host).
         builder.UseEnvironment(Environments.Development);
 
+        // Disable ONLY the auth-login per-IP limiter: this shared "HttpApi" collection logs in from one IP
+        // across ~12 classes and would cumulatively trip 10/min. UseSetting feeds host→app config early enough
+        // for Program.cs to read it at build. forgot-password/public-application limits stay on (RateLimitClusterApiTests).
+        builder.UseSetting("RateLimiting:Disabled", "true");
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>

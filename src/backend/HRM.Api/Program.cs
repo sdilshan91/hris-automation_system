@@ -357,6 +357,11 @@ try
     // Partitioned by CLIENT IP. NOTE: the store is in-memory, so limits are PER API INSTANCE — acceptable
     // for this threat model (a coarse anti-abuse throttle, not a distributed quota). Move to a Redis-backed
     // partitioned limiter if/when multi-instance precision is required.
+    // RateLimiting:Disabled (default false) lets the integration-test host opt out of the auth-login limiter
+    // only — the shared "HttpApi" test collection logs in from one IP (TestServer partition "unknown") across
+    // ~12 classes and would otherwise trip 10/min. forgot-password/public-application stay ON so their behavioral
+    // 429 tests (RateLimitClusterApiTests) still pass. Production leaves the flag false (all limiters on).
+    var rateLimitDisabled = builder.Configuration.GetValue<bool>("RateLimiting:Disabled");
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -385,6 +390,21 @@ try
                 {
                     PermitLimit = 10,
                     Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                }));
+
+        // US-AUTH-001/005 NFR-4: throttle the unauthenticated credential-check endpoints (login +
+        // MFA-challenge). Credential-stuffing is otherwise only blunted by the per-account lockout counter,
+        // which does nothing against attacks that spray one attempt each across many accounts from one host.
+        // 10/minute/IP is generous for a human (mistyped password, MFA retry) while capping automated spray.
+        options.AddPolicy("auth-login", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ResolveClientIp(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = rateLimitDisabled ? int.MaxValue : 10,
+                    Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0,
                     QueueProcessingOrder = QueueProcessingOrder.OldestFirst
                 }));
