@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
@@ -245,6 +246,15 @@ public sealed class EmployeeService : IEmployeeService
         if (employee is null)
             return Result<string>.Failure("Employee not found.", 404);
 
+        // BUG-058: sniff the real magic bytes BEFORE the virus scan — the AllowedPhotoMimeTypes check above
+        // only trusts the client-supplied Content-Type, so a renamed .exe with an image MIME string would
+        // otherwise be accepted. Reject (400 invalid_file_type) when the bytes don't match. Resets the stream.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(contentType, fileStream, cancellationToken);
+        if (signature.IsFailure)
+            return Result<string>.Failure(
+                "File content does not match its type. Allowed types: JPEG, PNG, WebP.",
+                400, FileSignatureValidator.ErrorCode);
+
         // NFR-3: Virus scan before persistence
         var scanResult = await _virusScanner.ScanAsync(fileStream, fileName, cancellationToken);
         if (!scanResult.IsClean)
@@ -255,19 +265,18 @@ public sealed class EmployeeService : IEmployeeService
         if (fileStream.CanSeek)
             fileStream.Position = 0;
 
-        // EXIF stripping stub — TODO(US-CHR-001): implement real EXIF stripping
-        // when an image processing library (e.g. SixLabors.ImageSharp) is added.
-        // For now, the stream is passed through as-is.
-        StripExifData(fileStream, contentType);
-
-        // Reset stream position after EXIF strip
-        if (fileStream.CanSeek)
-            fileStream.Position = 0;
+        // AC-4/FR-6: strip EXIF/IPTC/XMP metadata (GPS, camera PII) from the photo before storage. Returns a
+        // cleaned copy for JPEG/PNG; a non-decodable image passes through unchanged (fail-open).
+        var (uploadStream, exifReplaced) = await ImageMetadataStripper.StripAsync(
+            fileStream, contentType, _logger, cancellationToken);
 
         // Upload to tenant-isolated storage: {tenantId}/core-hr/{employeeId}/profile/{filename}
         var relativePath = $"core-hr/{employeeId}/profile/{fileName}";
         var storedUrl = await _fileStorage.UploadAsync(
-            _tenantContext.TenantId, relativePath, fileStream, contentType, cancellationToken);
+            _tenantContext.TenantId, relativePath, uploadStream, contentType, cancellationToken);
+
+        if (exifReplaced)
+            await uploadStream.DisposeAsync();
 
         // Update employee record with photo URL
         employee.ProfilePhotoUrl = storedUrl;
@@ -856,25 +865,6 @@ public sealed class EmployeeService : IEmployeeService
             .Max();
 
         return $"EMP-{maxSeq + 1:D4}";
-    }
-
-    /// <summary>
-    /// Strips EXIF metadata from image files.
-    /// TODO(US-CHR-001): Implement real EXIF stripping with SixLabors.ImageSharp or similar.
-    /// This is a clearly-marked stub that logs a warning.
-    /// </summary>
-    private void StripExifData(Stream fileStream, string contentType)
-    {
-        // STUB: Real EXIF stripping requires an image processing library.
-        // When SixLabors.ImageSharp is added, implement:
-        //   using var image = await Image.LoadAsync(fileStream, cancellationToken);
-        //   image.Metadata.ExifProfile = null;
-        //   image.Metadata.IptcProfile = null;
-        //   image.SaveAsync(outputStream, encoder);
-        _logger.LogWarning(
-            "EXIF stripping SKIPPED (stub). ContentType={ContentType}. " +
-            "TODO: Add SixLabors.ImageSharp for real EXIF stripping.",
-            contentType);
     }
 
     private async Task<EmployeeDto> LoadDtoAsync(Guid employeeId, CancellationToken cancellationToken)

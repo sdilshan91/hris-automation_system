@@ -134,7 +134,7 @@ public sealed class EmployeeDocumentAuditWriteTests
     public async Task UploadDocument_WritesAuditRow_ISSUE024()
     {
         var empId = await SeedEmployee();
-        using var stream = new MemoryStream(new byte[1024]);
+        using var stream = HRM.Tests.Unit.Helpers.UploadTestBytes.Stream("application/pdf", 1024);
 
         var result = await CreateService().UploadAsync(
             empId, stream, "offer_letter.pdf", "application/pdf", 1024,

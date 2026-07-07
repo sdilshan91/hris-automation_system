@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Recruitment.DTOs;
 using HRM.Application.Features.Recruitment.Validators;
@@ -120,6 +121,15 @@ public sealed class ApplicantService : IApplicantService
         if (duplicate)
             return Result<ApplicationConfirmationDto>.Failure(
                 "You have already applied to this vacancy with this email address.", 409, "duplicate_application");
+
+        // BUG-058: sniff the real magic bytes BEFORE the virus scan — the allow-list above only checks the
+        // client-supplied Content-Type, so a renamed .exe with a PDF/DOCX MIME string would otherwise pass.
+        // Reject (400 invalid_file_type) when the bytes don't match the declared type. Resets the stream.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(
+            input.ResumeContentType, input.ResumeStream, cancellationToken);
+        if (signature.IsFailure)
+            return Result<ApplicationConfirmationDto>.Failure(
+                "Resume must be a PDF, DOC, or DOCX file.", 400, FileSignatureValidator.ErrorCode);
 
         // FR-3/NFR-4: virus scan BEFORE persisting the storage key.
         var scan = await _virusScanner.ScanAsync(input.ResumeStream, input.ResumeFileName, cancellationToken);
@@ -946,7 +956,6 @@ public sealed class ApplicantService : IApplicantService
         Phone = a.Phone,
         CoverLetter = a.CoverLetter,
         ResumeFileName = a.ResumeFileName,
-        ResumeStorageKey = a.ResumeStorageKey,
         Stage = a.Stage,
         StageName = a.Stage.ToString(),
         Source = a.Source,

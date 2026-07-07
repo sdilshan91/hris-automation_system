@@ -47,6 +47,14 @@
          XSS (OWASP). HtmlSanitizer (Ganss.Xss) is a vetted allow-list sanitizer; a hand-rolled regex
          stripper would be unsafe. NEW dependency for the Recruitment module. -->
     <PackageReference Include="HtmlSanitizer" Version="9.0.892" />
+    <!-- US-CHR-001 AC-4 / US-CHR-008 FR-5 (privacy): strip EXIF/IPTC/XMP metadata (GPS, camera PII)
+         from uploaded raster images before storage. SixLabors.ImageSharp is the standard .NET imaging
+         library; a hand-rolled JPEG APP1-segment stripper would be fragile and unsafe. NEW dependency
+         for the Core HR photo/document upload paths.
+         LICENSE NOTE: pinned to the 2.1.x line, which is Apache-2.0 (permissive, no key). ImageSharp
+         v3+ moved to the source-available "Six Labors Split License" and v4 ENFORCES a build-time paid
+         license key — do not upgrade past 2.1.x without a licensing decision. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.*" />
   </ItemGroup>
 
   <ItemGroup>

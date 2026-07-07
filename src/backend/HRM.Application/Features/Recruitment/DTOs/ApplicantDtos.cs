@@ -4,7 +4,9 @@ namespace HRM.Application.Features.Recruitment.DTOs;
 
 /// <summary>
 /// Full applicant representation for the submit response and the recruiter detail view (US-REC-002 §7).
-/// The resume binary is never returned inline — only its storage key + original file name.
+/// The resume binary is never returned inline; nor is its internal storage key (ISSUE-244 / NFR-5 — the
+/// tenant-scoped blob path must not leak on the wire). Clients download via the safe <c>/resume</c> route
+/// (see <c>PipelineDetailDto.ResumeDownloadUrl</c>), so only the original file name is exposed here.
 /// </summary>
 public sealed record ApplicantDto
 {
@@ -18,7 +20,6 @@ public sealed record ApplicantDto
     public string? Phone { get; init; }
     public string? CoverLetter { get; init; }
     public string ResumeFileName { get; init; } = string.Empty;
-    public string ResumeStorageKey { get; init; } = string.Empty;
     public ApplicantStage Stage { get; init; }
     public string StageName { get; init; } = string.Empty;
     public ApplicationSource Source { get; init; }

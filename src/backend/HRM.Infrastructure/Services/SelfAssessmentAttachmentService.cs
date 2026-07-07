@@ -1,5 +1,6 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -152,6 +153,16 @@ public sealed class SelfAssessmentAttachmentService : ISelfAssessmentAttachmentS
         if (existingCount >= MaxFilesPerGoal)
             return Result<SelfAssessmentAttachmentDto>.Failure(
                 $"A maximum of {MaxFilesPerGoal} evidence files per goal is allowed.", 409, "attachment_limit_reached");
+
+        // BUG-058: sniff the real magic bytes BEFORE the virus scan — the allow-list above only checks the
+        // client-supplied Content-Type, so a spoofed type (renamed .exe) would otherwise pass. Reject
+        // (400 invalid_file_type) when the bytes don't match the declared type. Resets the stream.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(
+            input.ContentType, input.Content, cancellationToken);
+        if (signature.IsFailure)
+            return Result<SelfAssessmentAttachmentDto>.Failure(
+                "File type not allowed. Supported: PDF, JPEG, PNG, DOC, DOCX, XLS, XLSX.",
+                400, FileSignatureValidator.ErrorCode);
 
         // NFR-4: virus-scan BEFORE storing / persisting. A non-clean result rejects the upload (400).
         var scan = await _virusScanner.ScanAsync(input.Content, input.FileName, cancellationToken);

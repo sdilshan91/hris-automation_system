@@ -139,7 +139,7 @@ public sealed class ApplicantSubmissionIntegrationTests
         Guid? linkedEmployeeId = null)
         => new(
             vacancyId, "Ada", "Lovelace", email, "+1-555-0100", "Cover letter.",
-            new MemoryStream(new byte[] { 1, 2, 3, 4 }), "resume.pdf", "application/pdf", 4,
+            new MemoryStream(HRM.Tests.Unit.Helpers.UploadTestBytes.Pdf), "resume.pdf", "application/pdf", HRM.Tests.Unit.Helpers.UploadTestBytes.Pdf.Length,
             source, linkedEmployeeId);
 
     // ── Happy path (AC-1) ─────────────────────────────────────────────
