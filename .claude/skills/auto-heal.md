@@ -93,6 +93,10 @@ deterministic.
 - **Feeds on** the out-of-lane contract in every `team/` + `review/` agent and the discoveries from the
   completeness sweep (integration-enforcer, contract-drift, US-AC audits).
 - **Writes to** `TEST-FINDINGS.md` (the ledger) and the `COMPLETION-PLAN` (the living plan).
+- **Paired with** [`/plan-audit`](plan-audit.md) — its **read-side** counterpart. Auto-heal *writes* the
+  living plan; `/plan-audit` *audits drift across all ~30 tracking docs* (stale checkboxes, status
+  conflicts, duplicate tracking, unregistered plans) into `test-cases/PLAN-AUDIT.md` and hands the
+  reconciliation list back here. Auto-heal owns the edits; plan-audit never mutates a source doc.
 - **Complements** `/error-recovery` (stuck-loop breaker — retries), `/fault-diagnosis` (root-cause-before-fix),
   and the `/implement-all` remediation loop. Auto-heal is about *breadth* (don't lose discoveries); those are
   about *depth* (don't thrash on one fix).
