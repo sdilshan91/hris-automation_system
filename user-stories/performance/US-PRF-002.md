@@ -88,3 +88,9 @@ acceptance_criteria_count: 5
 - Test Hangfire reminders: configure a deadline, advance time, verify reminder notifications fire.
 - Test file upload: upload files of various types and sizes, verify virus scan and tenant-scoped storage.
 - Test mobile at 360px: confirm all rating inputs are usable with touch.
+
+---
+## Follow-up ACs (deferred — BUG-243, missing backend endpoint)
+> Attached here rather than as a net-new epic. Track in STATUS.md. Verified against
+> `SelfAssessmentAttachmentsController` (upload POST L34, list GET L63, download GET L83 — no DELETE).
+- **AC-B1 — Delete a self-assessment evidence attachment (FR-5).** `SelfAssessmentAttachmentsController` exposes upload (POST), list (GET) and download (GET) but **no delete** route, so the FE `SelfAssessmentService.deleteAttachment` (DELETE `…/{assessmentId}/attachments/{attachmentId}`) is a dead button. Add `DELETE /api/v1/tenant/performance/self-assessments/attachments/{attachmentId}`. **Input:** `attachmentId` (route). **Output:** 200/204 on success; 404 when the attachment is not the caller's own. **Tenant-scoping:** EF global query filter. **Authz:** `Performance.Read.Self` + service ownership check (caller's own self-assessment only, same gate as upload/list). Reject deletion once the assessment is Submitted/locked (BR-3) → 409. **Status: not built. Ref: BUG-243.**

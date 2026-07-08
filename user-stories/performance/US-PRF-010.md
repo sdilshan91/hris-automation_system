@@ -98,3 +98,11 @@ acceptance_criteria_count: 5
 - Test compensation encryption: query database directly, verify bonus amounts and increment values are encrypted.
 - Test aggregate report export: generate PDF/Excel, verify statistics match dashboard.
 - Test historical comparison: complete two cycles, verify trend comparison shows correct data.
+
+---
+## Follow-up ACs (deferred — BUG-243, missing/reshape backend endpoints)
+> Attached here rather than as net-new epics. Track in STATUS.md. Verified against `RecommendationController`
+> (workspace GET L48 admits `Performance.Review.Team` and hard-scopes a manager to direct reports; no
+> `cycles/completed` route; no dedicated `team` route).
+- **AC-B1 — Completed-cycles picker (BR-1/AC-1).** The recommendation workspace opens with a picker of completed cycles (published final ratings), but `RecommendationController` exposes no such list — `GET workspace` merely defaults to the tenant's most recent cycle. Add `GET /api/v1/tenant/performance/recommendations/cycles/completed`. **Output:** `[{ cycleId, name, completedDate }]` for cycles whose final ratings are published (BR-1). **Tenant-scoping:** EF global query filter. **Authz:** `Performance.Publish.All` (HR). FE `RecommendationService.getCompletedCycles()` is a dead call until built. **Status: not built. Ref: BUG-243.**
+- **AC-B2 — Manager "Team Recommendations" view (AC-5) — RESHAPE, not a genuine gap.** The FE calls a dedicated `GET /recommendations/team?cycleId=` returning a slim `IRecommendationRow[]`, which has no backend route. **However the capability already exists:** `GET workspace` admits `Performance.Review.Team` and the service hard-scopes a manager to their direct reports (AC-5). So this is a FE-reshape / optional-convenience decision, **not** a genuine missing capability. **Decision:** EITHER re-point the FE to `GET workspace` (paginated envelope) — a FE-wiring fix — OR add a slim `GET /recommendations/team?cycleId=` returning only the manager's direct-report rows. **Recommendation:** the FE-reshape (no new endpoint) unless the slim payload is genuinely needed for the mobile view. **Status: capability exists via workspace; new endpoint optional. Ref: BUG-243.**
