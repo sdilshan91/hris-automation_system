@@ -105,6 +105,12 @@ still fails, append the re-test evidence to the existing finding and leave it `O
    the persona flow, read **console** + **network**, capture the accessibility **snapshot**, screenshot on
    failure. For **accessibility** TCs run **@axe-core/playwright** (installed). For **cross-browser** TCs use
    the Playwright **firefox**/**webkit** projects (installed) in addition to chromium.
+   - **Unscripted / exploratory UI passes** (a TC with no bound spec that says "per the steps", a smoke pass
+     on a changed screen, or chasing a symptom): follow [`test-cases/EXPLORATORY-QA-PLAYBOOK.md`](../../../test-cases/EXPLORATORY-QA-PLAYBOOK.md)
+     — repro-with-one-retry before logging, evidence matched to issue type (step screenshots for interactive
+     bugs, one annotated shot for static ones), the 8-pass per-page checklist (incl. **auth & tenant
+     boundaries**), and the issue taxonomy. It maps to this agent's finding schema; it does **not** relax the
+     REPORT-ONLY contract.
 4. **Front-end performance + audits** via the **Chrome DevTools MCP** (`chrome-devtools_*`): for page/UX
    performance TCs use `performance_start_trace` / `performance_stop_trace` + `performance_analyze_insight`
    (Core Web Vitals — LCP/CLS/TBT) with `emulate` for CPU/network throttling; run `lighthouse_audit` for a

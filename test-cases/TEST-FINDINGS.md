@@ -5699,6 +5699,38 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** LOW — narrow-format privacy nit; resolvable by adding a WebP path (needs a WebP-encode-capable lib or an ImageSharp v3/v4 licensing decision) or disallowing WebP photo uploads.
 - **Suggested direction (NOT applied):** either drop WebP from the photo allow-list or add a WebP metadata-strip path. Report only.
 
+### BUG-245 — Attendance HR dashboard / live-board / custom-report derive day-boundaries in UTC (same non-UTC-tenant defect as ISSUE-065)
+- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 2b, 2026-07-08)
+- **Layer:** BE
+- **Module / US / TC:** Attendance · US-ATT-010 · (sibling of the Phase 2b tenant-timezone fix)
+- **Title:** `AttendanceDashboardService` (:263 "today", :276-277 & :551-552 day windows, :306 present-days `DISTINCT(date)`) still computes "today", day windows, and present-day counts in **UTC**, so for a non-UTC tenant the dashboard/live-board/custom-report show the wrong day's data — the same day-boundary defect the Phase 2b fix corrected in `AttendanceService`/`AttendanceSummaryService`.
+- **Suggested direction (NOT applied):** reuse the new `TenantClock` helper; thread `TimeZoneInfo` through like `AttendanceSummaryService`. Report only.
+
+### BUG-246 — Attendance→payroll monthly aggregation windows/day-grouping are UTC (non-UTC tenant boundary punches roll into the wrong pay-period day)
+- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 2b, 2026-07-08)
+- **Layer:** BE
+- **Module / US / TC:** Attendance/Payroll · US-ATT-009 · (sibling of Phase 2b)
+- **Title:** `AttendancePayrollService` (:346-347 month window, :424 `DateOnly.FromDateTime(EffectiveDate)`) aggregates attendance for payroll in **UTC**, so a non-UTC tenant's near-midnight punches fall into the wrong pay-period day — feeding wrong attendance inputs to payroll.
+- **Suggested direction (NOT applied):** reuse `TenantClock`. Report only.
+
+### ISSUE-250 — SubmitRegularizationValidator "not in the future" check combines wall-clock as UTC (coarse for non-UTC tenants)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed, Phase 2b)
+- **Layer:** BE
+- **Module / US / TC:** Attendance · US-ATT-004 · (Phase 2b residual)
+- **Title:** `SubmitRegularizationValidator:74-83` has no tenant-tz access (FluentValidation, no DI), so its fine-grained future check treats the wall-clock as UTC. The **authoritative** future-DATE rejection is now tz-aware in the service; this validator check is merely lenient (not falsely-rejecting). Fixing needs the tenant tz injected into the validator (architectural). **Suggested:** inject tenant tz or accept service-layer authority. Report only.
+
+### ISSUE-251 — TenantClock.LocalToUtc throws on a DST spring-forward gap time (rare non-UTC regularization edge → potential 500)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed, Phase 2b — limitation of the new helper)
+- **Layer:** BE
+- **Module / US / TC:** Attendance · US-ATT-004 · (Phase 2b)
+- **Title:** `TenantClock.LocalToUtc` uses `TimeZoneInfo.ConvertTimeToUtc`, which throws `ArgumentException` for a wall-clock that lands exactly in a 1-hour DST spring-forward gap in a non-UTC zone (once/year, that hour) — a latent 500 on a regularization submit. UTC tenants + all non-gap/ambiguous times are unaffected. **Suggested:** catch invalid-time and either snap-forward by the gap or reject with a clear 400. Report only.
+
+### BUG-247 — Regularization-approval late/early recompute still UTC-keyed (Phase 2b tenant-tz fix incomplete on this path)
+- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 2b, 2026-07-08)
+- **Layer:** BE
+- **Module / US / TC:** Attendance · US-ATT-004 · (sibling of the Phase 2b tenant-timezone fix)
+- **Title:** `RegularizationApprovalService.cs:513` recomputes `is_late`/`is_early` with `TimeOnly.FromDateTime(log.ClockIn)` directly (UTC), NOT `TenantClock.LocalTimeOfDay`, so a **manager-approved** regularization on a non-UTC tenant re-flags late/early by the UTC offset — inconsistent with the now-tz-aware clock-in/out path (ISSUE-065). Same sibling class as BUG-245 (dashboard) / BUG-246 (payroll): the Phase 2b fix covered `AttendanceService` + `AttendanceSummaryService`; this approval path was missed.
+- **Suggested direction (NOT applied):** thread the tenant `TimeZoneInfo` into the approval recompute and use `TenantClock.LocalTimeOfDay`, matching clock-out. Belongs in a "finish tenant-tz across attendance" follow-up (with BUG-245/246). Report only.
 ---
 
 ### ISSUE-247 — DataProtection key ring is ephemeral/per-instance: MFA secrets encrypted by one instance (or before a redeploy) can't be decrypted after key rotation

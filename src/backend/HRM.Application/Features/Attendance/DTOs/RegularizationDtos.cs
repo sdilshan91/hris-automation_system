@@ -1,15 +1,14 @@
 using System.Globalization;
+using HRM.Application.Common.Helpers;
 
 namespace HRM.Application.Features.Attendance.DTOs;
 
 /// <summary>
 /// Request body for POST /api/v1/attendance/regularizations (US-ATT-003 §7).
 /// The corrected times are sent as wall-clock <c>HH:mm</c> strings (24-hour) paired with the separate
-/// <see cref="Date"/>; the backend combines date + time into the stored UTC instant.
-/// TODO(tenant-timezone): the wall-clock is treated as UTC for now — no tenant-timezone infrastructure
-/// exists yet (consistent with how US-ATT-001/002 deferred tenant-tz day-boundary semantics). When that
-/// lands, combine in the tenant's zone and convert to UTC here. The times are conditional on
-/// <see cref="RegularizationType"/>.
+/// <see cref="Date"/>; the backend interprets them in the tenant's time zone and converts to the stored
+/// UTC instant (ISSUE-065 / Phase 2b) via <see cref="CombineToUtc(string?, TimeZoneInfo)"/>. The times
+/// are conditional on <see cref="RegularizationType"/>.
 /// </summary>
 public sealed record SubmitRegularizationRequest
 {
@@ -43,15 +42,24 @@ public sealed record SubmitRegularizationRequest
     }
 
     /// <summary>
-    /// Combines <see cref="Date"/> with a parsed "HH:mm" wall-clock time into a UTC instant.
-    /// Returns null when <paramref name="value"/> is null/blank/invalid (the caller decides whether a
-    /// missing/invalid time is an error per regularization type). TODO(tenant-timezone): treats the
-    /// wall-clock as UTC; convert from the tenant zone once that infrastructure exists.
+    /// Combines <see cref="Date"/> with a parsed "HH:mm" wall-clock time — interpreted in the tenant's
+    /// <paramref name="tenantZone"/> — into the UTC instant to store (ISSUE-065). Returns null when
+    /// <paramref name="value"/> is null/blank/invalid (the caller decides whether a missing/invalid time
+    /// is an error per regularization type). For a UTC zone this is identical to the prior UTC-combine.
+    /// </summary>
+    public DateTime? CombineToUtc(string? value, TimeZoneInfo tenantZone)
+        => TryParseTime(value, out var time)
+            ? TenantClock.LocalToUtc(Date, time, tenantZone)
+            : null;
+
+    /// <summary>
+    /// Time-zone-agnostic combine (wall-clock treated as UTC). Used only by the shape validator for
+    /// tenant-tz-invariant relative checks — clock-in vs clock-out ORDERING (a shared offset cancels)
+    /// and a coarse not-in-the-future guard. The authoritative tenant-tz-aware future-DATE rejection and
+    /// the persisted instant both live in the service via <see cref="CombineToUtc(string?, TimeZoneInfo)"/>.
     /// </summary>
     public DateTime? CombineToUtc(string? value)
-        => TryParseTime(value, out var time)
-            ? Date.ToDateTime(time, DateTimeKind.Utc)
-            : null;
+        => CombineToUtc(value, TimeZoneInfo.Utc);
 }
 
 /// <summary>
