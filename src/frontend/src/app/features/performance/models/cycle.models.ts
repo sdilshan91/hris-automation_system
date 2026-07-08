@@ -167,8 +167,8 @@ export interface ICycle {
   endDate: string;
   phases: ICyclePhase[];
   scope: IParticipantScope;
-  /** Tenant rating-scale id chosen for this cycle (locked once Active, BR-5). */
-  ratingScaleId: string;
+  /** Rating-scale maximum (integer 2-10, default 5); locked once Active (BR-5). */
+  ratingScaleMax: number;
   /** Self-rating weight 0-100; managerWeight is 100 - selfWeight (FR-6). */
   selfWeight: number;
   /** 360-degree peer feedback toggle (FR-6). */
@@ -188,17 +188,11 @@ export interface ISaveCycleRequest {
   endDate: string;
   phases: ICyclePhase[];
   scope: IParticipantScope;
-  ratingScaleId: string;
+  /** Rating-scale maximum (integer 2-10, default 5). Maps to backend RatingScaleMax. */
+  ratingScaleMax: number;
   selfWeight: number;
   enable360: boolean;
   enableCalibration: boolean;
-}
-
-/** A tenant rating scale option for the cycle form (FR-6). */
-export interface IRatingScaleOption {
-  id: string;
-  name: string;
-  max: number;
 }
 
 /** Per-phase completion stats for the dashboard (AC-3). */
@@ -251,6 +245,10 @@ export interface ICloneCycleRequest {
 export const CYCLE_NAME_MAX = 150;
 export const CANCEL_REASON_MIN = 5;
 export const CANCEL_REASON_MAX = 500;
+/** Rating-scale maximum bounds (mirror backend CycleValidators InclusiveBetween(2,10)). */
+export const RATING_SCALE_MIN = 2;
+export const RATING_SCALE_MAX = 10;
+export const RATING_SCALE_DEFAULT = 5;
 
 // ─── Pure helpers (testable without a component) ──────────────
 

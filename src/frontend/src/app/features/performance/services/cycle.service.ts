@@ -9,7 +9,6 @@ import {
   ICycleDashboard,
   ICycleSummary,
   ICycleTransitionRequest,
-  IRatingScaleOption,
   ISaveCycleRequest,
 } from '../models/cycle.models';
 
@@ -106,21 +105,6 @@ export class CycleService {
       { sourceCycleId: cycleId, ...request },
       { withCredentials: true },
     );
-  }
-
-  /**
-   * Tenant rating scales for the cycle form (FR-6). Lives under the cycles base so
-   * the whole cycle contract reconciles in one place. Tolerates a `{ data }` page.
-   */
-  ratingScales(): Observable<IRatingScaleOption[]> {
-    // BUG-243: no backend route — CyclesController exposes no rating-scales
-    // endpoint. Needs a BE endpoint (see COMPLETION-PLAN Theme F/K).
-    return this.http
-      .get<IRatingScaleOption[] | { data: IRatingScaleOption[] }>(
-        `${this.baseUrl}/rating-scales`,
-        { withCredentials: true },
-      )
-      .pipe(map((res) => this.toArray(res)));
   }
 
   /** Accept either a bare array or a `{ data }` page; default to []. */

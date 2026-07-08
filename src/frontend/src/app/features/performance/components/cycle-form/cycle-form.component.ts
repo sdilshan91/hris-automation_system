@@ -25,12 +25,14 @@ import {
   CyclePhaseKind,
   ICycle,
   IPhaseDates,
-  IRatingScaleOption,
   ISaveCycleRequest,
   PARTICIPANT_SCOPE_OPTIONS,
   PHASE_LABEL,
   PHASE_ORDER,
   ParticipantScopeType,
+  RATING_SCALE_DEFAULT,
+  RATING_SCALE_MAX,
+  RATING_SCALE_MIN,
   validatePhaseSequencing,
 } from '../../models/cycle.models';
 
@@ -121,20 +123,27 @@ import {
               </label>
               <label class="block">
                 <span class="mb-1 block text-sm font-medium text-neutral-700"
-                  >Rating scale</span
+                  >Rating scale maximum</span
                 >
-                <select
-                  formControlName="ratingScaleId"
+                <input
+                  type="number"
+                  formControlName="ratingScaleMax"
+                  [min]="ratingScaleMin"
+                  [max]="ratingScaleMax"
+                  step="1"
                   class="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none transition focus:border-neutral-400 focus:ring-1"
-                  data-testid="rating-scale-select"
-                >
-                  <option value="">Select a scale…</option>
-                  @for (s of ratingScales(); track s.id) {
-                    <option [value]="s.id">
-                      {{ s.name }} (1–{{ s.max }})
-                    </option>
-                  }
-                </select>
+                  data-testid="rating-scale-max"
+                />
+                <span class="mt-1 block text-xs text-neutral-400">
+                  Ratings run 1–{{ ratingScaleMax }}. Locked once the cycle is
+                  active.
+                </span>
+                @if (showError('ratingScaleMax')) {
+                  <span class="mt-1 block text-xs text-rose-600"
+                    >Enter a value between {{ ratingScaleMin }} and
+                    {{ ratingScaleMax }}.</span
+                  >
+                }
               </label>
               <label class="block">
                 <span class="mb-1 block text-sm font-medium text-neutral-700"
@@ -343,11 +352,12 @@ export class CycleFormComponent implements OnInit {
   readonly nameMax = CYCLE_NAME_MAX;
   readonly typeOptions = CYCLE_TYPE_OPTIONS;
   readonly scopeOptions = PARTICIPANT_SCOPE_OPTIONS;
+  readonly ratingScaleMin = RATING_SCALE_MIN;
+  readonly ratingScaleMax = RATING_SCALE_MAX;
 
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly cycleId = signal<string | null>(null);
-  readonly ratingScales = signal<IRatingScaleOption[]>([]);
 
   readonly isEdit = computed(() => this.cycleId() !== null);
 
@@ -356,7 +366,14 @@ export class CycleFormComponent implements OnInit {
     type: ['Annual', Validators.required],
     startDate: ['', Validators.required],
     endDate: ['', Validators.required],
-    ratingScaleId: ['', Validators.required],
+    ratingScaleMax: [
+      RATING_SCALE_DEFAULT,
+      [
+        Validators.required,
+        Validators.min(RATING_SCALE_MIN),
+        Validators.max(RATING_SCALE_MAX),
+      ],
+    ],
     selfWeight: [40, Validators.required],
     enable360: [false],
     enableCalibration: [false],
@@ -417,10 +434,6 @@ export class CycleFormComponent implements OnInit {
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('cycleId');
-    this.service.ratingScales().subscribe({
-      next: (scales) => this.ratingScales.set(scales),
-      error: () => this.ratingScales.set([]),
-    });
 
     if (id) {
       this.cycleId.set(id);
@@ -522,7 +535,7 @@ export class CycleFormComponent implements OnInit {
       type: cycle.type,
       startDate: cycle.startDate,
       endDate: cycle.endDate,
-      ratingScaleId: cycle.ratingScaleId,
+      ratingScaleMax: cycle.ratingScaleMax,
       selfWeight: cycle.selfWeight,
       enable360: cycle.enable360,
       enableCalibration: cycle.enableCalibration,
@@ -539,6 +552,10 @@ export class CycleFormComponent implements OnInit {
           endDate: match.endDate,
         });
       }
+    }
+    // BR-5: the rating scale locks once the cycle leaves Draft.
+    if (cycle.status !== 'Draft') {
+      this.form.get('ratingScaleMax')?.disable();
     }
   }
 
@@ -557,7 +574,7 @@ export class CycleFormComponent implements OnInit {
       type: v.type,
       startDate: v.startDate,
       endDate: v.endDate,
-      ratingScaleId: v.ratingScaleId,
+      ratingScaleMax: Number(v.ratingScaleMax),
       selfWeight: Number(v.selfWeight),
       enable360: !!v.enable360,
       enableCalibration: !!v.enableCalibration,

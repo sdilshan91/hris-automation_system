@@ -52,6 +52,26 @@ public sealed class PipController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/tenant/performance/pips/draft?employeeId={id?}&amp;reviewId={id?} — the create-form pre-fill
+    /// payload (AC-1). HR-only (same BR-1 gate as create). Both query params are optional: omit employeeId for a
+    /// blank HR-initiated form (escalation options only); pass reviewId to seed the reason from a flagged
+    /// manager review (US-PRF-003). 404 if a supplied employeeId is not in this tenant.
+    /// </summary>
+    [HttpGet("draft")]
+    [RequirePermission("Performance.Review.All")]
+    [ProducesResponseType(typeof(ApiResponse<PipDraftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDraft(
+        [FromQuery] Guid? employeeId, [FromQuery] Guid? reviewId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPipDraftQuery(employeeId, reviewId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<PipDraftDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/tenant/performance/pips/{pipId} — one full PIP with its immutable history (AC-1/FR-5).
     /// VISIBILITY-restricted: only the employee, their manager, HR or the assigned mentor (FR-8) — else 403.
     /// </summary>

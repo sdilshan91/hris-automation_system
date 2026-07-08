@@ -49,7 +49,7 @@ describe('CycleService', () => {
       gradeIds: [],
       employeeIds: [],
     },
-    ratingScaleId: 'scale-5',
+    ratingScaleMax: 5,
     selfWeight: 40,
     enable360: false,
     enableCalibration: false,
@@ -136,7 +136,7 @@ describe('CycleService', () => {
         gradeIds: [],
         employeeIds: [],
       },
-      ratingScaleId: 'scale-5',
+      ratingScaleMax: 5,
       selfWeight: 40,
       enable360: false,
       enableCalibration: false,
@@ -197,17 +197,5 @@ describe('CycleService', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ sourceCycleId: 'cyc-1', ...body });
     req.flush({ ...cycle, id: 'cyc-2' });
-  });
-
-  it('ratingScales() GETs the tenant scales and unwraps a { data } page', () => {
-    const scales = [{ id: 'scale-5', name: '1-5 scale', max: 5 }];
-    let result: unknown;
-    service.ratingScales().subscribe((r) => (result = r));
-
-    const req = httpMock.expectOne(`${baseUrl}/rating-scales`);
-    expect(req.request.method).toBe('GET');
-    req.flush({ data: scales });
-
-    expect(result).toEqual(scales);
   });
 });

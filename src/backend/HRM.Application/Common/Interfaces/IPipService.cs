@@ -25,6 +25,15 @@ public interface IPipService
     /// </summary>
     Task<Result<PipDto>> CreateAsync(CreatePipInput input, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the create-form pre-fill payload (AC-1). HR-only (same BR-1 gate as create). Resolves the target
+    /// employee (name/job-title/manager) when an employeeId is supplied, a suggested reason from the flagged
+    /// origin manager review (US-PRF-003) when a reviewId is supplied and it is that employee's review, the
+    /// configured escalation actions (BR-6), and a BR-2 pre-check (already has a non-terminal PIP). A null
+    /// employeeId returns a blank draft (escalation options only) for an HR-initiated form.
+    /// </summary>
+    Task<Result<PipDraftDto>> GetDraftAsync(GetPipDraftInput input, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the PIP list for the dedicated PIP section (AC-1/BR-5), scoped to the caller's visibility (FR-8).</summary>
     Task<Result<IReadOnlyList<PipSummaryDto>>> ListAsync(CancellationToken cancellationToken = default);
 
