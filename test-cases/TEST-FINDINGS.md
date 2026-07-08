@@ -5698,3 +5698,30 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** `ImageMetadataStripper` (#187) strips Exif/Iptc/Xmp from JPEG/PNG but **passes WebP through un-stripped** — ImageSharp is pinned to 2.1.x (Apache-2.0) whose WebP encode support is limited. A WebP profile photo therefore retains GPS/camera metadata. Contained: the magic-byte validator (BUG-058) still gates WebP, and most uploads are JPEG/PNG.
 - **Severity rationale:** LOW — narrow-format privacy nit; resolvable by adding a WebP path (needs a WebP-encode-capable lib or an ImageSharp v3/v4 licensing decision) or disallowing WebP photo uploads.
 - **Suggested direction (NOT applied):** either drop WebP from the photo allow-list or add a WebP metadata-strip path. Report only.
+
+---
+
+### ISSUE-247 — DataProtection key ring is ephemeral/per-instance: MFA secrets encrypted by one instance (or before a redeploy) can't be decrypted after key rotation
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 1b-B / PR-pending)
+- **Layer:** BE / INFRA
+- **Module / US / TC:** Auth · US-AUTH-005 · (surfaced 2026-07-08 building the MFA-secret encryption)
+- **Title:** The MFA-secret-at-rest encryption (Phase 1b-B) uses ASP.NET Core Data Protection with the **default key ring**, which is per-instance and non-persistent. On a **multi-instance deploy** (keys not shared) or **after a redeploy** (key ring regenerated), secrets protected with the old key can no longer be `Unprotect`ed → that user's TOTP code won't validate until they re-enroll. Mitigated short-term by the legacy-plaintext fallback (an undecryptable value is treated as legacy and doesn't crash), but it silently breaks MFA verification for affected users in production.
+- **Root cause:** DataProtection defaults to a local, ephemeral key ring; production needs a **shared, persisted, at-rest-encrypted** key ring.
+- **Severity rationale:** HIGH — a security feature (MFA) silently fails for real users under normal prod topology (>1 instance) or any redeploy. No data exposure, but an availability/trust break on a security control.
+- **Suggested direction (NOT applied):** persist the DataProtection key ring to a shared store (`PersistKeysToDbContext`/Redis/blob) + `ProtectKeysWith*` (a certificate/KMS) — **Phase 4 infra**. Belongs with the Redis/RLS/OTel provisioning. Report only.
+
+### ISSUE-248 — No authenticated self-service "change password" endpoint; password-history (FR-5) is enforced only on the token-based reset path
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 1b-B)
+- **Layer:** BE
+- **Module / US / TC:** Auth · US-AUTH-004 · (surfaced 2026-07-08)
+- **Title:** The only password-set path is token-based `AuthService.ResetPasswordAsync` (also used by the welcome/set-password link); there is **no** logged-in self-service change-password flow. Password-history enforcement (ISSUE-053, Phase 1b-B) is wired to that single path, which covers reset + welcome. If a self-service change-password feature is added later, it must route through the same history check or it silently bypasses FR-5.
+- **Severity rationale:** LOW — nothing is broken today; it's a scope/decision observation to prevent a future bypass.
+- **Suggested direction (NOT applied):** confirm no self-service change-password flow is expected this release; if one is added, extract the history check+record+prune into a shared helper and call it there. Report only.
+
+### ISSUE-249 — AutoMapper 13.0.1 carries a known high-severity advisory (NU1903 / GHSA-rvv3-g6hj-g44x)
+- **Type / Severity / Status:** ISSUE · MED · OPEN (auto-healed from an OUT-OF-LANE flag, 2026-07-08)
+- **Layer:** BE / dependency
+- **Module / US / TC:** Platform · (build advisory across HRM.Application/Infrastructure/Api/Tests)
+- **Title:** Every restore/build emits `NU1903: Package 'AutoMapper' 13.0.1 has a known high severity vulnerability` (GHSA-rvv3-g6hj-g44x). Pre-existing, noisy on every build, and a real advisory.
+- **Severity rationale:** MED — a flagged high-severity advisory on a core mapping dependency; exploitability in this app is unassessed, but it should be evaluated and bumped or explicitly accepted/suppressed with a rationale.
+- **Suggested direction (NOT applied):** evaluate the advisory's applicability, bump AutoMapper to a patched line (verify API compat) or record an accepted-risk suppression. Belongs in a dependency-hygiene pass. Report only.

@@ -7,6 +7,7 @@ using HRM.Application.Features.Auth.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
@@ -34,6 +35,10 @@ public sealed class AuthService : IAuthService
     // Optional (nullable, default null) so isolated unit construction that omits it still compiles; the DI
     // container injects the registered scoped ICurrentUser in production.
     private readonly ICurrentUser? _currentUser;
+    // US-AUTH-005 NFR-2: encrypts/decrypts the TOTP MFA secret at rest. Optional so isolated unit
+    // construction that omits it still compiles; falls back to a no-op protector (plaintext passthrough),
+    // preserving pre-encryption behavior. DI injects the registered singleton in production.
+    private readonly IFieldProtector _mfaSecretProtector;
 
     public AuthService(
         AppDbContext dbContext,
@@ -44,7 +49,8 @@ public sealed class AuthService : IAuthService
         IDistributedCache cache,
         ILogger<AuthService> logger,
         IBackgroundJobClient backgroundJobClient,
-        ICurrentUser? currentUser = null)
+        ICurrentUser? currentUser = null,
+        IFieldProtector? mfaSecretProtector = null)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
@@ -55,6 +61,7 @@ public sealed class AuthService : IAuthService
         _logger = logger;
         _backgroundJobClient = backgroundJobClient;
         _currentUser = currentUser;
+        _mfaSecretProtector = mfaSecretProtector ?? PlaintextFieldProtector.Instance;
     }
 
     public async Task<Result<LoginResponse>> LoginAsync(
@@ -272,7 +279,7 @@ public sealed class AuthService : IAuthService
             }
 
             // Inline MFA validation for single-shot login (client passes mfaCode with credentials)
-            if (!string.IsNullOrEmpty(user.MfaSecret) && _totpService.ValidateCode(user.MfaSecret, mfaCode))
+            if (!string.IsNullOrEmpty(user.MfaSecret) && _totpService.ValidateCode(_mfaSecretProtector.Unprotect(user.MfaSecret), mfaCode))
             {
                 // MFA valid, fall through to token issuance
                 user.MfaFailedAttemptCount = 0;
@@ -636,11 +643,34 @@ public sealed class AuthService : IAuthService
                 return Result.Failure(string.Join(" ", violations), 400);
         }
 
+        // US-AUTH-004 FR-5 (ISSUE-053): password-history enforcement — reject reuse of the last N passwords.
+        // Runs after policy validation and BEFORE the token is consumed, so a rejection lets the user retry
+        // with the same link. historyCount <= 0 (disabled) skips the check entirely.
+        var historyCount = policyTenant?.PasswordHistoryCount ?? 0;
+        if (historyCount > 0)
+        {
+            var recentHashes = await _dbContext.PasswordHistories
+                .IgnoreQueryFilters()
+                .Where(ph => ph.UserId == user.Id)
+                .OrderByDescending(ph => ph.CreatedAt)
+                .ThenByDescending(ph => ph.Id)
+                .Take(historyCount)
+                .Select(ph => ph.PasswordHash)
+                .ToListAsync(cancellationToken);
+
+            // Seed the CURRENT password into the comparison so it counts even before it is recorded in history.
+            var priorHashes = new List<string?>(recentHashes) { user.PasswordHash };
+
+            if (PasswordHistoryValidator.IsReused(newPassword, priorHashes, (pw, hash) => BCrypt.Net.BCrypt.Verify(pw, hash)))
+                return Result.Failure("You cannot reuse a recent password.", 400, "password_reused");
+        }
+
         // Single-use: consume the token so it cannot be replayed.
         user.PasswordResetTokenHash = null;
         user.PasswordResetTokenExpiresAt = null;
 
         // Hash and set new password (BR-2: password reset clears lockout)
+        var previousHash = user.PasswordHash;
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
         user.PasswordChangedAt = DateTime.UtcNow;
         user.FailedLoginCount = 0;
@@ -660,7 +690,55 @@ public sealed class AuthService : IAuthService
             rt.RevokedAt = DateTime.UtcNow;
         }
 
+        // US-AUTH-004 FR-5 (ISSUE-053): record the new password in history (seeding the prior password on the
+        // first change so it counts), then prune to the newest N below. Skipped when history is disabled.
+        if (historyCount > 0)
+        {
+            var recordedAt = DateTime.UtcNow;
+
+            var hasHistory = await _dbContext.PasswordHistories
+                .IgnoreQueryFilters()
+                .AnyAsync(ph => ph.UserId == user.Id, cancellationToken);
+
+            if (!hasHistory && !string.IsNullOrEmpty(previousHash))
+            {
+                _dbContext.PasswordHistories.Add(new PasswordHistory
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    UserId = user.Id,
+                    PasswordHash = previousHash,
+                    CreatedAt = recordedAt.AddMilliseconds(-1), // orders strictly before the new entry
+                });
+            }
+
+            _dbContext.PasswordHistories.Add(new PasswordHistory
+            {
+                Id = BaseEntity.NewUuidV7(),
+                UserId = user.Id,
+                PasswordHash = user.PasswordHash,
+                CreatedAt = recordedAt,
+            });
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Prune password history beyond the configured count (keep the newest N entries).
+        if (historyCount > 0)
+        {
+            var stale = await _dbContext.PasswordHistories
+                .IgnoreQueryFilters()
+                .Where(ph => ph.UserId == user.Id)
+                .OrderByDescending(ph => ph.CreatedAt)
+                .ThenByDescending(ph => ph.Id)
+                .Skip(historyCount)
+                .ToListAsync(cancellationToken);
+
+            if (stale.Count > 0)
+            {
+                _dbContext.PasswordHistories.RemoveRange(stale);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
 
         // ISSUE-051 (US-AUTH-004 FR-8): audit the successful reset completion. Reached only after the reset
         // token is validated, so the user id is a real, authorized subject; no ip/userAgent is threaded into
@@ -987,8 +1065,9 @@ public sealed class AuthService : IAuthService
         // Generate TOTP secret
         var secret = _totpService.GenerateSecret();
 
-        // TODO: encrypt with pgcrypto KEK once secrets vault is wired (NFR-2)
-        user.MfaSecret = secret;
+        // US-AUTH-005 NFR-2: encrypt the TOTP secret at rest (ASP.NET Core Data Protection) — a raw DB read
+        // must not disclose it. Read sites decrypt via _mfaSecretProtector.Unprotect (legacy-plaintext safe).
+        user.MfaSecret = _mfaSecretProtector.Protect(secret);
         user.MfaEnabled = false; // Only flips to true after verify
 
         // Build otpauth URI
@@ -1059,7 +1138,7 @@ public sealed class AuthService : IAuthService
         }
 
         // Validate code
-        if (!_totpService.ValidateCode(user.MfaSecret, code))
+        if (!_totpService.ValidateCode(_mfaSecretProtector.Unprotect(user.MfaSecret), code))
         {
             // BUG-045: same lost-update class — increment the failed-attempt counter atomically under a
             // per-user row lock (as one retriable unit) so parallel enrollment-verify failures cannot lose
@@ -1131,7 +1210,7 @@ public sealed class AuthService : IAuthService
         var codeIsValid = false;
 
         // Try TOTP validation first
-        if (!string.IsNullOrEmpty(user.MfaSecret) && _totpService.ValidateCode(user.MfaSecret, code))
+        if (!string.IsNullOrEmpty(user.MfaSecret) && _totpService.ValidateCode(_mfaSecretProtector.Unprotect(user.MfaSecret), code))
         {
             codeIsValid = true;
         }
