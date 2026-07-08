@@ -198,7 +198,8 @@ public sealed class LeaveReportServiceTests
     }
 
     private void AddRequest(Guid employeeId, Guid leaveTypeId, LeaveRequestStatus status,
-        DateOnly start, DateOnly? end = null, decimal totalDays = 1m, bool isLop = false)
+        DateOnly start, DateOnly? end = null, decimal totalDays = 1m, bool isLop = false,
+        bool isHalfDay = false)
     {
         using var db = CreateDbContext();
         db.LeaveRequests.Add(new LeaveRequest
@@ -206,6 +207,7 @@ public sealed class LeaveReportServiceTests
             Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeId = employeeId,
             LeaveTypeId = leaveTypeId, StartDate = start, EndDate = end ?? start,
             TotalDays = totalDays, Status = status, RequestedAt = DateTime.UtcNow, IsLop = isLop,
+            IsHalfDay = isHalfDay,
         });
         db.SaveChanges();
     }
@@ -797,14 +799,182 @@ public sealed class LeaveReportServiceTests
         result.Error.Should().Contain("Tenant context is not resolved");
     }
 
-    [Fact]
-    public async Task DepartmentCalendarCoverage_IsDocumentedStub_ReturnsNote()
+    // ══════════════════════════════════════════════════════════════
+    //  FR-1: Department Leave Calendar Coverage (US-LV-012)
+    //
+    //  BuildDepartmentCalendarCoverageAsync replaced the former empty/"documented
+    //  stub" (which returned zero rows + a Note). These tests pin the real math:
+    //  one row per (department, day) where >=1 scoped employee is on APPROVED leave;
+    //  half-day contributes 0.5; Headcount = non-terminated scoped employees in the
+    //  department; Coverage % = (headcount - onLeave)/headcount*100 (2dp); days with
+    //  nobody off produce NO row; other tenants' data never leaks in.
+    //
+    //  Pre-fix these all fail because the stub returned an empty row set — there is
+    //  no (dept, day) row to assert On Leave / Headcount / Coverage % against.
+    // ══════════════════════════════════════════════════════════════
+
+    // Coverage-report column headers.
+    private const string ColOnLeave = "On Leave";
+    private const string ColHeadcount = "Headcount";
+    private const string ColCoverage = "Coverage %";
+
+    // Seeds an already-terminated employee (excluded from the coverage headcount denominator).
+    private Guid AddTerminatedEmployee(string first, string empNo, Guid deptId)
     {
+        var id = Guid.NewGuid();
+        using var db = CreateDbContext();
+        var emp = Emp(id, first, empNo, deptId);
+        emp.Status = EmployeeStatus.Terminated;
+        emp.IsActive = false;
+        db.Employees.Add(emp);
+        db.SaveChanges();
+        return id;
+    }
+
+    [Fact]
+    public async Task DeptCoverage_FullDayCountsOne_AndSkipsDaysWithNobodyOff()
+    {
+        // Engineering headcount = Alice + Bob = 2. Alice is on a single full day (Mar 10) of approved
+        // leave inside a Mar 09..Mar 12 window. Exactly one (Engineering, 2026-03-10) row must appear;
+        // the other in-range days (09/11/12) have nobody off -> no rows.
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 10), new DateOnly(Year, 3, 10), totalDays: 1m);
+
         var result = await CreateService().GenerateReportAsync(
-            LeaveReportType.DepartmentCalendarCoverage, Params());
+            LeaveReportType.DepartmentCalendarCoverage,
+            Params(from: new DateOnly(Year, 3, 9), to: new DateOnly(Year, 3, 12)));
 
         result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        report.Columns.Should().ContainInOrder("Department", "Date", ColOnLeave, ColHeadcount, ColCoverage);
+
+        // Only Engineering employees are off, and only on the one day -> exactly one row.
+        report.Rows.Should().ContainSingle();
+        var row = report.Rows.Single();
+        Cell(row, report, "Department").Should().Be("Engineering");
+        Cell(row, report, "Date").Should().Be("2026-03-10");
+        Cell(row, report, ColOnLeave).Should().Be("1");         // full day = 1
+        Cell(row, report, ColHeadcount).Should().Be("2");       // Alice + Bob
+        Cell(row, report, ColCoverage).Should().Be("50");       // (2 - 1) / 2 * 100
+    }
+
+    [Fact]
+    public async Task DeptCoverage_HalfDayCountsHalf_ISSUE_LV012()
+    {
+        // A half-day approved leave contributes 0.5 to the day's On Leave, so Coverage % = (2-0.5)/2*100 = 75.
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 4, 5), new DateOnly(Year, 4, 5), totalDays: 0.5m, isHalfDay: true);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.DepartmentCalendarCoverage,
+            Params(from: new DateOnly(Year, 4, 1), to: new DateOnly(Year, 4, 30)));
+
+        var report = result.Value!;
+        var row = report.Rows.Single(r => Cell(r, report, "Date") == "2026-04-05");
+        Cell(row, report, "Department").Should().Be("Engineering");
+        Cell(row, report, ColOnLeave).Should().Be("0.5");       // half day = 0.5
+        Cell(row, report, ColHeadcount).Should().Be("2");
+        Cell(row, report, ColCoverage).Should().Be("75");       // (2 - 0.5) / 2 * 100
+    }
+
+    [Fact]
+    public async Task DeptCoverage_TwoPeopleOffSameDay_SumsOnLeave()
+    {
+        // Alice (full) + Bob (half) off Mar 10 -> On Leave 1.5, Coverage (2-1.5)/2*100 = 25.
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 10), new DateOnly(Year, 3, 10), totalDays: 1m);
+        AddRequest(_empBob, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 10), new DateOnly(Year, 3, 10), totalDays: 0.5m, isHalfDay: true);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.DepartmentCalendarCoverage,
+            Params(from: new DateOnly(Year, 3, 10), to: new DateOnly(Year, 3, 10)));
+
+        var report = result.Value!;
+        var row = report.Rows.Single(r => Cell(r, report, "Department") == "Engineering");
+        Cell(row, report, ColOnLeave).Should().Be("1.5");
+        Cell(row, report, ColHeadcount).Should().Be("2");
+        Cell(row, report, ColCoverage).Should().Be("25");
+    }
+
+    [Fact]
+    public async Task DeptCoverage_TerminatedExcludedFromHeadcount()
+    {
+        // Engineering gains a terminated employee (Dan). The headcount denominator must stay 2
+        // (Alice + Bob), NOT 3 -> Coverage for a single full-day absence is (2-1)/2*100 = 50, not 66.67.
+        AddTerminatedEmployee("Dan", "EMP-0004", _engineeringDeptId);
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 10), new DateOnly(Year, 3, 10), totalDays: 1m);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.DepartmentCalendarCoverage,
+            Params(from: new DateOnly(Year, 3, 10), to: new DateOnly(Year, 3, 10)));
+
+        var report = result.Value!;
+        var row = report.Rows.Single(r => Cell(r, report, "Department") == "Engineering");
+        Cell(row, report, ColHeadcount).Should().Be("2");       // Dan (Terminated) excluded
+        Cell(row, report, ColCoverage).Should().Be("50");       // (2 - 1) / 2 * 100
+    }
+
+    [Fact]
+    public async Task DeptCoverage_OnlyApprovedLeaveCounts()
+    {
+        // A Pending request on Mar 10 must NOT produce a coverage row (only Approved leave counts).
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Pending,
+            new DateOnly(Year, 3, 10), new DateOnly(Year, 3, 10), totalDays: 1m);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.DepartmentCalendarCoverage,
+            Params(from: new DateOnly(Year, 3, 1), to: new DateOnly(Year, 3, 31)));
+
         result.Value!.Rows.Should().BeEmpty();
-        result.Value.Note.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task DeptCoverage_CrossTenant_OtherTenantLeaveExcluded()
+    {
+        // Tenant A: Alice (Engineering) is off Mar 10. Another tenant has its own department, employee,
+        // and approved leave on the SAME day. The report (run under tenant A) must show only Engineering
+        // and must NOT leak the other tenant's department/employee, nor inflate any headcount.
+        var otherTenantId = Guid.NewGuid();
+        using (var db = CreateDbContext())
+        {
+            var otherDeptId = Guid.NewGuid();
+            var otherEmpId = Guid.NewGuid();
+            db.Departments.Add(new Department
+            {
+                Id = otherDeptId, TenantId = otherTenantId, Name = "Foreign-Dept", Code = "FGN",
+            });
+            db.Employees.Add(new Employee
+            {
+                Id = otherEmpId, TenantId = otherTenantId, EmployeeNo = "FGN-0001",
+                FirstName = "Zoe", LastName = "X", Email = "zoe@foreign.com", Gender = Gender.Female,
+                DateOfJoining = new DateTime(2020, 1, 1), DepartmentId = otherDeptId,
+                JobTitleId = Guid.NewGuid(), EmploymentType = EmploymentType.FullTime,
+                Status = EmployeeStatus.Active, IsActive = true,
+            });
+            db.LeaveRequests.Add(new LeaveRequest
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = otherTenantId, EmployeeId = otherEmpId,
+                LeaveTypeId = _annualLeaveTypeId, StartDate = new DateOnly(Year, 3, 10),
+                EndDate = new DateOnly(Year, 3, 10), TotalDays = 1m,
+                Status = LeaveRequestStatus.Approved, RequestedAt = DateTime.UtcNow,
+            });
+            db.SaveChanges();
+        }
+
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 10), new DateOnly(Year, 3, 10), totalDays: 1m);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.DepartmentCalendarCoverage,
+            Params(from: new DateOnly(Year, 3, 10), to: new DateOnly(Year, 3, 10)));
+
+        var report = result.Value!;
+        report.Rows.Should().ContainSingle();
+        var row = report.Rows.Single();
+        Cell(row, report, "Department").Should().Be("Engineering");
+        Cell(row, report, ColHeadcount).Should().Be("2");   // only tenant A's Engineering headcount
+        report.Rows.Should().NotContain(r => Cell(r, report, "Department") == "Foreign-Dept");
     }
 }

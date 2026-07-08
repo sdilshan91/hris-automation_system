@@ -3,8 +3,8 @@ namespace HRM.Application.Features.LeaveReports.DTOs;
 /// <summary>
 /// The pre-built leave report types (US-LV-012 FR-1). Sent as the {reportType} path segment
 /// (case-insensitive). The AC-named reports (BalanceSummary, Utilization, Absenteeism) plus the
-/// FR-1 thin wrappers (CarryForwardSummary, LopSummary) are implemented; LeaveTrend is exposed via
-/// the analytics endpoint (it is chart-shaped, AC-4). DepartmentCalendarCoverage is a documented stub.
+/// FR-1 thin wrappers (CarryForwardSummary, LopSummary) and DepartmentCalendarCoverage are implemented;
+/// LeaveTrend is exposed via the analytics endpoint (it is chart-shaped, AC-4).
 /// </summary>
 public enum LeaveReportType
 {
@@ -13,7 +13,7 @@ public enum LeaveReportType
     Absenteeism,
     CarryForwardSummary,
     LopSummary,
-    /// <summary>FR-1 "Department Leave Calendar Coverage" — STUBBED (returns empty + a TODO note).</summary>
+    /// <summary>FR-1 "Department Leave Calendar Coverage" — per-department per-day on-leave vs headcount.</summary>
     DepartmentCalendarCoverage,
 }
 
