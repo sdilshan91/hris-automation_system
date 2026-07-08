@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -95,7 +96,8 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         // summary (GetMonthlyAsync generates an all-absent row for every non-terminated employee). Such
         // employees are OMITTED below — "no data" is not "absent". Employees with partial data keep their
         // real present/absent computation.
-        var employeesWithRecords = await EmployeesWithAttendanceRecordsAsync(monthStart, monthEnd, cancellationToken);
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+        var employeesWithRecords = await EmployeesWithAttendanceRecordsAsync(monthStart, monthEnd, tenantZone, cancellationToken);
 
         var rows = new List<AttendancePayrollRowDto>();
         foreach (var emp in employees)
@@ -334,6 +336,20 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     private sealed record OvertimeAgg(int TotalMinutes, Dictionary<string, int> ByMultiplier);
 
     /// <summary>
+    /// ISSUE-065: resolves the tenant's configured time zone into a <see cref="TimeZoneInfo"/> (UTC
+    /// fallback via <see cref="TenantClock.ResolveTimeZone"/>) so the month day-boundary used to detect
+    /// real attendance records is derived in tenant-local terms. One DB read per payroll pull.
+    /// </summary>
+    private async Task<TimeZoneInfo> ResolveTenantTimeZoneAsync(CancellationToken ct)
+    {
+        var tzId = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.TimeZone)
+            .FirstOrDefaultAsync(ct);
+        return TenantClock.ResolveTimeZone(tzId, _logger);
+    }
+
+    /// <summary>
     /// ISSUE-090: the set of employees with ANY real attendance record in the period — an attendance log,
     /// an approved leave overlapping the period, an approved regularization, or approved overtime. Used to
     /// distinguish a genuinely-empty month (no data) from a real, partially-attended one, so the payroll
@@ -341,10 +357,11 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     /// Tenant-scoped via the global query filter.
     /// </summary>
     private async Task<HashSet<Guid>> EmployeesWithAttendanceRecordsAsync(
-        DateOnly monthStart, DateOnly monthEnd, CancellationToken ct)
+        DateOnly monthStart, DateOnly monthEnd, TimeZoneInfo tenantZone, CancellationToken ct)
     {
-        var startUtc = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var endUtc = monthEnd.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        // ISSUE-065: the tenant-local month maps to this UTC window for the clock-in filter (UTC zone → no-op).
+        var startUtc = TenantClock.LocalToUtc(monthStart, TimeOnly.MinValue, tenantZone);
+        var endUtc = TenantClock.LocalToUtc(monthEnd.AddDays(1), TimeOnly.MinValue, tenantZone);
 
         var withLogs = await _dbContext.AttendanceLogs.AsNoTracking()
             .Where(a => a.ClockIn >= startUtc && a.ClockIn < endUtc)
