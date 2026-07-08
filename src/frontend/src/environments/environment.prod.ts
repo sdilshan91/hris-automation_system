@@ -5,4 +5,6 @@ export const environment = {
   appName: 'YourHRM',
   tokenRefreshBufferSeconds: 60,
   idleWarningSeconds: 300,
+  // Set a prod GlitchTip DSN here when prod error-tracking is stood up. Empty => disabled.
+  sentryDsn: '',
 };

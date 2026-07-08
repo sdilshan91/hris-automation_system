@@ -13,4 +13,6 @@ export const environment = {
   appName: 'YourHRM',
   tokenRefreshBufferSeconds: 60,
   idleWarningSeconds: 300,
+  // Error tracking → self-hosted GlitchTip (Sentry-compatible). Empty => Sentry disabled.
+  sentryDsn: 'http://ea6cf1f1b0ef4d9889fcf82cec26cbaa@localhost:8000/1',
 };

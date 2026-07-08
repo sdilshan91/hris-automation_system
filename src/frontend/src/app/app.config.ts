@@ -1,8 +1,10 @@
 import {
   ApplicationConfig,
+  ErrorHandler,
   provideZoneChangeDetection,
   APP_INITIALIZER,
 } from '@angular/core';
+import * as Sentry from '@sentry/angular';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import {
   provideHttpClient,
@@ -34,6 +36,9 @@ function initializeTenant(tenantService: TenantService): () => Promise<void> {
 
 export const appConfig: ApplicationConfig = {
   providers: [
+    // Route unhandled Angular errors to Sentry/GlitchTip (no-op when the DSN is empty).
+    { provide: ErrorHandler, useValue: Sentry.createErrorHandler() },
+
     provideZoneChangeDetection({ eventCoalescing: true }),
 
     // Router with lazy-loaded components and input binding
