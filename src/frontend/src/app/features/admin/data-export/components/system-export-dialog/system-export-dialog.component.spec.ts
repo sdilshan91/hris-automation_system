@@ -32,7 +32,7 @@ describe('SystemExportDialogComponent', () => {
   let host: HostComponent;
   let httpMock: HttpTestingController;
 
-  const systemBase = `${environment.apiBaseUrl}/system/tenants/t-7/exports`;
+  const systemBase = `${environment.apiBaseUrl}/system/tenants/t-7/data-exports`;
 
   beforeEach(() => {
     TestBed.configureTestingModule({

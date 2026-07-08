@@ -147,7 +147,7 @@ describe('MonthlySummaryComponent', () => {
     component.onFilterChange('department', 'd1');
     expect(component.departmentId()).toBe('d1');
     expect(attendanceSpy.getMonthlySummary).toHaveBeenCalledWith(
-      jasmine.objectContaining({ month: '2026-06', departmentId: 'd1' }),
+      jasmine.objectContaining({ month: component.month(), departmentId: 'd1' }),
     );
   });
 
@@ -185,7 +185,7 @@ describe('MonthlySummaryComponent', () => {
     component.openDrillDown(rows[0]);
     fixture.detectChanges();
 
-    expect(attendanceSpy.getEmployeeDailyBreakdown).toHaveBeenCalledWith('e1', '2026-06');
+    expect(attendanceSpy.getEmployeeDailyBreakdown).toHaveBeenCalledWith('e1', component.month());
     expect(component.drillDays().length).toBe(2);
     expect(component.drillName()).toBe('Ada Lovelace');
     const text = fixture.nativeElement.textContent as string;
@@ -210,7 +210,7 @@ describe('MonthlySummaryComponent', () => {
     attendanceSpy.getMonthlySummary.and.returnValue(of(result));
 
     component.generate();
-    expect(attendanceSpy.generateMonthlySummary).toHaveBeenCalledWith('2026-06');
+    expect(attendanceSpy.generateMonthlySummary).toHaveBeenCalledWith(component.month());
     expect(component.isGenerating()).toBeTrue();
 
     tick(2000); // first poll -> COMPLETED
@@ -251,7 +251,7 @@ describe('MonthlySummaryComponent', () => {
     component.exportAs('csv');
 
     expect(attendanceSpy.exportMonthlySummary).toHaveBeenCalledWith(
-      jasmine.objectContaining({ month: '2026-06' }),
+      jasmine.objectContaining({ month: component.month() }),
       'csv',
     );
     expect(createSpy).toHaveBeenCalled();

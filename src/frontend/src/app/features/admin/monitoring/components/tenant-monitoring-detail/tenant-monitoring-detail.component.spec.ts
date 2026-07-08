@@ -24,7 +24,7 @@ describe('TenantMonitoringDetailComponent', () => {
   // loads the tenant's overrides on init.
   const overridesUrl = `${environment.apiBaseUrl}/system/tenants/t-1/plan-overrides`;
   // US-ADM-010 AC-6: the export dialog's panel loads history from the system path.
-  const exportUrl = `${environment.apiBaseUrl}/system/tenants/t-1/exports`;
+  const exportUrl = `${environment.apiBaseUrl}/system/tenants/t-1/data-exports`;
 
   const detail: ITenantMonitoringDetail = {
     tenantId: 't-1',
