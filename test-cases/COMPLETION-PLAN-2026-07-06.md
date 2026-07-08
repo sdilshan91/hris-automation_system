@@ -21,7 +21,7 @@
 
 ## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08)
 - **Base:** `test/local-subdomains` @ **HEAD `e862198b`** (everything through PR #196 merged). **0 open PRs.** Working tree clean.
-- **Base health:** backend build green (exit 0); the full `dotnet test` re-verify was **in-progress at handoff** — **RE-RUN `dotnet test HRM.sln` (Docker up) + `ng test` first** to confirm the merged base (last known: backend 2998 green, FE 3647 green on the pre-merge branches; #195 combined #193's migrations + timezone).
+- **Base health:** ✅ **CONFIRMED GREEN on the merged base** — backend `dotnet test` = **3011/3011, 0 failed** (Docker up, 2026-07-08); FE `ng test` = **3647/0** (from #194). The merged tree (incl. #193's migrations + #195 timezone) is healthy. A quick re-confirm on session start is still good hygiene but the base was verified at handoff.
 - **Working method (unchanged):** one `fix/{cluster}` branch per item off fresh `test/local-subdomains` → parallel `@backend-dev` + `@qa-engineer` (non-overlapping paths) → gate on the **FULL** suite → commit → PR → user merges → next. **Auto-heal is ACTIVE** (rule #6 / `/auto-heal`): file every `OUT-OF-LANE:` flag to `TEST-FINDINGS.md`, fold into this plan, re-prioritize. Avoid stacking branches that touch the same files/migrations as an open PR.
 - **▶ NEXT, in priority order:**
   1. **Phase 1c — JWT signing-key rotation/overlap** (`JwtService`/`AuthService`; a key-ring so rotation doesn't invalidate live tokens).
