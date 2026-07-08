@@ -37,6 +37,26 @@ public sealed class RecommendationController : ControllerBase
         return Ok(ApiResponse<RecommendationDto>.Ok(result.Value!));
     }
 
+    // ── Completed-cycle picker (BR-1) ───────────────────────────────────
+
+    /// <summary>
+    /// GET /api/v1/tenant/performance/recommendations/cycles/completed — the completed-cycle picker (BR-1 /
+    /// BUG-244 #6). Returns cycles with published final ratings (Completed status) for the recommendation
+    /// workspace/team cycle selector. Admits HR (<c>Performance.Publish.All</c>) OR a manager
+    /// (<c>Performance.Review.Team</c>) — same gate as the workspace GET, since both personas pick a cycle.
+    /// </summary>
+    [HttpGet("cycles/completed")]
+    [RequirePermission("Performance.Publish.All", "Performance.Review.Team")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<CompletedCycleOptionDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetCompletedCycles(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetCompletedCyclesForRecommendationsQuery(), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<IReadOnlyList<CompletedCycleOptionDto>>.Ok(result.Value!));
+    }
+
     // ── Workspace (AC-1, NFR-4) ─────────────────────────────────────────
 
     /// <summary>

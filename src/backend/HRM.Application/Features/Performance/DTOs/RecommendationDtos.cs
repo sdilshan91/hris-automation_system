@@ -9,6 +9,24 @@ namespace HRM.Application.Features.Performance.DTOs;
 
 // ── Output DTOs ─────────────────────────────────────────────────────────
 
+/// <summary>
+/// A completed cycle eligible for recommendations — the cycle-picker option (US-PRF-010 BR-1 / BUG-244 #6).
+/// BR-1: only cycles whose final ratings are published qualify; in this domain "published final ratings" IS the
+/// <c>Completed</c> status (the same gate <c>RecommendationService.SubmitAsync</c> enforces). Matches the FE
+/// <c>ICompletedCycleOption</c> shape field-for-field.
+/// </summary>
+public sealed record CompletedCycleOptionDto
+{
+    public Guid CycleId { get; init; }
+    public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Best-available proxy for "when the cycle's final ratings were published": the cycle's end date. No
+    /// dedicated publish timestamp is persisted on <c>AppraisalCycle</c> (see BUG-244 #6 OUT-OF-LANE note).
+    /// </summary>
+    public DateTime? RatingsPublishedOn { get; init; }
+}
+
 /// <summary>One approver step in a recommendation's approval chain (US-PRF-010 FR-4).</summary>
 public sealed record RecommendationApproverDto
 {

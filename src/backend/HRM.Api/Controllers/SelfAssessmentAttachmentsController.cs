@@ -95,4 +95,28 @@ public sealed class SelfAssessmentAttachmentsController : ControllerBase
         var file = result.Value!;
         return File(file.Content, file.ContentType, file.FileName);
     }
+
+    /// <summary>
+    /// DELETE /api/v1/tenant/performance/self-assessments/{assessmentId}/attachments/{attachmentId}
+    /// Removes one evidence file (blob + row) from the caller's own self-assessment (FR-5 / BUG-244 #4). Ownership
+    /// -checked (404 if it is not the caller's own attachment, NFR-2); rejected 409 once the self-assessment
+    /// window is closed (BR-1) or the assessment is submitted/locked (BR-3). Returns 204 on success.
+    /// </summary>
+    [HttpDelete("{assessmentId:guid}/attachments/{attachmentId:guid}")]
+    [RequirePermission("Performance.Read.Self")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(
+        Guid assessmentId, Guid attachmentId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new DeleteSelfAssessmentAttachmentCommand(assessmentId, attachmentId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return NoContent();
+    }
 }
