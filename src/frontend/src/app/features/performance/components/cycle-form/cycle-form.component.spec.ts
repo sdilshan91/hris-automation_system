@@ -24,15 +24,14 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     endDate: '2026-12-31',
     phases: [],
     scope: {
-      type: 'AllEmployees',
+      scopeType: 'AllEmployees',
       departmentIds: [],
-      gradeIds: [],
       employeeIds: [],
     },
     ratingScaleMax: 5,
-    selfWeight: 40,
-    enable360: false,
-    enableCalibration: false,
+    selfWeightPercent: 40,
+    is360Enabled: false,
+    isCalibrationEnabled: false,
     participantCount: 0,
     cancelledReason: null,
   };
@@ -84,7 +83,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
       startDate: '2026-01-01',
       endDate: '2026-12-31',
       ratingScaleMax: 5,
-      selfWeight: 40,
+      selfWeightPercent: 40,
       scopeType: 'AllEmployees',
     });
     const phaseDates: Record<string, [string, string]> = {
@@ -95,7 +94,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
       Publish: ['2026-03-15', '2026-03-20'],
     };
     for (const ctrl of component.phases.controls) {
-      const [s, e] = phaseDates[ctrl.value.kind];
+      const [s, e] = phaseDates[ctrl.value.phaseType];
       ctrl.patchValue({ startDate: s, endDate: e });
     }
     fixture.detectChanges();
@@ -136,7 +135,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
       .args[0] as ISaveCycleRequest;
     expect(req.name).toBe('2026 Annual');
     expect(req.phases.length).toBe(4); // calibration excluded (toggle off)
-    expect(req.scope.type).toBe('AllEmployees');
+    expect(req.scope.scopeType).toBe('AllEmployees');
     expect(toastr.success).toHaveBeenCalled();
     expect(router.navigate).toHaveBeenCalledWith([
       '/performance/cycles',
@@ -149,7 +148,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     fillValid();
     // Make self-assessment start before goal-setting ends → overlap.
     const self = component.phases.controls.find(
-      (c) => c.value.kind === 'SelfAssessment',
+      (c) => c.value.phaseType === 'SelfAssessment',
     )!;
     self.patchValue({ startDate: '2026-01-10', endDate: '2026-02-10' });
     fixture.detectChanges();
@@ -165,7 +164,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     await setup(null);
     fillValid();
     const gs = component.phases.controls.find(
-      (c) => c.value.kind === 'GoalSetting',
+      (c) => c.value.phaseType === 'GoalSetting',
     )!;
     gs.patchValue({ startDate: '2025-12-01', endDate: '2026-01-20' });
     fixture.detectChanges();
@@ -179,7 +178,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
   it('includes the calibration phase when the toggle is on (FR-6)', async () => {
     await setup(null);
     fillValid();
-    component.form.patchValue({ enableCalibration: true });
+    component.form.patchValue({ isCalibrationEnabled: true });
     fixture.detectChanges();
 
     expect(component.isPhaseVisible('Calibration')).toBeTrue();
@@ -189,7 +188,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     const req = serviceSpy.create.calls.mostRecent()
       .args[0] as ISaveCycleRequest;
     expect(req.phases.length).toBe(5);
-    expect(req.enableCalibration).toBeTrue();
+    expect(req.isCalibrationEnabled).toBeTrue();
   });
 
   it('in edit mode loads the cycle and calls update() on save (AC-5)', async () => {
@@ -215,8 +214,61 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     component.save();
     const req = serviceSpy.create.calls.mostRecent()
       .args[0] as ISaveCycleRequest;
-    expect(req.scope.type).toBe('CustomList');
+    expect(req.scope.scopeType).toBe('CustomList');
     expect(req.scope.employeeIds).toEqual(['emp-1', 'emp-2', 'emp-3']);
     expect(req.scope.departmentIds).toEqual([]);
+  });
+
+  it('BUG-257: toRequest emits the corrected backend field names (regression)', async () => {
+    await setup(null);
+    fillValid();
+    component.form.patchValue({
+      selfWeightPercent: 40,
+      is360Enabled: true,
+      isCalibrationEnabled: false,
+      scopeType: 'Departments',
+      scopeIds: 'dept-1, dept-2',
+    });
+    fixture.detectChanges();
+
+    expect(component.canSave()).toBeTrue();
+    component.save();
+
+    const req = serviceSpy.create.calls.mostRecent()
+      .args[0] as ISaveCycleRequest;
+    // The fields that previously dropped (BUG-257 400) now reach the wire.
+    expect(req.selfWeightPercent).toBe(40);
+    expect(req.is360Enabled).toBeTrue();
+    expect(req.isCalibrationEnabled).toBeFalse();
+    expect(req.phases[0].phaseType).toBe('GoalSetting');
+    expect(req.scope.scopeType).toBe('Departments');
+    expect(req.scope.departmentIds).toEqual(['dept-1', 'dept-2']);
+    // managerWeightPercent is derived server-side — never sent.
+    expect('managerWeightPercent' in req).toBeFalse();
+    // gradeIds is gone from the payload (Grades scope disabled).
+    expect('gradeIds' in req.scope).toBeFalse();
+  });
+
+  it('BUG-257: the Grades scope option is disabled and no gradeIds are sent', async () => {
+    await setup(null);
+    const gradesOption = component.scopeOptions.find(
+      (o) => o.value === 'Grades',
+    )!;
+    expect(gradesOption.disabled).toBeTrue();
+    expect(gradesOption.hint).toBeTruthy();
+
+    // Render check: the <option> for Grades is disabled in the select.
+    const el: HTMLElement = fixture.nativeElement;
+    const gradesEl = Array.from(
+      el.querySelectorAll<HTMLOptionElement>('[data-testid="scope-type"] option'),
+    ).find((o) => o.value === 'Grades');
+    expect(gradesEl?.disabled).toBeTrue();
+
+    // Even a valid, submittable form never carries gradeIds.
+    fillValid();
+    component.save();
+    const req = serviceSpy.create.calls.mostRecent()
+      .args[0] as ISaveCycleRequest;
+    expect('gradeIds' in req.scope).toBeFalse();
   });
 });

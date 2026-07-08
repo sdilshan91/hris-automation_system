@@ -16,10 +16,10 @@ describe('cycle.models pure helpers', () => {
     const cycleEnd = '2026-12-31';
 
     const validPhases: IPhaseDates[] = [
-      { kind: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
-      { kind: 'SelfAssessment', startDate: '2026-01-25', endDate: '2026-02-10' },
-      { kind: 'ManagerReview', startDate: '2026-02-15', endDate: '2026-03-01' },
-      { kind: 'Publish', startDate: '2026-03-05', endDate: '2026-03-10' },
+      { phaseType: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
+      { phaseType: 'SelfAssessment', startDate: '2026-01-25', endDate: '2026-02-10' },
+      { phaseType: 'ManagerReview', startDate: '2026-02-15', endDate: '2026-03-01' },
+      { phaseType: 'Publish', startDate: '2026-03-05', endDate: '2026-03-10' },
     ];
 
     it('accepts sequential, non-overlapping, in-window phases', () => {
@@ -36,10 +36,10 @@ describe('cycle.models pure helpers', () => {
 
     it('rejects overlapping phases', () => {
       const overlap: IPhaseDates[] = [
-        { kind: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-02-01' },
+        { phaseType: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-02-01' },
         // starts before goal-setting ends → overlap
         {
-          kind: 'SelfAssessment',
+          phaseType: 'SelfAssessment',
           startDate: '2026-01-20',
           endDate: '2026-02-10',
         },
@@ -52,7 +52,7 @@ describe('cycle.models pure helpers', () => {
 
     it('rejects a phase that starts before the cycle window', () => {
       const outOfRange: IPhaseDates[] = [
-        { kind: 'GoalSetting', startDate: '2025-12-20', endDate: '2026-01-10' },
+        { phaseType: 'GoalSetting', startDate: '2025-12-20', endDate: '2026-01-10' },
       ];
       const errors = validatePhaseSequencing(outOfRange, cycleStart, cycleEnd);
       expect(errors.some((e) => e.includes('within the cycle window'))).toBeTrue();
@@ -60,7 +60,7 @@ describe('cycle.models pure helpers', () => {
 
     it('rejects a phase that ends after the cycle window', () => {
       const outOfRange: IPhaseDates[] = [
-        { kind: 'GoalSetting', startDate: '2026-12-20', endDate: '2027-01-10' },
+        { phaseType: 'GoalSetting', startDate: '2026-12-20', endDate: '2027-01-10' },
       ];
       const errors = validatePhaseSequencing(outOfRange, cycleStart, cycleEnd);
       expect(errors.some((e) => e.includes('within the cycle window'))).toBeTrue();
@@ -68,7 +68,7 @@ describe('cycle.models pure helpers', () => {
 
     it('rejects a reversed phase range (start after end)', () => {
       const reversed: IPhaseDates[] = [
-        { kind: 'GoalSetting', startDate: '2026-02-01', endDate: '2026-01-01' },
+        { phaseType: 'GoalSetting', startDate: '2026-02-01', endDate: '2026-01-01' },
       ];
       const errors = validatePhaseSequencing(reversed, cycleStart, cycleEnd);
       expect(
@@ -78,7 +78,7 @@ describe('cycle.models pure helpers', () => {
 
     it('rejects a missing phase date', () => {
       const missing: IPhaseDates[] = [
-        { kind: 'GoalSetting', startDate: '', endDate: '2026-01-10' },
+        { phaseType: 'GoalSetting', startDate: '', endDate: '2026-01-10' },
       ];
       const errors = validatePhaseSequencing(missing, cycleStart, cycleEnd);
       expect(

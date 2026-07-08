@@ -177,15 +177,15 @@ import {
             <h2 class="mb-4 text-sm font-semibold text-neutral-700">Scoring</h2>
             <label class="block">
               <span class="mb-1 block text-sm font-medium text-neutral-700">
-                Self vs. manager weight — self {{ selfWeight() }}% / manager
-                {{ 100 - selfWeight() }}%
+                Self vs. manager weight — self {{ selfWeightPercent() }}% / manager
+                {{ 100 - selfWeightPercent() }}%
               </span>
               <input
                 type="range"
                 min="0"
                 max="100"
                 step="5"
-                formControlName="selfWeight"
+                formControlName="selfWeightPercent"
                 class="w-full accent-[var(--brand-primary)]"
                 data-testid="self-weight"
               />
@@ -194,7 +194,7 @@ import {
               <label class="inline-flex items-center gap-2 text-sm text-neutral-700">
                 <input
                   type="checkbox"
-                  formControlName="enable360"
+                  formControlName="is360Enabled"
                   class="h-4 w-4 rounded border-neutral-300"
                   data-testid="enable-360"
                 />
@@ -203,7 +203,7 @@ import {
               <label class="inline-flex items-center gap-2 text-sm text-neutral-700">
                 <input
                   type="checkbox"
-                  formControlName="enableCalibration"
+                  formControlName="isCalibrationEnabled"
                   class="h-4 w-4 rounded border-neutral-300"
                   data-testid="enable-calibration"
                 />
@@ -224,17 +224,17 @@ import {
             <div class="space-y-3" formArrayName="phases">
               @for (
                 phase of phases.controls;
-                track phase.value.kind;
+                track phase.value.phaseType;
                 let i = $index
               ) {
-                @if (isPhaseVisible(phase.value.kind)) {
+                @if (isPhaseVisible(phase.value.phaseType)) {
                   <div
                     [formGroupName]="i"
                     class="grid gap-3 rounded-lg border border-neutral-100 bg-neutral-50/60 p-3 sm:grid-cols-[1fr,auto,auto] sm:items-end"
                     data-testid="phase-row"
                   >
                     <div class="text-sm font-medium text-neutral-800">
-                      {{ phaseLabel(phase.value.kind) }}
+                      {{ phaseLabel(phase.value.phaseType) }}
                     </div>
                     <label class="block">
                       <span class="mb-1 block text-xs text-neutral-500">Start</span>
@@ -242,7 +242,7 @@ import {
                         type="date"
                         formControlName="startDate"
                         class="rounded-lg border border-neutral-200 px-2 py-1.5 text-sm outline-none focus:border-neutral-400 focus:ring-1"
-                        [attr.data-testid]="'phase-start-' + phase.value.kind"
+                        [attr.data-testid]="'phase-start-' + phase.value.phaseType"
                       />
                     </label>
                     <label class="block">
@@ -251,7 +251,7 @@ import {
                         type="date"
                         formControlName="endDate"
                         class="rounded-lg border border-neutral-200 px-2 py-1.5 text-sm outline-none focus:border-neutral-400 focus:ring-1"
-                        [attr.data-testid]="'phase-end-' + phase.value.kind"
+                        [attr.data-testid]="'phase-end-' + phase.value.phaseType"
                       />
                     </label>
                   </div>
@@ -289,10 +289,21 @@ import {
                 data-testid="scope-type"
               >
                 @for (s of scopeOptions; track s.value) {
-                  <option [value]="s.value">{{ s.label }}</option>
+                  <option
+                    [value]="s.value"
+                    [disabled]="s.disabled"
+                    [attr.title]="s.hint"
+                  >
+                    {{ s.label }}{{ s.disabled ? ' — not available yet' : '' }}
+                  </option>
                 }
               </select>
             </label>
+            @if (selectedScopeHint(); as hint) {
+              <p class="mt-1 text-xs text-neutral-400" data-testid="scope-hint">
+                {{ hint }}
+              </p>
+            }
 
             @if (scopeType() !== 'AllEmployees') {
               <label class="mt-3 block">
@@ -374,15 +385,15 @@ export class CycleFormComponent implements OnInit {
         Validators.max(RATING_SCALE_MAX),
       ],
     ],
-    selfWeight: [40, Validators.required],
-    enable360: [false],
-    enableCalibration: [false],
+    selfWeightPercent: [40, Validators.required],
+    is360Enabled: [false],
+    isCalibrationEnabled: [false],
     scopeType: ['AllEmployees' as ParticipantScopeType, Validators.required],
     scopeIds: [''],
     phases: this.fb.array(
-      PHASE_ORDER.map((kind) =>
+      PHASE_ORDER.map((phaseType) =>
         this.fb.group({
-          kind: [kind],
+          phaseType: [phaseType],
           startDate: [''],
           endDate: [''],
         }),
@@ -400,17 +411,25 @@ export class CycleFormComponent implements OnInit {
     () => this.formValue().scopeType as ParticipantScopeType,
   );
 
-  readonly enableCalibration = computed(
-    () => !!this.formValue().enableCalibration,
+  readonly isCalibrationEnabled = computed(
+    () => !!this.formValue().isCalibrationEnabled,
   );
 
-  readonly selfWeight = computed(() => Number(this.formValue().selfWeight) || 0);
+  readonly selfWeightPercent = computed(
+    () => Number(this.formValue().selfWeightPercent) || 0,
+  );
+
+  /** BUG-257: full hint text when the current scope is a disabled/unavailable option. */
+  readonly selectedScopeHint = computed<string | null>(() => {
+    const opt = PARTICIPANT_SCOPE_OPTIONS.find((s) => s.value === this.scopeType());
+    return opt?.disabled ? (opt.hint ?? null) : null;
+  });
 
   /** FR-2/BR-3 validation errors for the currently-visible phases. */
   readonly phaseErrors = computed(() => {
     const v = this.formValue();
     const visible: IPhaseDates[] = (v.phases as IPhaseDates[]).filter((p) =>
-      this.isPhaseVisible(p.kind),
+      this.isPhaseVisible(p.phaseType),
     );
     // Only validate once the cycle window is set, to avoid noise while typing.
     if (!v.startDate || !v.endDate) {
@@ -455,7 +474,7 @@ export class CycleFormComponent implements OnInit {
   /** Calibration row hides when the calibration toggle is off (FR-6). */
   isPhaseVisible(kind: CyclePhaseKind): boolean {
     if (kind === 'Calibration') {
-      return this.enableCalibration();
+      return this.isCalibrationEnabled();
     }
     return true;
   }
@@ -523,29 +542,27 @@ export class CycleFormComponent implements OnInit {
 
   private patchFromCycle(cycle: ICycle): void {
     const idLists =
-      cycle.scope.type === 'Departments'
+      cycle.scope.scopeType === 'Departments'
         ? cycle.scope.departmentIds
-        : cycle.scope.type === 'Grades'
-          ? cycle.scope.gradeIds
-          : cycle.scope.type === 'CustomList'
-            ? cycle.scope.employeeIds
-            : [];
+        : cycle.scope.scopeType === 'CustomList'
+          ? cycle.scope.employeeIds
+          : [];
     this.form.patchValue({
       name: cycle.name,
       type: cycle.type,
       startDate: cycle.startDate,
       endDate: cycle.endDate,
       ratingScaleMax: cycle.ratingScaleMax,
-      selfWeight: cycle.selfWeight,
-      enable360: cycle.enable360,
-      enableCalibration: cycle.enableCalibration,
-      scopeType: cycle.scope.type,
+      selfWeightPercent: cycle.selfWeightPercent,
+      is360Enabled: cycle.is360Enabled,
+      isCalibrationEnabled: cycle.isCalibrationEnabled,
+      scopeType: cycle.scope.scopeType,
       scopeIds: idLists.join(', '),
     });
-    // Patch phase dates by kind so order/visibility stays canonical.
+    // Patch phase dates by phaseType so order/visibility stays canonical.
     for (const ctrl of this.phases.controls) {
-      const kind = ctrl.value.kind as CyclePhaseKind;
-      const match = cycle.phases.find((p) => p.kind === kind);
+      const phaseType = ctrl.value.phaseType as CyclePhaseKind;
+      const match = cycle.phases.find((p) => p.phaseType === phaseType);
       if (match) {
         ctrl.patchValue({
           startDate: match.startDate,
@@ -567,7 +584,7 @@ export class CycleFormComponent implements OnInit {
       .filter((s) => s.length > 0);
     const scopeType = v.scopeType as ParticipantScopeType;
     const phases = (v.phases as IPhaseDates[]).filter((p) =>
-      this.isPhaseVisible(p.kind),
+      this.isPhaseVisible(p.phaseType),
     );
     return {
       name: (v.name as string).trim(),
@@ -575,14 +592,14 @@ export class CycleFormComponent implements OnInit {
       startDate: v.startDate,
       endDate: v.endDate,
       ratingScaleMax: Number(v.ratingScaleMax),
-      selfWeight: Number(v.selfWeight),
-      enable360: !!v.enable360,
-      enableCalibration: !!v.enableCalibration,
+      // managerWeightPercent is derived server-side (100 − self), so not sent (BUG-257).
+      selfWeightPercent: Number(v.selfWeightPercent),
+      is360Enabled: !!v.is360Enabled,
+      isCalibrationEnabled: !!v.isCalibrationEnabled,
       phases,
       scope: {
-        type: scopeType,
+        scopeType,
         departmentIds: scopeType === 'Departments' ? ids : [],
-        gradeIds: scopeType === 'Grades' ? ids : [],
         employeeIds: scopeType === 'CustomList' ? ids : [],
       },
     };
