@@ -31,6 +31,23 @@ exploitable** findings — not theoretical noise.
 3. Review **only the changed surface** plus anything it directly endangers (e.g. a new
    entity's query filter, a new endpoint's authorization). Do not audit the whole codebase.
 
+## Phase 0 — build the mental model first (before hunting)
+
+Do **not** start pattern-matching for bugs. First spend a moment mapping the change's
+**attack surface**, so every later finding is anchored to a real entry point:
+
+- **Trust boundaries crossed** — what untrusted input enters (request body/query/route/header,
+  file upload, subdomain, JWT claims) and where it flows.
+- **New/changed entry points** — endpoints, MediatR handlers, background jobs, raw SQL,
+  Angular routes/guards. Which are authenticated? tenant-scoped?
+- **Data sensitivity touched** — does this path read/write PII (names, salaries, national IDs)
+  or cross a tenant boundary?
+- **Who is the attacker** — an authenticated user of *another* tenant, a lower-privileged user
+  of the *same* tenant, or an anonymous caller? Most HRM breaches are the first two.
+
+Write this as a 3-6 line **Attack Surface** preamble in the report. A finding that can't be
+tied to one of these entry points is probably theoretical — treat it with suspicion.
+
 ## Threat checklist (this platform's real risks)
 
 Score each against *actual* exploitability, not presence-of-pattern. The first block is
@@ -120,9 +137,57 @@ Agent tool**, one per dimension (tenant-isolation, authz, injection, secrets/PII
 returning structured findings; then **dedupe and synthesize** into the single report above.
 Default (no flag) is a single-pass review — cheaper, fine for routine story diffs.
 
+## Confidence gate (which findings to emit)
+
+The failure mode of security tooling is **noise** — a report full of maybes trains the reader
+to ignore it. Gate output by confidence, and let the mode set the bar:
+
+- **Default (routine story diff):** emit a finding only at **~80%+ confidence** that it is real
+  and exploitable. High signal, near-zero false positives. This is what runs before every PR.
+- **`--deep` (release candidate / high-blast-radius):** lower the bar to **~20%** but **tag every
+  sub-threshold finding `[TENTATIVE]`** with the specific doubt ("can't confirm the caller's role
+  is checked without seeing the policy"). Comprehensive, but the reader can see what's speculative.
+
+Never silently drop a real risk to hit "zero findings"; never pad a thin diff to look thorough.
+
+### Not a finding — hard exclusions (do NOT report these as vulnerabilities)
+
+These are the recurring false positives. Exclude them from Findings entirely (a genuinely
+relevant one goes under *Defense-in-depth*, never as High/Critical):
+
+1. **Missing rate-limiting / DoS / resource exhaustion** — absent a concrete auth/isolation
+   bypass. "An attacker could send many requests" is not a finding here.
+2. **Missing security headers** (CSP, HSTS, X-Frame-Options) with no demonstrated exploit on the
+   changed surface — hardening, not a bug.
+3. **Verbose error messages / stack traces** unless they leak a secret or PII (our
+   `ExceptionHandlingMiddleware` normalizes errors — check before claiming a leak).
+4. **Self-XSS / self-inflicted actions** — a user attacking only their own session.
+5. **Memory safety / buffer issues** — managed C#/TypeScript; not applicable.
+6. **Log spoofing / log injection** without a concrete downstream exploit.
+7. **CSRF on a JWT-Bearer endpoint** — no ambient cookie auth, so classic CSRF doesn't apply
+   (flag only if a cookie-auth path was actually added).
+8. **"No input validation"** where FluentValidation + the MediatR `ValidationBehavior` already
+   run — verify the validator is absent before claiming it.
+9. **Theoretical tenant leak that the global query filter already blocks** — confirm the entity
+   is genuinely unfiltered / uses `IgnoreQueryFilters` / raw SQL before raising it (that's the
+   real bug); the mere presence of `TenantId` on an entity is not a leak.
+10. **Dependency CVEs** not reachable from the changed code path (that's a separate SCA pass).
+11. **Best-practice/style nits** (naming, "should use a constant") — not security.
+
+If you catch yourself writing "an attacker could potentially…" with no concrete path, it belongs
+here, not in Findings.
+
+### STRIDE lens (optional overlay for `--deep`)
+
+For a high-value change, sanity-check the surface against **S**poofing (authn/JWT),
+**T**ampering (input/mass-assignment), **R**epudiation (audit_logs actually written),
+**I**nformation disclosure (PII/tenant leak — our #1), **D**enial of service (usually *excluded*,
+see above), **E**levation of privilege (authz/role/tenant escalation — our #2). Use it to find
+*gaps*, not to generate one finding per letter.
+
 ## Honesty contract
 - Report **only what you can justify** with a concrete exploit path. Mark uncertainty with a
-  confidence note rather than asserting.
+  confidence note (or `[TENTATIVE]`) rather than asserting.
 - A clean change gets **PASS** — do not invent findings to look thorough.
 - This is a **review**: do NOT edit code, commit, or open PRs. Hand findings to the owning
   dev agent / the user.

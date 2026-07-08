@@ -53,6 +53,9 @@ test-results/
 playwright-report/
 .playwright-artifacts/
 
+# /freeze guard state (per-session, never committed)
+.claude/hooks/.freeze-dir
+
 # Local backup archive (not source)
 .claude.zip
 
