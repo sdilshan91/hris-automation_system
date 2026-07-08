@@ -4,6 +4,7 @@ using HRM.Infrastructure.Caching;
 using HRM.Infrastructure.Identity;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Persistence.Interceptors;
+using HRM.Infrastructure.Security;
 using HRM.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +56,12 @@ public static class DependencyInjection
 
         // TOTP service (singleton — no per-request state)
         services.AddSingleton<ITotpService, TotpService>();
+
+        // US-AUTH-005 NFR-2: encrypt the TOTP MFA secret at rest via ASP.NET Core Data Protection.
+        // NOTE: default key ring is ephemeral/per-instance — see MfaSecretProtector for the production
+        // shared-key-ring caveat. Singleton; the underlying protector is thread-safe.
+        services.AddDataProtection();
+        services.AddSingleton<IFieldProtector, MfaSecretProtector>();
 
         // Note: JwtService is registered in Program.cs alongside JWT authentication config.
         // Auth service

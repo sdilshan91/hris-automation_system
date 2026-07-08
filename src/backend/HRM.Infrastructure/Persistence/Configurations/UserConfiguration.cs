@@ -44,8 +44,10 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.IdentityProvider)
             .HasMaxLength(20);
 
+        // US-AUTH-005 NFR-2: stores the Data-Protection-encrypted TOTP secret (a ~32-byte secret protects to
+        // several hundred chars). Widened from 200 to 512 to hold the protected payload (legacy plaintext fits too).
         builder.Property(u => u.MfaSecret)
-            .HasMaxLength(200);
+            .HasMaxLength(512);
 
         builder.Property(u => u.MfaEnabled)
             .HasDefaultValue(false);

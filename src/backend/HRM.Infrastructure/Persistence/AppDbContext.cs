@@ -36,6 +36,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<UserInvitation> UserInvitations => Set<UserInvitation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
+    public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     // US-ADM-003: system-level, cross-tenant — NO tenant query filter (see ImpersonationSessionConfiguration).
     public DbSet<ImpersonationSession> ImpersonationSessions => Set<ImpersonationSession>();
