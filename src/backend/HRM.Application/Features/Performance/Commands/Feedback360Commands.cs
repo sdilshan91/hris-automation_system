@@ -37,6 +37,25 @@ public sealed class RemoveReviewerCommandHandler : IRequestHandler<RemoveReviewe
         => _service.RemoveReviewerAsync(request.AssignmentId, cancellationToken);
 }
 
+// ── Full-replace reviewer set (BUG-244 #1, AC-1/FR-2) ──────────────────────
+
+/// <summary>
+/// BUG-244 #1: full-replace of an employee's manual (Peer + Direct Report) 360 reviewers in the active
+/// 360-enabled cycle (US-PRF-005 AC-1/FR-2). The reviewee rides the route; the cycle is resolved server-side.
+/// </summary>
+public sealed record SaveReviewersCommand(
+    Guid RevieweeEmployeeId, IReadOnlyList<ReviewerInputDto> Reviewers
+) : IRequest<Result<ReviewerConfigurationDto>>;
+
+public sealed class SaveReviewersCommandHandler : IRequestHandler<SaveReviewersCommand, Result<ReviewerConfigurationDto>>
+{
+    private readonly IReviewerAssignmentService _service;
+    public SaveReviewersCommandHandler(IReviewerAssignmentService service) => _service = service;
+
+    public Task<Result<ReviewerConfigurationDto>> Handle(SaveReviewersCommand request, CancellationToken cancellationToken)
+        => _service.SaveReviewersAsync(request.RevieweeEmployeeId, request.Reviewers, cancellationToken);
+}
+
 // ── Notify reviewers — enter 360 phase (AC-2) ──────────────────────────────
 
 /// <summary>Notifies all assigned reviewers that the 360 phase has started (US-PRF-005 AC-2).</summary>
@@ -68,4 +87,24 @@ public sealed class SubmitFeedback360CommandHandler
         => _service.SubmitFeedbackAsync(
             new SubmitFeedback360Input(request.CycleId, request.RevieweeEmployeeId, request.OverallComment, request.Items),
             cancellationToken);
+}
+
+// ── Submit feedback by assignment (BUG-244, reviewer form submit) ──────────
+
+/// <summary>
+/// BUG-244: submits the reviewer form keyed by the assignment id (US-PRF-005 AC-3). The cycle + reviewee +
+/// reviewer are resolved from the assignment; RLS is enforced in the service. Returns the now-locked form.
+/// </summary>
+public sealed record SubmitFeedbackByAssignmentCommand(
+    Guid AssignmentId, IReadOnlyList<FeedbackAnswerInput> Answers
+) : IRequest<Result<FeedbackFormDto>>;
+
+public sealed class SubmitFeedbackByAssignmentCommandHandler
+    : IRequestHandler<SubmitFeedbackByAssignmentCommand, Result<FeedbackFormDto>>
+{
+    private readonly IFeedback360Service _service;
+    public SubmitFeedbackByAssignmentCommandHandler(IFeedback360Service service) => _service = service;
+
+    public Task<Result<FeedbackFormDto>> Handle(SubmitFeedbackByAssignmentCommand request, CancellationToken cancellationToken)
+        => _service.SubmitFeedbackByAssignmentAsync(request.AssignmentId, request.Answers, cancellationToken);
 }

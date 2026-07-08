@@ -19,6 +19,43 @@ public sealed class GetReviewerConfigurationQueryHandler
         => _service.GetConfigurationAsync(request.RevieweeEmployeeId, request.CycleId, cancellationToken);
 }
 
+/// <summary>BUG-244: config-screen LOAD — gets the reviewer config for an employee in the active 360-enabled cycle.</summary>
+public sealed record GetActiveReviewerConfigurationQuery(Guid EmployeeId) : IRequest<Result<ReviewerConfigurationDto>>;
+
+public sealed class GetActiveReviewerConfigurationQueryHandler
+    : IRequestHandler<GetActiveReviewerConfigurationQuery, Result<ReviewerConfigurationDto>>
+{
+    private readonly IReviewerAssignmentService _service;
+    public GetActiveReviewerConfigurationQueryHandler(IReviewerAssignmentService service) => _service = service;
+
+    public Task<Result<ReviewerConfigurationDto>> Handle(GetActiveReviewerConfigurationQuery request, CancellationToken cancellationToken)
+        => _service.GetConfigurationForActiveCycleAsync(request.EmployeeId, cancellationToken);
+}
+
+/// <summary>BUG-244 #3: gets the 360 completion tracker for an employee in the active 360-enabled cycle.</summary>
+public sealed record GetTrackerQuery(Guid EmployeeId) : IRequest<Result<CompletionTrackerDto>>;
+
+public sealed class GetTrackerQueryHandler : IRequestHandler<GetTrackerQuery, Result<CompletionTrackerDto>>
+{
+    private readonly IReviewerAssignmentService _service;
+    public GetTrackerQueryHandler(IReviewerAssignmentService service) => _service = service;
+
+    public Task<Result<CompletionTrackerDto>> Handle(GetTrackerQuery request, CancellationToken cancellationToken)
+        => _service.GetTrackerAsync(request.EmployeeId, cancellationToken);
+}
+
+/// <summary>BUG-244 #2: gets one reviewer's feedback form for a single assignment (US-PRF-005 FR-4/AC-2).</summary>
+public sealed record GetFeedbackFormQuery(Guid AssignmentId) : IRequest<Result<FeedbackFormDto>>;
+
+public sealed class GetFeedbackFormQueryHandler : IRequestHandler<GetFeedbackFormQuery, Result<FeedbackFormDto>>
+{
+    private readonly IFeedback360Service _service;
+    public GetFeedbackFormQueryHandler(IFeedback360Service service) => _service = service;
+
+    public Task<Result<FeedbackFormDto>> Handle(GetFeedbackFormQuery request, CancellationToken cancellationToken)
+        => _service.GetFeedbackFormAsync(request.AssignmentId, cancellationToken);
+}
+
 /// <summary>Gets the aggregated 360 results for a reviewee + cycle (US-PRF-005 AC-4/FR-6).</summary>
 public sealed record GetFeedback360ResultsQuery(Guid CycleId, Guid RevieweeEmployeeId)
     : IRequest<Result<Feedback360ResultsDto>>;
