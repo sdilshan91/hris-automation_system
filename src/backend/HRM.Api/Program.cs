@@ -28,6 +28,26 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
+    // ===== Error tracking → self-hosted GlitchTip (Sentry-compatible) =====
+    // We host customer HR data, so exception payloads must NEVER carry PII to the sink.
+    // See docs/vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md.
+    // Empty DSN (e.g. in prod until configured) => the SDK no-ops safely.
+    builder.WebHost.UseSentry(o =>
+    {
+        o.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
+        o.Environment = builder.Environment.EnvironmentName;
+        o.SendDefaultPii = false;                                     // never attach user/PII by default
+        o.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None; // do not capture request bodies
+        o.TracesSampleRate = 0.1;
+        o.SetBeforeSend((Sentry.SentryEvent e) =>
+        {
+            e.User = new Sentry.SentryUser();          // drop any captured user identity
+            e.ServerName = null;                       // don't leak host/machine names
+            if (e.Request is not null) e.Request.Data = null; // belt-and-suspenders: no request bodies
+            return e;
+        });
+    });
+
     // ===== Serilog =====
     builder.Host.UseSerilog((context, services, configuration) =>
     {
