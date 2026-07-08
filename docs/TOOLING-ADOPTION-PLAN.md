@@ -24,11 +24,11 @@
 | 8 | Stryker.NET (nightly, `HRM.Application`) | 3 | ~½ day | scheduled job, `@test-authenticator` | — |
 | 9 | Semgrep **custom tenant-isolation rules** | 3 | ~1 day | `/security-audit`, secret/tenant invariants | — |
 | 10 | StrykerJS (FE `core/`) | 3 | ~½ day | scheduled job | — |
-| 11 | Sentry + Sentry MCP | 4 | ~1 day | `@browser-debugger`, `@test-runner`, `/fault-diagnosis` | **product + PII/data-governance decision** |
+| 11 | **Self-hosted GlitchTip** + Sentry MCP | 4 | ~1 day | `@browser-debugger`, `@test-runner`, `/fault-diagnosis` | ✅ **DECIDED** (self-hosted, see ADR) |
 | 12 | grafana/mcp-k6 | 4 | ~2 hr | `@test-runner`, `perf/` harness | AGPL/experimental |
 | 13 | Dexter (pgdexter) index audit | 4 | ~½ day | periodic DB audit (Docker Postgres) | Ruby/HypoPG on Windows |
 | 14 | Pact (pact-net) | 4 | ~2 wk | FE↔BE contract tests | **only if shape-drift recurs past Schemathesis** |
-| 15 | Trivy | 4 | ~2 hr | CI, `/security-audit` | **only if we ship Docker images** |
+| 15 | Trivy | 4 | ~2 hr | CI, `/security-audit` | ✅ **ADOPT** (we're the hosting provider — supply-chain is ours) |
 | 16 | NuGet MCP | 4 | 10 min | `@backend-dev`, package mgmt | dependency-drift pain |
 | 17 | OpenSpec | 4 | ~½ day | upstream of `/implement-all` | **only if story quality is the bottleneck** |
 | 18 | CodeRabbit | 4 | ~1 hr | PR review (external) | paid trial |
@@ -101,6 +101,22 @@ that drops the tenant filter is flagged red. *Owner:* `/security-audit`.
 bug is most dangerous. Scheduled (Karma mutation runs are slow). *Owner:* `@test-authenticator`.
 
 ## Wave 4 — Decision-gated bets (planned, but each has an explicit gate)
+
+> **Governance update (2026-07-08) — HRM ships as a hosted SaaS.** We host + are liable for customer
+> HR PII, so several gates now resolve. See [ADR — SaaS data-governance posture](vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md):
+> - **Sentry (#11): DECIDED → self-hosted GlitchTip** (Sentry-compatible) + SDK PII scrubbing — no
+>   third-party ingestion of PII-bearing exceptions.
+> - **Trivy (#15): ADOPT** — as the hosting provider the supply-chain risk is ours.
+> - **NEW — Postgres RLS (defense-in-depth tenant isolation): PLANNED.** Was in SKIP ("only with a
+>   compliance driver"); that driver now exists. App-layer isolation (query filters +
+>   `TenantAccessGuardMiddleware`) stays; RLS is an *additive* second layer in the DB. Weeks of work —
+>   sequence deliberately. **The most important consequence of going SaaS.**
+> - **Custom Semgrep tenant rules (#9): PRIORITY** · **Gitleaks → hard gate** after the historical
+>   secret is rotated/purged · **encryption-at-rest (US-PLT-005)** + **full audit logging (BUG-082)**
+>   become compliance-required.
+> - CodeRabbit (#18) skip-for-now · Pact (#14) wait · OpenSpec (#17) skip · Dexter (#13) defer (also
+>   validates RLS index leading-column).
+
 
 **11. Sentry + Sentry MCP.** Best-in-class error tracking for a multi-tenant SaaS; the MCP lets
 `@browser-debugger` / `@test-runner` pull the *exact* exception + release behind a failing TC instead of
