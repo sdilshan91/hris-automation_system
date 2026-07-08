@@ -5757,3 +5757,19 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** Every restore/build emits `NU1903: Package 'AutoMapper' 13.0.1 has a known high severity vulnerability` (GHSA-rvv3-g6hj-g44x). Pre-existing, noisy on every build, and a real advisory.
 - **Severity rationale:** MED — a flagged high-severity advisory on a core mapping dependency; exploitability in this app is unassessed, but it should be evaluated and bumped or explicitly accepted/suppressed with a rationale.
 - **Suggested direction (NOT applied):** evaluate the advisory's applicability, bump AutoMapper to a patched line (verify API compat) or record an accepted-risk suppression. Belongs in a dependency-hygiene pass. Report only.
+
+### BUG-252 — Tenant hard-delete opens a user-initiated transaction not wrapped in an execution strategy → throws under Npgsql retry (GDPR/US-ADM-004 purge never runs on Postgres)
+- **Type / Severity / Status:** BUG · HIGH · OPEN → **fix in flight** (auto-healed from an OUT-OF-LANE flag surfaced by the Phase 5 Testcontainers pass, 2026-07-08; fix + regression test on `fix/phase5-testcontainers-tx`)
+- **Layer:** BE / DB
+- **Module / US / TC:** Admin Console · US-ADM-004 (tenant termination / GDPR data purge) · TC via `TenantDataDeletionPostgresTests`
+- **Title:** `TenantDataDeletionService.DeleteTenantDataAsync` (`:63-65`) opens a manual `BeginTransactionAsync` **not** wrapped in `Database.CreateExecutionStrategy().ExecuteAsync`. The DbContext is configured with `EnableRetryOnFailure` (`DependencyInjection.cs:41`), and a user-initiated transaction throws *"NpgsqlRetryingExecutionStrategy does not support user-initiated transactions"* under the retrying strategy — so the tenant hard-delete + PII-redaction + audit path throws on real Postgres and the tenant is never purged.
+- **Root cause:** BUG-068 class (retry-strategy vs manual transaction). Identical to the fix `ApplicantConversionService.cs:137-163` already applies; this sibling was missed. The prior InMemory-only test (`TenantDataDeletionIntegrationTests`) could not catch it (`IsRelational()` false → transaction path skipped).
+- **Evidence:** confirmed live in `src/backend/HRM.Api/Logs/hrm-20260707.log` (recurring through 2026-07-07) with a `TenantDataDeletionService.DeleteTenantDataAsync → TenantDeletionJob.RunAsync` stack. New `TenantDataDeletionPostgresTests` reproduces it under production-faithful retry config.
+- **Fix (applied on this branch):** wrap the delete→redact→audit→save→commit unit in `CreateExecutionStrategy().ExecuteAsync` (retry-safe accumulators, single audit/lifecycle row on commit), mirroring `ApplicantConversionService`. Regression covered by the new Postgres test with `EnableRetryOnFailure` enabled. Flip to VERIFIED via `/verify-fix BUG-252` after the PR merges.
+
+### ISSUE-253 — ApplicantConversionService adds an AuditLog inside its retry delegate without detach-on-rollback (rare transient retry could double-insert)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building BUG-252, 2026-07-08) — **deferred (report-only, needs decision)**
+- **Layer:** BE / DB
+- **Module / US / TC:** Recruitment · US-REC-010 (applicant→employee convert)
+- **Title:** `ApplicantConversionService.cs:~230-239` creates and `Add`s a fresh `AuditLog` inside the `CreateExecutionStrategy().ExecuteAsync` delegate but, unlike the BUG-252 fix, does not `Detach` it on rollback. A genuine transient failure that triggers a strategy **retry** could leave the prior attempt's Added audit row tracked and double-insert it on the successful attempt. Harmless today (retries are rare in practice and its tests run on InMemory, which never retries), so no live impact observed.
+- **Suggested direction (NOT applied):** apply the same catch-block `Detach` to the audit row (one-line, mirrors BUG-252). Touches a currently-working path → needs a "worth it?" decision. Report only.

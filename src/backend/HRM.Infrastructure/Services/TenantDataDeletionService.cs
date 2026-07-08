@@ -60,73 +60,98 @@ public sealed class TenantDataDeletionService : ITenantDataDeletionService
         var orderedTypes = GetTenantScopedTypesChildFirst();
         var isRelational = _db.Database.IsRelational();
 
-        await using var transaction = isRelational
-            ? await _db.Database.BeginTransactionAsync(cancellationToken)
-            : null;
-
-        long rowsDeleted = 0;
-        var now = DateTime.UtcNow;
-
-        try
+        // BUG-252 (BUG-068 class): a user-initiated BeginTransactionAsync throws under Npgsql's retrying
+        // execution strategy ("does not support user-initiated transactions") — the whole atomic delete/redact
+        // unit (NFR-4) must run *inside* the execution strategy delegate so it is retried as a single retriable
+        // unit. All per-attempt accumulators (rowsDeleted, now), the transaction, the deletes, and the tracked
+        // lifecycle+audit rows are (re)created inside the delegate so a transient retry starts from a clean
+        // state and cannot double-insert. Mirrors ApplicantConversionService.ConvertAsync.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var rowsDeleted = await strategy.ExecuteAsync(async () =>
         {
-            // Delete every tenant-scoped business table, child-first.
-            foreach (var clrType in orderedTypes)
+            await using var transaction = isRelational
+                ? await _db.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+
+            long attemptRows = 0;
+            var now = DateTime.UtcNow;
+
+            // Lifecycle + audit rows are created *inside* the delegate; on a rolled-back retry we detach them in
+            // the catch so the next attempt starts with exactly one of each (no double-insert). AC-4.
+            TenantLifecycleEvent? lifecycleEvent = null;
+            AuditLog? auditLog = null;
+
+            try
             {
-                rowsDeleted += await DeleteForTypeAsync(clrType, tenantId, isRelational, cancellationToken);
+                // Delete every tenant-scoped business table, child-first.
+                foreach (var clrType in orderedTypes)
+                {
+                    attemptRows += await DeleteForTypeAsync(clrType, tenantId, isRelational, cancellationToken);
+                }
+
+                // §7: also remove the tenant's UserTenant memberships (not a BaseEntity).
+                attemptRows += await DeleteUserTenantsAsync(tenantId, isRelational, cancellationToken);
+
+                // Retain the tenant row, marked Terminated with PII redacted (AC-4). Audit logs + lifecycle events
+                // are intentionally retained. These property sets are idempotent, so re-applying them on a retry
+                // is safe.
+                tenant.Status = TenantStatus.Terminated;
+                tenant.Name = "[redacted]";
+                tenant.ContactEmail = null;
+                tenant.BillingEmail = null;
+                tenant.LogoUrl = null;
+                tenant.SuspendedReason = null;
+                tenant.TerminationScheduledAt = null;
+                tenant.UpdatedAt = now;
+
+                var detail = JsonSerializer.Serialize(new
+                {
+                    EntityTypesDeleted = orderedTypes.Count,
+                    RowsDeleted = attemptRows,
+                    TerminatedAt = now,
+                });
+                lifecycleEvent = new TenantLifecycleEvent
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = tenantId,
+                    EventType = "terminated",
+                    DetailJson = detail,
+                    CreatedAt = now,
+                    CreatedBy = "system",
+                };
+                _db.TenantLifecycleEvents.Add(lifecycleEvent);
+                auditLog = new AuditLog
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = tenantId,
+                    EventType = "Tenant.Terminated",
+                    Action = "Tenant.Terminated",
+                    ResourceType = "Tenant",
+                    ResourceId = tenantId.ToString(),
+                    After = detail,
+                    CreatedAt = now,
+                };
+                _db.AuditLogs.Add(auditLog);
+
+                await _db.SaveChangesAsync(cancellationToken);
+
+                if (transaction is not null)
+                    await transaction.CommitAsync(cancellationToken);
+
+                return attemptRows;
             }
-
-            // §7: also remove the tenant's UserTenant memberships (not a BaseEntity).
-            rowsDeleted += await DeleteUserTenantsAsync(tenantId, isRelational, cancellationToken);
-
-            // Retain the tenant row, marked Terminated with PII redacted (AC-4). Audit logs + lifecycle events
-            // are intentionally retained.
-            tenant.Status = TenantStatus.Terminated;
-            tenant.Name = "[redacted]";
-            tenant.ContactEmail = null;
-            tenant.BillingEmail = null;
-            tenant.LogoUrl = null;
-            tenant.SuspendedReason = null;
-            tenant.TerminationScheduledAt = null;
-            tenant.UpdatedAt = now;
-
-            var detail = JsonSerializer.Serialize(new
+            catch
             {
-                EntityTypesDeleted = orderedTypes.Count,
-                RowsDeleted = rowsDeleted,
-                TerminatedAt = now,
-            });
-            _db.TenantLifecycleEvents.Add(new TenantLifecycleEvent
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = tenantId,
-                EventType = "terminated",
-                DetailJson = detail,
-                CreatedAt = now,
-                CreatedBy = "system",
-            });
-            _db.AuditLogs.Add(new AuditLog
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = tenantId,
-                EventType = "Tenant.Terminated",
-                Action = "Tenant.Terminated",
-                ResourceType = "Tenant",
-                ResourceId = tenantId.ToString(),
-                After = detail,
-                CreatedAt = now,
-            });
-
-            await _db.SaveChangesAsync(cancellationToken);
-
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            if (transaction is not null)
-                await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+                if (transaction is not null)
+                    await transaction.RollbackAsync(cancellationToken);
+                // Drop the Added lifecycle/audit rows so a strategy retry doesn't insert them twice.
+                if (lifecycleEvent is not null)
+                    _db.Entry(lifecycleEvent).State = EntityState.Detached;
+                if (auditLog is not null)
+                    _db.Entry(auditLog).State = EntityState.Detached;
+                throw;
+            }
+        });
 
         _logger.LogInformation(
             "TenantDataDeletionService: hard-deleted {Rows} row(s) across {Types} type(s) for tenant {TenantId}; " +
