@@ -43,11 +43,7 @@ describe('CycleService', () => {
     phases: [
       { phaseType: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
     ],
-    scope: {
-      scopeType: 'AllEmployees',
-      departmentIds: [],
-      employeeIds: [],
-    },
+    participantScope: 'AllEmployees',
     ratingScaleMax: 5,
     selfWeightPercent: 40,
     is360Enabled: false,
@@ -58,16 +54,16 @@ describe('CycleService', () => {
 
   const dashboard: ICycleDashboard = {
     cycleId: 'cyc-1',
-    cycleName: '2026 Annual',
+    name: '2026 Annual',
     status: 'Active',
     participantCount: 120,
     phases: [
       {
-        kind: 'GoalSetting',
+        phaseType: 'GoalSetting',
         startDate: '2026-01-05',
         endDate: '2026-01-20',
         completedCount: 80,
-        totalCount: 120,
+        totalParticipants: 120,
         overdueCount: 5,
       },
     ],

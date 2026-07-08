@@ -187,7 +187,14 @@ export interface ICycle {
   /** ISO date (yyyy-MM-dd). */
   endDate: string;
   phases: ICyclePhase[];
-  scope: IParticipantScope;
+  /**
+   * BUG-259: the backend read DTO (`CycleDto.ParticipantScope`) returns only the FLAT
+   * scope enum — there are NO department/employee id lists on the read side yet. The
+   * nested `{ scopeType, departmentIds, employeeIds }` shape is the WRITE contract
+   * (see `ISaveCycleRequest.scope`), not this one. Prefilling id lists in edit mode is
+   * deferred to a backend enrichment (BUG-260).
+   */
+  participantScope: ParticipantScopeType;
   /** Rating-scale maximum (integer 2-10, default 5); locked once Active (BR-5). */
   ratingScaleMax: number;
   /** Self-rating weight 0-100; managerWeightPercent is derived server-side (FR-6). */
@@ -217,9 +224,9 @@ export interface ISaveCycleRequest {
   isCalibrationEnabled: boolean;
 }
 
-/** Per-phase completion stats for the dashboard (AC-3). */
+/** Per-phase completion stats for the dashboard (AC-3). Matches C# `PhaseCompletionDto`. */
 export interface IPhaseStat {
-  kind: CyclePhaseKind;
+  phaseType: CyclePhaseKind;
   /** ISO date. */
   startDate: string;
   /** ISO date. */
@@ -227,15 +234,15 @@ export interface IPhaseStat {
   /** Number of participants who completed this phase. */
   completedCount: number;
   /** Total participants expected to complete this phase. */
-  totalCount: number;
+  totalParticipants: number;
   /** Participants past the phase end date who have not completed it. */
   overdueCount: number;
 }
 
-/** Cycle dashboard payload (AC-3). One call drives the whole dashboard. */
+/** Cycle dashboard payload (AC-3). One call drives the whole dashboard. Matches C# `CycleDashboardDto`. */
 export interface ICycleDashboard {
   cycleId: string;
-  cycleName: string;
+  name: string;
   status: CycleStatus;
   participantCount: number;
   phases: IPhaseStat[];
@@ -398,12 +405,12 @@ export const TRANSITION_LABEL: Record<CycleTransitionAction, string> = {
  */
 export function phaseCompletionPercent(stat: {
   completedCount: number;
-  totalCount: number;
+  totalParticipants: number;
 }): number {
-  if (!stat.totalCount || stat.totalCount <= 0) {
+  if (!stat.totalParticipants || stat.totalParticipants <= 0) {
     return 0;
   }
-  const pct = (stat.completedCount / stat.totalCount) * 100;
+  const pct = (stat.completedCount / stat.totalParticipants) * 100;
   return Math.min(100, Math.max(0, Math.round(pct)));
 }
 
