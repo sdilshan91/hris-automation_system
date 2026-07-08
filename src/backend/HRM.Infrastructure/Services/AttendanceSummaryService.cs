@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using ClosedXML.Excel;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -74,9 +75,10 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             return Result<MonthlySummaryResult>.Failure("Month must be between 1 and 12.", 400, "invalid_month");
 
         var yearMonth = YearMonth(year, month);
+        var tenantZone = await ResolveTenantZoneAsync(cancellationToken);
 
         // Candidate employees for the filter (also drives which materialized rows we surface).
-        var employees = await FilteredEmployeesAsync(filter, cancellationToken);
+        var employees = await FilteredEmployeesAsync(filter, tenantZone, cancellationToken);
         var employeeIds = employees.Select(e => e.Id).ToList();
 
         // Read materialized rows for the month. If none exist for these employees yet, compute on-demand
@@ -153,8 +155,9 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         if (employee is null)
             return Result<EmployeeDailyBreakdownResult>.Failure("Employee not found.", 404);
 
-        var (monthStart, monthEnd, lastDay) = MonthBounds(year, month);
-        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, cancellationToken);
+        var tenantZone = await ResolveTenantZoneAsync(cancellationToken);
+        var (monthStart, monthEnd, lastDay) = MonthBounds(year, month, tenantZone);
+        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, tenantZone, cancellationToken);
 
         var days = new List<DailyBreakdownDto>();
         for (var date = monthStart; date <= lastDay; date = date.AddDays(1))
@@ -193,7 +196,8 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             return Result<SummaryGenerationStatusDto>.Failure("Month must be between 1 and 12.", 400, "invalid_month");
 
         var yearMonth = YearMonth(year, month);
-        var (monthStart, monthEnd, lastDay) = MonthBounds(year, month);
+        var tenantZone = await ResolveTenantZoneAsync(cancellationToken);
+        var (monthStart, monthEnd, lastDay) = MonthBounds(year, month, tenantZone);
 
         // Compute for ALL non-terminated employees (the materialized table is filter-agnostic; the read
         // path applies department/location/shift/status filters on top).
@@ -211,7 +215,7 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         var now = DateTime.UtcNow;
         foreach (var employee in employees)
         {
-            var computed = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, cancellationToken);
+            var computed = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, tenantZone, cancellationToken);
 
             if (existingByEmp.TryGetValue(employee.Id, out var row))
             {
@@ -343,18 +347,21 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
     }
 
     private async Task<MonthContext> LoadEmployeeMonthContextAsync(
-        Employee employee, DateOnly monthStart, DateOnly monthEnd, CancellationToken ct)
+        Employee employee, DateOnly monthStart, DateOnly monthEnd, TimeZoneInfo tenantZone, CancellationToken ct)
     {
-        // Attendance logs for the month (match on the UTC calendar day of clock-in).
+        // Attendance logs for the month (match on the tenant-LOCAL calendar day of clock-in — ISSUE-065).
+        // The local month [monthStart 00:00, monthEnd+1 00:00) maps to this UTC window (UTC zone → no-op).
+        var windowStartUtc = TenantClock.LocalToUtc(monthStart, TimeOnly.MinValue, tenantZone);
+        var windowEndUtc = TenantClock.LocalToUtc(monthEnd.AddDays(1), TimeOnly.MinValue, tenantZone);
         var logs = await _dbContext.AttendanceLogs.AsNoTracking()
             .Where(a => a.EmployeeId == employee.Id
-                && a.ClockIn >= monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
-                && a.ClockIn < monthEnd.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc))
+                && a.ClockIn >= windowStartUtc
+                && a.ClockIn < windowEndUtc)
             .ToListAsync(ct);
 
         // One log per date; if multiple, keep the one with the most worked minutes (best signal).
         var logsByDate = logs
-            .GroupBy(a => DateOnly.FromDateTime(a.ClockIn))
+            .GroupBy(a => TenantClock.LocalDateOf(a.ClockIn, tenantZone))
             .ToDictionary(
                 g => g.Key,
                 g => g.OrderByDescending(a => a.TotalWorkMinutes ?? 0).First());
@@ -435,8 +442,9 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             var quarterStart = QuarterStart(monthStart);
             if (quarterStart < monthStart)
             {
-                var qStartUtc = quarterStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-                var qPriorEndUtc = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);   // exclusive of this month
+                // ISSUE-065: local-day windows for the quarter-to-prior-month range (UTC zone → no-op).
+                var qStartUtc = TenantClock.LocalToUtc(quarterStart, TimeOnly.MinValue, tenantZone);
+                var qPriorEndUtc = TenantClock.LocalToUtc(monthStart, TimeOnly.MinValue, tenantZone);   // exclusive of this month
                 priorQuarterLateCount = await _dbContext.AttendanceLogs.AsNoTracking()
                     .Where(a => a.EmployeeId == employee.Id && a.IsLate
                         && a.ClockIn >= qStartUtc && a.ClockIn < qPriorEndUtc)
@@ -471,9 +479,10 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         int WorkMinutes, int OvertimeMinutes, decimal LeaveDays, int Holidays, int WeeklyOffs, decimal LopDays);
 
     private async Task<MonthAggregate> ComputeMonthAsync(
-        Employee employee, DateOnly monthStart, DateOnly monthEnd, DateOnly lastIncludedDay, CancellationToken ct)
+        Employee employee, DateOnly monthStart, DateOnly monthEnd, DateOnly lastIncludedDay,
+        TimeZoneInfo tenantZone, CancellationToken ct)
     {
-        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, ct);
+        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, tenantZone, ct);
 
         decimal present = 0m, absent = 0m, leave = 0m, lop = 0m;
         int late = 0, early = 0, workMinutes = 0, holidays = 0, weeklyOffs = 0, overtime = 0;
@@ -674,7 +683,7 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
     // ══════════════════════════════════════════════════════════════
 
     private async Task<List<Employee>> FilteredEmployeesAsync(
-        MonthlySummaryFilter filter, CancellationToken ct)
+        MonthlySummaryFilter filter, TimeZoneInfo tenantZone, CancellationToken ct)
     {
         IQueryable<Employee> q = _dbContext.Employees.AsNoTracking();
 
@@ -693,7 +702,7 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         // Shift filter: keep employees whose effective (or default) shift is the requested one.
         if (filter.ShiftId is { } shiftId)
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = TenantClock.TodayIn(tenantZone);
             var assignedToShift = (await _dbContext.EmployeeShifts.AsNoTracking()
                     .Where(es => es.ShiftId == shiftId
                         && es.EffectiveFrom <= today
@@ -763,14 +772,30 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
 
     private static string YearMonth(int year, int month) => $"{year:D4}-{month:D2}";
 
-    private static (DateOnly Start, DateOnly End, DateOnly LastIncluded) MonthBounds(int year, int month)
+    private static (DateOnly Start, DateOnly End, DateOnly LastIncluded) MonthBounds(
+        int year, int month, TimeZoneInfo tenantZone)
     {
         var start = new DateOnly(year, month, 1);
         var end = start.AddMonths(1).AddDays(-1);
-        // AC-3 / §10: for the current (incomplete) month, only include days up to today (UTC); never future.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // AC-3 / §10: for the current (incomplete) month, only include days up to the tenant-local today
+        // (ISSUE-065; UTC zone → no-op); never future.
+        var today = TenantClock.TodayIn(tenantZone);
         var lastIncluded = end <= today ? end : (today < start ? start.AddDays(-1) : today);
         return (start, end, lastIncluded);
+    }
+
+    /// <summary>
+    /// ISSUE-065: resolves the tenant's configured time zone into a <see cref="TimeZoneInfo"/> (UTC
+    /// fallback via <see cref="TenantClock.ResolveTimeZone"/>) so the month/day-boundary logic runs in
+    /// tenant-local terms. One DB read per aggregation operation; threaded down to the per-employee loop.
+    /// </summary>
+    private async Task<TimeZoneInfo> ResolveTenantZoneAsync(CancellationToken ct)
+    {
+        var tzId = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.TimeZone)
+            .FirstOrDefaultAsync(ct);
+        return TenantClock.ResolveTimeZone(tzId, _logger);
     }
 
     private static int IsoDay(DateOnly date)

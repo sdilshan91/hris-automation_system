@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -88,9 +89,13 @@ public sealed class AttendanceService : IAttendanceService
             return Result<AttendanceLogDto>.Failure(
                 "You have already clocked in. Please clock out first.", 409, "already_clocked_in");
 
+        // ISSUE-065 / Phase 2b: resolve the tenant's zone once for this operation so every derived date /
+        // time-of-day below is computed in tenant-local terms (UTC fallback → no-op for UTC tenants).
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+
         // US-ATT-009 AC-4: once HR locks the attendance period, no further clock-in is allowed for a
-        // date in the locked range. "Today" is UTC (same deferral as the rest of the module).
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // date in the locked range. "Today" is the tenant-local calendar day of the punch (ISSUE-065).
+        var today = TenantClock.TodayIn(tenantZone);
         if (await IsDateLockedAsync(today, cancellationToken))
             return Result<AttendanceLogDto>.Failure(
                 "This date falls within a locked payroll period. Please contact HR.",
@@ -152,14 +157,13 @@ public sealed class AttendanceService : IAttendanceService
         // shifts are exempt (BR-6/§10). Grace resolves shift → tenant default → 0 (BR-3). Early
         // departure is NOT evaluated here (no clock-out yet) — it is computed on clock-out.
         var shiftSignals = await ResolveShiftSignalsAsync(
-            employee.Id, DateOnly.FromDateTime(log.ClockIn), settings, cancellationToken);
+            employee.Id, TenantClock.LocalDateOf(log.ClockIn, tenantZone), settings, cancellationToken);
         if (shiftSignals is { } ss)
         {
             // ISSUE-065: the punch instant is stored in UTC, but the shift start is configured in the
             // tenant's local time zone — compare LOCAL wall-clock to local shift start (UTC fallback).
-            var tenantTimeZone = await ResolveTenantTimeZoneAsync(cancellationToken);
             var lateEarly = LateEarlyCalculator.Evaluate(
-                clockInTime: ToLocalTimeOfDay(log.ClockIn, tenantTimeZone),
+                clockInTime: TenantClock.LocalTimeOfDay(log.ClockIn, tenantZone),
                 clockOutTime: null,
                 shiftStart: ss.Start,
                 shiftEnd: ss.End,
@@ -236,9 +240,13 @@ public sealed class AttendanceService : IAttendanceService
                 "No active clock-in found. Please clock in first or submit a regularization request.",
                 404, "no_active_clock_in");
 
+        // ISSUE-065 / Phase 2b: resolve the tenant's zone once so the lock-date, shift-resolution date,
+        // and late/early comparison below are all in tenant-local terms (UTC fallback → no-op).
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+
         // US-ATT-009 AC-4: a locked period freezes the day's record — no clock-out modification is
-        // allowed once the open record's clock-in date is in a locked range.
-        if (await IsDateLockedAsync(DateOnly.FromDateTime(openLog.ClockIn), cancellationToken))
+        // allowed once the open record's clock-in LOCAL date is in a locked range.
+        if (await IsDateLockedAsync(TenantClock.LocalDateOf(openLog.ClockIn, tenantZone), cancellationToken))
             return Result<ClockOutResultDto>.Failure(
                 "This date falls within a locked payroll period. Please contact HR.",
                 409, "payroll_period_locked");
@@ -273,15 +281,14 @@ public sealed class AttendanceService : IAttendanceService
         // are exempt (BR-6/§10); grace does NOT apply to early departure (§10). Re-evaluate the late
         // flag too (idempotent — the clock-in value is preserved) against the same resolved shift.
         var shiftSignals = await ResolveShiftSignalsAsync(
-            openLog.EmployeeId, DateOnly.FromDateTime(openLog.ClockIn), settings, cancellationToken);
+            openLog.EmployeeId, TenantClock.LocalDateOf(openLog.ClockIn, tenantZone), settings, cancellationToken);
         if (shiftSignals is { } ss)
         {
             // ISSUE-065: compare LOCAL wall-clock times (tenant time zone) to the local shift start/end.
             // Both instants are stored in UTC; only the late/early comparison uses local time (UTC fallback).
-            var tenantTimeZone = await ResolveTenantTimeZoneAsync(cancellationToken);
             var lateEarly = LateEarlyCalculator.Evaluate(
-                clockInTime: ToLocalTimeOfDay(openLog.ClockIn, tenantTimeZone),
-                clockOutTime: ToLocalTimeOfDay(clockOut, tenantTimeZone),
+                clockInTime: TenantClock.LocalTimeOfDay(openLog.ClockIn, tenantZone),
+                clockOutTime: TenantClock.LocalTimeOfDay(clockOut, tenantZone),
                 shiftStart: ss.Start,
                 shiftEnd: ss.End,
                 gracePeriodMinutes: ss.Grace,
@@ -387,9 +394,11 @@ public sealed class AttendanceService : IAttendanceService
 
         var type = request.RegularizationType;
 
-        // BR-4: no future dates. "Today" is evaluated in UTC (consistent with the rest of the module;
-        // tenant-timezone day-boundary semantics are deferred — see the vault note).
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // ISSUE-065 / Phase 2b: resolve the tenant's zone once for the day-boundary + wall-clock logic.
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+
+        // BR-4: no future dates. "Today" is the tenant-local calendar day (ISSUE-065; UTC fallback → no-op).
+        var today = TenantClock.TodayIn(tenantZone);
         if (request.Date > today)
             return Result<RegularizationDto>.Failure(
                 "Regularization requests cannot be submitted for future dates.", 400, "future_date");
@@ -428,10 +437,10 @@ public sealed class AttendanceService : IAttendanceService
                 409, "duplicate_pending");
 
         // AC-2 / BR-5: link to an existing attendance_log for the date if one exists. We do NOT
-        // mutate the log here — that happens on approval (US-ATT-004). Match on the UTC calendar day
-        // of clock_in (same UTC-day basis as the future/lookback checks above).
-        var dayStart = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var dayEnd = dayStart.AddDays(1);
+        // mutate the log here — that happens on approval (US-ATT-004). Match on the tenant-LOCAL calendar
+        // day of clock_in (ISSUE-065): the local day [date 00:00, date+1 00:00) maps to this UTC window.
+        var dayStart = TenantClock.LocalToUtc(request.Date, TimeOnly.MinValue, tenantZone);
+        var dayEnd = TenantClock.LocalToUtc(request.Date.AddDays(1), TimeOnly.MinValue, tenantZone);
         var existingLog = await _dbContext.AttendanceLogs
             .Where(a => a.EmployeeId == employee.Id && a.ClockIn >= dayStart && a.ClockIn < dayEnd)
             .OrderByDescending(a => a.ClockIn)
@@ -445,13 +454,13 @@ public sealed class AttendanceService : IAttendanceService
             AttendanceLogId = existingLog?.Id,
             Date = request.Date,
             RegularizationType = type,
-            // Combine the regularized date + wall-clock "HH:mm" into the stored UTC timestamptz.
-            // TODO(tenant-timezone): treated as UTC for now (no tenant-tz infra; same deferral as the
-            // rest of the module). Conditional on type, mirroring the validator's required-time rules.
+            // Combine the regularized date + wall-clock "HH:mm" into the stored UTC timestamptz, interpreting
+            // the wall-clock in the tenant's zone (ISSUE-065; UTC fallback → identical to the prior behavior).
+            // Conditional on type, mirroring the validator's required-time rules.
             RequestedClockIn = RegularizationType.RequiresClockIn(type)
-                ? request.CombineToUtc(request.RequestedClockIn) : null,
+                ? request.CombineToUtc(request.RequestedClockIn, tenantZone) : null,
             RequestedClockOut = RegularizationType.RequiresClockOut(type)
-                ? request.CombineToUtc(request.RequestedClockOut) : null,
+                ? request.CombineToUtc(request.RequestedClockOut, tenantZone) : null,
             Reason = request.Reason.Trim(),
             Status = RegularizationStatus.Pending,
             WorkflowInstanceId = null,   // TODO(US-ADM-007): set when the Approval Workflow Engine lands.
@@ -678,9 +687,9 @@ public sealed class AttendanceService : IAttendanceService
 
     /// <summary>
     /// ISSUE-065: resolves the tenant's configured IANA time zone (locale.time_zone, validated on write —
-    /// BUG-005) so a UTC punch instant can be compared against the shift's local start/end for late/early
-    /// detection. Falls back to UTC when the tenant has no (or an unrecognized) time zone — preserving the
-    /// prior behavior rather than throwing.
+    /// BUG-005) into a <see cref="TimeZoneInfo"/> so UTC punch instants can be projected to tenant-local
+    /// day / time-of-day for day-boundary and late/early derivation. Resolution + the UTC fallback (for a
+    /// missing or unrecognized zone — never throws) live in <see cref="TenantClock.ResolveTimeZone"/>.
     /// </summary>
     private async Task<TimeZoneInfo> ResolveTenantTimeZoneAsync(CancellationToken cancellationToken)
     {
@@ -690,21 +699,8 @@ public sealed class AttendanceService : IAttendanceService
             .Select(t => t.TimeZone)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return !string.IsNullOrWhiteSpace(tzId)
-            && TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var tz)
-                ? tz
-                : TimeZoneInfo.Utc;
+        return TenantClock.ResolveTimeZone(tzId, _logger);
     }
-
-    /// <summary>
-    /// ISSUE-065: projects a UTC instant to the tenant-local wall-clock time-of-day used by
-    /// <see cref="LateEarlyCalculator"/>. The record continues to store the instant in UTC; only the
-    /// late/early comparison uses the local time.
-    /// </summary>
-    private static TimeOnly ToLocalTimeOfDay(DateTime utcInstant, TimeZoneInfo tenantTimeZone)
-        => TimeOnly.FromDateTime(
-            TimeZoneInfo.ConvertTimeFromUtc(
-                DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc), tenantTimeZone));
 
     private async Task TryRecordIdempotencyAsync(
         string key, AttendanceLogDto dto, CancellationToken cancellationToken)
