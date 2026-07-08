@@ -85,3 +85,6 @@ longer ledger to review.
 - Findings are logged `OPEN`; the skill never sets downstream fix states or fixes the cause.
 - A blocked TC/story keeps a `blocked:` reason; never invent a pass.
 - Stack must be running; if not, stop cleanly rather than guessing.
+- **Auto-heal (breadth):** every finding logged here is also intake for [`/auto-heal`](auto-heal.md) — the
+  orchestrator folds new findings into the `COMPLETION-PLAN` and re-sorts priority (Engineering-Discipline
+  rule #6). Report-only still holds: auto-heal *tracks and ranks*, it does not fix under `/test-all`.
