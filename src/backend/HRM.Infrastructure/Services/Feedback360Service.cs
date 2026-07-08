@@ -141,6 +141,142 @@ public sealed class Feedback360Service : IFeedback360Service
         return Result<Feedback360ResultEntryDto>.Success(ProjectEntry(feedback, reviewerName, labels));
     }
 
+    // ── Feedback form for one assignment (BUG-244 #2, FR-4/AC-2) ─────
+
+    public async Task<Result<FeedbackFormDto>> GetFeedbackFormAsync(
+        Guid assignmentId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<FeedbackFormDto>.Failure("Tenant context is not resolved.", 400);
+
+        var caller = await GetCurrentEmployeeAsync(cancellationToken);
+        if (caller is null)
+            return Result<FeedbackFormDto>.Failure(
+                "The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        var assignment = await _dbContext.ReviewerAssignments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == assignmentId, cancellationToken);
+        if (assignment is null)
+            return Result<FeedbackFormDto>.Failure("Reviewer assignment not found.", 404, "assignment_not_found");
+
+        // RLS (NFR-2/NFR-3): a reviewer may load ONLY their own assignment's form.
+        if (assignment.ReviewerEmployeeId != caller.Id)
+            return Result<FeedbackFormDto>.Failure(
+                "You are not assigned to review this employee for this cycle.", 403, "not_assigned");
+
+        var cycle = await _dbContext.AppraisalCycles.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == assignment.CycleId, cancellationToken);
+        if (cycle is null)
+            return Result<FeedbackFormDto>.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
+
+        var reviewee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == assignment.RevieweeEmployeeId, cancellationToken);
+        if (reviewee is null)
+            return Result<FeedbackFormDto>.Failure("Employee not found.", 404, "employee_not_found");
+
+        var revieweeJobTitle = await _dbContext.JobTitles.AsNoTracking()
+            .Where(j => j.Id == reviewee.JobTitleId)
+            .Select(j => j.TitleName)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Questions = the reviewee's goals for this cycle (same source Feedback360Service uses for submit labels).
+        var goals = await _dbContext.Goals.AsNoTracking()
+            .Where(g => g.EmployeeId == assignment.RevieweeEmployeeId && g.CycleId == assignment.CycleId)
+            .OrderBy(g => g.Title)
+            .Select(g => new { g.Id, g.Title, g.Description })
+            .ToListAsync(cancellationToken);
+
+        // Hydrate the reviewer's existing answers when they have already submitted (BR-3 — one per reviewer).
+        var feedback = await _dbContext.Feedback360s.AsNoTracking()
+            .Include(f => f.Items)
+            .FirstOrDefaultAsync(f => f.CycleId == assignment.CycleId
+                && f.RevieweeEmployeeId == assignment.RevieweeEmployeeId
+                && f.ReviewerEmployeeId == caller.Id, cancellationToken);
+
+        var submitted = feedback is not null || assignment.Status == ReviewerAssignmentStatus.Completed;
+        var itemsByGoal = feedback?.Items
+            .Where(i => !i.IsDeleted && i.GoalId.HasValue)
+            .ToDictionary(i => i.GoalId!.Value)
+            ?? new Dictionary<Guid, Feedback360Item>();
+
+        var questions = goals.Select(g =>
+        {
+            itemsByGoal.TryGetValue(g.Id, out var item);
+            return new FeedbackFormQuestionDto
+            {
+                QuestionId = g.Id,
+                Kind = "Goal",
+                Title = g.Title,
+                Description = g.Description,
+                Rating = item?.Rating,
+                Comment = item?.Comment ?? string.Empty,
+            };
+        }).ToList();
+
+        return Result<FeedbackFormDto>.Success(new FeedbackFormDto
+        {
+            AssignmentId = assignment.Id,
+            CycleId = cycle.Id,
+            CycleName = cycle.Name,
+            RevieweeId = reviewee.Id,
+            RevieweeName = FullName(reviewee),
+            RevieweeJobTitle = revieweeJobTitle,
+            Category = assignment.Category,
+            RatingScaleMax = cycle.RatingScaleMax,
+            Submitted = submitted,
+            SubmittedOn = feedback?.SubmittedAt ?? assignment.CompletedAt,
+            Anonymous = cycle.IsAnonymousFeedback,
+            Questions = questions,
+        });
+    }
+
+    // ── Submit-by-assignment (BUG-244, reviewer form submit) ─────────
+
+    public async Task<Result<FeedbackFormDto>> SubmitFeedbackByAssignmentAsync(
+        Guid assignmentId, IReadOnlyList<FeedbackAnswerInput> answers, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<FeedbackFormDto>.Failure("Tenant context is not resolved.", 400);
+
+        var caller = await GetCurrentEmployeeAsync(cancellationToken);
+        if (caller is null)
+            return Result<FeedbackFormDto>.Failure(
+                "The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        var assignment = await _dbContext.ReviewerAssignments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == assignmentId, cancellationToken);
+        if (assignment is null)
+            return Result<FeedbackFormDto>.Failure("Reviewer assignment not found.", 404, "assignment_not_found");
+
+        // RLS (NFR-2/NFR-3): a reviewer may submit ONLY their own assignment — same gate as the form load (#2).
+        if (assignment.ReviewerEmployeeId != caller.Id)
+            return Result<FeedbackFormDto>.Failure(
+                "You are not assigned to review this employee for this cycle.", 403, "not_assigned");
+
+        // Map each form answer back to a goal rating — the exact inverse of the #2 form projection
+        // (questionId == goal id). Null ratings map to 0 so the reused validator rejects them (rating_out_of_range).
+        var items = (answers ?? [])
+            .Select(a => new Feedback360ItemInput
+            {
+                GoalId = a.QuestionId,
+                CompetencyKey = null,
+                Rating = a.Rating ?? 0,
+                Comment = a.Comment,
+            })
+            .ToList();
+
+        // Reuse the full submit path (Is360Enabled, Pending assignment, BR-3 duplicate, rating-range) keyed by
+        // the assignment's cycle + reviewee; the caller is re-resolved to the same reviewer inside.
+        var submit = await SubmitFeedbackAsync(
+            new SubmitFeedback360Input(assignment.CycleId, assignment.RevieweeEmployeeId, null, items),
+            cancellationToken);
+        if (submit.IsFailure)
+            return Result<FeedbackFormDto>.Failure(submit.Error!, submit.StatusCode ?? 400, submit.ErrorCode);
+
+        // Return the now-locked form (submitted=true, ratings/comments hydrated) — the FE consumes IFeedbackForm.
+        return await GetFeedbackFormAsync(assignmentId, cancellationToken);
+    }
+
     // ── Aggregated results (AC-4/FR-6) ───────────────────────────────
 
     public Task<Result<Feedback360ResultsDto>> GetResultsAsync(
@@ -257,13 +393,13 @@ public sealed class Feedback360Service : IFeedback360Service
                 cycle.ThreeSixtyPeerWeightPercent,
                 cycle.ThreeSixtyReportWeightPercent));
 
-        // Completion tracker (AC-3/AC-4).
-        var completion = Enum.GetValues<ReviewerCategory>().Select(cat => new CategoryCompletionDto
+        // Completion tracker (AC-3/AC-4) — shared per-category tally (BUG-244: also feeds the standalone tracker).
+        var completion = ThreeSixtyCompletion.ByCategory(assignments).Select(c => new CategoryCompletionDto
         {
-            Category = cat,
-            CategoryName = cat.ToString(),
-            Assigned = assignments.Count(a => a.Category == cat),
-            Completed = assignments.Count(a => a.Category == cat && a.Status == ReviewerAssignmentStatus.Completed),
+            Category = c.Category,
+            CategoryName = c.Category.ToString(),
+            Assigned = c.Assigned,
+            Completed = c.Completed,
         }).ToList();
 
         // Individual entries — reviewer identity OMITTED when the feedback is anonymous (NFR-3/FR-5).

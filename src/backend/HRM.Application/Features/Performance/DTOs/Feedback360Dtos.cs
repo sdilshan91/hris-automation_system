@@ -46,6 +46,105 @@ public sealed record SuggestedReviewerDto
     public string? EmployeeNo { get; init; }
 }
 
+// ── Full-replace reviewer set (BUG-244 #1, AC-1/FR-2) ──────────────────────
+
+/// <summary>One reviewer row in a full-replace save (BUG-244 #1). Only Peer / DirectReport are client-managed;
+/// Self + Manager are server-owned and never sent. Matches the FE <c>IReviewerInput</c> (camelCase).</summary>
+public sealed record ReviewerInputDto(Guid ReviewerId, ReviewerCategory Category);
+
+/// <summary>
+/// Full-replace request for an employee's manual (Peer + Direct Report) 360 reviewers (BUG-244 #1). The
+/// reviewee rides the route; the active 360-enabled cycle is resolved server-side. Self + Manager are
+/// server-owned and left untouched. Matches the FE <c>ISaveReviewersRequest</c>.
+/// </summary>
+public sealed record SaveReviewersRequest(IReadOnlyList<ReviewerInputDto> Reviewers);
+
+// ── Feedback form for one assignment (BUG-244 #2, FR-4/AC-2) ────────────────
+
+/// <summary>
+/// One question card on a reviewer's 360 feedback form (BUG-244 #2). Projected from the reviewee's cycle goals
+/// (<see cref="Kind"/> = "Goal", <see cref="QuestionId"/> = goal id); <see cref="Rating"/>/<see cref="Comment"/>
+/// are hydrated from the persisted feedback when already submitted, else null/empty. Matches the FE
+/// <c>IFeedbackQuestion</c>.
+/// </summary>
+public sealed record FeedbackFormQuestionDto
+{
+    public Guid QuestionId { get; init; }
+    /// <summary>"Competency" | "Goal" — currently always "Goal" (questions come from the reviewee's goals).</summary>
+    public string Kind { get; init; } = "Goal";
+    public string Title { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    /// <summary>The reviewer's rating on the tenant scale; null while unrated/unsubmitted.</summary>
+    public int? Rating { get; init; }
+    public string Comment { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// One reviewer's 360 feedback form for a single assignment (BUG-244 #2 / FR-4 / AC-2 deep link). The reviewer
+/// is resolved server-side and RLS ensures a reviewer only loads their OWN assignment. Matches the FE
+/// <c>IFeedbackForm</c> (camelCase).
+/// </summary>
+public sealed record FeedbackFormDto
+{
+    public Guid AssignmentId { get; init; }
+    public Guid CycleId { get; init; }
+    public string CycleName { get; init; } = string.Empty;
+    public Guid RevieweeId { get; init; }
+    public string RevieweeName { get; init; } = string.Empty;
+    public string? RevieweeJobTitle { get; init; }
+    public ReviewerCategory Category { get; init; }
+    public int RatingScaleMax { get; init; }
+    /// <summary>Once true the form is read-only (BR-3 — the reviewer has submitted).</summary>
+    public bool Submitted { get; init; }
+    public DateTime? SubmittedOn { get; init; }
+    public bool Anonymous { get; init; }
+    public IReadOnlyList<FeedbackFormQuestionDto> Questions { get; init; } = [];
+}
+
+// ── Completion tracker (BUG-244 #3, AC-3) ──────────────────────────────────
+
+/// <summary>Per-category progress for the completion tracker (BUG-244 #3). Matches the FE <c>ICategoryProgress</c>.</summary>
+public sealed record CategoryProgressDto
+{
+    public ReviewerCategory Category { get; init; }
+    public int Submitted { get; init; }
+    public int Pending { get; init; }
+    /// <summary>Always 0 — there is no 360 deadline/window entity yet (BUG-244 #3).</summary>
+    public int Overdue { get; init; }
+    /// <summary>Configured minimum for this category: <c>Min360PeerReviewers</c> for Peer, 0 for the rest.</summary>
+    public int Minimum { get; init; }
+}
+
+/// <summary>The 360 completion tracker across all four categories for one reviewee (BUG-244 #3). Matches the FE
+/// <c>ICompletionTracker</c>.</summary>
+public sealed record CompletionTrackerDto
+{
+    public Guid EmployeeId { get; init; }
+    public IReadOnlyList<CategoryProgressDto> Categories { get; init; } = [];
+}
+
+// ── Submit-by-assignment (BUG-244, reviewer form submit) ───────────────────
+
+/// <summary>
+/// One answer posted from the reviewer's feedback form (BUG-244 submit). <see cref="QuestionId"/> is the form
+/// question id — for #2's form this is the GOAL id (kind="Goal"), so it maps to <c>Feedback360ItemInput.GoalId</c>
+/// on the way back in (an exact round-trip with the #2 form projection). Matches the FE <c>IFeedbackAnswerInput</c>.
+/// </summary>
+public sealed record FeedbackAnswerInput
+{
+    public Guid QuestionId { get; init; }
+    /// <summary>Rating on the tenant scale; may arrive null (unrated) — the service rejects an out-of-range rating.</summary>
+    public int? Rating { get; init; }
+    public string? Comment { get; init; }
+}
+
+/// <summary>
+/// Submit-by-assignment request (BUG-244). The assignment rides the route; the reviewer + cycle + reviewee are
+/// resolved from it server-side (RLS: caller's employee must be the assignment's reviewer). Matches the FE
+/// <c>ISubmitFeedbackRequest</c>.
+/// </summary>
+public sealed record SubmitFeedbackByAssignmentRequest(IReadOnlyList<FeedbackAnswerInput> Answers);
+
 // ── Feedback submission (AC-3/FR-4) ────────────────────────────────────────
 
 /// <summary>One competency/goal rating in a feedback submission (US-PRF-005 FR-4).</summary>

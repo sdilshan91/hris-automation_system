@@ -34,6 +34,32 @@ public interface IReviewerAssignmentService
     Task<Result> RemoveReviewerAsync(Guid assignmentId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// BUG-244 #1: full-replace of an employee's MANUAL (Peer + Direct Report) 360 reviewers in the active
+    /// 360-enabled cycle. Self + Manager are server-owned and left untouched. Re-validates BR-2 (no self-as-peer)
+    /// and BR-3 de-dup, and refuses to remove a reviewer who has already submitted (cannot-remove-Completed).
+    /// Authorization is HR (Performance.Review.All, unrestricted) OR a Team manager of the reviewee when the
+    /// tenant toggle allows it. Returns the refreshed configuration view.
+    /// </summary>
+    Task<Result<ReviewerConfigurationDto>> SaveReviewersAsync(
+        Guid revieweeEmployeeId, IReadOnlyList<ReviewerInputDto> reviewers, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-244: the no-cycleId config-screen LOAD. Resolves the active 360-enabled cycle server-side then returns
+    /// the SAME full configuration view (WITH the Self/Manager auto-seed) that the cycle-keyed
+    /// <see cref="GetConfigurationAsync"/> produces. Same authorization as <see cref="SaveReviewersAsync"/>.
+    /// </summary>
+    Task<Result<ReviewerConfigurationDto>> GetConfigurationForActiveCycleAsync(
+        Guid revieweeEmployeeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-244 #3: per-category submitted/pending/overdue completion tracker for an employee in the active
+    /// 360-enabled cycle. Same authorization as <see cref="SaveReviewersAsync"/>. Overdue is always 0 (no 360
+    /// window exists); only the Peer category carries a configured minimum.
+    /// </summary>
+    Task<Result<CompletionTrackerDto>> GetTrackerAsync(
+        Guid revieweeEmployeeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Notifies every assigned reviewer for a reviewee + cycle that the 360 phase has started (AC-2). Stamps
     /// NotifiedAt and dispatches via the notification seam. Returns the number of reviewers notified.
     /// </summary>

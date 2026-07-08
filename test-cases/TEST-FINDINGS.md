@@ -5787,3 +5787,10 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Module / US / TC:** Platform / test-infra (`HRM.Tests/Integration/Http/ApiTestFactory.cs`)
 - **Title:** The `HttpApi` Testcontainers factory seeds only high-privilege personas with login creds, so a "403 without permission" HTTP arm for a `[RequirePermission]`-gated route would be fabricated rather than real (only positive 200 arms are testable end-to-end; the negative gate is covered by the declarative attribute + handler unit coverage). Surfaced writing the BUG-244 #6 auth test.
 - **Suggested direction (NOT applied):** seed a plain Employee-role user on the e2e tenant to enable genuine negative-authz HTTP arms across the suite. Report only.
+
+### ISSUE-256 — 360 feedback comment over the DB length cap returns 500 instead of 422
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (surfaced by the security audit of the BUG-244 Feedback360 build, 2026-07-08)
+- **Layer:** BE
+- **Module / US / TC:** Performance · Feedback360 submit
+- **Title:** 360 feedback comments are trimmed but not length-validated in the service; a body exceeding the Postgres column caps (`OverallComment` 5000, item `Comment` 2000) is rejected only by the DB, surfacing as a 500 rather than a 422. No security impact (no truncation bypass; EF-parameterized, no SQLi), just error-hygiene. Sibling XSS-class note: 360 comments flow verbatim into the results/report DTOs — same class as **ISSUE-226** (ensure the PDF/HTML render encodes them); no new sink added here.
+- **Suggested direction (NOT applied):** validate comment length in the submit handler/validator → 422 with a clear message. Report only.

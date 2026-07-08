@@ -22,6 +22,26 @@ public interface IFeedback360Service
         SubmitFeedback360Input input, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// BUG-244 #2: returns ONE reviewer's feedback form for a single assignment (FR-4 / AC-2 deep link). The
+    /// cycle comes from the assignment (not the active cycle). RLS: only the assigned reviewer (the caller's
+    /// employee == the assignment's reviewer) may load the form, else 403 <c>not_assigned</c>. Questions are
+    /// projected from the reviewee's cycle goals; ratings/comments hydrate from the persisted feedback once
+    /// submitted.
+    /// </summary>
+    Task<Result<FeedbackFormDto>> GetFeedbackFormAsync(
+        Guid assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-244: submit-by-assignment — the reviewer form's submit. Resolves cycle + reviewee + reviewer from the
+    /// reviewer assignment and enforces the SAME RLS as <see cref="GetFeedbackFormAsync"/> (caller's
+    /// employee must be the assignment's reviewer, else 403 <c>not_assigned</c>). Maps each answer's questionId to
+    /// a goal rating (the exact inverse of the #2 form projection) and reuses <see cref="SubmitFeedbackAsync"/>'s
+    /// guards (Is360Enabled, Pending assignment, BR-3 no-duplicate, rating-range). Returns the now-locked form.
+    /// </summary>
+    Task<Result<FeedbackFormDto>> SubmitFeedbackByAssignmentAsync(
+        Guid assignmentId, IReadOnlyList<FeedbackAnswerInput> answers, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the aggregated 360 results for a reviewee + cycle (AC-4/FR-6): composite score, per-competency
     /// and per-category averages, completion tracker, and individual entries (reviewer identity omitted when
     /// anonymity is on, NFR-3). HR/manager only. The BR-4 minimum-peer release gate is surfaced as a warning.

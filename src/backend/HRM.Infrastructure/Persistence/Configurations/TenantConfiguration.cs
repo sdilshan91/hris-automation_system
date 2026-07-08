@@ -91,6 +91,11 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.AuditLogRetentionDays)
             .HasDefaultValue(90);
 
+        // BUG-244 (US-PRF-005): default true so existing tenant rows opt IN to manager reviewer-config on
+        // migrate (managers-allowed is the intended default). New tenants also default true via the entity.
+        builder.Property(t => t.AllowManagerReviewerConfig)
+            .HasDefaultValue(true);
+
         // MfaRequiredRoles stored as jsonb column with value converter and comparer
         builder.Property(t => t.MfaRequiredRoles)
             .HasColumnType("jsonb")

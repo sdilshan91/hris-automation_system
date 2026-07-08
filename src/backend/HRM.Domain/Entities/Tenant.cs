@@ -163,6 +163,17 @@ public sealed class Tenant
     /// </summary>
     public bool PayslipYtdEnabled { get; set; }
 
+    /// <summary>
+    /// Tenant-level toggle (BUG-244 Feedback360) letting DIRECT MANAGERS — not just HR — configure the 360
+    /// reviewer set (add/remove Peer + Direct Report nominations) for their OWN direct reports (US-PRF-005
+    /// AC-1/FR-2). HR (Performance.Review.All) is always unrestricted; when this is true a manager holding
+    /// Performance.Review.Team may also configure reviewers for an employee who reports directly to them.
+    /// Defaults to true (managers allowed — opt-out), mirroring the plain-boolean tenant flags above
+    /// (<see cref="PublicCareersEnabled"/>/<see cref="PayslipYtdEnabled"/>). TODO(admin-console): surface this
+    /// in tenant performance configuration once that subsystem exists; for now a plain boolean on the tenant.
+    /// </summary>
+    public bool AllowManagerReviewerConfig { get; set; } = true;
+
     // Password policy
     public int MinPasswordLength { get; set; } = 12;
     public bool RequireUppercase { get; set; } = true;
