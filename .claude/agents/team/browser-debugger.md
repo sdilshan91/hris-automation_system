@@ -117,6 +117,13 @@ Pick the right browser: **Playwright** for functional reproduction + DOM/a11y tr
    (status/payload/CORS), or tenancy (wrong/missing tenant context).
 6. **Report** (see format below). Close the browser with `browser_close` when finished.
 
+> **Exploratory / bug-hunt mode:** when asked to *find* issues rather than diagnose one known symptom
+> (dogfood, smoke a changed screen, quality review), work through
+> [`test-cases/EXPLORATORY-QA-PLAYBOOK.md`](../../../test-cases/EXPLORATORY-QA-PLAYBOOK.md) — the 8-pass
+> per-page checklist (incl. **auth & tenant boundaries**), repro-with-one-retry before logging, and
+> evidence matched to issue type (step screenshots for interactive bugs, one annotated shot for static).
+> You remain read-only — a diagnosis/finding, never a code edit.
+
 ## Diagnosis report format
 ```
 ## Symptom
