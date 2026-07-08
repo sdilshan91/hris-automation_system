@@ -19,22 +19,25 @@
 
 ---
 
-## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08, post-loop)
-- **Base:** `test/local-subdomains` @ **HEAD `f8fdcc8b`** (everything through PR **#201** merged; #197 plan-doc + #198–201 fix PRs all merged). Working tree clean.
-- **Base health:** ✅ **CONFIRMED GREEN on the merged union (2026-07-08)** — backend `dotnet test HRM.sln` = **3030/3030, 0 failed** (Docker up); FE `ng test` (headless) = **3647/3647, 0 failed**. The four loop PRs (#198–201) are merged and re-verified together.
+## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08, BUG-244 in progress)
+- **Base:** `test/local-subdomains` @ **HEAD `b5ecf3af`** (through PR **#206**; #203 BUG-252 close-out + #204 BUG-244 #8 + #206 BUG-244 #4/#6 all merged). Working tree clean.
+- **Base health:** ✅ **CONFIRMED GREEN (2026-07-08)** — backend `dotnet test HRM.sln` = **3041/3041, 0 failed** (Docker up); FE `ng test` (headless) = **3647/3647** (FE untouched since). Union of #203/#204/#206 re-verified together.
+- **▶ IN PROGRESS — BUG-244 Performance FE↔BE endpoint builds (3 of 8 done):** ✅ **#8 `cycles/active` gate-relax** (keystone, PR #204 — unblocked the module landing) · ✅ **#4 `deleteAttachment`** + **#6 `recommendations/cycles/completed`** (PR #206). **NEXT (all disposition-decided):** ⏳ **Feedback360 trio** — #1 `saveReviewers` (thin), #2 `getFeedbackForm` (medium), #3 `getTracker` (thin); now unblocked since #8's resolver supplies `cycleId`. ⏳ **#7 pip `draft`** = BUILD `GetPipDraftQuery` (decided). ⏳ **#5 cycle `rating-scales`** = REMOVE the FE picker → bind numeric `RatingScaleMax` (FE-only, decided). See memory `bug244-performance-endpoints-progress` for exact FE callers/paths.
+- **Base health (historical, pre-BUG-244):** the four loop PRs (#198–201) merged + re-verified 3030/3030 BE + 3647/3647 FE.
 - **Working method (unchanged):** one `fix/{cluster}` branch per item off fresh `test/local-subdomains` → parallel `@backend-dev` + `@qa-engineer` (non-overlapping paths) → gate on the **FULL** suite → commit → PR → user merges → next. **Auto-heal is ACTIVE** (rule #6 / `/auto-heal`): file every `OUT-OF-LANE:` flag to `TEST-FINDINGS.md`, fold into this plan, re-prioritize. Avoid stacking branches that touch the same files/migrations as an open PR.
 - **✅ COMPLETED this loop (merged #198–201):**
   1. ✅ **Phase 1c — JWT signing-key rotation/overlap** → **PR #198** (config-driven key-ring, back-compat; 3016/3016).
   2. ✅ **BUG-245/246/247 — tenant-tz across attendance** (dashboard/payroll/regularization via `TenantClock`) → **PR #199** (3018/3018). Residual ISSUE-250/251 remain LOW (Phase 6/decision).
   3. ✅ **Phase 5 — Testcontainers tx coverage + BUG-252 fix** → **PR #200** (3014/3014). Covered `TenantDataDeletionService` + `ApplicantConversionService` tx paths on real Postgres. **`TenantTransactionBehavior:57` deferred to Phase 4** (RLS-gated). **Training & Benefits = UNBUILT** (stories + permission constants only; no code) → greenfield feature-build, moved to the decision-gate.
   4. ✅ **Phase 6 — Theme-L dead-code** (`EmployeeFieldAuditLog` query filter added; `IPipCheckpointScheduler` + `GeneratePortalLinkCommand` removed; 2 Hangfire jobs `AddScoped`) → **PR #201** (3015/3015). **LOW-cosmetic tail (~70) intentionally NOT swept** (mostly fixed-not-closed) — targeted follow-up only.
-- **▶ NEXT — everything remaining is at the DECISION-GATE (needs the user):**
-  - **Post-merge close-out:** `/verify-fix BUG-252` to flip it RESOLVED with PR #200.
-  - **Phase 3 features (each needs AC):** **BUG-244** Performance backend endpoints incl. the HR-gated `cycles/current` resolver (highest-leverage — unblocks a whole priced module's UI; per-endpoint build-vs-remove call); **Notifications delivery** US-NTF-006 (biggest blast radius, ~25 stories; SMTP+SignalR); **workflow runtime** US-ADM-011; **Training & Benefits** greenfield build (US-TRN-*).
+- **▶ AFTER BUG-244 — still at the DECISION-GATE (needs the user):**
+  - ✅ **BUG-252 close-out** — RESOLVED (PR #203 merged).
+  - **Phase 3 features (each needs AC):** **Notifications delivery** US-NTF-006 (biggest blast radius, ~25 stories; SMTP+SignalR); **workflow runtime** US-ADM-011; **Training & Benefits** greenfield build (US-TRN-*). *(BUG-244 no longer here — it's the in-progress item above.)*
   - **Phase 4 infra (needs provisioning):** **Redis**, **RLS enablement** (+ `TenantTransactionBehavior` test), **OTel**, **ISSUE-247** DataProtection key persistence.
-  - **Deferred LOW:** ISSUE-253 (`ApplicantConversionService` audit detach-on-retry), the ~70 LOW-cosmetic Phase-6 tail, ISSUE-249 (AutoMapper NU1903 bump), ISSUE-250/251.
+  - **Deferred LOW:** ISSUE-253 (`ApplicantConversionService` audit detach-on-retry), **ISSUE-254** (#6 `ratingsPublishedOn` EndDate proxy), **ISSUE-255** (test harness has no permissionless persona), the ~70 LOW-cosmetic Phase-6 tail, ISSUE-249 (AutoMapper NU1903 bump), ISSUE-250/251.
 
 ## 🔄 LOOP EXECUTION PROGRESS — MERGED (2026-07-07/08)
+- ✅ **#203 BUG-252 close-out** · **#204 BUG-244 #8 cycles/active gate-relax** · **#206 BUG-244 #4 deleteAttachment + #6 cycles/completed** — merged, union re-verified **3041/3041 BE** (2026-07-08). BUG-244 remaining: Feedback360 trio (#1/#2/#3) + #7 pip-draft + #5 rating-scales FE.
 - ✅ **#198 Phase 1c JWT key-ring** · **#199 attendance tenant-tz (BUG-245/246/247)** · **#200 Phase 5 Testcontainers tx + BUG-252 fix** · **#201 Phase 6 Theme-L dead-code** — all merged, union re-verified **3030/3030 BE + 3647/3647 FE** (2026-07-08).
 - ✅ #184 verify-first (2 ghosts STALE; Perf routes LIVE→BUG-243) · #185 BUG-243 (6 Perf FE routes) · #186 Theme-G (4 shape bugs) · #187 Ph1a (magic-byte + EXIF + ISSUE-244) · #188 Ph1b-A (auth rate-limit + cache-invalidation + refresh-guard + audit-metadata) · #189 Ph2a (dept leave-coverage + payroll-lock) · #190 US AC-B* · #191 tracking (BUG-244/ISSUE-245/246 + TC stubs) · #192 **auto-heal protocol** · #193 Ph1b-B (MFA encryption + password-history, migrations) · #194 **ISSUE-245 FE suite green (3647/0)** · #195 Ph2b (tenant timezone / ISSUE-065) · #196 absorbed tooling (design-review/retro/security-audit/guardrails/exploratory-QA).
 
