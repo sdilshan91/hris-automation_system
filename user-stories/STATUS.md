@@ -249,13 +249,14 @@
 | US-PAY-009 | **year-end tax-statement PDF (ISSUE-177)** + report PDF export | F | — |
 | US-PAY-011 | **entire story purpose unbuilt** — bulk payslip email is LogOnly, nothing delivered | B | US-NTF-006 |
 | US-PRF-001 | goals-set notification delivery; **goal-set finalize == 100% (BUG-056)** — see story AC-K1 | B; K | US-NTF-006 |
-| US-PRF-002 | self-rating notification delivery | B | US-NTF-006 |
+| US-PRF-002 | self-rating notification delivery; **AC-B1 self-assessment attachment DELETE missing (BUG-243)** | B; F/BUG-243 | US-NTF-006 |
 | US-PRF-003 | rating notification delivery | B | US-NTF-006 |
-| US-PRF-005 | **360 report PDF**; 360 notifications delivery | F; B | US-NTF-006 |
+| US-PRF-004 | **AC-B1 cycle rating-scales endpoint missing**; **AC-B2 low-privilege "resolve active cycle" resolver missing — cross-cutting BUG-243 enabler** | F/BUG-243 | — |
+| US-PRF-005 | **360 report PDF**; 360 notifications delivery; **AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment missing (BUG-243)** | F; B; F/BUG-243 | US-NTF-006 |
 | US-PRF-006 | **review meeting PDF** | F | — |
 | US-PRF-007 | **dashboard PDF export** | F | — |
-| US-PRF-008 | **PIP PDF**; PIP notification delivery | F; B | US-NTF-006 |
-| US-PRF-010 | **recommendation PDF**; **calibration dead-end trap** (permanent lockout) | F; E | US-PRF-011 |
+| US-PRF-008 | **PIP PDF**; PIP notification delivery; **AC-B1 PIP draft/pre-fill endpoint missing (BUG-243)** | F; B; F/BUG-243 | US-NTF-006 |
+| US-PRF-010 | **recommendation PDF**; **calibration dead-end trap** (permanent lockout); **AC-B1 completed-cycles picker missing (BUG-243)**; **AC-B2 team-recs = workspace reshape (BUG-243, not a gap)** | F; E; F/BUG-243 | US-PRF-011 |
 | US-ADM-002 | monitoring KPIs (error-rate/latency/SLA/usage) **hardcoded null** | I | US-PLT-004 |
 | US-ADM-006 | plan-gated enterprise-only settings absent (#17) | H | US-ADM-012 |
 | US-ADM-009 | module-gating **not enforced** (disabled-module API not 403'd, no FE guard); usage limits config-only (BUG-114) | H | US-ADM-012 |
@@ -269,6 +270,18 @@
 | US-CHR-010 | AC-K1 custom-field columns in bulk import (spans US-CHR-012) | CHR-010/012 FR-11 |
 | US-LV-012 | AC-K1 Dept Leave-Coverage report (empty stub) | LV-012 FR-1 |
 | US-REC-006 | AC-K1 scorecard versioning | REC-006 |
+
+### BUG-243 follow-up ACs — Performance FE→BE missing endpoints (attached 2026-07-08)
+> Verified per-item against the real controllers (`Feedback360Controller`, `SelfAssessment*Controller`,
+> `CyclesController`, `RecommendationController`, `PipController`) — only genuinely-absent routes formalized.
+> See each story's "Follow-up ACs (BUG-243 …)" section. AC-B prefix = BUG-243 backlog.
+| Existing story | Attached follow-up (AC-B) | Verdict |
+|---|---|---|
+| US-PRF-002 | AC-B1 self-assessment attachment DELETE | genuinely missing |
+| US-PRF-004 | AC-B1 cycle rating-scales endpoint · AC-B2 low-privilege active-cycle **resolver** (cross-cutting enabler) | both missing |
+| US-PRF-005 | AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment | missing (B2 data exists embedded in /results) |
+| US-PRF-008 | AC-B1 PIP draft/pre-fill | genuinely missing |
+| US-PRF-010 | AC-B1 completed-cycles picker · AC-B2 team-recs | B1 missing; B2 **reshape** (workspace already serves managers) |
 
 ---
 

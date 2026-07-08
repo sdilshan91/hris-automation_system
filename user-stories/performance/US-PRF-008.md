@@ -93,3 +93,10 @@ acceptance_criteria_count: 5
 - Test concurrent PIP prevention: attempt to create a second PIP for an employee with an active PIP.
 - Test data encryption: query the database directly, verify PIP reason and escalation notes are encrypted.
 - Test PDF report generation: verify all sections, checkpoints, and signatures are included.
+
+---
+## Follow-up ACs (deferred — BUG-243, missing backend endpoint)
+> Attached here rather than as a net-new epic. Track in STATUS.md. Verified against `PipController`
+> (list GET L43, get GET L58, create POST L70, acknowledge L89, checkpoints L101, outcome L122,
+> escalation L140 — no draft/pre-fill route).
+- **AC-B1 — PIP creation-form pre-fill / draft (AC-1).** `PipController` has no draft route; the FE create-PIP form calls `GET /pips/draft?employeeId=&reviewId=` (`PipService.getDraft`) to pre-populate — a dead call. Add `GET /api/v1/tenant/performance/pips/draft`. **Input:** optional `employeeId` and `reviewId` query params. **Output:** a read-only pre-fill DTO (employee name/snapshot, plus a suggested reason/objectives when arriving from a flagged manager review, US-PRF-003 FR-6). **No persistence** — this is pre-fill only, distinct from create (`POST /pips`). **Tenant-scoping:** EF global query filter. **Authz:** `Performance.Review.All` (HR, same gate as create, BR-1). **Status: not built. Ref: BUG-243.**
