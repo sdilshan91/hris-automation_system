@@ -286,6 +286,62 @@ public sealed class SelfAssessmentAttachmentService : ISelfAssessmentAttachmentS
         });
     }
 
+    public async Task<Result> DeleteAsync(
+        Guid assessmentId, Guid attachmentId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await GetCurrentEmployeeAsync(cancellationToken);
+        if (employee is null)
+            return Result.Failure(
+                "The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        // Ownership (NFR-2): load the attachment (tracking, so we can delete it) scoped to the caller's OWN
+        // self-assessment AND require it to belong to the assessment named in the path. Tenant is enforced by
+        // the global query filter. 404 (not 403) so we never disclose another employee's attachment.
+        var attachment = await _dbContext.SelfAssessmentAttachments
+            .Include(a => a.SelfAssessmentItem!)
+                .ThenInclude(i => i.SelfAssessment!)
+            .FirstOrDefaultAsync(a => a.Id == attachmentId
+                && a.SelfAssessmentItem!.SelfAssessment!.Id == assessmentId
+                && a.SelfAssessmentItem.SelfAssessment.EmployeeId == employee.Id,
+                cancellationToken);
+
+        if (attachment is null)
+            return Result.Failure("Attachment not found.", 404, "attachment_not_found");
+
+        var assessment = attachment.SelfAssessmentItem!.SelfAssessment!;
+
+        // BR-3: a submitted (locked) self-assessment cannot have evidence removed (mirrors the upload gate).
+        if (assessment.Status == SelfAssessmentStatus.Submitted)
+            return Result.Failure(
+                "This self-assessment has already been submitted and is locked.", 409, "already_submitted");
+
+        // BR-1/AC-4: evidence can only be removed while the self-assessment window is open (same gate as the
+        // upload path — you must not be able to pull evidence after the window closes).
+        var cycle = await _dbContext.AppraisalCycles
+            .FirstOrDefaultAsync(c => c.Id == assessment.CycleId, cancellationToken);
+        if (cycle is null)
+            return Result.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
+        if (!cycle.IsSelfAssessmentOpen(DateTime.UtcNow))
+            return Result.Failure(
+                "The self-assessment period for this cycle has ended.", 409, "self_assessment_closed");
+
+        // Delete the blob first (via the same storage abstraction the upload path uses), then remove the row.
+        await _fileStorage.DeleteAsync(_tenantContext.TenantId, attachment.StorageKey, cancellationToken);
+
+        _dbContext.SelfAssessmentAttachments.Remove(attachment);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Self-assessment evidence deleted. AttachmentId={AttachmentId}, SelfAssessmentId={SelfAssessmentId}, " +
+            "EmployeeId={EmployeeId}, TenantId={TenantId}",
+            attachment.Id, assessment.Id, employee.Id, _tenantContext.TenantId);
+
+        return Result.Success();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private Task<Employee?> GetCurrentEmployeeAsync(CancellationToken cancellationToken)

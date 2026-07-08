@@ -5773,3 +5773,17 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Module / US / TC:** Recruitment · US-REC-010 (applicant→employee convert)
 - **Title:** `ApplicantConversionService.cs:~230-239` creates and `Add`s a fresh `AuditLog` inside the `CreateExecutionStrategy().ExecuteAsync` delegate but, unlike the BUG-252 fix, does not `Detach` it on rollback. A genuine transient failure that triggers a strategy **retry** could leave the prior attempt's Added audit row tracked and double-insert it on the successful attempt. Harmless today (retries are rare in practice and its tests run on InMemory, which never retries), so no live impact observed.
 - **Suggested direction (NOT applied):** apply the same catch-block `Detach` to the audit row (one-line, mirrors BUG-252). Touches a currently-working path → needs a "worth it?" decision. Report only.
+
+### ISSUE-254 — recommendations `cycles/completed` returns `ratingsPublishedOn` from cycle EndDate as a proxy (no real publish timestamp)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag building BUG-244 #6, 2026-07-08) — deferred (needs decision)
+- **Layer:** BE / data-model
+- **Module / US / TC:** Performance · recommendation cycle picker
+- **Title:** `AppraisalCycle` has **no** dedicated "final ratings published" timestamp, so the new `GetCompletedCyclesForRecommendationsQuery` populates the FE `ICompletedCycleOption.ratingsPublishedOn` from the cycle `EndDate` as a display proxy. Filtering is correct (`Status == Completed` **is** the domain's published signal, same gate `RecommendationService.SubmitAsync` uses for BR-1); only the displayed date is approximate.
+- **Suggested direction (NOT applied):** accept the EndDate proxy, or add a real `RatingsPublishedOn` column set on transition to Completed (schema/migration + backfill). Report only.
+
+### ISSUE-255 — API test harness seeds no permissionless persona, so negative-authz HTTP arms can't be written for `[RequirePermission]` routes
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag, test-health, 2026-07-08)
+- **Layer:** TEST
+- **Module / US / TC:** Platform / test-infra (`HRM.Tests/Integration/Http/ApiTestFactory.cs`)
+- **Title:** The `HttpApi` Testcontainers factory seeds only high-privilege personas with login creds, so a "403 without permission" HTTP arm for a `[RequirePermission]`-gated route would be fabricated rather than real (only positive 200 arms are testable end-to-end; the negative gate is covered by the declarative attribute + handler unit coverage). Surfaced writing the BUG-244 #6 auth test.
+- **Suggested direction (NOT applied):** seed a plain Employee-role user on the e2e tenant to enable genuine negative-authz HTTP arms across the suite. Report only.

@@ -1,9 +1,52 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
+using HRM.Domain.Enums;
 using MediatR;
 
 namespace HRM.Application.Features.Performance.Queries;
+
+// ── Completed-cycle picker (BR-1 / BUG-244 #6) ──────────────────────────
+
+/// <summary>
+/// The completed-cycle picker for the recommendation workspace (US-PRF-010 BR-1 / BUG-244 #6). Returns only
+/// cycles with published final ratings — which in this domain is the <c>Completed</c> status (the same signal
+/// <c>RecommendationService.SubmitAsync</c>'s BR-1 gate uses). Reuses the completed-cycle read
+/// (<see cref="IAppraisalCycleService.ListAsync"/>) and shapes it to the FE <c>ICompletedCycleOption</c>.
+/// </summary>
+public sealed record GetCompletedCyclesForRecommendationsQuery
+    : IRequest<Result<IReadOnlyList<CompletedCycleOptionDto>>>;
+
+public sealed class GetCompletedCyclesForRecommendationsQueryHandler
+    : IRequestHandler<GetCompletedCyclesForRecommendationsQuery, Result<IReadOnlyList<CompletedCycleOptionDto>>>
+{
+    private readonly IAppraisalCycleService _cycleService;
+    public GetCompletedCyclesForRecommendationsQueryHandler(IAppraisalCycleService cycleService)
+        => _cycleService = cycleService;
+
+    public async Task<Result<IReadOnlyList<CompletedCycleOptionDto>>> Handle(
+        GetCompletedCyclesForRecommendationsQuery request, CancellationToken cancellationToken)
+    {
+        // BR-1: only Completed cycles (= final ratings published in this domain — no separate publish flag
+        // exists on AppraisalCycle; see BUG-244 #6 OUT-OF-LANE). Tenant-scoped by the EF global query filter.
+        var result = await _cycleService.ListAsync(AppraisalCycleStatus.Completed, cancellationToken);
+        if (result.IsFailure)
+            return Result<IReadOnlyList<CompletedCycleOptionDto>>.Failure(
+                result.Error!, result.StatusCode ?? 400, result.ErrorCode);
+
+        var options = result.Value!
+            .Select(c => new CompletedCycleOptionDto
+            {
+                CycleId = c.Id,
+                CycleName = c.Name,
+                // No dedicated publish timestamp is persisted; the cycle end date is the best-available proxy.
+                RatingsPublishedOn = c.EndDate,
+            })
+            .ToList();
+
+        return Result<IReadOnlyList<CompletedCycleOptionDto>>.Success(options);
+    }
+}
 
 // ── Workspace (AC-1, NFR-4) ─────────────────────────────────────────────
 

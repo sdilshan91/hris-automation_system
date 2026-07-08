@@ -37,4 +37,14 @@ public interface ISelfAssessmentAttachmentService
     /// </summary>
     Task<Result<SelfAssessmentAttachmentDownloadDto>> DownloadAsync(
         Guid attachmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes one evidence file (blob + row) from the caller's OWN self-assessment (US-PRF-002 FR-5 / BUG-244 #4).
+    /// Tenant-scoped and ownership-checked: the attachment must belong to <paramref name="assessmentId"/> AND that
+    /// self-assessment must belong to the calling employee — otherwise 404 (never disclosing another employee's
+    /// evidence, NFR-2). Fails 409 when the self-assessment window is closed (BR-1) or already submitted/locked
+    /// (BR-3), so evidence cannot be pulled after submission.
+    /// </summary>
+    Task<Result> DeleteAsync(
+        Guid assessmentId, Guid attachmentId, CancellationToken cancellationToken = default);
 }

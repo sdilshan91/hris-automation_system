@@ -35,3 +35,26 @@ public sealed class UploadSelfAssessmentAttachmentCommandHandler
                 request.FileName, request.ContentType, request.SizeBytes),
             cancellationToken);
 }
+
+// ── Delete an evidence file (US-PRF-002 FR-5 / ISSUE-105 / BUG-244 #4) ──
+
+/// <summary>
+/// Removes one evidence file from the caller's OWN self-assessment. The owning employee is resolved from the
+/// authenticated caller; the service verifies the attachment belongs to the named self-assessment + the caller
+/// (ownership, NFR-2) and that the self-assessment window is still open + not submitted (BR-1/BR-3) before it
+/// deletes the blob and the row.
+/// </summary>
+public sealed record DeleteSelfAssessmentAttachmentCommand(Guid AssessmentId, Guid AttachmentId)
+    : IRequest<Result>;
+
+public sealed class DeleteSelfAssessmentAttachmentCommandHandler
+    : IRequestHandler<DeleteSelfAssessmentAttachmentCommand, Result>
+{
+    private readonly ISelfAssessmentAttachmentService _service;
+    public DeleteSelfAssessmentAttachmentCommandHandler(ISelfAssessmentAttachmentService service)
+        => _service = service;
+
+    public Task<Result> Handle(
+        DeleteSelfAssessmentAttachmentCommand request, CancellationToken cancellationToken)
+        => _service.DeleteAsync(request.AssessmentId, request.AttachmentId, cancellationToken);
+}
