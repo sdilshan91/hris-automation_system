@@ -23,24 +23,48 @@ public sealed class JwtService : IJwtService
 
     private readonly IConfiguration _configuration;
     private readonly RsaSecurityKey _signingKey;
-    private readonly RsaSecurityKey _validationKey;
+
+    // The signing key ring: the current primary's PUBLIC key plus any extra public keys configured for a
+    // rotation overlap window. The JWT handler matches a token to a key by its `kid` header, so a token
+    // signed under a previous (now-retired) key still validates as long as that key remains in this set —
+    // that is the overlap. See JwtKeyRingOptions for the deploy -> promote -> drop rotation procedure.
+    private readonly IReadOnlyList<SecurityKey> _validationKeys;
 
     public JwtService(IConfiguration configuration)
     {
         _configuration = configuration;
 
+        var options = configuration.GetSection("Jwt").Get<JwtKeyRingOptions>() ?? new JwtKeyRingOptions();
+
         // In production, load from secrets vault / key management service.
         // For local dev, we generate an RSA key pair on startup.
         var rsa = RSA.Create(2048);
 
-        var privateKeyPem = _configuration["Jwt:PrivateKey"];
+        var privateKeyPem = options.PrivateKey;
         if (!string.IsNullOrEmpty(privateKeyPem))
         {
             rsa.ImportFromPem(privateKeyPem);
         }
 
-        _signingKey = new RsaSecurityKey(rsa) { KeyId = "hrm-dev-key-1" };
-        _validationKey = new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = "hrm-dev-key-1" };
+        _signingKey = new RsaSecurityKey(rsa) { KeyId = options.SigningKeyId };
+
+        // Build the validation ring: the primary's public key first, then each configured overlap key.
+        var validationKeys = new List<SecurityKey>
+        {
+            new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = options.SigningKeyId },
+        };
+
+        foreach (var extra in options.ValidationKeys)
+        {
+            if (string.IsNullOrWhiteSpace(extra.PublicKeyPem))
+                continue;
+
+            var extraRsa = RSA.Create();
+            extraRsa.ImportFromPem(extra.PublicKeyPem);
+            validationKeys.Add(new RsaSecurityKey(extraRsa.ExportParameters(false)) { KeyId = extra.Kid });
+        }
+
+        _validationKeys = validationKeys;
     }
 
     public string GenerateAccessToken(User user, Guid tenantId, Guid userTenantId, IEnumerable<string> roles, IEnumerable<string> permissions)
@@ -162,7 +186,7 @@ public sealed class JwtService : IJwtService
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30),
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = _validationKey,
+            IssuerSigningKeys = _validationKeys,
         };
 
         try
@@ -187,7 +211,7 @@ public sealed class JwtService : IJwtService
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromSeconds(30),
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = _validationKey,
+        IssuerSigningKeys = _validationKeys,
         // BUG-240: roles are emitted under the custom "roles" claim (GenerateAccessToken),
         // and MapInboundClaims=false (BUG-001) keeps claim names 1:1 — so the framework
         // never maps them to the default ClaimTypes.Role. Point role-based checks
