@@ -34,7 +34,7 @@ describe('CycleDashboardComponent (AC-3 / FR-7 / FR-8)', () => {
         gradeIds: [],
         employeeIds: [],
       },
-      ratingScaleId: 'scale-5',
+      ratingScaleMax: 5,
       selfWeight: 40,
       enable360: false,
       enableCalibration: false,

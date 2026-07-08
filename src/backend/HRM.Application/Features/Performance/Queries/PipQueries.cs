@@ -18,6 +18,22 @@ public sealed class ListPipsQueryHandler : IRequestHandler<ListPipsQuery, Result
 }
 
 /// <summary>
+/// Pre-fill payload for the create-PIP form (US-PRF-008 AC-1). HR-only (same BR-1 gate as create). Resolves the
+/// target employee + a suggested reason from the flagged origin manager review (US-PRF-003) + the configured
+/// escalation actions (BR-6) + a BR-2 pre-check. <paramref name="EmployeeId"/> is optional (null = blank form).
+/// </summary>
+public sealed record GetPipDraftQuery(Guid? EmployeeId, Guid? ReviewId) : IRequest<Result<PipDraftDto>>;
+
+public sealed class GetPipDraftQueryHandler : IRequestHandler<GetPipDraftQuery, Result<PipDraftDto>>
+{
+    private readonly IPipService _service;
+    public GetPipDraftQueryHandler(IPipService service) => _service = service;
+
+    public Task<Result<PipDraftDto>> Handle(GetPipDraftQuery request, CancellationToken cancellationToken)
+        => _service.GetDraftAsync(new GetPipDraftInput(request.EmployeeId, request.ReviewId), cancellationToken);
+}
+
+/// <summary>
 /// Gets one full PIP including its immutable checkpoint + event history (US-PRF-008 AC-1/FR-5). VISIBILITY-
 /// restricted server-side: only the employee, their manager, HR or the assigned mentor (FR-8/BR-1).
 /// </summary>

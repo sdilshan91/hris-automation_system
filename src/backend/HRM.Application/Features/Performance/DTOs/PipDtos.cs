@@ -88,6 +88,38 @@ public sealed record PipDto
     public IReadOnlyList<PipEventDto> Events { get; init; } = [];
 }
 
+/// <summary>
+/// Pre-fill payload for the create-PIP form (US-PRF-008 AC-1). Seeds the HR officer's New-PIP form: the target
+/// employee (name + job title + manager) when arriving from a flagged review or a directory row, a suggested
+/// reason derived from the origin manager review (US-PRF-003) when one is supplied, the configured escalation
+/// actions to offer (BR-6), and a client-side BR-2 pre-check (<see cref="HasActivePip"/>) so the form can warn
+/// before submit — the create path still re-enforces BR-2 server-side. All fields are null/empty for a blank
+/// HR-initiated form (no employeeId).
+/// </summary>
+public sealed record PipDraftDto
+{
+    /// <summary>The target employee id — null for a blank HR-initiated form.</summary>
+    public Guid? EmployeeId { get; init; }
+
+    /// <summary>The target employee's display name — null for a blank form.</summary>
+    public string? EmployeeName { get; init; }
+
+    /// <summary>The target employee's job title — null for a blank form / when unresolved.</summary>
+    public string? JobTitle { get; init; }
+
+    /// <summary>The target employee's current manager display name — null when none / blank form.</summary>
+    public string? ManagerName { get; init; }
+
+    /// <summary>Suggested PIP reason seeded from the flagged origin manager review; null when none supplied.</summary>
+    public string? SuggestedReason { get; init; }
+
+    /// <summary>BR-2 pre-check: true if the employee already has a non-terminal PIP (blocks creation).</summary>
+    public bool HasActivePip { get; init; }
+
+    /// <summary>The escalation actions offered to HR (BR-6) — every configurable action (excludes None).</summary>
+    public IReadOnlyList<PipEscalationAction> EscalationOptions { get; init; } = [];
+}
+
 /// <summary>A summary row for the PIP list view (US-PRF-008 AC-1 dedicated PIP section, BR-5).</summary>
 public sealed record PipSummaryDto
 {
@@ -205,3 +237,11 @@ public sealed record ConfirmEscalationInput(
 public sealed record AcknowledgePipInput(
     Guid PipId,
     string? ClientIpAddress);
+
+/// <summary>
+/// Create-form pre-fill request (US-PRF-008 AC-1). <paramref name="EmployeeId"/> is optional — null opens a blank
+/// HR-initiated form. <paramref name="ReviewId"/> is the optional flagged origin manager review to seed the reason.
+/// </summary>
+public sealed record GetPipDraftInput(
+    Guid? EmployeeId,
+    Guid? ReviewId);

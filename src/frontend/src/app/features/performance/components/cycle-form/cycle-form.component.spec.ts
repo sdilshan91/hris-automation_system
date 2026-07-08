@@ -6,11 +6,7 @@ import { of } from 'rxjs';
 
 import { CycleFormComponent } from './cycle-form.component';
 import { CycleService } from '../../services/cycle.service';
-import {
-  ICycle,
-  IRatingScaleOption,
-  ISaveCycleRequest,
-} from '../../models/cycle.models';
+import { ICycle, ISaveCycleRequest } from '../../models/cycle.models';
 
 describe('CycleFormComponent (AC-1 / AC-5)', () => {
   let fixture: ComponentFixture<CycleFormComponent>;
@@ -18,10 +14,6 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
   let serviceSpy: jasmine.SpyObj<CycleService>;
   let toastr: jasmine.SpyObj<ToastrService>;
   let router: Router;
-
-  const scales: IRatingScaleOption[] = [
-    { id: 'scale-5', name: '1-5 scale', max: 5 },
-  ];
 
   const createdCycle: ICycle = {
     id: 'cyc-new',
@@ -37,7 +29,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
       gradeIds: [],
       employeeIds: [],
     },
-    ratingScaleId: 'scale-5',
+    ratingScaleMax: 5,
     selfWeight: 40,
     enable360: false,
     enableCalibration: false,
@@ -54,13 +46,11 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
       'dashboard',
       'transition',
       'clone',
-      'ratingScales',
     ]);
     toastr = jasmine.createSpyObj<ToastrService>('ToastrService', [
       'success',
       'error',
     ]);
-    serviceSpy.ratingScales.and.returnValue(of(scales));
     serviceSpy.create.and.returnValue(of(createdCycle));
     serviceSpy.update.and.returnValue(of(createdCycle));
     serviceSpy.get.and.returnValue(of(createdCycle));
@@ -93,7 +83,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
       type: 'Annual',
       startDate: '2026-01-01',
       endDate: '2026-12-31',
-      ratingScaleId: 'scale-5',
+      ratingScaleMax: 5,
       selfWeight: 40,
       scopeType: 'AllEmployees',
     });
@@ -111,12 +101,25 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     fixture.detectChanges();
   }
 
-  it('loads rating scales and is in create mode without a route id', async () => {
+  it('is in create mode with a default rating-scale maximum of 5', async () => {
     await setup(null);
-    expect(serviceSpy.ratingScales).toHaveBeenCalled();
     expect(component.isEdit()).toBeFalse();
-    expect(component.ratingScales().length).toBe(1);
+    expect(component.form.get('ratingScaleMax')?.value).toBe(5);
     expect(component.loading()).toBeFalse();
+  });
+
+  it('sends the numeric ratingScaleMax in the create payload', async () => {
+    await setup(null);
+    fillValid();
+    component.form.patchValue({ ratingScaleMax: 7 });
+    fixture.detectChanges();
+
+    expect(component.canSave()).toBeTrue();
+    component.save();
+
+    const req = serviceSpy.create.calls.mostRecent()
+      .args[0] as ISaveCycleRequest;
+    expect(req.ratingScaleMax).toBe(7);
   });
 
   it('happy path: a valid form can be saved and calls create() (AC-1/AC-2)', async () => {

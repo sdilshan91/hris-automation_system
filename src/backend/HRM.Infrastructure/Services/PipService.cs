@@ -152,6 +152,71 @@ public sealed class PipService : IPipService
         return await ReloadAsync(pip.Id, cancellationToken);
     }
 
+    // ── Create-form pre-fill (AC-1, HR-only BR-1) ───────────────────────
+
+    public async Task<Result<PipDraftDto>> GetDraftAsync(GetPipDraftInput input, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PipDraftDto>.Failure("Tenant context is not resolved.", 400);
+
+        // BR-1: the draft seeds the HR-only create form — same gate as CreateAsync.
+        if (!_currentUser.Permissions.Contains(PermissionCatalog.Performance.ReviewAll))
+            return Result<PipDraftDto>.Failure("Only HR can create a Performance Improvement Plan.", 403, "forbidden");
+
+        // BR-6: offer every configurable escalation action (None is the "unset" sentinel, never offered).
+        var escalationOptions = Enum.GetValues<PipEscalationAction>()
+            .Where(a => a != PipEscalationAction.None)
+            .ToList();
+
+        // Blank HR-initiated form: no employee context — return just the escalation options.
+        if (input.EmployeeId is not { } employeeId)
+            return Result<PipDraftDto>.Success(new PipDraftDto { EscalationOptions = escalationOptions });
+
+        // Tenant-scoped read (global query filter); resolves nothing cross-tenant.
+        var employee = await _dbContext.Employees.AsNoTracking()
+            .Include(e => e.JobTitle)
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+        if (employee is null)
+            return Result<PipDraftDto>.Failure("Employee not found.", 404, "employee_not_found");
+
+        string? managerName = null;
+        if (employee.ReportsToEmployeeId is { } managerId)
+        {
+            var manager = await _dbContext.Employees.AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == managerId, cancellationToken);
+            managerName = manager is null ? null : FullName(manager);
+        }
+
+        // BR-2 pre-check: reuse the EXACT predicate CreateAsync enforces (Draft/Active/Extended = non-terminal).
+        var hasActivePip = await _dbContext.Pips.AsNoTracking().AnyAsync(
+            p => p.EmployeeId == employeeId
+                 && (p.Status == PipStatus.Draft || p.Status == PipStatus.Active || p.Status == PipStatus.Extended),
+            cancellationToken);
+
+        // Suggested reason: seeded from the flagged origin manager review (US-PRF-003 SummaryComment) when a
+        // reviewId is supplied AND it belongs to this employee. A stale/foreign reviewId is tolerated (ignored,
+        // leaving the reason blank) so the create form still opens — matching the FE's error tolerance.
+        string? suggestedReason = null;
+        if (input.ReviewId is { } reviewId)
+        {
+            var review = await _dbContext.ManagerReviews.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == reviewId && r.EmployeeId == employeeId, cancellationToken);
+            if (review is not null && !string.IsNullOrWhiteSpace(review.SummaryComment))
+                suggestedReason = review.SummaryComment.Trim();
+        }
+
+        return Result<PipDraftDto>.Success(new PipDraftDto
+        {
+            EmployeeId = employee.Id,
+            EmployeeName = FullName(employee),
+            JobTitle = employee.JobTitle?.TitleName,
+            ManagerName = managerName,
+            SuggestedReason = suggestedReason,
+            HasActivePip = hasActivePip,
+            EscalationOptions = escalationOptions,
+        });
+    }
+
     // ── List + Get (FR-8 visibility) ────────────────────────────────────
 
     public async Task<Result<IReadOnlyList<PipSummaryDto>>> ListAsync(CancellationToken cancellationToken = default)
