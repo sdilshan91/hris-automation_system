@@ -131,3 +131,27 @@ src/backend/
 - Connection strings must never be hardcoded
 - Sensitive data (PII) must be encrypted at rest using `pgcrypto`
 - All queries must be tenant-scoped (no raw SQL without WHERE tenant_id)
+
+## Out-of-lane discovery contract (auto-heal)
+
+You **stay in your lane to fix**, but you are **never in your lane to ignore**. When you discover something
+outside your assigned lane — a new bug, an adjacent-module dependency, a broken sibling test, a missing
+endpoint the FE already calls, a dependency/licensing/infra snag, or work that needs a product decision — do
+**not** silently drop it and do **not** scope-creep to fix it (the only exception is a *trivial, clearly-correct,
+same-file* correction — which you still call out). Instead, **FLAG it** in your report with a structured block so
+the orchestrator can auto-heal it (file the finding → fold into the completion plan → re-prioritize):
+
+```
+OUT-OF-LANE:
+  type:        BUG | ISSUE | ENH | GAP | DEPENDENCY | INFRA | TEST-HEALTH | DECISION
+  severity:    CRIT | HIGH | MED | LOW
+  where:       <file:line or module/endpoint>
+  what:        <one sentence: the discovered gap>
+  why_oo_lane: <why it's outside this task's lane>
+  suggested:   <build | remove-dead-control | fix-in-<lane> | needs-decision | needs-infra>
+  blocks:      <what it blocks, if anything>
+```
+
+Emit one block per distinct discovery. This is the intake for the [`/auto-heal`](../../skills/auto-heal.md)
+protocol (Engineering Discipline rule #6) — the orchestrator, not you, does the healing. Flagging is mandatory;
+staying silent about a real gap is a contract violation.

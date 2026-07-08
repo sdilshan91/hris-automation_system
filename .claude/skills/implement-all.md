@@ -223,6 +223,7 @@ Report the list of TC-IDs you created and which ACs each covers.
 | Step-10 still failing after 3 remediation attempts | Print errors verbatim, leave branch local, mark STATUS.md back to `[ ]` (note `blocked: …`), do NOT push or open PR. |
 | Remediation would require weakening/skipping a test | STOP immediately, do NOT push, report — never mask a failure to go green. |
 | Sub-agent reports "blocked — missing dependency" | Mark STATUS.md `[~]` with note `blocked: <reason>`, do NOT branch/push, report to user. |
+| Sub-agent emits an `OUT-OF-LANE:` block (or a fix reveals adjacent work) | Run [`/auto-heal`](auto-heal.md): file the finding to `TEST-FINDINGS.md`, fold it into the `COMPLETION-PLAN`, re-sort priority — never silently drop it (Engineering-Discipline rule #6). Keep building the current story; the discovery is *tracked*, not fixed inline. |
 | Working tree not clean at step 6 | Abort. Ask the user to commit/stash first. Never auto-stash. |
 | Story file missing or malformed | Abort. Ask the user to fix the story first. |
 | MCP PR creation fails | Branch is already pushed; print manual `gh pr create` command for the user to run. |

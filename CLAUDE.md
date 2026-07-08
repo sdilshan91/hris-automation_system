@@ -42,6 +42,19 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    one message) to speed things up — but **never parallelize dependent steps**
    (where one's output feeds the next) **or concurrent writes to the same file**
    (use `isolation: worktree` if parallel edits are unavoidable).
+6. **Auto-heal: never silently drop an out-of-lane discovery.** Work constantly surfaces
+   things outside the current task's lane — a new bug, an adjacent-module dependency, a
+   broken sibling test, a missing endpoint the FE already calls, a licensing/infra snag.
+   **Stay in your lane to *fix*, but never in your lane to *ignore*.** Sub-agents **FLAG**
+   these in a structured `OUT-OF-LANE:` block (type · severity · where · what · why-out-of-lane
+   · suggested action) and do **not** scope-creep to fix them (a trivial, clearly-correct,
+   same-file correction is the only exception, and it's still noted). The **orchestrator HEALS**:
+   files the finding to `test-cases/TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and
+   **re-sorts the priority order** (severity × blast-radius × unblocks-others; decision/infra-gated
+   items park at the decision-gate). The completion plan is a **living document** — it changes every
+   time reality does. Protocol: [`/auto-heal`](.claude/skills/auto-heal.md). This does **not** bypass
+   the report-only boundary, the test-integrity rule, or the decision-gate — it *tracks and ranks*;
+   the human still decides gated work.
 
 ## Advisor Stance (how to talk to the user)
 
@@ -162,6 +175,7 @@ diagnosis). **Read-only on the codebase.**
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
 | `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
 | `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
+| `/auto-heal` | Local | **Living-plan self-healing (breadth).** On any `OUT-OF-LANE:` flag or discovered adjacent gap: files the finding to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and **re-sorts the priority order** (severity × blast-radius × unblocks-others; gated items park at the decision-gate). Encodes Engineering-Discipline rule #6. The orchestrator's counterpart to every agent's out-of-lane contract; complements `/error-recovery` + `/fault-diagnosis` (depth). Never bypasses report-only / test-integrity / decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
 > **Locally-vendored discipline skills.** `/fault-diagnosis` and `/error-recovery` live in
