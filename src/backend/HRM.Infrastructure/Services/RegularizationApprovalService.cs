@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -396,7 +397,8 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         // (e.g.) regularizing a late clock-in to an on-time value CLEARS the late flag. FLEXIBLE / no
         // shift → cleared (no tracking). Single source of truth: the same LateEarlyCalculator + the
         // same shift resolution the clock-in/out path uses.
-        await RecomputeLateEarlyAsync(log, regularization.Date, settings, calc.TotalWorkMinutes, cancellationToken);
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+        await RecomputeLateEarlyAsync(log, regularization.Date, settings, calc.TotalWorkMinutes, tenantZone, cancellationToken);
 
         return Result<AttendanceLog>.Success(log);
     }
@@ -455,6 +457,20 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         => _dbContext.Employees.FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
 
     /// <summary>
+    /// ISSUE-065: resolves the tenant's configured time zone into a <see cref="TimeZoneInfo"/> (UTC
+    /// fallback via <see cref="TenantClock.ResolveTimeZone"/>) so the wall-clock late/early re-derivation
+    /// runs in tenant-local terms. One DB read per approval.
+    /// </summary>
+    private async Task<TimeZoneInfo> ResolveTenantTimeZoneAsync(CancellationToken cancellationToken)
+    {
+        var tzId = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.TimeZone)
+            .FirstOrDefaultAsync(cancellationToken);
+        return TenantClock.ResolveTimeZone(tzId, _logger);
+    }
+
+    /// <summary>
     /// Returns the tenant's attendance settings, creating a default (all enforcement off) row if none
     /// exists — the calculation policy thresholds the AttendanceCalculator reads. Matches the lazy
     /// creation in AttendanceService. The new row is committed immediately (it is not part of the
@@ -485,7 +501,7 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
     /// </summary>
     private async Task RecomputeLateEarlyAsync(
         AttendanceLog log, DateOnly date, AttendanceSettings settings, int? workedMinutes,
-        CancellationToken cancellationToken)
+        TimeZoneInfo tenantZone, CancellationToken cancellationToken)
     {
         log.IsLate = false;
         log.LateMinutes = 0;
@@ -509,9 +525,11 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         var grace = shift.GracePeriodMinutes > 0 ? shift.GracePeriodMinutes : settings.GracePeriodMinutes;
         var minimumMinutes = shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0;
 
+        // ISSUE-065: late/early is a WALL-CLOCK comparison — derive the tenant-local time-of-day from the
+        // stored UTC punch instants (UTC zone → no-op) before comparing against the shift start/end.
         var result = LateEarlyCalculator.Evaluate(
-            clockInTime: TimeOnly.FromDateTime(log.ClockIn),
-            clockOutTime: log.ClockOut is { } co ? TimeOnly.FromDateTime(co) : null,
+            clockInTime: TenantClock.LocalTimeOfDay(log.ClockIn, tenantZone),
+            clockOutTime: log.ClockOut is { } co ? TenantClock.LocalTimeOfDay(co, tenantZone) : null,
             shiftStart: start,
             shiftEnd: end,
             gracePeriodMinutes: Math.Max(0, grace),

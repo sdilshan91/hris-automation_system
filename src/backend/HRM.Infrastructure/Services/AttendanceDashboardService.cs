@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using ClosedXML.Excel;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -63,7 +64,8 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
             return Result<DashboardKpiDto>.Failure(scopeResult.Error!, scopeResult.StatusCode ?? 400, scopeResult.ErrorCode);
 
         var employees = scopeResult.Value!;
-        var statuses = await ComputeStatusesAsync(employees, date, cancellationToken);
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+        var statuses = await ComputeStatusesAsync(employees, date, tenantZone, cancellationToken);
 
         // BR-1: expected headcount = active employees − full-day approved leave − holiday-at-location.
         int onLeave = statuses.Count(s => s.Status == "ON_LEAVE");
@@ -107,7 +109,8 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
             return Result<LiveBoardResult>.Failure(scopeResult.Error!, scopeResult.StatusCode ?? 400, scopeResult.ErrorCode);
 
         var employees = scopeResult.Value!;
-        var statuses = await ComputeStatusesAsync(employees, date, cancellationToken);
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+        var statuses = await ComputeStatusesAsync(employees, date, tenantZone, cancellationToken);
         var deptNames = await DepartmentNamesAsync(employees, cancellationToken);
 
         var rows = statuses
@@ -251,6 +254,8 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     private async Task<List<CustomReportRowDto>> ComputeCustomRowsAsync(
         DateOnly from, DateOnly to, CustomReportFilter filter, CancellationToken ct)
     {
+        var tenantZone = await ResolveTenantTimeZoneAsync(ct);
+
         // Candidate employees (filters: department/location/shift).
         IQueryable<Employee> q = _dbContext.Employees.AsNoTracking()
             .Where(e => e.Status != EmployeeStatus.Terminated);
@@ -260,7 +265,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
 
         if (filter.ShiftId is { } shiftId)
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = TenantClock.TodayIn(tenantZone);
             var assigned = (await _dbContext.EmployeeShifts.AsNoTracking()
                     .Where(es => es.ShiftId == shiftId && es.EffectiveFrom <= today
                         && (es.EffectiveTo == null || es.EffectiveTo >= today))
@@ -273,8 +278,9 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         var empIds = employees.Select(e => e.Id).ToHashSet();
         var deptNames = await DepartmentNamesAsync(employees, ct);
 
-        var rangeStart = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var rangeEnd = to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        // ISSUE-065: the tenant-local range maps to this UTC window (UTC zone → no-op).
+        var rangeStart = TenantClock.LocalToUtc(from, TimeOnly.MinValue, tenantZone);
+        var rangeEnd = TenantClock.LocalToUtc(to.AddDays(1), TimeOnly.MinValue, tenantZone);
 
         // Attendance logs in the range (present/late/work minutes per employee).
         var logs = await _dbContext.AttendanceLogs.AsNoTracking()
@@ -303,7 +309,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
             .ToDictionary(
                 g => g.Key,
                 g => (
-                    PresentDays: g.Select(x => DateOnly.FromDateTime(x.Day)).Distinct().Count(),
+                    PresentDays: g.Select(x => TenantClock.LocalDateOf(x.Day, tenantZone)).Distinct().Count(),
                     LateCount: g.Count(x => x.IsLate),
                     WorkMinutes: g.Sum(x => x.TotalWorkMinutes ?? 0)));
 
@@ -369,10 +375,11 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
 
         int window = months is >= 1 and <= 36 ? months : 12;
 
-        // The last `window` months ending with the current UTC month.
-        var now = DateTime.UtcNow;
+        // The last `window` months ending with the current tenant-local month (ISSUE-065; UTC zone → no-op).
+        var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
+        var today = TenantClock.TodayIn(tenantZone);
         var periods = new List<string>();
-        var anchor = new DateOnly(now.Year, now.Month, 1);
+        var anchor = new DateOnly(today.Year, today.Month, 1);
         for (int i = window - 1; i >= 0; i--)
             periods.Add(anchor.AddMonths(-i).ToString("yyyy-MM", CultureInfo.InvariantCulture));
 
@@ -543,13 +550,14 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     /// NOT_CLOCKED_IN. Loads all source data in 3 bulk queries (NFR-3 — no per-employee round-trips).
     /// </summary>
     private async Task<List<EmployeeDayStatus>> ComputeStatusesAsync(
-        List<Employee> employees, DateOnly date, CancellationToken ct)
+        List<Employee> employees, DateOnly date, TimeZoneInfo tenantZone, CancellationToken ct)
     {
         if (employees.Count == 0) return [];
 
         var empIds = employees.Select(e => e.Id).ToHashSet();
-        var dayStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var dayEnd = date.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        // ISSUE-065: the tenant-local day [date 00:00, date+1 00:00) maps to this UTC window (UTC zone → no-op).
+        var dayStart = TenantClock.LocalToUtc(date, TimeOnly.MinValue, tenantZone);
+        var dayEnd = TenantClock.LocalToUtc(date.AddDays(1), TimeOnly.MinValue, tenantZone);
 
         // Clock-ins for the date (earliest clock-in per employee).
         var logs = await _dbContext.AttendanceLogs.AsNoTracking()
@@ -608,6 +616,20 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// ISSUE-065: resolves the tenant's configured time zone into a <see cref="TimeZoneInfo"/> (UTC
+    /// fallback via <see cref="TenantClock.ResolveTimeZone"/>) so day/month boundaries and "today" are
+    /// derived in tenant-local terms. One DB read per dashboard operation.
+    /// </summary>
+    private async Task<TimeZoneInfo> ResolveTenantTimeZoneAsync(CancellationToken ct)
+    {
+        var tzId = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.TimeZone)
+            .FirstOrDefaultAsync(ct);
+        return TenantClock.ResolveTimeZone(tzId, _logger);
     }
 
     // ══════════════════════════════════════════════════════════════
