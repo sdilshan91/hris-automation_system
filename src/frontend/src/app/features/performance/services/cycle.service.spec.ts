@@ -41,18 +41,17 @@ describe('CycleService', () => {
     startDate: '2026-01-01',
     endDate: '2026-12-31',
     phases: [
-      { kind: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
+      { phaseType: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
     ],
     scope: {
-      type: 'AllEmployees',
+      scopeType: 'AllEmployees',
       departmentIds: [],
-      gradeIds: [],
       employeeIds: [],
     },
     ratingScaleMax: 5,
-    selfWeight: 40,
-    enable360: false,
-    enableCalibration: false,
+    selfWeightPercent: 40,
+    is360Enabled: false,
+    isCalibrationEnabled: false,
     participantCount: 120,
     cancelledReason: null,
   };
@@ -128,18 +127,17 @@ describe('CycleService', () => {
       startDate: '2026-01-01',
       endDate: '2026-03-31',
       phases: [
-        { kind: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
+        { phaseType: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
       ],
       scope: {
-        type: 'AllEmployees',
+        scopeType: 'AllEmployees',
         departmentIds: [],
-        gradeIds: [],
         employeeIds: [],
       },
       ratingScaleMax: 5,
-      selfWeight: 40,
-      enable360: false,
-      enableCalibration: false,
+      selfWeightPercent: 40,
+      is360Enabled: false,
+      isCalibrationEnabled: false,
     };
     let result: ICycle | undefined;
     service.create(body).subscribe((r) => (result = r));
@@ -147,6 +145,13 @@ describe('CycleService', () => {
     const req = httpMock.expectOne(baseUrl);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
+    // BUG-257 regression: the corrected field names reach the wire verbatim.
+    expect(req.request.body.selfWeightPercent).toBe(40);
+    expect(req.request.body.is360Enabled).toBeFalse();
+    expect(req.request.body.isCalibrationEnabled).toBeFalse();
+    expect(req.request.body.phases[0].phaseType).toBe('GoalSetting');
+    expect(req.request.body.scope.scopeType).toBe('AllEmployees');
+    expect('gradeIds' in req.request.body.scope).toBeFalse();
     req.flush(cycle);
 
     expect(result).toEqual(cycle);

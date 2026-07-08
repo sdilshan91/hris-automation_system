@@ -1,6 +1,6 @@
 /**
- * US-PRF-004: HR-facing appraisal-cycle management models matching the (ASSUMED)
- * backend API contract. This is the HR Officer creating/managing appraisal cycles
+ * US-PRF-004: HR-facing appraisal-cycle management models matching the backend
+ * API contract. This is the HR Officer creating/managing appraisal cycles
  * (phases, timelines, participants, status transitions) — the cycle layer that the
  * goal-setting (US-PRF-001), self-assessment (US-PRF-002), and manager-review
  * (US-PRF-003) stories all hang off.
@@ -9,7 +9,15 @@
  * is a one-file fix once the backend lands. This is also the reconciliation point
  * for the US-PRF-001 path mismatch (see docs/vault/modules/performance.md).
  *
- * ── ASSUMED backend contract (backend agent must confirm/reconcile) ────────────
+ * ── Backend contract (VERIFIED against CycleDtos.cs, BUG-257) ──────────────────
+ * The save-request field names below are aligned to the authoritative
+ * `CreateCycleInput` / `UpdateCycleInput` / `CyclePhaseInput` / `ParticipantScopeInput`:
+ * `selfWeightPercent`, `is360Enabled`, `isCalibrationEnabled`, `phases[].phaseType`,
+ * `scope.scopeType`. The backend derives `managerWeightPercent` (100 − self), so the
+ * FE never sends it. The `Grades` participant scope resolves to an EMPTY set on the
+ * backend (unimplemented Core-HR grade seam), so it is disabled in the UI and the FE
+ * sends no grade ids.
+ *
  * `apiBaseUrl` already includes `/api/v1`. All under `/performance/cycles`:
  *
  *   GET    /performance/cycles                       → ICycleSummary[] (list, FR-7)
@@ -113,10 +121,22 @@ export type ParticipantScopeType =
 export const PARTICIPANT_SCOPE_OPTIONS: {
   value: ParticipantScopeType;
   label: string;
+  /** BUG-257: an unavailable option is greyed out and cannot be selected. */
+  disabled?: boolean;
+  /** Short reason shown alongside a disabled option. */
+  hint?: string;
 }[] = [
   { value: 'AllEmployees', label: 'All active employees' },
   { value: 'Departments', label: 'Specific departments' },
-  { value: 'Grades', label: 'Specific grades / bands' },
+  {
+    value: 'Grades',
+    label: 'Specific grades / bands',
+    // BUG-257: the backend Grades scope resolves to zero participants (the
+    // Core-HR grade/band field is not implemented yet), so selecting it would
+    // silently create an empty cycle. Disabled until that seam lands.
+    disabled: true,
+    hint: 'Not available yet — grade / band data is not configured.',
+  },
   { value: 'CustomList', label: 'Custom employee list' },
 ];
 
@@ -135,22 +155,23 @@ export interface ICycleSummary {
   participantCount: number;
 }
 
-/** One phase within a cycle (FR-2). */
+/** One phase within a cycle (FR-2). Matches C# `CyclePhaseInput.PhaseType`. */
 export interface ICyclePhase {
-  kind: CyclePhaseKind;
+  phaseType: CyclePhaseKind;
   /** ISO date (yyyy-MM-dd). */
   startDate: string;
   /** ISO date (yyyy-MM-dd). */
   endDate: string;
 }
 
-/** Participant scope (FR-3). The id lists are only meaningful for their scope type. */
+/**
+ * Participant scope (FR-3). The id lists are only meaningful for their scope type.
+ * Matches C# `ParticipantScopeInput` (ScopeType + DepartmentIds + EmployeeIds).
+ */
 export interface IParticipantScope {
-  type: ParticipantScopeType;
+  scopeType: ParticipantScopeType;
   /** Department ids (Departments scope); resolved server-side to participants. */
   departmentIds: string[];
-  /** Grade/band ids (Grades scope). */
-  gradeIds: string[];
   /** Explicit employee ids (CustomList scope). */
   employeeIds: string[];
 }
@@ -169,12 +190,12 @@ export interface ICycle {
   scope: IParticipantScope;
   /** Rating-scale maximum (integer 2-10, default 5); locked once Active (BR-5). */
   ratingScaleMax: number;
-  /** Self-rating weight 0-100; managerWeight is 100 - selfWeight (FR-6). */
-  selfWeight: number;
+  /** Self-rating weight 0-100; managerWeightPercent is derived server-side (FR-6). */
+  selfWeightPercent: number;
   /** 360-degree peer feedback toggle (FR-6). */
-  enable360: boolean;
+  is360Enabled: boolean;
   /** Calibration phase toggle (FR-6). */
-  enableCalibration: boolean;
+  isCalibrationEnabled: boolean;
   participantCount: number;
   /** ISO timestamp; null while Draft. */
   cancelledReason?: string | null;
@@ -190,9 +211,10 @@ export interface ISaveCycleRequest {
   scope: IParticipantScope;
   /** Rating-scale maximum (integer 2-10, default 5). Maps to backend RatingScaleMax. */
   ratingScaleMax: number;
-  selfWeight: number;
-  enable360: boolean;
-  enableCalibration: boolean;
+  /** Self-rating weight 0-100; the backend derives managerWeightPercent (100 − self). */
+  selfWeightPercent: number;
+  is360Enabled: boolean;
+  isCalibrationEnabled: boolean;
 }
 
 /** Per-phase completion stats for the dashboard (AC-3). */
@@ -252,9 +274,9 @@ export const RATING_SCALE_DEFAULT = 5;
 
 // ─── Pure helpers (testable without a component) ──────────────
 
-/** A phase shape used by the sequencing validator (kind + date strings). */
+/** A phase shape used by the sequencing validator (phaseType + date strings). */
 export interface IPhaseDates {
-  kind: CyclePhaseKind;
+  phaseType: CyclePhaseKind;
   startDate: string;
   endDate: string;
 }
@@ -297,13 +319,13 @@ export function validatePhaseSequencing(
   }
 
   const ordered = [...phases].sort(
-    (a, b) => PHASE_ORDER.indexOf(a.kind) - PHASE_ORDER.indexOf(b.kind),
+    (a, b) => PHASE_ORDER.indexOf(a.phaseType) - PHASE_ORDER.indexOf(b.phaseType),
   );
 
   let prevEnd = NaN;
   let prevLabel = '';
   for (const p of ordered) {
-    const label = PHASE_LABEL[p.kind];
+    const label = PHASE_LABEL[p.phaseType];
     const s = toEpoch(p.startDate);
     const e = toEpoch(p.endDate);
 
