@@ -17,7 +17,7 @@ describe('ExportPanelComponent', () => {
   let httpMock: HttpTestingController;
   let toastr: jasmine.SpyObj<ToastrService>;
 
-  const tenantBase = `${environment.apiBaseUrl}/tenant/exports`;
+  const tenantBase = `${environment.apiBaseUrl}/tenant/data-exports`;
 
   const completed: IExportRecord = {
     id: 'exp-done',
@@ -231,7 +231,7 @@ describe('ExportPanelComponent', () => {
 
   it('routes requests to the system base when a tenantId is provided (AC-6)', () => {
     fixture.componentRef.setInput('tenantId', 't-42');
-    const systemBase = `${environment.apiBaseUrl}/system/tenants/t-42/exports`;
+    const systemBase = `${environment.apiBaseUrl}/system/tenants/t-42/data-exports`;
 
     fixture.detectChanges();
     httpMock.expectOne(systemBase).flush([]);

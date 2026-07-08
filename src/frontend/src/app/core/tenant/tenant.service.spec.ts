@@ -7,8 +7,19 @@ import { environment } from '../../../environments/environment';
 describe('TenantService', () => {
   let service: TenantService;
   let httpMock: HttpTestingController;
+  let originalBaseDomain: string;
+  let originalTenantSubdomain: string;
 
   beforeEach(() => {
+    // These tests exercise the localhost subdomain-extraction and dev-fallback code
+    // paths, so pin the two environment values those paths read (the deployed defaults
+    // are `myhrm.org` / no fallback). Restored in afterEach.
+    originalBaseDomain = environment.baseDomain;
+    originalTenantSubdomain = environment.tenantSubdomain;
+    environment.baseDomain = 'localhost';
+    environment.tenantSubdomain = 'platform';
+    window.localStorage.removeItem('devTenantSubdomain');
+
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()],
     });
@@ -20,6 +31,8 @@ describe('TenantService', () => {
 
   afterEach(() => {
     httpMock.verify();
+    environment.baseDomain = originalBaseDomain;
+    environment.tenantSubdomain = originalTenantSubdomain;
     document.documentElement.style.removeProperty('--brand-primary');
   });
 
