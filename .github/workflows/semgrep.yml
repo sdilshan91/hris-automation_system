@@ -1,0 +1,41 @@
+name: semgrep
+
+# SAST — ADVISORY (does not fail the build yet). Runs our custom tenant-isolation
+# rules (the BUG-003 class) plus the official C# + TypeScript registry packs.
+# Flip to blocking (drop continue-on-error / `|| true`) once the codebase is clean.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate custom rules
+        run: semgrep --validate --config .semgrep/
+
+      - name: Semgrep scan (advisory)
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --config .semgrep/ \
+            --config p/csharp \
+            --config p/typescript \
+            --sarif --output semgrep.sarif \
+            --metrics off \
+            src/ || true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep.sarif
+          if-no-files-found: ignore

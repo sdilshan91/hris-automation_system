@@ -1,0 +1,56 @@
+# Custom Semgrep rules encoding this platform's #1 invariant — tenant isolation
+# (the BUG-003 cross-tenant-leak class). Runs ADVISORY in CI first (see
+# .github/workflows/semgrep.yml); tighten to blocking once the codebase is clean.
+# Justified exceptions: add `// nosemgrep: <rule-id>` with a one-line reason.
+rules:
+  - id: hrm-ignore-query-filters
+    languages: [csharp]
+    severity: ERROR
+    message: |
+      IgnoreQueryFilters() disables the global tenant query filter and is a
+      cross-tenant data-leak risk (BUG-003 class). It is legitimate ONLY in
+      tenant-resolution / system-context lookups. If this use is justified, add
+      `// nosemgrep: hrm-ignore-query-filters` with a one-line reason; otherwise
+      remove it and rely on the global filter.
+    pattern: $X.IgnoreQueryFilters()
+    paths:
+      exclude:
+        - "**/TenantResolution*.cs"
+        - "**/*Tests*.cs"
+        - "**/*Test.cs"
+
+  - id: hrm-raw-sql-no-tenant-predicate
+    languages: [csharp]
+    severity: WARNING
+    message: |
+      Raw SQL bypasses EF Core global query filters. Confirm this statement carries
+      an explicit tenant_id predicate (or is genuinely tenant-agnostic system SQL).
+      Without it, raw SQL can read or write across tenants.
+    patterns:
+      - pattern-either:
+          - pattern: $DB.ExecuteSqlRaw(...)
+          - pattern: $DB.ExecuteSqlRawAsync(...)
+          - pattern: $DB.ExecuteSqlInterpolated(...)
+          - pattern: $DB.ExecuteSqlInterpolatedAsync(...)
+          - pattern: $S.FromSqlRaw(...)
+          - pattern: $S.FromSqlInterpolated(...)
+      - pattern-not-regex: (?i)tenant_id
+    paths:
+      exclude:
+        - "**/*Tests*.cs"
+        - "**/Migrations/**"
+
+  - id: hrm-new-entity-missing-base
+    languages: [csharp]
+    severity: INFO
+    message: |
+      Heads-up: a new tenant-scoped entity must derive from BaseEntity AND get a
+      global query filter (TenantId == _tenantContext.TenantId) in
+      AppDbContext.OnModelCreating — otherwise it is not tenant-isolated. Verify
+      this entity is covered (or is deliberately a global/system table).
+    pattern-regex: 'public\s+class\s+\w+\s*:\s*(?!BaseEntity|AuditableEntity)'
+    paths:
+      include:
+        - "**/Domain/Entities/**"
+      exclude:
+        - "**/*Tests*.cs"
