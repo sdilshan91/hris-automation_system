@@ -217,6 +217,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         modelBuilder.Entity<IdempotencyRecord>()
             .HasQueryFilter(i => !_tenantContext.IsResolved || i.TenantId == _tenantContext.TenantId);
 
+        // EmployeeFieldAuditLog — no soft-delete; tenant isolation only (defense-in-depth)
+        modelBuilder.Entity<EmployeeFieldAuditLog>()
+            .HasQueryFilter(e => !_tenantContext.IsResolved || e.TenantId == _tenantContext.TenantId);
+
         // US-CHR-010: BulkImportJob tenant isolation + soft-delete filter
         modelBuilder.Entity<BulkImportJob>()
             .HasQueryFilter(b => !b.IsDeleted && (!_tenantContext.IsResolved || b.TenantId == _tenantContext.TenantId));

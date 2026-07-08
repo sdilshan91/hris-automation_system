@@ -146,17 +146,6 @@ public sealed record PortalTimelineEventDto
 }
 
 /// <summary>
-/// The issued magic-link token + expiry returned to the recruiter caller (US-REC-008 FR-1/FR-7). The token
-/// is the raw value to embed in the portal URL. (The candidate-facing regenerate flow uses
-/// <see cref="PortalLinkRequestResultDto"/> instead, which never echoes a token — BR-5 anti-enumeration.)
-/// </summary>
-public sealed record PortalLinkDto
-{
-    public string Token { get; init; } = string.Empty;
-    public DateTime ExpiresAt { get; init; }
-}
-
-/// <summary>
 /// The generic, anti-enumeration response to a candidate's "request a new link" call (US-REC-008 BR-5).
 /// Never reveals whether an application exists or echoes a token.
 /// </summary>

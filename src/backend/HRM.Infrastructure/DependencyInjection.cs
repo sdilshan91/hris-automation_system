@@ -418,8 +418,7 @@ public static class DependencyInjection
         // intentionally NOT surfaced in the general performance dashboard (BR-5). The reminder/not-acknowledged
         // sweep (FR-3/BR-4) is driven by the PipReminderJob via the same log-only performance notification seam.
         // Encryption of the sensitive Reason/EscalationNotes (NFR-4) is a documented seam (no PII-encryption
-        // mechanism exists in the codebase — stored plain text today). IPipCheckpointScheduler is an OPTIONAL
-        // Hangfire seam bound in HRM.Api; absent in tests, where the service simply skips explicit scheduling.
+        // mechanism exists in the codebase — stored plain text today).
         services.AddScoped<IPipService, PipService>();
         services.AddScoped<IPipReminderService, PipReminderService>();
 
