@@ -1,0 +1,26 @@
+# Gitleaks config for the HRM SaaS repo.
+# Complements the `secret-guard` PreToolUse hook: that blocks *pending* writes;
+# Gitleaks scans committed history + the full tree for what predates the hook.
+# Starts ADVISORY (the CI job does not fail the build) — see .github/workflows/gitleaks.yml.
+
+title = "HRM gitleaks config"
+
+[extend]
+useDefault = true   # inherit gitleaks' built-in rule pack (AWS/GitHub/JWT/private-keys/…)
+
+[allowlist]
+description = "Placeholders, ${ENV_VAR} references, and example/template files that legitimately contain no real secrets"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)[^/]*\.example$''',
+  '''(^|/)appsettings(\.[A-Za-z]+)?\.json$''',   # ship with BLANK secrets (Password=; / empty Jwt keys) — set via user-secrets
+  '''(^|/)node_modules/''',
+  '''(^|/)\.playwright-artifacts/''',
+  '''(^|/)(bin|obj|dist)/''',
+]
+regexes = [
+  '''\$\{[A-Z0-9_]+\}''',                       # ${ENV_VAR} interpolation is not a secret
+  '''Password\s*=\s*;''',                        # empty password in the appsettings connstring template
+  '''(?i)your[-_]?(secret|key|token|password|api[-_]?key)[-_]?here''',
+  '''(?i)(changeme|placeholder|example|dummy|test)[-_]?(secret|key|token|password)''',
+]
