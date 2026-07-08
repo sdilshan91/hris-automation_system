@@ -29,7 +29,6 @@ public sealed class PipService : IPipService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IPerformanceNotificationService _notifications;
-    private readonly IPipCheckpointScheduler? _scheduler;
     private readonly ILogger<PipService> _logger;
 
     /// <summary>Minimum PIP duration in days (BR-3).</summary>
@@ -40,15 +39,13 @@ public sealed class PipService : IPipService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IPerformanceNotificationService notifications,
-        ILogger<PipService> logger,
-        IPipCheckpointScheduler? scheduler = null)
+        ILogger<PipService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _notifications = notifications;
         _logger = logger;
-        _scheduler = scheduler;
     }
 
     // ── Create (AC-1/AC-2/FR-1, HR-only BR-1) ───────────────────────────
@@ -151,9 +148,6 @@ public sealed class PipService : IPipService
             await _notifications.NotifyPipEventAsync("pip-initiated", pip.Id, pip.EmployeeId, mgr, cancellationToken: cancellationToken);
         if (pip.MentorEmployeeId is { } men)
             await _notifications.NotifyPipEventAsync("pip-initiated", pip.Id, pip.EmployeeId, men, cancellationToken: cancellationToken);
-
-        // FR-3: schedule Hangfire checkpoint reminders (optional seam — absent in tests).
-        _scheduler?.ScheduleCheckpointReminders(_tenantContext.TenantId, pip.Id, input.CheckpointDates);
 
         return await ReloadAsync(pip.Id, cancellationToken);
     }

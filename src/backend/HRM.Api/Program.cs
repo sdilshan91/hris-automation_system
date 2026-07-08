@@ -239,6 +239,8 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ReviewSignoffAutoCloseJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.PipReminderJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.StaleGoalNudgeJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.DocumentExpiryNotificationJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.Feedback360ReminderJob>();
 
     // US-LV-012 FR-5: large leave-report exports run as a Hangfire background job. Bound to the
     // ILeaveReportExportJob interface so the Infrastructure report service can enqueue it by interface.
