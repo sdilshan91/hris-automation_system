@@ -156,6 +156,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     public DbSet<SystemNotificationTemplate> SystemNotificationTemplates => Set<SystemNotificationTemplate>();
     // US-NTF-003: per-user notification preferences (tenant-scoped, per-tenant-membership — BR-4/AC-5).
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    // US-NTF-006: notification delivery-tracking rows (tenant-scoped; written by RealNotificationDispatcher,
+    // driven to terminal state by the Hangfire SendEmailJob).
+    public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -596,6 +599,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
         // US-NTF-003: NotificationPreference tenant isolation + soft-delete filter (AC-5/BR-4 cross-tenant
         // isolation — a user's preferences are independent per tenant membership).
         modelBuilder.Entity<NotificationPreference>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-NTF-006: NotificationDelivery tenant isolation + soft-delete filter (cross-tenant isolation).
+        modelBuilder.Entity<NotificationDelivery>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

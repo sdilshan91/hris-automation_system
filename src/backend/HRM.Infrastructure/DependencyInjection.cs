@@ -574,12 +574,22 @@ public static class DependencyInjection
 
         // US-NTF-002: email notification templates per tenant. EmailTemplateService is the RESOLUTION + RENDERING
         // seam other modules call (override→default + language fallback, {{placeholder}} merge). NotificationTemplate
-        // Service is the tenant-admin CRUD/preview/test-email facade. IEmailSender is the new GENERIC log-only send
-        // seam (no SMTP required to start/test — mirrors IPayslipEmailSender; real delivery deferred, TODO US-NTF).
+        // Service is the tenant-admin CRUD/preview/test-email facade. IEmailSender is the GENERIC send seam.
         // The existing module-specific email seams are intentionally left untouched.
         services.AddScoped<IEmailTemplateService, EmailTemplateService>();
         services.AddScoped<INotificationTemplateService, NotificationTemplateService>();
-        services.AddScoped<IEmailSender, LogOnlyEmailSender>();
+
+        // US-NTF-006 FR-8: real delivery is opt-in. When Smtp:Host is configured we use the MailKit-backed
+        // SmtpEmailSender (surfaces failures so the Hangfire SendEmailJob can retry); with a BLANK host we keep the
+        // log-only seam, so the app starts and tests run with no SMTP server (safe to merge without live SMTP).
+        if (string.IsNullOrWhiteSpace(configuration["Smtp:Host"]))
+        {
+            services.AddScoped<IEmailSender, LogOnlyEmailSender>();
+        }
+        else
+        {
+            services.AddScoped<IEmailSender, SmtpEmailSender>();
+        }
 
         // US-NTF-003: per-user notification preferences. Matrix CRUD runs in the resolved request scope scoped
         // to ICurrentUser; the dispatch-time ShouldDeliver check takes tenant+user explicitly (works from
