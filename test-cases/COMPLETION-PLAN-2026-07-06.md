@@ -19,6 +19,25 @@
 
 ---
 
+## 🔄 LOOP EXECUTION PROGRESS (2026-07-07/08)
+Executing the plan in priority order. Merged so far:
+- ✅ **Verify-first pass** (PR #184): cross-tenant-writes-outside-`/tenant/*` + BUG-040 = STALE (already fixed); **Performance FE↔BE routes = LIVE → BUG-243 (HIGH)**.
+- ✅ **BUG-243** (PR #185): 6 Performance FE services corrected FE-only; **4 flagged backend-dependent** (see below).
+- ✅ **Theme G shape bugs** (PR #186): payroll-adjustments empty list, custom-fields list-shape + `id` + reorder `fieldIds`.
+- ✅ **Phase 1 (security) 1a** (PR #187): BUG-058 magic-byte sniffing (4 upload paths) + EXIF strip (JPEG/PNG) + ISSUE-244 drop resume blob key. *(ImageSharp pinned 2.1.x/Apache-2.0.)*
+- ✅ **Phase 1 (security) 1b-A** (PR #188): auth-login rate-limit + subdomain-cache invalidation (AUTH-007 FR-9) + refresh cross-tenant reject (ISSUE-049) + reuse audit (ISSUE-050) + audit ip/user_agent + authz actor (ISSUE-006/054).
+- ✅ **Phase 2 (correctness) 2a** (PR #189): dept leave-coverage report (US-LV-012) + payroll-lock on leave approve/cancel (US-LV-010/005).
+- ✅ **US reconciliation for missing endpoints** (PR #190): AC-B* added to US-PRF-002/004/005/008/010.
+
+**Still queued (clean base):** Phase 1b-B (MFA-secret encryption + password-history), 1c (JWT rotation), Phase 2b (tenant **timezone** — isolated/careful — + hardcoded settings), Phase 5 (Testcontainers `IsRelational` paths; Training & Benefits), Phase 6 (LOW sweep + Theme-L dead-code). **DECISION-GATE** before Phase 3 features (Notifications delivery, workflow runtime) + Phase 4 infra (Redis / RLS / OTel).
+
+## 🆕 LOOP-DISCOVERED items now tracked (weren't in the original plan)
+1. **BUG-244 [NEW·MED]** — the **backend half of BUG-243**: 7 Performance endpoints the FE calls were never built (360 `saveReviewers`/`getFeedbackForm`/`tracker`, self-assessment `deleteAttachment`, cycle `rating-scales`, recommendation `cycles/completed`, pip `draft`) + the **HR-gated `cycles/active` resolver** blocking employees/managers. Formalized as US-PRF-*-**AC-B*** (PR #190) + TC-PRF-*-B* draft stubs. **Per-endpoint decision: build vs remove the dead FE control.** The `cycles/current` resolver is the highest-leverage single item (unblocks manager-review/sign-off/360). → belongs in **Phase 3** (feature build) or a decision to hide the controls.
+2. **ISSUE-245 [NEW·MED]** — the **Angular unit suite is RED on the base** (~26 pre-existing failures: ExportPanel/TenantService/MonthlySummary/SystemExportDialog/TenantMonitoring). The FE gate isn't green; the "2924 green" verification was **backend-only**. → **Phase 5** (test health) — triage to green so the FE regression gate is trustworthy.
+3. **ISSUE-246 [NEW·LOW]** — EXIF strip (#187) doesn't cover **WebP** (ImageSharp 2.1.x). → Phase 1/6 follow-up: drop WebP from photo allow-list or add a WebP strip path.
+
+---
+
 ## Legend
 - **[LEDGER]** already a tracked finding · **[NEW]** surfaced by the code scan, not yet filed · **[OPS]** deployment/config, not code
 - Sev = product impact. "Decision" = needs a product/AC/infra call before coding.

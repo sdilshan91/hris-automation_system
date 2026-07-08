@@ -5667,3 +5667,34 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Evidence:** static FE-service-URL vs controller-route diff (files: `src/frontend/src/app/features/performance/**/services/*.service.ts` vs `src/backend/HRM.Api/Controllers/{ManagerReview,Feedback360,GoalProgress,ReviewSignoff,SelfAssessment,Cycles,Pip,Recommendation,PerformanceDashboard,Goals}Controller.cs`) + live 404/403 probes distinguishing "route missing" (empty-body 404) from "route exists, authz/no-data" (403 / coded 404).
 - **Severity rationale:** HIGH — a whole priced module is unusable via its own UI (primary flows dead E2E), yet backend + tests are green so it reads "done"; no data/security impact (it fails closed, 404). Fix is contained but broad: align each FE service's path segments to the controller routes (FE-only change, ~10 services), then a smoke pass per service. Prefer fixing the FE to match BE (the BE routes are the tested contract). Surfaced by the 2026-07-06 verify-first pass; matches COMPLETION-PLAN Part II Theme G.
 - **Suggested direction (NOT applied):** none — report only.
+
+---
+
+### BUG-244 — Performance module: 7 backend endpoints the Angular FE calls were never built (+ the cycle-resolver is HR-gated), leaving dead UI — the backend half of BUG-243
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** BE (missing endpoints) — surfaced by FE↔BE audit
+- **Module / US / TC:** Performance · US-PRF-002/004/005/008/010 · (BUG-243 follow-up, verified 2026-07-08)
+- **Title:** Formalizing the backend half of [[BUG-243]]. BUG-243 fixed the 6 Performance FE services whose routes merely differed; **the remaining 4 services can't be fixed FE-only because the backend endpoints don't exist**. Verified against the controllers (grep + full reads): **genuinely missing** — feedback-360 `saveReviewers` (full-replace PUT; BE only has add-one/remove-one), feedback-360 `getFeedbackForm` (by assignmentId; no get-form route), feedback-360 standalone `tracker` (data only embedded in `…/results`), self-assessment `deleteAttachment` (upload/list/download only, no DELETE), cycle `rating-scales` (no route anywhere), recommendation `cycles/completed` (no completed-cycles list), pip `draft` (create-final only, no draft). **`recommendation team` is NOT missing** — the `workspace` endpoint already serves managers scoped to direct reports (an FE reshape, not a gap). **Root enabler:** `GET cycles/active` EXISTS but is HR-gated (`Performance.SetGoal.All`/`Publish.All`), so employees (`Read.Self`)/managers (`Review.Team`) can't resolve their own cycle id — which is exactly why the FE keys by reviewId/assignmentId and the manager-review/sign-off/feedback-360 flows are FE-only-unfixable.
+- **Root cause (~95%, verified):** these capabilities were scoped in the FE but never built server-side; the FE 404s at routing (empty body) end-to-end.
+- **Reproduction:** call any of the above FE actions against the running API → empty-body 404 (route missing), vs a 403/coded-404 where the route exists.
+- **Evidence:** per-endpoint controller verification recorded in PR #190; ACs `AC-B*` added to US-PRF-002/004/005/008/010; TC stubs `TC-PRF-*-B*` (draft/blocked). See [[BUG-243]].
+- **Severity rationale:** MED — each is a discrete missing endpoint (collectively they make the Performance UI's advanced flows unusable = the parent BUG-243 HIGH), no data/security impact (fails closed, 404). **Decision needed per endpoint: implement it, or remove the dead FE control.** The cycle-resolver (AC-B2) is the highest-leverage single item (unblocks the whole manager-review/sign-off half).
+- **Suggested direction (NOT applied):** implement the low-privilege `cycles/current` resolver first (unblocks the most), then the 7 endpoints as US-PRF-*-AC-B* stories; or hide the FE controls for any deferred this release. Report only.
+
+### ISSUE-245 — Angular unit-test suite is RED on the base: ~26 pre-existing spec failures (admin / data-export / monitoring), unrelated to feature work
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** FE (test health)
+- **Module / US / TC:** Admin Console / Reports · (surfaced 2026-07-07 during BUG-243)
+- **Title:** `npm test` (Karma/Jasmine) on `test/local-subdomains` reports **~26 failing specs** independent of any current change — concentrated in `ExportPanelComponent` (~14), `TenantService` (5), `MonthlySummaryComponent` (4), `SystemExportDialogComponent` (2), `TenantMonitoringDetailComponent` (1). The FE quality gate is therefore not green, so a real FE regression could hide in the noise (every FE PR this campaign has had to filter "new failures beyond the known ~26"). NOTE: the earlier "final verification 2924/2924 green" was **backend-only** (`dotnet test`); the FE suite was never separately gated green.
+- **Root cause (~50%, unpinned):** appears environment/config-related (the classes cluster around data-export/monitoring/tenant-service, several referencing `environment.ts`/apiBaseUrl); needs a dev to run `npm test` and triage per class.
+- **Reproduction:** `cd src/frontend && npx ng test --watch=false --browsers=ChromeHeadlessNoSandbox` → 26 failed / ~3620 passed.
+- **Severity rationale:** MED — no user-facing defect proven, but a red unit-suite erodes the FE regression gate. Should be triaged to green (or the failing specs fixed/quarantined-with-reason) so the FE gate is trustworthy.
+- **Suggested direction (NOT applied):** triage the 5 failing classes; fix or (with justification) repair the stale specs. Report only.
+
+### ISSUE-246 — EXIF stripping (PR #187) does not cover WebP images (ImageSharp 2.1.x limited WebP encode)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR · US-CHR-001/008 · (follow-up to PR #187)
+- **Title:** `ImageMetadataStripper` (#187) strips Exif/Iptc/Xmp from JPEG/PNG but **passes WebP through un-stripped** — ImageSharp is pinned to 2.1.x (Apache-2.0) whose WebP encode support is limited. A WebP profile photo therefore retains GPS/camera metadata. Contained: the magic-byte validator (BUG-058) still gates WebP, and most uploads are JPEG/PNG.
+- **Severity rationale:** LOW — narrow-format privacy nit; resolvable by adding a WebP path (needs a WebP-encode-capable lib or an ImageSharp v3/v4 licensing decision) or disallowing WebP photo uploads.
+- **Suggested direction (NOT applied):** either drop WebP from the photo allow-list or add a WebP metadata-strip path. Report only.
