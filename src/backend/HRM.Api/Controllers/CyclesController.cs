@@ -24,6 +24,12 @@ public sealed class CyclesController : ControllerBase
     private const string ManageCycles = "Performance.SetGoal.All";
     private const string PublishCycles = "Performance.Publish.All";
 
+    // Team-/Self-level participation permissions (Manager / reviewer / employee) that must also be able
+    // to READ the active cycle + its window flags — the module landing-route data source (BUG-244 #8).
+    private const string SetGoalTeam = "Performance.SetGoal.Team";
+    private const string ReviewTeam = "Performance.Review.Team";
+    private const string ReadSelf = "Performance.Read.Self";
+
     private readonly IMediator _mediator;
 
     public CyclesController(IMediator mediator) => _mediator = mediator;
@@ -45,7 +51,7 @@ public sealed class CyclesController : ControllerBase
     /// authoritative window flags (goalSettingOpen / selfAssessmentOpen / managerReviewOpen). AC-3.
     /// </summary>
     [HttpGet("cycles/active")]
-    [RequirePermission(ManageCycles, PublishCycles)]
+    [RequirePermission(ManageCycles, PublishCycles, SetGoalTeam, ReviewTeam, ReadSelf)]
     [ProducesResponseType(typeof(ApiResponse<ActiveCycleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetActive(CancellationToken cancellationToken)
