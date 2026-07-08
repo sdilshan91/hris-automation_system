@@ -19,22 +19,29 @@
 
 ---
 
-## 🔄 LOOP EXECUTION PROGRESS (2026-07-07/08)
-Executing the plan in priority order. Merged so far:
-- ✅ **Verify-first pass** (PR #184): cross-tenant-writes-outside-`/tenant/*` + BUG-040 = STALE (already fixed); **Performance FE↔BE routes = LIVE → BUG-243 (HIGH)**.
-- ✅ **BUG-243** (PR #185): 6 Performance FE services corrected FE-only; **4 flagged backend-dependent** (see below).
-- ✅ **Theme G shape bugs** (PR #186): payroll-adjustments empty list, custom-fields list-shape + `id` + reorder `fieldIds`.
-- ✅ **Phase 1 (security) 1a** (PR #187): BUG-058 magic-byte sniffing (4 upload paths) + EXIF strip (JPEG/PNG) + ISSUE-244 drop resume blob key. *(ImageSharp pinned 2.1.x/Apache-2.0.)*
-- ✅ **Phase 1 (security) 1b-A** (PR #188): auth-login rate-limit + subdomain-cache invalidation (AUTH-007 FR-9) + refresh cross-tenant reject (ISSUE-049) + reuse audit (ISSUE-050) + audit ip/user_agent + authz actor (ISSUE-006/054).
-- ✅ **Phase 2 (correctness) 2a** (PR #189): dept leave-coverage report (US-LV-012) + payroll-lock on leave approve/cancel (US-LV-010/005).
-- ✅ **US reconciliation for missing endpoints** (PR #190): AC-B* added to US-PRF-002/004/005/008/010.
+## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08)
+- **Base:** `test/local-subdomains` @ **HEAD `e862198b`** (everything through PR #196 merged). **0 open PRs.** Working tree clean.
+- **Base health:** backend build green (exit 0); the full `dotnet test` re-verify was **in-progress at handoff** — **RE-RUN `dotnet test HRM.sln` (Docker up) + `ng test` first** to confirm the merged base (last known: backend 2998 green, FE 3647 green on the pre-merge branches; #195 combined #193's migrations + timezone).
+- **Working method (unchanged):** one `fix/{cluster}` branch per item off fresh `test/local-subdomains` → parallel `@backend-dev` + `@qa-engineer` (non-overlapping paths) → gate on the **FULL** suite → commit → PR → user merges → next. **Auto-heal is ACTIVE** (rule #6 / `/auto-heal`): file every `OUT-OF-LANE:` flag to `TEST-FINDINGS.md`, fold into this plan, re-prioritize. Avoid stacking branches that touch the same files/migrations as an open PR.
+- **▶ NEXT, in priority order:**
+  1. **Phase 1c — JWT signing-key rotation/overlap** (`JwtService`/`AuthService`; a key-ring so rotation doesn't invalidate live tokens).
+  2. **Finish tenant-tz across attendance** — **BUG-245** (`AttendanceDashboardService`), **BUG-246** (`AttendancePayrollService` monthly agg), **BUG-247** (`RegularizationApprovalService` recompute) — reuse the merged **`TenantClock`** helper; same UTC-no-op discipline.
+  3. **Phase 5** — Testcontainers coverage for the `TenantDataDeletionService` tx path (BUG-068 class) + the **Training & Benefits** module (zero coverage).
+  4. **Phase 6** — LOW cosmetic sweep + **Theme-L dead-code** (`EmployeeFieldAuditLog` query filter, `IPipCheckpointScheduler`/`GeneratePortalLinkCommand` orphans, 2 un-`AddScoped` Hangfire jobs).
+  5. **DECISION-GATE** (needs the user): Phase 3 features (**Notifications delivery** US-NTF-006, **workflow runtime** US-ADM-011, the **BUG-244** Performance endpoints incl. the `cycles/current` resolver) + Phase 4 infra (**Redis, RLS enablement, OTel**, and **ISSUE-247** DataProtection key persistence).
 
-**Still queued (clean base):** Phase 1b-B (MFA-secret encryption + password-history), 1c (JWT rotation), Phase 2b (tenant **timezone** — isolated/careful — + hardcoded settings), Phase 5 (Testcontainers `IsRelational` paths; Training & Benefits), Phase 6 (LOW sweep + Theme-L dead-code). **DECISION-GATE** before Phase 3 features (Notifications delivery, workflow runtime) + Phase 4 infra (Redis / RLS / OTel).
+## 🔄 LOOP EXECUTION PROGRESS — MERGED (2026-07-07/08)
+- ✅ #184 verify-first (2 ghosts STALE; Perf routes LIVE→BUG-243) · #185 BUG-243 (6 Perf FE routes) · #186 Theme-G (4 shape bugs) · #187 Ph1a (magic-byte + EXIF + ISSUE-244) · #188 Ph1b-A (auth rate-limit + cache-invalidation + refresh-guard + audit-metadata) · #189 Ph2a (dept leave-coverage + payroll-lock) · #190 US AC-B* · #191 tracking (BUG-244/ISSUE-245/246 + TC stubs) · #192 **auto-heal protocol** · #193 Ph1b-B (MFA encryption + password-history, migrations) · #194 **ISSUE-245 FE suite green (3647/0)** · #195 Ph2b (tenant timezone / ISSUE-065) · #196 absorbed tooling (design-review/retro/security-audit/guardrails/exploratory-QA).
 
-## 🆕 LOOP-DISCOVERED items now tracked (weren't in the original plan)
-1. **BUG-244 [NEW·MED]** — the **backend half of BUG-243**: 7 Performance endpoints the FE calls were never built (360 `saveReviewers`/`getFeedbackForm`/`tracker`, self-assessment `deleteAttachment`, cycle `rating-scales`, recommendation `cycles/completed`, pip `draft`) + the **HR-gated `cycles/active` resolver** blocking employees/managers. Formalized as US-PRF-*-**AC-B*** (PR #190) + TC-PRF-*-B* draft stubs. **Per-endpoint decision: build vs remove the dead FE control.** The `cycles/current` resolver is the highest-leverage single item (unblocks manager-review/sign-off/360). → belongs in **Phase 3** (feature build) or a decision to hide the controls.
-2. **ISSUE-245 [NEW·MED]** — the **Angular unit suite is RED on the base** (~26 pre-existing failures: ExportPanel/TenantService/MonthlySummary/SystemExportDialog/TenantMonitoring). The FE gate isn't green; the "2924 green" verification was **backend-only**. → **Phase 5** (test health) — triage to green so the FE regression gate is trustworthy.
-3. **ISSUE-246 [NEW·LOW]** — EXIF strip (#187) doesn't cover **WebP** (ImageSharp 2.1.x). → Phase 1/6 follow-up: drop WebP from photo allow-list or add a WebP strip path.
+## 🆕 LOOP-DISCOVERED items now tracked (auto-healed into the ledger)
+1. **BUG-244 [MED]** — backend half of BUG-243: 7 Performance endpoints never built (360 `saveReviewers`/`getFeedbackForm`/`tracker`, self-assessment `deleteAttachment`, cycle `rating-scales`, recommendation `cycles/completed`, pip `draft`) + **HR-gated `cycles/active` resolver**. → US-PRF-*-AC-B* (#190), TC-PRF-*-B* stubs (#191). **Decision per endpoint: build vs remove dead FE control**; `cycles/current` resolver = highest-leverage. → Phase 3.
+2. **ISSUE-245 [MED] — RESOLVED (#194)** — the Angular suite was red on the base (~26 stale specs); now green (3647/0).
+3. **ISSUE-246 [LOW]** — EXIF strip skips WebP (ImageSharp 2.1.x). → Phase 6.
+4. **ISSUE-247 [HIGH]** — DataProtection key ring is ephemeral/per-instance → MFA secrets won't decrypt across instances/redeploys. → **Phase 4 infra**.
+5. **ISSUE-248 [LOW]** — no self-service change-password path; history enforced only on reset. → decision.
+6. **ISSUE-249 [MED]** — AutoMapper 13.0.1 NU1903 advisory. → dependency hygiene.
+7. **BUG-245/246/247 [MED×3]** — attendance dashboard / payroll-agg / regularization-approval still UTC (siblings of the Ph2b tz fix). → NEXT item #2.
+8. **ISSUE-250/251 [LOW×2]** — regularization validator UTC future-check; `TenantClock.LocalToUtc` DST-gap throw. → Phase 6 / decision.
 
 ---
 
