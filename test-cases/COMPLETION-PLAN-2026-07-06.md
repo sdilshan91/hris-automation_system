@@ -19,18 +19,23 @@
 
 ---
 
-## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08)
-- **Base:** `test/local-subdomains` @ **HEAD `e862198b`** (everything through PR #196 merged). **0 open PRs.** Working tree clean.
-- **Base health:** ✅ **CONFIRMED GREEN on the merged base** — backend `dotnet test` = **3011/3011, 0 failed** (Docker up, 2026-07-08); FE `ng test` = **3647/0** (from #194). The merged tree (incl. #193's migrations + #195 timezone) is healthy. A quick re-confirm on session start is still good hygiene but the base was verified at handoff.
+## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08, post-loop)
+- **Base:** `test/local-subdomains` @ **HEAD `f8fdcc8b`** (everything through PR **#201** merged; #197 plan-doc + #198–201 fix PRs all merged). Working tree clean.
+- **Base health:** ✅ **CONFIRMED GREEN on the merged union (2026-07-08)** — backend `dotnet test HRM.sln` = **3030/3030, 0 failed** (Docker up); FE `ng test` (headless) = **3647/3647, 0 failed**. The four loop PRs (#198–201) are merged and re-verified together.
 - **Working method (unchanged):** one `fix/{cluster}` branch per item off fresh `test/local-subdomains` → parallel `@backend-dev` + `@qa-engineer` (non-overlapping paths) → gate on the **FULL** suite → commit → PR → user merges → next. **Auto-heal is ACTIVE** (rule #6 / `/auto-heal`): file every `OUT-OF-LANE:` flag to `TEST-FINDINGS.md`, fold into this plan, re-prioritize. Avoid stacking branches that touch the same files/migrations as an open PR.
-- **▶ NEXT, in priority order:**
-  1. **Phase 1c — JWT signing-key rotation/overlap** (`JwtService`/`AuthService`; a key-ring so rotation doesn't invalidate live tokens).
-  2. **Finish tenant-tz across attendance** — **BUG-245** (`AttendanceDashboardService`), **BUG-246** (`AttendancePayrollService` monthly agg), **BUG-247** (`RegularizationApprovalService` recompute) — reuse the merged **`TenantClock`** helper; same UTC-no-op discipline.
-  3. **Phase 5** — Testcontainers coverage for the `TenantDataDeletionService` tx path (BUG-068 class) + the **Training & Benefits** module (zero coverage).
-  4. **Phase 6** — LOW cosmetic sweep + **Theme-L dead-code** (`EmployeeFieldAuditLog` query filter, `IPipCheckpointScheduler`/`GeneratePortalLinkCommand` orphans, 2 un-`AddScoped` Hangfire jobs).
-  5. **DECISION-GATE** (needs the user): Phase 3 features (**Notifications delivery** US-NTF-006, **workflow runtime** US-ADM-011, the **BUG-244** Performance endpoints incl. the `cycles/current` resolver) + Phase 4 infra (**Redis, RLS enablement, OTel**, and **ISSUE-247** DataProtection key persistence).
+- **✅ COMPLETED this loop (merged #198–201):**
+  1. ✅ **Phase 1c — JWT signing-key rotation/overlap** → **PR #198** (config-driven key-ring, back-compat; 3016/3016).
+  2. ✅ **BUG-245/246/247 — tenant-tz across attendance** (dashboard/payroll/regularization via `TenantClock`) → **PR #199** (3018/3018). Residual ISSUE-250/251 remain LOW (Phase 6/decision).
+  3. ✅ **Phase 5 — Testcontainers tx coverage + BUG-252 fix** → **PR #200** (3014/3014). Covered `TenantDataDeletionService` + `ApplicantConversionService` tx paths on real Postgres. **`TenantTransactionBehavior:57` deferred to Phase 4** (RLS-gated). **Training & Benefits = UNBUILT** (stories + permission constants only; no code) → greenfield feature-build, moved to the decision-gate.
+  4. ✅ **Phase 6 — Theme-L dead-code** (`EmployeeFieldAuditLog` query filter added; `IPipCheckpointScheduler` + `GeneratePortalLinkCommand` removed; 2 Hangfire jobs `AddScoped`) → **PR #201** (3015/3015). **LOW-cosmetic tail (~70) intentionally NOT swept** (mostly fixed-not-closed) — targeted follow-up only.
+- **▶ NEXT — everything remaining is at the DECISION-GATE (needs the user):**
+  - **Post-merge close-out:** `/verify-fix BUG-252` to flip it RESOLVED with PR #200.
+  - **Phase 3 features (each needs AC):** **BUG-244** Performance backend endpoints incl. the HR-gated `cycles/current` resolver (highest-leverage — unblocks a whole priced module's UI; per-endpoint build-vs-remove call); **Notifications delivery** US-NTF-006 (biggest blast radius, ~25 stories; SMTP+SignalR); **workflow runtime** US-ADM-011; **Training & Benefits** greenfield build (US-TRN-*).
+  - **Phase 4 infra (needs provisioning):** **Redis**, **RLS enablement** (+ `TenantTransactionBehavior` test), **OTel**, **ISSUE-247** DataProtection key persistence.
+  - **Deferred LOW:** ISSUE-253 (`ApplicantConversionService` audit detach-on-retry), the ~70 LOW-cosmetic Phase-6 tail, ISSUE-249 (AutoMapper NU1903 bump), ISSUE-250/251.
 
 ## 🔄 LOOP EXECUTION PROGRESS — MERGED (2026-07-07/08)
+- ✅ **#198 Phase 1c JWT key-ring** · **#199 attendance tenant-tz (BUG-245/246/247)** · **#200 Phase 5 Testcontainers tx + BUG-252 fix** · **#201 Phase 6 Theme-L dead-code** — all merged, union re-verified **3030/3030 BE + 3647/3647 FE** (2026-07-08).
 - ✅ #184 verify-first (2 ghosts STALE; Perf routes LIVE→BUG-243) · #185 BUG-243 (6 Perf FE routes) · #186 Theme-G (4 shape bugs) · #187 Ph1a (magic-byte + EXIF + ISSUE-244) · #188 Ph1b-A (auth rate-limit + cache-invalidation + refresh-guard + audit-metadata) · #189 Ph2a (dept leave-coverage + payroll-lock) · #190 US AC-B* · #191 tracking (BUG-244/ISSUE-245/246 + TC stubs) · #192 **auto-heal protocol** · #193 Ph1b-B (MFA encryption + password-history, migrations) · #194 **ISSUE-245 FE suite green (3647/0)** · #195 Ph2b (tenant timezone / ISSUE-065) · #196 absorbed tooling (design-review/retro/security-audit/guardrails/exploratory-QA).
 
 ## 🆕 LOOP-DISCOVERED items now tracked (auto-healed into the ledger)
@@ -40,8 +45,10 @@
 4. **ISSUE-247 [HIGH]** — DataProtection key ring is ephemeral/per-instance → MFA secrets won't decrypt across instances/redeploys. → **Phase 4 infra**.
 5. **ISSUE-248 [LOW]** — no self-service change-password path; history enforced only on reset. → decision.
 6. **ISSUE-249 [MED]** — AutoMapper 13.0.1 NU1903 advisory. → dependency hygiene.
-7. **BUG-245/246/247 [MED×3]** — attendance dashboard / payroll-agg / regularization-approval still UTC (siblings of the Ph2b tz fix). → NEXT item #2.
+7. **BUG-245/246/247 [MED×3]** — attendance dashboard / payroll-agg / regularization-approval still UTC (siblings of the Ph2b tz fix). → ✅ **FIXED (#199)**.
 8. **ISSUE-250/251 [LOW×2]** — regularization validator UTC future-check; `TenantClock.LocalToUtc` DST-gap throw. → Phase 6 / decision.
+9. **BUG-252 [HIGH]** — `TenantDataDeletionService` manual tx not wrapped in `CreateExecutionStrategy` → throws under Npgsql retry; **GDPR/tenant purge (US-ADM-004) never ran on Postgres**, confirmed live in prod logs through 2026-07-07 (BUG-068 class). → ✅ **FIXED (#200)**; run `/verify-fix BUG-252` post-merge.
+10. **ISSUE-253 [LOW]** — `ApplicantConversionService` adds an `AuditLog` inside its retry delegate without detach-on-rollback (rare double-insert). Works today. → deferred (needs decision).
 
 ---
 
