@@ -4,8 +4,9 @@ user_story: US-AUTH-005
 module: Authentication
 priority: high
 type: integration
-status: automated
+status: pass
 created: 2026-07-09
+verified: 2026-07-09 (PR #224 merged; 3/3 green on merged test/local-subdomains, Docker up)
 ---
 
 # TC-AUTH-113: Data Protection key ring persists to Postgres and survives a redeploy (cross-instance MFA-secret decryption)

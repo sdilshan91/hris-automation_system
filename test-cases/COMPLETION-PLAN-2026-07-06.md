@@ -35,9 +35,9 @@
 - **✅ DONE (the whole autonomous arc):** BUG-252 (#203) · BUG-244 (#204/#206/#209/#210) · **US-NTF-006 Notifications** (#214–220) · **cycle-drift lineage** BUG-257/258/259/260 (#212/#213/#221) · **ISSUE-249** accepted-risk (Directory.Build.props NuGetAuditSuppress).
 
 - **▶ REFRESHED PRIORITIES (2026-07-09) — what's left, re-sorted by value × readiness × effort:**
-  - **P1 — highest value, NO new infra, decision-light (do next):**
-    - **ISSUE-247 — DataProtection key persistence** (HIGH). MFA secrets don't decrypt across instances/redeploys. Fix with **`PersistKeysToDbContext`** onto the **existing Postgres** (no Redis/blob needed) + `ProtectKeysWith*` if a cert/KMS is available. Biggest security/availability win still open; buildable now.
-  - **P2 — bounded quick wins (small, no AC/infra):**
+  - **P1 — ✅ DONE (PR #224, merged 2026-07-09; verified via `/verify-fix ISSUE-247`):**
+    - ✅ **ISSUE-247 — DataProtection key persistence** (HIGH) → RESOLVED. Key ring persisted to the existing Postgres via `AddDataProtection().PersistKeysToDbContext<AppDbContext>().SetApplicationName("HRM")` + migration `data_protection_keys` + `AppDbContext:IDataProtectionKeyContext`. Regression **TC-AUTH-113** (real Postgres, cross-instance decrypt) green; BE 3279/3279. Keys unencrypted-at-rest (DB-ACL protected); `ProtectKeysWith*` (cert/KMS) deferred to **P3 infra**. **NEXT ⇒ P2.**
+  - **P2 — bounded quick wins (small, no AC/infra) — ◀ RESUME HERE:**
     - **BUG-261** — make the cycle scope control read-only on edit (or wire `UpdateCycleInput.Scope`) — removes the silent-drop UX trap.
     - **ISSUE-256** (360 comment length→422 + encode comments in the PDF/HTML report, ISSUE-226 class) · **ISSUE-262** (wire the offer pre-expiry reminder scheduler) · **ISSUE-263** (interviewer in-app: widen the interview seam signature) · **ISSUE-250/251** (regularization validator tz / DST-gap) · **ISSUE-253** (ApplicantConversion audit detach-on-retry) · **ISSUE-254** (ratingsPublishedOn proxy) · **ISSUE-255** (seed a permissionless e2e persona).
   - **P3 — needs provisioning / a go-no-go (infra):**
@@ -55,7 +55,7 @@
 1. **BUG-244 [MED]** — backend half of BUG-243: 7 Performance endpoints never built (360 `saveReviewers`/`getFeedbackForm`/`tracker`, self-assessment `deleteAttachment`, cycle `rating-scales`, recommendation `cycles/completed`, pip `draft`) + **HR-gated `cycles/active` resolver**. → US-PRF-*-AC-B* (#190), TC-PRF-*-B* stubs (#191). **Decision per endpoint: build vs remove dead FE control**; `cycles/current` resolver = highest-leverage. → Phase 3.
 2. **ISSUE-245 [MED] — RESOLVED (#194)** — the Angular suite was red on the base (~26 stale specs); now green (3647/0).
 3. **ISSUE-246 [LOW]** — EXIF strip skips WebP (ImageSharp 2.1.x). → Phase 6.
-4. **ISSUE-247 [HIGH]** — DataProtection key ring is ephemeral/per-instance → MFA secrets won't decrypt across instances/redeploys. → **Phase 4 infra**.
+4. **ISSUE-247 [HIGH] — ✅ RESOLVED (PR #224, 2026-07-09)** — key ring now persisted to Postgres (`PersistKeysToDbContext` + `SetApplicationName("HRM")`); regression TC-AUTH-113. Key-ring at-rest encryption (`ProtectKeysWith*`) deferred to P3 infra (cert/KMS).
 5. **ISSUE-248 [LOW]** — no self-service change-password path; history enforced only on reset. → decision.
 6. **ISSUE-249 [MED]** — AutoMapper 13.0.1 NU1903 advisory. → dependency hygiene.
 7. **BUG-245/246/247 [MED×3]** — attendance dashboard / payroll-agg / regularization-approval still UTC (siblings of the Ph2b tz fix). → ✅ **FIXED (#199)**.
