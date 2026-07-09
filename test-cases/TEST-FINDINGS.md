@@ -5752,7 +5752,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** confirm no self-service change-password flow is expected this release; if one is added, extract the history check+record+prune into a shared helper and call it there. Report only.
 
 ### ISSUE-249 — AutoMapper 13.0.1 carries a known high-severity advisory (NU1903 / GHSA-rvv3-g6hj-g44x)
-- **Type / Severity / Status:** ISSUE · MED · OPEN (auto-healed from an OUT-OF-LANE flag, 2026-07-08)
+- **Type / Severity / Status:** ISSUE · MED · **RESOLVED — ACCEPTED-RISK (decision 2026-07-09)**. GHSA-rvv3-g6hj-g44x = CVE-2026-32933, a DoS-via-uncontrolled-recursion (StackOverflow); **no free patch exists** (fix only in commercial AutoMapper 15.x/16.x). Assessment: this app maps finite DTO↔entity shapes, not attacker-controlled deeply-nested/recursive graphs → recursion sink unreachable from untrusted input → low real exploitability. Applied a **targeted** `NuGetAuditSuppress` (this GHSA only, in `src/backend/Directory.Build.props` with a documented rationale) — does NOT blanket-mute NU1903, so other future vuln advisories still surface. Revisit if a free patch ships or a commercial upgrade is approved.
 - **Layer:** BE / dependency
 - **Module / US / TC:** Platform · (build advisory across HRM.Application/Infrastructure/Api/Tests)
 - **Title:** Every restore/build emits `NU1903: Package 'AutoMapper' 13.0.1 has a known high severity vulnerability` (GHSA-rvv3-g6hj-g44x). Pre-existing, noisy on every build, and a real advisory.

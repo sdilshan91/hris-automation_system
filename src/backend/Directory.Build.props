@@ -1,0 +1,23 @@
+<Project>
+
+  <!--
+    ISSUE-249 — AutoMapper GHSA-rvv3-g6hj-g44x (CVE-2026-32933): DoS via uncontrolled recursion
+    (StackOverflowException) when mapping deeply-nested/recursive object graphs. Severity 7.5 (High).
+
+    ACCEPTED RISK (decision 2026-07-09):
+      * No free patched version exists — the fix ships only in the COMMERCIAL AutoMapper 15.x/16.x;
+        13.x/14.x remain flagged (this repo pins AutoMapper 13.*).
+      * Real exploitability here is low: the app maps finite DTO<->entity shapes, not
+        attacker-controlled deeply-nested/recursive graphs, so the recursion sink isn't reachable
+        from untrusted input.
+      * Mitigation posture: accept-and-document now; revisit if a free patch ships or a commercial
+        upgrade is approved (then remove this suppression).
+
+    This is a TARGETED suppression of THIS advisory only (by its GHSA url) — it does NOT blanket-mute
+    NU1903, so any *other* vulnerable-package advisory will still surface in the build.
+  -->
+  <ItemGroup>
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-rvv3-g6hj-g44x" />
+  </ItemGroup>
+
+</Project>

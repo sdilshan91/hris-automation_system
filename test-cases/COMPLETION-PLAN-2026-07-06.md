@@ -32,12 +32,19 @@
   2. ✅ **BUG-245/246/247 — tenant-tz across attendance** (dashboard/payroll/regularization via `TenantClock`) → **PR #199** (3018/3018). Residual ISSUE-250/251 remain LOW (Phase 6/decision).
   3. ✅ **Phase 5 — Testcontainers tx coverage + BUG-252 fix** → **PR #200** (3014/3014). Covered `TenantDataDeletionService` + `ApplicantConversionService` tx paths on real Postgres. **`TenantTransactionBehavior:57` deferred to Phase 4** (RLS-gated). **Training & Benefits = UNBUILT** (stories + permission constants only; no code) → greenfield feature-build, moved to the decision-gate.
   4. ✅ **Phase 6 — Theme-L dead-code** (`EmployeeFieldAuditLog` query filter added; `IPipCheckpointScheduler` + `GeneratePortalLinkCommand` removed; 2 Hangfire jobs `AddScoped`) → **PR #201** (3015/3015). **LOW-cosmetic tail (~70) intentionally NOT swept** (mostly fixed-not-closed) — targeted follow-up only.
-- **▶ DECISION-GATE — the remaining work (needs the user's call on scope/AC/infra):**
-  - ✅ **BUG-252** RESOLVED (#203). ✅ **BUG-244** RESOLVED (#204/#206/#209/#210). ✅ **US-NTF-006 Notifications** COMPLETE (#214–220). ✅ **Cycle-drift lineage** BUG-257/258/259/260 RESOLVED (#212/#213/#221).
-  - **Phase 3 features (each needs AC):** ~~Notifications delivery US-NTF-006~~ **DONE**; **workflow runtime** US-ADM-011; **Training & Benefits** greenfield build (US-TRN-*).
-  - **Phase 4 infra (needs provisioning):** **Redis**, **RLS enablement** (+ `TenantTransactionBehavior` test — ⚠ behavior change, confirm before flipping on), **OTel** (GlitchTip ops in-tree; Sentry MCP config stashed locally), **ISSUE-247** DataProtection key persistence.
-  - **Dependency/LOW hygiene:** **ISSUE-249** (AutoMapper 13.0.1 NU1903 → bump), **ISSUE-256** (360 comment length→422 + XSS-encode), **BUG-261** (cycle scope-on-update — decision), **ISSUE-262/263** (offer-reminder dormant / interviewer email-only), ISSUE-253/254/255, ISSUE-250/251, the ~70 LOW-cosmetic tail.
-  - **Deferred LOW:** ISSUE-253 (`ApplicantConversionService` audit detach-on-retry), ISSUE-254 (#6 `ratingsPublishedOn` EndDate proxy), ISSUE-255 (test harness has no permissionless persona), ISSUE-256 (360 comment length→422 + XSS-encode), the ~70 LOW-cosmetic Phase-6 tail, ISSUE-249 (AutoMapper NU1903 bump), ISSUE-250/251.
+- **✅ DONE (the whole autonomous arc):** BUG-252 (#203) · BUG-244 (#204/#206/#209/#210) · **US-NTF-006 Notifications** (#214–220) · **cycle-drift lineage** BUG-257/258/259/260 (#212/#213/#221) · **ISSUE-249** accepted-risk (Directory.Build.props NuGetAuditSuppress).
+
+- **▶ REFRESHED PRIORITIES (2026-07-09) — what's left, re-sorted by value × readiness × effort:**
+  - **P1 — highest value, NO new infra, decision-light (do next):**
+    - **ISSUE-247 — DataProtection key persistence** (HIGH). MFA secrets don't decrypt across instances/redeploys. Fix with **`PersistKeysToDbContext`** onto the **existing Postgres** (no Redis/blob needed) + `ProtectKeysWith*` if a cert/KMS is available. Biggest security/availability win still open; buildable now.
+  - **P2 — bounded quick wins (small, no AC/infra):**
+    - **BUG-261** — make the cycle scope control read-only on edit (or wire `UpdateCycleInput.Scope`) — removes the silent-drop UX trap.
+    - **ISSUE-256** (360 comment length→422 + encode comments in the PDF/HTML report, ISSUE-226 class) · **ISSUE-262** (wire the offer pre-expiry reminder scheduler) · **ISSUE-263** (interviewer in-app: widen the interview seam signature) · **ISSUE-250/251** (regularization validator tz / DST-gap) · **ISSUE-253** (ApplicantConversion audit detach-on-retry) · **ISSUE-254** (ratingsPublishedOn proxy) · **ISSUE-255** (seed a permissionless e2e persona).
+  - **P3 — needs provisioning / a go-no-go (infra):**
+    - **RLS enablement** (+ `TenantTransactionBehavior:57` Postgres test) — ⚠ behavior change; **confirm go/no-go before flipping on**. · **Redis** wiring (permission/leave caches, session denylist) — needs a Redis instance. · **OTel** (GlitchTip ops in-tree; Sentry MCP config stashed locally) — wire tracing/metrics.
+  - **P4 — large feature builds, need an AC brief:**
+    - **Workflow runtime** (US-ADM-011) · **Training & Benefits** greenfield (US-TRN-*).
+  - **P5 — the ~70 LOW-cosmetic tail** (mostly fixed-not-closed) — sweep only if a polish pass is wanted.
 
 ## 🔄 LOOP EXECUTION PROGRESS — MERGED (2026-07-07/08)
 - ✅ **#203 BUG-252 close-out** · **#204 BUG-244 #8 cycles/active gate-relax** · **#206 BUG-244 #4 deleteAttachment + #6 cycles/completed** — merged, union re-verified **3041/3041 BE** (2026-07-08). BUG-244 remaining: Feedback360 trio (#1/#2/#3) + #7 pip-draft + #5 rating-scales FE.
