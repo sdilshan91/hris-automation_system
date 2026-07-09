@@ -73,6 +73,12 @@ public sealed class AppraisalCycleConfiguration : IEntityTypeConfiguration<Appra
             .HasDefaultValue(Domain.Enums.ParticipantScopeType.AllEmployees)
             .IsRequired();
 
+        // BUG-260: the selected department ids for a Departments-scoped cycle, persisted so the edit form can
+        // prefill the selection. EF Core 10 maps List<Guid> as a primitive collection; force a jsonb column
+        // (snake_case "scope_department_ids") rather than a Postgres uuid[].
+        builder.Property(c => c.ScopeDepartmentIds)
+            .HasColumnType("jsonb");
+
         builder.Property(c => c.CancellationReason).HasMaxLength(1000);
 
         builder.Property(c => c.IsDeleted).HasDefaultValue(false).IsRequired();

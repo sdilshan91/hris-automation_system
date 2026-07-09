@@ -123,6 +123,15 @@ public sealed class AppraisalCycle : BaseEntity
     /// <summary>How the participant set was resolved at creation (FR-3).</summary>
     public ParticipantScopeType ParticipantScope { get; set; } = ParticipantScopeType.AllEmployees;
 
+    /// <summary>
+    /// The department ids selected when the participant scope was <see cref="ParticipantScopeType.Departments"/>
+    /// (BUG-260). Persisted ALONGSIDE the resolved <see cref="CycleParticipant"/> rows purely so the edit form can
+    /// prefill the department selection — it does NOT drive participant resolution. Empty for non-Departments
+    /// scopes and for cycles created before this column existed (cannot be backfilled). Mapped as a jsonb
+    /// primitive collection (snake_case "scope_department_ids").
+    /// </summary>
+    public List<Guid> ScopeDepartmentIds { get; set; } = [];
+
     /// <summary>Cancellation reason (US-PRF-004 BR-6). Required when Status is Cancelled.</summary>
     public string? CancellationReason { get; set; }
 

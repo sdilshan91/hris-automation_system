@@ -28,7 +28,7 @@ describe('CycleDashboardComponent (AC-3 / FR-7 / FR-8)', () => {
       startDate: '2026-01-01',
       endDate: '2026-12-31',
       phases: [],
-      participantScope: 'AllEmployees',
+      scope: { scopeType: 'AllEmployees', departmentIds: [], employeeIds: [] },
       ratingScaleMax: 5,
       selfWeightPercent: 40,
       is360Enabled: false,

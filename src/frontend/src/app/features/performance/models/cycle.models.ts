@@ -188,13 +188,18 @@ export interface ICycle {
   endDate: string;
   phases: ICyclePhase[];
   /**
-   * BUG-259: the backend read DTO (`CycleDto.ParticipantScope`) returns only the FLAT
-   * scope enum — there are NO department/employee id lists on the read side yet. The
-   * nested `{ scopeType, departmentIds, employeeIds }` shape is the WRITE contract
-   * (see `ISaveCycleRequest.scope`), not this one. Prefilling id lists in edit mode is
-   * deferred to a backend enrichment (BUG-260).
+   * BUG-260: the backend read DTO (`CycleDto`) now exposes the full participant scope
+   * — the scope type plus the persisted department/employee id lists — so edit mode
+   * can prefill the id selection, not just the scope type. `departmentIds` is the
+   * persisted department selection (empty for non-Departments scopes and pre-existing
+   * cycles); `employeeIds` is the persisted participant employee ids. Mirrors the
+   * write-side `ISaveCycleRequest.scope` (`IParticipantScope`).
    */
-  participantScope: ParticipantScopeType;
+  scope: {
+    scopeType: ParticipantScopeType;
+    departmentIds: string[];
+    employeeIds: string[];
+  };
   /** Rating-scale maximum (integer 2-10, default 5); locked once Active (BR-5). */
   ratingScaleMax: number;
   /** Self-rating weight 0-100; managerWeightPercent is derived server-side (FR-6). */

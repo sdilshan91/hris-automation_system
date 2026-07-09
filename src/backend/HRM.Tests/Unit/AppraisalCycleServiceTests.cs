@@ -585,6 +585,130 @@ public sealed class AppraisalCycleServiceTests
         quarterly.IsSuccess.Should().BeTrue(quarterly.Error);
     }
 
+    // ── BUG-260: department-scope selection persistence + full-scope read DTO ────
+    // The department selection is persisted ALONGSIDE the resolved participant snapshot (purely so the edit
+    // form can prefill it) — but ONLY when the scope is Departments. GetByIdAsync then exposes the full scope
+    // (scope type + persisted department ids + resolved participant employee ids) via CycleDto.Scope, while the
+    // flat ParticipantScope field is kept for back-compat.
+
+    [Fact]
+    public async Task Create_DepartmentsScope_PersistsSelectedDepartmentIds_Distinct()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Pass a duplicate department id to prove the persisted list is de-duplicated (.Distinct()).
+        var scope = new ParticipantScopeInput(
+            ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr, _deptEng, _deptHr });
+        var input = CreateInput(start, start.AddDays(40), DefaultPhases(start), scope);
+
+        var result = await CreateService().CreateAsync(input);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+        var cycle = await db.AppraisalCycles.AsNoTracking().FirstAsync();
+        cycle.ScopeDepartmentIds.Should().BeEquivalentTo(new[] { _deptHr, _deptEng });
+        cycle.ScopeDepartmentIds.Should().HaveCount(2); // duplicate collapsed
+    }
+
+    [Theory]
+    [InlineData(ParticipantScopeType.AllEmployees)]
+    [InlineData(ParticipantScopeType.CustomList)]
+    public async Task Create_NonDepartmentsScope_PersistsEmptyDepartmentIds_EvenWhenSupplied(
+        ParticipantScopeType scopeType)
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Deliberately supply DepartmentIds for a NON-Departments scope; they must be ignored (not persisted),
+        // proving the column only stores the selection for a Departments-scoped cycle.
+        var scope = scopeType == ParticipantScopeType.CustomList
+            ? new ParticipantScopeInput(ParticipantScopeType.CustomList,
+                DepartmentIds: new[] { _deptHr }, EmployeeIds: new[] { _empA })
+            : new ParticipantScopeInput(ParticipantScopeType.AllEmployees,
+                DepartmentIds: new[] { _deptHr });
+        var input = CreateInput(start, start.AddDays(40), DefaultPhases(start), scope);
+
+        var result = await CreateService().CreateAsync(input);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+        var cycle = await db.AppraisalCycles.AsNoTracking().FirstAsync();
+        cycle.ParticipantScope.Should().Be(scopeType);
+        cycle.ScopeDepartmentIds.Should().BeEmpty(); // only a Departments scope persists the selection
+    }
+
+    [Fact]
+    public async Task GetById_DepartmentsCycle_ExposesFullScope_DepartmentsEmployeesAndFlat()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Both seeded employees live in these two departments, so participants resolve to {_empA, _empB}.
+        var scope = new ParticipantScopeInput(
+            ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr, _deptEng });
+        var created = await CreateService().CreateAsync(
+            CreateInput(start, start.AddDays(40), DefaultPhases(start), scope));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        var read = await CreateService().GetByIdAsync(created.Value!.Id);
+
+        read.IsSuccess.Should().BeTrue(read.Error);
+        var dto = read.Value!;
+        // All three nested Scope fields are populated.
+        dto.Scope.ScopeType.Should().Be(ParticipantScopeType.Departments);
+        dto.Scope.DepartmentIds.Should().BeEquivalentTo(new[] { _deptHr, _deptEng }); // persisted selection
+        dto.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empA, _empB });        // resolved participants
+        // The flat back-compat field is unchanged.
+        dto.ParticipantScope.Should().Be(ParticipantScopeType.Departments);
+        dto.ParticipantCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetById_AllEmployeesCycle_HasEmptyDepartmentIds_ButResolvedEmployeeIds()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        var created = await CreateService().CreateAsync(
+            CreateInput(start, start.AddDays(40), DefaultPhases(start), AllScope()));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        var dto = (await CreateService().GetByIdAsync(created.Value!.Id)).Value!;
+
+        dto.Scope.ScopeType.Should().Be(ParticipantScopeType.AllEmployees);
+        dto.Scope.DepartmentIds.Should().BeEmpty();                            // non-Departments ⇒ no selection
+        dto.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empA, _empB }); // participants still exposed
+    }
+
+    [Fact]
+    public async Task GetById_PreColumnDepartmentsCycle_WithEmptySelection_ReadsWithoutError()
+    {
+        // Simulate a cycle created before the scope_department_ids column existed: a Departments-scoped cycle
+        // whose ScopeDepartmentIds was never populated (it cannot be backfilled). The read must not error and
+        // must expose an empty DepartmentIds.
+        SeedEmployees();
+        var cycleId = BaseEntity.NewUuidV7();
+        using (var db = CreateDbContext())
+        {
+            db.AppraisalCycles.Add(new AppraisalCycle
+            {
+                Id = cycleId, TenantId = _tenantId, Name = "Legacy", Type = CycleType.Annual,
+                Status = AppraisalCycleStatus.Draft,
+                StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(40),
+                ParticipantScope = ParticipantScopeType.Departments,
+                ScopeDepartmentIds = [], // pre-column: never populated
+                IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var read = await CreateService().GetByIdAsync(cycleId);
+
+        read.IsSuccess.Should().BeTrue(read.Error);
+        read.Value!.Scope.ScopeType.Should().Be(ParticipantScopeType.Departments);
+        read.Value!.Scope.DepartmentIds.Should().BeEmpty(); // nothing to prefill, no error
+        read.Value!.Scope.EmployeeIds.Should().BeEmpty();   // no participants resolved
+    }
+
     // ── helper: create a Draft cycle scoped to all employees and return its id ──
     private async Task<Guid> CreateDraftAsync(CycleType type = CycleType.Annual)
     {
