@@ -32,10 +32,18 @@ public sealed class OfferService : IOfferService
     private readonly IFileStorage _fileStorage;
     private readonly IRecruitmentNotificationService _notifications;
     private readonly IOfferExpiryScheduler? _expiryScheduler;
+    private readonly IOfferExpiryReminderScheduler? _expiryReminderScheduler;
     private readonly ILogger<OfferService> _logger;
 
     /// <summary>BR-6: default offer-validity window (days) when no expiry date is supplied.</summary>
     private const int DefaultExpiryDays = 7;
+
+    /// <summary>
+    /// ISSUE-262 / FR-7: how many days BEFORE the expiry date the reminder nudge fires. A documented
+    /// constant default; making it tenant-configurable (a recruitment-settings surface) is a SEPARATE
+    /// concern and is intentionally NOT built here.
+    /// </summary>
+    private const int ExpiryReminderDaysBefore = 3;
 
     public OfferService(
         AppDbContext dbContext,
@@ -43,7 +51,8 @@ public sealed class OfferService : IOfferService
         IFileStorage fileStorage,
         IRecruitmentNotificationService notifications,
         ILogger<OfferService> logger,
-        IOfferExpiryScheduler? expiryScheduler = null)
+        IOfferExpiryScheduler? expiryScheduler = null,
+        IOfferExpiryReminderScheduler? expiryReminderScheduler = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -51,6 +60,7 @@ public sealed class OfferService : IOfferService
         _notifications = notifications;
         _logger = logger;
         _expiryScheduler = expiryScheduler;
+        _expiryReminderScheduler = expiryReminderScheduler;
     }
 
     // ── Generate (AC-1/FR-2/FR-3/FR-9/BR-2/BR-6) ─────────────────────
@@ -91,6 +101,8 @@ public sealed class OfferService : IOfferService
             prior.Status = OfferStatus.Withdrawn;
             _expiryScheduler?.Cancel(prior.ReminderJobId);
             prior.ReminderJobId = null;
+            _expiryReminderScheduler?.Cancel(prior.ExpiryReminderJobId);
+            prior.ExpiryReminderJobId = null;
             _logger.LogInformation(
                 "Superseded prior active offer {OfferId} (v{Version}) for applicant {ApplicantId} (BR-2/FR-9). TenantId={TenantId}",
                 prior.Id, prior.Version, applicant.Id, _tenantContext.TenantId);
@@ -184,11 +196,16 @@ public sealed class OfferService : IOfferService
         // or if the fire-time is already past).
         offer.ReminderJobId = ScheduleExpiry(offer);
 
+        // ISSUE-262 / FR-7/AC-4: also schedule the "N days before expiry" reminder nudge (no-op if the seam
+        // is absent). Stored on a SEPARATE field so cancelling the reminder never clobbers the expiry job.
+        offer.ExpiryReminderJobId = ScheduleExpiryReminder(offer);
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Offer sent. OfferId={OfferId}, ExpiryDate={ExpiryDate}, ReminderJobId={ReminderJobId}, TenantId={TenantId}",
-            offer.Id, offer.ExpiryDate, offer.ReminderJobId, _tenantContext.TenantId);
+            "Offer sent. OfferId={OfferId}, ExpiryDate={ExpiryDate}, ReminderJobId={ReminderJobId}, " +
+            "ExpiryReminderJobId={ExpiryReminderJobId}, TenantId={TenantId}",
+            offer.Id, offer.ExpiryDate, offer.ReminderJobId, offer.ExpiryReminderJobId, _tenantContext.TenantId);
 
         await NotifyOfferSafeAsync("offer-sent", offer, cancellationToken);
 
@@ -215,9 +232,11 @@ public sealed class OfferService : IOfferService
         offer.Response = offer.Status.ToString();
         offer.RespondedAt = DateTime.UtcNow;
 
-        // The offer is answered → cancel the expiry follow-up.
+        // The offer is answered → cancel the expiry follow-up + the expiry-reminder nudge.
         _expiryScheduler?.Cancel(offer.ReminderJobId);
         offer.ReminderJobId = null;
+        _expiryReminderScheduler?.Cancel(offer.ExpiryReminderJobId);
+        offer.ExpiryReminderJobId = null;
 
         if (input.Accepted)
         {
@@ -271,6 +290,8 @@ public sealed class OfferService : IOfferService
         offer.Status = OfferStatus.Withdrawn;
         _expiryScheduler?.Cancel(offer.ReminderJobId);
         offer.ReminderJobId = null;
+        _expiryReminderScheduler?.Cancel(offer.ExpiryReminderJobId);
+        offer.ExpiryReminderJobId = null;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -360,6 +381,24 @@ public sealed class OfferService : IOfferService
             offer.ExpiryDate.AddDays(1).ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
 
         return _expiryScheduler.Schedule(_tenantContext.TenantId, offer.Id, fireAtUtc);
+    }
+
+    /// <summary>
+    /// ISSUE-262 / FR-7/AC-4: schedule the tenant-aware expiry-reminder job via the seam. Fires at the START
+    /// of the day <see cref="ExpiryReminderDaysBefore"/> days BEFORE the expiry date (UTC). Returns the job
+    /// id, or null when the scheduler is unavailable (tests). If the computed fire time is already in the
+    /// past (offer sent close to expiry), the reminder is scheduled anyway — Hangfire runs a past-dated job
+    /// immediately and the job's IsActive guard keeps it safe.
+    /// </summary>
+    private string? ScheduleExpiryReminder(Offer offer)
+    {
+        if (_expiryReminderScheduler is null)
+            return null;
+
+        var fireAtUtc = DateTime.SpecifyKind(
+            offer.ExpiryDate.AddDays(-ExpiryReminderDaysBefore).ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+
+        return _expiryReminderScheduler.Schedule(_tenantContext.TenantId, offer.Id, fireAtUtc);
     }
 
     /// <summary>

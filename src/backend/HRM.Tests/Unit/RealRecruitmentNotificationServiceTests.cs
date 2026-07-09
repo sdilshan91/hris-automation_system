@@ -45,8 +45,15 @@ public sealed class RealRecruitmentNotificationServiceTests
     private readonly Guid _offerId = Guid.NewGuid();
     private readonly Guid _scorecardId = Guid.NewGuid();
 
+    // Interviewers are Employees; one has a linked user account (in-app + email), one does not (email-only).
+    private readonly Guid _interviewerWithUserEmpId = Guid.NewGuid();
+    private readonly Guid _interviewerWithUserId = Guid.NewGuid();
+    private readonly Guid _interviewerNoUserEmpId = Guid.NewGuid();
+
     private const string CandidateEmail = "jordan.rivera@example.com";
     private const string HiringManagerEmail = "hm@acme.test";
+    private const string InterviewerLinkedEmail = "iv-linked@acme.test";
+    private const string InterviewerNoUserEmail = "iv-nouser@acme.test";
     private static readonly byte[] Pdf = "%PDF-1.4 fake-offer-letter-bytes"u8.ToArray();
 
     private readonly string _dbName = Guid.NewGuid().ToString();
@@ -226,6 +233,23 @@ public sealed class RealRecruitmentNotificationServiceTests
         await db.SaveChangesAsync();
     }
 
+    /// <summary>Two interviewer Employees: one linked to a User (in-app + email), one account-less (email-only).</summary>
+    private async Task SeedInterviewersAsync()
+    {
+        using var db = Db();
+        db.Employees.Add(new Employee
+        {
+            Id = _interviewerWithUserEmpId, TenantId = _tenantId, FirstName = "Sam", LastName = "Lin",
+            Email = InterviewerLinkedEmail, UserId = _interviewerWithUserId,
+        });
+        db.Employees.Add(new Employee
+        {
+            Id = _interviewerNoUserEmpId, TenantId = _tenantId, FirstName = "Alex", LastName = "Poe",
+            Email = InterviewerNoUserEmail, UserId = null,
+        });
+        await db.SaveChangesAsync();
+    }
+
     // ── #1: application_received → candidate email-only ──
 
     [Fact]
@@ -282,38 +306,71 @@ public sealed class RealRecruitmentNotificationServiceTests
         dispatcher.Email.Should().Contain(r => r.RecipientEmail == HiringManagerEmail && r.EventKey == "application_new");
     }
 
-    // ── #3: interview → candidate + each interviewer via RecipientEmail (email-only) + eventType mapping ──
+    // ── #3: interview → candidate email-only; interviewers resolved by employee id (ISSUE-263) ──
+    //   • interviewer WITH a linked user account → in-app (that user id) + email
+    //   • interviewer WITHOUT a user account     → email-only (no in-app), graceful fallback
 
     [Fact]
-    public async Task NotifyInterviewAsync_Scheduled_EmailsCandidateAndInterviewers_EmailOnly()
+    public async Task NotifyInterviewAsync_Scheduled_InAppPlusEmailForLinkedInterviewer_EmailOnlyForAccountLess()
     {
         await SeedRecruitmentDataAsync();
+        await SeedInterviewersAsync();
         var dispatcher = new RecordingDispatcher();
-        var interviewers = new[] { "interviewer1@acme.test", "interviewer2@acme.test" };
+        var interviewerIds = new[] { _interviewerWithUserEmpId, _interviewerNoUserEmpId };
 
         await Service(dispatcher).NotifyInterviewAsync(
-            "interview-scheduled", _interviewId, _applicantId, _vacancyId, CandidateEmail, interviewers);
+            "interview-scheduled", _interviewId, _applicantId, _vacancyId, CandidateEmail, interviewerIds);
 
-        dispatcher.InApp.Should().BeEmpty("candidate + interviewers are all email-only");
-        dispatcher.Email.Select(r => r.RecipientEmail)
-            .Should().BeEquivalentTo(new[] { CandidateEmail, "interviewer1@acme.test", "interviewer2@acme.test" });
+        // In-app goes ONLY to the interviewer with a linked user account — with THAT user's id.
+        dispatcher.InApp.Select(r => r.RecipientUserId)
+            .Should().BeEquivalentTo(new Guid?[] { _interviewerWithUserId });
+        // The account-less interviewer never gets an in-app row.
+        dispatcher.InApp.Should().NotContain(r => r.RecipientEmail == InterviewerNoUserEmail);
+
+        // The linked interviewer also gets an email (routed by user id, via DispatchToUsersAsync).
+        dispatcher.Email.Should().Contain(r => r.RecipientUserId == _interviewerWithUserId);
+        // The account-less interviewer is reached email-only, by address, with no user id.
+        dispatcher.Email.Should().Contain(r =>
+            r.RecipientEmail == InterviewerNoUserEmail && r.RecipientUserId == null);
+        // The candidate stays email-only (external, no User row).
+        dispatcher.Email.Should().Contain(r => r.RecipientEmail == CandidateEmail && r.RecipientUserId == null);
         dispatcher.Email.Should().OnlyContain(r => r.EventKey == "interview_scheduled");
-        dispatcher.Email.Should().OnlyContain(r => r.RecipientUserId == null);
     }
 
     [Fact]
     public async Task NotifyInterviewAsync_Cancelled_MapsEventTypeTo_interview_cancelled()
     {
         await SeedRecruitmentDataAsync();
+        await SeedInterviewersAsync();
         var dispatcher = new RecordingDispatcher();
 
         await Service(dispatcher).NotifyInterviewAsync(
             "interview-cancelled", _interviewId, _applicantId, _vacancyId, CandidateEmail,
-            new[] { "interviewer1@acme.test" });
+            new[] { _interviewerNoUserEmpId });
 
         dispatcher.Email.Should().OnlyContain(r => r.EventKey == "interview_cancelled");
+        // Account-less interviewer + candidate, both email-only.
         dispatcher.Email.Select(r => r.RecipientEmail)
-            .Should().BeEquivalentTo(new[] { CandidateEmail, "interviewer1@acme.test" });
+            .Should().BeEquivalentTo(new[] { CandidateEmail, InterviewerNoUserEmail });
+        dispatcher.InApp.Should().BeEmpty("neither the candidate nor the account-less interviewer has a user account");
+    }
+
+    [Fact]
+    public async Task NotifyInterviewReminderAsync_LinkedInterviewer_GetsInAppPlusEmail()
+    {
+        await SeedRecruitmentDataAsync();
+        await SeedInterviewersAsync();
+        var dispatcher = new RecordingDispatcher();
+
+        await Service(dispatcher).NotifyInterviewReminderAsync(
+            _interviewId, _applicantId, _vacancyId, CandidateEmail,
+            new[] { _interviewerWithUserEmpId });
+
+        dispatcher.InApp.Select(r => r.RecipientUserId)
+            .Should().BeEquivalentTo(new Guid?[] { _interviewerWithUserId });
+        dispatcher.Email.Should().OnlyContain(r => r.EventKey == "interview_reminder");
+        dispatcher.Email.Should().Contain(r => r.RecipientUserId == _interviewerWithUserId);
+        dispatcher.Email.Should().Contain(r => r.RecipientEmail == CandidateEmail && r.RecipientUserId == null);
     }
 
     // ── #4: scorecard_submitted → recruiter pool ONLY (not the non-recruiter, not the candidate) ──

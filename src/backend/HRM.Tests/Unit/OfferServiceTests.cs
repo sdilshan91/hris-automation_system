@@ -20,6 +20,7 @@
 // ============================================================================
 
 using FluentAssertions;
+using HRM.Api.Jobs;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Recruitment.DTOs;
 using HRM.Domain.Entities;
@@ -27,6 +28,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -316,6 +318,182 @@ public sealed class OfferServiceTests
         doc.Value!.ContentType.Should().Be("application/pdf");
         doc.Value.FileName.Should().Contain(draft.OfferReferenceNumber);
         doc.Value.Content.Length.Should().BeGreaterThan(100);
+    }
+
+    // ══ ISSUE-262 / FR-7/AC-4: the "N days before expiry" reminder job + scheduling ════════════════════
+
+    /// <summary>N days-before-expiry the reminder fires — mirrors OfferService.ExpiryReminderDaysBefore.</summary>
+    private const int ReminderDaysBefore = 3;
+
+    private OfferService CreateServiceWithReminder(
+        AppDbContext db,
+        IOfferExpiryReminderScheduler reminderScheduler,
+        IRecruitmentNotificationService? notifications = null) => new(
+        db,
+        _tenantContext,
+        _fileStorage,
+        notifications ?? Substitute.For<IRecruitmentNotificationService>(),
+        Substitute.For<ILogger<OfferService>>(),
+        expiryScheduler: null,
+        expiryReminderScheduler: reminderScheduler);
+
+    // ── Send schedules the reminder N days before expiry + persists the job id ────────────
+
+    [Fact]
+    public async Task Send_SchedulesExpiryReminder_AndStoresJobId()
+    {
+        using var db = CreateDb();
+        var reminderScheduler = Substitute.For<IOfferExpiryReminderScheduler>();
+        reminderScheduler.Schedule(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>()).Returns("rem-job-1");
+        var svc = CreateServiceWithReminder(db, reminderScheduler);
+
+        var expiry = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(10);
+        var draft = (await svc.GenerateAsync(Input(expiry) with { ApplicantId = _applicantId })).Value!;
+
+        await svc.SendAsync(draft.Id);
+
+        var expectedFire = DateTime.SpecifyKind(
+            expiry.AddDays(-ReminderDaysBefore).ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        reminderScheduler.Received(1).Schedule(_tenantId, draft.Id, expectedFire);
+
+        var stored = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == draft.Id);
+        stored.ExpiryReminderJobId.Should().Be("rem-job-1");
+    }
+
+    // ── Withdraw cancels the reminder + nulls the field ───────────────────────────────────
+
+    [Fact]
+    public async Task Withdraw_CancelsExpiryReminder_AndNullsJobId()
+    {
+        using var db = CreateDb();
+        var reminderScheduler = Substitute.For<IOfferExpiryReminderScheduler>();
+        reminderScheduler.Schedule(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>()).Returns("rem-job-1");
+        var svc = CreateServiceWithReminder(db, reminderScheduler);
+
+        var draft = (await svc.GenerateAsync(Input() with { ApplicantId = _applicantId })).Value!;
+        await svc.SendAsync(draft.Id);
+
+        await svc.WithdrawAsync(draft.Id);
+
+        reminderScheduler.Received(1).Cancel("rem-job-1");
+        var stored = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == draft.Id);
+        stored.ExpiryReminderJobId.Should().BeNull();
+    }
+
+    // ── Respond cancels the reminder + nulls the field ────────────────────────────────────
+
+    [Fact]
+    public async Task Respond_CancelsExpiryReminder_AndNullsJobId()
+    {
+        using var db = CreateDb();
+        var reminderScheduler = Substitute.For<IOfferExpiryReminderScheduler>();
+        reminderScheduler.Schedule(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>()).Returns("rem-job-1");
+        var svc = CreateServiceWithReminder(db, reminderScheduler);
+
+        var draft = (await svc.GenerateAsync(Input() with { ApplicantId = _applicantId })).Value!;
+        await svc.SendAsync(draft.Id);
+
+        await svc.RespondAsync(draft.Id, new RespondToOfferInput { Accepted = true });
+
+        reminderScheduler.Received(1).Cancel("rem-job-1");
+        var stored = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == draft.Id);
+        stored.ExpiryReminderJobId.Should().BeNull();
+    }
+
+    // ── Re-generate (supersede) cancels the prior offer's reminder ────────────────────────
+
+    [Fact]
+    public async Task Regenerate_CancelsPriorReminder_AndNullsJobId()
+    {
+        using var db = CreateDb();
+        var reminderScheduler = Substitute.For<IOfferExpiryReminderScheduler>();
+        reminderScheduler.Schedule(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>()).Returns("rem-job-1");
+        var svc = CreateServiceWithReminder(db, reminderScheduler);
+
+        var first = (await svc.GenerateAsync(Input() with { ApplicantId = _applicantId })).Value!;
+        await svc.SendAsync(first.Id);
+
+        // Superseding the sent offer with a new generate must cancel the prior offer's reminder.
+        await svc.GenerateAsync(Input() with { ApplicantId = _applicantId, SalaryAmount = 130000m });
+
+        reminderScheduler.Received(1).Cancel("rem-job-1");
+        var firstReloaded = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == first.Id);
+        firstReloaded.ExpiryReminderJobId.Should().BeNull();
+    }
+
+    // ── The reminder JOB: happy path fires the "offer-expiry-reminder" notification ───────
+
+    [Fact]
+    public async Task ReminderJob_ActiveOffer_FiresExpiryReminderNotification()
+    {
+        var notifications = Substitute.For<IRecruitmentNotificationService>();
+        var offerId = SeedOfferForJob(OfferStatus.Sent, reminderJobId: "rem-job-1");
+        var provider = BuildJobProvider(notifications);
+
+        var job = new OfferExpiryReminderJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync(_tenantId, offerId);
+
+        await notifications.Received(1).NotifyOfferAsync(
+            "offer-expiry-reminder", offerId, _applicantId, _vacancyId, Arg.Any<string>());
+
+        // The reminder job id is cleared once fired (read back via the tenant-resolved test context).
+        using var db = CreateDb();
+        var offer = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == offerId);
+        offer.ExpiryReminderJobId.Should().BeNull();
+    }
+
+    // ── The reminder JOB: idempotency — no notification when the offer is no longer active ─
+
+    [Fact]
+    public async Task ReminderJob_InactiveOffer_DoesNotNotify()
+    {
+        var notifications = Substitute.For<IRecruitmentNotificationService>();
+        // Already accepted (terminal) — the candidate responded before the reminder fired.
+        var offerId = SeedOfferForJob(OfferStatus.Accepted, reminderJobId: "rem-job-1");
+        var provider = BuildJobProvider(notifications);
+
+        var job = new OfferExpiryReminderJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync(_tenantId, offerId);
+
+        await notifications.DidNotReceive().NotifyOfferAsync(
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    private ServiceProvider BuildJobProvider(IRecruitmentNotificationService notifications)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<ITenantContext, TenantContext>();
+        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddSingleton(notifications);
+        return services.BuildServiceProvider();
+    }
+
+    /// <summary>Seeds an Offer row (in the shared InMemory db) in the given status for the job tests.</summary>
+    private Guid SeedOfferForJob(OfferStatus status, string? reminderJobId)
+    {
+        using var db = CreateDb();
+        var offerId = BaseEntity.NewUuidV7();
+        db.Offers.Add(new Offer
+        {
+            Id = offerId,
+            TenantId = _tenantId,
+            ApplicantId = _applicantId,
+            VacancyId = _vacancyId,
+            OfferReferenceNumber = "OFR-2026-9001",
+            Status = status,
+            OfferedPosition = "Senior Backend Engineer",
+            SalaryAmount = 120000m,
+            Currency = "USD",
+            SalaryFrequency = SalaryFrequency.Annual,
+            StartDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            ExpiryDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(4),
+            PdfStorageKey = "recruitment/x/y/offers/z.pdf",
+            ExpiryReminderJobId = reminderJobId,
+            IsDeleted = false,
+        });
+        db.SaveChanges();
+        return offerId;
     }
 
     /// <summary>

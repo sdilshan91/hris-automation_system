@@ -163,6 +163,9 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
                 : null;
 
+            // Hoisted so the catch can detach it on a rollback — otherwise the still-tracked Added row is
+            // re-inserted when the retrying execution strategy re-invokes this delegate (ISSUE-253/BUG-252 class).
+            AuditLog? auditLog = null;
             try
             {
                 // Reuse the Core HR create path: email uniqueness (BR-2 employee), dept/job-title validation,
@@ -227,14 +230,15 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 }
 
                 // Audit trail for the conversion (security-relevant org change).
-                _dbContext.AuditLogs.Add(new AuditLog
+                auditLog = new AuditLog
                 {
                     Id = BaseEntity.NewUuidV7(),
                     TenantId = _tenantContext.TenantId,
                     UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
                     EventType = "recruitment.applicant.converted",
                     Detail = $"Applicant {applicant.ApplicationReferenceNumber} converted to employee {employee.EmployeeNo} ({employeeId}).",
-                });
+                };
+                _dbContext.AuditLogs.Add(auditLog);
 
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -267,6 +271,9 @@ public sealed class ApplicantConversionService : IApplicantConversionService
             {
                 if (transaction is not null)
                     await transaction.RollbackAsync(cancellationToken);
+                // Drop the Added audit row so a strategy retry doesn't insert it twice (ISSUE-253/BUG-252 class).
+                if (auditLog is not null)
+                    _dbContext.Entry(auditLog).State = EntityState.Detached;
                 throw;
             }
         });

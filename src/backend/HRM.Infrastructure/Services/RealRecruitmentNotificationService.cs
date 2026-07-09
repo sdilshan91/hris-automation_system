@@ -15,8 +15,8 @@ namespace HRM.Infrastructure.Services;
 /// <list type="bullet">
 /// <item><b>External candidates</b> (application/interview/offer confirmations) → <c>RecipientEmail</c> (email-only;
 /// they have no <c>User</c> row).</item>
-/// <item><b>Interviewers</b> arrive as raw work emails on the existing signature → <c>RecipientEmail</c>
-/// (email-only). Resolving them to user ids is a deferred interface change (see the Phase-5a OUT-OF-LANE note).</item>
+/// <item><b>Interviewers</b> arrive as employee ids → resolved to <c>Employee.UserId</c> (in-app + email) when
+/// the interviewer has a linked user account, else <c>Employee.Email</c> (email-only fallback) — ISSUE-263.</item>
 /// <item><b>Hiring manager</b> → the vacancy's <c>HiringManagerId</c> → <c>Employee.UserId</c> (in-app + email),
 /// falling back to <c>Employee.Email</c> (email-only) when the employee has no linked user.</item>
 /// <item><b>Recruiter / hiring-team pool</b> → every ACTIVE tenant user whose roles grant
@@ -154,7 +154,7 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
 
     public async Task NotifyInterviewAsync(
         string eventType, Guid interviewId, Guid applicantId, Guid vacancyId, string applicantEmail,
-        IReadOnlyList<string> interviewerEmails, CancellationToken cancellationToken = default)
+        IReadOnlyList<Guid> interviewerEmployeeIds, CancellationToken cancellationToken = default)
     {
         var eventKey = eventType switch
         {
@@ -171,17 +171,17 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             return;
         }
 
-        await DispatchInterviewAsync(eventKey, interviewId, vacancyId, applicantEmail, interviewerEmails, cancellationToken);
+        await DispatchInterviewAsync(eventKey, interviewId, vacancyId, applicantEmail, interviewerEmployeeIds, cancellationToken);
     }
 
     public Task NotifyInterviewReminderAsync(
         Guid interviewId, Guid applicantId, Guid vacancyId, string applicantEmail,
-        IReadOnlyList<string> interviewerEmails, CancellationToken cancellationToken = default)
-        => DispatchInterviewAsync("interview_reminder", interviewId, vacancyId, applicantEmail, interviewerEmails, cancellationToken);
+        IReadOnlyList<Guid> interviewerEmployeeIds, CancellationToken cancellationToken = default)
+        => DispatchInterviewAsync("interview_reminder", interviewId, vacancyId, applicantEmail, interviewerEmployeeIds, cancellationToken);
 
     private async Task DispatchInterviewAsync(
         string eventKey, Guid interviewId, Guid vacancyId, string applicantEmail,
-        IReadOnlyList<string> interviewerEmails, CancellationToken cancellationToken)
+        IReadOnlyList<Guid> interviewerEmployeeIds, CancellationToken cancellationToken)
     {
         try
         {
@@ -205,10 +205,30 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                 },
             });
 
-            // Candidate + interviewers are all email-only (interviewers arrive as raw emails, BR-7).
+            // Candidate is external → email-only (no User row).
             await DispatchEmailOnlyAsync(tenantId, eventKey, payload, applicantEmail, cancellationToken);
-            foreach (var email in interviewerEmails)
-                await DispatchEmailOnlyAsync(tenantId, eventKey, payload, email, cancellationToken);
+
+            // Interviewers are Employees: resolve {UserId, Email}. Linked account → in-app + email;
+            // account-less → email-only fallback (ISSUE-263). Mirrors the hiring-manager resolution above.
+            if (interviewerEmployeeIds.Count > 0)
+            {
+                var distinctIds = interviewerEmployeeIds.Distinct().ToList();
+                var interviewers = await _db.Employees.IgnoreQueryFilters().AsNoTracking()
+                    .Where(e => e.TenantId == tenantId && distinctIds.Contains(e.Id))
+                    .Select(e => new { e.UserId, e.Email })
+                    .ToListAsync(cancellationToken);
+
+                var userIds = new HashSet<Guid>();
+                foreach (var iv in interviewers)
+                {
+                    if (iv.UserId is { } uid)
+                        userIds.Add(uid);
+                    else if (!string.IsNullOrWhiteSpace(iv.Email))
+                        await DispatchEmailOnlyAsync(tenantId, eventKey, payload, iv.Email, cancellationToken);
+                }
+
+                await DispatchToUsersAsync(tenantId, eventKey, payload, userIds, cancellationToken);
+            }
         }
         catch (Exception ex)
         {

@@ -60,20 +60,13 @@ public sealed class InterviewReminderJob
             .Select(a => a.Email)
             .FirstOrDefaultAsync() ?? string.Empty;
 
-        var interviewerIds = interview.Interviewers.Select(ii => ii.EmployeeId).ToList();
-        var interviewerEmails = interviewerIds.Count == 0
-            ? new List<string>()
-            : await dbContext.Employees
-                .AsNoTracking()
-                .Where(e => interviewerIds.Contains(e.Id))
-                .Select(e => e.Email)
-                .ToListAsync();
+        var interviewerEmployeeIds = interview.Interviewers.Select(ii => ii.EmployeeId).ToList();
 
         await notifications.NotifyInterviewReminderAsync(
-            interview.Id, interview.ApplicantId, interview.VacancyId, applicantEmail, interviewerEmails);
+            interview.Id, interview.ApplicantId, interview.VacancyId, applicantEmail, interviewerEmployeeIds);
 
         Log.Information(
             "InterviewReminderJob: sent reminder for interview {InterviewId} (tenant {TenantId}) to applicant + {Count} interviewer(s)",
-            interview.Id, tenantId, interviewerEmails.Count);
+            interview.Id, tenantId, interviewerEmployeeIds.Count);
     }
 }
