@@ -155,7 +155,7 @@ import {
         </h2>
         @if (dashboard(); as d) {
           <ol class="mt-4 space-y-4" data-testid="timeline" @fadeIn>
-            @for (stat of d.phases; track stat.kind; let last = $last) {
+            @for (stat of d.phases; track stat.phaseType; let last = $last) {
               <li class="relative flex gap-4" data-testid="phase-step">
                 <!-- Stepper rail -->
                 <div class="flex flex-col items-center">
@@ -179,7 +179,7 @@ import {
                     class="flex flex-wrap items-center justify-between gap-2"
                   >
                     <p class="font-medium text-neutral-900">
-                      {{ phaseLabel(stat.kind) }}
+                      {{ phaseLabel(stat.phaseType) }}
                     </p>
                     <p class="text-xs text-neutral-500">
                       {{ stat.startDate }} → {{ stat.endDate }}
@@ -190,19 +190,19 @@ import {
                       class="h-full rounded-full transition-all"
                       [class]="fillClass(stat)"
                       [style.width.%]="completion(stat)"
-                      [attr.data-testid]="'fill-' + stat.kind"
+                      [attr.data-testid]="'fill-' + stat.phaseType"
                     ></div>
                   </div>
                   <div
                     class="mt-2 flex items-center justify-between text-xs text-neutral-600"
                   >
                     <span>
-                      {{ stat.completedCount }} / {{ stat.totalCount }} completed
+                      {{ stat.completedCount }} / {{ stat.totalParticipants }} completed
                     </span>
                     @if (stat.overdueCount > 0) {
                       <span
                         class="font-medium text-rose-600"
-                        [attr.data-testid]="'overdue-' + stat.kind"
+                        [attr.data-testid]="'overdue-' + stat.phaseType"
                       >
                         {{ stat.overdueCount }} overdue
                       </span>
@@ -515,7 +515,8 @@ export class CycleDashboardComponent implements OnInit {
     return CYCLE_STATUS_LABEL[status];
   }
 
-  phaseLabel = (kind: IPhaseStat['kind']): string => PHASE_LABEL[kind];
+  phaseLabel = (phaseType: IPhaseStat['phaseType']): string =>
+    PHASE_LABEL[phaseType];
 
   transitionLabel(action: CycleTransitionAction): string {
     return TRANSITION_LABEL[action];

@@ -143,9 +143,9 @@ describe('cycle.models pure helpers', () => {
     const stat = (
       completed: number,
       total: number,
-    ): Pick<IPhaseStat, 'completedCount' | 'totalCount'> => ({
+    ): Pick<IPhaseStat, 'completedCount' | 'totalParticipants'> => ({
       completedCount: completed,
-      totalCount: total,
+      totalParticipants: total,
     });
 
     it('returns a rounded percentage', () => {

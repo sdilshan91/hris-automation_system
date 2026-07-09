@@ -541,12 +541,8 @@ export class CycleFormComponent implements OnInit {
   }
 
   private patchFromCycle(cycle: ICycle): void {
-    const idLists =
-      cycle.scope.scopeType === 'Departments'
-        ? cycle.scope.departmentIds
-        : cycle.scope.scopeType === 'CustomList'
-          ? cycle.scope.employeeIds
-          : [];
+    // BUG-259: BE CycleDto returns only the flat scope enum (no id lists yet). Prefill
+    // scopeType; ids re-selected until the BE exposes them (BUG-260).
     this.form.patchValue({
       name: cycle.name,
       type: cycle.type,
@@ -556,8 +552,8 @@ export class CycleFormComponent implements OnInit {
       selfWeightPercent: cycle.selfWeightPercent,
       is360Enabled: cycle.is360Enabled,
       isCalibrationEnabled: cycle.isCalibrationEnabled,
-      scopeType: cycle.scope.scopeType,
-      scopeIds: idLists.join(', '),
+      scopeType: cycle.participantScope,
+      scopeIds: '',
     });
     // Patch phase dates by phaseType so order/visibility stays canonical.
     for (const ctrl of this.phases.controls) {

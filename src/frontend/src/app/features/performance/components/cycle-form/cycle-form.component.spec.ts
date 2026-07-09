@@ -23,11 +23,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     startDate: '2026-01-01',
     endDate: '2026-12-31',
     phases: [],
-    scope: {
-      scopeType: 'AllEmployees',
-      departmentIds: [],
-      employeeIds: [],
-    },
+    participantScope: 'AllEmployees',
     ratingScaleMax: 5,
     selfWeightPercent: 40,
     is360Enabled: false,
@@ -36,7 +32,10 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     cancelledReason: null,
   };
 
-  async function setup(cycleId: string | null = null): Promise<void> {
+  async function setup(
+    cycleId: string | null = null,
+    editCycle: ICycle = createdCycle,
+  ): Promise<void> {
     serviceSpy = jasmine.createSpyObj<CycleService>('CycleService', [
       'list',
       'get',
@@ -52,7 +51,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     ]);
     serviceSpy.create.and.returnValue(of(createdCycle));
     serviceSpy.update.and.returnValue(of(createdCycle));
-    serviceSpy.get.and.returnValue(of(createdCycle));
+    serviceSpy.get.and.returnValue(of(editCycle));
 
     await TestBed.configureTestingModule({
       imports: [CycleFormComponent],
@@ -200,6 +199,20 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     component.save();
     expect(serviceSpy.update).toHaveBeenCalled();
     expect(serviceSpy.create).not.toHaveBeenCalled();
+  });
+
+  it('BUG-259: edit mode does not throw when the cycle has only a flat participantScope (no nested ids), and prefills the scope-type control', async () => {
+    // BE CycleDto returns the flat scope enum only — no nested { scopeType, ids }.
+    const departmentsCycle: ICycle = {
+      ...createdCycle,
+      participantScope: 'Departments',
+    };
+    // The crash guard: patchFromCycle must not dereference a missing nested scope.
+    await expectAsync(setup('cyc-new', departmentsCycle)).toBeResolved();
+    expect(component.isEdit()).toBeTrue();
+    // Scope-type radio reflects the flat enum; ids are empty (re-selected until BUG-260).
+    expect(component.form.get('scopeType')?.value).toBe('Departments');
+    expect(component.form.get('scopeIds')?.value).toBe('');
   });
 
   it('maps custom-list scope ids into the request employeeIds (FR-3)', async () => {

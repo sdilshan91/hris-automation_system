@@ -28,11 +28,7 @@ describe('CycleDashboardComponent (AC-3 / FR-7 / FR-8)', () => {
       startDate: '2026-01-01',
       endDate: '2026-12-31',
       phases: [],
-      scope: {
-        scopeType: 'AllEmployees',
-        departmentIds: [],
-        employeeIds: [],
-      },
+      participantScope: 'AllEmployees',
       ratingScaleMax: 5,
       selfWeightPercent: 40,
       is360Enabled: false,
@@ -44,32 +40,32 @@ describe('CycleDashboardComponent (AC-3 / FR-7 / FR-8)', () => {
 
   const dashboard: ICycleDashboard = {
     cycleId: 'cyc-1',
-    cycleName: '2026 Annual',
+    name: '2026 Annual',
     status: 'Active',
     participantCount: 120,
     phases: [
       {
-        kind: 'GoalSetting',
+        phaseType: 'GoalSetting',
         startDate: '2026-01-05',
         endDate: '2026-01-20',
         completedCount: 120,
-        totalCount: 120,
+        totalParticipants: 120,
         overdueCount: 0,
       },
       {
-        kind: 'SelfAssessment',
+        phaseType: 'SelfAssessment',
         startDate: '2026-01-25',
         endDate: '2026-02-10',
         completedCount: 60,
-        totalCount: 120,
+        totalParticipants: 120,
         overdueCount: 8,
       },
       {
-        kind: 'ManagerReview',
+        phaseType: 'ManagerReview',
         startDate: '2026-02-15',
         endDate: '2026-03-01',
         completedCount: 0,
-        totalCount: 120,
+        totalParticipants: 120,
         overdueCount: 0,
       },
     ],
@@ -144,6 +140,15 @@ describe('CycleDashboardComponent (AC-3 / FR-7 / FR-8)', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="overdue-GoalSetting"]'),
     ).toBeNull();
+
+    // BUG-258: phase label (phaseType) + totals (totalParticipants) render, not blank/zero.
+    const cards = fixture.nativeElement.querySelectorAll(
+      '[data-testid="phase-card"]',
+    ) as NodeListOf<HTMLElement>;
+    expect(cards[0].textContent).toContain('Goal setting');
+    expect(cards[0].textContent).toContain('120 / 120 completed');
+    expect(cards[1].textContent).toContain('Self-assessment');
+    expect(cards[1].textContent).toContain('60 / 120 completed');
   });
 
   it('shows only the legal transition buttons for an Active cycle (FR-7)', async () => {
