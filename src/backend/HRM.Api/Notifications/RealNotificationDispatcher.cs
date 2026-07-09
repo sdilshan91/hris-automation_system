@@ -49,11 +49,19 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
         _logger = logger;
     }
 
-    public async Task SendInAppAsync(
-        Guid tenantId, Guid recipientUserId, string notificationType, string payloadJson,
-        CancellationToken cancellationToken = default)
+    public async Task SendInAppAsync(NotificationRequest request, CancellationToken cancellationToken = default)
     {
-        var payload = ParsePayload(payloadJson);
+        // The in-app leg needs a real user to push to; skip gracefully for email-only (raw-address) recipients.
+        if (request.RecipientUserId is not { } recipientUserId)
+        {
+            _logger.LogDebug(
+                "RealNotificationDispatcher: no recipient user for event {EventKey}; skipping the in-app leg.",
+                request.EventKey);
+            return;
+        }
+
+        var notificationType = request.NotificationType ?? request.EventKey;
+        var payload = ParsePayload(request.PayloadJson);
         var title = GetString(payload, "title") ?? Humanize(notificationType);
         var message = GetString(payload, "message") ?? GetString(payload, "body") ?? string.Empty;
         var resourceType = GetString(payload, "resourceType");
@@ -62,13 +70,15 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
         // The in-app path (INotificationService) persists a durable row + best-effort SignalR push, and works
         // outside a resolved tenant context (it takes tenantId explicitly and opens its own scope).
         await _notificationService.CreateAndDispatchAsync(
-            tenantId, recipientUserId, notificationType, title, message, resourceType, resourceId, cancellationToken);
+            request.TenantId, recipientUserId, notificationType, title, message, resourceType, resourceId, cancellationToken);
     }
 
-    public async Task SendEmailAsync(
-        Guid tenantId, Guid recipientUserId, string notificationType, string payloadJson,
-        CancellationToken cancellationToken = default)
+    public async Task SendEmailAsync(NotificationRequest request, CancellationToken cancellationToken = default)
     {
+        var tenantId = request.TenantId;
+        var eventKey = request.EventKey;
+        var notificationType = request.NotificationType ?? eventKey;
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -78,45 +88,54 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
         if (tenant is null)
         {
             _logger.LogWarning(
-                "RealNotificationDispatcher: tenant {TenantId} not found; dropping email for {Type}.",
-                tenantId, notificationType);
+                "RealNotificationDispatcher: tenant {TenantId} not found; dropping email for {EventKey}.",
+                tenantId, eventKey);
             return;
         }
         tenantContext.SetTenant(tenantId, tenant.Subdomain, tenant.Status);
 
-        var (eventKey, category, isMandatory) = MapType(notificationType);
+        // Category + mandatory come from the catalog (single source of truth). Unknown events default to a
+        // suppressible SystemAnnouncement — template resolution will then fail below and write a Failed row.
+        var definition = NotificationEventCatalog.Get(eventKey);
+        var category = definition?.Category ?? NotificationCategory.SystemAnnouncements;
+        var isMandatory = definition?.IsMandatory ?? false;
 
-        // Resolve the recipient's email (global User table — not tenant-filtered).
-        var recipientEmail = await db.Users
-            .Where(u => u.Id == recipientUserId)
-            .Select(u => u.Email)
-            .FirstOrDefaultAsync(cancellationToken);
+        // Resolve the recipient's email: the raw override wins, else the User table (global — not tenant-filtered).
+        var recipientEmail = request.RecipientEmail;
+        if (string.IsNullOrWhiteSpace(recipientEmail) && request.RecipientUserId is { } userId)
+        {
+            recipientEmail = await db.Users
+                .Where(u => u.Id == userId)
+                .Select(u => u.Email)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
 
         if (string.IsNullOrWhiteSpace(recipientEmail))
         {
-            await WriteDeliveryAsync(db, tenantId, recipientUserId, notificationType, eventKey, null, null,
-                NotificationDeliveryStatus.Failed, "No email address resolved for recipient user.", cancellationToken);
+            await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey, null, null,
+                NotificationDeliveryStatus.Failed, "No email address resolved for recipient.", cancellationToken);
             _logger.LogWarning(
-                "RealNotificationDispatcher: no email for user {UserId} (tenant {TenantId}); email {Type} not sent.",
-                recipientUserId, tenantId, notificationType);
+                "RealNotificationDispatcher: no email resolved for event {EventKey} (tenant {TenantId}); not sent.",
+                eventKey, tenantId);
             return;
         }
 
-        // Preference gate (BR-1: non-suppressible security types always send, bypassing the gate).
+        // Preference gate (BR-1: non-suppressible security types always send, bypassing the gate). The gate is
+        // per-user, so it only applies when we have a recipient user id (raw-email recipients always send).
         DateTime? deferUntilUtc = null;
-        if (!isMandatory)
+        if (!isMandatory && request.RecipientUserId is { } prefUserId)
         {
             var decision = await scope.ServiceProvider.GetRequiredService<INotificationPreferenceService>()
-                .ShouldDeliverAsync(tenantId, recipientUserId, category, NotificationChannel.Email, cancellationToken);
+                .ShouldDeliverAsync(tenantId, prefUserId, category, NotificationChannel.Email, cancellationToken);
 
             switch (decision.Kind)
             {
                 case DeliveryDecisionKind.Suppressed:
-                    await WriteDeliveryAsync(db, tenantId, recipientUserId, notificationType, eventKey,
+                    await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
                         recipientEmail, null, NotificationDeliveryStatus.Suppressed, null, cancellationToken);
                     _logger.LogDebug(
-                        "RealNotificationDispatcher: email {Type} suppressed by preferences for user {UserId}.",
-                        notificationType, recipientUserId);
+                        "RealNotificationDispatcher: email {EventKey} suppressed by preferences for user {UserId}.",
+                        eventKey, prefUserId);
                     return;
 
                 case DeliveryDecisionKind.DeferredUntilQuietHoursEnd:
@@ -130,23 +149,22 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
         var resolved = await templateService.ResolveAsync(eventKey, language: null, cancellationToken);
         if (resolved.IsFailure || resolved.Value is null)
         {
-            await WriteDeliveryAsync(db, tenantId, recipientUserId, notificationType, eventKey, recipientEmail, null,
+            await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey, recipientEmail, null,
                 NotificationDeliveryStatus.Failed, $"No email template for event '{eventKey}'.", cancellationToken);
             _logger.LogWarning(
-                "RealNotificationDispatcher: no template for event {EventKey} (type {Type}); email not sent.",
-                eventKey, notificationType);
+                "RealNotificationDispatcher: no template for event {EventKey}; email not sent.", eventKey);
             return;
         }
 
         var template = resolved.Value;
-        var data = ParsePayload(payloadJson);
+        var data = ParsePayload(request.PayloadJson);
         var rendered = templateService.Render(template.Subject, template.BodyHtml, template.BodyText, data);
 
         var status = deferUntilUtc.HasValue
             ? NotificationDeliveryStatus.Deferred
             : NotificationDeliveryStatus.Queued;
 
-        var delivery = await WriteDeliveryAsync(db, tenantId, recipientUserId, notificationType, eventKey,
+        var delivery = await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
             recipientEmail, rendered.Subject, status, null, cancellationToken);
 
         var emailMessage = new EmailMessage(
@@ -168,7 +186,7 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
     }
 
     private static async Task<NotificationDelivery> WriteDeliveryAsync(
-        AppDbContext db, Guid tenantId, Guid recipientUserId, string notificationType, string eventKey,
+        AppDbContext db, Guid tenantId, Guid? recipientUserId, string notificationType, string eventKey,
         string? recipientEmail, string? subject, NotificationDeliveryStatus status, string? lastError,
         CancellationToken cancellationToken)
     {
@@ -180,7 +198,7 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
             Status = status,
             NotificationType = notificationType,
             EventKey = eventKey,
-            RecipientUserId = recipientUserId,
+            RecipientUserId = recipientUserId ?? Guid.Empty,  // Guid.Empty for raw-email (non-provisioned) recipients.
             RecipientEmail = recipientEmail,
             Subject = subject,
             LastError = lastError,
@@ -190,48 +208,6 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
         await db.SaveChangesAsync(cancellationToken);
         return row;
     }
-
-    /// <summary>
-    /// Maps a raw dispatched notification type to (catalog event key, preference category, non-suppressible flag).
-    /// This is the Phase-1 bridge between the free-form <c>notificationType</c> the dispatcher receives and the
-    /// notification catalog/preference model; Phase 2 rewires the module seams to pass these explicitly. Security
-    /// types (password reset, impersonation, tenant lifecycle, MFA, lockout) are mandatory (BR-1) and bypass the
-    /// preference gate.
-    /// </summary>
-    private static (string EventKey, NotificationCategory Category, bool Mandatory) MapType(string notificationType)
-    {
-        var t = notificationType.ToLowerInvariant();
-
-        if (t.Contains("password") || t.Contains("reset") || t.Contains("impersonat") || t.Contains("security")
-            || t.Contains("mfa") || t.Contains("lockout") || t.Contains("tenant.lifecycle"))
-            return (ResolveEventKey(notificationType, "password_reset"), NotificationCategory.SecurityAlerts, true);
-
-        if (t.Contains("leave"))
-            return (ResolveEventKey(notificationType, "leave_approved"), NotificationCategory.LeaveUpdates, false);
-
-        if (t.Contains("payslip") || t.Contains("payroll"))
-            return (ResolveEventKey(notificationType, "payslip_published"), NotificationCategory.PayrollNotifications, false);
-
-        if (t.Contains("onboard") || t.Contains("offboard"))
-            return (ResolveEventKey(notificationType, "onboarding_welcome"), NotificationCategory.OnboardingOffboarding, false);
-
-        if (t.Contains("attendance") || t.Contains("regulariz") || t.Contains("punch") || t.Contains("shift"))
-            return (ResolveEventKey(notificationType, notificationType), NotificationCategory.AttendanceAlerts, false);
-
-        if (t.Contains("performance") || t.Contains("appraisal") || t.Contains("review") || t.Contains("goal") || t.Contains("pip"))
-            return (ResolveEventKey(notificationType, notificationType), NotificationCategory.PerformanceReviews, false);
-
-        if (t.Contains("recruit") || t.Contains("interview") || t.Contains("applicant") || t.Contains("offer") || t.Contains("vacancy"))
-            return (ResolveEventKey(notificationType, notificationType), NotificationCategory.RecruitmentUpdates, false);
-
-        return (ResolveEventKey(notificationType, notificationType), NotificationCategory.SystemAnnouncements, false);
-    }
-
-    /// <summary>Uses the type itself as the catalog event key when it is a known event, else the mapped fallback.</summary>
-    private static string ResolveEventKey(string? notificationType, string fallback) =>
-        !string.IsNullOrWhiteSpace(notificationType) && NotificationEventCatalog.IsKnownEvent(notificationType)
-            ? notificationType!
-            : fallback;
 
     /// <summary>Parses a JSON payload into a nested <c>Dictionary&lt;string, object?&gt;</c> the renderer walks.</summary>
     private static IReadOnlyDictionary<string, object?> ParsePayload(string? payloadJson)

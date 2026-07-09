@@ -18,23 +18,19 @@ public sealed class LoggingNotificationDispatcher : INotificationDispatcher
 
     public LoggingNotificationDispatcher(ILogger<LoggingNotificationDispatcher> logger) => _logger = logger;
 
-    public Task SendInAppAsync(
-        Guid tenantId, Guid recipientUserId, string notificationType, string payloadJson,
-        CancellationToken cancellationToken = default)
+    public Task SendInAppAsync(NotificationRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "NOTIFICATION INTENT (in-app) — Type={Type}, Recipient={Recipient}, TenantId={TenantId}, Payload={Payload}",
-            notificationType, recipientUserId, tenantId, payloadJson);
+            "NOTIFICATION INTENT (in-app) — EventKey={EventKey}, Recipient={Recipient}, TenantId={TenantId}, Payload={Payload}",
+            request.EventKey, request.RecipientUserId, request.TenantId, request.PayloadJson);
         return Task.CompletedTask;
     }
 
-    public Task SendEmailAsync(
-        Guid tenantId, Guid recipientUserId, string notificationType, string payloadJson,
-        CancellationToken cancellationToken = default)
+    public Task SendEmailAsync(NotificationRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "NOTIFICATION INTENT (email) — Type={Type}, Recipient={Recipient}, TenantId={TenantId}, Payload={Payload}",
-            notificationType, recipientUserId, tenantId, payloadJson);
+            "NOTIFICATION INTENT (email) — EventKey={EventKey}, Recipient={Recipient}/{Email}, TenantId={TenantId}, Payload={Payload}",
+            request.EventKey, request.RecipientUserId, request.RecipientEmail, request.TenantId, request.PayloadJson);
         return Task.CompletedTask;
     }
 }
