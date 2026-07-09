@@ -48,8 +48,15 @@ public sealed class OnboardingNotificationDispatchJob : IOnboardingNotificationD
             row.AttemptCount++;
             try
             {
-                await dispatcher.SendInAppAsync(row.TenantId, row.RecipientUserId, row.NotificationType, row.Payload, cancellationToken);
-                await dispatcher.SendEmailAsync(row.TenantId, row.RecipientUserId, row.NotificationType, row.Payload, cancellationToken);
+                var request = new NotificationRequest(
+                    TenantId: row.TenantId,
+                    EventKey: MapOutboxTypeToEventKey(row.NotificationType),
+                    PayloadJson: row.Payload,
+                    RecipientUserId: row.RecipientUserId,
+                    NotificationType: row.NotificationType);
+
+                await dispatcher.SendInAppAsync(request, cancellationToken);
+                await dispatcher.SendEmailAsync(request, cancellationToken);
 
                 row.Status = OnboardingNotificationStatus.Dispatched;
                 row.DispatchedAt = DateTime.UtcNow;
@@ -68,4 +75,14 @@ public sealed class OnboardingNotificationDispatchJob : IOnboardingNotificationD
         await dbContext.SaveChangesAsync(cancellationToken);
         Log.Information("OnboardingNotificationDispatchJob: completed for tenant {TenantId}.", tenantId);
     }
+
+    /// <summary>
+    /// Maps this outbox's free-form <c>NotificationType</c> (e.g. "onboarding.checklist.assigned") to a
+    /// <c>NotificationEventCatalog</c> event key. Kept as a tiny local map so the outbox schema stays as-is
+    /// (US-NTF-006 Phase 2a); all current onboarding intents render from the "onboarding_welcome" template.
+    /// </summary>
+    private static string MapOutboxTypeToEventKey(string notificationType) => notificationType switch
+    {
+        _ => "onboarding_welcome",
+    };
 }

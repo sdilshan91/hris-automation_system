@@ -553,7 +553,9 @@ public static class DependencyInjection
         // ImpersonationSession, writes impersonator-attributed audit, and dispatches the tenant-admin
         // notification via the log-only seam (mirrors the welcome-email seam; real delivery deferred, US-NTF).
         services.AddScoped<IImpersonationService, ImpersonationService>();
-        services.AddScoped<IImpersonationNotificationService, LogOnlyImpersonationNotificationService>();
+        // US-NTF-006 Phase 2a: real email + in-app delivery to the target tenant's admins (SecurityAlerts,
+        // mandatory/non-suppressible). Never throws — a delivery failure cannot block the impersonation start.
+        services.AddScoped<IImpersonationNotificationService, RealImpersonationNotificationService>();
 
         // US-ADM-004: System Admin tenant lifecycle (suspend / terminate / reactivate / restore + history).
         // Runs in the system/admin context (IgnoreQueryFilters, explicit tenant-id scoping). Each transition
@@ -565,7 +567,10 @@ public static class DependencyInjection
         // + a transaction on relational, load+RemoveRange on InMemory — only the target tenant's rows are touched.
         services.AddScoped<ITenantLifecycleService, TenantLifecycleService>();
         services.AddScoped<ITenantDataDeletionService, TenantDataDeletionService>();
-        services.AddScoped<ITenantLifecycleNotificationService, LogOnlyTenantLifecycleNotificationService>();
+        // US-NTF-006 Phase 2a: real delivery to the tenant's billing email + admin emails (raw addresses via the
+        // dispatcher's RecipientEmail override; in-app added where an address maps to an active user). Mandatory —
+        // account-status changes always deliver. Never throws — a delivery failure cannot block the transition.
+        services.AddScoped<ITenantLifecycleNotificationService, RealTenantLifecycleNotificationService>();
 
         // US-NTF-001: in-app notifications — read + mark-read (panel list, unread-count badge, mark-(all)-read).
         // Runs in the resolved-tenant request scope; scoped to the calling user. The PERSIST + real-time SignalR
