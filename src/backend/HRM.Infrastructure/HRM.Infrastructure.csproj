@@ -21,6 +21,10 @@
     <PackageReference Include="EFCore.NamingConventions" Version="10.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.*" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.*" />
+    <!-- ISSUE-247: persist the Data Protection key ring to Postgres (via EF) so the TOTP MFA secret
+         (MfaSecretProtector, purpose HRM.MfaSecret.v1) stays decryptable across redeploys / multiple
+         instances instead of using the default ephemeral per-instance key ring. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.*" />
     <!-- CR-AUTH-001 Increment 2: Microsoft Entra OIDC SSO. Provides ConfigurationManager +
          OpenIdConnectConfiguration for discovery-document / JWKS retrieval used to validate the
          id_token signature & issuer. JwtBearer (above) already pulls Microsoft.IdentityModel.* 8.x

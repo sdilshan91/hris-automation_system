@@ -7,6 +7,7 @@ using HRM.Infrastructure.Persistence.Interceptors;
 using HRM.Infrastructure.Security;
 using HRM.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,9 +59,14 @@ public static class DependencyInjection
         services.AddSingleton<ITotpService, TotpService>();
 
         // US-AUTH-005 NFR-2: encrypt the TOTP MFA secret at rest via ASP.NET Core Data Protection.
-        // NOTE: default key ring is ephemeral/per-instance — see MfaSecretProtector for the production
-        // shared-key-ring caveat. Singleton; the underlying protector is thread-safe.
-        services.AddDataProtection();
+        // ISSUE-247: the key ring is persisted to Postgres (via EF, DataProtectionKeys DbSet) so keys survive
+        // redeploys and are shared across instances — otherwise the default ephemeral per-instance ring rotates
+        // and encrypted MFA secrets become undecryptable. SetApplicationName("HRM") fixes the discriminator
+        // (the default is derived from the content-root path, which differs per container/deploy slot, so
+        // without it the persisted keys still wouldn't be shared). Singleton; the protector is thread-safe.
+        services.AddDataProtection()
+            .PersistKeysToDbContext<AppDbContext>()
+            .SetApplicationName("HRM");
         services.AddSingleton<IFieldProtector, MfaSecretProtector>();
 
         // Note: JwtService is registered in Program.cs alongside JWT authentication config.
