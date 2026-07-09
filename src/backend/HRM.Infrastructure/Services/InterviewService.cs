@@ -423,8 +423,10 @@ public sealed class InterviewService : IInterviewService
     }
 
     /// <summary>
-    /// FR-3/BR-7: notify all interviewers (work email) + the applicant (application email) via the
-    /// log-only seam. Never let a notification failure fail a committed interview write.
+    /// FR-3/BR-7: notify all interviewers + the applicant (application email) via the notification seam.
+    /// Interviewer employee ids are the source of truth — the seam resolves each to a linked user (in-app +
+    /// email) or work email (email-only fallback, ISSUE-263). Never let a notification failure fail a
+    /// committed interview write.
     /// </summary>
     private async Task NotifyParticipantsSafeAsync(string eventType, Interview interview, CancellationToken cancellationToken)
     {
@@ -436,11 +438,11 @@ public sealed class InterviewService : IInterviewService
                 .Select(a => a.Email)
                 .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
 
-            var interviewerEmails = await GetInterviewerEmailsAsync(interview, cancellationToken);
+            var interviewerEmployeeIds = interview.Interviewers.Select(ii => ii.EmployeeId).ToList();
 
             await _notifications.NotifyInterviewAsync(
                 eventType, interview.Id, interview.ApplicantId, interview.VacancyId,
-                applicantEmail, interviewerEmails, cancellationToken);
+                applicantEmail, interviewerEmployeeIds, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -448,19 +450,6 @@ public sealed class InterviewService : IInterviewService
                 "Interview notification failed (non-fatal). EventType={EventType}, InterviewId={InterviewId}, TenantId={TenantId}",
                 eventType, interview.Id, _tenantContext.TenantId);
         }
-    }
-
-    private async Task<IReadOnlyList<string>> GetInterviewerEmailsAsync(Interview interview, CancellationToken cancellationToken)
-    {
-        var ids = interview.Interviewers.Select(ii => ii.EmployeeId).ToList();
-        if (ids.Count == 0)
-            return [];
-
-        return await _dbContext.Employees
-            .AsNoTracking()
-            .Where(e => ids.Contains(e.Id))
-            .Select(e => e.Email)
-            .ToListAsync(cancellationToken);
     }
 
     private async Task<Result<InterviewDto>> BuildDtoResultAsync(

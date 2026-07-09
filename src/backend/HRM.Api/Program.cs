@@ -284,6 +284,10 @@ try
     // job is scheduled when an offer is sent, cancelled on response/withdraw.
     builder.Services.AddScoped<HRM.Api.Jobs.OfferExpiryJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOfferExpiryScheduler, HRM.Api.Jobs.HangfireOfferExpiryScheduler>();
+    // ISSUE-262: the "N days before expiry" reminder counterpart (FR-7/AC-4) — the reminder is scheduled
+    // when an offer is sent and cancelled on response/withdraw/supersede.
+    builder.Services.AddScoped<HRM.Api.Jobs.OfferExpiryReminderJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOfferExpiryReminderScheduler, HRM.Api.Jobs.HangfireOfferExpiryReminderScheduler>();
 
     // US-PRF-004 FR-5/AC-2/AC-5: tenant-aware cycle phase-transition job + the Hangfire-backed scheduler seam
     // (bound to ICyclePhaseScheduler so the Infrastructure AppraisalCycleService can schedule/cancel by

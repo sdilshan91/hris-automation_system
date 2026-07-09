@@ -72,6 +72,7 @@ public sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         builder.Property(o => o.RespondedAt);
         builder.Property(o => o.Response).HasMaxLength(20);
         builder.Property(o => o.ReminderJobId).HasMaxLength(100);
+        builder.Property(o => o.ExpiryReminderJobId).HasMaxLength(100);
 
         builder.Property(o => o.IsDeleted).HasDefaultValue(false).IsRequired();
 

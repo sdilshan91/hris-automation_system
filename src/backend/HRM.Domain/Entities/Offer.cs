@@ -100,6 +100,15 @@ public sealed class Offer : BaseEntity
     /// </summary>
     public string? ReminderJobId { get; set; }
 
+    /// <summary>
+    /// Id of the scheduled Hangfire expiry-<em>reminder</em> job (US-REC-007 FR-7/AC-4). SEPARATE from
+    /// <see cref="ReminderJobId"/> (which holds the auto-expire job) so cancelling one never clobbers the
+    /// other. Set when the offer is sent (a reminder is scheduled N days before expiry), cleared on
+    /// response/withdraw/supersede or once the reminder has fired. Null when no reminder job is active
+    /// (scheduler seam unavailable in tests).
+    /// </summary>
+    public string? ExpiryReminderJobId { get; set; }
+
     /// <summary>True for the active states used by the one-active-offer rule (BR-2): Draft or Sent.</summary>
     public bool IsActive => Status == OfferStatus.Draft || Status == OfferStatus.Sent;
 }
