@@ -98,6 +98,31 @@ public static class NotificationEventCatalog
         "payroll.period", "payroll.processed", "payroll.skipped", "payroll.runId",
     ];
 
+    // ── Shared placeholders for the recruitment applicant events (US-NTF-006 Phase 5a, US-REC-002/004). MUST be
+    // declared before _byKey: the eager BuildCatalog() at type-init references it, so a later declaration would leave
+    // it null → NRE in the type initializer (Phase 2a lesson). ──
+    private static readonly string[] ApplicantPlaceholders =
+    [
+        "applicant.firstName", "applicant.lastName", "applicant.email",
+        "vacancy.title", "application.reference", "application.fromStage", "application.toStage",
+    ];
+
+    // ── Shared placeholders for the recruitment interview events (US-NTF-006 Phase 5a, US-REC-005). MUST be declared
+    // before _byKey (Phase 2a NRE lesson). ──
+    private static readonly string[] InterviewPlaceholders =
+    [
+        "applicant.email", "vacancy.title",
+        "interview.date", "interview.time", "interview.type", "interview.location",
+    ];
+
+    // ── Shared placeholders for the recruitment offer events (US-NTF-006 Phase 5a, US-REC-007). MUST be declared
+    // before _byKey (Phase 2a NRE lesson). ──
+    private static readonly string[] OfferPlaceholders =
+    [
+        "applicant.firstName", "applicant.lastName", "applicant.email", "vacancy.title",
+        "offer.reference", "offer.position", "offer.startDate", "offer.expiryDate",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -809,7 +834,300 @@ public static class NotificationEventCatalog
                 "Regards,\n{{tenant.companyName}}",
             Category: NotificationCategory.PayrollNotifications,
             IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5a — recruitment applicant lifecycle (US-REC-002 FR-5/FR-7, US-REC-004 FR-6). The Real
+        // service loads the applicant + vacancy for these fields; recipients are the candidate (email-only) or the
+        // hiring manager + recruiter pool (in-app + email). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "application_received",
+            EventName: "Application Received",
+            Placeholders: [.. ApplicantPlaceholders, .. TenantPlaceholders],
+            SampleData: ApplicantSample(),
+            DefaultSubject: "We've received your application for {{vacancy.title}}",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>Thank you for applying for the <strong>{{vacancy.title}}</strong> position. We've received your " +
+                "application (reference <strong>{{application.reference}}</strong>) and our team will review it " +
+                "shortly.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "Thank you for applying for the {{vacancy.title}} position. We've received your application " +
+                "(reference {{application.reference}}) and our team will review it shortly.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "application_new",
+            EventName: "New Application Received",
+            Placeholders: [.. ApplicantPlaceholders, .. TenantPlaceholders],
+            SampleData: ApplicantSample(),
+            DefaultSubject: "New application for {{vacancy.title}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>A new application has been received from <strong>{{applicant.firstName}} " +
+                "{{applicant.lastName}}</strong> for the <strong>{{vacancy.title}}</strong> position " +
+                "(reference {{application.reference}}).</p>" +
+                "<p>Review it in the recruitment portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "A new application has been received from {{applicant.firstName}} {{applicant.lastName}} for the " +
+                "{{vacancy.title}} position (reference {{application.reference}}).\n\n" +
+                "Review it in the recruitment portal.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "application_stage_changed",
+            EventName: "Application Stage Updated",
+            Placeholders: [.. ApplicantPlaceholders, .. TenantPlaceholders],
+            SampleData: ApplicantSample(fromStage: "Screening", toStage: "Interview"),
+            DefaultSubject: "Update on your application for {{vacancy.title}}",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>There's an update on your application for the <strong>{{vacancy.title}}</strong> position: it has " +
+                "moved from <strong>{{application.fromStage}}</strong> to <strong>{{application.toStage}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "There's an update on your application for the {{vacancy.title}} position: it has moved from " +
+                "{{application.fromStage}} to {{application.toStage}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5a — recruitment interview lifecycle (US-REC-005 FR-3/FR-4/BR-7). Recipients are the
+        // candidate + interviewers (email-only — interviewers arrive as raw emails). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "interview_scheduled",
+            EventName: "Interview Scheduled",
+            Placeholders: [.. InterviewPlaceholders, .. TenantPlaceholders],
+            SampleData: InterviewSample(),
+            DefaultSubject: "Interview scheduled for {{vacancy.title}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>An interview for the <strong>{{vacancy.title}}</strong> position has been scheduled for " +
+                "<strong>{{interview.date}} at {{interview.time}}</strong> ({{interview.type}}). " +
+                "Location / link: {{interview.location}}.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "An interview for the {{vacancy.title}} position has been scheduled for {{interview.date}} at " +
+                "{{interview.time}} ({{interview.type}}). Location / link: {{interview.location}}.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "interview_updated",
+            EventName: "Interview Updated",
+            Placeholders: [.. InterviewPlaceholders, .. TenantPlaceholders],
+            SampleData: InterviewSample(),
+            DefaultSubject: "Your interview for {{vacancy.title}} has been updated",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The interview for the <strong>{{vacancy.title}}</strong> position has been updated. The new time " +
+                "is <strong>{{interview.date}} at {{interview.time}}</strong> ({{interview.type}}). " +
+                "Location / link: {{interview.location}}.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The interview for the {{vacancy.title}} position has been updated. The new time is {{interview.date}} " +
+                "at {{interview.time}} ({{interview.type}}). Location / link: {{interview.location}}.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "interview_cancelled",
+            EventName: "Interview Cancelled",
+            Placeholders: [.. InterviewPlaceholders, .. TenantPlaceholders],
+            SampleData: InterviewSample(),
+            DefaultSubject: "Your interview for {{vacancy.title}} has been cancelled",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The interview for the <strong>{{vacancy.title}}</strong> position previously scheduled for " +
+                "{{interview.date}} at {{interview.time}} has been <strong>cancelled</strong>. We'll be in touch if " +
+                "it is rescheduled.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The interview for the {{vacancy.title}} position previously scheduled for {{interview.date}} at " +
+                "{{interview.time}} has been cancelled. We'll be in touch if it is rescheduled.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "interview_reminder",
+            EventName: "Interview Reminder",
+            Placeholders: [.. InterviewPlaceholders, .. TenantPlaceholders],
+            SampleData: InterviewSample(),
+            DefaultSubject: "Reminder: interview for {{vacancy.title}} on {{interview.date}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>This is a reminder that the interview for the <strong>{{vacancy.title}}</strong> position is " +
+                "coming up on <strong>{{interview.date}} at {{interview.time}}</strong> ({{interview.type}}). " +
+                "Location / link: {{interview.location}}.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "This is a reminder that the interview for the {{vacancy.title}} position is coming up on " +
+                "{{interview.date}} at {{interview.time}} ({{interview.type}}). Location / link: " +
+                "{{interview.location}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5a — scorecard submitted (US-REC-006 FR-5). Recipients are the recruiter pool
+        // (in-app + email). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "scorecard_submitted",
+            EventName: "Scorecard Submitted",
+            Placeholders: [.. ApplicantPlaceholders, .. TenantPlaceholders],
+            SampleData: ApplicantSample(),
+            DefaultSubject: "A scorecard was submitted for {{vacancy.title}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>An interviewer has submitted a scorecard for <strong>{{applicant.firstName}} " +
+                "{{applicant.lastName}}</strong> ({{vacancy.title}}). Review it in the recruitment portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "An interviewer has submitted a scorecard for {{applicant.firstName}} {{applicant.lastName}} " +
+                "({{vacancy.title}}). Review it in the recruitment portal.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5a — recruitment offer lifecycle (US-REC-007 FR-5/FR-7/FR-8). Candidate is the primary
+        // recipient (email-only); expiry-reminder/expired also copy the recruiter pool. The offer_sent candidate leg
+        // additionally carries the offer-letter PDF inline (Real service, via IEmailSender + IFileStorage). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "offer_sent",
+            EventName: "Offer Sent",
+            Placeholders: [.. OfferPlaceholders, .. TenantPlaceholders],
+            SampleData: OfferSample(),
+            DefaultSubject: "Your offer for {{offer.position}}",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>Congratulations! We're delighted to offer you the <strong>{{offer.position}}</strong> position " +
+                "(reference {{offer.reference}}), starting {{offer.startDate}}. Your offer letter is attached.</p>" +
+                "<p>Please review and respond by <strong>{{offer.expiryDate}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "Congratulations! We're delighted to offer you the {{offer.position}} position (reference " +
+                "{{offer.reference}}), starting {{offer.startDate}}. Your offer letter is attached.\n\n" +
+                "Please review and respond by {{offer.expiryDate}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "offer_withdrawn",
+            EventName: "Offer Withdrawn",
+            Placeholders: [.. OfferPlaceholders, .. TenantPlaceholders],
+            SampleData: OfferSample(),
+            DefaultSubject: "Your offer for {{offer.position}} has been withdrawn",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>We're writing to let you know that the offer for the <strong>{{offer.position}}</strong> position " +
+                "(reference {{offer.reference}}) has been <strong>withdrawn</strong>. Please contact us if you have " +
+                "any questions.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "We're writing to let you know that the offer for the {{offer.position}} position (reference " +
+                "{{offer.reference}}) has been withdrawn. Please contact us if you have any questions.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "offer_expiry_reminder",
+            EventName: "Offer Expiry Reminder",
+            Placeholders: [.. OfferPlaceholders, .. TenantPlaceholders],
+            SampleData: OfferSample(),
+            DefaultSubject: "Reminder: your offer for {{offer.position}} expires soon",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>This is a reminder that your offer for the <strong>{{offer.position}}</strong> position " +
+                "(reference {{offer.reference}}) expires on <strong>{{offer.expiryDate}}</strong>. Please respond " +
+                "before then.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "This is a reminder that your offer for the {{offer.position}} position (reference {{offer.reference}}) " +
+                "expires on {{offer.expiryDate}}. Please respond before then.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "offer_expired",
+            EventName: "Offer Expired",
+            Placeholders: [.. OfferPlaceholders, .. TenantPlaceholders],
+            SampleData: OfferSample(),
+            DefaultSubject: "Your offer for {{offer.position}} has expired",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>Your offer for the <strong>{{offer.position}}</strong> position (reference {{offer.reference}}) " +
+                "has <strong>expired</strong> as we did not receive a response by {{offer.expiryDate}}. Please " +
+                "contact us if you're still interested.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "Your offer for the {{offer.position}} position (reference {{offer.reference}}) has expired as we did " +
+                "not receive a response by {{offer.expiryDate}}. Please contact us if you're still interested.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
     }
+
+    // ── Sample-data for the recruitment applicant events (US-NTF-006 Phase 5a). ──
+    private static Dictionary<string, object?> ApplicantSample(string? fromStage = null, string? toStage = null)
+    {
+        var application = new Dictionary<string, object?> { ["reference"] = "APP-2026-000123" };
+        if (fromStage is not null) application["fromStage"] = fromStage;
+        if (toStage is not null) application["toStage"] = toStage;
+        return new Dictionary<string, object?>
+        {
+            ["applicant"] = new Dictionary<string, object?>
+            {
+                ["firstName"] = "Jordan", ["lastName"] = "Rivera", ["email"] = "jordan.rivera@example.com",
+            },
+            ["vacancy"] = new Dictionary<string, object?> { ["title"] = "Senior Software Engineer" },
+            ["application"] = application,
+            ["tenant"] = SampleTenant(),
+        };
+    }
+
+    // ── Sample-data for the recruitment interview events (US-NTF-006 Phase 5a). ──
+    private static Dictionary<string, object?> InterviewSample() => new()
+    {
+        ["applicant"] = new Dictionary<string, object?> { ["email"] = "jordan.rivera@example.com" },
+        ["vacancy"] = new Dictionary<string, object?> { ["title"] = "Senior Software Engineer" },
+        ["interview"] = new Dictionary<string, object?>
+        {
+            ["date"] = "2026-07-20", ["time"] = "10:30", ["type"] = "Video",
+            ["location"] = "https://meet.example.com/abc-defg-hij",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    // ── Sample-data for the recruitment offer events (US-NTF-006 Phase 5a). ──
+    private static Dictionary<string, object?> OfferSample() => new()
+    {
+        ["applicant"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Jordan", ["email"] = "jordan.rivera@example.com",
+        },
+        ["vacancy"] = new Dictionary<string, object?> { ["title"] = "Senior Software Engineer" },
+        ["offer"] = new Dictionary<string, object?>
+        {
+            ["reference"] = "OFR-2026-000045", ["position"] = "Senior Software Engineer",
+            ["startDate"] = "2026-08-01", ["expiryDate"] = "2026-07-25",
+        },
+        ["tenant"] = SampleTenant(),
+    };
 
     // ── Sample-data for the payroll run + approval events (US-NTF-006 Phase 4). ──
     private static Dictionary<string, object?> PayrollSample() => new()
