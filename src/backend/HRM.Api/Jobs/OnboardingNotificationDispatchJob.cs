@@ -79,10 +79,15 @@ public sealed class OnboardingNotificationDispatchJob : IOnboardingNotificationD
     /// <summary>
     /// Maps this outbox's free-form <c>NotificationType</c> (e.g. "onboarding.checklist.assigned") to a
     /// <c>NotificationEventCatalog</c> event key. Kept as a tiny local map so the outbox schema stays as-is
-    /// (US-NTF-006 Phase 2a); all current onboarding intents render from the "onboarding_welcome" template.
+    /// (US-NTF-006). Every onboarding intent renders from a dedicated template whose placeholders match its
+    /// outbox payload (US-NTF-006 Phase 3 — no blank {{placeholders}}); the "onboarding_welcome" default is a
+    /// last-resort fallback for any future/unmapped intent.
     /// </summary>
     private static string MapOutboxTypeToEventKey(string notificationType) => notificationType switch
     {
+        "onboarding.checklist.assigned" => "onboarding_checklist_assigned",
+        "onboarding.task.completed" => "onboarding_task_completed",
+        "onboarding.task.overdue" => "onboarding_task_overdue",
         _ => "onboarding_welcome",
     };
 }

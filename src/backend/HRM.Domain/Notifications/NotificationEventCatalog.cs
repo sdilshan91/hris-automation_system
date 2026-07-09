@@ -60,6 +60,35 @@ public static class NotificationEventCatalog
         "owner.name", "tenant.name", "subdomain", "forgotPassword.url",
     ];
 
+    // ── Shared placeholders for the leave lifecycle events (US-NTF-006 Phase 3, US-LV-*). MUST be declared before
+    // _byKey: the eager BuildCatalog() at type-init references it, so a later declaration would leave it null → NRE
+    // in the type initializer (Phase 2a lesson). Mirrors the existing "leave_approved" event's placeholder set. ──
+    private static readonly string[] LeavePlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "employee.email",
+        "leave.type", "leave.startDate", "leave.endDate", "leave.days", "leave.reason",
+    ];
+
+    // ── Placeholders for the onboarding-checklist-assigned event (US-NTF-006 Phase 3, US-ONB-002). These are FLAT
+    // keys (not dotted) because the onboarding outbox payload is flat (employeeName/templateName/startDate/taskCount);
+    // the renderer resolves them as top-level fields. MUST be declared before _byKey (Phase 2a lesson). ──
+    private static readonly string[] OnboardingChecklistPlaceholders =
+    [
+        "employeeName", "templateName", "startDate", "taskCount",
+    ];
+
+    // ── Placeholders for the onboarding task-completed / task-overdue events (US-NTF-006 Phase 3, US-ONB-003). FLAT
+    // keys matching the onboarding outbox payloads. MUST be declared before _byKey (Phase 2a NRE lesson). ──
+    private static readonly string[] OnboardingTaskCompletedPlaceholders =
+    [
+        "taskTitle", "employeeName", "completedAt",
+    ];
+
+    private static readonly string[] OnboardingTaskOverduePlaceholders =
+    [
+        "taskTitle", "employeeName", "dueDate", "daysOverdue",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -113,6 +142,93 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.LeaveUpdates,
             IsMandatory: false);
 
+        // ── US-NTF-006 Phase 3 — leave lifecycle email leg (mirrors the in-app LeaveNotificationService). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "leave_requested",
+            EventName: "Leave Requested",
+            Placeholders: [.. LeavePlaceholders, .. TenantPlaceholders],
+            SampleData: LeaveSample(),
+            DefaultSubject: "Leave request pending your approval",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has submitted a " +
+                "<strong>{{leave.type}}</strong> request from {{leave.startDate}} to {{leave.endDate}} " +
+                "({{leave.days}} day(s)) that needs your approval.</p>" +
+                "<p>Reason: {{leave.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has submitted a {{leave.type}} request from " +
+                "{{leave.startDate}} to {{leave.endDate}} ({{leave.days}} day(s)) that needs your approval.\n\n" +
+                "Reason: {{leave.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "leave_rejected",
+            EventName: "Leave Rejected",
+            Placeholders: [.. LeavePlaceholders, "approver.name", .. TenantPlaceholders],
+            SampleData: LeaveSample(approverName: "Sam Manager", reason: "Insufficient coverage during that week."),
+            DefaultSubject: "Your leave request has been rejected",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your <strong>{{leave.type}}</strong> request from {{leave.startDate}} to {{leave.endDate}} " +
+                "({{leave.days}} day(s)) has been <strong>rejected</strong> by {{approver.name}}.</p>" +
+                "<p>Reason: {{leave.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your {{leave.type}} request from {{leave.startDate}} to {{leave.endDate}} ({{leave.days}} day(s)) " +
+                "has been rejected by {{approver.name}}.\n\nReason: {{leave.reason}}\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "leave_cancelled",
+            EventName: "Leave Cancelled",
+            Placeholders: [.. LeavePlaceholders, .. TenantPlaceholders],
+            SampleData: LeaveSample(reason: "Plans changed."),
+            DefaultSubject: "A leave request has been cancelled",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has cancelled a " +
+                "<strong>{{leave.type}}</strong> request from {{leave.startDate}} to {{leave.endDate}} " +
+                "({{leave.days}} day(s)).</p>" +
+                "<p>Reason: {{leave.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has cancelled a {{leave.type}} request from " +
+                "{{leave.startDate}} to {{leave.endDate}} ({{leave.days}} day(s)).\n\n" +
+                "Reason: {{leave.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "leave_lop",
+            EventName: "Loss-of-Pay Leave Assigned",
+            Placeholders:
+            [
+                "employee.firstName", "employee.lastName", "employee.email",
+                "leave.days", "leave.source", "leave.reason",
+                .. TenantPlaceholders,
+            ],
+            SampleData: LeaveSample(reason: "Unapproved absence.", lop: true),
+            DefaultSubject: "Loss-of-pay leave assigned",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p><strong>{{leave.days}}</strong> loss-of-pay leave day(s) have been assigned to your record " +
+                "({{leave.source}}).</p>" +
+                "<p>Reason: {{leave.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "{{leave.days}} loss-of-pay leave day(s) have been assigned to your record ({{leave.source}}).\n\n" +
+                "Reason: {{leave.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
         yield return new NotificationEventDefinition(
             EventKey: "onboarding_welcome",
             EventName: "Onboarding Welcome",
@@ -145,6 +261,90 @@ public static class NotificationEventCatalog
                 "Welcome to {{tenant.companyName}}! We're excited to have you join {{employee.department}} as " +
                 "{{employee.jobTitle}} starting {{employee.startDate}}.\n\n" +
                 "Your manager {{manager.name}} will be in touch.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 3 — onboarding CHECKLIST ASSIGNED (US-ONB-002). A dedicated event whose FLAT
+        // placeholders match the onboarding outbox payload (employeeName/templateName/startDate/taskCount), so the
+        // rendered email has no blank placeholders — the generic "onboarding_welcome" template does NOT match that
+        // payload. Recipients are the new hire + manager + IT, so the copy is role-neutral and carries no branding
+        // placeholder (the outbox payload has none). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "onboarding_checklist_assigned",
+            EventName: "Onboarding Checklist Assigned",
+            Placeholders: [.. OnboardingChecklistPlaceholders],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["employeeName"] = "Alex Newcomer",
+                ["templateName"] = "Engineering Onboarding",
+                ["startDate"] = "2026-08-01",
+                ["taskCount"] = 7,
+            },
+            DefaultSubject: "Onboarding checklist assigned: {{templateName}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>An onboarding checklist — <strong>{{templateName}}</strong> — has been assigned for " +
+                "<strong>{{employeeName}}</strong>, starting {{startDate}}. It has {{taskCount}} task(s).</p>" +
+                "<p>Please review your assigned tasks in the HRM portal.</p>" +
+                "<p>Regards,<br/>The HR Team</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "An onboarding checklist - {{templateName}} - has been assigned for {{employeeName}}, starting " +
+                "{{startDate}}. It has {{taskCount}} task(s).\n\n" +
+                "Please review your assigned tasks in the HRM portal.\n\nRegards,\nThe HR Team",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 3 — onboarding TASK COMPLETED (US-ONB-003 AC-3/FR-5). Sent to HR + manager. FLAT
+        // placeholders match the completion outbox payload (taskTitle/employeeName/completedAt). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "onboarding_task_completed",
+            EventName: "Onboarding Task Completed",
+            Placeholders: [.. OnboardingTaskCompletedPlaceholders],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["taskTitle"] = "Sign employment contract",
+                ["employeeName"] = "Alex Newcomer",
+                ["completedAt"] = "2026-08-02T09:30:00Z",
+            },
+            DefaultSubject: "Onboarding task completed: {{taskTitle}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employeeName}}</strong> has completed the onboarding task " +
+                "<strong>{{taskTitle}}</strong> on {{completedAt}}.</p>" +
+                "<p>Regards,<br/>The HR Team</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employeeName}} has completed the onboarding task {{taskTitle}} on {{completedAt}}.\n\n" +
+                "Regards,\nThe HR Team",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 3 — onboarding TASK OVERDUE (US-ONB-003 AC-5/FR-6). Sent to employee + HR + manager by
+        // the daily sweep. FLAT placeholders match the overdue outbox payload (taskTitle/dueDate/daysOverdue/name). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "onboarding_task_overdue",
+            EventName: "Onboarding Task Overdue",
+            Placeholders: [.. OnboardingTaskOverduePlaceholders],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["taskTitle"] = "Submit tax forms",
+                ["employeeName"] = "Alex Newcomer",
+                ["dueDate"] = "2026-08-05",
+                ["daysOverdue"] = 3,
+            },
+            DefaultSubject: "Onboarding task overdue: {{taskTitle}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The onboarding task <strong>{{taskTitle}}</strong> for <strong>{{employeeName}}</strong> was due " +
+                "on {{dueDate}} and is now <strong>{{daysOverdue}} day(s) overdue</strong>.</p>" +
+                "<p>Please complete it as soon as possible.</p>" +
+                "<p>Regards,<br/>The HR Team</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The onboarding task {{taskTitle}} for {{employeeName}} was due on {{dueDate}} and is now " +
+                "{{daysOverdue}} day(s) overdue.\n\nPlease complete it as soon as possible.\n\n" +
+                "Regards,\nThe HR Team",
             Category: NotificationCategory.OnboardingOffboarding,
             IsMandatory: false);
 
@@ -484,6 +684,34 @@ public static class NotificationEventCatalog
         },
         ["tenant"] = MergeTenant(new Dictionary<string, object?> { ["name"] = "Acme Corporation" }),
     };
+
+    // ── Sample-data for the leave lifecycle events (US-NTF-006 Phase 3). ──
+    private static Dictionary<string, object?> LeaveSample(
+        string? approverName = null, string? reason = null, bool lop = false)
+    {
+        var data = new Dictionary<string, object?>
+        {
+            ["employee"] = new Dictionary<string, object?>
+            {
+                ["firstName"] = "Jane", ["lastName"] = "Doe", ["email"] = "jane.doe@example.com",
+            },
+            ["leave"] = lop
+                ? new Dictionary<string, object?>
+                {
+                    ["days"] = 2, ["source"] = "HrAssigned", ["reason"] = reason ?? "Unapproved absence.",
+                }
+                : new Dictionary<string, object?>
+                {
+                    ["type"] = "Annual Leave",
+                    ["startDate"] = "2026-07-01", ["endDate"] = "2026-07-05", ["days"] = 5,
+                    ["reason"] = reason ?? "Family vacation.",
+                },
+            ["tenant"] = SampleTenant(),
+        };
+        if (approverName is not null)
+            data["approver"] = new Dictionary<string, object?> { ["name"] = approverName };
+        return data;
+    }
 
     // ── Sample-data for the tenant-lifecycle events (US-ADM-004). ──
     private static Dictionary<string, object?> LifecycleSample(
