@@ -55,6 +55,10 @@
          v3+ moved to the source-available "Six Labors Split License" and v4 ENFORCES a build-time paid
          license key — do not upgrade past 2.1.x without a licensing decision. -->
     <PackageReference Include="SixLabors.ImageSharp" Version="2.1.*" />
+    <!-- US-NTF-006 FR-8: real SMTP delivery for the generic IEmailSender seam (SmtpEmailSender). MailKit is the
+         recommended modern .NET SMTP client (STARTTLS, per-message From override). Only USED when Smtp:Host is
+         configured; with no host the app falls back to LogOnlyEmailSender, so this is never a startup/test dep. -->
+    <PackageReference Include="MailKit" Version="4.*" />
   </ItemGroup>
 
   <ItemGroup>

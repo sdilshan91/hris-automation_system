@@ -252,7 +252,13 @@ try
     // it by interface. The dispatcher is log-only until the Notifications module (US-NTF-001/002) lands.
     builder.Services.AddScoped<HRM.Api.Jobs.OnboardingNotificationDispatchJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IOnboardingNotificationDispatchJob, HRM.Api.Jobs.OnboardingNotificationDispatchJob>();
-    builder.Services.AddScoped<HRM.Application.Common.Interfaces.INotificationDispatcher, HRM.Api.Notifications.LoggingNotificationDispatcher>();
+
+    // US-NTF-006: real notification delivery infrastructure. RealNotificationDispatcher replaces the log-only
+    // dispatcher: in-app via INotificationService (SignalR), email via the preference gate + template render +
+    // the Hangfire SendEmailJob. The email leg still degrades to LogOnlyEmailSender when SMTP is unconfigured, so
+    // this is safe with no SMTP server. (LoggingNotificationDispatcher remains in the tree as a fallback.)
+    builder.Services.AddScoped<HRM.Api.Jobs.SendEmailJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.INotificationDispatcher, HRM.Api.Notifications.RealNotificationDispatcher>();
 
     // US-ONB-003 FR-6/AC-5/BR-4: daily overdue-task sweep (writes overdue outbox rows; tenant-tz deferred, UTC).
     builder.Services.AddScoped<HRM.Api.Jobs.OnboardingOverdueSweepJob>();
