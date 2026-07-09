@@ -37,9 +37,12 @@
 - **▶ REFRESHED PRIORITIES (2026-07-09) — what's left, re-sorted by value × readiness × effort:**
   - **P1 — ✅ DONE (PR #224, merged 2026-07-09; verified via `/verify-fix ISSUE-247`):**
     - ✅ **ISSUE-247 — DataProtection key persistence** (HIGH) → RESOLVED. Key ring persisted to the existing Postgres via `AddDataProtection().PersistKeysToDbContext<AppDbContext>().SetApplicationName("HRM")` + migration `data_protection_keys` + `AppDbContext:IDataProtectionKeyContext`. Regression **TC-AUTH-113** (real Postgres, cross-instance decrypt) green; BE 3279/3279. Keys unencrypted-at-rest (DB-ACL protected); `ProtectKeysWith*` (cert/KMS) deferred to **P3 infra**. **NEXT ⇒ P2.**
-  - **P2 — bounded quick wins (small, no AC/infra) — ◀ RESUME HERE:**
-    - **BUG-261** — make the cycle scope control read-only on edit (or wire `UpdateCycleInput.Scope`) — removes the silent-drop UX trap.
-    - **ISSUE-256** (360 comment length→422 + encode comments in the PDF/HTML report, ISSUE-226 class) · **ISSUE-262** (wire the offer pre-expiry reminder scheduler) · **ISSUE-263** (interviewer in-app: widen the interview seam signature) · **ISSUE-250/251** (regularization validator tz / DST-gap) · **ISSUE-253** (ApplicantConversion audit detach-on-retry) · **ISSUE-254** (ratingsPublishedOn proxy) · **ISSUE-255** (seed a permissionless e2e persona).
+  - **P2 — ▶ IN PR (awaiting merge, 2026-07-09) — 3 clusters:**
+    - **Cluster A `fix/p2a-attendance-tz` → PR #225:** ISSUE-251 DST spring-forward gap fix (BE 3281/3281). *(ISSUE-250 → WONTFIX: validator only lenient, service is authoritative. Stale BUG-247 → corrected RESOLVED, already fixed by #199.)*
+    - **Cluster B `fix/p2b-performance` → PR #226:** BUG-261 editable cycle scope (Draft-only guard, BE+FE) · ISSUE-254 real `RatingsPublishedOn` column + migration · ISSUE-256 360-comment 422 · ISSUE-255 permissionless test persona (BE 3296/3296, FE 3657/3657).
+    - **Cluster C `fix/p2c-recruitment-notif` → PR #227:** ISSUE-262 offer pre-expiry reminder job · ISSUE-263 interview in-app · ISSUE-253 audit-detach on retry (BE 3287/3287).
+    - **After the 3 merge:** run `/verify-fix` on each finding to flip TEST-FINDINGS → RESOLVED with the PR#.
+    - **🆕 auto-healed while building C:** **BUG-264 [MED]** (ApplicantConversion broader unreset-mutation retry gap — Employee double-create + spurious `already_converted`; BUG-068/252 class) → **next fix candidate, ahead of P3**. **ISSUE-265 [LOW]** (interviewer `Employee.UserId` provisioning caps ISSUE-263 in-app value) → provisioning follow-up.
   - **P3 — needs provisioning / a go-no-go (infra):**
     - **RLS enablement** (+ `TenantTransactionBehavior:57` Postgres test) — ⚠ behavior change; **confirm go/no-go before flipping on**. · **Redis** wiring (permission/leave caches, session denylist) — needs a Redis instance. · **OTel** (GlitchTip ops in-tree; Sentry MCP config stashed locally) — wire tracing/metrics.
   - **P4 — large feature builds, need an AC brief:**

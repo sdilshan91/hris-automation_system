@@ -5715,7 +5715,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** reuse `TenantClock`. Report only.
 
 ### ISSUE-250 — SubmitRegularizationValidator "not in the future" check combines wall-clock as UTC (coarse for non-UTC tenants)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed, Phase 2b)
+- **Type / Severity / Status:** ISSUE · LOW · **WONTFIX (decision 2026-07-09)** — the validator's future-check is only *lenient* (never falsely-rejects), and the **service layer already performs the authoritative tz-aware future-DATE rejection**. Injecting a tenant `TimeZoneInfo` into a DI-less FluentValidation validator is architectural churn for zero real-world impact (worst case: a submit that should be rejected for being minutes-in-the-future on a non-UTC tenant is instead caught one layer deeper by the service). Accept service-layer authority. Revisit only if the validator becomes the sole gate. Was: OPEN (auto-healed, Phase 2b).
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-004 · (Phase 2b residual)
 - **Title:** `SubmitRegularizationValidator:74-83` has no tenant-tz access (FluentValidation, no DI), so its fine-grained future check treats the wall-clock as UTC. The **authoritative** future-DATE rejection is now tz-aware in the service; this validator check is merely lenient (not falsely-rejecting). Fixing needs the tenant tz injected into the validator (architectural). **Suggested:** inject tenant tz or accept service-layer authority. Report only.
@@ -5727,7 +5727,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** `TenantClock.LocalToUtc` uses `TimeZoneInfo.ConvertTimeToUtc`, which throws `ArgumentException` for a wall-clock that lands exactly in a 1-hour DST spring-forward gap in a non-UTC zone (once/year, that hour) — a latent 500 on a regularization submit. UTC tenants + all non-gap/ambiguous times are unaffected. **Suggested:** catch invalid-time and either snap-forward by the gap or reject with a clear 400. Report only.
 
 ### BUG-247 — Regularization-approval late/early recompute still UTC-keyed (Phase 2b tenant-tz fix incomplete on this path)
-- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 2b, 2026-07-08)
+- **Type / Severity / Status:** BUG · MED · **RESOLVED (PR #199, merged 2026-07-08; ledger entry was stale — corrected 2026-07-09)** — `RegularizationApprovalService.RecomputeLateEarlyAsync` now threads the tenant `TimeZoneInfo` and evaluates late/early via `TenantClock.LocalTimeOfDay(log.ClockIn, tenantZone)` (verified in-code at `RegularizationApprovalService.cs:531-532`), exactly the tz-aware fix this entry marked "NOT applied." It was fixed as part of the #199 attendance tenant-tz trio (BUG-245/246/247) but this findings entry was never flipped. Was: OPEN.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-004 · (sibling of the Phase 2b tenant-timezone fix)
 - **Title:** `RegularizationApprovalService.cs:513` recomputes `is_late`/`is_early` with `TimeOnly.FromDateTime(log.ClockIn)` directly (UTC), NOT `TenantClock.LocalTimeOfDay`, so a **manager-approved** regularization on a non-UTC tenant re-flags late/early by the UTC offset — inconsistent with the now-tz-aware clock-in/out path (ISSUE-065). Same sibling class as BUG-245 (dashboard) / BUG-246 (payroll): the Phase 2b fix covered `AttendanceService` + `AttendanceSummaryService`; this approval path was missed.
@@ -5832,3 +5832,18 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Type / Severity / Status:** ISSUE · LOW · OPEN (deferred, surfaced building US-NTF-006 Phase 5a, 2026-07-09)
 - **Layer:** BE · **Module:** Recruitment · interviews
 - **Title:** `NotifyInterviewAsync`/`NotifyInterviewReminderAsync` receive interviewers as **raw emails**, so the real seam can only send them email (not in-app) — the dispatcher needs a `UserId` for the in-app leg. **Suggested:** widen the interface to pass interviewer employee/user ids (ripples into `InterviewService` + `InterviewReminderJob` + tests). Report only.
+
+### BUG-264 — ApplicantConversionService.ConvertAsync does not reset tracked mutations on a transient retry (Employee double-create + spurious `already_converted`)
+- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building ISSUE-253, 2026-07-09)
+- **Layer:** BE / DB · **Module:** Recruitment · US-REC-010 (applicant→employee convert)
+- **Title:** The whole convert unit runs inside a retrying `strategy.ExecuteAsync` delegate (`ApplicantConversionService.ConvertAsync:171-227`). On a genuine transient failure that triggers a strategy **retry**, the failed attempt's tracked mutations are NOT reset: the `Employee` created via `_employeeService.CreateAsync` (`:171`) rolls back in the DB but stays tracked (could double-create / mint a second employee-number), and the mutated `Applicant` carries attempt-1's `ConvertedToEmployeeId` into attempt 2 → the retry short-circuits with a misleading `already_converted` **instead of completing the conversion**. Same BUG-068/BUG-252 retry-vs-tracked-state class; ISSUE-253 (PR #227) fixed only the AuditLog detach (its stated scope), leaving this broader gap.
+- **Evidence:** surfaced + partially masked while writing the ISSUE-253 Postgres retry regression — the spurious `already_converted` short-circuit is exactly why an end-to-end double-row could not be produced there. Reproduces only on Postgres under `EnableRetryOnFailure` (InMemory never retries).
+- **Severity rationale:** MED — a real transient DB blip during an applicant→employee conversion currently fails the conversion with a misleading error (and risks a double employee) rather than retrying cleanly; low frequency (transient retries are rare) but wrong when it happens.
+- **Suggested direction (NOT applied):** re-read/re-materialize all mutated entities at the top of each delegate invocation (or detach them all in the catch, like the audit row), so a retry starts from clean DB state. Report only.
+
+### ISSUE-265 — Interview in-app notifications only reach interviewers whose Employee has a linked UserId
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building ISSUE-263, 2026-07-09)
+- **Layer:** BE / provisioning · **Module:** Recruitment · interviews / Core-HR employee provisioning
+- **Title:** ISSUE-263 (PR #227) wired in-app interview notifications, but the in-app leg is gated on a non-null `Employee.UserId` (email-only fallback otherwise). If interviewer Employees are rarely linked to user accounts in this tenant model, in-app delivery for interviewers mostly no-ops and they keep getting email only. The real gap is then employee↔user provisioning, not the notification seam.
+- **Severity rationale:** LOW — no breakage; ISSUE-263 is correct and fail-safe. This caps the *observable value* of in-app-for-interviewers until interviewer Employees are user-linked.
+- **Suggested direction (NOT applied):** confirm interviewers (who log in to submit scorecards) reliably get `Employee.UserId` set; if not, address it in the employee/user provisioning flow. Report only.
