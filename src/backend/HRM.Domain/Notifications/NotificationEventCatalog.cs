@@ -52,6 +52,14 @@ public static class NotificationEventCatalog
         "tenant.name", "event.type", "reason",
     ];
 
+    // ── Shared placeholders for the tenant-welcome events (US-NTF-006 Phase 2b, US-ADM-001). MUST be declared
+    // before _byKey: the eager BuildCatalog() at type-init references it, so a later declaration would leave it
+    // null → NRE in the type initializer (Phase 2a lesson). ──
+    private static readonly string[] WelcomePlaceholders =
+    [
+        "owner.name", "tenant.name", "subdomain", "forgotPassword.url",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -337,7 +345,145 @@ public static class NotificationEventCatalog
                 "Regards,\n{{tenant.companyName}}",
             Category: NotificationCategory.SystemAnnouncements,
             IsMandatory: true);
+
+        // ── US-NTF-006 Phase 2b — user invitation (US-ADM-005 AC-2). Email-only: the invitee has no User row yet.
+        // Carries a real accept link (the invitation persists a one-time token; the link embeds the RAW token). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "user_invitation",
+            EventName: "User Invitation",
+            Placeholders:
+            [
+                "invitee.email", "tenant.name",
+                "invitation.acceptUrl", "invitation.expiryHours",
+                .. TenantPlaceholders,
+            ],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["invitee"] = new Dictionary<string, object?> { ["email"] = "new.user@example.com" },
+                ["tenant"] = MergeTenant(new Dictionary<string, object?> { ["name"] = "Acme Corporation" }),
+                ["invitation"] = new Dictionary<string, object?>
+                {
+                    ["acceptUrl"] = "https://acme.example.com/accept-invite?token=sample", ["expiryHours"] = 72,
+                },
+            },
+            DefaultSubject: "You've been invited to join {{tenant.name}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>You have been invited to join <strong>{{tenant.name}}</strong> on HRM. Click the link below to " +
+                "accept the invitation and set up your account. This invitation expires in " +
+                "{{invitation.expiryHours}} hours.</p>" +
+                "<p><a href=\"{{invitation.acceptUrl}}\">Accept your invitation</a></p>" +
+                "<p>If you weren't expecting this, you can safely ignore this email.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "You have been invited to join {{tenant.name}} on HRM. Open the link below to accept the invitation " +
+                "and set up your account. This invitation expires in {{invitation.expiryHours}} hours.\n\n" +
+                "{{invitation.acceptUrl}}\n\n" +
+                "If you weren't expecting this, you can safely ignore this email.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 2b — admin-forced password reset (US-ADM-005 AC-5). INFORMATIONAL only: NO link/token
+        // (per the product decision). The recipient uses the existing self-service Forgot Password flow. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "admin_password_reset",
+            EventName: "Password Reset by Administrator",
+            Placeholders:
+            [
+                "user.email", "tenant.name",
+                .. TenantPlaceholders,
+            ],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["user"] = new Dictionary<string, object?> { ["email"] = "jane.doe@example.com" },
+                ["tenant"] = MergeTenant(new Dictionary<string, object?> { ["name"] = "Acme Corporation" }),
+            },
+            DefaultSubject: "Your {{tenant.name}} password was reset by an administrator",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>An administrator has reset the password on your <strong>{{tenant.name}}</strong> account. For " +
+                "security, no new password has been set for you.</p>" +
+                "<p>To choose a new password, go to your organization's sign-in page and use the " +
+                "<strong>Forgot Password</strong> option.</p>" +
+                "<p>If you believe this was unexpected, contact your administrator.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "An administrator has reset the password on your {{tenant.name}} account. For security, no new " +
+                "password has been set for you.\n\n" +
+                "To choose a new password, go to your organization's sign-in page and use the Forgot Password " +
+                "option.\n\n" +
+                "If you believe this was unexpected, contact your administrator.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SecurityAlerts,
+            IsMandatory: true);
+
+        // ── US-NTF-006 Phase 2b — tenant welcome (US-ADM-001 FR-4). INFORMATIONAL: no set-password token (per the
+        // product decision). A not-yet-existing owner is pointed at the self-service Forgot Password page. Email-only
+        // (the owner may not yet have a signed-in session). Split trial/active so the wording can differ. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "tenant_welcome_trial",
+            EventName: "Tenant Welcome (Trial)",
+            Placeholders: [.. WelcomePlaceholders, .. TenantPlaceholders],
+            SampleData: WelcomeSample(),
+            DefaultSubject: "Welcome to HRM — your {{tenant.name}} trial workspace is ready",
+            DefaultBodyHtml:
+                "<p>Hi {{owner.name}},</p>" +
+                "<p>Your HRM workspace <strong>{{subdomain}}</strong> is ready and your free trial has started. " +
+                "We're excited to have <strong>{{tenant.name}}</strong> on board.</p>" +
+                "<p>To set your password and sign in for the first time, use the Forgot Password option at " +
+                "<a href=\"{{forgotPassword.url}}\">{{forgotPassword.url}}</a>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{owner.name}},\n\n" +
+                "Your HRM workspace {{subdomain}} is ready and your free trial has started. We're excited to have " +
+                "{{tenant.name}} on board.\n\n" +
+                "To set your password and sign in for the first time, use the Forgot Password option at " +
+                "{{forgotPassword.url}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "tenant_welcome_active",
+            EventName: "Tenant Welcome (Active)",
+            Placeholders: [.. WelcomePlaceholders, .. TenantPlaceholders],
+            SampleData: WelcomeSample(),
+            DefaultSubject: "Welcome to HRM — your {{tenant.name}} workspace is ready",
+            DefaultBodyHtml:
+                "<p>Hi {{owner.name}},</p>" +
+                "<p>Your HRM workspace <strong>{{subdomain}}</strong> is ready. We're excited to have " +
+                "<strong>{{tenant.name}}</strong> on board.</p>" +
+                "<p>To set your password and sign in for the first time, use the Forgot Password option at " +
+                "<a href=\"{{forgotPassword.url}}\">{{forgotPassword.url}}</a>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{owner.name}},\n\n" +
+                "Your HRM workspace {{subdomain}} is ready. We're excited to have {{tenant.name}} on board.\n\n" +
+                "To set your password and sign in for the first time, use the Forgot Password option at " +
+                "{{forgotPassword.url}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
     }
+
+    /// <summary>Merges the shared tenant-branding sample values into a tenant sample node (for Phase 2b events).</summary>
+    private static Dictionary<string, object?> MergeTenant(Dictionary<string, object?> tenant)
+    {
+        foreach (var kv in SampleTenant())
+            tenant[kv.Key] = kv.Value;
+        return tenant;
+    }
+
+    // ── Sample-data for the tenant-welcome events (US-NTF-006 Phase 2b). ──
+    private static Dictionary<string, object?> WelcomeSample() => new()
+    {
+        ["owner"] = new Dictionary<string, object?> { ["name"] = "Sam Owner" },
+        ["subdomain"] = "acme",
+        ["forgotPassword"] = new Dictionary<string, object?>
+        {
+            ["url"] = "https://acme.example.com/forgot-password",
+        },
+        ["tenant"] = MergeTenant(new Dictionary<string, object?> { ["name"] = "Acme Corporation" }),
+    };
 
     // ── Sample-data for the tenant-lifecycle events (US-ADM-004). ──
     private static Dictionary<string, object?> LifecycleSample(

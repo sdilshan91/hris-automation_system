@@ -476,7 +476,10 @@ public static class DependencyInjection
         // query filter + TenantInterceptor (no RLS — deferred platform work). The welcome-email send is a
         // log-only seam (mirrors IPayslipEmailSender; real SMTP deferred, TODO US-NTF).
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
-        services.AddScoped<ITenantWelcomeEmailService, LogOnlyTenantWelcomeEmailService>();
+        // US-NTF-006 Phase 2b: real (informational) welcome-email delivery via INotificationDispatcher
+        // (tenant_welcome_trial / tenant_welcome_active, SystemAnnouncements). No set-password token — a new owner
+        // uses self-service Forgot Password. Never throws — a delivery failure cannot block provisioning.
+        services.AddScoped<ITenantWelcomeEmailService, RealTenantWelcomeEmailService>();
 
         // US-ADM-009: System Admin subscription-plan management. Runs in the system/admin context — plans and
         // per-tenant limit overrides are platform tables (no tenant query filter). The code is unique + immutable
@@ -496,7 +499,10 @@ public static class DependencyInjection
         // cross-tenant write (global password → revoke tokens across all tenants by UserId). The invitation/
         // password-reset emails use a log-only seam (mirrors the welcome-email seam; real SMTP deferred, US-NTF).
         services.AddScoped<IUserManagementService, UserManagementService>();
-        services.AddScoped<IUserManagementNotificationService, LogOnlyUserManagementNotificationService>();
+        // US-NTF-006 Phase 2b: real invitation (user_invitation, with a real accept link + raw token) and
+        // admin-forced-reset (admin_password_reset, INFORMATIONAL — no link/token) email delivery via
+        // INotificationDispatcher. Never throws — a delivery failure cannot block invite / force-reset flows.
+        services.AddScoped<IUserManagementNotificationService, RealUserManagementNotificationService>();
 
         // US-ADM-006: Tenant-Admin company settings (org profile, branding, localization, password/session
         // policy). Operates only on the CURRENT tenant via ITenantContext (AC-5). Reuses the existing
