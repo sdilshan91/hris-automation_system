@@ -39,6 +39,10 @@ public sealed class AuthService : IAuthService
     // construction that omits it still compiles; falls back to a no-op protector (plaintext passthrough),
     // preserving pre-encryption behavior. DI injects the registered singleton in production.
     private readonly IFieldProtector _mfaSecretProtector;
+    // US-NTF-006 Phase 2b: dispatches the real self-service password-reset email. Optional (nullable, default
+    // null) so isolated unit construction that omits it still compiles; DI injects the registered dispatcher in
+    // production. A null dispatcher (or any delivery failure) never fails the reset request.
+    private readonly INotificationDispatcher? _notificationDispatcher;
 
     public AuthService(
         AppDbContext dbContext,
@@ -50,7 +54,8 @@ public sealed class AuthService : IAuthService
         ILogger<AuthService> logger,
         IBackgroundJobClient backgroundJobClient,
         ICurrentUser? currentUser = null,
-        IFieldProtector? mfaSecretProtector = null)
+        IFieldProtector? mfaSecretProtector = null,
+        INotificationDispatcher? notificationDispatcher = null)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
@@ -62,6 +67,7 @@ public sealed class AuthService : IAuthService
         _backgroundJobClient = backgroundJobClient;
         _currentUser = currentUser;
         _mfaSecretProtector = mfaSecretProtector ?? PlaintextFieldProtector.Instance;
+        _notificationDispatcher = notificationDispatcher;
     }
 
     public async Task<Result<LoginResponse>> LoginAsync(
@@ -544,12 +550,14 @@ public sealed class AuthService : IAuthService
                 user.PasswordResetTokenExpiresAt = DateTime.UtcNow.Add(ResetTokenLifetime);
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
-                // Real email dispatch (Hangfire) is deferred like the rest of the platform's outbound
-                // email. The raw token is NOT logged (it is a credential); the delivery seam replaces
-                // this log line when the email platform lands.
+                // US-NTF-006 Phase 2b: dispatch the real password-reset email (SecurityAlerts, mandatory). The raw
+                // token is delivered out-of-band via the reset link only — never logged (it is a credential) and
+                // never returned in the API response (no-enumeration). A delivery failure must NOT fail the reset
+                // request, so the dispatch is wrapped (the dispatcher itself is also never-throw).
+                await DispatchPasswordResetEmailAsync(user, rawToken, cancellationToken);
+
                 _logger.LogInformation(
-                    "Password reset token issued for user {UserId} in tenant {TenantId}, expires {Expiry:o}. " +
-                    "Email dispatch deferred (log-only seam).",
+                    "Password reset token issued for user {UserId} in tenant {TenantId}, expires {Expiry:o}.",
                     user.Id, _tenantContext.TenantId, user.PasswordResetTokenExpiresAt);
             }
         }
@@ -581,6 +589,59 @@ public sealed class AuthService : IAuthService
         var hash = System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(rawToken));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// US-NTF-006 Phase 2b: dispatches the self-service password-reset email via <see cref="INotificationDispatcher"/>
+    /// (catalog event <c>password_reset</c>, SecurityAlerts/mandatory). The reset link embeds the RAW token and is the
+    /// only place it is surfaced; the token is never logged and never returned in the API response (no-enumeration).
+    /// Wrapped so a delivery failure never fails the reset request; skips gracefully when no dispatcher is injected.
+    /// </summary>
+    private async Task DispatchPasswordResetEmailAsync(User user, string rawToken, CancellationToken cancellationToken)
+    {
+        if (_notificationDispatcher is null)
+            return;
+
+        try
+        {
+            var baseDomain = (_configuration["Platform:BaseDomain"] ?? "yourhrm.com").Trim().TrimStart('.');
+            var subdomain = _tenantContext.Subdomain;
+            var resetUrl = $"https://{subdomain}.{baseDomain}/reset-password?token={rawToken}";
+            var expiryHours = (int)Math.Ceiling(ResetTokenLifetime.TotalHours);
+
+            var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["user"] = new Dictionary<string, object?>
+                {
+                    // The password_reset template greets with {{user.firstName}}; the global User has only a
+                    // DisplayName, so use it as the friendly name (empty → BR-5 renders as blank).
+                    ["firstName"] = user.DisplayName,
+                    ["email"] = user.Email,
+                },
+                ["reset"] = new Dictionary<string, object?>
+                {
+                    ["url"] = resetUrl,
+                    ["expiryHours"] = expiryHours,
+                },
+            });
+
+            var request = new NotificationRequest(
+                TenantId: _tenantContext.TenantId,
+                EventKey: "password_reset",
+                PayloadJson: payloadJson,
+                RecipientUserId: user.Id,
+                NotificationType: "password.reset.requested");
+
+            await _notificationDispatcher.SendEmailAsync(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Never fail the reset request on a delivery error — the token is already persisted and the response
+            // stays an unconditional success (no-enumeration). The token is NOT included in the log.
+            _logger.LogError(ex,
+                "Password reset email dispatch failed for user {UserId} in tenant {TenantId}; reset still succeeded.",
+                user.Id, _tenantContext.TenantId);
+        }
     }
 
     public async Task<Result> ResetPasswordAsync(
