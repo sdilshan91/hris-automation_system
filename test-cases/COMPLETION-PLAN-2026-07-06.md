@@ -19,11 +19,13 @@
 
 ---
 
-## ▶ RESUME POINT — new session starts HERE (updated 2026-07-08, BUG-244 COMPLETE)
-- **Base:** `test/local-subdomains` @ **HEAD `d1c59a4c`** (through PR **#210** + absorbed GlitchTip/tooling merges). Working tree clean.
-- **Base health:** ✅ **CONFIRMED GREEN (2026-07-08)** — backend `dotnet test HRM.sln` = **3073/3073, 0 failed** (Docker up); FE `ng test` (headless) = **3647/3647, 0 failed**. Full union re-verified.
-- **✅ BUG-244 COMPLETE — all 8 Performance FE↔BE endpoints shipped + merged:** #8 `cycles/active` gate-relax (**#204**) · #4 `deleteAttachment` + #6 `cycles/completed` (**#206**) · Feedback360 #1 `saveReviewers`/#2 `getFeedbackForm`/#3 `tracker` + config-load + submit-by-assignment, with tenant-configurable team-scoped **manager** reviewer-config authz (security-audited SHIP) (**#209**) · #7 pip `draft` + #5 rating-scales removed→numeric (**#210**). Ledger BUG-244 flipped RESOLVED. **New follow-up filed: BUG-257** (cycle create/update payload field drift — needs live repro) + ISSUE-256 (LOW).
-- **▶ NEXT — everything remaining is at the DECISION-GATE (see the section just below).**
+## ▶ RESUME POINT — new session starts HERE (updated 2026-07-09; US-NTF-006 + cycle-drift lineage COMPLETE)
+- **Base:** `test/local-subdomains` @ **HEAD `4698c87e`** (through PR **#221**). Working tree clean.
+- **Base health:** ✅ **GREEN (2026-07-09)** — backend `dotnet test HRM.sln` = **3276/3276**; FE `ng test` = **3653/3653**; 0 failed (Docker up).
+- **✅ US-NTF-006 Notifications delivery COMPLETE** (7 PRs **#214–220**, all merged): #214 infra (SMTP `SmtpEmailSender` + `RealNotificationDispatcher` + `SendEmailJob` retry + `NotificationDelivery`) · #215 contract widening (`NotificationRequest`, catalog category/mandatory) + impersonation/tenant-lifecycle · #216 password-reset/invitation/welcome/admin-reset · #217 leave + onboarding · #218 payroll + payslip-PDF (inline `EmailMessage.Attachments`) + data-export · #219 recruitment (+ offer-PDF) · #220 performance. All ~12 `LogOnly*` seams now real; feature-flagged behind `Smtp:Host`, preference-gated, retry-backed. **SMTP live-verified** (Gmail send-to-self). ~70 catalog events. See memory `ntf006-notifications-delivery-campaign`.
+- **✅ Cycle FE↔BE drift lineage COMPLETE:** BUG-257 create/update payload (#212) · BUG-258 dashboard read-model (#213) · BUG-259 edit-crash (#213) · BUG-260 scope-id persistence + edit-prefill (#221). All RESOLVED in the ledger.
+- **✅ BUG-244 COMPLETE** — all 8 Performance FE↔BE endpoints (#204/#206/#209/#210).
+- **▶ NEXT — the remaining queue (see the DECISION-GATE section below).** Newly filed follow-ups: **BUG-261** (cycle scope not editable on update — decision), **ISSUE-262** (offer-expiry-reminder dormant), **ISSUE-263** (interviewer email-only).
 - **Working method (unchanged):** one `fix/{cluster}` branch per item off fresh `test/local-subdomains` → parallel `@backend-dev` + `@qa-engineer` (non-overlapping paths) → gate on the **FULL** suite → commit → PR → user merges → next. **Auto-heal is ACTIVE** (rule #6 / `/auto-heal`): file every `OUT-OF-LANE:` flag to `TEST-FINDINGS.md`, fold into this plan, re-prioritize. Avoid stacking branches that touch the same files/migrations as an open PR.
 - **✅ COMPLETED this loop (merged #198–201):**
   1. ✅ **Phase 1c — JWT signing-key rotation/overlap** → **PR #198** (config-driven key-ring, back-compat; 3016/3016).
@@ -31,10 +33,10 @@
   3. ✅ **Phase 5 — Testcontainers tx coverage + BUG-252 fix** → **PR #200** (3014/3014). Covered `TenantDataDeletionService` + `ApplicantConversionService` tx paths on real Postgres. **`TenantTransactionBehavior:57` deferred to Phase 4** (RLS-gated). **Training & Benefits = UNBUILT** (stories + permission constants only; no code) → greenfield feature-build, moved to the decision-gate.
   4. ✅ **Phase 6 — Theme-L dead-code** (`EmployeeFieldAuditLog` query filter added; `IPipCheckpointScheduler` + `GeneratePortalLinkCommand` removed; 2 Hangfire jobs `AddScoped`) → **PR #201** (3015/3015). **LOW-cosmetic tail (~70) intentionally NOT swept** (mostly fixed-not-closed) — targeted follow-up only.
 - **▶ DECISION-GATE — the remaining work (needs the user's call on scope/AC/infra):**
-  - ✅ **BUG-252 close-out** — RESOLVED (PR #203). ✅ **BUG-244** — RESOLVED (#204/#206/#209/#210).
-  - **Phase 3 features (each needs AC):** **Notifications delivery** US-NTF-006 (biggest blast radius, ~25 stories; SMTP+SignalR — note a `feature/smtp-email-sender` branch already exists); **workflow runtime** US-ADM-011; **Training & Benefits** greenfield build (US-TRN-*).
-  - **Phase 4 infra (needs provisioning):** **Redis**, **RLS enablement** (+ `TenantTransactionBehavior` test), **OTel** (note GlitchTip ops now in-tree), **ISSUE-247** DataProtection key persistence.
-  - **Contract-drift follow-up:** **BUG-257** (appraisal-cycle create/update FE↔BE payload drift — needs live repro; MED-HIGH if confirmed).
+  - ✅ **BUG-252** RESOLVED (#203). ✅ **BUG-244** RESOLVED (#204/#206/#209/#210). ✅ **US-NTF-006 Notifications** COMPLETE (#214–220). ✅ **Cycle-drift lineage** BUG-257/258/259/260 RESOLVED (#212/#213/#221).
+  - **Phase 3 features (each needs AC):** ~~Notifications delivery US-NTF-006~~ **DONE**; **workflow runtime** US-ADM-011; **Training & Benefits** greenfield build (US-TRN-*).
+  - **Phase 4 infra (needs provisioning):** **Redis**, **RLS enablement** (+ `TenantTransactionBehavior` test — ⚠ behavior change, confirm before flipping on), **OTel** (GlitchTip ops in-tree; Sentry MCP config stashed locally), **ISSUE-247** DataProtection key persistence.
+  - **Dependency/LOW hygiene:** **ISSUE-249** (AutoMapper 13.0.1 NU1903 → bump), **ISSUE-256** (360 comment length→422 + XSS-encode), **BUG-261** (cycle scope-on-update — decision), **ISSUE-262/263** (offer-reminder dormant / interviewer email-only), ISSUE-253/254/255, ISSUE-250/251, the ~70 LOW-cosmetic tail.
   - **Deferred LOW:** ISSUE-253 (`ApplicantConversionService` audit detach-on-retry), ISSUE-254 (#6 `ratingsPublishedOn` EndDate proxy), ISSUE-255 (test harness has no permissionless persona), ISSUE-256 (360 comment length→422 + XSS-encode), the ~70 LOW-cosmetic Phase-6 tail, ISSUE-249 (AutoMapper NU1903 bump), ISSUE-250/251.
 
 ## 🔄 LOOP EXECUTION PROGRESS — MERGED (2026-07-07/08)

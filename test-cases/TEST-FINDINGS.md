@@ -5797,8 +5797,38 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** validate comment length in the submit handler/validator → 422 with a clear message. Report only.
 
 ### BUG-257 — Appraisal-cycle create/update payload has broad FE↔BE field-name drift (likely silently drops fields)
-- **Type / Severity / Status:** BUG · MED (needs live repro; MED-HIGH if confirmed) · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building BUG-244 #5, 2026-07-08)
+- **Type / Severity / Status:** BUG · HIGH (confirmed: **create hard-failed 400**) · **RESOLVED (PR #212, merged 2026-07-08)** — 5 FE renames (selfWeightPercent/is360Enabled/isCalibrationEnabled/phases[].phaseType/scope.scopeType), Grades scope disabled, BE JSON-wire regression tests (corrected→201 round-trips, old-shape→400).
 - **Layer:** FE↔BE contract
 - **Module / US / TC:** Performance · appraisal-cycle create/edit (`cycle-form`)
 - **Title:** Beyond the rating-scale field (fixed in #210), the Angular cycle create/update payload drifts from the backend `CreateCycleInput`/`UpdateCycleInput`: FE sends `selfWeight` / `enable360` / `enableCalibration` / `scope.type` / `scope.gradeIds` / `phases[].kind`; the backend expects `SelfWeightPercent` / `Is360Enabled` / `IsCalibrationEnabled` / `IsAnonymousFeedback` / `Scope.ScopeType` / `DepartmentIds` / `EmployeeIds` / `Phases[].PhaseType`. There is no `gradeIds` or `IsAnonymousFeedback` counterpart on the respective sides. The FE model header still reads "ASSUMED backend contract." Since these are genuinely different names (not just casing, which STJ tolerates), cycle create/edit likely **silently drops** weight/360/calibration/scope/phase fields → wrong cycle config. Same class as the Theme-G shape bugs (#186) / [[fe-be-shape-drift-null-guard-class]].
 - **Suggested direction (NOT applied):** diff every `ISaveCycleRequest`/`IParticipantScope`/`ICyclePhase` field vs `CycleDtos.cs`, align names + enum casing, then **live-repro** a create/edit round-trip to confirm which fields drop before/after. A dedicated FE-contract reconciliation (not touched in #210, which owned only the rating-scale field). Report only.
+
+### BUG-258 — Appraisal-cycle DASHBOARD read-model FE↔BE drift (blank phase labels + zeroed totals)
+- **Type / Severity / Status:** BUG · HIGH · **RESOLVED (PR #213, merged 2026-07-08)** — surfaced building BUG-257.
+- **Layer:** FE↔BE contract · **Module:** Performance · cycle dashboard
+- **Title:** FE `IPhaseStat.kind`/`totalCount` + `ICycleDashboard.cycleName` drifted from `PhaseCompletionDto.PhaseType`/`TotalParticipants` + `CycleDashboardDto.Name` → dashboard rendered blank labels + zeroed totals. Pure FE rename. Fixed FE-only.
+
+### BUG-259 — Editing an appraisal cycle CRASHED (nested-vs-flat scope shape)
+- **Type / Severity / Status:** BUG · HIGH · **RESOLVED (PR #213, merged 2026-07-08)** — surfaced building BUG-257.
+- **Layer:** FE↔BE contract · **Module:** Performance · cycle edit
+- **Title:** `GET cycles/{id}` returned a flat `participantScope` enum but FE `ICycle.scope` was typed nested → `patchFromCycle` dereferenced `undefined` → threw. Reshaped the FE read model to the flat enum + guarded (scope-type prefilled; ids empty interim). Full id-prefill followed in BUG-260.
+
+### BUG-260 — Cycle edit-form couldn't prefill participant scope ids (not persisted / not exposed)
+- **Type / Severity / Status:** BUG · MED · **RESOLVED (PR #221, merged 2026-07-09)** — the BUG-259 interim left ids empty.
+- **Layer:** FE↔BE + schema · **Module:** Performance · cycle edit
+- **Title:** Selected department ids were discarded at create (only resolved `CycleParticipant` employee rows persisted) and `CycleDto` exposed no scope ids. Added `AppraisalCycle.ScopeDepartmentIds` (jsonb, migration) + a nested `CycleDto.Scope{ScopeType,DepartmentIds,EmployeeIds}`; FE prefills all three (null-safe). Pre-existing Departments cycles can't backfill department ids (expected).
+
+### BUG-261 — Appraisal-cycle scope is silently NOT editable on update (UpdateCycleInput has no Scope)
+- **Type / Severity / Status:** BUG · MED · OPEN — deferred (needs decision) (surfaced building BUG-260, 2026-07-09)
+- **Layer:** FE↔BE contract · **Module:** Performance · cycle edit
+- **Title:** `UpdateCycleInput` carries **no** `Scope`, so `AppraisalCycleService.UpdateAsync` never re-resolves participants — a user can PREFILL the scope on edit but changing it is **silently ignored** (the FE's `scope` in the update payload is dropped, BUG-257-class drift on the *update* path). Pre-existing (update always ignored scope); prefill works. **Suggested (NOT applied):** add `UpdateCycleInput.Scope` + re-resolution (+ BR checks) and match the FE, OR make the scope control read-only on edit to avoid the UX trap. Report only.
+
+### ISSUE-262 — `offer_expiry_reminder` notification event cataloged + mapped but no caller emits it (REC-007 FR-8 unwired)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (surfaced building US-NTF-006 Phase 5a, 2026-07-09)
+- **Layer:** BE · **Module:** Recruitment · offer expiry
+- **Title:** The `offer_expiry_reminder` event/template + eventType mapping exist, but no scheduler emits `offer-expiry-reminder` (only offer-sent/withdrawn/expired fire; the offer scheduler only schedules the *expiry* job, not a pre-expiry reminder). US-REC-007 FR-8 pre-expiry reminder is unwired; the notification key sits dormant, ready. **Suggested:** schedule a pre-expiry reminder job that emits the eventType. Report only.
+
+### ISSUE-263 — Interview notifications reach interviewers by EMAIL only (no in-app)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (deferred, surfaced building US-NTF-006 Phase 5a, 2026-07-09)
+- **Layer:** BE · **Module:** Recruitment · interviews
+- **Title:** `NotifyInterviewAsync`/`NotifyInterviewReminderAsync` receive interviewers as **raw emails**, so the real seam can only send them email (not in-app) — the dispatcher needs a `UserId` for the in-app leg. **Suggested:** widen the interface to pass interviewer employee/user ids (ripples into `InterviewService` + `InterviewReminderJob` + tests). Report only.
