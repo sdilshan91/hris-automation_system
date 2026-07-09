@@ -135,6 +135,14 @@ public sealed class AppraisalCycle : BaseEntity
     /// <summary>Cancellation reason (US-PRF-004 BR-6). Required when Status is Cancelled.</summary>
     public string? CancellationReason { get; set; }
 
+    /// <summary>
+    /// ISSUE-254: the real "final ratings published" timestamp. Stamped (once) when the cycle transitions to
+    /// <see cref="AppraisalCycleStatus.Completed"/>. Null while the cycle has not been completed, and for cycles
+    /// completed before this column existed (cannot be backfilled — the recommendation picker falls back to the
+    /// end date for those). Replaces the previous EndDate proxy in the completed-cycle picker.
+    /// </summary>
+    public DateTime? RatingsPublishedOn { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────────
     public List<CyclePhase> Phases { get; set; } = [];
     public List<CycleParticipant> Participants { get; set; } = [];

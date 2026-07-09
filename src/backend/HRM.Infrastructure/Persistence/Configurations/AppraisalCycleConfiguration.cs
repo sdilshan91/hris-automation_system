@@ -81,6 +81,10 @@ public sealed class AppraisalCycleConfiguration : IEntityTypeConfiguration<Appra
 
         builder.Property(c => c.CancellationReason).HasMaxLength(1000);
 
+        // ISSUE-254: the real "final ratings published" timestamp, stamped on transition to Completed. Nullable
+        // (null for not-yet-completed cycles and for cycles completed before this column existed).
+        builder.Property(c => c.RatingsPublishedOn);
+
         builder.Property(c => c.IsDeleted).HasDefaultValue(false).IsRequired();
 
         builder.HasMany(c => c.Phases)

@@ -7,6 +7,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink, ActivatedRoute, Router } from '@angular/router';
 import {
   FormArray,
@@ -23,6 +24,7 @@ import {
   CYCLE_NAME_MAX,
   CYCLE_TYPE_OPTIONS,
   CyclePhaseKind,
+  CycleStatus,
   ICycle,
   IPhaseDates,
   ISaveCycleRequest,
@@ -299,6 +301,14 @@ import {
                 }
               </select>
             </label>
+            @if (scopeLocked()) {
+              <p
+                class="mt-1 text-xs text-neutral-400"
+                data-testid="scope-lock-hint"
+              >
+                Scope is locked once the cycle starts.
+              </p>
+            }
             @if (selectedScopeHint(); as hint) {
               <p class="mt-1 text-xs text-neutral-400" data-testid="scope-hint">
                 {{ hint }}
@@ -369,8 +379,18 @@ export class CycleFormComponent implements OnInit {
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly cycleId = signal<string | null>(null);
+  /** The loaded cycle's status; defaults to Draft (create mode is always editable). */
+  readonly status = signal<CycleStatus>('Draft');
 
   readonly isEdit = computed(() => this.cycleId() !== null);
+
+  /**
+   * BUG-261: the participant scope can only be re-resolved while the cycle is Draft
+   * (the backend rejects a scope change on a non-Draft cycle with 409 scope_locked).
+   * Mirrors the BR-5 rating-scale lock: once the cycle leaves Draft the scope selector
+   * is disabled so the user can't attempt a change the server would refuse.
+   */
+  readonly scopeLocked = computed(() => this.status() !== 'Draft');
 
   readonly form: FormGroup = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(CYCLE_NAME_MAX)]],
@@ -407,9 +427,16 @@ export class CycleFormComponent implements OnInit {
     { initialValue: this.form.value },
   );
 
-  readonly scopeType = computed(
-    () => this.formValue().scopeType as ParticipantScopeType,
-  );
+  readonly scopeType = computed(() => {
+    // A disabled control is omitted from `form.value` (and so from `formValue()`),
+    // so when the scope is locked we fall back to the raw control value — which
+    // `AbstractControl.value` still exposes for disabled controls. Keeps the scope
+    // id row + hints rendering correctly for a locked (non-Draft) cycle.
+    const live = this.formValue().scopeType as ParticipantScopeType | undefined;
+    return (
+      live ?? (this.form.get('scopeType')?.value as ParticipantScopeType)
+    );
+  });
 
   readonly isCalibrationEnabled = computed(
     () => !!this.formValue().isCalibrationEnabled,
@@ -533,11 +560,27 @@ export class CycleFormComponent implements OnInit {
         );
         this.router.navigate(['/performance/cycles', cycle.id]);
       },
-      error: () => {
+      error: (err: unknown) => {
         this.saving.set(false);
+        // BUG-261 safety net: a scope change on a non-Draft cycle is rejected with
+        // 409 scope_locked. The Draft-only disable above normally prevents this, but
+        // surface a clear message rather than the generic one if it still happens.
+        if (this.isScopeLockedError(err)) {
+          this.toastr.error("Scope can't be changed after the cycle starts.");
+          return;
+        }
         this.toastr.error('Unable to save the cycle. Please try again.');
       },
     });
+  }
+
+  /** True for a 409 response carrying the backend `scope_locked` error code (BUG-261). */
+  private isScopeLockedError(err: unknown): boolean {
+    return (
+      err instanceof HttpErrorResponse &&
+      err.status === 409 &&
+      (err.error as { code?: string } | null)?.code === 'scope_locked'
+    );
   }
 
   private patchFromCycle(cycle: ICycle): void {
@@ -575,9 +618,14 @@ export class CycleFormComponent implements OnInit {
         });
       }
     }
-    // BR-5: the rating scale locks once the cycle leaves Draft.
+    this.status.set(cycle.status);
+    // BR-5 / BUG-261: the rating scale AND the participant scope lock once the cycle
+    // leaves Draft — the backend re-resolves participants only while Draft and returns
+    // 409 scope_locked otherwise, so we disable both editors to match.
     if (cycle.status !== 'Draft') {
       this.form.get('ratingScaleMax')?.disable();
+      this.form.get('scopeType')?.disable();
+      this.form.get('scopeIds')?.disable();
     }
   }
 

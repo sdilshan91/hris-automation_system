@@ -709,6 +709,228 @@ public sealed class AppraisalCycleServiceTests
         read.Value!.Scope.EmployeeIds.Should().BeEmpty();   // no participants resolved
     }
 
+    // ── BUG-261: participant scope is editable on update (Draft-only) ────────────
+    // The department/custom-list selection can be changed on an edit, but ONLY while the cycle is Draft. In
+    // Draft there is no review activity (keyed by CycleId+EmployeeId) to orphan, so the participant set is
+    // safely re-resolved and replaced. Once the cycle leaves Draft the scope is locked (409 scope_locked).
+
+    [Fact]
+    public async Task Update_DraftScope_DepartmentsToCustomList_ReResolvesParticipants_AndClearsDepartmentIds()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Create a Draft cycle scoped to the Eng department ⇒ participants = {_empB}, ScopeDepartmentIds = {Eng}.
+        var created = await CreateService().CreateAsync(CreateInput(
+            start, start.AddDays(40), DefaultPhases(start),
+            new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptEng })));
+        created.IsSuccess.Should().BeTrue(created.Error);
+        created.Value!.ParticipantCount.Should().Be(1);
+
+        // Edit the scope to a custom list of {_empA} ⇒ participants re-resolved to {_empA}; department selection cleared.
+        var update = new UpdateCycleInput("FY2026 Annual", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null,
+            Scope: new ParticipantScopeInput(ParticipantScopeType.CustomList, EmployeeIds: new[] { _empA }));
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, update);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var dto = result.Value!;
+        dto.Scope.ScopeType.Should().Be(ParticipantScopeType.CustomList);
+        dto.Scope.DepartmentIds.Should().BeEmpty();                       // CustomList ⇒ no department selection
+        dto.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empA });   // re-resolved participant set
+        dto.ParticipantCount.Should().Be(1);
+
+        // Persistence check: exactly one CycleParticipant row (the OLD _empB row was replaced by _empA).
+        using var db = CreateDbContext();
+        var participants = await db.CycleParticipants.AsNoTracking()
+            .Where(p => p.CycleId == created.Value!.Id).Select(p => p.EmployeeId).ToListAsync();
+        participants.Should().BeEquivalentTo(new[] { _empA });
+        var cycle = await db.AppraisalCycles.AsNoTracking().FirstAsync(c => c.Id == created.Value!.Id);
+        cycle.ParticipantScope.Should().Be(ParticipantScopeType.CustomList);
+        cycle.ScopeDepartmentIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Update_DraftScope_ToNewDepartments_PersistsNewDepartmentIds_AndParticipants()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        var created = await CreateService().CreateAsync(CreateInput(
+            start, start.AddDays(40), DefaultPhases(start),
+            new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr })));
+        created.IsSuccess.Should().BeTrue(created.Error);
+        created.Value!.ParticipantCount.Should().Be(1); // only _empA is in HR
+
+        // Re-scope to BOTH departments ⇒ participants become {_empA, _empB}, ScopeDepartmentIds = {HR, Eng}.
+        var update = new UpdateCycleInput("FY2026 Annual", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null,
+            Scope: new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr, _deptEng }));
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, update);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Scope.DepartmentIds.Should().BeEquivalentTo(new[] { _deptHr, _deptEng });
+        result.Value!.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empA, _empB });
+
+        using var db = CreateDbContext();
+        var cycle = await db.AppraisalCycles.AsNoTracking().FirstAsync(c => c.Id == created.Value!.Id);
+        cycle.ScopeDepartmentIds.Should().BeEquivalentTo(new[] { _deptHr, _deptEng });
+    }
+
+    [Fact]
+    public async Task Update_Scope_OnNonDraftCycle_IsRejected_ScopeLocked()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Draft scoped to Eng, then activated (leaves Draft).
+        var created = await CreateService().CreateAsync(CreateInput(
+            start, start.AddDays(40), DefaultPhases(start),
+            new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptEng })));
+        created.IsSuccess.Should().BeTrue(created.Error);
+        (await CreateService().TransitionStatusAsync(created.Value!.Id, AppraisalCycleStatus.Active, null))
+            .IsSuccess.Should().BeTrue();
+
+        // Attempt to change the scope on the now-Active cycle ⇒ rejected.
+        var update = new UpdateCycleInput("FY2026 Annual", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null,
+            Scope: new ParticipantScopeInput(ParticipantScopeType.AllEmployees));
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, update);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("scope_locked");
+
+        // The participant set must be untouched (still just _empB from the Eng scope).
+        using var db = CreateDbContext();
+        var participants = await db.CycleParticipants.AsNoTracking()
+            .Where(p => p.CycleId == created.Value!.Id).Select(p => p.EmployeeId).ToListAsync();
+        participants.Should().BeEquivalentTo(new[] { _empB });
+    }
+
+    [Fact]
+    public async Task Update_Scope_UnchangedOnActiveCycle_IsNoOp_NoScopeLock_NoSelfConflict()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Draft scoped CustomList {_empA}, then activated.
+        var scope = new ParticipantScopeInput(ParticipantScopeType.CustomList, EmployeeIds: new[] { _empA });
+        var created = await CreateService().CreateAsync(CreateInput(start, start.AddDays(40), DefaultPhases(start), scope));
+        created.IsSuccess.Should().BeTrue(created.Error);
+        (await CreateService().TransitionStatusAsync(created.Value!.Id, AppraisalCycleStatus.Active, null))
+            .IsSuccess.Should().BeTrue();
+
+        // Re-send the SAME scope (unchanged) while Active ⇒ no scope handling runs, so neither scope_locked nor a
+        // BR-4 self-conflict (the cycle's own _empA is in an active same-type cycle: itself) fires. Only the name changes.
+        var update = new UpdateCycleInput("Renamed", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null,
+            Scope: new ParticipantScopeInput(ParticipantScopeType.CustomList, EmployeeIds: new[] { _empA }));
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, update);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Name.Should().Be("Renamed");
+    }
+
+    [Fact]
+    public async Task Update_DraftScope_SameEmployeesDifferentScopeType_DoesNotSelfConflict_BR4()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        // Draft scoped CustomList {_empA, _empB}.
+        var created = await CreateService().CreateAsync(CreateInput(
+            start, start.AddDays(40), DefaultPhases(start),
+            new ParticipantScopeInput(ParticipantScopeType.CustomList, EmployeeIds: new[] { _empA, _empB })));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        // Re-scope to Departments {HR, Eng} which resolves to the SAME employees {_empA, _empB}. Because the BR-4
+        // check excludes the current cycle, re-resolving to its own members must NOT trip a self-conflict.
+        var update = new UpdateCycleInput("FY2026 Annual", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null,
+            Scope: new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr, _deptEng }));
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, update);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empA, _empB });
+    }
+
+    [Fact]
+    public async Task Update_NoScopeSupplied_LeavesParticipantsUntouched()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        var created = await CreateService().CreateAsync(CreateInput(
+            start, start.AddDays(40), DefaultPhases(start),
+            new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptEng })));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        // A plain edit that omits Scope (null) must not churn the participant set.
+        var update = new UpdateCycleInput("Renamed", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null); // Scope defaults to null
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, update);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empB }); // unchanged
+        result.Value!.Scope.DepartmentIds.Should().BeEquivalentTo(new[] { _deptEng }); // unchanged
+    }
+
+    // ── ISSUE-254: RatingsPublishedOn stamped on transition to Completed ─────────
+
+    [Fact]
+    public async Task Transition_ToCompleted_StampsRatingsPublishedOn()
+    {
+        SeedEmployees();
+        var cycleId = await CreateDraftAsync();
+        var before = DateTime.UtcNow;
+        (await CreateService().TransitionStatusAsync(cycleId, AppraisalCycleStatus.Active, null)).IsSuccess.Should().BeTrue();
+
+        var completed = await CreateService().TransitionStatusAsync(cycleId, AppraisalCycleStatus.Completed, null);
+
+        completed.IsSuccess.Should().BeTrue(completed.Error);
+        var after = DateTime.UtcNow;
+
+        using var db = CreateDbContext();
+        var cycle = await db.AppraisalCycles.AsNoTracking().FirstAsync(c => c.Id == cycleId);
+        cycle.RatingsPublishedOn.Should().NotBeNull();
+        cycle.RatingsPublishedOn!.Value.Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
+    }
+
+    [Fact]
+    public async Task Transition_ToActive_DoesNotStampRatingsPublishedOn()
+    {
+        SeedEmployees();
+        var cycleId = await CreateDraftAsync();
+
+        (await CreateService().TransitionStatusAsync(cycleId, AppraisalCycleStatus.Active, null)).IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var cycle = await db.AppraisalCycles.AsNoTracking().FirstAsync(c => c.Id == cycleId);
+        cycle.RatingsPublishedOn.Should().BeNull(); // only set on Completed
+    }
+
+    [Fact]
+    public async Task List_Completed_SurfacesRatingsPublishedOn()
+    {
+        SeedEmployees();
+        var cycleId = await CreateDraftAsync();
+        (await CreateService().TransitionStatusAsync(cycleId, AppraisalCycleStatus.Active, null)).IsSuccess.Should().BeTrue();
+        (await CreateService().TransitionStatusAsync(cycleId, AppraisalCycleStatus.Completed, null)).IsSuccess.Should().BeTrue();
+
+        var list = await CreateService().ListAsync(AppraisalCycleStatus.Completed);
+
+        list.IsSuccess.Should().BeTrue(list.Error);
+        var summary = list.Value!.Single(c => c.Id == cycleId);
+        summary.RatingsPublishedOn.Should().NotBeNull();
+    }
+
     // ── helper: create a Draft cycle scoped to all employees and return its id ──
     private async Task<Guid> CreateDraftAsync(CycleType type = CycleType.Annual)
     {

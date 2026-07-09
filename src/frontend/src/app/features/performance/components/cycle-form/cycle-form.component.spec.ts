@@ -1,8 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, ActivatedRoute, Router } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { CycleFormComponent } from './cycle-form.component';
 import { CycleService } from '../../services/cycle.service';
@@ -323,6 +324,107 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     expect('managerWeightPercent' in req).toBeFalse();
     // gradeIds is gone from the payload (Grades scope disabled).
     expect('gradeIds' in req.scope).toBeFalse();
+  });
+
+  // ── BUG-261: the participant scope is Draft-only editable ──────────────────
+  // The scope selector mirrors the BR-5 rating-scale lock: editable while Draft,
+  // disabled/read-only once the cycle leaves Draft (the backend re-resolves
+  // participants only in Draft and returns 409 scope_locked otherwise).
+
+  it('BUG-261: scope control is enabled and not locked when the cycle is Draft', async () => {
+    await setup('cyc-new', { ...createdCycle, status: 'Draft' });
+
+    expect(component.scopeLocked()).toBeFalse();
+    expect(component.form.get('scopeType')?.enabled).toBeTrue();
+    expect(component.form.get('scopeIds')?.enabled).toBeTrue();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const select = el.querySelector<HTMLSelectElement>(
+      '[data-testid="scope-type"]',
+    );
+    expect(select?.disabled).toBeFalse();
+    expect(
+      el.querySelector('[data-testid="scope-lock-hint"]'),
+    ).toBeNull();
+  });
+
+  it('BUG-261: scope control is disabled/read-only and shows a hint when the cycle is not Draft (Active)', async () => {
+    await setup('cyc-new', { ...createdCycle, status: 'Active' });
+
+    expect(component.scopeLocked()).toBeTrue();
+    expect(component.form.get('scopeType')?.disabled).toBeTrue();
+    expect(component.form.get('scopeIds')?.disabled).toBeTrue();
+    // The rating-scale lock (BR-5) still applies alongside the scope lock.
+    expect(component.form.get('ratingScaleMax')?.disabled).toBeTrue();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const select = el.querySelector<HTMLSelectElement>(
+      '[data-testid="scope-type"]',
+    );
+    expect(select?.disabled).toBeTrue();
+    expect(
+      el.querySelector('[data-testid="scope-lock-hint"]')?.textContent,
+    ).toContain('locked');
+  });
+
+  it('BUG-261: a locked (non-Draft) cycle still re-sends its scope on save (disabled controls are read via getRawValue)', async () => {
+    const activeCustom: ICycle = {
+      ...createdCycle,
+      status: 'Active',
+      scope: {
+        scopeType: 'CustomList',
+        departmentIds: [],
+        employeeIds: ['emp-1', 'emp-2'],
+      },
+    };
+    await setup('cyc-new', activeCustom);
+    // Give the cycle a valid, in-window phase set so it can be saved.
+    const phaseDates: Record<string, [string, string]> = {
+      GoalSetting: ['2026-01-05', '2026-01-20'],
+      SelfAssessment: ['2026-01-25', '2026-02-10'],
+      ManagerReview: ['2026-02-15', '2026-03-01'],
+      Calibration: ['2026-03-05', '2026-03-10'],
+      Publish: ['2026-03-15', '2026-03-20'],
+    };
+    for (const ctrl of component.phases.controls) {
+      const [s, e] = phaseDates[ctrl.value.phaseType];
+      ctrl.patchValue({ startDate: s, endDate: e });
+    }
+    fixture.detectChanges();
+
+    expect(component.canSave()).toBeTrue();
+    component.save();
+
+    const req = serviceSpy.update.calls.mostRecent()
+      .args[1] as ISaveCycleRequest;
+    // The locked scope is unchanged but still transmitted (server treats it as a no-op).
+    expect(req.scope.scopeType).toBe('CustomList');
+    expect(req.scope.employeeIds).toEqual(['emp-1', 'emp-2']);
+  });
+
+  it('BUG-261: a 409 scope_locked response surfaces a friendly toast', async () => {
+    await setup('cyc-new', { ...createdCycle, status: 'Draft' });
+    fillValid();
+    serviceSpy.update.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              message: 'The participant scope cannot be changed once the cycle leaves Draft.',
+              code: 'scope_locked',
+            },
+          }),
+      ),
+    );
+
+    expect(component.canSave()).toBeTrue();
+    component.save();
+
+    expect(toastr.error).toHaveBeenCalledWith(
+      "Scope can't be changed after the cycle starts.",
+    );
+    expect(component.saving()).toBeFalse();
   });
 
   it('BUG-257: the Grades scope option is disabled and no gradeIds are sent', async () => {
