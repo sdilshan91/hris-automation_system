@@ -156,4 +156,50 @@ public sealed class AppraisalCycleScopePostgresTests : IAsyncLifetime
             dto.Scope.EmployeeIds.Should().BeEquivalentTo(new[] { _empHr, _empEng });
         }
     }
+
+    // ── BUG-261: a Draft Departments cycle re-scoped to new departmentIds round-trips the new jsonb selection ──
+    // Proves the Draft-only scope edit (AppraisalCycleService.UpdateAsync) writes the NEW ScopeDepartmentIds
+    // through the real jsonb column (read back on a FRESH context, not an in-memory object ref) and re-resolves
+    // the participant set to the new departments.
+
+    [Fact]
+    public async Task DraftDepartmentsScope_UpdatedToNewDepartmentIds_RoundTripsThroughJsonbColumn_BUG261()
+    {
+        var start = DateTime.UtcNow.Date.AddDays(1);
+
+        // Create a Draft cycle scoped to HR only ⇒ ScopeDepartmentIds = {HR}, participants = {_empHr}.
+        Guid cycleId;
+        await using (var db = Db())
+        {
+            var created = await Service(db).CreateAsync(new CreateCycleInput(
+                "FY26 Dept", CycleType.Annual, start, start.AddDays(40), Phases(start),
+                new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr }),
+                RatingScaleMax: 5, SelfWeightPercent: 30,
+                Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false));
+            created.IsSuccess.Should().BeTrue(created.Error);
+            cycleId = created.Value!.Id;
+        }
+
+        // Re-scope (still Draft) to BOTH departments ⇒ ScopeDepartmentIds = {HR, Eng}, participants = {_empHr, _empEng}.
+        await using (var db = Db())
+        {
+            var update = new UpdateCycleInput("FY26 Dept", start, start.AddDays(40), Phases(start),
+                Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+                RatingScaleMax: null, SelfWeightPercent: null,
+                Scope: new ParticipantScopeInput(ParticipantScopeType.Departments, DepartmentIds: new[] { _deptHr, _deptEng }));
+            var updated = await Service(db).UpdateAsync(cycleId, update);
+            updated.IsSuccess.Should().BeTrue(updated.Error);
+        }
+
+        // Fresh context ⇒ real jsonb read-back of the NEW selection + re-resolved participants.
+        await using (var verify = Db())
+        {
+            var cycle = await verify.AppraisalCycles.AsNoTracking().FirstAsync(c => c.Id == cycleId);
+            cycle.ScopeDepartmentIds.Should().BeEquivalentTo(new[] { _deptHr, _deptEng });
+
+            var participants = await verify.CycleParticipants.AsNoTracking()
+                .Where(p => p.CycleId == cycleId).Select(p => p.EmployeeId).ToListAsync();
+            participants.Should().BeEquivalentTo(new[] { _empHr, _empEng });
+        }
+    }
 }

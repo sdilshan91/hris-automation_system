@@ -140,6 +140,36 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
                     "Anonymity cannot be changed after feedback has been submitted.", 409, "anonymity_locked");
         }
 
+        // BUG-261: the participant scope is editable — but ONLY while the cycle is still in Draft. Once it leaves
+        // Draft, review activity (Feedback360 / SelfAssessment / ManagerReview / Goal rows keyed by
+        // CycleId+EmployeeId, NOT by CycleParticipant.Id) may exist and re-resolving participants would orphan it.
+        // So a scope change is Draft-only — mirroring the BR-5 scale lock and the anonymity freeze above. A scope
+        // change on a non-Draft cycle is rejected (scope_locked); an unchanged (or omitted) scope is a no-op so we
+        // never churn the participant set. When the scope differs we re-resolve the set BEFORE any mutation, so a
+        // resolution/BR-4 failure short-circuits cleanly.
+        List<Guid>? rescopedParticipantIds = null;
+        if (input.Scope is not null && await ScopeDiffersAsync(input.Scope, cycle, cancellationToken))
+        {
+            if (cycle.Status != AppraisalCycleStatus.Draft)
+                return Result<CycleDto>.Failure(
+                    "The participant scope cannot be changed once the cycle leaves Draft.", 409, "scope_locked");
+
+            // FR-3: re-resolve the participant set from the new scope (snapshot).
+            var rescoped = await ResolveParticipantsAsync(input.Scope, cancellationToken);
+            if (rescoped.IsFailure)
+                return Result<CycleDto>.Failure(rescoped.Error!, rescoped.StatusCode ?? 400, rescoped.ErrorCode);
+            rescopedParticipantIds = rescoped.Value!;
+
+            // BR-4: none of the newly-resolved employees may already be in an ACTIVE cycle of the same type — but
+            // EXCLUDE this cycle so its own (about-to-be-replaced) participants can't falsely self-conflict.
+            var conflict = await FindActiveSameTypeConflictAsync(
+                cycle.Type, rescopedParticipantIds, excludeCycleId: cycle.Id, cancellationToken);
+            if (conflict is not null)
+                return Result<CycleDto>.Failure(
+                    $"Employee {conflict} is already a participant in an active {cycle.Type} cycle.",
+                    409, "active_same_type_conflict");
+        }
+
         cycle.Name = input.Name.Trim();
         cycle.StartDate = input.StartDate;
         cycle.EndDate = input.EndDate;
@@ -173,15 +203,42 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
         // Keep the legacy window columns in sync off the freshly built phases (US-PRF-001/002/003 windows).
         cycle.SyncLegacyWindowsFromPhases(newPhases);
 
+        // BUG-261: apply the re-resolved scope. This only runs in Draft (guarded above), so there is no review
+        // activity keyed to these participants by construction ⇒ it is safe to REPLACE the participant set. Use
+        // the same replace-set pattern as the phases (remove the tracked rows via the DbSet, add the new ones by
+        // CycleId FK) WITHOUT touching the cycle.Participants navigation, so EF's cascade fixup can't resurrect a
+        // deleted child as a modified row on save.
+        if (rescopedParticipantIds is not null)
+        {
+            cycle.ParticipantScope = input.Scope!.ScopeType;
+            // Mirror create (:84-86): persist the department selection only for a Departments scope, distinct.
+            cycle.ScopeDepartmentIds = input.Scope.ScopeType == ParticipantScopeType.Departments
+                ? (input.Scope.DepartmentIds ?? []).Distinct().ToList()
+                : [];
+
+            var oldParticipants = await _dbContext.CycleParticipants
+                .Where(p => p.CycleId == cycle.Id)
+                .ToListAsync(cancellationToken);
+            _dbContext.CycleParticipants.RemoveRange(oldParticipants);
+            _dbContext.CycleParticipants.AddRange(rescopedParticipantIds.Select(eid => new CycleParticipant
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                CycleId = cycle.Id,
+                EmployeeId = eid,
+                IsDeleted = false,
+            }));
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // AC-5: reschedule jobs + notify affected participants.
         _scheduler?.ScheduleCycleJobs(_tenantContext.TenantId, cycle.Id);
         await NotifyParticipantsAsync(cycle.Id, "cycle-updated", "phase dates changed", cancellationToken);
 
-        // BUG-260: load the resolved participant ids (not just a count) so the returned DTO's Scope is populated.
-        // The department selection (cycle.ScopeDepartmentIds) is preserved as-is — UpdateCycleInput carries no
-        // scope, so participants are immutable post-create (see OUT-OF-LANE note).
+        // BUG-260/BUG-261: reload the resolved participant ids (not just a count) so the returned DTO's Scope
+        // reflects the post-update set — either the preserved snapshot (no scope change) or the newly re-resolved
+        // participants (Draft-only scope edit above). AsNoTracking read after SaveChanges ⇒ authoritative.
         var participantEmployeeIds = await _dbContext.CycleParticipants
             .AsNoTracking()
             .Where(p => p.CycleId == cycle.Id)
@@ -292,6 +349,11 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
         if (targetStatus == AppraisalCycleStatus.Cancelled)
             cycle.CancellationReason = reason!.Trim();
 
+        // ISSUE-254: stamp the real "final ratings published" timestamp the first time the cycle completes. Only
+        // set it when currently null so a (defensive) re-entry can never overwrite the original publish time.
+        if (targetStatus == AppraisalCycleStatus.Completed && cycle.RatingsPublishedOn is null)
+            cycle.RatingsPublishedOn = DateTime.UtcNow;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // FR-5/FR-7: (re)schedule on Active/resume; cancel scheduled jobs on terminal/paused states.
@@ -394,7 +456,7 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
 
         var cycles = await query
             .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new { c.Id, c.Name, c.Type, c.Status, c.StartDate, c.EndDate })
+            .Select(c => new { c.Id, c.Name, c.Type, c.Status, c.StartDate, c.EndDate, c.RatingsPublishedOn })
             .ToListAsync(cancellationToken);
 
         var counts = await _dbContext.CycleParticipants
@@ -414,6 +476,7 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             StartDate = c.StartDate,
             EndDate = c.EndDate,
             ParticipantCount = counts.GetValueOrDefault(c.Id),
+            RatingsPublishedOn = c.RatingsPublishedOn,
         }).ToList();
 
         return Result<IReadOnlyList<CycleSummaryDto>>.Success(summaries);
@@ -619,6 +682,43 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
                 return Result<List<Guid>>.Success([]);
             default:
                 return Result<List<Guid>>.Failure("Unsupported participant scope.", 400, "invalid_scope");
+        }
+    }
+
+    /// <summary>
+    /// BUG-261: true when the supplied edit scope actually differs from the cycle's persisted scope (so the
+    /// participant set needs re-resolving). A different scope TYPE always differs. Within the same type: a
+    /// Departments scope compares the (distinct) department-id selection; a CustomList scope compares the
+    /// (distinct) requested employee-ids against the currently-persisted participant set. AllEmployees / Grades
+    /// carry no id selection, so the same type ⇒ unchanged (no churn).
+    /// </summary>
+    private async Task<bool> ScopeDiffersAsync(
+        ParticipantScopeInput scope, AppraisalCycle cycle, CancellationToken cancellationToken)
+    {
+        if (scope.ScopeType != cycle.ParticipantScope)
+            return true;
+
+        switch (scope.ScopeType)
+        {
+            case ParticipantScopeType.Departments:
+            {
+                var requested = (scope.DepartmentIds ?? []).Distinct().OrderBy(x => x);
+                var persisted = cycle.ScopeDepartmentIds.Distinct().OrderBy(x => x);
+                return !requested.SequenceEqual(persisted);
+            }
+            case ParticipantScopeType.CustomList:
+            {
+                var requested = (scope.EmployeeIds ?? []).Distinct().OrderBy(x => x).ToList();
+                var current = await _dbContext.CycleParticipants
+                    .AsNoTracking()
+                    .Where(p => p.CycleId == cycle.Id)
+                    .Select(p => p.EmployeeId)
+                    .ToListAsync(cancellationToken);
+                return !requested.SequenceEqual(current.Distinct().OrderBy(x => x));
+            }
+            default:
+                // AllEmployees / Grades: no id selection to compare ⇒ same type means unchanged.
+                return false;
         }
     }
 

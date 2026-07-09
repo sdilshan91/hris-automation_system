@@ -235,6 +235,88 @@ public sealed class Feedback360ServiceTests
         result.ErrorCode.Should().Be("rating_out_of_range");
     }
 
+    // ── ISSUE-256: over-length comments → uniform 422 (not a 500 / not a 400) ──
+
+    [Fact]
+    public async Task Submit_Rejected_WhenOverallCommentExceedsLimit()
+    {
+        Seed();
+        Assign(_peer1EmpId, ReviewerCategory.Peer);
+
+        var input = new SubmitFeedback360Input(_cycleId, _revieweeEmpId,
+            new string('x', 5001),
+            new List<Feedback360ItemInput> { new() { CompetencyKey = Communication, Rating = 4 } });
+
+        var result = await CreateService(ReviewerUser(_peer1UserId)).SubmitFeedbackAsync(input);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("comment_too_long");
+    }
+
+    [Fact]
+    public async Task Submit_Rejected_WhenItemCommentExceedsLimit()
+    {
+        Seed();
+        Assign(_peer1EmpId, ReviewerCategory.Peer);
+
+        var input = new SubmitFeedback360Input(_cycleId, _revieweeEmpId,
+            "Solid work this cycle.",
+            new List<Feedback360ItemInput>
+            {
+                new() { CompetencyKey = Communication, Rating = 4, Comment = new string('x', 2001) }
+            });
+
+        var result = await CreateService(ReviewerUser(_peer1UserId)).SubmitFeedbackAsync(input);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("comment_too_long");
+    }
+
+    // The by-assignment path had NO validator, so an over-length comment used to reach Npgsql → 22001 → 500.
+    // It must now surface the same clean 422 as the direct path (ISSUE-256).
+    [Fact]
+    public async Task SubmitByAssignment_Rejected_WhenCommentExceedsLimit()
+    {
+        Seed();
+        Assign(_peer1EmpId, ReviewerCategory.Peer);
+
+        Guid assignmentId;
+        using (var db = CreateDbContext())
+            assignmentId = (await db.ReviewerAssignments.FirstAsync(a => a.ReviewerEmployeeId == _peer1EmpId)).Id;
+
+        var answers = new List<FeedbackAnswerInput>
+        {
+            new() { QuestionId = Guid.NewGuid(), Rating = 4, Comment = new string('x', 2001) }
+        };
+
+        var result = await CreateService(ReviewerUser(_peer1UserId))
+            .SubmitFeedbackByAssignmentAsync(assignmentId, answers);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("comment_too_long");
+    }
+
+    [Fact]
+    public async Task Submit_Succeeds_WhenCommentsAtMaxLength()
+    {
+        Seed();
+        Assign(_peer1EmpId, ReviewerCategory.Peer);
+
+        var input = new SubmitFeedback360Input(_cycleId, _revieweeEmpId,
+            new string('x', 5000),
+            new List<Feedback360ItemInput>
+            {
+                new() { CompetencyKey = Communication, Rating = 4, Comment = new string('y', 2000) }
+            });
+
+        var result = await CreateService(ReviewerUser(_peer1UserId)).SubmitFeedbackAsync(input);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+    }
+
     // ── AC-4/FR-6: aggregated results — averages + composite score ──────
 
     [Fact]

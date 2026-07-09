@@ -1,9 +1,13 @@
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
 
@@ -112,6 +116,86 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         client.DefaultRequestHeaders.Add("X-Tenant-Subdomain", subdomain);
 
         return client;
+    }
+
+    /// <summary>
+    /// Seeds a fresh <b>Active</b> business tenant plus a single user assigned a tenant-scoped role carrying
+    /// <b>exactly</b> the given permission strings (<c>Module.Action[.Scope]</c>), logs that user in, and
+    /// returns a <c>Bearer</c>-authed <see cref="HttpClient"/> for the new tenant.
+    ///
+    /// <para>Passing <b>no</b> permissions yields a genuinely <b>permission-less</b> caller — which the
+    /// high-privilege DbInitializer personas (and even the built-in <c>Employee</c> role, that still carries
+    /// <c>Performance.Read.Self</c> etc.) cannot express. This is what makes an end-to-end negative-authz
+    /// arm ("a real logged-in user with the wrong/no permission gets <c>403</c>") writable over the genuine
+    /// HTTP → <c>[RequirePermission]</c> → controller pipeline (ISSUE-255).</para>
+    ///
+    /// <para>Mirrors the self-contained seeding pattern in
+    /// <c>CyclesActiveAuthorizationApiTests.SeedTenantWithPersonaAsync</c>; each call uses a unique
+    /// tenant/subdomain/email so it is safe under the sequential shared "HttpApi" collection.
+    /// <c>TenantId</c> is stamped explicitly because the SaveChanges tenant interceptor does not stamp when
+    /// no tenant is resolved during seeding.</para>
+    /// </summary>
+    public async Task<HttpClient> CreateClientWithPermissionsAsync(params string[] permissions)
+    {
+        const string password = "Persona@123!";
+        var subdomain = $"iss255{Guid.NewGuid():N}"[..14];
+        var email = $"persona-{Guid.NewGuid():N}@issue255.test";
+
+        using (var scope = Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tenantId = Guid.NewGuid();
+
+            db.Tenants.Add(new Tenant
+            {
+                Id = tenantId,
+                Subdomain = subdomain,
+                Name = "ISSUE-255 persona tenant",
+                Status = TenantStatus.Active,
+                PlanId = "default",
+            });
+
+            var role = new Role
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = permissions.Length == 0 ? "ISSUE-255 No Permissions" : "ISSUE-255 Scoped",
+                IsBuiltIn = false,
+                RolePermissions = permissions
+                    .Select(p => new RolePermission { Permission = p })
+                    .ToList(),
+            };
+            db.Roles.Add(role);
+
+            var user = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = email,
+                IsActive = true,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12),
+            };
+            db.Users.Add(user);
+
+            var membership = new UserTenant
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                TenantId = tenantId,
+                Status = UserTenantStatus.Active,
+            };
+            db.UserTenants.Add(membership);
+            db.UserTenantRoles.Add(new UserTenantRole
+            {
+                UserTenantId = membership.Id,
+                RoleId = role.Id,
+                AssignedAt = DateTime.UtcNow,
+                AssignedBy = "test",
+            });
+
+            await db.SaveChangesAsync();
+        }
+
+        return await CreateAuthedClientAsync(subdomain, email, password);
     }
 
     /// <summary>Shared JSON options matching the API's camelCase Web defaults.</summary>

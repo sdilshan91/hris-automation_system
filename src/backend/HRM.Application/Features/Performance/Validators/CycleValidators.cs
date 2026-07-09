@@ -122,6 +122,20 @@ public sealed class UpdateCycleCommandValidator : AbstractValidator<UpdateCycleC
             .InclusiveBetween(0, 100).WithMessage("The self-weight percentage must be between 0 and 100.")
             .When(x => x.Input.SelfWeightPercent.HasValue);
 
+        // BUG-261: scope is OPTIONAL on update (omitted ⇒ participants unchanged). When supplied, mirror the
+        // CreateCycleValidator scope rules so a Departments/CustomList re-scope carries the required id selection.
+        RuleFor(x => x.Input.Scope!)
+            .Must(s => s.ScopeType != ParticipantScopeType.Departments ||
+                       (s.DepartmentIds is not null && s.DepartmentIds.Count > 0))
+            .WithMessage("At least one department is required for a department-scoped cycle.")
+            .When(x => x.Input.Scope is not null);
+
+        RuleFor(x => x.Input.Scope!)
+            .Must(s => s.ScopeType != ParticipantScopeType.CustomList ||
+                       (s.EmployeeIds is not null && s.EmployeeIds.Count > 0))
+            .WithMessage("At least one employee is required for a custom-list cycle.")
+            .When(x => x.Input.Scope is not null);
+
         CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate);
     }
 }

@@ -122,11 +122,49 @@ public sealed class RecommendationCompletedCyclesTests
         var option = result.Value!.Single();
         option.CycleId.Should().Be(completedId);
         option.CycleName.Should().Be("FY2025 (completed)");
-        option.RatingsPublishedOn.Should().Be(completedEnd); // end-date proxy (no dedicated publish column).
+        // ISSUE-254: this cycle was seeded directly at Completed WITHOUT going through TransitionStatusAsync, so
+        // RatingsPublishedOn is null (a "legacy" completed cycle) ⇒ the projection falls back to the end date.
+        option.RatingsPublishedOn.Should().Be(completedEnd);
 
         // Belt-and-braces: none of the non-Completed names leak through.
         result.Value!.Select(o => o.CycleName).Should().NotContain("FY2026 (active)");
         result.Value!.Select(o => o.CycleName).Should().NotContain("FY2027 (draft)");
+    }
+
+    // ── ISSUE-254: a real RatingsPublishedOn is surfaced (not the end-date fallback) ─
+
+    [Fact]
+    public async Task GetCompletedCycles_UsesRealRatingsPublishedOn_WhenStamped_ISSUE254()
+    {
+        using (var db = Db(_tenantA))
+        {
+            db.Tenants.Add(new Tenant { Id = _tenantA, Subdomain = "tenant-a", Name = "Tenant A", Status = TenantStatus.Active });
+            db.SaveChanges();
+        }
+
+        var completedId = Guid.NewGuid();
+        var completedEnd = new DateTime(2025, 12, 31, 0, 0, 0, DateTimeKind.Utc);
+        // The real publish timestamp is distinct from the end date, so a fallback would be visibly wrong.
+        var publishedOn = new DateTime(2026, 1, 15, 9, 30, 0, DateTimeKind.Utc);
+
+        using (var db = Db(_tenantA))
+        {
+            db.AppraisalCycles.Add(new AppraisalCycle
+            {
+                Id = completedId, TenantId = _tenantA, Name = "FY2025 (completed, published)",
+                Status = AppraisalCycleStatus.Completed,
+                StartDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc), EndDate = completedEnd,
+                RatingScaleMax = 5, RatingsPublishedOn = publishedOn,
+            });
+            db.SaveChanges();
+        }
+
+        var result = await Handler(_tenantA).Handle(new GetCompletedCyclesForRecommendationsQuery(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var option = result.Value!.Single();
+        option.RatingsPublishedOn.Should().Be(publishedOn);        // the real stamped timestamp
+        option.RatingsPublishedOn.Should().NotBe(completedEnd);    // NOT the end-date fallback
     }
 
     // ── No completed cycles → empty (not an error) ───────────────────────────

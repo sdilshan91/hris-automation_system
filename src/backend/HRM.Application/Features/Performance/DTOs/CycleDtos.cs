@@ -30,7 +30,16 @@ public sealed record CreateCycleInput(
     bool IsCalibrationEnabled,
     bool IsAnonymousFeedback);
 
-/// <summary>Edit-cycle input (US-PRF-004 AC-5). Re-validates phase dates; reschedules jobs; notifies.</summary>
+/// <summary>
+/// Edit-cycle input (US-PRF-004 AC-5). Re-validates phase dates; reschedules jobs; notifies.
+/// <para>
+/// BUG-261: <see cref="Scope"/> makes the participant scope editable — but ONLY while the cycle is still in
+/// Draft (the service enforces this; a scope change on a non-Draft cycle is rejected with <c>scope_locked</c>).
+/// It is nullable/optional: an update that omits it leaves the participant set untouched (back-compat — a
+/// caller that never intends to re-scope should not have to resend the whole selection). Same shape as
+/// <see cref="CreateCycleInput.Scope"/> (<see cref="ParticipantScopeInput"/>).
+/// </para>
+/// </summary>
 public sealed record UpdateCycleInput(
     string Name,
     DateTime StartDate,
@@ -40,7 +49,8 @@ public sealed record UpdateCycleInput(
     bool IsCalibrationEnabled,
     bool IsAnonymousFeedback,
     int? RatingScaleMax,
-    int? SelfWeightPercent);
+    int? SelfWeightPercent,
+    ParticipantScopeInput? Scope = null);
 
 /// <summary>Clone an existing cycle as a template with a new name + shifted dates (US-PRF-004 FR-8).</summary>
 public sealed record CloneCycleInput(
@@ -86,6 +96,13 @@ public sealed record CycleSummaryDto
     public DateTime StartDate { get; init; }
     public DateTime EndDate { get; init; }
     public int ParticipantCount { get; init; }
+
+    /// <summary>
+    /// ISSUE-254: when the cycle's final ratings were published — stamped when the cycle transitions to
+    /// <see cref="AppraisalCycleStatus.Completed"/>. Null while not yet completed, and for cycles completed
+    /// before this column existed (they fall back to the end date at the recommendation-picker projection).
+    /// </summary>
+    public DateTime? RatingsPublishedOn { get; init; }
 }
 
 /// <summary>The full cycle record (US-PRF-004 §7).</summary>

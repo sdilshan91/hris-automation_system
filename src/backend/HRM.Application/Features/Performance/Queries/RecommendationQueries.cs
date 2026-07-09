@@ -39,8 +39,10 @@ public sealed class GetCompletedCyclesForRecommendationsQueryHandler
             {
                 CycleId = c.Id,
                 CycleName = c.Name,
-                // No dedicated publish timestamp is persisted; the cycle end date is the best-available proxy.
-                RatingsPublishedOn = c.EndDate,
+                // ISSUE-254: use the real publish timestamp stamped when the cycle completed; fall back to the
+                // cycle end date for legacy cycles completed before the RatingsPublishedOn column existed (their
+                // timestamp is null and cannot be backfilled) so the picker never shows a null date.
+                RatingsPublishedOn = c.RatingsPublishedOn ?? c.EndDate,
             })
             .ToList();
 

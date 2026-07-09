@@ -21,6 +21,11 @@ namespace HRM.Infrastructure.Services;
 /// </summary>
 public sealed class Feedback360Service : IFeedback360Service
 {
+    // Comment length ceilings — must mirror the EF column caps (Feedback360Configuration / Feedback360ItemConfiguration)
+    // so an over-length comment is rejected as a clean 422 before it ever hits Npgsql (ISSUE-256).
+    private const int MaxOverallCommentLength = 5000;
+    private const int MaxItemCommentLength = 2000;
+
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
@@ -89,6 +94,18 @@ public sealed class Feedback360Service : IFeedback360Service
                 return Result<Feedback360ResultEntryDto>.Failure(
                     $"Rating must be between 1 and {cycle.RatingScaleMax}.", 422, "rating_out_of_range");
         }
+
+        // Comment length ceilings (ISSUE-256): enforced here so BOTH submit entry points (the direct
+        // SubmitFeedback360Command and the by-assignment SubmitFeedbackByAssignmentCommand) are covered —
+        // otherwise an over-length comment reaches the DB column cap and Npgsql returns 22001 → HTTP 500.
+        // Caps mirror Feedback360Configuration (OverallComment 5000) / Feedback360ItemConfiguration (Comment 2000).
+        if (input.OverallComment is { Length: > MaxOverallCommentLength })
+            return Result<Feedback360ResultEntryDto>.Failure(
+                $"Overall comment cannot exceed {MaxOverallCommentLength} characters.", 422, "comment_too_long");
+
+        if (input.Items.Any(i => i.Comment is { Length: > MaxItemCommentLength }))
+            return Result<Feedback360ResultEntryDto>.Failure(
+                $"Comment cannot exceed {MaxItemCommentLength} characters.", 422, "comment_too_long");
 
         var feedback = new Feedback360
         {

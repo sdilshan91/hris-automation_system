@@ -7,10 +7,10 @@ namespace HRM.Application.Features.Performance.Validators;
 /// <summary>
 /// Field-shape rules for a single 360 feedback item (US-PRF-005 FR-4).
 ///
-/// SCOPE: only the rules a command can verify in isolation — exactly one of GoalId/CompetencyKey set, the
-/// rating's lower bound and the comment length ceiling. The rating's UPPER bound depends on the cycle's
-/// configured scale (RatingScaleMax) and the reviewer's Pending assignment / BR-3 de-duplication depend on
-/// the persisted rows, so those are enforced in <c>Feedback360Service</c> against the DB.
+/// SCOPE: only the rules a command can verify in isolation — exactly one of GoalId/CompetencyKey set and the
+/// rating's lower bound. The rating's UPPER bound depends on the cycle's configured scale (RatingScaleMax),
+/// the reviewer's Pending assignment / BR-3 de-duplication depend on the persisted rows, and the comment
+/// length ceiling is uniform across both submit paths — so those are enforced in <c>Feedback360Service</c>.
 /// </summary>
 internal sealed class Feedback360ItemValidator : AbstractValidator<Feedback360ItemInput>
 {
@@ -26,8 +26,8 @@ internal sealed class Feedback360ItemValidator : AbstractValidator<Feedback360It
         RuleFor(i => i.Rating)
             .GreaterThanOrEqualTo(1).WithMessage("Rating must be at least 1.");
 
-        RuleFor(i => i.Comment)
-            .MaximumLength(2000).WithMessage("Comment cannot exceed 2000 characters.");
+        // NOTE: the item Comment length ceiling (2000) is enforced in Feedback360Service (ISSUE-256) so that
+        // BOTH submit entry points return a uniform 422 comment_too_long — the single source of truth is the service.
     }
 }
 
@@ -52,8 +52,8 @@ public sealed class SubmitFeedback360Validator : AbstractValidator<SubmitFeedbac
     {
         RuleFor(x => x.CycleId).NotEmpty().WithMessage("A cycle is required.");
         RuleFor(x => x.RevieweeEmployeeId).NotEmpty().WithMessage("A reviewee is required.");
-        RuleFor(x => x.OverallComment)
-            .MaximumLength(5000).WithMessage("Overall comment cannot exceed 5000 characters.");
+        // NOTE: the OverallComment length ceiling (5000) is enforced in Feedback360Service (ISSUE-256) so that
+        // BOTH submit entry points return a uniform 422 comment_too_long — the single source of truth is the service.
         RuleFor(x => x.Items)
             .NotNull().WithMessage("Items are required.")
             .NotEmpty().WithMessage("At least one competency rating is required to submit feedback.");
