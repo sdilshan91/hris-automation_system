@@ -370,7 +370,9 @@ public static class DependencyInjection
         // TODO US-NTF). The minimal AppraisalCycle entity is created here to unblock goal-setting; full cycle
         // management is owned by US-PRF-004.
         services.AddScoped<IGoalService, GoalService>();
-        services.AddScoped<IPerformanceNotificationService, LogOnlyPerformanceNotificationService>();
+        // US-NTF-006 Phase 5b (final seam): real in-app + email delivery for performance notifications. LogOnly is
+        // kept (integration tests register it); this Real impl supersedes it in the app composition.
+        services.AddScoped<IPerformanceNotificationService, RealPerformanceNotificationService>();
 
         // US-PRF-002: Performance — employee self-assessment (get-my / save-draft / submit). Every read/write
         // is scoped to the calling employee's own record + tenant (NFR-2); the self-assessment-window gate

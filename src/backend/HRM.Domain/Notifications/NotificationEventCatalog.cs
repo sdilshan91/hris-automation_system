@@ -123,6 +123,40 @@ public static class NotificationEventCatalog
         "offer.reference", "offer.position", "offer.startDate", "offer.expiryDate",
     ];
 
+    // ── Shared placeholders for the performance events (US-NTF-006 Phase 5b, US-PRF-001..009). ALL performance
+    // recipients are internal employees; the Real service loads the subject employee + cycle/goal for these fields.
+    // MUST be declared before _byKey: the eager BuildCatalog() at type-init references them, so a later declaration
+    // would leave them null → NRE in the type initializer (Phase 2a lesson). ──
+    private static readonly string[] GoalPlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "cycle.name", "goal.title",
+    ];
+
+    private static readonly string[] PerformancePlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "cycle.name",
+    ];
+
+    private static readonly string[] CyclePlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "cycle.name", "event.subtype", "event.detail",
+    ];
+
+    private static readonly string[] ReviewerPlaceholders =
+    [
+        "reviewer.firstName", "reviewee.firstName", "reviewee.lastName", "cycle.name",
+    ];
+
+    private static readonly string[] PipPlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "pip.subtype", "pip.detail",
+    ];
+
+    private static readonly string[] GoalProgressPlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "goal.title", "progress.detail",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1080,7 +1114,410 @@ public static class NotificationEventCatalog
                 "Regards,\n{{tenant.companyName}}",
             Category: NotificationCategory.RecruitmentUpdates,
             IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — performance goal-setting (US-PRF-001 AC-2/FR-7). Recipient is the goal's employee
+        // (in-app + email via the linked user, else email-only fallback). The Real service loads the employee + cycle +
+        // goal for these fields. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_assigned",
+            EventName: "Goal Assigned",
+            Placeholders: [.. GoalPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalSample(),
+            DefaultSubject: "A new goal has been assigned to you",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your manager has assigned you a new goal — <strong>{{goal.title}}</strong> — for the " +
+                "<strong>{{cycle.name}}</strong> cycle.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your manager has assigned you a new goal - {{goal.title}} - for the {{cycle.name}} cycle.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_modified",
+            EventName: "Goal Modified",
+            Placeholders: [.. GoalPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalSample(),
+            DefaultSubject: "One of your goals has been updated",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your manager has updated your goal — <strong>{{goal.title}}</strong> — for the " +
+                "<strong>{{cycle.name}}</strong> cycle.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your manager has updated your goal - {{goal.title}} - for the {{cycle.name}} cycle.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_removed",
+            EventName: "Goal Removed",
+            Placeholders: [.. GoalPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalSample(),
+            DefaultSubject: "One of your goals has been removed",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your manager has removed your goal — <strong>{{goal.title}}</strong> — from the " +
+                "<strong>{{cycle.name}}</strong> cycle.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your manager has removed your goal - {{goal.title}} - from the {{cycle.name}} cycle.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — self-assessment (US-PRF-002 AC-2/AC-5/FR-7). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "self_assessment_submitted",
+            EventName: "Self-Assessment Submitted",
+            Placeholders: [.. PerformancePlaceholders, .. TenantPlaceholders],
+            SampleData: PerfSample(),
+            DefaultSubject: "A self-assessment has been submitted for your review",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has submitted their " +
+                "self-assessment for the <strong>{{cycle.name}}</strong> cycle. It is ready for your review.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has submitted their self-assessment for the " +
+                "{{cycle.name}} cycle. It is ready for your review.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "self_assessment_reminder",
+            EventName: "Self-Assessment Reminder",
+            Placeholders: [.. PerformancePlaceholders, "reminder.daysUntilDeadline", .. TenantPlaceholders],
+            SampleData: PerfSample(daysUntilDeadline: 3),
+            DefaultSubject: "Reminder: your self-assessment is due soon",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your self-assessment for the <strong>{{cycle.name}}</strong> cycle has not been submitted yet " +
+                "and is due in <strong>{{reminder.daysUntilDeadline}}</strong> day(s). Please complete it soon.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your self-assessment for the {{cycle.name}} cycle has not been submitted yet and is due in " +
+                "{{reminder.daysUntilDeadline}} day(s). Please complete it soon.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — manager review (US-PRF-003 AC-2). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "manager_review_submitted",
+            EventName: "Manager Review Submitted",
+            Placeholders: [.. PerformancePlaceholders, .. TenantPlaceholders],
+            SampleData: PerfSample(),
+            DefaultSubject: "Your performance review has been submitted",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your manager has submitted your performance review for the <strong>{{cycle.name}}</strong> " +
+                "cycle. You can view it in the performance portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your manager has submitted your performance review for the {{cycle.name}} cycle. You can view it " +
+                "in the performance portal.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — appraisal cycle events (US-PRF-004 AC-2/AC-4/AC-5/BR-6). A SINGLE parametrized event:
+        // the caller's subtype (phase-start / deadline-reminder / phase-close / overdue-escalation / cycle-updated /
+        // cycle-cancelled) is carried in event.subtype and a free-text note in event.detail. Recipient is the
+        // participant employee. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "cycle_event",
+            EventName: "Appraisal Cycle Update",
+            Placeholders: [.. CyclePlaceholders, .. TenantPlaceholders],
+            SampleData: CycleEventSample(),
+            DefaultSubject: "Update on the {{cycle.name}} performance cycle",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>There's an update on the <strong>{{cycle.name}}</strong> performance cycle: " +
+                "<strong>{{event.subtype}}</strong>. {{event.detail}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "There's an update on the {{cycle.name}} performance cycle: {{event.subtype}}. {{event.detail}}\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — 360-degree feedback (US-PRF-005 AC-2/AC-5/FR-8). Recipient is the reviewer. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "reviewer_assigned",
+            EventName: "360 Reviewer Assigned",
+            Placeholders: [.. ReviewerPlaceholders, .. TenantPlaceholders],
+            SampleData: ReviewerSample(),
+            DefaultSubject: "You've been asked to provide feedback",
+            DefaultBodyHtml:
+                "<p>Hi {{reviewer.firstName}},</p>" +
+                "<p>You've been asked to provide 360-degree feedback for <strong>{{reviewee.firstName}} " +
+                "{{reviewee.lastName}}</strong> in the <strong>{{cycle.name}}</strong> cycle. A feedback form is " +
+                "waiting for you.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{reviewer.firstName}},\n\n" +
+                "You've been asked to provide 360-degree feedback for {{reviewee.firstName}} {{reviewee.lastName}} " +
+                "in the {{cycle.name}} cycle. A feedback form is waiting for you.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "reviewer_reminder",
+            EventName: "360 Reviewer Reminder",
+            Placeholders: [.. ReviewerPlaceholders, .. TenantPlaceholders],
+            SampleData: ReviewerSample(),
+            DefaultSubject: "Reminder: your feedback is still pending",
+            DefaultBodyHtml:
+                "<p>Hi {{reviewer.firstName}},</p>" +
+                "<p>This is a reminder to submit your 360-degree feedback for <strong>{{reviewee.firstName}} " +
+                "{{reviewee.lastName}}</strong> in the <strong>{{cycle.name}}</strong> cycle before the deadline.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{reviewer.firstName}},\n\n" +
+                "This is a reminder to submit your 360-degree feedback for {{reviewee.firstName}} " +
+                "{{reviewee.lastName}} in the {{cycle.name}} cycle before the deadline.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — review sign-off (US-PRF-006 AC-2/AC-3/BR-3/FR-5). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "review_signoff_requested",
+            EventName: "Review Sign-Off Requested",
+            Placeholders: [.. PerformancePlaceholders, .. TenantPlaceholders],
+            SampleData: PerfSample(),
+            DefaultSubject: "Please sign off on your performance review",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your manager has requested your sign-off on your <strong>{{cycle.name}}</strong> performance " +
+                "review. Please review the meeting notes and acknowledge them.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your manager has requested your sign-off on your {{cycle.name}} performance review. Please review " +
+                "the meeting notes and acknowledge them.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "review_disputed",
+            EventName: "Review Disputed",
+            Placeholders: [.. PerformancePlaceholders, .. TenantPlaceholders],
+            SampleData: PerfSample(),
+            DefaultSubject: "A performance review has been disputed",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has disputed their " +
+                "<strong>{{cycle.name}}</strong> performance review. Please follow up to resolve it.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has disputed their {{cycle.name}} performance review. " +
+                "Please follow up to resolve it.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "review_auto_closed",
+            EventName: "Review Auto-Closed",
+            Placeholders: [.. PerformancePlaceholders, .. TenantPlaceholders],
+            SampleData: PerfSample(),
+            DefaultSubject: "A performance review was auto-closed",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The <strong>{{cycle.name}}</strong> performance review for <strong>{{employee.firstName}} " +
+                "{{employee.lastName}}</strong> was auto-closed with <em>No Response</em> because it was not signed " +
+                "within the configured window.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The {{cycle.name}} performance review for {{employee.firstName}} {{employee.lastName}} was " +
+                "auto-closed with No Response because it was not signed within the configured window.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — PIP events (US-PRF-008 AC-2/AC-3/AC-5/FR-3). A SINGLE parametrized event: the
+        // caller's subtype (pip-initiated / pip-checkpoint-recorded / pip-checkpoint-reminder / pip-end-date-reminder /
+        // pip-checkpoint-overdue / pip-extended / pip-completed / pip-not-met / pip-escalation-confirmed /
+        // pip-not-acknowledged) is carried in pip.subtype and a free-text note in pip.detail. Recipient is the passed
+        // stakeholder (employee / manager / mentor). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "pip_event",
+            EventName: "Performance Improvement Plan Update",
+            Placeholders: [.. PipPlaceholders, .. TenantPlaceholders],
+            SampleData: PipSample(),
+            DefaultSubject: "Update on a performance improvement plan",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>There's an update on the performance improvement plan for <strong>{{employee.firstName}} " +
+                "{{employee.lastName}}</strong>: <strong>{{pip.subtype}}</strong>. {{pip.detail}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "There's an update on the performance improvement plan for {{employee.firstName}} " +
+                "{{employee.lastName}}: {{pip.subtype}}. {{pip.detail}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 5b — goal progress (US-PRF-009 AC-2/AC-5/FR-5/FR-6/BR-3). Three distinct subtypes +
+        // a manager comment. Recipient is the manager (updated/blocked), HR (blocked broadcast, detail=="hr") or the
+        // employee (stale-nudge / comment). ──
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_progress_updated",
+            EventName: "Goal Progress Updated",
+            Placeholders: [.. GoalProgressPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalProgressSample(progressDetail: "60% / OnTrack"),
+            DefaultSubject: "A goal progress update has been posted",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> posted a progress update on their " +
+                "goal — <strong>{{goal.title}}</strong>: {{progress.detail}}.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} posted a progress update on their goal - " +
+                "{{goal.title}}: {{progress.detail}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_blocked",
+            EventName: "Goal Blocked",
+            Placeholders: [.. GoalProgressPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalProgressSample(),
+            DefaultSubject: "A goal has been marked as blocked",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has marked their goal — " +
+                "<strong>{{goal.title}}</strong> — as <strong>Blocked</strong>. It may need your attention.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has marked their goal - {{goal.title}} - as Blocked. " +
+                "It may need your attention.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_stale_nudge",
+            EventName: "Goal Stale Nudge",
+            Placeholders: [.. GoalProgressPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalProgressSample(),
+            DefaultSubject: "One of your goals needs an update",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your goal — <strong>{{goal.title}}</strong> — hasn't been updated recently. Please post a " +
+                "progress update to keep it on track.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your goal - {{goal.title}} - hasn't been updated recently. Please post a progress update to keep " +
+                "it on track.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "goal_comment_added",
+            EventName: "Goal Comment Added",
+            Placeholders: [.. GoalProgressPlaceholders, .. TenantPlaceholders],
+            SampleData: GoalProgressSample(),
+            DefaultSubject: "A comment was added to your goal",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your manager added a comment to your goal — <strong>{{goal.title}}</strong>. View it in the " +
+                "performance portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your manager added a comment to your goal - {{goal.title}}. View it in the performance portal.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PerformanceReviews,
+            IsMandatory: false);
     }
+
+    // ── Sample-data for the performance events (US-NTF-006 Phase 5b). ──
+    private static Dictionary<string, object?> GoalSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Jane", ["lastName"] = "Doe", ["email"] = "jane.doe@example.com",
+        },
+        ["cycle"] = new Dictionary<string, object?> { ["name"] = "H1 2026 Appraisal" },
+        ["goal"] = new Dictionary<string, object?> { ["title"] = "Improve release cadence" },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> PerfSample(int? daysUntilDeadline = null)
+    {
+        var data = new Dictionary<string, object?>
+        {
+            ["employee"] = new Dictionary<string, object?>
+            {
+                ["firstName"] = "Jane", ["lastName"] = "Doe", ["email"] = "jane.doe@example.com",
+            },
+            ["cycle"] = new Dictionary<string, object?> { ["name"] = "H1 2026 Appraisal" },
+            ["tenant"] = SampleTenant(),
+        };
+        if (daysUntilDeadline is not null)
+            data["reminder"] = new Dictionary<string, object?> { ["daysUntilDeadline"] = daysUntilDeadline };
+        return data;
+    }
+
+    private static Dictionary<string, object?> CycleEventSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Jane", ["lastName"] = "Doe", ["email"] = "jane.doe@example.com",
+        },
+        ["cycle"] = new Dictionary<string, object?> { ["name"] = "H1 2026 Appraisal" },
+        ["event"] = new Dictionary<string, object?>
+        {
+            ["subtype"] = "phase-start", ["detail"] = "The Self-Assessment phase has started.",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> ReviewerSample() => new()
+    {
+        ["reviewer"] = new Dictionary<string, object?> { ["firstName"] = "Sam" },
+        ["reviewee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["cycle"] = new Dictionary<string, object?> { ["name"] = "H1 2026 Appraisal" },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> PipSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Jane", ["lastName"] = "Doe", ["email"] = "jane.doe@example.com",
+        },
+        ["pip"] = new Dictionary<string, object?>
+        {
+            ["subtype"] = "pip-initiated", ["detail"] = "A 60-day improvement plan has been created.",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> GoalProgressSample(string? progressDetail = null) => new()
+    {
+        ["employee"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Jane", ["lastName"] = "Doe", ["email"] = "jane.doe@example.com",
+        },
+        ["goal"] = new Dictionary<string, object?> { ["title"] = "Improve release cadence" },
+        ["progress"] = new Dictionary<string, object?> { ["detail"] = progressDetail ?? string.Empty },
+        ["tenant"] = SampleTenant(),
+    };
 
     // ── Sample-data for the recruitment applicant events (US-NTF-006 Phase 5a). ──
     private static Dictionary<string, object?> ApplicantSample(string? fromStage = null, string? toStage = null)
