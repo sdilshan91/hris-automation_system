@@ -11,6 +11,7 @@ DOTNET_VULN = json.dumps({"projects": [{"frameworks": [{"topLevelPackages": [
      "vulnerabilities": [{"severity": "High", "advisoryurl": "https://x/GHSA-rvv3"}]}]}]}]})
 NPM_AUDIT = json.dumps({"vulnerabilities": {"lodash": {
     "name": "lodash", "severity": "high", "via": [{"title": "Proto pollution", "url": "https://y"}]}}})
+NPM_OUTDATED = json.dumps({"lodash": {"current": "4.17.20", "latest": "4.17.21", "wanted": "4.17.21"}})
 
 def test_parse_dotnet_outdated():
     r = cs.parse_dotnet(DOTNET_OUTDATED, "outdated")
@@ -27,6 +28,12 @@ def test_parse_npm_audit():
     assert r == [{"ecosystem": "npm", "package": "lodash", "current": "", "latest": "",
                   "kind": "vulnerable", "severity": "high", "detail": "Proto pollution https://y"}]
 
+def test_parse_npm_outdated():
+    r = cs.parse_npm_outdated(NPM_OUTDATED)
+    assert r == [{"ecosystem": "npm", "package": "lodash", "current": "4.17.20",
+                  "latest": "4.17.21", "kind": "outdated", "severity": "", "detail": ""}]
+
 if __name__ == "__main__":
     test_parse_dotnet_outdated(); test_parse_dotnet_vulnerable(); test_parse_npm_audit()
+    test_parse_npm_outdated()
     print("ALL PASS")

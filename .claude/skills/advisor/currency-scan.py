@@ -3,12 +3,7 @@
 Runs dotnet + npm currency/vuln checks, normalizes to one record shape, emits JSON.
 Report-only: shells out to read-only listing commands; writes nothing. Fails open
 (a missing tool becomes a 'gaps' entry, never an error)."""
-import sys, os, json, subprocess
-
-def _dig(obj, *keys):
-    for k in keys:
-        obj = obj.get(k, {}) if isinstance(obj, dict) else {}
-    return obj
+import sys, os, json, subprocess, shutil
 
 def parse_dotnet(json_text, kind):
     out = []
@@ -61,6 +56,8 @@ def parse_npm_audit(json_text):
 
 def _run(cmd, cwd):
     try:
+        exe = shutil.which(cmd[0]) or cmd[0]
+        cmd = [exe, *cmd[1:]]
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=180)
         return p.stdout
     except Exception:
