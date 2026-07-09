@@ -201,8 +201,10 @@ public static class DependencyInjection
 
         // US-REC-002: Recruitment — applicant submission (public + internal) + recruiter reads.
         services.AddScoped<IApplicantService, ApplicantService>();
-        // Recruitment notification seam — log-only until the notification platform exists (FR-5/FR-7).
-        services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
+        // Recruitment notification seam — US-NTF-006 Phase 5a: real delivery (email + in-app) via the notification
+        // dispatcher; the offer_sent candidate leg attaches the offer PDF inline via IEmailSender + IFileStorage.
+        // LogOnlyRecruitmentNotificationService is retained (integration tests register it).
+        services.AddScoped<IRecruitmentNotificationService, RealRecruitmentNotificationService>();
 
         // US-REC-009: Recruitment dashboard + analytics (read-only aggregation, no new entities).
         services.AddScoped<IRecruitmentDashboardService, RecruitmentDashboardService>();
