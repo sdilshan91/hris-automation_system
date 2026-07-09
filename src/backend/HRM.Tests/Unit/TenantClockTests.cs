@@ -17,7 +17,8 @@
 //
 // Traceability: @TC-ATT-TZ-001 (UTC no-op) · @TC-ATT-TZ-002 (non-UTC conversion) ·
 // @TC-ATT-TZ-003 (invalid/blank zone → UTC fallback, never throws) · @TC-ATT-TZ-004
-// (LocalToUtc round-trip) · @TC-ATT-TZ-005 (DST-gap current-behavior baseline, ISSUE-251).
+// (LocalToUtc round-trip) · @TC-ATT-TZ-005 (ISSUE-251: DST spring-forward gap snaps forward,
+// no longer throws; UTC path byte-identical).
 // ============================================================================
 
 using FluentAssertions;
@@ -155,21 +156,58 @@ public sealed class TenantClockTests
         TenantClock.LocalTimeOfDay(utc, NewYork).Should().Be(localTime);
     }
 
-    // ── 5. DST-gap edge — DOCUMENTS CURRENT BEHAVIOR ONLY (ISSUE-251) ───────────
+    // ── 5. DST spring-forward gap — THE ISSUE-251 FIX (@TC-ATT-TZ-005) ──────────
     //
-    // On 2026-03-08 New York springs forward 02:00 → 03:00, so 02:30 local does not exist.
-    // CURRENT behavior: LocalToUtc throws for a non-existent wall-clock time. This is pinned as a
-    // BASELINE so the ISSUE-251 follow-up (graceful gap handling) has a known starting point — it is
-    // NOT the desired end-state and nothing else in this suite depends on it. Deterministic (the DST
-    // transition date is fixed), so it is a safe, non-flaky baseline assertion.
+    // A wall-clock time inside the skipped spring-forward hour does not exist in the zone.
+    // BEFORE the fix, LocalToUtc let ConvertTimeToUtc throw ArgumentException (a latent 500 on a
+    // regularization submit for that once-a-year hour). AFTER the fix, the invalid time is snapped
+    // forward past the gap to the first valid instant, then converted.
+    //
+    // Uses the Windows zone id "Pacific Standard Time" (the test host is Windows). On 2026-03-08 the
+    // US Pacific zone springs forward 02:00 → 03:00, so 02:30 local does not exist; snapping +1h gives
+    // 03:30 PDT (UTC-7) == 10:30 UTC. Deterministic (the transition date is fixed) → non-flaky.
+    private static readonly TimeZoneInfo Pacific = ResolvePacific();
+
+    private static TimeZoneInfo ResolvePacific()
+    {
+        // Prefer the Windows id (host is Windows); fall back to the IANA id if the runner only has ICU.
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"); }
+        catch (TimeZoneNotFoundException) { return TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"); }
+    }
+
     [Fact]
-    public void LocalToUtc_NewYork_SpringForwardGap_CurrentlyThrows_ISSUE251Baseline()
+    public void LocalToUtc_Pacific_SpringForwardGap_SnapsForward_DoesNotThrow_ISSUE251()
     {
         var gapDate = new DateOnly(2026, 3, 8);
-        var gapTime = new TimeOnly(2, 30);   // inside the skipped 02:00–02:59 hour.
+        var gapTime = new TimeOnly(2, 30);   // inside the skipped 02:00–02:59 hour — invalid.
 
-        var act = () => TenantClock.LocalToUtc(gapDate, gapTime, NewYork);
+        DateTime utc = default;
+        var act = () => utc = TenantClock.LocalToUtc(gapDate, gapTime, Pacific);
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().NotThrow();
+        // Snapped to 03:30 PDT (UTC-7) → 10:30 UTC.
+        utc.Should().Be(new DateTime(2026, 3, 8, 10, 30, 0, DateTimeKind.Utc));
+        utc.Kind.Should().Be(DateTimeKind.Utc);
+    }
+
+    [Fact]
+    public void LocalToUtc_Pacific_ValidTime_ConvertsUnchanged()
+    {
+        // 05:00 on 2026-03-08 is AFTER the 03:00 spring-forward, so PDT (UTC-7) is in effect.
+        var utc = TenantClock.LocalToUtc(new DateOnly(2026, 3, 8), new TimeOnly(5, 0), Pacific);
+
+        utc.Should().Be(new DateTime(2026, 3, 8, 12, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void LocalToUtc_UtcZone_GapDate_ByteIdenticalToPriorBehavior()
+    {
+        // The gap only exists in DST zones; for UTC the same date/time is an exact no-op (regression guard
+        // that the ISSUE-251 branch never touches the UTC path).
+        var date = new DateOnly(2026, 3, 8);
+        var time = new TimeOnly(2, 30);
+
+        TenantClock.LocalToUtc(date, time, TimeZoneInfo.Utc)
+            .Should().Be(date.ToDateTime(time, DateTimeKind.Utc));
     }
 }

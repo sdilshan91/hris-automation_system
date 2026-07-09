@@ -58,11 +58,36 @@ public static class TenantClock
     /// <summary>
     /// Combines a tenant-local calendar date + wall-clock time into the UTC instant to store. For a UTC
     /// zone this equals <c>date.ToDateTime(time, DateTimeKind.Utc)</c> exactly (the prior behavior).
+    ///
+    /// ISSUE-251: a wall-clock time that lands inside a spring-forward DST gap (the skipped hour) does not
+    /// exist in the zone and would make <see cref="TimeZoneInfo.ConvertTimeToUtc(DateTime, TimeZoneInfo)"/>
+    /// throw. Such invalid times are <b>snapped forward</b> past the gap to the first valid instant (by the
+    /// transition's daylight delta) before converting. UTC zones and all valid wall-clock times are
+    /// unaffected and convert byte-identically to before.
     /// </summary>
     public static DateTime LocalToUtc(DateOnly localDate, TimeOnly localTime, TimeZoneInfo tenantZone)
     {
         var local = DateTime.SpecifyKind(localDate.ToDateTime(localTime), DateTimeKind.Unspecified);
+
+        // Spring-forward gap: the wall-clock time is skipped in this zone (ConvertTimeToUtc would throw).
+        // Advance it past the gap by the transition's DaylightDelta so non-1-hour DST zones (e.g. Lord
+        // Howe, 30-min) are handled correctly, then convert the now-valid instant.
+        if (tenantZone.IsInvalidTime(local))
+            local = local.Add(DaylightDeltaFor(local, tenantZone));
+
         return TimeZoneInfo.ConvertTimeToUtc(local, tenantZone);
+    }
+
+    /// <summary>The daylight-saving delta of the adjustment rule that covers <paramref name="local"/>
+    /// (defaults to the standard one hour if no rule matches).</summary>
+    private static TimeSpan DaylightDeltaFor(DateTime local, TimeZoneInfo tenantZone)
+    {
+        foreach (var rule in tenantZone.GetAdjustmentRules())
+        {
+            if (local >= rule.DateStart && local <= rule.DateEnd)
+                return rule.DaylightDelta;
+        }
+        return TimeSpan.FromHours(1);
     }
 
     private static DateTime ToLocal(DateTime utcInstant, TimeZoneInfo tenantZone)
