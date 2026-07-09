@@ -63,6 +63,17 @@ public sealed record CyclePhaseDto
     public bool IsCurrent { get; init; }
 }
 
+/// <summary>
+/// The full participant scope of a cycle (BUG-260). Exposes the id lists behind the flat
+/// <see cref="ParticipantScopeType"/> so the edit form can prefill participants. <c>DepartmentIds</c> is the
+/// persisted selection (only populated for a <see cref="ParticipantScopeType.Departments"/> scope; empty
+/// otherwise and for pre-existing cycles). <c>EmployeeIds</c> is the resolved <c>CycleParticipant</c> set.
+/// </summary>
+public sealed record CycleScopeDto(
+    ParticipantScopeType ScopeType,
+    IReadOnlyList<Guid> DepartmentIds,
+    IReadOnlyList<Guid> EmployeeIds);
+
 /// <summary>A cycle summary row for the list view (US-PRF-004).</summary>
 public sealed record CycleSummaryDto
 {
@@ -95,6 +106,12 @@ public sealed record CycleDto
     public bool IsCalibrationEnabled { get; init; }
     public bool IsAnonymousFeedback { get; init; }
     public ParticipantScopeType ParticipantScope { get; init; }
+
+    /// <summary>
+    /// The full participant scope (BUG-260) — nested id lists behind the flat <see cref="ParticipantScope"/>
+    /// (kept for back-compat). Lets the edit form prefill the department/employee selection.
+    /// </summary>
+    public CycleScopeDto Scope { get; init; } = new(ParticipantScopeType.AllEmployees, [], []);
     public string? CancellationReason { get; init; }
     public int ParticipantCount { get; init; }
     public IReadOnlyList<CyclePhaseDto> Phases { get; init; } = [];

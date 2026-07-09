@@ -43,7 +43,7 @@ describe('CycleService', () => {
     phases: [
       { phaseType: 'GoalSetting', startDate: '2026-01-05', endDate: '2026-01-20' },
     ],
-    participantScope: 'AllEmployees',
+    scope: { scopeType: 'AllEmployees', departmentIds: [], employeeIds: [] },
     ratingScaleMax: 5,
     selfWeightPercent: 40,
     is360Enabled: false,

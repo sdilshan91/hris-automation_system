@@ -23,7 +23,7 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     startDate: '2026-01-01',
     endDate: '2026-12-31',
     phases: [],
-    participantScope: 'AllEmployees',
+    scope: { scopeType: 'AllEmployees', departmentIds: [], employeeIds: [] },
     ratingScaleMax: 5,
     selfWeightPercent: 40,
     is360Enabled: false,
@@ -201,17 +201,80 @@ describe('CycleFormComponent (AC-1 / AC-5)', () => {
     expect(serviceSpy.create).not.toHaveBeenCalled();
   });
 
-  it('BUG-259: edit mode does not throw when the cycle has only a flat participantScope (no nested ids), and prefills the scope-type control', async () => {
-    // BE CycleDto returns the flat scope enum only — no nested { scopeType, ids }.
+  it('BUG-260: edit mode prefills the scope type AND the persisted department ids from the nested scope', async () => {
+    // BE CycleDto now returns the full nested scope { scopeType, departmentIds, employeeIds }.
     const departmentsCycle: ICycle = {
       ...createdCycle,
-      participantScope: 'Departments',
+      scope: {
+        scopeType: 'Departments',
+        departmentIds: ['dept-1', 'dept-2'],
+        employeeIds: [],
+      },
     };
-    // The crash guard: patchFromCycle must not dereference a missing nested scope.
     await expectAsync(setup('cyc-new', departmentsCycle)).toBeResolved();
     expect(component.isEdit()).toBeTrue();
-    // Scope-type radio reflects the flat enum; ids are empty (re-selected until BUG-260).
+    // Scope-type reflects the nested scopeType; department ids are now pre-selected.
     expect(component.form.get('scopeType')?.value).toBe('Departments');
+    expect(component.form.get('scopeIds')?.value).toBe('dept-1, dept-2');
+  });
+
+  it('BUG-260: edit mode prefills persisted employee ids for a CustomList scope', async () => {
+    const customCycle: ICycle = {
+      ...createdCycle,
+      scope: {
+        scopeType: 'CustomList',
+        departmentIds: [],
+        employeeIds: ['emp-1', 'emp-2'],
+      },
+    };
+    await setup('cyc-new', customCycle);
+    expect(component.form.get('scopeType')?.value).toBe('CustomList');
+    expect(component.form.get('scopeIds')?.value).toBe('emp-1, emp-2');
+  });
+
+  it('BUG-260: edit→save round-trip re-sends the prefilled department ids (write-side scope unchanged)', async () => {
+    const departmentsCycle: ICycle = {
+      ...createdCycle,
+      scope: {
+        scopeType: 'Departments',
+        departmentIds: ['dept-1', 'dept-2'],
+        employeeIds: [],
+      },
+    };
+    await setup('cyc-new', departmentsCycle);
+    // Give the cycle a valid phase set so it can be saved (dates prefilled from the cycle).
+    const phaseDates: Record<string, [string, string]> = {
+      GoalSetting: ['2026-01-05', '2026-01-20'],
+      SelfAssessment: ['2026-01-25', '2026-02-10'],
+      ManagerReview: ['2026-02-15', '2026-03-01'],
+      Calibration: ['2026-03-05', '2026-03-10'],
+      Publish: ['2026-03-15', '2026-03-20'],
+    };
+    for (const ctrl of component.phases.controls) {
+      const [s, e] = phaseDates[ctrl.value.phaseType];
+      ctrl.patchValue({ startDate: s, endDate: e });
+    }
+    fixture.detectChanges();
+
+    expect(component.canSave()).toBeTrue();
+    component.save();
+
+    const req = serviceSpy.update.calls.mostRecent()
+      .args[1] as ISaveCycleRequest;
+    expect(req.scope.scopeType).toBe('Departments');
+    expect(req.scope.departmentIds).toEqual(['dept-1', 'dept-2']);
+    expect(req.scope.employeeIds).toEqual([]);
+  });
+
+  it('BUG-260: edit mode does not throw when the cycle has no nested scope (null-safe fallback)', async () => {
+    // Defensive: an older/partial payload without `scope` must not crash patchFromCycle.
+    const noScopeCycle = {
+      ...createdCycle,
+      scope: undefined,
+    } as unknown as ICycle;
+    await expectAsync(setup('cyc-new', noScopeCycle)).toBeResolved();
+    expect(component.isEdit()).toBeTrue();
+    expect(component.form.get('scopeType')?.value).toBe('AllEmployees');
     expect(component.form.get('scopeIds')?.value).toBe('');
   });
 

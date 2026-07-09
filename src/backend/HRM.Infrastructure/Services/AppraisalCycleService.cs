@@ -79,6 +79,11 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             IsCalibrationEnabled = input.IsCalibrationEnabled,
             IsAnonymousFeedback = input.IsAnonymousFeedback,
             ParticipantScope = input.Scope.ScopeType,
+            // BUG-260: persist the department selection (prefill only) whenever the scope is Departments; clear it
+            // otherwise. This lives alongside the resolved participant snapshot and does not affect resolution.
+            ScopeDepartmentIds = input.Scope.ScopeType == ParticipantScopeType.Departments
+                ? (input.Scope.DepartmentIds ?? []).Distinct().ToList()
+                : [],
             Phases = BuildPhases(cycleId, input.Phases),
             IsDeleted = false,
         };
@@ -103,7 +108,7 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             "Appraisal cycle created. Id={CycleId}, Type={Type}, Participants={Count}, TenantId={TenantId}, By={User}",
             cycleId, input.Type, employeeIds.Count, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<CycleDto>.Success(ToDto(cycle, employeeIds.Count));
+        return Result<CycleDto>.Success(ToDto(cycle, employeeIds.Count, employeeIds));
     }
 
     // ── Update / extend phase (AC-5) ─────────────────────────────────────────
@@ -174,12 +179,19 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
         _scheduler?.ScheduleCycleJobs(_tenantContext.TenantId, cycle.Id);
         await NotifyParticipantsAsync(cycle.Id, "cycle-updated", "phase dates changed", cancellationToken);
 
-        var count = await _dbContext.CycleParticipants.CountAsync(p => p.CycleId == cycle.Id, cancellationToken);
+        // BUG-260: load the resolved participant ids (not just a count) so the returned DTO's Scope is populated.
+        // The department selection (cycle.ScopeDepartmentIds) is preserved as-is — UpdateCycleInput carries no
+        // scope, so participants are immutable post-create (see OUT-OF-LANE note).
+        var participantEmployeeIds = await _dbContext.CycleParticipants
+            .AsNoTracking()
+            .Where(p => p.CycleId == cycle.Id)
+            .Select(p => p.EmployeeId)
+            .ToListAsync(cancellationToken);
         _logger.LogInformation(
             "Appraisal cycle updated. Id={CycleId}, TenantId={TenantId}, By={User}",
             cycle.Id, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<CycleDto>.Success(ToDto(cycle, count));
+        return Result<CycleDto>.Success(ToDto(cycle, participantEmployeeIds.Count, participantEmployeeIds));
     }
 
     // ── Clone (FR-8) ─────────────────────────────────────────────────────────
@@ -223,6 +235,8 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             IsCalibrationEnabled = source.IsCalibrationEnabled,
             IsAnonymousFeedback = source.IsAnonymousFeedback,
             ParticipantScope = source.ParticipantScope,
+            // BUG-260: a clone copies the department selection as a SETTING (participants are re-resolved on edit).
+            ScopeDepartmentIds = source.ScopeDepartmentIds.ToList(),
             IsDeleted = false,
             Phases = source.Phases
                 .OrderBy(p => p.Sequence)
@@ -290,12 +304,17 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
         if (targetStatus == AppraisalCycleStatus.Cancelled)
             await NotifyParticipantsAsync(cycle.Id, "cycle-cancelled", reason!.Trim(), cancellationToken);
 
-        var count = await _dbContext.CycleParticipants.CountAsync(p => p.CycleId == cycle.Id, cancellationToken);
+        // BUG-260: load the resolved participant ids so the returned DTO's Scope is populated.
+        var participantEmployeeIds = await _dbContext.CycleParticipants
+            .AsNoTracking()
+            .Where(p => p.CycleId == cycle.Id)
+            .Select(p => p.EmployeeId)
+            .ToListAsync(cancellationToken);
         _logger.LogInformation(
             "Appraisal cycle status changed. Id={CycleId}, To={Status}, TenantId={TenantId}, By={User}",
             cycle.Id, targetStatus, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<CycleDto>.Success(ToDto(cycle, count));
+        return Result<CycleDto>.Success(ToDto(cycle, participantEmployeeIds.Count, participantEmployeeIds));
     }
 
     // ── Delete (BR-2) ────────────────────────────────────────────────────────
@@ -353,8 +372,14 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
         if (cycle is null)
             return Result<CycleDto>.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
 
-        var count = await _dbContext.CycleParticipants.CountAsync(p => p.CycleId == cycleId, cancellationToken);
-        return Result<CycleDto>.Success(ToDto(cycle, count));
+        // BUG-260: load the resolved participant ids (not just a count) so the DTO's Scope.EmployeeIds is
+        // populated for the edit-form prefill. Tenant-scoped via the global query filter.
+        var participantEmployeeIds = await _dbContext.CycleParticipants
+            .AsNoTracking()
+            .Where(p => p.CycleId == cycleId)
+            .Select(p => p.EmployeeId)
+            .ToListAsync(cancellationToken);
+        return Result<CycleDto>.Success(ToDto(cycle, participantEmployeeIds.Count, participantEmployeeIds));
     }
 
     public async Task<Result<IReadOnlyList<CycleSummaryDto>>> ListAsync(
@@ -645,7 +670,7 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
         IsCurrent = p.ContainsInstant(now),
     };
 
-    private static CycleDto ToDto(AppraisalCycle c, int participantCount)
+    private static CycleDto ToDto(AppraisalCycle c, int participantCount, IReadOnlyList<Guid>? participantEmployeeIds = null)
     {
         var now = DateTime.UtcNow;
         return new CycleDto
@@ -665,6 +690,12 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             IsCalibrationEnabled = c.IsCalibrationEnabled,
             IsAnonymousFeedback = c.IsAnonymousFeedback,
             ParticipantScope = c.ParticipantScope,
+            // BUG-260: the full scope. DepartmentIds is the persisted selection (empty for non-Departments
+            // scopes / pre-existing cycles); EmployeeIds is the resolved participant set (empty when not loaded).
+            Scope = new CycleScopeDto(
+                c.ParticipantScope,
+                c.ScopeDepartmentIds.ToList(),
+                participantEmployeeIds ?? []),
             CancellationReason = c.CancellationReason,
             ParticipantCount = participantCount,
             Phases = c.Phases.OrderBy(p => p.Sequence).Select(p => ToPhaseDto(p, now)).ToList(),
