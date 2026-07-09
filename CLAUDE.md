@@ -152,8 +152,9 @@ diagnosis). **Read-only on the codebase.**
 | `@test-runner` | **Executes** test cases against the running stack + **triages** findings (bug/issue/enhancement: severity, root cause, repro). **REPORT-ONLY — never fixes, never opens PRs.** Writes only to `test-cases/` ledgers. | _(no branch — diagnoses only)_ | playwright (UI/a11y/cross-browser) + chrome-devtools (lighthouse/perf-trace/memory) + create_issue (optional); runs xUnit/Karma/Playwright/axe/k6/curl via Bash |
 | `@test-authenticator` | **Read-only auditor** of test quality — flags "test theater" (mock-everything, tautologies, happy-path-only, InMemory-masks-Postgres, fake isolation arms). Reports a verdict; **never edits/weakens a test.** Use after test code changes. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 | `@integration-enforcer` | **Read-only auditor** of wiring — catches orphaned code (undispatched MediatR handlers, missing DI, unrouted Angular components, entities missing tenant query filters). Reports a verdict; **never wires it itself.** Use after implementation. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
+| `@principal-advisor` | **Read-only technical-consultant synthesizer.** Runs the /advisor v1 passes (dependency currency, ADR-drift, complexity/dead-code) + ingests existing auditor reports → ONE ranked, evidence-anchored advisory. REPORT-ONLY — never edits code/opens PRs. | _(no branch — advisory only)_ | _none (read-only: Read/Glob/Grep/Bash/WebSearch/WebFetch + microsoft-learn)_ |
 
-> The last two are **auxiliary local review agents** in [`.claude/agents/review/`](.claude/agents/review/)
+> The last three are **auxiliary local review agents** in [`.claude/agents/review/`](.claude/agents/review/)
 > (adapted from third-party MIT agent definitions, retargeted to this stack). They are read-only and
 > report-only — separate from the pipeline `team/` agents above; invoke them explicitly or let them
 > auto-delegate after dev/test changes.
@@ -177,6 +178,7 @@ diagnosis). **Read-only on the codebase.**
 | `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
 | `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
 | `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `test-cases/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Read-only on code. Adapted (MIT) from gstack `/retro`. |
+| `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical-consultant advisory (REPORT-ONLY).** Evidence-anchored, ranked advisory over 3 net-new passes — tech-radar/dependency currency, ADR-drift, complexity/dead-code — plus light synthesis that links (never re-runs) the existing auditors. Writes `advisory-reports/`, updates `docs/radar/tech-radar.md`, proposes ADRs; folds actionable items into `/auto-heal`. Never edits src / deletes / bumps deps. Drives `@principal-advisor`. |
 | `/auto-heal` | Local | **Living-plan self-healing (breadth).** On any `OUT-OF-LANE:` flag or discovered adjacent gap: files the finding to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and **re-sorts the priority order** (severity × blast-radius × unblocks-others; gated items park at the decision-gate). Encodes Engineering-Discipline rule #6. The orchestrator's counterpart to every agent's out-of-lane contract; complements `/error-recovery` + `/fault-diagnosis` (depth). Never bypasses report-only / test-integrity / decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
@@ -305,7 +307,8 @@ main
 │   │   └── browser-debugger.md    # Playwright-driven UI debugger (read-only)
 │   ├── agents/review/             # Auxiliary read-only review agents (local, adapted)
 │   │   ├── test-authenticator.md  # Flags fake/theatrical tests (report-only)
-│   │   └── integration-enforcer.md # Flags orphaned/unwired code (report-only)
+│   │   ├── integration-enforcer.md # Flags orphaned/unwired code (report-only)
+│   │   └── principal-advisor.md   # Read-only technical-consultant synthesizer
 │   ├── skills/                    # Slash command skills
 │   │   ├── orchestrate.md         # Local + MCP pipeline
 │   │   ├── analyze-module.md
@@ -315,6 +318,7 @@ main
 │   │   ├── fault-diagnosis.md     # Root-cause-before-fix discipline (local)
 │   │   ├── error-recovery.md      # Stuck-loop breaker / failure-counter (local)
 │   │   ├── retro.md               # Engineering retrospective from git + ledgers (local)
+│   │   ├── advisor.md             # Technical-consultant advisory (report-only); + advisor/currency-scan.py
 │   │   └── github-pipeline.md     # Remote pipeline (needs credits)
 │   ├── hooks/                     # Automation hooks
 │   │   ├── post-user-story-commit.sh
