@@ -31,4 +31,11 @@ public sealed record EmailMessage(
     string Subject,
     string BodyHtml,
     string BodyText,
-    string? FromAddress = null);
+    string? FromAddress = null,
+    IReadOnlyList<EmailAttachment>? Attachments = null);
+
+/// <summary>
+/// A single binary attachment on an <see cref="EmailMessage"/> (US-NTF-006 Phase 4). Optional and additive — the
+/// generic notification/email flows never set it; only the payslip-email path (US-PAY-011) attaches a PDF.
+/// </summary>
+public sealed record EmailAttachment(string FileName, byte[] Content, string ContentType);

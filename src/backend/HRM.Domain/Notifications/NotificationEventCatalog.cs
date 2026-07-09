@@ -89,6 +89,15 @@ public static class NotificationEventCatalog
         "taskTitle", "employeeName", "dueDate", "daysOverdue",
     ];
 
+    // ── Shared placeholders for the payroll run + approval-workflow events (US-NTF-006 Phase 4, US-PAY-003/008). The
+    // Real service loads the run for these fields. MUST be declared before _byKey: the eager BuildCatalog() at
+    // type-init references it, so a later declaration would leave it null → NRE in the type initializer (Phase 2a
+    // lesson). ──
+    private static readonly string[] PayrollPlaceholders =
+    [
+        "payroll.period", "payroll.processed", "payroll.skipped", "payroll.runId",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -663,7 +672,155 @@ public static class NotificationEventCatalog
                 "{{forgotPassword.url}}.\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.SystemAnnouncements,
             IsMandatory: false);
+
+        // ── US-NTF-006 Phase 4 — data export ready (US-ADM-010 AC-2/BR-6). Email-only: recipients are RAW addresses
+        // (the requester + the tenant billing/contact) that may have no User row. Carries the download link. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "data_export_ready",
+            EventName: "Data Export Ready",
+            Placeholders: ["export.downloadUrl", .. TenantPlaceholders],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["export"] = new Dictionary<string, object?>
+                {
+                    ["downloadUrl"] = "https://app.example.com/exports/019f2607/download?token=sample",
+                },
+                ["tenant"] = SampleTenant(),
+            },
+            DefaultSubject: "Your data export is ready to download",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Your requested data export bundle is ready. Use the secure link below to download it. The link " +
+                "is time-limited.</p>" +
+                "<p><a href=\"{{export.downloadUrl}}\">Download your export</a></p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Your requested data export bundle is ready. Use the secure link below to download it. The link is " +
+                "time-limited.\n\n{{export.downloadUrl}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 4 — payroll run + approval workflow (US-PAY-003 AC-3 / US-PAY-008 AC-1). Recipients are
+        // resolved in the Real service (approver pool / run submitter); the payload carries the run period + counts. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_run_ready",
+            EventName: "Payroll Run Ready for Review",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "Payroll run for {{payroll.period}} is ready for review",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> has finished computing " +
+                "({{payroll.processed}} processed, {{payroll.skipped}} skipped) and is awaiting your review.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} has finished computing ({{payroll.processed}} processed, " +
+                "{{payroll.skipped}} skipped) and is awaiting your review.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_approval_submitted",
+            EventName: "Payroll Run Submitted for Approval",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "Payroll run for {{payroll.period}} needs your approval",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> has been submitted and is awaiting your " +
+                "approval.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} has been submitted and is awaiting your approval.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_approval_approved",
+            EventName: "Payroll Run Approved",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "Your payroll run for {{payroll.period}} was approved",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> you submitted has been " +
+                "<strong>approved</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} you submitted has been approved.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_approval_rejected",
+            EventName: "Payroll Run Rejected",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "Your payroll run for {{payroll.period}} was rejected",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> you submitted has been " +
+                "<strong>rejected</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} you submitted has been rejected.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_approval_returned",
+            EventName: "Payroll Run Returned to HR",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "Your payroll run for {{payroll.period}} was returned to HR",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> you submitted has been " +
+                "<strong>returned to HR</strong> for changes.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} you submitted has been returned to HR for changes.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_finalized",
+            EventName: "Payroll Run Finalized",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "Payroll run for {{payroll.period}} was finalized",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> has been <strong>finalized</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} has been finalized.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
     }
+
+    // ── Sample-data for the payroll run + approval events (US-NTF-006 Phase 4). ──
+    private static Dictionary<string, object?> PayrollSample() => new()
+    {
+        ["payroll"] = new Dictionary<string, object?>
+        {
+            ["period"] = "May 2026", ["processed"] = 42, ["skipped"] = 1,
+            ["runId"] = "019f2607-0000-7000-8000-000000000000",
+        },
+        ["tenant"] = SampleTenant(),
+    };
 
     /// <summary>Merges the shared tenant-branding sample values into a tenant sample node (for Phase 2b events).</summary>
     private static Dictionary<string, object?> MergeTenant(Dictionary<string, object?> tenant)

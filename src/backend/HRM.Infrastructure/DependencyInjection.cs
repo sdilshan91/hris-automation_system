@@ -243,7 +243,7 @@ public static class DependencyInjection
         services.AddScoped<IPayrollRunService, PayrollRunService>();
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
         services.AddScoped<IPayrollApprovalService, PayrollApprovalService>();  // US-PAY-008
-        services.AddScoped<IPayrollNotificationService, LogOnlyPayrollNotificationService>();
+        services.AddScoped<IPayrollNotificationService, RealPayrollNotificationService>();  // US-NTF-006 Phase 4
 
         // US-PAY-004: Payroll — payslip-PDF generation. The generation service (enqueue + status + downloads)
         // takes an OPTIONAL IPayslipGenerationJobScheduler (Hangfire-backed impl registered in Program.cs) so
@@ -261,7 +261,7 @@ public static class DependencyInjection
         // SMTP deferred, TODO US-NTF).
         services.AddScoped<IPayslipDistributionService, PayslipDistributionService>();
         services.AddScoped<IPayslipDistributionRunner, PayslipDistributionRunner>();
-        services.AddScoped<IPayslipEmailSender, LogOnlyPayslipEmailSender>();
+        services.AddScoped<IPayslipEmailSender, RealPayslipEmailSender>();  // US-NTF-006 Phase 4
 
         // US-PAY-006: Payroll — statutory deduction configuration (income-tax slabs, EPF/ETF/professional/custom
         // social-security) + the side-effect-free FR-5 test calculation. The deduction resolver (FR-4) is the
@@ -545,7 +545,7 @@ public static class DependencyInjection
         // Real email + pre-signed S3 URL + the schema PDF + at-rest encryption are DEFERRED (TODO US-NTF / infra).
         services.AddScoped<ITenantDataExportService, TenantDataExportService>();
         services.AddScoped<IExportCleanupService, ExportCleanupService>();
-        services.AddScoped<IDataExportNotificationService, LogOnlyDataExportNotificationService>();
+        services.AddScoped<IDataExportNotificationService, RealDataExportNotificationService>();  // US-NTF-006 Phase 4
 
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
