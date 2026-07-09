@@ -56,11 +56,18 @@ public sealed class SmtpEmailSender : IEmailSender
         email.From.Add(new MailboxAddress(fromName, fromAddress));
         email.To.Add(MailboxAddress.Parse(message.RecipientEmail));
         email.Subject = message.Subject;
-        email.Body = new BodyBuilder
+
+        var builder = new BodyBuilder
         {
             HtmlBody = message.BodyHtml,
             TextBody = message.BodyText,
-        }.ToMessageBody();
+        };
+        if (message.Attachments is { Count: > 0 })
+        {
+            foreach (var a in message.Attachments)
+                builder.Attachments.Add(a.FileName, a.Content, ContentType.Parse(a.ContentType));
+        }
+        email.Body = builder.ToMessageBody();
 
         using var client = new SmtpClient();
         try
