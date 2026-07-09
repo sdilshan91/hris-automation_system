@@ -5721,7 +5721,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** `SubmitRegularizationValidator:74-83` has no tenant-tz access (FluentValidation, no DI), so its fine-grained future check treats the wall-clock as UTC. The **authoritative** future-DATE rejection is now tz-aware in the service; this validator check is merely lenient (not falsely-rejecting). Fixing needs the tenant tz injected into the validator (architectural). **Suggested:** inject tenant tz or accept service-layer authority. Report only.
 
 ### ISSUE-251 — TenantClock.LocalToUtc throws on a DST spring-forward gap time (rare non-UTC regularization edge → potential 500)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed, Phase 2b — limitation of the new helper)
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #225, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — `LocalToUtc` now guards `IsInvalidTime` and snaps the wall-clock forward past the gap by the transition's `DaylightDelta`; UTC/valid-time paths byte-identical. Regression in `TenantClockTests`. Was: OPEN (auto-healed, Phase 2b).
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-004 · (Phase 2b)
 - **Title:** `TenantClock.LocalToUtc` uses `TimeZoneInfo.ConvertTimeToUtc`, which throws `ArgumentException` for a wall-clock that lands exactly in a 1-hour DST spring-forward gap in a non-UTC zone (once/year, that hour) — a latent 500 on a regularization submit. UTC tenants + all non-gap/ambiguous times are unaffected. **Suggested:** catch invalid-time and either snap-forward by the gap or reject with a clear 400. Report only.
@@ -5769,28 +5769,28 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Fix (applied on this branch):** wrap the delete→redact→audit→save→commit unit in `CreateExecutionStrategy().ExecuteAsync` (retry-safe accumulators, single audit/lifecycle row on commit), mirroring `ApplicantConversionService`. Regression covered by the new Postgres test with `EnableRetryOnFailure` enabled. Flip to VERIFIED via `/verify-fix BUG-252` after the PR merges.
 
 ### ISSUE-253 — ApplicantConversionService adds an AuditLog inside its retry delegate without detach-on-rollback (rare transient retry could double-insert)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building BUG-252, 2026-07-08) — **deferred (report-only, needs decision)**
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #227, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — the conversion `AuditLog` is hoisted to a local and detached on rollback (mirrors the BUG-252 fix); regression forces a real transient retry on Postgres and asserts a single audit row. NOTE: the broader unreset-mutation gap on retry (Employee double-create / spurious `already_converted`) is tracked separately as **BUG-264**. Was: OPEN (auto-healed from BUG-252 work).
 - **Layer:** BE / DB
 - **Module / US / TC:** Recruitment · US-REC-010 (applicant→employee convert)
 - **Title:** `ApplicantConversionService.cs:~230-239` creates and `Add`s a fresh `AuditLog` inside the `CreateExecutionStrategy().ExecuteAsync` delegate but, unlike the BUG-252 fix, does not `Detach` it on rollback. A genuine transient failure that triggers a strategy **retry** could leave the prior attempt's Added audit row tracked and double-insert it on the successful attempt. Harmless today (retries are rare in practice and its tests run on InMemory, which never retries), so no live impact observed.
 - **Suggested direction (NOT applied):** apply the same catch-block `Detach` to the audit row (one-line, mirrors BUG-252). Touches a currently-working path → needs a "worth it?" decision. Report only.
 
 ### ISSUE-254 — recommendations `cycles/completed` returns `ratingsPublishedOn` from cycle EndDate as a proxy (no real publish timestamp)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag building BUG-244 #6, 2026-07-08) — deferred (needs decision)
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #226, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — added a real nullable `RatingsPublishedOn` column (migration), stamped on transition to Completed; the completed-cycles picker returns it with a `?? EndDate` fallback for legacy cycles. Decision (user): add the real column rather than keep the proxy. Was: OPEN.
 - **Layer:** BE / data-model
 - **Module / US / TC:** Performance · recommendation cycle picker
 - **Title:** `AppraisalCycle` has **no** dedicated "final ratings published" timestamp, so the new `GetCompletedCyclesForRecommendationsQuery` populates the FE `ICompletedCycleOption.ratingsPublishedOn` from the cycle `EndDate` as a display proxy. Filtering is correct (`Status == Completed` **is** the domain's published signal, same gate `RecommendationService.SubmitAsync` uses for BR-1); only the displayed date is approximate.
 - **Suggested direction (NOT applied):** accept the EndDate proxy, or add a real `RatingsPublishedOn` column set on transition to Completed (schema/migration + backfill). Report only.
 
 ### ISSUE-255 — API test harness seeds no permissionless persona, so negative-authz HTTP arms can't be written for `[RequirePermission]` routes
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag, test-health, 2026-07-08)
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #226, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — `ApiTestFactory.CreateClientWithPermissionsAsync` seeds a genuinely empty-permission role + user and returns an authed client; proven with a real 403 (permissionless) / 200 (privileged) arm pair. Was: OPEN.
 - **Layer:** TEST
 - **Module / US / TC:** Platform / test-infra (`HRM.Tests/Integration/Http/ApiTestFactory.cs`)
 - **Title:** The `HttpApi` Testcontainers factory seeds only high-privilege personas with login creds, so a "403 without permission" HTTP arm for a `[RequirePermission]`-gated route would be fabricated rather than real (only positive 200 arms are testable end-to-end; the negative gate is covered by the declarative attribute + handler unit coverage). Surfaced writing the BUG-244 #6 auth test.
 - **Suggested direction (NOT applied):** seed a plain Employee-role user on the e2e tenant to enable genuine negative-authz HTTP arms across the suite. Report only.
 
 ### ISSUE-256 — 360 feedback comment over the DB length cap returns 500 instead of 422
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (surfaced by the security audit of the BUG-244 Feedback360 build, 2026-07-08)
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #226, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — a service-layer guard in `Feedback360Service.SubmitFeedbackAsync` returns a uniform `422 comment_too_long` across both the direct and the previously-unvalidated by-assignment path (the real 500 vector); redundant validator MaxLength rules removed for consistency. Was: OPEN.
 - **Layer:** BE
 - **Module / US / TC:** Performance · Feedback360 submit
 - **Title:** 360 feedback comments are trimmed but not length-validated in the service; a body exceeding the Postgres column caps (`OverallComment` 5000, item `Comment` 2000) is rejected only by the DB, surfacing as a 500 rather than a 422. No security impact (no truncation bypass; EF-parameterized, no SQLi), just error-hygiene. Sibling XSS-class note: 360 comments flow verbatim into the results/report DTOs — same class as **ISSUE-226** (ensure the PDF/HTML render encodes them); no new sink added here.
@@ -5819,17 +5819,17 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** Selected department ids were discarded at create (only resolved `CycleParticipant` employee rows persisted) and `CycleDto` exposed no scope ids. Added `AppraisalCycle.ScopeDepartmentIds` (jsonb, migration) + a nested `CycleDto.Scope{ScopeType,DepartmentIds,EmployeeIds}`; FE prefills all three (null-safe). Pre-existing Departments cycles can't backfill department ids (expected).
 
 ### BUG-261 — Appraisal-cycle scope is silently NOT editable on update (UpdateCycleInput has no Scope)
-- **Type / Severity / Status:** BUG · MED · OPEN — deferred (needs decision) (surfaced building BUG-260, 2026-07-09)
+- **Type / Severity / Status:** BUG · MED · **RESOLVED (PR #226, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306 + FE cycle-form 18/18)** — `UpdateCycleInput` gains an optional `Scope`; `UpdateAsync` re-resolves participants + re-runs BR-4 (excluding self) + re-persists `ScopeDepartmentIds`, guarded to `Draft` (409 `scope_locked` otherwise — Draft-only can't orphan collected feedback). FE gates the scope selector to Draft + handles 409. Decision (user): fully editable, implemented as Draft-only. Was: OPEN.
 - **Layer:** FE↔BE contract · **Module:** Performance · cycle edit
 - **Title:** `UpdateCycleInput` carries **no** `Scope`, so `AppraisalCycleService.UpdateAsync` never re-resolves participants — a user can PREFILL the scope on edit but changing it is **silently ignored** (the FE's `scope` in the update payload is dropped, BUG-257-class drift on the *update* path). Pre-existing (update always ignored scope); prefill works. **Suggested (NOT applied):** add `UpdateCycleInput.Scope` + re-resolution (+ BR checks) and match the FE, OR make the scope control read-only on edit to avoid the UX trap. Report only.
 
 ### ISSUE-262 — `offer_expiry_reminder` notification event cataloged + mapped but no caller emits it (REC-007 FR-8 unwired)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (surfaced building US-NTF-006 Phase 5a, 2026-07-09)
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #227, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — new `OfferExpiryReminderJob` + `IOfferExpiryReminderScheduler` scheduled from `OfferService.SendAsync` at ExpiryDate−3d (documented constant), stored on a separate `Offer.ExpiryReminderJobId` (migration), cancelled on respond/withdraw/regenerate, idempotent (no-ops unless `IsActive`). Was: OPEN.
 - **Layer:** BE · **Module:** Recruitment · offer expiry
 - **Title:** The `offer_expiry_reminder` event/template + eventType mapping exist, but no scheduler emits `offer-expiry-reminder` (only offer-sent/withdrawn/expired fire; the offer scheduler only schedules the *expiry* job, not a pre-expiry reminder). US-REC-007 FR-8 pre-expiry reminder is unwired; the notification key sits dormant, ready. **Suggested:** schedule a pre-expiry reminder job that emits the eventType. Report only.
 
 ### ISSUE-263 — Interview notifications reach interviewers by EMAIL only (no in-app)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (deferred, surfaced building US-NTF-006 Phase 5a, 2026-07-09)
+- **Type / Severity / Status:** ISSUE · LOW · **RESOLVED (PR #227, merged 2026-07-09; verified via /verify-fix — merged-union BE 3306/3306)** — the interview seam now carries interviewer employee ids; `RealRecruitmentNotificationService` resolves each to `{UserId, Email}` and dispatches in-app + email when the interviewer's Employee has a linked UserId, email-only otherwise. In-app value is capped by employee↔user provisioning → tracked as **ISSUE-265**. Was: OPEN.
 - **Layer:** BE · **Module:** Recruitment · interviews
 - **Title:** `NotifyInterviewAsync`/`NotifyInterviewReminderAsync` receive interviewers as **raw emails**, so the real seam can only send them email (not in-app) — the dispatcher needs a `UserId` for the in-app leg. **Suggested:** widen the interface to pass interviewer employee/user ids (ripples into `InterviewService` + `InterviewReminderJob` + tests). Report only.
 
