@@ -10,10 +10,11 @@ namespace HRM.Infrastructure.Security;
 /// host. Registered as a singleton (the underlying protector is thread-safe).
 /// </summary>
 /// <remarks>
-/// <para>PRODUCTION KEY-PERSISTENCE CAVEAT: DataProtection's default key ring is per-instance/ephemeral, so
-/// on a multi-instance deploy or after a redeploy the keys rotate and existing secrets can no longer be
-/// decrypted. A shared, persisted key ring (DB/Redis/blob) is required in production — tracked as a separate
-/// infra task. The legacy-plaintext fallback in <see cref="Unprotect"/> keeps this safe in the meantime.</para>
+/// <para>KEY PERSISTENCE (ISSUE-247): the Data Protection key ring is persisted to Postgres via EF
+/// (<c>PersistKeysToDbContext&lt;AppDbContext&gt;</c> + a fixed <c>SetApplicationName("HRM")</c>, see
+/// <c>DependencyInjection.AddInfrastructure</c>), so keys survive redeploys and are shared across instances
+/// — encrypted MFA secrets stay decryptable. The legacy-plaintext fallback in <see cref="Unprotect"/> still
+/// covers pre-encryption values and any values written before a deliberate key re-key.</para>
 /// </remarks>
 public sealed class MfaSecretProtector : IFieldProtector
 {

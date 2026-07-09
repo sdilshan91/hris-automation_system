@@ -2,6 +2,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Interfaces;
 using HRM.Domain.Performance;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Infrastructure.Persistence;
@@ -10,7 +11,7 @@ namespace HRM.Infrastructure.Persistence;
 /// EF Core DbContext with multi-tenant global query filters.
 /// All tenant-scoped entities are filtered by the current tenant context.
 /// </summary>
-public sealed class AppDbContext : DbContext, IUnitOfWork
+public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyContext
 {
     private readonly ITenantContext _tenantContext;
 
@@ -159,6 +160,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork
     // US-NTF-006: notification delivery-tracking rows (tenant-scoped; written by RealNotificationDispatcher,
     // driven to terminal state by the Hangfire SendEmailJob).
     public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+
+    // ISSUE-247: framework-owned Data Protection key ring, persisted to Postgres via EF. NOT a BaseEntity,
+    // so the TenantInterceptor does not stamp it and it intentionally gets NO tenant query filter — it is a
+    // shared, platform-wide key ring (IDataProtectionKeyContext).
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
