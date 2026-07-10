@@ -39,27 +39,30 @@ public sealed class AttendanceSummaryExportJob : IAttendanceSummaryExportJob
 
         using var scope = _scopeFactory.CreateScope();
 
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        tenantContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var service = scope.ServiceProvider.GetRequiredService<IAttendanceSummaryService>();
         var storage = scope.ServiceProvider.GetRequiredService<IReportExportStorage>();
 
-        var summary = await service.GetMonthlyAsync(year, month, filter, cancellationToken);
-        if (summary.IsFailure)
+        // RLS increment 2c: run the export via the shared runner so it sets the tenant context (and, gated on
+        // Rls:Enabled, the app.current_tenant GUC) — this export-by-id job stays inside the RLS backstop.
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
         {
-            Log.Error("AttendanceSummaryExportJob {ReportId} failed to generate: {Error}",
-                reportId, summary.Error);
-            return;
-        }
+            var summary = await service.GetMonthlyAsync(year, month, filter, ct);
+            if (summary.IsFailure)
+            {
+                Log.Error("AttendanceSummaryExportJob {ReportId} failed to generate: {Error}",
+                    reportId, summary.Error);
+                return;
+            }
 
-        var (content, fileName, contentType) = service.RenderExport(year, month, format, summary.Value!);
-        var location = await storage.SaveAsync(tenantId, reportId, fileName, contentType, content, cancellationToken);
+            var (content, fileName, contentType) = service.RenderExport(year, month, format, summary.Value!);
+            var location = await storage.SaveAsync(tenantId, reportId, fileName, contentType, content, ct);
 
-        // TODO(US-NTF): dispatch a real "your export is ready" notification with a download link.
-        Log.Information(
-            "AttendanceSummaryExportJob {ReportId} complete: {Rows} rows, {Bytes} bytes stored at {Location}. " +
-            "User notification deferred (US-NTF).",
-            reportId, summary.Value!.Rows.Count, content.Length, location);
+            // TODO(US-NTF): dispatch a real "your export is ready" notification with a download link.
+            Log.Information(
+                "AttendanceSummaryExportJob {ReportId} complete: {Rows} rows, {Bytes} bytes stored at {Location}. " +
+                "User notification deferred (US-NTF).",
+                reportId, summary.Value!.Rows.Count, content.Length, location);
+        }, cancellationToken);
     }
 }

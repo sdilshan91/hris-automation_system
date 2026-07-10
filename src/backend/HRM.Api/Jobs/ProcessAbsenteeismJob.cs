@@ -59,41 +59,40 @@ public sealed class ProcessAbsenteeismJob
             {
                 using var scope = _scopeFactory.CreateScope();
 
-                // Restore the tenant context for this scope so global query filters apply.
-                var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-                {
-                    mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-                }
-
+                var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
                 var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var lopService = scope.ServiceProvider.GetRequiredService<ILopService>();
 
+                // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context
+                // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
                 int generated = 0;
-                int page = 0;
-                while (true)
+                await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
                 {
-                    var employeeIds = await dbContext.Employees
-                        .Where(e => e.Status != EmployeeStatus.Terminated)
-                        .OrderBy(e => e.Id)
-                        .Skip(page * EmployeePageSize)
-                        .Take(EmployeePageSize)
-                        .Select(e => e.Id)
-                        .ToListAsync();
-                    if (employeeIds.Count == 0)
-                        break;
-
-                    foreach (var employeeId in employeeIds)
+                    int page = 0;
+                    while (true)
                     {
-                        var result = await lopService.GenerateAbsenteeismLopAsync(employeeId, from, to);
-                        if (result.IsSuccess)
-                            generated += result.Value;
-                    }
+                        var employeeIds = await dbContext.Employees
+                            .Where(e => e.Status != EmployeeStatus.Terminated)
+                            .OrderBy(e => e.Id)
+                            .Skip(page * EmployeePageSize)
+                            .Take(EmployeePageSize)
+                            .Select(e => e.Id)
+                            .ToListAsync();
+                        if (employeeIds.Count == 0)
+                            break;
 
-                    if (employeeIds.Count < EmployeePageSize)
-                        break;
-                    page++;
-                }
+                        foreach (var employeeId in employeeIds)
+                        {
+                            var result = await lopService.GenerateAbsenteeismLopAsync(employeeId, from, to);
+                            if (result.IsSuccess)
+                                generated += result.Value;
+                        }
+
+                        if (employeeIds.Count < EmployeePageSize)
+                            break;
+                        page++;
+                    }
+                });
 
                 Log.Information("ProcessAbsenteeismJob: Generated {Count} LOP entr(ies) for tenant {TenantId}",
                     generated, tenantId);

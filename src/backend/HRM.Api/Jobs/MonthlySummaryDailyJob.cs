@@ -63,14 +63,17 @@ public sealed class MonthlySummaryDailyJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        tenantContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var service = scope.ServiceProvider.GetRequiredService<IAttendanceSummaryService>();
-        var result = await service.GenerateAsync(year, month, CancellationToken.None);
 
-        if (result.IsFailure)
-            Log.Warning("MonthlySummaryDailyJob: tenant {TenantId} generation failed: {Error}",
-                tenantId, result.Error);
+        // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context
+        // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
+        {
+            var result = await service.GenerateAsync(year, month, ct);
+            if (result.IsFailure)
+                Log.Warning("MonthlySummaryDailyJob: tenant {TenantId} generation failed: {Error}",
+                    tenantId, result.Error);
+        });
     }
 }

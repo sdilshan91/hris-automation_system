@@ -30,16 +30,14 @@ public sealed class InterviewReminderJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        // Restore tenant context so global query filters scope the reads (tenant isolation, NFR-4).
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-        {
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-        }
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<IRecruitmentNotificationService>();
 
+        // RLS increment 2c: run the tenant body via the shared runner so it sets the tenant context (and, gated
+        // on Rls:Enabled, the app.current_tenant GUC) — this interview-by-id job stays inside the RLS backstop.
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+        {
         var interview = await dbContext.Interviews
             .AsNoTracking()
             .Include(i => i.Interviewers)
@@ -68,5 +66,6 @@ public sealed class InterviewReminderJob
         Log.Information(
             "InterviewReminderJob: sent reminder for interview {InterviewId} (tenant {TenantId}) to applicant + {Count} interviewer(s)",
             interview.Id, tenantId, interviewerEmployeeIds.Count);
+        });
     }
 }

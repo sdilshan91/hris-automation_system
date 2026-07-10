@@ -49,18 +49,18 @@ public sealed class HolidayRecurrenceJob
             {
                 using var scope = _scopeFactory.CreateScope();
 
-                // Restore the tenant context for this scope so global query filters apply.
-                var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-                {
-                    mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-                }
-
+                var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
                 var holidayService = scope.ServiceProvider.GetRequiredService<IHolidayService>();
-                var result = await holidayService.GenerateRecurringForYearAsync(tenantId, targetYear);
 
-                Log.Information("HolidayRecurrenceJob: Generated {Count} holidays for tenant {TenantId}",
-                    result.IsSuccess ? result.Value : 0, tenantId);
+                // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context
+                // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping the whitelisted-holidays
+                // read + write inside the RLS backstop AND under the tenant-scoped (t:{tenantId}:) cache prefix.
+                await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+                {
+                    var result = await holidayService.GenerateRecurringForYearAsync(tenantId, targetYear);
+                    Log.Information("HolidayRecurrenceJob: Generated {Count} holidays for tenant {TenantId}",
+                        result.IsSuccess ? result.Value : 0, tenantId);
+                });
             }
             catch (Exception ex)
             {

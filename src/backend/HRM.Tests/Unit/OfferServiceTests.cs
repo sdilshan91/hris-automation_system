@@ -28,6 +28,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -465,6 +466,10 @@ public sealed class OfferServiceTests
         var services = new ServiceCollection();
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        // RLS increment 2c: the reminder/expiry jobs wrap their body in ITenantJobRunner — register the real
+        // runner + an empty IConfiguration (Rls:Enabled defaults false → runs the work directly, no tx/GUC).
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton(notifications);
         return services.BuildServiceProvider();
     }

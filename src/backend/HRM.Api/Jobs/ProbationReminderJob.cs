@@ -12,15 +12,22 @@ namespace HRM.Api.Jobs;
 public sealed class ProbationReminderJob
 {
     private readonly IEmployeeStatusService _statusService;
+    private readonly ITenantContext _tenantContext;
 
-    public ProbationReminderJob(IEmployeeStatusService statusService)
+    public ProbationReminderJob(IEmployeeStatusService statusService, ITenantContext tenantContext)
     {
         _statusService = statusService;
+        _tenantContext = tenantContext;
     }
 
     public async Task RunAsync()
     {
         Log.Information("Starting ProbationReminderJob");
+
+        // RLS increment 2c: cross-tenant sweep (the service spans tenants via IgnoreQueryFilters). System
+        // context → privileged (BYPASSRLS) routing under RLS + sys: cache prefix.
+        _tenantContext.SetSystemContext();
+
         await _statusService.CheckProbationEndDatesAsync();
         Log.Information("Completed ProbationReminderJob");
     }

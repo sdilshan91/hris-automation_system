@@ -1,6 +1,4 @@
 using HRM.Application.Common.Interfaces;
-using HRM.Domain.Entities;
-using HRM.Infrastructure.Services;
 using Serilog;
 
 namespace HRM.Api.Jobs;
@@ -26,17 +24,19 @@ public sealed class HrReportExportJob : IHrReportExportJob
 
         using var scope = _scopeFactory.CreateScope();
 
-        // Restore the tenant context so the global query filter scopes the export to this tenant (AC-5).
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is TenantContext mutableContext)
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var service = scope.ServiceProvider.GetRequiredService<IHrReportExportService>();
-        var result = await service.GenerateAsync(exportId, cancellationToken);
 
-        if (result.IsFailure)
-            Log.Warning("HrReportExportJob {ExportId} finished with failure: {Error}", exportId, result.Error);
-        else
-            Log.Information("HrReportExportJob {ExportId} complete.", exportId);
+        // RLS increment 2c: run the export via the shared runner so it sets the tenant context (and, gated on
+        // Rls:Enabled, the app.current_tenant GUC) — this export-by-id job stays inside the RLS backstop (AC-5).
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
+        {
+            var result = await service.GenerateAsync(exportId, ct);
+
+            if (result.IsFailure)
+                Log.Warning("HrReportExportJob {ExportId} finished with failure: {Error}", exportId, result.Error);
+            else
+                Log.Information("HrReportExportJob {ExportId} complete.", exportId);
+        }, cancellationToken);
     }
 }

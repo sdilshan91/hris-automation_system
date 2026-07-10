@@ -27,6 +27,12 @@ public static class DependencyInjection
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ICurrentUser, CurrentUser>();
 
+        // P3/RLS increment 2c: the per-tenant job runner — sets the tenant context (and, gated on Rls:Enabled,
+        // the app.current_tenant GUC inside a retry-safe transaction) so Hangfire per-tenant jobs stay inside the
+        // RLS backstop. Scoped: resolved from the per-tenant scope each job creates, so it shares that scope's
+        // AppDbContext + ITenantContext. Behaviour-neutral while Rls:Enabled is false (the committed default).
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
+
         // EF Core interceptors
         services.AddScoped<AuditInterceptor>();
         services.AddScoped<TenantInterceptor>();

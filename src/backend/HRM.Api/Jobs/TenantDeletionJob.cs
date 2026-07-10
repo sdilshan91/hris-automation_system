@@ -26,12 +26,11 @@ public sealed class TenantDeletionJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        // Restore tenant context so the global query filters scope the deletion reads to this tenant.
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-        {
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Terminating);
-        }
+        // RLS increment 2c: tenant HARD-DELETE is a privileged platform operation. The deletion service spans the
+        // target tenant's rows via IgnoreQueryFilters + explicit tenant-id scoping AND manages its OWN retry-safe
+        // transaction — so it routes on the SYSTEM context (privileged BYPASSRLS connection), NOT the per-tenant
+        // runner (whose transaction would nest inside the deletion service's own transaction).
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
 
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var stillTerminating = await db.Tenants

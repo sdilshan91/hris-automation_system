@@ -27,6 +27,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HRM.Tests.Unit;
@@ -72,9 +73,13 @@ public sealed class LeaveYearEndJobRetryTests
         var fault = new FaultyCarryForwardService(ThrowsBeforeSuccess);
 
         var services = new ServiceCollection();
-        // Concrete TenantContext (the jobs cast ITenantContext to it to call SetTenant).
+        // Concrete TenantContext (the jobs set the tenant via the runner, which uses ITenantContext).
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
+        // RLS increment 2c: the jobs now wrap their per-tenant body in ITenantJobRunner. Register the real runner
+        // + an empty IConfiguration (Rls:Enabled defaults to false → runs the work directly, no tx/GUC).
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         // Singleton so the invocation counter is shared across the fresh scope each retry attempt creates.
         services.AddSingleton<ILeaveCarryForwardService>(fault);
 

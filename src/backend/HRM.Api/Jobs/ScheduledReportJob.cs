@@ -66,13 +66,15 @@ public sealed class ScheduledReportJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        tenantContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var dashboard = scope.ServiceProvider.GetRequiredService<IAttendanceDashboardService>();
         var storage = scope.ServiceProvider.GetRequiredService<IReportExportStorage>();
 
+        // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context (and,
+        // gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+        {
         var configs = await dbContext.ScheduledReportConfigs
             .Where(c => c.IsActive)
             .ToListAsync();
@@ -97,6 +99,7 @@ public sealed class ScheduledReportJob
                 "Email delivery to {RecipientCount} recipient(s) is DEFERRED (US-NTF).",
                 config.Id, config.ReportType, config.Frequency, tenantId, locator, config.Recipients.Count);
         }
+        });
     }
 
     /// <summary>

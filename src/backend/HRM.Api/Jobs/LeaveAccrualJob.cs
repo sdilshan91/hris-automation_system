@@ -50,15 +50,13 @@ public sealed class LeaveAccrualJob
             {
                 using var scope = _scopeFactory.CreateScope();
 
-                // Set tenant context for this scope.
-                var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-                {
-                    mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-                }
-
+                var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
                 var entitlementService = scope.ServiceProvider.GetRequiredService<ILeaveEntitlementService>();
-                await entitlementService.ProcessAccrualsAsync(leaveYear);
+
+                // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context
+                // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
+                await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}",
+                    async _ => await entitlementService.ProcessAccrualsAsync(leaveYear));
 
                 Log.Information("LeaveAccrualJob: Completed accruals for tenant {TenantId}", tenantId);
             }

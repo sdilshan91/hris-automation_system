@@ -21,8 +21,10 @@ using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -50,6 +52,10 @@ public sealed class OnboardingNotificationDispatchJobTests
             var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
             return new AppDbContext(options, sp.GetRequiredService<ITenantContext>());
         });
+        // RLS increment 2c: the job wraps its body in ITenantJobRunner — register the real runner + an empty
+        // IConfiguration (Rls:Enabled defaults false → runs the work directly, no tx/GUC).
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton(_dispatcher);
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }

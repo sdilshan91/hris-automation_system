@@ -23,6 +23,10 @@ public sealed class DataExportGenerationJob
     {
         using var scope = _scopeFactory.CreateScope();
 
+        // Cross-tenant lookup FIRST: the job args carry only the export id, so we must find the request (and its
+        // tenant) with no tenant context yet. This read runs with an unresolved ambient → the connection router
+        // picks the privileged (hrm_owner/BYPASSRLS) connection under RLS, so the IgnoreQueryFilters lookup is
+        // NOT fail-closed. (Increment 2c: routing is inert until PrivilegedConnection is populated.)
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var export = await db.ExportRequests
             .IgnoreQueryFilters()
@@ -33,18 +37,20 @@ public sealed class DataExportGenerationJob
             return;
         }
 
-        // Restore tenant context so the generation reads are scoped to the target tenant.
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-            mutableContext.SetTenant(export.TenantId, $"tenant-{export.TenantId}", TenantStatus.Active);
-
+        // Now run the generation for the resolved tenant via the shared runner so it sets the tenant context
+        // (and, gated on Rls:Enabled, the app.current_tenant GUC) — the generation reads stay inside the RLS backstop.
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var service = scope.ServiceProvider.GetRequiredService<ITenantDataExportService>();
-        var result = await service.GenerateAsync(exportRequestId);
 
-        if (result.IsFailure)
-            Log.Warning("DataExportGenerationJob: export {ExportId} returned '{Error}' ({Code}).",
-                exportRequestId, result.Error, result.ErrorCode);
-        else
-            Log.Information("DataExportGenerationJob: export {ExportId} completed.", exportRequestId);
+        await runner.RunForTenantAsync(export.TenantId, $"tenant-{export.TenantId}", async _ =>
+        {
+            var result = await service.GenerateAsync(exportRequestId);
+
+            if (result.IsFailure)
+                Log.Warning("DataExportGenerationJob: export {ExportId} returned '{Error}' ({Code}).",
+                    exportRequestId, result.Error, result.ErrorCode);
+            else
+                Log.Information("DataExportGenerationJob: export {ExportId} completed.", exportRequestId);
+        });
     }
 }

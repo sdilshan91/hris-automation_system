@@ -71,21 +71,19 @@ public sealed class AutoClockOutJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        // Restore the tenant context for this scope so global query filters apply (tenant isolation).
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-        {
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-        }
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context (and,
+        // gated on Rls:Enabled, the app.current_tenant GUC) — keeping the scan inside the RLS backstop.
+        int closed = 0;
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+        {
         // One settings row per tenant; fall back to defaults when none exists (read-only — don't
         // create a row as a side effect).
         var settings = await dbContext.AttendanceSettings.FirstOrDefaultAsync()
                        ?? new AttendanceSettings { TenantId = tenantId };
 
-        int closed = 0;
         while (true)
         {
             // Records still open from a prior UTC day. Ordered by clock-in for stable paging.
@@ -120,6 +118,7 @@ public sealed class AutoClockOutJob
             if (openLogs.Count < PageSize)
                 break;
         }
+        });
 
         if (closed > 0)
             Log.Information(

@@ -26,6 +26,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -300,6 +301,35 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
         policied.Should().BeEquivalentTo(expected,
             "the policy set must match the tenant-scoped entity set exactly (no missing, no extra)");
         policied.Should().NotContain("users");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9. PER-JOB GUC — the RLS increment 2c TenantJobRunner. RunForTenantAsync(A) on hrm_app (RLS enabled) must
+    //    set the app.current_tenant GUC so a background job sees ONLY A's rows even with IgnoreQueryFilters
+    //    (RLS is the sole isolation), and a subsequent RunForTenantAsync(B) rescopes to B. This is the job-side
+    //    equivalent of the request-path TenantTransactionBehavior; without it a per-tenant job on hrm_app with no
+    //    GUC would be fail-closed (0 rows, test #2).
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task TenantJobRunner_OnAppRole_RlsEnabled_SetsGuc_SeesOnlyItsTenant()
+    {
+        var tenant = new HRM.Infrastructure.Services.TenantContext();
+        await using var db = OwnerAwareDb(_appConnString, tenant);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Rls:Enabled"] = "true" })
+            .Build();
+        var runner = new HRM.Infrastructure.Services.TenantJobRunner(db, tenant, config);
+
+        // IgnoreQueryFilters() ⇒ EF's tenant filter is off, so ONLY the runner-set GUC (RLS) isolates the result.
+        var seenA = -1;
+        await runner.RunForTenantAsync(_tenantA, "tenant-a",
+            async _ => seenA = await db.Employees.IgnoreQueryFilters().CountAsync());
+        seenA.Should().Be(EmployeesA, "the runner set the GUC to A, so RLS caps the job to A's rows");
+
+        var seenB = -1;
+        await runner.RunForTenantAsync(_tenantB, "tenant-b",
+            async _ => seenB = await db.Employees.IgnoreQueryFilters().CountAsync());
+        seenB.Should().Be(EmployeesB, "a subsequent run rescopes the GUC to B");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
