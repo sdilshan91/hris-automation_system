@@ -30,6 +30,7 @@ public static class SecondLevelCacheServiceCollectionExtensions
     /// </summary>
     public static readonly string[] DefaultCachedTables =
     [
+        // Reference / org
         "holiday",
         "leave_types",
         "departments",
@@ -38,6 +39,33 @@ public static class SecondLevelCacheServiceCollectionExtensions
         "statutory_rule",
         "custom_field_definitions",
         "locations",
+        // Policy / config
+        "attendance_settings",
+        "late_policy",
+        "leave_entitlement_rules",
+        "leave_entitlement_overrides",
+        "shift_rotation_step",
+        "employee_shift",
+        // Catalogs / templates
+        "notification_template",
+        "system_notification_template",
+        "onboarding_checklist_template",
+        "onboarding_template_task",
+        "exit_interview_template",
+        "exit_interview_question",
+        "scheduled_report_config",
+        "recommendation_rule",
+        // Plan / statutory. tax_slab + social_security_rule auto-evict on SaveChanges; the only staleness
+        // path is a bulk/raw-SQL rate edit that bypasses the interceptor — statutory rates in this app are
+        // updated via services → SaveChanges, so this is safe. Revisit if rates ever move to bulk updates.
+        "subscription_plans",
+        "plan_limit_overrides",
+        "tax_slab",
+        "social_security_rule",
+        // Workflow design-time (definitions/steps are slow-changing config; runtime instances are a
+        // separate table and are NOT cached).
+        "workflow_definitions",
+        "workflow_steps",
     ];
 
     public static IServiceCollection AddTenantSafeSecondLevelCache(
