@@ -26,6 +26,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
     private readonly IHolidayService _holidayService;
     private readonly ILeaveNotificationService _notificationService;
     private readonly ILeaveTypeService? _leaveTypeService;
+    private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly ILogger<LeaveRequestService> _logger;
 
     // BR-1 / BR-2 configurable defaults. No tenant-settings entity exists yet, so these
@@ -47,7 +48,8 @@ public sealed class LeaveRequestService : ILeaveRequestService
         ILeaveNotificationService notificationService,
         ILogger<LeaveRequestService> logger,
         IHolidayService? holidayService = null,
-        ILeaveTypeService? leaveTypeService = null)
+        ILeaveTypeService? leaveTypeService = null,
+        IWorkflowRuntime? workflowRuntime = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -60,6 +62,10 @@ public sealed class LeaveRequestService : ILeaveRequestService
         // US-LV-011: optional for the same back-compat reason. DI always supplies it; it is only
         // needed for the AC-1 confirm-LOP path (resolving the system LOP leave type).
         _leaveTypeService = leaveTypeService;
+        // US-ADM-011 FR-11: optional so the existing US-LV-003/004/005 unit tests keep compiling; DI always
+        // supplies it. When present AND the tenant has an Active Leave workflow definition, submission and
+        // approval route through the generic workflow runtime; otherwise the legacy single-level path runs (AC-11).
+        _workflowRuntime = workflowRuntime;
         _notificationService = notificationService;
         _logger = logger;
     }
@@ -245,6 +251,28 @@ public sealed class LeaveRequestService : ILeaveRequestService
 
         _dbContext.LeaveRequests.Add(leaveRequest);
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // US-ADM-011 FR-11/AC-1/AC-11: if the tenant has an Active Leave approval workflow, instantiate it now
+        // so the request routes through the configured (multi-level/conditional) steps. When there is no active
+        // definition the runtime returns a legacy result and WorkflowInstanceId stays null — the existing
+        // single-level direct-manager approval path (US-LV-005) then governs the request unchanged (AC-11).
+        if (_workflowRuntime is not null)
+        {
+            var requestData = new Dictionary<string, object?>
+            {
+                ["days_requested"] = totalDays,
+                ["leave_type_id"] = effectiveLeaveTypeId,
+                ["is_half_day"] = request.IsHalfDay,
+                ["is_lop"] = createAsLop,
+            };
+            var wf = await _workflowRuntime.CreateInstanceOnSubmitAsync(
+                WorkflowEntityType.Leave, leaveRequest.Id, employee.Id, requestData, cancellationToken);
+            if (wf.InstanceCreated)
+            {
+                leaveRequest.WorkflowInstanceId = wf.InstanceId;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
 
         _logger.LogInformation(
             "Created leave request {LeaveRequestId} for employee {EmployeeId} ({LeaveTypeId}, {TotalDays} days, {Start}-{End}) in tenant {TenantId}",
@@ -697,6 +725,15 @@ public sealed class LeaveRequestService : ILeaveRequestService
         string? comment,
         CancellationToken cancellationToken = default)
     {
+        // US-ADM-011 FR-11: when this request is workflow-driven (WorkflowInstanceId set), route the decision
+        // through the generic runtime (approver authz + multi-level advance + single-winner transaction) instead
+        // of the legacy single-level direct-manager path. Returns null when the request is NOT workflow-driven,
+        // in which case the legacy path below runs unchanged (AC-11).
+        var routed = await TryWorkflowDecisionAsync(
+            leaveRequestId, WorkflowDecisionAction.Approve, comment, cancellationToken);
+        if (routed is not null)
+            return routed;
+
         var ctx = await LoadForDecisionAsync(leaveRequestId, cancellationToken);
         if (ctx.Failure is not null)
             return ctx.Failure;
@@ -811,6 +848,12 @@ public sealed class LeaveRequestService : ILeaveRequestService
         if (string.IsNullOrWhiteSpace(reason))
             return Result<LeaveApprovalResultDto>.Failure("A rejection reason is required.", 400);
 
+        // US-ADM-011 FR-11: route a workflow-driven request's rejection through the runtime (see ApproveAsync).
+        var routed = await TryWorkflowDecisionAsync(
+            leaveRequestId, WorkflowDecisionAction.Reject, reason, cancellationToken);
+        if (routed is not null)
+            return routed;
+
         var ctx = await LoadForDecisionAsync(leaveRequestId, cancellationToken);
         if (ctx.Failure is not null)
             return ctx.Failure;
@@ -854,6 +897,187 @@ public sealed class LeaveRequestService : ILeaveRequestService
             BalanceAfter = null,
             ActionedAt = history.ActionedAt,
         });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Workflow-driven approval routing (US-ADM-011 FR-11)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// US-ADM-011 FR-11: routes an approve/reject decision through the generic workflow runtime when the leave
+    /// request is workflow-driven (its <see cref="LeaveRequest.WorkflowInstanceId"/> is set). Returns
+    /// <c>null</c> when the request is NOT workflow-driven (or the runtime is unavailable), so the caller runs
+    /// the legacy single-level path unchanged (AC-11). The leave domain side-effects (balance floor + payroll
+    /// lock + ledger deduction / status change) run inside the runtime's transaction via the callbacks, so the
+    /// workflow state and the leave state commit atomically (AC-12).
+    /// </summary>
+    private async Task<Result<LeaveApprovalResultDto>?> TryWorkflowDecisionAsync(
+        Guid leaveRequestId, WorkflowDecisionAction action, string? comment, CancellationToken cancellationToken)
+    {
+        if (_workflowRuntime is null || !_tenantContext.IsResolved)
+            return null;
+
+        var peek = await _dbContext.LeaveRequests.AsNoTracking()
+            .FirstOrDefaultAsync(lr => lr.Id == leaveRequestId, cancellationToken);
+        if (peek is null || peek.WorkflowInstanceId is null)
+            return null; // legacy single-level path (AC-11)
+
+        Guid? ledgerEntryId = null;
+        decimal? balanceAfter = null;
+
+        var decision = await _workflowRuntime.DecideAsync(
+            WorkflowEntityType.Leave, leaveRequestId, action, comment,
+            onApproved: async ct =>
+            {
+                var staged = await StageLeaveApprovalAsync(leaveRequestId, comment, ct);
+                if (staged.IsFailure)
+                    return Result.Failure(staged.Error!, staged.StatusCode ?? 400, staged.ErrorCode);
+                ledgerEntryId = staged.Value!.LedgerEntryId;
+                balanceAfter = staged.Value!.BalanceAfter;
+                return Result.Success();
+            },
+            onRejected: ct => StageLeaveRejectionAsync(leaveRequestId, comment, ct),
+            cancellationToken: cancellationToken);
+
+        if (decision.IsFailure)
+            return Result<LeaveApprovalResultDto>.Failure(
+                decision.Error!, decision.StatusCode ?? 400, decision.ErrorCode);
+
+        var outcome = decision.Value!;
+        var now = DateTime.UtcNow;
+
+        switch (outcome.Outcome)
+        {
+            case WorkflowDecisionOutcome.StepAdvanced:
+                // Intermediate approval — the request stays Pending until the final step approves (AC-2). The
+                // next-approver notification is US-ADM-011b.
+                _logger.LogInformation(
+                    "Leave request {LeaveRequestId} advanced to workflow step {StepOrder} in tenant {TenantId}.",
+                    leaveRequestId, outcome.NextStepOrder, _tenantContext.TenantId);
+                return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
+                {
+                    RequestId = leaveRequestId,
+                    Status = LeaveRequestStatus.Pending.ToString(),
+                    Action = LeaveApprovalAction.Approved.ToString(),
+                    ApprovalLevel = outcome.NextStepOrder ?? 0,
+                    ActionedAt = now,
+                });
+
+            case WorkflowDecisionOutcome.InstanceApproved:
+                await _notificationService.NotifyLeaveApprovedAsync(
+                    leaveRequestId, peek.EmployeeId, _currentUser.UserId, cancellationToken);
+                return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
+                {
+                    RequestId = leaveRequestId,
+                    Status = LeaveRequestStatus.Approved.ToString(),
+                    Action = LeaveApprovalAction.Approved.ToString(),
+                    ApprovalLevel = outcome.NextStepOrder ?? 0,
+                    LedgerEntryId = ledgerEntryId,
+                    BalanceAfter = balanceAfter,
+                    ActionedAt = now,
+                });
+
+            case WorkflowDecisionOutcome.InstanceRejected:
+            default:
+                await _notificationService.NotifyLeaveRejectedAsync(
+                    leaveRequestId, peek.EmployeeId, _currentUser.UserId, comment ?? string.Empty, cancellationToken);
+                return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
+                {
+                    RequestId = leaveRequestId,
+                    Status = LeaveRequestStatus.Rejected.ToString(),
+                    Action = LeaveApprovalAction.Rejected.ToString(),
+                    ApprovalLevel = 0,
+                    ActionedAt = now,
+                });
+        }
+    }
+
+    /// <summary>
+    /// Stages the leave-approval side-effects (US-LV-005 balance floor + payroll-lock guard + ledger "Used"
+    /// deduction + status → Approved + approval-history) WITHOUT saving — the workflow runtime owns the
+    /// SaveChanges/commit so the workflow completion and the ledger deduction are one atomic unit. Mirrors the
+    /// legacy <see cref="ApproveAsync"/> ledger logic for the workflow-driven path.
+    /// </summary>
+    private async Task<Result<(Guid LedgerEntryId, decimal BalanceAfter)>> StageLeaveApprovalAsync(
+        Guid leaveRequestId, string? comment, CancellationToken cancellationToken)
+    {
+        var request = await _dbContext.LeaveRequests
+            .FirstOrDefaultAsync(lr => lr.Id == leaveRequestId, cancellationToken);
+        if (request is null)
+            return Result<(Guid, decimal)>.Failure("Leave request not found.", 404);
+
+        var leaveType = await _dbContext.LeaveTypes.AsNoTracking()
+            .FirstOrDefaultAsync(lt => lt.Id == request.LeaveTypeId, cancellationToken);
+        if (leaveType is null)
+            return Result<(Guid, decimal)>.Failure("Leave type not found.", 404);
+
+        // BR-4 / AC-4: block completion in a locked payroll period (same guard as the legacy path).
+        if (await IsPayrollLockedAsync(request, cancellationToken))
+            return Result<(Guid, decimal)>.Failure(
+                "Cannot approve leave for a payroll-locked period. Please contact HR.", 400);
+
+        int leaveYear = request.StartDate.Year;
+        decimal currentBalance = await GetLedgerBalanceAsync(
+            request.EmployeeId, leaveType.Id, leaveYear, cancellationToken);
+        decimal projected = currentBalance - request.TotalDays;
+
+        // BR-5 / AC-3 + BUG-029 floor: honor the same balance guards as the legacy approval.
+        if (projected < 0m && !leaveType.NegativeBalanceAllowed)
+            return Result<(Guid, decimal)>.Failure(
+                $"Insufficient leave balance to approve. Available: {currentBalance} day(s), requested: {request.TotalDays} day(s).", 400);
+        if (projected < 0m && leaveType.NegativeBalanceAllowed && leaveType.NegativeBalanceLimit is decimal negativeLimit
+            && projected < -negativeLimit)
+            return Result<(Guid, decimal)>.Failure(
+                $"negative_balance_limit_exceeded: Approving would exceed the allowed negative balance. " +
+                $"Available: {currentBalance} day(s), requested: {request.TotalDays} day(s), negative-balance limit: {negativeLimit} day(s).", 400);
+
+        var ledgerEntry = new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            EntryType = LedgerEntryType.Used,
+            EmployeeId = request.EmployeeId,
+            LeaveTypeId = leaveType.Id,
+            LeaveYear = leaveYear,
+            LeaveRequestId = request.Id,
+            Amount = -request.TotalDays,
+            BalanceAfter = projected,
+            Description = $"Leave approved via workflow ({leaveType.Name}): {request.TotalDays} day(s)",
+            OccurredAt = DateTime.UtcNow,
+        };
+        _dbContext.LeaveLedgerEntries.Add(ledgerEntry);
+
+        request.Status = LeaveRequestStatus.Approved;
+
+        var approverEmployeeId = await ResolveActingEmployeeIdAsync(cancellationToken);
+        _dbContext.LeaveApprovalHistories.Add(NewHistory(
+            request.Id, approverEmployeeId, LeaveApprovalAction.Approved, comment));
+
+        return Result<(Guid, decimal)>.Success((ledgerEntry.Id, projected));
+    }
+
+    /// <summary>
+    /// Stages the leave-rejection side-effects (status → Rejected + approval-history) WITHOUT saving — the
+    /// workflow runtime owns the commit. Mirrors the legacy <see cref="RejectAsync"/> for the workflow path.
+    /// </summary>
+    private async Task StageLeaveRejectionAsync(Guid leaveRequestId, string? reason, CancellationToken cancellationToken)
+    {
+        var request = await _dbContext.LeaveRequests
+            .FirstOrDefaultAsync(lr => lr.Id == leaveRequestId, cancellationToken);
+        if (request is null)
+            return;
+
+        request.Status = LeaveRequestStatus.Rejected;
+        var approverEmployeeId = await ResolveActingEmployeeIdAsync(cancellationToken);
+        _dbContext.LeaveApprovalHistories.Add(NewHistory(
+            request.Id, approverEmployeeId, LeaveApprovalAction.Rejected, reason));
+    }
+
+    /// <summary>Resolves the acting user's employee id for approval-history (Guid.Empty if none is linked).</summary>
+    private async Task<Guid> ResolveActingEmployeeIdAsync(CancellationToken cancellationToken)
+    {
+        var employee = await GetCurrentEmployeeAsync(cancellationToken);
+        return employee?.Id ?? Guid.Empty;
     }
 
     // ══════════════════════════════════════════════════════════════

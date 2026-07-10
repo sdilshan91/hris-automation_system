@@ -557,6 +557,11 @@ public static class DependencyInjection
         // EVALUATION (WorkflowEvaluator) is built+tested here, not its invocation from live request flows.
         services.AddScoped<IWorkflowService, WorkflowService>();
 
+        // US-ADM-011 (Phase 1): approval-workflow RUNTIME engine — live instance/step-instance state machine,
+        // instance creation on submit (version snapshot), sequential advance with WorkflowEvaluator condition
+        // skip, single-winner transactional decisions, real in-flight count. Wired into Leave submission/approval.
+        services.AddScoped<IWorkflowRuntime, WorkflowRuntimeService>();
+
         // US-ADM-008: Tenant-Admin audit-log READ + EXPORT. Runs in the normal resolved-tenant context but
         // filters audit_logs EXPLICITLY by ITenantContext.TenantId (that table has NO global query filter; its
         // TenantId is nullable and shared with system rows). Masks sensitive values on read (FR-4), audits the
