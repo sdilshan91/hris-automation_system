@@ -25,16 +25,23 @@ public sealed class OnboardingNotificationDispatchJob : IOnboardingNotificationD
     public async Task RunAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
         using var scope = _scopeFactory.CreateScope();
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<INotificationDispatcher>();
 
+        // RLS increment 2c: run the drain via the shared runner so it sets the tenant context (and, gated on
+        // Rls:Enabled, the app.current_tenant GUC) — this outbox-by-tenant job stays inside the RLS backstop.
+        // (Enqueued standalone by OnboardingChecklistService AND called from OnboardingOverdueSweepJob; each call
+        // creates its own scope + runner, so there is never a nested transaction.)
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
+        {
         var pending = await dbContext.OnboardingNotificationOutbox
             .IgnoreQueryFilters()
             .Where(o => !o.IsDeleted
                 && o.TenantId == tenantId
                 && o.Status == OnboardingNotificationStatus.Pending)
             .OrderBy(o => o.CreatedAt)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(ct);
 
         if (pending.Count == 0)
             return;
@@ -55,8 +62,8 @@ public sealed class OnboardingNotificationDispatchJob : IOnboardingNotificationD
                     RecipientUserId: row.RecipientUserId,
                     NotificationType: row.NotificationType);
 
-                await dispatcher.SendInAppAsync(request, cancellationToken);
-                await dispatcher.SendEmailAsync(request, cancellationToken);
+                await dispatcher.SendInAppAsync(request, ct);
+                await dispatcher.SendEmailAsync(request, ct);
 
                 row.Status = OnboardingNotificationStatus.Dispatched;
                 row.DispatchedAt = DateTime.UtcNow;
@@ -72,8 +79,9 @@ public sealed class OnboardingNotificationDispatchJob : IOnboardingNotificationD
             }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveChangesAsync(ct);
         Log.Information("OnboardingNotificationDispatchJob: completed for tenant {TenantId}.", tenantId);
+        }, cancellationToken);
     }
 
     /// <summary>

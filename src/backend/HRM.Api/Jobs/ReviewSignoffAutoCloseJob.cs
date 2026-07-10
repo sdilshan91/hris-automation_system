@@ -49,15 +49,15 @@ public sealed class ReviewSignoffAutoCloseJob
             {
                 using var scope = _scopeFactory.CreateScope();
 
-                var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-                {
-                    mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-                }
-
+                var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
                 var autoClose = scope.ServiceProvider.GetRequiredService<IReviewSignoffAutoCloseService>();
-                var closed = await autoClose.AutoCloseOverdueAsync(now);
-                total += closed;
+
+                // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context
+                // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
+                await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+                {
+                    total += await autoClose.AutoCloseOverdueAsync(now);
+                });
             }
             catch (Exception ex)
             {

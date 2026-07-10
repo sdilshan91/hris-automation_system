@@ -25,6 +25,7 @@ using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -278,6 +279,10 @@ public sealed class AttendanceClockOutIntegrationTests
         services.AddLogging();
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        // RLS increment 2c: AutoClockOutJob wraps its per-tenant body in ITenantJobRunner — register the real
+        // runner + an empty IConfiguration (Rls:Enabled defaults false → runs the work directly, no tx/GUC).
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         return services.BuildServiceProvider();
     }
 }

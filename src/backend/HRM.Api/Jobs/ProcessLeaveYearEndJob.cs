@@ -72,18 +72,19 @@ public sealed class ProcessLeaveYearEndJob
                 {
                     using var scope = _scopeFactory.CreateScope();
 
-                    var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                    if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-                    {
-                        mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-                    }
-
+                    var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
                     var service = scope.ServiceProvider.GetRequiredService<ILeaveCarryForwardService>();
-                    var result = await service.ProcessYearEndAsync(fromYear);
 
-                    Log.Information(
-                        "ProcessLeaveYearEndJob: Tenant {TenantId} carried forward {Count} pairs for year {Year}",
-                        tenantId, result.IsSuccess ? result.Value : 0, fromYear);
+                    // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant
+                    // context (and, gated on Rls:Enabled, the app.current_tenant GUC). The outer Polly retry
+                    // re-runs the whole unit (fresh scope + runner) on a transient failure.
+                    await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+                    {
+                        var result = await service.ProcessYearEndAsync(fromYear);
+                        Log.Information(
+                            "ProcessLeaveYearEndJob: Tenant {TenantId} carried forward {Count} pairs for year {Year}",
+                            tenantId, result.IsSuccess ? result.Value : 0, fromYear);
+                    });
                 });
             }
             catch (Exception ex)

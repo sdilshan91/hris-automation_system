@@ -1,7 +1,5 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.LeaveReports.DTOs;
-using HRM.Domain.Entities;
-using HRM.Infrastructure.Services;
 using Serilog;
 
 namespace HRM.Api.Jobs;
@@ -43,37 +41,38 @@ public sealed class LeaveReportExportJob : ILeaveReportExportJob
 
         using var scope = _scopeFactory.CreateScope();
 
-        // Restore the tenant context so global query filters scope the report to this tenant (BR-1).
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is TenantContext mutableContext)
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var reportService = scope.ServiceProvider.GetRequiredService<ILeaveReportService>();
         var storage = scope.ServiceProvider.GetRequiredService<IReportExportStorage>();
 
-        // Regenerate the FULL (unpaged) report under the captured role scope.
-        var fullParams = queryParams with { Page = 1, PageSize = int.MaxValue };
-        var result = await reportService.GenerateReportWithScopeAsync(
-            reportType, scopeKind, scopeEmployeeId, fullParams, cancellationToken);
-
-        if (result.IsFailure)
+        // RLS increment 2c: run the export via the shared runner so it sets the tenant context (and, gated on
+        // Rls:Enabled, the app.current_tenant GUC) — this export-by-id job stays inside the RLS backstop (BR-1).
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
         {
-            Log.Error("LeaveReportExportJob {ReportId} failed to generate report: {Error}",
-                reportId, result.Error);
-            return;
-        }
+            // Regenerate the FULL (unpaged) report under the captured role scope.
+            var fullParams = queryParams with { Page = 1, PageSize = int.MaxValue };
+            var result = await reportService.GenerateReportWithScopeAsync(
+                reportType, scopeKind, scopeEmployeeId, fullParams, ct);
 
-        var (content, fileName, contentType) =
-            reportService.RenderExport(reportType, format, result.Value!);
+            if (result.IsFailure)
+            {
+                Log.Error("LeaveReportExportJob {ReportId} failed to generate report: {Error}",
+                    reportId, result.Error);
+                return;
+            }
 
-        var location = await storage.SaveAsync(
-            tenantId, reportId, fileName, contentType, content, cancellationToken);
+            var (content, fileName, contentType) =
+                reportService.RenderExport(reportType, format, result.Value!);
 
-        // FR-5 / AC-5: notify-when-ready seam (log-only until a real notification dispatch exists).
-        // TODO(notifications): dispatch a real "your export is ready" notification with a download link.
-        Log.Information(
-            "LeaveReportExportJob {ReportId} complete: {Rows} rows, {Bytes} bytes stored at {Location}. " +
-            "User notification (log-only seam) emitted.",
-            reportId, result.Value!.Rows.Count, content.Length, location);
+            var location = await storage.SaveAsync(
+                tenantId, reportId, fileName, contentType, content, ct);
+
+            // FR-5 / AC-5: notify-when-ready seam (log-only until a real notification dispatch exists).
+            // TODO(notifications): dispatch a real "your export is ready" notification with a download link.
+            Log.Information(
+                "LeaveReportExportJob {ReportId} complete: {Rows} rows, {Bytes} bytes stored at {Location}. " +
+                "User notification (log-only seam) emitted.",
+                reportId, result.Value!.Rows.Count, content.Length, location);
+        }, cancellationToken);
     }
 }

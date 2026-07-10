@@ -11,15 +11,22 @@ namespace HRM.Api.Jobs;
 public sealed class AuditLogPurgeJob
 {
     private readonly IAuditLogPurgeService _purgeService;
+    private readonly ITenantContext _tenantContext;
 
-    public AuditLogPurgeJob(IAuditLogPurgeService purgeService)
+    public AuditLogPurgeJob(IAuditLogPurgeService purgeService, ITenantContext tenantContext)
     {
         _purgeService = purgeService;
+        _tenantContext = tenantContext;
     }
 
     public async Task RunAsync()
     {
         Log.Information("Starting AuditLogPurgeJob");
+
+        // RLS increment 2c: cross-tenant purge (the service spans tenants via IgnoreQueryFilters + explicit
+        // per-tenant scoping). System context → privileged (BYPASSRLS) routing under RLS + sys: cache prefix.
+        _tenantContext.SetSystemContext();
+
         var deleted = await _purgeService.PurgeExpiredAsync(DateTime.UtcNow);
         Log.Information("Completed AuditLogPurgeJob — purged {Count} audit records", deleted);
     }

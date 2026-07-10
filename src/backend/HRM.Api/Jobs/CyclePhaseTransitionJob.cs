@@ -31,13 +31,14 @@ public sealed class CyclePhaseTransitionJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", Domain.Entities.TenantStatus.Active);
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<IPerformanceNotificationService>();
 
+        // RLS increment 2c: run the tenant body via the shared runner so it sets the tenant context (and, gated
+        // on Rls:Enabled, the app.current_tenant GUC) — this cycle-by-id job stays inside the RLS backstop.
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+        {
         var now = DateTime.UtcNow;
         var today = now.Date;
 
@@ -82,6 +83,7 @@ public sealed class CyclePhaseTransitionJob
         }
 
         Log.Information("CyclePhaseTransitionJob completed for cycle {CycleId}, tenant {TenantId}", cycleId, tenantId);
+        });
     }
 
     private static async Task<HashSet<Guid>> CompletedSetAsync(AppDbContext db, Guid cycleId, CyclePhaseType phaseType)

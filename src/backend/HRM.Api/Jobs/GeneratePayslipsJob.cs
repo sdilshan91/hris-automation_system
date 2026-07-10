@@ -30,17 +30,21 @@ public sealed class GeneratePayslipsJob
 
         using var scope = _scopeFactory.CreateScope();
 
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        tenantContext.SetTenant(tenantId, tenantSubdomain, TenantStatus.Active);
-
+        var tenantRunner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var renderer = scope.ServiceProvider.GetRequiredService<IPayslipBatchRenderer>();
-        var result = await renderer.RenderRunAsync(runId, cancellationToken);
 
-        if (result.IsFailure)
-            Log.Warning("GeneratePayslipsJob did not complete. RunId={RunId}, Error={Error}", runId, result.Error);
-        else
-            Log.Information(
-                "Completed GeneratePayslipsJob. RunId={RunId}, Generated={Generated}, Failed={Failed}",
-                runId, result.Value!.Generated, result.Value.Failed);
+        // RLS increment 2c: run the render via the shared runner so it sets the tenant context (and, gated on
+        // Rls:Enabled, the app.current_tenant GUC) — this payroll-run-by-id job stays inside the RLS backstop.
+        await tenantRunner.RunForTenantAsync(tenantId, tenantSubdomain, async ct =>
+        {
+            var result = await renderer.RenderRunAsync(runId, ct);
+
+            if (result.IsFailure)
+                Log.Warning("GeneratePayslipsJob did not complete. RunId={RunId}, Error={Error}", runId, result.Error);
+            else
+                Log.Information(
+                    "Completed GeneratePayslipsJob. RunId={RunId}, Generated={Generated}, Failed={Failed}",
+                    runId, result.Value!.Generated, result.Value.Failed);
+        }, cancellationToken);
     }
 }

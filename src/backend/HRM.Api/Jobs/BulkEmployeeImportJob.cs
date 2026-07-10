@@ -1,24 +1,24 @@
 using HRM.Application.Common.Interfaces;
-using HRM.Domain.Entities;
 using Serilog;
 
 namespace HRM.Api.Jobs;
 
 /// <summary>
 /// Hangfire background job that processes a queued bulk employee import (US-CHR-010 FR-7, AC-4).
-/// Sets the tenant context before invoking the service so tenant-scoped queries work.
+/// Sets the tenant context (via the shared <see cref="ITenantJobRunner"/>) before invoking the service so
+/// tenant-scoped queries work — and, gated on Rls:Enabled, sets the app.current_tenant GUC (RLS increment 2c).
 /// </summary>
 public sealed class BulkEmployeeImportJob
 {
     private readonly IBulkEmployeeImportService _importService;
-    private readonly ITenantContext _tenantContext;
+    private readonly ITenantJobRunner _jobRunner;
 
     public BulkEmployeeImportJob(
         IBulkEmployeeImportService importService,
-        ITenantContext tenantContext)
+        ITenantJobRunner jobRunner)
     {
         _importService = importService;
-        _tenantContext = tenantContext;
+        _jobRunner = jobRunner;
     }
 
     /// <summary>
@@ -29,10 +29,8 @@ public sealed class BulkEmployeeImportJob
     {
         Log.Information("Starting BulkEmployeeImportJob. JobId={JobId}, TenantId={TenantId}", jobId, tenantId);
 
-        // Restore tenant context for the background job scope
-        _tenantContext.SetTenant(tenantId, tenantSubdomain, TenantStatus.Active);
-
-        await _importService.ProcessImportJobAsync(jobId, CancellationToken.None);
+        await _jobRunner.RunForTenantAsync(tenantId, tenantSubdomain,
+            ct => _importService.ProcessImportJobAsync(jobId, ct));
 
         Log.Information("Completed BulkEmployeeImportJob. JobId={JobId}", jobId);
     }

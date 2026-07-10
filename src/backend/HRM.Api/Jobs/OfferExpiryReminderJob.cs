@@ -31,16 +31,14 @@ public sealed class OfferExpiryReminderJob
     {
         using var scope = _scopeFactory.CreateScope();
 
-        // Restore tenant context so global query filters scope the reads/writes (tenant isolation).
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        if (tenantContext is Infrastructure.Services.TenantContext mutableContext)
-        {
-            mutableContext.SetTenant(tenantId, $"tenant-{tenantId}", TenantStatus.Active);
-        }
-
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<IRecruitmentNotificationService>();
 
+        // RLS increment 2c: run the tenant body via the shared runner so it sets the tenant context (and, gated
+        // on Rls:Enabled, the app.current_tenant GUC) — this offer-by-id job stays inside the RLS backstop.
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
+        {
         var offer = await dbContext.Offers.FirstOrDefaultAsync(o => o.Id == offerId);
 
         // Idempotent / defensive: only remind about a still-active (Draft/Sent) offer. If it has already been
@@ -67,5 +65,6 @@ public sealed class OfferExpiryReminderJob
 
         Log.Information(
             "OfferExpiryReminderJob: reminder sent for offer {OfferId} (tenant {TenantId})", offer.Id, tenantId);
+        });
     }
 }

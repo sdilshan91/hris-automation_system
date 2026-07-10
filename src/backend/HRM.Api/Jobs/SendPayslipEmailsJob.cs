@@ -36,17 +36,21 @@ public sealed class SendPayslipEmailsJob
 
         using var scope = _scopeFactory.CreateScope();
 
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        tenantContext.SetTenant(tenantId, tenantSubdomain, TenantStatus.Active);
-
+        var tenantRunner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var runner = scope.ServiceProvider.GetRequiredService<IPayslipDistributionRunner>();
-        var result = await runner.RunAsync(runId, targetEmployeeIds, cancellationToken);
 
-        if (result.IsFailure)
-            Log.Warning("SendPayslipEmailsJob did not complete. RunId={RunId}, Error={Error}", runId, result.Error);
-        else
-            Log.Information(
-                "Completed SendPayslipEmailsJob. RunId={RunId}, Sent={Sent}, Failed={Failed}, Skipped={Skipped}",
-                runId, result.Value!.EmailsSent, result.Value.EmailsFailed, result.Value.EmailsSkipped);
+        // RLS increment 2c: run the send loop via the shared runner so it sets the tenant context (and, gated on
+        // Rls:Enabled, the app.current_tenant GUC) — this payroll-run-by-id job stays inside the RLS backstop.
+        await tenantRunner.RunForTenantAsync(tenantId, tenantSubdomain, async ct =>
+        {
+            var result = await runner.RunAsync(runId, targetEmployeeIds, ct);
+
+            if (result.IsFailure)
+                Log.Warning("SendPayslipEmailsJob did not complete. RunId={RunId}, Error={Error}", runId, result.Error);
+            else
+                Log.Information(
+                    "Completed SendPayslipEmailsJob. RunId={RunId}, Sent={Sent}, Failed={Failed}, Skipped={Skipped}",
+                    runId, result.Value!.EmailsSent, result.Value.EmailsFailed, result.Value.EmailsSkipped);
+        }, cancellationToken);
     }
 }

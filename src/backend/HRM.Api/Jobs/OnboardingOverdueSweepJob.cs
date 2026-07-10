@@ -45,13 +45,19 @@ public sealed class OnboardingOverdueSweepJob
         {
             // Fresh scope per tenant → fresh scoped service + DbContext (no cross-tenant state bleed).
             using var scope = _scopeFactory.CreateScope();
+            var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
             var service = scope.ServiceProvider.GetRequiredService<IOnboardingChecklistService>();
             var dispatch = scope.ServiceProvider.GetService<IOnboardingNotificationDispatchJob>();
 
-            var written = await service.RunOverdueSweepAsync(tenantId, cancellationToken);
+            // RLS increment 2c: the per-tenant sweep runs via the shared runner so it sets the tenant context
+            // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
+            var written = 0;
+            await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}",
+                async ct => written = await service.RunOverdueSweepAsync(tenantId, ct), cancellationToken);
             totalWritten += written;
 
-            // Deliver the newly written overdue rows (the dispatcher drains all pending rows for the tenant).
+            // Deliver the newly written overdue rows (the dispatcher drains all pending rows for the tenant). It
+            // creates its OWN scope + runner, so it runs AFTER the sweep's transaction — never nested inside it.
             if (written > 0 && dispatch is not null)
                 await dispatch.RunAsync(tenantId, cancellationToken);
         }

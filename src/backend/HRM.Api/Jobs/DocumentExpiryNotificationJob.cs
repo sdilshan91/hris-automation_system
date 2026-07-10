@@ -1,4 +1,4 @@
-using HRM.Domain.Entities;
+using HRM.Application.Common.Interfaces;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -29,6 +29,12 @@ public sealed class DocumentExpiryNotificationJob
         try
         {
             using var scope = _scopeFactory.CreateScope();
+
+            // RLS increment 2c: this is a cross-tenant scan (IgnoreQueryFilters spans every tenant). Establish the
+            // system/admin context so the ambient routes to the privileged (BYPASSRLS) connection under RLS and
+            // caches under the sys: prefix (closing the increment-1 shared-none: gap).
+            scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
+
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
             var today = DateTime.UtcNow.Date;

@@ -25,6 +25,11 @@ public sealed class TenantTerminationReminderJob
     public async Task RunAsync(Guid tenantId, int daysBefore)
     {
         using var scope = _scopeFactory.CreateScope();
+
+        // RLS increment 2c: a platform lifecycle job that reads a terminating tenant via IgnoreQueryFilters and
+        // dispatches a reminder. System context → privileged (BYPASSRLS) routing under RLS + sys: cache prefix.
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
+
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var tenant = await db.Tenants
