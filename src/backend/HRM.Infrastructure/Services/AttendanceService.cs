@@ -30,6 +30,7 @@ public sealed class AttendanceService : IAttendanceService
     private readonly ICurrentUser _currentUser;
     private readonly IOvertimeService _overtimeService;
     private readonly IShiftService _shiftService;
+    private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly ILogger<AttendanceService> _logger;
 
     public AttendanceService(
@@ -38,13 +39,18 @@ public sealed class AttendanceService : IAttendanceService
         ICurrentUser currentUser,
         IOvertimeService overtimeService,
         IShiftService shiftService,
-        ILogger<AttendanceService> logger)
+        ILogger<AttendanceService> logger,
+        IWorkflowRuntime? workflowRuntime = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _overtimeService = overtimeService;
         _shiftService = shiftService;
+        // US-ADM-011c FR-11: optional so existing US-ATT unit tests keep compiling; DI always supplies it. When
+        // present AND the tenant has an Active Attendance workflow definition, a submitted regularization routes
+        // through the generic runtime; otherwise the legacy single-level manager approval runs (AC-11).
+        _workflowRuntime = workflowRuntime;
         _logger = logger;
     }
 
@@ -475,6 +481,25 @@ public sealed class AttendanceService : IAttendanceService
 
         // NFR-3: single SaveChanges; the AuditInterceptor stamps created_at/created_by.
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // US-ADM-011c FR-11/AC-11: if the tenant has an Active Attendance approval workflow, instantiate it now so
+        // the regularization routes through the configured (multi-level/conditional) steps. No active definition →
+        // WorkflowInstanceId stays null and the legacy single-level manager approval (US-ATT-004) governs it (AC-11).
+        if (_workflowRuntime is not null)
+        {
+            var requestData = new Dictionary<string, object?>
+            {
+                ["date"] = regularization.Date.ToString("yyyy-MM-dd"),
+                ["regularization_type"] = regularization.RegularizationType,
+            };
+            var wf = await _workflowRuntime.CreateInstanceOnSubmitAsync(
+                WorkflowEntityType.Attendance, regularization.Id, employee.Id, requestData, cancellationToken);
+            if (wf.InstanceCreated)
+            {
+                regularization.WorkflowInstanceId = wf.InstanceId;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
 
         // FR-4 (notify approver): DEFERRED — no notification infrastructure exists yet.
         // TODO(US-NTF): emit an in-app (and optional email) notification to the line manager here.

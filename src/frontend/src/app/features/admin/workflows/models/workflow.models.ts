@@ -22,7 +22,8 @@ export type WorkflowEntityType =
   | 'Attendance'
   | 'Expense'
   | 'Offer'
-  | 'SalaryRevision';
+  | 'SalaryRevision'
+  | 'Overtime';
 
 /** Lifecycle status of a workflow definition (AC-1). */
 export type WorkflowStatus = 'Active' | 'Draft' | 'Archived';
@@ -44,6 +45,7 @@ export const WORKFLOW_ENTITY_TYPES: readonly WorkflowEntityType[] = [
   'Expense',
   'Offer',
   'SalaryRevision',
+  'Overtime',
 ] as const;
 
 /** All approver types, in display order (step + escalation pickers). */
@@ -130,6 +132,8 @@ export interface IWorkflowSummary {
   isDefault: boolean;
   stepCount: number;
   updatedAt: string;
+  /** US-ADM-011c FR-10: count of live (InProgress) runtime instances on this lineage. */
+  inFlightCount?: number;
 }
 
 /** Full workflow definition with its ordered steps (editor payload, AC-2). */

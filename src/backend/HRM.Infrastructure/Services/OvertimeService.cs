@@ -30,17 +30,22 @@ public sealed class OvertimeService : IOvertimeService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly ILogger<OvertimeService> _logger;
 
     public OvertimeService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        ILogger<OvertimeService> logger)
+        ILogger<OvertimeService> logger,
+        IWorkflowRuntime? workflowRuntime = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        // US-ADM-011c FR-11: optional so existing US-ATT-006 unit tests keep compiling; DI always supplies it.
+        // When a pre-approval is workflow-driven (WorkflowInstanceId set), decisions route through the runtime.
+        _workflowRuntime = workflowRuntime;
         _logger = logger;
     }
 
@@ -205,6 +210,27 @@ public sealed class OvertimeService : IOvertimeService
         _dbContext.OvertimeRecords.Add(record);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        // US-ADM-011c FR-11/AC-11: if the tenant has an Active Overtime approval workflow, instantiate it now so the
+        // pre-approval routes through the configured steps. No active definition → WorkflowInstanceId stays null and
+        // the legacy single-level manager approval governs it (AC-11). Only USER-submitted pre-approvals are wired —
+        // the auto-detected clock-out path (BuildAutoDetectedAsync) is NOT a user submission and stays legacy.
+        if (_workflowRuntime is not null)
+        {
+            var requestData = new Dictionary<string, object?>
+            {
+                ["overtime_minutes"] = record.OvertimeMinutes,
+                ["multiplier"] = record.Multiplier,
+                ["type"] = record.Type.ToString(),
+            };
+            var wf = await _workflowRuntime.CreateInstanceOnSubmitAsync(
+                WorkflowEntityType.Overtime, record.Id, employee.Id, requestData, cancellationToken);
+            if (wf.InstanceCreated)
+            {
+                record.WorkflowInstanceId = wf.InstanceId;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         // FR-8 (notify manager of pending pre-approval): DEFERRED — no notification infra (TODO US-NTF).
 
         _logger.LogInformation(
@@ -308,6 +334,14 @@ public sealed class OvertimeService : IOvertimeService
         Guid overtimeId, int? approvedMinutes, string? comment,
         CancellationToken cancellationToken = default)
     {
+        // US-ADM-011c FR-11: a workflow-driven pre-approval routes through the runtime. The generic decision
+        // endpoint carries no minute-adjust, so the workflow approve path uses the record's existing minutes; the
+        // direct/legacy path below keeps the manager minute-adjust. Null → legacy path (AC-11).
+        var routed = await TryWorkflowDecisionAsync(
+            overtimeId, WorkflowDecisionAction.Approve, comment, cancellationToken);
+        if (routed is not null)
+            return routed;
+
         var ctx = await LoadForDecisionAsync(overtimeId, cancellationToken);
         if (ctx.Failure is not null)
             return ctx.Failure;
@@ -363,6 +397,12 @@ public sealed class OvertimeService : IOvertimeService
             return Result<OvertimeDecisionDto>.Failure(
                 "A rejection reason of at least 10 characters is required.", 400);
 
+        // US-ADM-011c FR-11: route a workflow-driven pre-approval's rejection through the runtime (see ApproveAsync).
+        var routed = await TryWorkflowDecisionAsync(
+            overtimeId, WorkflowDecisionAction.Reject, trimmed, cancellationToken);
+        if (routed is not null)
+            return routed;
+
         var ctx = await LoadForDecisionAsync(overtimeId, cancellationToken);
         if (ctx.Failure is not null)
             return ctx.Failure;
@@ -397,6 +437,130 @@ public sealed class OvertimeService : IOvertimeService
             ManagerComment = trimmed,
             ActionedAt = history.ActionedAt,
         });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Workflow-driven approval routing (US-ADM-011c FR-11)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// US-ADM-011c FR-11: routes an approve/reject decision through the generic workflow runtime when the overtime
+    /// record is workflow-driven (its <see cref="OvertimeRecord.WorkflowInstanceId"/> is set). Returns <c>null</c>
+    /// when it is NOT workflow-driven (or the runtime is unavailable), so the caller runs the legacy single-level
+    /// path unchanged (AC-11). The status/payroll side-effects run inside the runtime's transaction via the
+    /// callbacks so the workflow and overtime state commit atomically.
+    /// </summary>
+    private async Task<Result<OvertimeDecisionDto>?> TryWorkflowDecisionAsync(
+        Guid overtimeId, WorkflowDecisionAction action, string? comment, CancellationToken cancellationToken)
+    {
+        if (_workflowRuntime is null || !_tenantContext.IsResolved)
+            return null;
+
+        var peek = await _dbContext.OvertimeRecords.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == overtimeId, cancellationToken);
+        if (peek is null || peek.WorkflowInstanceId is null)
+            return null; // legacy single-level path (AC-11)
+
+        var decision = await _workflowRuntime.DecideAsync(
+            WorkflowEntityType.Overtime, overtimeId, action, comment,
+            onApproved: ct => StageOtApprovalAsync(overtimeId, comment, ct),
+            onRejected: ct => StageOtRejectionAsync(overtimeId, comment, ct),
+            cancellationToken: cancellationToken);
+
+        if (decision.IsFailure)
+            return Result<OvertimeDecisionDto>.Failure(
+                decision.Error!, decision.StatusCode ?? 400, decision.ErrorCode);
+
+        var outcome = decision.Value!;
+        var now = DateTime.UtcNow;
+
+        switch (outcome.Outcome)
+        {
+            case WorkflowDecisionOutcome.StepAdvanced:
+            case WorkflowDecisionOutcome.StepRecorded:
+                // Intermediate approval — the record stays Pending until the final step approves.
+                return Result<OvertimeDecisionDto>.Success(new OvertimeDecisionDto
+                {
+                    Id = overtimeId,
+                    Status = OvertimeStatus.Pending,
+                    ApprovedMinutes = null,
+                    Multiplier = peek.Multiplier,
+                    ManagerComment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                    ActionedAt = now,
+                });
+
+            case WorkflowDecisionOutcome.InstanceApproved:
+                return Result<OvertimeDecisionDto>.Success(new OvertimeDecisionDto
+                {
+                    Id = overtimeId,
+                    Status = OvertimeStatus.Approved,
+                    ApprovedMinutes = peek.OvertimeMinutes,
+                    Multiplier = peek.Multiplier,
+                    ManagerComment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                    ActionedAt = now,
+                });
+
+            case WorkflowDecisionOutcome.InstanceRejected:
+            default:
+                return Result<OvertimeDecisionDto>.Success(new OvertimeDecisionDto
+                {
+                    Id = overtimeId,
+                    Status = OvertimeStatus.Rejected,
+                    ApprovedMinutes = null,
+                    Multiplier = peek.Multiplier,
+                    ManagerComment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                    ActionedAt = now,
+                });
+        }
+    }
+
+    /// <summary>
+    /// Stages the overtime-approve side-effect (status → APPROVED + approved-minutes + payroll-ready flag +
+    /// history) WITHOUT saving — the runtime owns the commit. The generic decision path carries no minute-adjust,
+    /// so it approves the record's existing overtime minutes (the legacy path keeps the manager adjust).
+    /// </summary>
+    private async Task<Result> StageOtApprovalAsync(
+        Guid overtimeId, string? comment, CancellationToken cancellationToken)
+    {
+        var record = await _dbContext.OvertimeRecords
+            .FirstOrDefaultAsync(o => o.Id == overtimeId, cancellationToken);
+        if (record is null)
+            return Result.Failure("Overtime record not found.", 404);
+
+        var approver = await GetCurrentEmployeeAsync(cancellationToken);
+
+        record.Status = OvertimeStatus.Approved;
+        record.ApprovedMinutes = record.OvertimeMinutes;
+        record.ManagerComment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
+        record.IsPayrollReady = true; // FR-7: approved overtime is payroll-ready.
+
+        _dbContext.OvertimeApprovalHistories.Add(NewHistory(
+            record.Id, approver?.Id, OvertimeApprovalAction.Approved,
+            record.ApprovedMinutes, record.ManagerComment, record.CalculationBasis));
+
+        // NO SaveChanges — the runtime commits this atomically with the workflow transition.
+        return Result.Success();
+    }
+
+    /// <summary>Stages the overtime-reject side-effect (status → REJECTED + history) WITHOUT saving.</summary>
+    private async Task StageOtRejectionAsync(
+        Guid overtimeId, string? reason, CancellationToken cancellationToken)
+    {
+        var record = await _dbContext.OvertimeRecords
+            .FirstOrDefaultAsync(o => o.Id == overtimeId, cancellationToken);
+        if (record is null)
+            return;
+
+        var approver = await GetCurrentEmployeeAsync(cancellationToken);
+
+        record.Status = OvertimeStatus.Rejected;
+        record.ApprovedMinutes = null;
+        record.ManagerComment = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        record.IsPayrollReady = false;
+
+        _dbContext.OvertimeApprovalHistories.Add(NewHistory(
+            record.Id, approver?.Id, OvertimeApprovalAction.Rejected,
+            null, record.ManagerComment, record.CalculationBasis));
     }
 
     // ══════════════════════════════════════════════════════════════

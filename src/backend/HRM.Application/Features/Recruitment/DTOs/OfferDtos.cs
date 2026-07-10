@@ -3,6 +3,14 @@ using HRM.Domain.Enums;
 namespace HRM.Application.Features.Recruitment.DTOs;
 
 /// <summary>
+/// US-ADM-011c (FR-11 / US-REC-007 FR-10/BR-5): the outcome of an approver's decision on an offer's approval
+/// workflow instance. <see cref="Status"/> is "Approved" | "Rejected" | "Pending" (an intermediate step
+/// advanced). The offer document itself is unchanged by the decision — Send is gated on the instance being
+/// Approved (a separate recruiter action).
+/// </summary>
+public sealed record OfferApprovalDecisionDto(Guid OfferId, string Status, int? NextStepOrder);
+
+/// <summary>
 /// Service-layer input for generating an offer (US-REC-007 FR-1/AC-1). Carried by
 /// <c>GenerateOfferCommand</c>. The reference number, version, PDF, and status are server-managed, so they
 /// are not part of the input. <see cref="ExpiryDate"/> is optional here — the service defaults it to

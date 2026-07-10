@@ -23,6 +23,20 @@ public interface IWorkflowService
     Task<Result<WorkflowDetailDto>> GetAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// US-ADM-011c FR-12: get a live workflow instance with its ordered step chain (tenant-scoped, AC-9). 404 when
+    /// the instance is not found / cross-tenant.
+    /// </summary>
+    Task<Result<WorkflowInstanceDetailDto>> GetInstanceAsync(
+        Guid instanceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// US-ADM-011c FR-10: paged list of the runtime instances for a definition lineage (tenant-scoped). Newest
+    /// first. pageSize clamped 1..50 (default 20); page is 1-based.
+    /// </summary>
+    Task<Result<PagedWorkflowInstancesDto>> ListInstancesAsync(
+        Guid lineageId, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Create a new workflow definition (AC-2/FR-1/FR-5). Validates ≥1 step, approver references, positive SLAs,
     /// well-formed conditions, and the plan limit (FR-4/AC-4). When activated, auto-archives the prior active
     /// workflow for the same entity type (BR-2). Version starts at 1.

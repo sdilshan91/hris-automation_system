@@ -1496,6 +1496,29 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.LeaveUpdates,
             IsMandatory: false);
 
+        // US-ADM-011c (AC-6/FR-9) — an approval step was delegated because its primary approver is on leave.
+        // Recipient: the backup approver the step routed to (or, when no backup is configured, the tenant admins).
+        yield return new NotificationEventDefinition(
+            EventKey: "workflow_step_delegated",
+            EventName: "Approval Delegated",
+            Placeholders: [.. WorkflowPlaceholders],
+            SampleData: WorkflowSample(),
+            DefaultSubject: "A {{workflow.entityType}} approval has been delegated to you",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>A <strong>{{workflow.entityType}}</strong> approval " +
+                "(request {{workflow.requestId}}, step {{workflow.stepOrder}}) has been delegated to you because " +
+                "the assigned approver is on leave.</p>" +
+                "<p>Please review it in the HRM portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "A {{workflow.entityType}} approval (request {{workflow.requestId}}, step {{workflow.stepOrder}}) " +
+                "has been delegated to you because the assigned approver is on leave.\n\n" +
+                "Please review it in the HRM portal.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
         yield return new NotificationEventDefinition(
             EventKey: "workflow_request_decided",
             EventName: "Approval Decision",

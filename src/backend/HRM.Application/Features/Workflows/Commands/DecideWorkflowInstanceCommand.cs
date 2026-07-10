@@ -10,9 +10,9 @@ namespace HRM.Application.Features.Workflows.Commands;
 /// workflow instance. Routing is dynamic — the runtime enforces that only the resolved approver of the current
 /// Pending step may decide (AC-10), so no static permission is required beyond authentication.
 ///
-/// <para>Phase 1 wires <see cref="WorkflowEntityType.Leave"/>: the decision is routed to the Leave service,
-/// which drives the runtime and applies the leave ledger/status atomically. Other entity types are wired in
-/// US-ADM-011c.</para>
+/// <para>US-ADM-011c: routes the decision to the owning domain service by entity type — Leave / Attendance /
+/// Overtime / Offer. Each service drives the runtime through its own <c>TryWorkflowDecisionAsync</c> adapter and
+/// applies its domain side-effect (or, for Offer, none) atomically inside the runtime transaction.</para>
 /// </summary>
 public sealed record DecideWorkflowInstanceCommand(
     Guid InstanceId, WorkflowDecisionAction Action, string? Comment)
@@ -26,12 +26,22 @@ public sealed class DecideWorkflowInstanceCommandHandler
 {
     private readonly IWorkflowRuntime _runtime;
     private readonly ILeaveRequestService _leaveRequestService;
+    private readonly IRegularizationApprovalService _regularizationApprovalService;
+    private readonly IOvertimeService _overtimeService;
+    private readonly IOfferService _offerService;
 
     public DecideWorkflowInstanceCommandHandler(
-        IWorkflowRuntime runtime, ILeaveRequestService leaveRequestService)
+        IWorkflowRuntime runtime,
+        ILeaveRequestService leaveRequestService,
+        IRegularizationApprovalService regularizationApprovalService,
+        IOvertimeService overtimeService,
+        IOfferService offerService)
     {
         _runtime = runtime;
         _leaveRequestService = leaveRequestService;
+        _regularizationApprovalService = regularizationApprovalService;
+        _overtimeService = overtimeService;
+        _offerService = offerService;
     }
 
     public async Task<Result<WorkflowDecisionResponseDto>> Handle(
@@ -44,22 +54,57 @@ public sealed class DecideWorkflowInstanceCommandHandler
         if (entity.Status != WorkflowInstanceStatus.InProgress)
             return Result<WorkflowDecisionResponseDto>.Failure("This workflow instance is already completed.", 409, "workflow_not_in_flight");
 
-        // Phase 1: only Leave is wired through the runtime. Reject/comment validation lives in the domain service.
-        if (entity.EntityType != WorkflowEntityType.Leave)
-            return Result<WorkflowDecisionResponseDto>.Failure(
-                $"Decisions for {entity.EntityType} are not yet wired to the workflow runtime.", 400, "entity_type_not_wired");
-
+        // FR-12 / BR-2: a rejection always requires a reason. Each domain service re-checks defensively.
         if (request.Action == WorkflowDecisionAction.Reject && string.IsNullOrWhiteSpace(request.Comment))
             return Result<WorkflowDecisionResponseDto>.Failure("A rejection reason is required.", 400);
 
-        var decision = request.Action == WorkflowDecisionAction.Approve
-            ? await _leaveRequestService.ApproveAsync(entity.EntityId, request.Comment, cancellationToken)
-            : await _leaveRequestService.RejectAsync(entity.EntityId, request.Comment!, cancellationToken);
+        bool approve = request.Action == WorkflowDecisionAction.Approve;
 
-        if (decision.IsFailure)
-            return Result<WorkflowDecisionResponseDto>.Failure(decision.Error!, decision.StatusCode ?? 400, decision.ErrorCode);
+        // US-ADM-011c: route to the owning domain service. Each service's Approve/Reject internally routes through
+        // its own TryWorkflowDecisionAsync (so the actual instance advance happens there), returning a status
+        // string ("Approved"/"Rejected"/"Pending"/enum name) that is surfaced to the approver.
+        var (ok, error, statusCode, errorCode, status) = entity.EntityType switch
+        {
+            WorkflowEntityType.Leave => Map(approve
+                ? await _leaveRequestService.ApproveAsync(entity.EntityId, request.Comment, cancellationToken)
+                : await _leaveRequestService.RejectAsync(entity.EntityId, request.Comment!, cancellationToken)),
+
+            WorkflowEntityType.Attendance => Map(approve
+                ? await _regularizationApprovalService.ApproveAsync(entity.EntityId, request.Comment, cancellationToken)
+                : await _regularizationApprovalService.RejectAsync(entity.EntityId, request.Comment!, cancellationToken)),
+
+            WorkflowEntityType.Overtime => Map(approve
+                ? await _overtimeService.ApproveAsync(entity.EntityId, null, request.Comment, cancellationToken)
+                : await _overtimeService.RejectAsync(entity.EntityId, request.Comment!, cancellationToken)),
+
+            WorkflowEntityType.Offer => Map(
+                await _offerService.DecideApprovalAsync(entity.EntityId, request.Action, request.Comment, cancellationToken)),
+
+            _ => (false, $"Decisions for {entity.EntityType} are not yet wired to the workflow runtime.",
+                  400, "entity_type_not_wired", (string?)null),
+        };
+
+        if (!ok)
+            return Result<WorkflowDecisionResponseDto>.Failure(error!, statusCode ?? 400, errorCode);
 
         return Result<WorkflowDecisionResponseDto>.Success(
-            new WorkflowDecisionResponseDto(request.InstanceId, entity.EntityType.ToString(), decision.Value!.Status));
+            new WorkflowDecisionResponseDto(request.InstanceId, entity.EntityType.ToString(), status ?? string.Empty));
     }
+
+    // Normalizes each service's Result<T> into a common tuple. The T just needs a Status string.
+    private static (bool ok, string? error, int? statusCode, string? errorCode, string? status) Map(
+        Result<HRM.Application.Features.LeaveRequests.DTOs.LeaveApprovalResultDto> r)
+        => r.IsSuccess ? (true, null, null, null, r.Value!.Status) : (false, r.Error, r.StatusCode, r.ErrorCode, null);
+
+    private static (bool ok, string? error, int? statusCode, string? errorCode, string? status) Map(
+        Result<HRM.Application.Features.Attendance.DTOs.RegularizationDecisionDto> r)
+        => r.IsSuccess ? (true, null, null, null, r.Value!.Status) : (false, r.Error, r.StatusCode, r.ErrorCode, null);
+
+    private static (bool ok, string? error, int? statusCode, string? errorCode, string? status) Map(
+        Result<HRM.Application.Features.Attendance.DTOs.OvertimeDecisionDto> r)
+        => r.IsSuccess ? (true, null, null, null, r.Value!.Status) : (false, r.Error, r.StatusCode, r.ErrorCode, null);
+
+    private static (bool ok, string? error, int? statusCode, string? errorCode, string? status) Map(
+        Result<HRM.Application.Features.Recruitment.DTOs.OfferApprovalDecisionDto> r)
+        => r.IsSuccess ? (true, null, null, null, r.Value!.Status) : (false, r.Error, r.StatusCode, r.ErrorCode, null);
 }

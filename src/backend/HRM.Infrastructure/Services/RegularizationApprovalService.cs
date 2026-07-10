@@ -4,6 +4,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
 using HRM.Domain.Entities;
+using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IShiftService _shiftService;
+    private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly ILogger<RegularizationApprovalService> _logger;
 
     public RegularizationApprovalService(
@@ -37,12 +39,16 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IShiftService shiftService,
-        ILogger<RegularizationApprovalService> logger)
+        ILogger<RegularizationApprovalService> logger,
+        IWorkflowRuntime? workflowRuntime = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _shiftService = shiftService;
+        // US-ADM-011c FR-11: optional so existing US-ATT-004 unit tests keep compiling; DI always supplies it.
+        // When the regularization is workflow-driven (WorkflowInstanceId set), decisions route through the runtime.
+        _workflowRuntime = workflowRuntime;
         _logger = logger;
     }
 
@@ -125,6 +131,13 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         string? comment,
         CancellationToken cancellationToken = default)
     {
+        // US-ADM-011c FR-11: when this regularization is workflow-driven, route the decision through the generic
+        // runtime (approver authz + multi-level advance + single-winner transaction). Null → legacy path (AC-11).
+        var routed = await TryWorkflowDecisionAsync(
+            regularizationId, WorkflowDecisionAction.Approve, comment, cancellationToken);
+        if (routed is not null)
+            return routed;
+
         var ctx = await LoadForDecisionAsync(regularizationId, cancellationToken);
         if (ctx.Failure is not null)
             return ctx.Failure;
@@ -146,6 +159,12 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         if (trimmed.Length < 10)
             return Result<RegularizationDecisionDto>.Failure(
                 "A rejection reason of at least 10 characters is required.", 400);
+
+        // US-ADM-011c FR-11: route a workflow-driven regularization's rejection through the runtime (see ApproveAsync).
+        var routed = await TryWorkflowDecisionAsync(
+            regularizationId, WorkflowDecisionAction.Reject, trimmed, cancellationToken);
+        if (routed is not null)
+            return routed;
 
         var ctx = await LoadForDecisionAsync(regularizationId, cancellationToken);
         if (ctx.Failure is not null)
@@ -219,6 +238,22 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         // already-approved one. De-duplicate ids to avoid double-processing.
         foreach (var id in regularizationIds.Distinct())
         {
+            // US-ADM-011c FR-11: a workflow-driven item routes through the runtime (each commits per item via the
+            // runtime). Non-workflow items fall through to the legacy per-item approve below.
+            var routed = await TryWorkflowDecisionAsync(id, WorkflowDecisionAction.Approve, comment, cancellationToken);
+            if (routed is not null)
+            {
+                items.Add(new BulkRegularizationItemResult
+                {
+                    RegularizationId = id,
+                    Succeeded = routed.IsSuccess,
+                    Decision = routed.IsSuccess ? routed.Value : null,
+                    Error = routed.IsFailure ? routed.Error : null,
+                    ErrorCode = routed.IsFailure ? routed.ErrorCode : null,
+                });
+                continue;
+            }
+
             var ctx = await LoadForDecisionAsync(id, cancellationToken);
             if (ctx.Failure is not null)
             {
@@ -331,6 +366,178 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
             Comment = history.Comment,
             ActionedAt = history.ActionedAt,
         });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Workflow-driven approval routing (US-ADM-011c FR-11)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// US-ADM-011c FR-11: routes an approve/reject decision through the generic workflow runtime when the
+    /// regularization is workflow-driven (its <see cref="AttendanceRegularization.WorkflowInstanceId"/> is set).
+    /// Returns <c>null</c> when it is NOT workflow-driven (or the runtime is unavailable), so the caller runs the
+    /// legacy single-level path unchanged (AC-11). The attendance side-effects (apply-to-log + status + history)
+    /// run inside the runtime's transaction via the callbacks, so the workflow and attendance state commit
+    /// atomically.
+    /// </summary>
+    private async Task<Result<RegularizationDecisionDto>?> TryWorkflowDecisionAsync(
+        Guid regularizationId, WorkflowDecisionAction action, string? comment, CancellationToken cancellationToken)
+    {
+        if (_workflowRuntime is null || !_tenantContext.IsResolved)
+            return null;
+
+        var peek = await _dbContext.AttendanceRegularizations.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == regularizationId, cancellationToken);
+        if (peek is null || peek.WorkflowInstanceId is null)
+            return null; // legacy single-level path (AC-11)
+
+        AttendanceLog? approvedLog = null;
+
+        var decision = await _workflowRuntime.DecideAsync(
+            WorkflowEntityType.Attendance, regularizationId, action, comment,
+            onApproved: async ct =>
+            {
+                var staged = await StageRegApprovalAsync(regularizationId, comment, ct);
+                if (staged.IsFailure)
+                    return Result.Failure(staged.Error!, staged.StatusCode ?? 400, staged.ErrorCode);
+                approvedLog = staged.Value;
+                return Result.Success();
+            },
+            onRejected: ct => StageRegRejectionAsync(regularizationId, comment, ct),
+            cancellationToken: cancellationToken);
+
+        if (decision.IsFailure)
+            return Result<RegularizationDecisionDto>.Failure(
+                decision.Error!, decision.StatusCode ?? 400, decision.ErrorCode);
+
+        var outcome = decision.Value!;
+        var now = DateTime.UtcNow;
+
+        switch (outcome.Outcome)
+        {
+            case WorkflowDecisionOutcome.StepAdvanced:
+            case WorkflowDecisionOutcome.StepRecorded:
+                // Intermediate approval — the regularization stays Pending until the final step approves.
+                return Result<RegularizationDecisionDto>.Success(new RegularizationDecisionDto
+                {
+                    RegularizationId = regularizationId,
+                    Status = RegularizationStatus.Pending,
+                    Action = RegularizationApprovalAction.Approved,
+                    ApprovalLevel = outcome.NextStepOrder ?? 0,
+                    ActionedAt = now,
+                });
+
+            case WorkflowDecisionOutcome.InstanceApproved:
+                return Result<RegularizationDecisionDto>.Success(new RegularizationDecisionDto
+                {
+                    RegularizationId = regularizationId,
+                    Status = RegularizationStatus.Approved,
+                    Action = RegularizationApprovalAction.Approved,
+                    ApprovalLevel = outcome.NextStepOrder ?? 1,
+                    AttendanceLogId = approvedLog?.Id,
+                    TotalWorkMinutes = approvedLog?.TotalWorkMinutes,
+                    OvertimeMinutes = approvedLog?.OvertimeMinutes,
+                    AttendanceStatus = approvedLog?.Status,
+                    Comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                    ActionedAt = now,
+                });
+
+            case WorkflowDecisionOutcome.InstanceRejected:
+            default:
+                return Result<RegularizationDecisionDto>.Success(new RegularizationDecisionDto
+                {
+                    RegularizationId = regularizationId,
+                    Status = RegularizationStatus.Rejected,
+                    Action = RegularizationApprovalAction.Rejected,
+                    ApprovalLevel = 1,
+                    Comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                    ActionedAt = now,
+                });
+        }
+    }
+
+    /// <summary>
+    /// Stages the approve side-effects (period-lock guard + apply-to-attendance-log + status → Approved +
+    /// history + audit) WITHOUT saving — the workflow runtime owns the commit so the workflow completion and the
+    /// attendance mutation are one atomic unit. Mirrors <see cref="ApproveCoreAsync"/> for the workflow path.
+    /// The acting approver must have a linked employee record (the history FK requires it); otherwise the staged
+    /// approval fails and the runtime rolls the transition back.
+    /// </summary>
+    private async Task<Result<AttendanceLog>> StageRegApprovalAsync(
+        Guid regularizationId, string? comment, CancellationToken cancellationToken)
+    {
+        var regularization = await _dbContext.AttendanceRegularizations
+            .FirstOrDefaultAsync(r => r.Id == regularizationId, cancellationToken);
+        if (regularization is null)
+            return Result<AttendanceLog>.Failure("Regularization request not found.", 404);
+
+        var approver = await GetCurrentEmployeeAsync(cancellationToken);
+        if (approver is null)
+            return Result<AttendanceLog>.Failure(
+                "The approving user has no linked employee record.", 403, "no_employee_record");
+
+        // BR-5: re-check the period lock AT APPROVAL TIME (same guard as the legacy path).
+        var locked = await _dbContext.AttendancePeriodLocks
+            .AnyAsync(p => p.IsLocked && p.PeriodStart <= regularization.Date && p.PeriodEnd >= regularization.Date,
+                cancellationToken);
+        if (locked)
+            return Result<AttendanceLog>.Failure(
+                "This date falls within a locked payroll period. Please contact HR.", 409, "payroll_period_locked");
+
+        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var logResult = await ApplyToAttendanceLogAsync(regularization, settings, cancellationToken);
+        if (logResult.IsFailure)
+            return Result<AttendanceLog>.Failure(
+                logResult.Error!, logResult.StatusCode ?? 400, logResult.ErrorCode);
+
+        var log = logResult.Value!;
+        var beforeSnapshot = SnapshotRegularization(regularization);
+
+        regularization.Status = RegularizationStatus.Approved;
+        regularization.AttendanceLogId = log.Id;
+
+        var history = NewHistory(
+            regularization.Id, approver.Id, RegularizationApprovalAction.Approved,
+            string.IsNullOrWhiteSpace(comment) ? null : comment.Trim());
+        _dbContext.RegularizationApprovalHistories.Add(history);
+
+        AddRegularizationAudit("AttendanceRegularization.Approved", regularization.Id,
+            before: beforeSnapshot, after: SnapshotRegularization(regularization),
+            detail: $"Approved via workflow by {approver.Id} → attendance_log {log.Id} "
+                  + $"({log.TotalWorkMinutes} min, status {log.Status}).");
+
+        // NO SaveChanges — the runtime commits this atomically with the workflow transition.
+        return Result<AttendanceLog>.Success(log);
+    }
+
+    /// <summary>
+    /// Stages the reject side-effect (status → Rejected + history + audit) WITHOUT saving — the runtime owns the
+    /// commit. The approval-history row is only written when the acting user has a linked employee record (the
+    /// history FK requires it); otherwise the rejection is still recorded on the regularization status + audit.
+    /// </summary>
+    private async Task StageRegRejectionAsync(
+        Guid regularizationId, string? reason, CancellationToken cancellationToken)
+    {
+        var regularization = await _dbContext.AttendanceRegularizations
+            .FirstOrDefaultAsync(r => r.Id == regularizationId, cancellationToken);
+        if (regularization is null)
+            return;
+
+        var beforeSnapshot = SnapshotRegularization(regularization);
+        regularization.Status = RegularizationStatus.Rejected;
+
+        var approver = await GetCurrentEmployeeAsync(cancellationToken);
+        if (approver is not null)
+        {
+            var history = NewHistory(
+                regularization.Id, approver.Id, RegularizationApprovalAction.Rejected,
+                string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());
+            _dbContext.RegularizationApprovalHistories.Add(history);
+        }
+
+        AddRegularizationAudit("AttendanceRegularization.Rejected", regularization.Id,
+            before: beforeSnapshot, after: SnapshotRegularization(regularization),
+            detail: $"Rejected via workflow. Reason: {reason?.Trim()}");
     }
 
     /// <summary>
