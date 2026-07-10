@@ -1,4 +1,6 @@
+using System.Runtime.ExceptionServices;
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Hangfire;
@@ -21,9 +23,20 @@ namespace HRM.Api.Jobs;
 /// <para>With no SMTP configured the injected <see cref="IEmailSender"/> is the log-only stub, which never
 /// throws — so this job simply marks rows Sent, and the whole path is safe with no SMTP server.</para>
 ///
-/// <para>Runs outside a request scope (no resolved ITenantContext): the delivery row is loaded by its id +
-/// explicit tenant id. The global query filter is bypassed naturally because ITenantContext is unresolved in the
-/// job scope (no <c>IgnoreQueryFilters</c> needed); the explicit tenant-id predicate is the isolation guard.</para>
+/// <para><b>RLS increment 3a</b> — the delivery row lives in the policy-bearing <c>notification_deliveries</c>
+/// table, so this job establishes the tenant via <see cref="ITenantJobRunner.RunForTenantAsync"/> (which sets the
+/// <c>app.current_tenant</c> GUC on the <c>hrm_app</c> connection under RLS) rather than relying on an unresolved
+/// see-all context. The work is split into THREE units so it works under RLS AND still persists retry state on
+/// failure — a single commit-on-success transaction would otherwise roll back the <c>Attempts++</c>/<c>LastError</c>
+/// bookkeeping when the send throws:</para>
+/// <list type="number">
+/// <item><b>read</b> the row (tenant-scoped, GUC set);</item>
+/// <item><b>send</b> via the SMTP seam OUTSIDE any GUC transaction (a network call must not hold a DB tx open);</item>
+/// <item><b>persist</b> the outcome (Sent, or Attempts++/LastError/Failed) in its OWN short GUC-scoped unit that
+/// COMMITS even when the send failed — so the retry counter/error is durable and visible under RLS;</item>
+/// </list>
+/// <para>then, only after that commit, the send error is rethrown so Hangfire retries with backoff (or gives up
+/// after <see cref="MaxAttempts"/>). An already-Sent row is a no-op (idempotent).</para>
 /// </summary>
 public sealed class SendEmailJob
 {
@@ -41,9 +54,19 @@ public sealed class SendEmailJob
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var sender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        var tenantRunner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
 
-        var row = await db.NotificationDeliveries
-            .FirstOrDefaultAsync(d => d.Id == deliveryId && d.TenantId == tenantId, cancellationToken);
+        // Subdomain is log/diagnostic-only for the runner; the tenant id is what scopes the GUC + query filter.
+        var subdomain = tenantId.ToString();
+
+        // 1. READ — load the delivery row inside the tenant scope (under RLS this sets the GUC on hrm_app so the
+        //    row is visible; the explicit tenant-id predicate stays as a belt-and-suspenders guard).
+        NotificationDelivery? row = null;
+        await tenantRunner.RunForTenantAsync(tenantId, subdomain, async innerCt =>
+        {
+            row = await db.NotificationDeliveries
+                .FirstOrDefaultAsync(d => d.Id == deliveryId && d.TenantId == tenantId, innerCt);
+        }, cancellationToken);
 
         if (row is null)
         {
@@ -56,29 +79,52 @@ public sealed class SendEmailJob
         if (row.Status == NotificationDeliveryStatus.Sent)
             return; // idempotent: a retry after a successful send that failed to persist should not resend twice.
 
-        row.Attempts++;
+        // 2. SEND — OUTSIDE any GUC transaction. A network/SMTP call must never hold a DB transaction open.
+        Exception? sendError = null;
         try
         {
             await sender.SendAsync(message, cancellationToken);
-
-            row.Status = NotificationDeliveryStatus.Sent;
-            row.SentAt = DateTime.UtcNow;
-            row.LastError = null;
-            await db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            row.LastError = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message;
-            if (row.Attempts >= MaxAttempts)
-                row.Status = NotificationDeliveryStatus.Failed;
+            sendError = ex;
+        }
 
-            await db.SaveChangesAsync(CancellationToken.None);
+        // Compute the target attempt count once, OUTSIDE the (retry-safe) persistence unit, so a transient-retry of
+        // that unit re-applies the SAME value instead of double-incrementing the tracked entity.
+        var attempts = row.Attempts + 1;
 
-            Log.Error(ex,
+        // 3. PERSIST — the outcome in its OWN short tenant-scoped unit that COMMITS even on send failure. This is
+        //    the key correctness property: the retry counter/error is durable regardless of the send result.
+        await tenantRunner.RunForTenantAsync(tenantId, subdomain, async innerCt =>
+        {
+            row.Attempts = attempts;
+            if (sendError is null)
+            {
+                row.Status = NotificationDeliveryStatus.Sent;
+                row.SentAt = DateTime.UtcNow;
+                row.LastError = null;
+            }
+            else
+            {
+                row.LastError = sendError.Message.Length > 2000 ? sendError.Message[..2000] : sendError.Message;
+                if (attempts >= MaxAttempts)
+                    row.Status = NotificationDeliveryStatus.Failed;
+            }
+
+            await db.SaveChangesAsync(innerCt);
+        }, cancellationToken);
+
+        // 4. RETHROW — only AFTER the outcome is committed, so Hangfire retries with backoff (or gives up after
+        //    MaxAttempts) while the persisted Attempts/LastError survive. ExceptionDispatchInfo preserves the
+        //    original stack trace.
+        if (sendError is not null)
+        {
+            Log.Error(sendError,
                 "SendEmailJob: send FAILED for delivery {DeliveryId} (tenant {TenantId}), attempt {Attempt}/{Max}.",
-                deliveryId, tenantId, row.Attempts, MaxAttempts);
+                deliveryId, tenantId, attempts, MaxAttempts);
 
-            throw; // surface to Hangfire so it retries with backoff (or gives up after MaxAttempts).
+            ExceptionDispatchInfo.Throw(sendError);
         }
     }
 }

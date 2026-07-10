@@ -24,6 +24,7 @@ using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -45,6 +46,14 @@ public sealed class SendEmailJobTests
             var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
             return new AppDbContext(options, tc);
         });
+        // RLS increment 3a: the job now scopes its DB access via ITenantJobRunner (sets the tenant context, and
+        // under RLS the app.current_tenant GUC). On InMemory (Rls:Enabled default false) the runner just sets the
+        // tenant context and runs the work directly — no transaction / raw SQL — so these tests stay provider-safe.
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Rls:Enabled"] = "false" })
+            .Build();
+        services.AddSingleton(config);
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
         services.AddSingleton(_sender);
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
@@ -178,5 +187,28 @@ public sealed class SendEmailJobTests
         var row = ReadDelivery(id);
         row.Status.Should().Be(NotificationDeliveryStatus.Queued); // never touched
         row.Attempts.Should().Be(0);
+    }
+
+    // ── RLS-3a: retry state is PERSISTED in its own committed unit BEFORE the rethrow (send failure) ─────────
+    // The 3a restructure splits read → send (outside any tx) → persist (own committed unit) → rethrow. This
+    // asserts the durable outcome: after a single failed send the row shows Attempts++/LastError (readable via a
+    // FRESH context = committed) yet the job still surfaces the error to Hangfire, and the send ran exactly once.
+    [Fact]
+    public async Task Run_WhenSendFails_PersistsRetryStateInOwnUnit_ThenRethrows()
+    {
+        var id = SeedDelivery(NotificationDeliveryStatus.Queued, attempts: 2);
+        SenderThrows("smtp timeout");
+
+        var act = async () => await CreateJob().RunAsync(_tenantId, id, Message(_tenantId));
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("smtp timeout");
+
+        // Fresh context ⇒ the write was committed independently of the rethrow.
+        var row = ReadDelivery(id);
+        row.Attempts.Should().Be(3);
+        row.LastError.Should().Contain("smtp timeout");
+        row.Status.Should().Be(NotificationDeliveryStatus.Queued); // 3 < MaxAttempts ⇒ not terminal
+        row.SentAt.Should().BeNull();
+        await _sender.Received(1).SendAsync(Arg.Any<EmailMessage>(), Arg.Any<CancellationToken>());
     }
 }
