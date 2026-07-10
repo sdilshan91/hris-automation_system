@@ -655,6 +655,9 @@ public static class DependencyInjection
         // NotificationPreferenceDefaults catalog is the tenant-default baseline (SecurityAlerts mandatory).
         services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
 
+        // ── Training & Benefits (US-TRN-001) ──
+        services.AddScoped<ITrainingService, TrainingService>();
+
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();
 

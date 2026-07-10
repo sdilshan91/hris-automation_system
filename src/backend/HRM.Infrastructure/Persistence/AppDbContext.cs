@@ -171,6 +171,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // shared, platform-wide key ring (IDataProtectionKeyContext).
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
+    // US-TRN-001: training catalog + course enrollments (tenant-scoped).
+    public DbSet<TrainingCourse> TrainingCourses => Set<TrainingCourse>();
+    public DbSet<CourseEnrollment> CourseEnrollments => Set<CourseEnrollment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -626,6 +630,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-NTF-006: NotificationDelivery tenant isolation + soft-delete filter (cross-tenant isolation).
         modelBuilder.Entity<NotificationDelivery>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-TRN-001 (AC-10, FR-8): tenant isolation for the training catalog + enrollments.
+        modelBuilder.Entity<TrainingCourse>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        modelBuilder.Entity<CourseEnrollment>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

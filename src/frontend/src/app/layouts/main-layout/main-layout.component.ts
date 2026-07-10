@@ -891,6 +891,14 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M15.988 3.012A2.25 2.25 0 0 1 18 5.25v6.5A2.25 2.25 0 0 1 15.75 14H13.5l-2.69 2.69a.75.75 0 0 1-1.06 0L7.06 14H4.25A2.25 2.25 0 0 1 2 11.75v-6.5a2.25 2.25 0 0 1 2.012-2.238 41.493 41.493 0 0 1 11.976 0ZM6.75 6.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 2.5a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      // US-TRN-001: Training catalog + enrollment management. Any-of gate so
+      // employees (View.Own), HR (View.All) and admins (Manage) all see it.
+      label: 'Training',
+      route: '/training',
+      permission: ['Training.View.Own', 'Training.View.All', 'Training.Manage'],
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a.999.999 0 0 1 .356-.257l4-1.714a1 1 0 1 1 .788 1.838L7.667 9.088l1.94.831a1 1 0 0 0 .787 0l7-3a1 1 0 0 0 0-1.838l-7-3ZM3.31 9.397 5 10.12v4.102a8.969 8.969 0 0 0-1.05-.174 1 1 0 0 1-.89-.89 11.115 11.115 0 0 1 .25-3.762ZM9.3 16.573A9.026 9.026 0 0 0 7 14.935v-3.957l1.818.78a3 3 0 0 0 2.364 0l5.508-2.361a11.026 11.026 0 0 1 .25 3.762 1 1 0 0 1-.89.89 8.968 8.968 0 0 0-5.35 2.524 1 1 0 0 1-1.4 0ZM6 18a1 1 0 0 0 1-1v-2.065a8.935 8.935 0 0 0-2-.712V17a1 1 0 0 0 1 1Z"/></svg>`,
+    },
+    {
       // US-ADM-005: Tenant Admin user & role-assignment management.
       label: 'Users',
       route: '/admin/users',

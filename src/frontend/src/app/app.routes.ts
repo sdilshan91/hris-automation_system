@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, noAuthGuard, roleGuard } from './core/auth/auth.guard';
+import { authGuard, noAuthGuard, permissionGuard, roleGuard } from './core/auth/auth.guard';
 import { mfaChallengeGuard, mfaEnrollGuard } from './core/auth/mfa.guard';
 import { tenantAvailabilityGuard } from './core/tenant/tenant.guard';
 import { AuthLayoutComponent } from './layouts/auth-layout/auth-layout.component';
@@ -359,6 +359,26 @@ export const appRoutes: Routes = [
           ),
         canActivate: [
           roleGuard(['Tenant Admin']),
+        ],
+      },
+      // ─── Training & Benefits / Training Catalog (US-TRN-001) ─
+      {
+        path: 'training',
+        loadChildren: () =>
+          import('./features/training/training.routes').then(
+            (m) => m.TRAINING_ROUTES
+          ),
+        // Employees self-enrol (Training.View.Own), so gate the route by the same
+        // permission set as the nav item rather than admin roles — otherwise an
+        // Employee sees "Training" in the nav but dead-ends at /forbidden (ISSUE-210
+        // class). Management actions (create/edit/status/complete) are permission-gated
+        // at the API and hidden in the UI for non-Manage users.
+        canActivate: [
+          permissionGuard([
+            'Training.View.Own',
+            'Training.View.All',
+            'Training.Manage',
+          ]),
         ],
       },
       // ─── Leave Management / Leave Types (US-LV-001) ─────────
