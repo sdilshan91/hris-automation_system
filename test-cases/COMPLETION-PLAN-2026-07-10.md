@@ -32,7 +32,18 @@ Story: `user-stories/admin-console/US-ADM-011.md` (§13 decisions, §14 phasing)
   3 US-NTF-006 events dispatched post-commit. 3374/3374 on Postgres; integration-enforcer WIRED + test-authenticator
   AUTHENTIC. **Auto-healed ISSUE-266** (pre-existing US-ADM-007 validation ErrorCode drop). **⚠ 011c must NOT
   re-collide the migration** — 011c's new-entity migration stacks on `20260710165359_Admin_WorkflowStepApprovers`.
-- **011c — Delegation + remaining entity wiring.** Delegation at step-activation via approver approved-leave
+- **011c — Delegation + remaining entity wiring. ✅ SHIPPED → PR #240 (merged 2026-07-10).** Delegation
+  snapshot-at-activation (primary approver → backup when on approved leave; no-backup → notify admin; recorded via
+  audit + `workflow_step_delegated` notif). Attendance/Overtime/Offer wired through the engine (per-service
+  `TryWorkflowDecisionAsync` adapters mirroring Leave; AC-11 legacy fallback each). `WorkflowEntityType.Overtime`
+  added (BE+FE). Offer got a `WorkflowInstanceId` column (`Recruitment_OfferWorkflowInstance`, column-only) + a
+  `SendAsync` gate (409 `offer_approval_pending` until Approved, US-REC-007 BR-5). `DecideWorkflowInstanceCommandHandler`
+  routes all 4 types. Read API (`GET /workflow-instances/{id}` step-chain + `GET /workflows/{lineageId}/instances`
+  paged) + real `InFlightCount`. 3385/3385 Postgres + FE green; both auditors clean. **Auto-healed ISSUE-267**
+  (open instance-read endpoint) + strengthened a delegation test. **⚠ DEFERRED:** full FE workflow-instance
+  detail/step-chain viewer (net-new, cross-module) — BE read API delivered for a follow-up FE story.
+  **✅ US-ADM-011 (workflow runtime) epic COMPLETE (011a #238 + 011b #239 + 011c #240).**
+- ~~**011c — Delegation + remaining entity wiring.**~~ (superseded by the shipped entry above) Delegation at step-activation via approver approved-leave
   lookup (AC-6/FR-9, resolve **Q3**: snapshot-at-activation). Wire **Attendance regularization** + **Overtime**
   (resolve **Q6**: add a `WorkflowEntityType.Overtime` member + migration/seeded default — recommended) + **Offer**
   approval through the engine (FR-11 remainder); no-definition legacy fallback for each (AC-11); request-detail
