@@ -241,7 +241,11 @@ modelling maker-checker + `Finalized` as first-class engine concepts.
   by `StepOrder` and returns them all — the runtime groups by `StepOrder`); or **(ii)** a new
   `WorkflowStepApprover` child collection. **Recommendation: (i)** — no schema change to the design-time layer,
   and it falls out of the existing `Evaluate` output naturally. Confirm with the US-ADM-007 editor UI (does it
-  emit sibling rows or a single row?). **This is a genuine gap — flagged OUT-OF-LANE below.**
+  emit sibling rows or a single row?). **DECISION (2026-07-10): model (ii) — a new `WorkflowStepApprover`
+  child table** (a `WorkflowStep` has many approvers). Cleaner domain model; US-ADM-011b must add the child
+  entity + migration, refactor the design-time `WorkflowStep`/`WorkflowService`/editor to author multiple
+  approvers per step, and the runtime groups a step's approvers for all-approve/any-reject. Remember the
+  NEW-TENANT-TABLE RLS RULE (add the child table's dormant `tenant_isolation` policy in its migration).
 - **Q2 — SLA clock source + idempotency key.** Is `SlaDueAt` computed from step *activation* time or instance
   *creation* time? (Recommend activation time.) What is the idempotency guard — a compare-and-swap on
   `Decision = Pending → Escalated` inside the retry-safe transaction, or a dedicated `EscalatedAt` null-check?

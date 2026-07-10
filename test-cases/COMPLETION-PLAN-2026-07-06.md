@@ -1,5 +1,10 @@
 # HRM — Completion Plan (all pending work)  ·  2026-07-06
 
+> **🔒 CLOSED 2026-07-10 — SUPERSEDED by [`COMPLETION-PLAN-2026-07-10.md`](COMPLETION-PLAN-2026-07-10.md).**
+> P1–P3 + RLS full-enable + P4-011a all shipped (see the new plan's "What shipped" section). Remaining work
+> (workflow runtime 011b/011c, Training & Benefits, RLS 3b hardening) lives in the continuation plan. This file
+> is kept for history; do not resume from it.
+
 > Consolidates everything left after the fix campaign (PRs #119–180, all merged into `test/local-subdomains`).
 > Sources: the `TEST-FINDINGS.md` open items **de-noised** (most "OPEN" MED items are actually merged-not-closed),
 > plus a fresh **codebase latent-TODO scan** that surfaced work never captured as a QA finding. Phased by
