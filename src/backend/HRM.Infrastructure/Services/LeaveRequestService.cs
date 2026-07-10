@@ -949,11 +949,13 @@ public sealed class LeaveRequestService : ILeaveRequestService
         switch (outcome.Outcome)
         {
             case WorkflowDecisionOutcome.StepAdvanced:
-                // Intermediate approval — the request stays Pending until the final step approves (AC-2). The
-                // next-approver notification is US-ADM-011b.
+            case WorkflowDecisionOutcome.StepRecorded:
+                // Intermediate approval — the request stays Pending. StepAdvanced = the group completed and the
+                // instance moved to the next step; StepRecorded (US-ADM-011b, AC-4) = a parallel co-approver
+                // approved but the group still awaits other approvers. Either way the leave request stays Pending.
                 _logger.LogInformation(
-                    "Leave request {LeaveRequestId} advanced to workflow step {StepOrder} in tenant {TenantId}.",
-                    leaveRequestId, outcome.NextStepOrder, _tenantContext.TenantId);
+                    "Leave request {LeaveRequestId} approval recorded at workflow step {StepOrder} ({Outcome}) in tenant {TenantId}.",
+                    leaveRequestId, outcome.NextStepOrder, outcome.Outcome, _tenantContext.TenantId);
                 return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
                 {
                     RequestId = leaveRequestId,

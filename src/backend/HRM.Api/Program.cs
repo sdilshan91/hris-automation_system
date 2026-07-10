@@ -306,6 +306,9 @@ try
     // US-ONB-003 FR-6/AC-5/BR-4: daily overdue-task sweep (writes overdue outbox rows; tenant-tz deferred, UTC).
     builder.Services.AddScoped<HRM.Api.Jobs.OnboardingOverdueSweepJob>();
 
+    // US-ADM-011b (AC-5/FR-8/NFR-3): per-tenant SLA-escalation sweep for overdue approval steps (every 5 min).
+    builder.Services.AddScoped<HRM.Api.Jobs.WorkflowSlaEscalationJob>();
+
     // US-ATT-007: monthly attendance summary jobs (daily refresh + monthly finalize) and the large-export
     // background job (bound to the interface so the Infrastructure service can enqueue it by interface).
     builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryDailyJob>();
@@ -715,6 +718,13 @@ try
         // tasks across active tenants and writes overdue notification-outbox rows to employee + HR + manager,
         // then enqueues the dispatch worker. Idempotent per task per UTC day. NOTE: tenant-timezone scheduling
         // (BR-4 default 09:00 tenant-local) is NOT built — runs on a single UTC cron, compares UTC dates.
+        // US-ADM-011b (AC-5/FR-8/NFR-3): SLA-escalation sweep — escalates overdue approval steps across active
+        // tenants every 5 minutes. Idempotent (conditional CAS per breached step). Runs on a single UTC cron.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.WorkflowSlaEscalationJob>(
+            "workflow-sla-escalation",
+            job => job.RunAsync(CancellationToken.None),
+            "*/5 * * * *"); // every 5 minutes
+
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.OnboardingOverdueSweepJob>(
             "onboarding-overdue-task-sweep",
             job => job.RunAsync(CancellationToken.None),

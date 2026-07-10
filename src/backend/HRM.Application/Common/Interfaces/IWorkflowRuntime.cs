@@ -95,7 +95,13 @@ public enum WorkflowDecisionOutcome
     InstanceApproved = 1,
 
     /// <summary>A step was rejected; the instance (and request) are Rejected.</summary>
-    InstanceRejected = 2
+    InstanceRejected = 2,
+
+    /// <summary>
+    /// US-ADM-011b: a parallel-group co-approver approved but the group is not yet complete; the request stays
+    /// pending (no advance yet). Only emitted for parallel steps awaiting other approvers (AC-4).
+    /// </summary>
+    StepRecorded = 3
 }
 
 /// <summary>The result of a successful <see cref="IWorkflowRuntime.DecideAsync"/> call.</summary>

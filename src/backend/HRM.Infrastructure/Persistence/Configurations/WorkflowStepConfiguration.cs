@@ -49,5 +49,11 @@ public sealed class WorkflowStepConfiguration : IEntityTypeConfiguration<Workflo
 
         builder.HasIndex(s => new { s.WorkflowDefinitionId, s.StepOrder })
             .HasDatabaseName("ix_workflow_steps_definition_step_order");
+
+        // US-ADM-011b: additional parallel approvers are a cascade child collection of the step.
+        builder.HasMany(s => s.Approvers)
+            .WithOne()
+            .HasForeignKey(a => a.WorkflowStepId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

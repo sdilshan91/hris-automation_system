@@ -114,7 +114,7 @@ public sealed class WorkflowService : IWorkflowService
 
         var workflow = await _db.WorkflowDefinitions
             .AsNoTracking()
-            .Include(w => w.Steps)
+            .Include(w => w.Steps).ThenInclude(s => s.Approvers)
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
         if (workflow is null)
@@ -215,6 +215,7 @@ public sealed class WorkflowService : IWorkflowService
 
         var tenantId = _tenantContext.TenantId;
         var currentSteps = await _db.WorkflowSteps
+            .Include(s => s.Approvers)
             .Where(s => s.WorkflowDefinitionId == current.Id)
             .ToListAsync(cancellationToken);
         var before = ToAuditSnapshot(current, currentSteps);
@@ -249,10 +250,15 @@ public sealed class WorkflowService : IWorkflowService
 
             resultSteps = MapSteps(request.Steps, tenantId, result.Id);
             _db.WorkflowSteps.AddRange(resultSteps);
+            // US-ADM-011b: insert the parallel-approver children explicitly (deterministic across InMemory +
+            // Postgres — the parent steps are directly added, not attached via a definition navigation).
+            _db.WorkflowStepApprovers.AddRange(resultSteps.SelectMany(s => s.Approvers));
         }
         else
         {
             // Draft: edit in place (no new version), replacing its steps via the DbSet (delete old, add new).
+            // US-ADM-011b: remove the old steps' approver children first (InMemory has no DB cascade).
+            _db.WorkflowStepApprovers.RemoveRange(currentSteps.SelectMany(s => s.Approvers));
             _db.WorkflowSteps.RemoveRange(currentSteps);
 
             current.Name = request.Name.Trim();
@@ -261,6 +267,7 @@ public sealed class WorkflowService : IWorkflowService
 
             resultSteps = MapSteps(request.Steps, tenantId, current.Id);
             _db.WorkflowSteps.AddRange(resultSteps);
+            _db.WorkflowStepApprovers.AddRange(resultSteps.SelectMany(s => s.Approvers));
         }
 
         await PersistAsync(
@@ -277,7 +284,7 @@ public sealed class WorkflowService : IWorkflowService
             return Result<WorkflowDetailDto>.Failure("No tenant context.", 400);
 
         var workflow = await _db.WorkflowDefinitions
-            .Include(w => w.Steps)
+            .Include(w => w.Steps).ThenInclude(s => s.Approvers)
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
         if (workflow is null)
@@ -304,7 +311,7 @@ public sealed class WorkflowService : IWorkflowService
             return Result<WorkflowDetailDto>.Failure("No tenant context.", 400);
 
         var workflow = await _db.WorkflowDefinitions
-            .Include(w => w.Steps)
+            .Include(w => w.Steps).ThenInclude(s => s.Approvers)
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
         if (workflow is null)
@@ -350,7 +357,7 @@ public sealed class WorkflowService : IWorkflowService
             return Result.Failure("No tenant context.", 400);
 
         var workflow = await _db.WorkflowDefinitions
-            .Include(w => w.Steps)
+            .Include(w => w.Steps).ThenInclude(s => s.Approvers)
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
         if (workflow is null)
@@ -368,6 +375,8 @@ public sealed class WorkflowService : IWorkflowService
                 "This workflow has in-flight requests and cannot be deleted. Archive it instead.", 409, "workflow_in_flight");
 
         var before = ToAuditSnapshot(workflow);
+        // US-ADM-011b: remove the parallel-approver children explicitly first (InMemory has no DB cascade).
+        _db.WorkflowStepApprovers.RemoveRange(workflow.Steps.SelectMany(s => s.Approvers));
         _db.WorkflowSteps.RemoveRange(workflow.Steps);
         _db.WorkflowDefinitions.Remove(workflow);
 
@@ -406,6 +415,12 @@ public sealed class WorkflowService : IWorkflowService
                 return Result.Failure(conditionError, 400);
 
             CollectReference(approverType, step.ApproverIdentifier, roleIds, userIds);
+
+            // US-ADM-011b: the additional parallel approvers (NamedUser ids) must also be tenant members.
+            if (step.IsParallel && step.ParallelApproverIdentifiers is { Count: > 0 })
+                foreach (var uid in step.ParallelApproverIdentifiers)
+                    if (uid != Guid.Empty)
+                        userIds.Add(uid);
 
             if (step.EscalationApproverType is not null)
             {
@@ -530,29 +545,51 @@ public sealed class WorkflowService : IWorkflowService
     }
 
     // definitionId is set on the Update path (steps added directly to the DbSet, FK set explicitly); on Create
-    // it is left default and EF sets the FK via the parent's Steps navigation.
+    // it is left default and EF sets the FK via the parent's Steps navigation. US-ADM-011b: the parallel
+    // approver children carry an explicitly-set WorkflowStepId FK (deterministic across InMemory + Postgres,
+    // independent of navigation fixup).
     private List<WorkflowStep> MapSteps(
         IReadOnlyList<WorkflowStepRequest> steps, Guid tenantId, Guid definitionId = default)
         => steps
             .OrderBy(s => s.StepOrder)
-            .Select(s => new WorkflowStep
+            .Select(s =>
             {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = tenantId,
-                WorkflowDefinitionId = definitionId,
-                StepOrder = s.StepOrder,
-                ApproverType = Enum.Parse<WorkflowApproverType>(s.ApproverType, ignoreCase: true),
-                ApproverIdentifier = s.ApproverIdentifier,
-                IsParallel = s.IsParallel,
-                SlaHours = s.SlaHours,
-                EscalationApproverType = s.EscalationApproverType is null
-                    ? null
-                    : Enum.Parse<WorkflowApproverType>(s.EscalationApproverType, ignoreCase: true),
-                EscalationApproverIdentifier = s.EscalationApproverIdentifier,
-                ConditionJson = string.IsNullOrWhiteSpace(s.ConditionJson) ? null : s.ConditionJson.Trim(),
-                DelegationEnabled = s.DelegationEnabled,
-                DelegationBackupUserId = s.DelegationBackupUserId,
-                CreatedAt = DateTime.UtcNow,
+                var stepId = BaseEntity.NewUuidV7();
+                return new WorkflowStep
+                {
+                    Id = stepId,
+                    TenantId = tenantId,
+                    WorkflowDefinitionId = definitionId,
+                    StepOrder = s.StepOrder,
+                    ApproverType = Enum.Parse<WorkflowApproverType>(s.ApproverType, ignoreCase: true),
+                    ApproverIdentifier = s.ApproverIdentifier,
+                    IsParallel = s.IsParallel,
+                    SlaHours = s.SlaHours,
+                    EscalationApproverType = s.EscalationApproverType is null
+                        ? null
+                        : Enum.Parse<WorkflowApproverType>(s.EscalationApproverType, ignoreCase: true),
+                    EscalationApproverIdentifier = s.EscalationApproverIdentifier,
+                    ConditionJson = string.IsNullOrWhiteSpace(s.ConditionJson) ? null : s.ConditionJson.Trim(),
+                    DelegationEnabled = s.DelegationEnabled,
+                    DelegationBackupUserId = s.DelegationBackupUserId,
+                    CreatedAt = DateTime.UtcNow,
+                    // US-ADM-011b: additional NamedUser approvers, only for a parallel step.
+                    Approvers = (s.IsParallel && s.ParallelApproverIdentifiers is { Count: > 0 })
+                        ? s.ParallelApproverIdentifiers
+                            .Where(id => id != Guid.Empty)
+                            .Distinct()
+                            .Select(id => new WorkflowStepApprover
+                            {
+                                Id = BaseEntity.NewUuidV7(),
+                                TenantId = tenantId,
+                                WorkflowStepId = stepId,
+                                ApproverType = WorkflowApproverType.NamedUser,
+                                ApproverIdentifier = id,
+                                CreatedAt = DateTime.UtcNow,
+                            })
+                            .ToList<WorkflowStepApprover>()
+                        : new List<WorkflowStepApprover>(),
+                };
             })
             .ToList();
 
@@ -609,7 +646,11 @@ public sealed class WorkflowService : IWorkflowService
         s.EscalationApproverIdentifier,
         s.ConditionJson,
         s.DelegationEnabled,
-        s.DelegationBackupUserId);
+        s.DelegationBackupUserId,
+        // US-ADM-011b: surface the additional parallel approver ids (null when there are none).
+        ParallelApproverIdentifiers: s.Approvers is { Count: > 0 }
+            ? s.Approvers.Where(a => a.ApproverIdentifier.HasValue).Select(a => a.ApproverIdentifier!.Value).ToList()
+            : null);
 
     /// <summary>Compact, log-safe snapshot for the audit before/after columns.</summary>
     private static object ToAuditSnapshot(WorkflowDefinition w) => ToAuditSnapshot(w, w.Steps);

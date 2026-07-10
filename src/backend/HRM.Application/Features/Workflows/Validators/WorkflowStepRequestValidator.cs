@@ -46,6 +46,13 @@ public sealed class WorkflowStepRequestValidator : AbstractValidator<WorkflowSte
             .NotNull()
             .When(s => s.DelegationEnabled)
             .WithMessage("A delegation backup user is required when delegation is enabled.");
+
+        // US-ADM-011b: each additional parallel approver id (when present on a parallel step) must be a real,
+        // non-empty Guid. No minimum count is enforced — a parallel step may carry only its primary approver.
+        RuleForEach(s => s.ParallelApproverIdentifiers)
+            .NotEqual(Guid.Empty)
+            .When(s => s.IsParallel && s.ParallelApproverIdentifiers is { Count: > 0 })
+            .WithMessage("Each parallel approver must be a valid user id.");
     }
 
     private static bool BeAValidApproverType(string value)

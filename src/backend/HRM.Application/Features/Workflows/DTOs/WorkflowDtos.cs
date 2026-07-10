@@ -44,7 +44,9 @@ public sealed record WorkflowStepDto(
     Guid? EscalationApproverIdentifier,
     string? ConditionJson,
     bool DelegationEnabled,
-    Guid? DelegationBackupUserId);
+    Guid? DelegationBackupUserId,
+    // US-ADM-011b: additional NamedUser approver ids for a parallel step (beyond the primary approver #1).
+    IReadOnlyList<Guid>? ParallelApproverIdentifiers = null);
 
 // ── Write requests ───────────────────────────────────────────────────────────
 
@@ -74,4 +76,7 @@ public sealed record WorkflowStepRequest(
     Guid? EscalationApproverIdentifier,
     string? ConditionJson,
     bool DelegationEnabled,
-    Guid? DelegationBackupUserId);
+    Guid? DelegationBackupUserId,
+    // US-ADM-011b: additional NamedUser approver ids for a parallel step (the FE emits these). Null for
+    // sequential steps or a primary-only parallel step.
+    IReadOnlyList<Guid>? ParallelApproverIdentifiers = null);

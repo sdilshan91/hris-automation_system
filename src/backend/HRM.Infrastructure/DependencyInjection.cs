@@ -562,6 +562,9 @@ public static class DependencyInjection
         // skip, single-winner transactional decisions, real in-flight count. Wired into Leave submission/approval.
         services.AddScoped<IWorkflowRuntime, WorkflowRuntimeService>();
 
+        // US-ADM-011b (AC-5/FR-8): SLA-timer escalation of overdue approval steps (per-tenant, idempotent CAS).
+        services.AddScoped<IWorkflowSlaEscalator, WorkflowSlaEscalator>();
+
         // US-ADM-008: Tenant-Admin audit-log READ + EXPORT. Runs in the normal resolved-tenant context but
         // filters audit_logs EXPLICITLY by ITenantContext.TenantId (that table has NO global query filter; its
         // TenantId is nullable and shared with system rows). Masks sensitive values on read (FR-4), audits the

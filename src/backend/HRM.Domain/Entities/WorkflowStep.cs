@@ -49,4 +49,11 @@ public sealed class WorkflowStep : BaseEntity
 
     /// <summary>The backup user to route to when delegation fires (AC-5). Config only; runtime routing deferred.</summary>
     public Guid? DelegationBackupUserId { get; set; }
+
+    /// <summary>
+    /// US-ADM-011b: ADDITIONAL approvers for a parallel step (beyond the step's own primary approver #1). Empty
+    /// for sequential steps. The runtime fans out one <see cref="WorkflowStepInstance"/> per distinct resolved
+    /// approver (primary + these), joined all-approve/any-reject (AC-4).
+    /// </summary>
+    public ICollection<WorkflowStepApprover> Approvers { get; set; } = new List<WorkflowStepApprover>();
 }

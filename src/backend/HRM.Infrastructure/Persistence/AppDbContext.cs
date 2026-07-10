@@ -128,6 +128,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // US-ADM-007: Approval-workflow definitions + steps (tenant-scoped).
     public DbSet<WorkflowDefinition> WorkflowDefinitions => Set<WorkflowDefinition>();
     public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
+    // US-ADM-011b: additional parallel approvers on a step (tenant-scoped).
+    public DbSet<WorkflowStepApprover> WorkflowStepApprovers => Set<WorkflowStepApprover>();
     // US-ADM-011: Approval-workflow RUNTIME instances + their step-instances (tenant-scoped).
     public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
     public DbSet<WorkflowStepInstance> WorkflowStepInstances => Set<WorkflowStepInstance>();
@@ -537,6 +539,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-ADM-007: WorkflowStep tenant isolation + soft-delete filter (BR-7).
         modelBuilder.Entity<WorkflowStep>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ADM-011b: WorkflowStepApprover tenant isolation + soft-delete filter (BR-7).
+        modelBuilder.Entity<WorkflowStepApprover>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-ADM-011: WorkflowInstance tenant isolation + soft-delete filter (AC-9 cross-tenant isolation).
