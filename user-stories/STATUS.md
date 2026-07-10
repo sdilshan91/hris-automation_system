@@ -165,7 +165,7 @@
 - [x] US-ADM-008 — View audit logs *(PR #92)*
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
 - [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
-- [ ] US-ADM-011 — Approval-workflow RUNTIME engine (instances/routing/SLA-escalation/delegation) *(**net-new, reconciliation 2026-07-06, Theme C** — US-ADM-007 built design-time only; runtime is inert. FULL story authored. Unblocks US-LV-005 AC-4, US-ATT-004 AC-4, US-REC-007 FR-10.)*
+- [ ] US-ADM-011 — Approval-workflow RUNTIME engine (instances/routing/SLA-escalation/delegation) *(**net-new, reconciliation 2026-07-06, Theme C** — US-ADM-007 built design-time only; runtime is inert. FULL story authored + build-ready 2026-07-09: 12 ACs grounded in real code, payroll-scope decision (keep bespoke), open design Qs, **3-phase breakdown 011a/b/c**. Unblocks US-LV-005 AC-4, US-ATT-004 AC-4, US-REC-007 FR-10.)*
 - [ ] US-ADM-012 — Plan/module governance enforcement (runtime gating + usage limits) *(**net-new STUB, reconciliation 2026-07-06, Theme H** — US-ADM-009 config not enforced; disabled-module APIs not 403'd, limits config-only (BUG-114).)*
 
 ## 9. Onboarding / Offboarding (6 stories) — COMPLETE ✅
@@ -193,10 +193,10 @@
 
 ## 12. Training & Benefits (epic + 3 core stories) — NET-NEW, backlog
 > **Reconciliation 2026-07-06, Theme M** — module had ZERO coverage (no stories/test-cases, never executed). Stubs authored to put it in the backlog; flesh out before build.
-- [ ] US-TRN-EPIC — Training & Benefits module epic *(STUB)*
-- [ ] US-TRN-001 — Training catalog & course enrollment *(STUB)*
-- [ ] US-TRN-002 — Benefits plan administration *(STUB)*
-- [ ] US-TRN-003 — Benefit eligibility & employee enrollment *(STUB)*
+- [ ] US-TRN-EPIC — Training & Benefits module epic *(authored 2026-07-09 — entity model + sequence + v1/future split)*
+- [ ] US-TRN-001 — Training catalog & course enrollment *(FULL IEEE-830 authored 2026-07-09; greenfield, one `/implement-story` unit)*
+- [ ] US-TRN-002 — Benefits plan administration *(FULL IEEE-830 authored 2026-07-09; greenfield; build before 003)*
+- [ ] US-TRN-003 — Benefit eligibility & employee enrollment *(FULL IEEE-830 authored 2026-07-09; depends on US-TRN-002)*
 
 ---
 
