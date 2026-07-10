@@ -2,6 +2,7 @@ using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Caching;
+using HRM.Infrastructure.Multitenancy;
 
 namespace HRM.Tests.Unit;
 
@@ -70,6 +71,56 @@ public sealed class CacheTenantPrefixTests
     [Fact]
     public void NoTenantContext_NonHttpFlow_UsesDistinctNoHttpSentinel()
     {
-        CacheTenantPrefix.For(null).Should().Be(CacheTenantPrefix.NoHttpContext);
+        CacheTenantPrefix.For((ITenantContext?)null).Should().Be(CacheTenantPrefix.NoHttpContext);
+    }
+
+    // ── Ambient overload (RLS increment 1): the mapping the singleton cache-key provider actually uses ──
+
+    [Trait("TC", "TC-INF-CACHE-001")]
+    [Fact]
+    public void Ambient_ResolvedTenant_MapsToTenantScopedPrefix()
+    {
+        var tid = Guid.NewGuid();
+        CacheTenantPrefix.For(new AmbientTenantInfo(tid, IsSystemContext: false, IsResolved: true))
+            .Should().Be($"t:{tid}:");
+    }
+
+    [Trait("TC", "TC-INF-CACHE-001")]
+    [Fact]
+    public void Ambient_TwoDifferentTenants_ProduceDistinctPrefixes()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+
+        var prefixA = CacheTenantPrefix.For(new AmbientTenantInfo(a, false, true));
+        var prefixB = CacheTenantPrefix.For(new AmbientTenantInfo(b, false, true));
+
+        prefixA.Should().Be($"t:{a}:");
+        prefixB.Should().Be($"t:{b}:");
+        prefixA.Should().NotBe(prefixB, "each tenant must occupy its own cache-key namespace");
+    }
+
+    [Trait("TC", "TC-INF-CACHE-001")]
+    [Fact]
+    public void Ambient_SystemContext_MapsToSystemPrefix()
+    {
+        CacheTenantPrefix.For(new AmbientTenantInfo(Guid.Empty, IsSystemContext: true, IsResolved: true))
+            .Should().Be(CacheTenantPrefix.System);
+    }
+
+    [Trait("TC", "TC-INF-CACHE-001")]
+    [Fact]
+    public void Ambient_None_MapsToUnresolvedSentinel_NeverTenantCrossing()
+    {
+        // No ambient at all (e.g. very early startup) => the safe 'none:' bucket, NOT a shared tenant-crossing
+        // value and NOT the system bucket.
+        var none = CacheTenantPrefix.For((AmbientTenantInfo?)null);
+        none.Should().Be(CacheTenantPrefix.Unresolved);
+        none.Should().NotStartWith("t:");
+        none.Should().NotBe(CacheTenantPrefix.System);
+
+        // A resolved-but-empty ambient collapses to the same safe bucket.
+        CacheTenantPrefix.For(new AmbientTenantInfo(Guid.Empty, false, true))
+            .Should().Be(CacheTenantPrefix.Unresolved);
     }
 }

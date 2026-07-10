@@ -1,11 +1,16 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
+using HRM.Infrastructure.Multitenancy;
 
 namespace HRM.Infrastructure.Services;
 
 /// <summary>
 /// Scoped service that holds the resolved tenant context for the current request.
-/// Set by TenantResolutionMiddleware early in the pipeline.
+/// Set by TenantResolutionMiddleware early in the pipeline (and by every Hangfire job at its top).
+///
+/// <para>Every mutation also publishes to the <see cref="AmbientTenant"/> (AsyncLocal), so root-singleton
+/// collaborators that cannot see this scoped service — chiefly the EF second-level cache key-prefix provider —
+/// still resolve the correct tenant on BOTH the HTTP and background-job flows.</para>
 /// </summary>
 public sealed class TenantContext : ITenantContext
 {
@@ -37,6 +42,10 @@ public sealed class TenantContext : ITenantContext
         PrimaryColor = primaryColor;
         IsSystemContext = false;
         IsResolved = true;
+
+        // Mirror to the AsyncLocal ambient so the (root-singleton) cache key-prefix provider — and future
+        // RLS ambient consumers — see this tenant on both HTTP requests and background/Hangfire jobs.
+        AmbientTenant.SetTenant(tenantId);
     }
 
     public void SetSystemContext()
@@ -50,5 +59,7 @@ public sealed class TenantContext : ITenantContext
         PrimaryColor = null;
         IsSystemContext = true;
         IsResolved = true;
+
+        AmbientTenant.SetSystem();
     }
 }
