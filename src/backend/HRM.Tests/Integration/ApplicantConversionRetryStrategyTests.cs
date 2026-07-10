@@ -163,10 +163,10 @@ public sealed class ApplicantConversionRetryStrategyTests : IAsyncLifetime
     // NpgsqlTransientExceptionDetector) on the save that carries the conversion audit, forcing the
     // execution strategy to re-invoke the delegate. We then assert NO stale Added conversion-audit
     // row lingers on the change tracker: pre-fix exactly one lingers (would double-insert), post-fix
-    // zero. NOTE: an observable DB double-row can't be produced end-to-end today because the retried
-    // delegate re-reads the SAME tracked Applicant (still carrying ConvertedToEmployeeId from attempt
-    // 1) and short-circuits with `already_converted` before saving again — that unreset-mutation gap
-    // is a separate, broader issue (flagged OUT-OF-LANE), so this binds to the audit-detach mechanism.
+    // zero. This test binds to the audit-detach MECHANISM specifically; the broader end-to-end
+    // idempotency guarantee (the retry completes to a real success rather than a spurious
+    // `already_converted`, with exactly one Employee / conversion audit) is covered by
+    // Convert_FailsTransientlyOnFirstAttempt_SucceedsOnRetry_ExactlyOnce (BUG-264).
     [Fact]
     public async Task Convert_FailsAfterAuditAdded_DetachesAuditRow_SoRetryCannotDoubleInsert()
     {
@@ -218,6 +218,74 @@ public sealed class ApplicantConversionRetryStrategyTests : IAsyncLifetime
         staleAddedConversionAudits.Should().Be(0,
             "the failed attempt's conversion AuditLog must be detached in the catch so a strategy "
             + "retry cannot re-insert it (ISSUE-253)");
+    }
+
+    // ── BUG-264 (ISSUE-253/BUG-252 class): the conversion must be IDEMPOTENT under a transient retry ──
+    //
+    // The broader sibling of the audit-detach gap. When the first attempt fails transiently AFTER the
+    // Employee has been created (EmployeeService.CreateAsync does its own SaveChanges) and the Applicant
+    // mutated (ConvertedToEmployeeId set), the retrying execution strategy re-invokes the whole delegate.
+    // Pre-fix the rolled-back attempt's mutations survived in the ChangeTracker, so the retry either:
+    //   (a) re-read the SAME tracked Applicant still carrying attempt-1's ConvertedToEmployeeId and
+    //       returned a spurious `already_converted`, or
+    //   (b) re-created the Employee (second employee-number) / double-inserted the audit row.
+    // Post-fix the catch detaches the Employee, Vacancy, Applicant, and AuditLog, so the retry re-reads
+    // clean DB-committed state and completes the conversion exactly once.
+    //
+    // This asserts the end-to-end idempotency guarantee (not just the change-tracker mechanism): the
+    // conversion SUCCEEDS on the retry, and the DB ends with exactly ONE employee, the applicant converted
+    // once, and exactly one conversion audit row. ThrowCount == 1 proves the retry actually fired (guards
+    // against a vacuous pass). Pre-fix this FAILS: ConvertAsync returns `already_converted` (spurious).
+    [Fact]
+    public async Task Convert_FailsTransientlyOnFirstAttempt_SucceedsOnRetry_ExactlyOnce()
+    {
+        var tenantContext = new MutableTenantContext { TenantId = _tenantId };
+        var currentUser = MakeCurrentUser();
+
+        var failOnce = new FailOnceOnConversionAuditInterceptor();
+
+        await using var db = CreateContext(tenantContext, currentUser, failOnce);
+        await db.Database.MigrateAsync();
+
+        var (applicantId, deptId, jobTitleId) = SeedConvertiblePipeline(db, _tenantId);
+        await db.SaveChangesAsync();
+
+        var service = BuildService(db, tenantContext, currentUser);
+
+        var result = await service.ConvertAsync(new ConvertApplicantToEmployeeInput
+        {
+            ApplicantId = applicantId,
+            DepartmentId = deptId,
+            JobTitleId = jobTitleId,
+            EmploymentType = EmploymentType.FullTime,
+            DateOfJoining = DateTime.UtcNow.Date,
+        });
+
+        // The injected transient failure must have fired exactly once (attempt 1) — proves the retry
+        // path was genuinely exercised, not a happy-path single attempt.
+        failOnce.ThrowCount.Should().Be(1);
+
+        // Idempotency guarantee #1: the retry COMPLETES the conversion — it must NOT short-circuit with
+        // the spurious `already_converted` produced pre-fix by the stale in-memory Applicant mutation.
+        result.IsSuccess.Should().BeTrue(
+            "the transient first attempt must be retried to a real success, not a spurious already_converted");
+        result.ErrorCode.Should().NotBe("already_converted");
+        result.Value!.EmployeeId.Should().NotBeEmpty();
+
+        // Idempotency guarantee #2: exactly ONE Employee exists (no double-create / no second employee-number).
+        var employees = await db.Employees.IgnoreQueryFilters().AsNoTracking()
+            .Where(e => e.Email == "ada@acme.com").ToListAsync();
+        employees.Should().HaveCount(1, "the created Employee must be detached on the failed attempt so the retry does not re-create it");
+        employees[0].Id.Should().Be(result.Value.EmployeeId);
+
+        // Idempotency guarantee #3: the applicant is Converted exactly once, linked to that single employee.
+        var applicant = await db.Applicants.IgnoreQueryFilters().AsNoTracking().FirstAsync(a => a.Id == applicantId);
+        applicant.ConvertedToEmployeeId.Should().Be(result.Value.EmployeeId);
+
+        // Idempotency guarantee #4: exactly ONE conversion audit row committed (the detach prevents a double-insert).
+        var conversionAudits = await db.AuditLogs.IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(a => a.EventType == "recruitment.applicant.converted");
+        conversionAudits.Should().Be(1);
     }
 
     /// <summary>

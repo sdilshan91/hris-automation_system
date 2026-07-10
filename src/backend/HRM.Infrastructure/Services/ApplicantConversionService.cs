@@ -163,9 +163,15 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
                 : null;
 
-            // Hoisted so the catch can detach it on a rollback — otherwise the still-tracked Added row is
-            // re-inserted when the retrying execution strategy re-invokes this delegate (ISSUE-253/BUG-252 class).
+            // Hoisted so the catch can detach every entity this attempt touched on a rollback. The retrying
+            // execution strategy re-invokes this whole delegate on a transient failure, and a rollback reverts
+            // only the DB — the tracked mutations survive in the ChangeTracker. Unless they are detached the
+            // retry would re-insert the Added AuditLog, re-create the Employee (double-create / second
+            // employee-number), double-increment the Vacancy, and re-read the SAME tracked Applicant still
+            // carrying attempt-1's ConvertedToEmployeeId (spurious `already_converted`). ISSUE-253/BUG-252/BUG-264.
             AuditLog? auditLog = null;
+            Employee? employee = null;
+            Vacancy? vacancy = null;
             try
             {
                 // Reuse the Core HR create path: email uniqueness (BR-2 employee), dept/job-title validation,
@@ -199,7 +205,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
 
                 // Apply the Core HR fields the create request doesn't carry: manual employee-number override
                 // (FR-4), the structured LocationId FK, and the reporting manager. Tracked fetch (no AsNoTracking).
-                var employee = await _dbContext.Employees.FirstAsync(e => e.Id == employeeId, cancellationToken);
+                employee = await _dbContext.Employees.FirstAsync(e => e.Id == employeeId, cancellationToken);
                 if (!string.IsNullOrWhiteSpace(input.EmployeeNo))
                     employee.EmployeeNo = input.EmployeeNo.Trim();
                 employee.LocationId = input.LocationId;
@@ -214,7 +220,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 var vacancyClosed = false;
                 var filledCount = 0;
                 var headcount = 0;
-                var vacancy = await _dbContext.Vacancies.FirstOrDefaultAsync(v => v.Id == applicant.VacancyId, cancellationToken);
+                vacancy = await _dbContext.Vacancies.FirstOrDefaultAsync(v => v.Id == applicant.VacancyId, cancellationToken);
                 if (vacancy is not null)
                 {
                     vacancy.FilledCount += 1;
@@ -271,9 +277,19 @@ public sealed class ApplicantConversionService : IApplicantConversionService
             {
                 if (transaction is not null)
                     await transaction.RollbackAsync(cancellationToken);
-                // Drop the Added audit row so a strategy retry doesn't insert it twice (ISSUE-253/BUG-252 class).
+                // BUG-264: detach EVERY entity this failed attempt mutated so the retrying execution strategy's
+                // re-invocation starts from clean, DB-committed state. Rollback reverts the DB but not the
+                // ChangeTracker, so without this the retry would double-insert the audit row, re-create the
+                // Employee (second employee-number), double-increment the Vacancy, and short-circuit on the
+                // stale Applicant.ConvertedToEmployeeId with a spurious `already_converted`. The top-of-delegate
+                // reads then re-materialize each entity fresh, making the conversion idempotent under retry.
                 if (auditLog is not null)
                     _dbContext.Entry(auditLog).State = EntityState.Detached;
+                if (employee is not null)
+                    _dbContext.Entry(employee).State = EntityState.Detached;
+                if (vacancy is not null)
+                    _dbContext.Entry(vacancy).State = EntityState.Detached;
+                _dbContext.Entry(applicant).State = EntityState.Detached;
                 throw;
             }
         });
