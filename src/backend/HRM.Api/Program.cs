@@ -3,14 +3,17 @@ using Hangfire;
 using Hangfire.PostgreSql;
 using HRM.Api.Filters;
 using HRM.Api.Middleware;
+using HRM.Api.Observability;
 using HRM.Application.Common.Behaviors;
 using HRM.Infrastructure;
 using HRM.Infrastructure.Identity;
 using HRM.Infrastructure.Persistence;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
 using Polly;
 using Polly.Extensions.Http;
@@ -40,6 +43,38 @@ try
 
     // ===== Infrastructure (DbContext, Auth, JWT, TenantContext) =====
     builder.Services.AddInfrastructure(builder.Configuration);
+
+    // ===== Observability (P3: OpenTelemetry traces + metrics) =====
+    // Endpoint-gated + safe-by-default: OTLP export when OpenTelemetry:OtlpEndpoint (or the standard
+    // OTEL_EXPORTER_OTLP_ENDPOINT env var) is set; Console exporter only when blank, so the app runs with
+    // no collector. See HRM.Api/Observability/ObservabilityExtensions.cs + docs/observability-otel-grafana-plan.md.
+    builder.Services.AddObservability(builder.Configuration, builder.Environment);
+
+    // ===== Health Checks (P3 infra probes: /health/live, /health/ready — mapped below) =====
+    // Liveness = process is up (self check, no external deps, tag "live"). Readiness = downstream deps
+    // reachable before we take traffic (tag "ready"): PostgreSQL always; Redis ONLY when configured, so a
+    // blank Redis connection string never fails readiness. Probes are anonymous (see mapping note below).
+    var healthChecks = builder.Services.AddHealthChecks()
+        .AddCheck("self", () => HealthCheckResult.Healthy("API process is running."), tags: ["live"]);
+
+    healthChecks.AddNpgSql(
+        builder.Configuration.GetConnectionString("DefaultConnection")!,
+        name: "postgres",
+        tags: ["ready"]);
+
+    var healthRedisConn = builder.Configuration.GetConnectionString("Redis")
+        ?? builder.Configuration["Redis:ConnectionString"];
+    if (!string.IsNullOrWhiteSpace(healthRedisConn))
+    {
+        // P3 Redis caching (Scope C): Redis is a SOFT readiness dependency. The cache layer degrades
+        // gracefully to the DB on a Redis outage (see DistributedCache*/module caches), so a Redis
+        // failure must NOT 503 the readiness probe and pull the instance out of rotation. We report it
+        // as Degraded on failure — the default MapHealthChecks status map returns 200 for Degraded (only
+        // Unhealthy → 503), so /health/ready surfaces the Redis problem without failing readiness.
+        // Postgres stays a HARD dependency (default failureStatus Unhealthy → 503).
+        healthChecks.AddRedis(
+            healthRedisConn, name: "redis", failureStatus: HealthStatus.Degraded, tags: ["ready"]);
+    }
 
     // ===== MediatR + Pipeline Behaviors =====
     builder.Services.AddMediatR(cfg =>
@@ -470,7 +505,21 @@ try
     // [EnableRateLimiting("...")] metadata is resolved, before the endpoints execute.
     app.UseRateLimiter();
 
-    // Health check endpoint
+    // ===== Health check endpoints (P3 infra probes) =====
+    // These are INFRA probes: anonymous by design. They bypass tenant resolution (TenantResolutionMiddleware
+    // skips any "/health*" path) and carry no [Authorize] metadata, so UseAuthorization and the post-auth
+    // tenant/impersonation/status middlewares all pass anonymous /health requests straight through — no JWT,
+    // no resolved tenant required. Predicate-filtered by tag so live/ready expose the right dependency set.
+    app.MapHealthChecks("/health/live", new HealthCheckOptions
+    {
+        Predicate = check => check.Tags.Contains("live"),
+    });
+    app.MapHealthChecks("/health/ready", new HealthCheckOptions
+    {
+        Predicate = check => check.Tags.Contains("ready"),
+    });
+
+    // Back-compat: keep the original lightweight /health as a liveness alias so existing callers don't break.
     app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
     app.MapControllers();

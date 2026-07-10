@@ -29,6 +29,27 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.*" />
   </ItemGroup>
 
+  <!-- P3 observability (docs/observability-otel-grafana-plan.md). OpenTelemetry traces + metrics.
+       Exporter is ENDPOINT-GATED (see Observability/ObservabilityExtensions.cs): OTLP when an endpoint
+       is configured, else Console-only, so the app runs with no collector. DB spans come from Npgsql's
+       STABLE built-in ActivitySource via AddSource("Npgsql") (no extra package — Npgsql core already
+       ships it); OpenTelemetry.Instrumentation.EntityFrameworkCore is still pre-release. -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.16.0" />
+  </ItemGroup>
+
+  <!-- P3 infra health probes (/health/live, /health/ready). Postgres readiness via AspNetCore.HealthChecks.Npgsql;
+       Redis readiness (AspNetCore.HealthChecks.Redis) is registered only when a Redis connection string is set. -->
+  <ItemGroup>
+    <PackageReference Include="AspNetCore.HealthChecks.Npgsql" Version="9.0.0" />
+    <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\HRM.Application\HRM.Application.csproj" />
     <ProjectReference Include="..\HRM.Infrastructure\HRM.Infrastructure.csproj" />
