@@ -166,6 +166,15 @@ public static class NotificationEventCatalog
         .. TenantPlaceholders,
     ];
 
+    // ── US-TRN-001 training catalog events (US-NTF-006). MUST be declared before _byKey: the eager BuildCatalog()
+    // at type-init references it, so a later declaration would leave it null → NRE in the type initializer (Phase 2a
+    // lesson). The service builds a payload with course.title + employee.firstName/lastName + enrollment.status. ──
+    private static readonly string[] TrainingPlaceholders =
+    [
+        "course.title", "employee.firstName", "employee.lastName", "enrollment.status",
+        .. TenantPlaceholders,
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1536,7 +1545,104 @@ public static class NotificationEventCatalog
                 "Regards,\n{{tenant.companyName}}",
             Category: NotificationCategory.LeaveUpdates,
             IsMandatory: false);
+
+        // ── US-TRN-001 training catalog lifecycle (US-NTF-006). Recipient = the enrolled/affected employee.
+        // No dedicated Training preference category exists, so these use OnboardingOffboarding (the closest
+        // HR-development bucket) — see the ENH flagged in the implementation notes. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "training_enrollment_confirmed",
+            EventName: "Training Enrollment Confirmed",
+            Placeholders: [.. TrainingPlaceholders],
+            SampleData: TrainingSample(),
+            DefaultSubject: "You're enrolled in {{course.title}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>You have been <strong>enrolled</strong> in <strong>{{course.title}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "You have been enrolled in {{course.title}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "training_waitlisted",
+            EventName: "Training Waitlisted",
+            Placeholders: [.. TrainingPlaceholders],
+            SampleData: TrainingSample(status: "Waitlisted"),
+            DefaultSubject: "You're on the waitlist for {{course.title}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p><strong>{{course.title}}</strong> is currently full, so you have been placed on the " +
+                "<strong>waitlist</strong>. We'll notify you if a seat frees up.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "{{course.title}} is currently full, so you have been placed on the waitlist. We'll notify you if " +
+                "a seat frees up.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "training_waitlist_promoted",
+            EventName: "Training Waitlist Promoted",
+            Placeholders: [.. TrainingPlaceholders],
+            SampleData: TrainingSample(),
+            DefaultSubject: "A seat opened up — you're now enrolled in {{course.title}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Good news — a seat has opened up and you have been <strong>promoted from the waitlist</strong> " +
+                "to enrolled in <strong>{{course.title}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Good news - a seat has opened up and you have been promoted from the waitlist to enrolled in " +
+                "{{course.title}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "training_enrollment_cancelled",
+            EventName: "Training Enrollment Cancelled",
+            Placeholders: [.. TrainingPlaceholders],
+            SampleData: TrainingSample(status: "Cancelled"),
+            DefaultSubject: "Your enrollment in {{course.title}} was cancelled",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your enrollment in <strong>{{course.title}}</strong> has been <strong>cancelled</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your enrollment in {{course.title}} has been cancelled.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "training_completed",
+            EventName: "Training Completed",
+            Placeholders: [.. TrainingPlaceholders],
+            SampleData: TrainingSample(status: "Completed"),
+            DefaultSubject: "You've completed {{course.title}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your completion of <strong>{{course.title}}</strong> has been recorded. Well done!</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your completion of {{course.title}} has been recorded. Well done!\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
     }
+
+    // ── Sample-data for the US-TRN-001 training events. ──
+    private static Dictionary<string, object?> TrainingSample(string status = "Enrolled") => new()
+    {
+        ["course"] = new Dictionary<string, object?> { ["title"] = "Workplace Safety 101" },
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["enrollment"] = new Dictionary<string, object?> { ["status"] = status },
+        ["tenant"] = SampleTenant(),
+    };
 
     // ── Sample-data for the US-ADM-011b workflow-runtime events. ──
     private static Dictionary<string, object?> WorkflowSample(string? decision = null)
