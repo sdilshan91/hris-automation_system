@@ -74,6 +74,10 @@ public sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         builder.Property(o => o.ReminderJobId).HasMaxLength(100);
         builder.Property(o => o.ExpiryReminderJobId).HasMaxLength(100);
 
+        // US-ADM-011c: the governing approval-workflow instance (plain nullable UUID column, no FK constraint —
+        // mirrors AttendanceRegularization/OvertimeRecord's WorkflowInstanceId mapping).
+        builder.Property(o => o.WorkflowInstanceId);
+
         builder.Property(o => o.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // §7 reference number is unique per tenant (partial — exclude soft-deleted).

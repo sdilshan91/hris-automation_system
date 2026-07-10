@@ -1,6 +1,8 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Workflows.Commands;
+using HRM.Application.Features.Workflows.DTOs;
+using HRM.Application.Features.Workflows.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -28,6 +30,23 @@ public sealed class WorkflowInstancesController : ControllerBase
 
     /// <summary>Request body for a step decision.</summary>
     public sealed record WorkflowDecisionBody(string? Comment);
+
+    /// <summary>
+    /// GET /api/v1/tenant/workflow-instances/{instanceId} — the live instance with its ordered step chain
+    /// (US-ADM-011c FR-12). Tenant-scoped by the global query filter (AC-9); requires only authentication.
+    /// </summary>
+    [HttpGet("{instanceId:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<WorkflowInstanceDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Get(
+        [FromRoute] Guid instanceId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetWorkflowInstanceQuery(instanceId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<WorkflowInstanceDetailDto>.Ok(result.Value!));
+    }
 
     /// <summary>POST /api/v1/tenant/workflow-instances/{instanceId}/approve — approve the active step (AC-2).</summary>
     [HttpPost("{instanceId:guid}/approve")]

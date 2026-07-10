@@ -334,7 +334,8 @@
         "Attendance": "Attendance",
         "Expense": "Expense",
         "Offer": "Offer",
-        "SalaryRevision": "Salary Revision"
+        "SalaryRevision": "Salary Revision",
+        "Overtime": "Overtime"
       },
       "status": {
         "Active": "Active",
@@ -357,6 +358,7 @@
         "empty": "No workflows configured yet. Create your first one to get started.",
         "default": "Default",
         "steps": "steps",
+        "inFlight": "in flight",
         "edit": "Edit",
         "archive": "Archive",
         "restore": "Restore",

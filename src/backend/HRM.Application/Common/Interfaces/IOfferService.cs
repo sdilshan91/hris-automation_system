@@ -37,6 +37,15 @@ public interface IOfferService
     /// </summary>
     Task<Result<OfferDto>> WithdrawAsync(Guid offerId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5: applies an approver's decision to the offer's approval-workflow
+    /// instance via the generic runtime. Offer approval has no domain side-effect at approval time (Send is a
+    /// separate recruiter action gated on the instance being Approved), so this just advances/completes the
+    /// instance and maps the outcome. Returns 400 when the offer is not workflow-driven.
+    /// </summary>
+    Task<Result<OfferApprovalDecisionDto>> DecideApprovalAsync(
+        Guid offerId, WorkflowDecisionAction action, string? comment, CancellationToken cancellationToken = default);
+
     /// <summary>Gets a single offer by id (tenant-scoped). 404 if not found / cross-tenant.</summary>
     Task<Result<OfferDto>> GetByIdAsync(Guid offerId, CancellationToken cancellationToken = default);
 

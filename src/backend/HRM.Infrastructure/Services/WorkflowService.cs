@@ -84,6 +84,15 @@ public sealed class WorkflowService : IWorkflowService
             })
             .ToListAsync(cancellationToken);
 
+        // US-ADM-011c FR-10: the real count of live (InProgress) runtime instances per lineage — one grouped query.
+        var inFlight = (await _db.WorkflowInstances
+                .AsNoTracking()
+                .Where(i => i.Status == WorkflowInstanceStatus.InProgress)
+                .GroupBy(i => i.LineageId)
+                .Select(g => new { LineageId = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken))
+            .ToDictionary(x => x.LineageId, x => x.Count);
+
         var items = rows
             .OrderBy(w => w.EntityType)
             .ThenBy(w => w.Name)
@@ -99,7 +108,8 @@ public sealed class WorkflowService : IWorkflowService
                 w.IsDefault,
                 w.StepCount,
                 w.CreatedAt,
-                w.UpdatedAt))
+                w.UpdatedAt,
+                inFlight.TryGetValue(w.LineageId, out var c) ? c : 0))
             .ToList();
 
         return Result<IReadOnlyList<WorkflowListItemDto>>.Success(items);
@@ -121,6 +131,82 @@ public sealed class WorkflowService : IWorkflowService
             return Result<WorkflowDetailDto>.Failure("Workflow not found.", 404);
 
         return Result<WorkflowDetailDto>.Success(ToDetailDto(workflow));
+    }
+
+    // ── Instance reads (US-ADM-011c FR-10/FR-12) ───────────────────────────────
+
+    public async Task<Result<WorkflowInstanceDetailDto>> GetInstanceAsync(
+        Guid instanceId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<WorkflowInstanceDetailDto>.Failure("No tenant context.", 400);
+
+        var instance = await _db.WorkflowInstances
+            .AsNoTracking()
+            .Include(i => i.StepInstances)
+            .FirstOrDefaultAsync(i => i.Id == instanceId, cancellationToken);
+
+        if (instance is null)
+            return Result<WorkflowInstanceDetailDto>.Failure("Workflow instance not found.", 404, "workflow_instance_not_found");
+
+        var steps = instance.StepInstances
+            .OrderBy(s => s.StepOrder).ThenBy(s => s.Id)
+            .Select(s => new WorkflowInstanceStepDto(
+                s.StepOrder,
+                s.IsParallel,
+                s.ApproverType.ToString(),
+                s.AssignedApproverUserId,
+                s.Decision.ToString(),
+                s.DecidedByUserId,
+                s.DecidedAt,
+                s.Comments,
+                s.SlaDueAt,
+                s.EscalatedAt))
+            .ToList();
+
+        return Result<WorkflowInstanceDetailDto>.Success(new WorkflowInstanceDetailDto(
+            instance.Id,
+            instance.EntityType.ToString(),
+            instance.EntityId,
+            instance.LineageId,
+            instance.Version,
+            instance.Status.ToString(),
+            instance.CurrentStepOrder,
+            instance.CreatedAt,
+            instance.CompletedAt,
+            steps));
+    }
+
+    public async Task<Result<PagedWorkflowInstancesDto>> ListInstancesAsync(
+        Guid lineageId, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PagedWorkflowInstancesDto>.Failure("No tenant context.", 400);
+
+        // Mirror the leave-queue paging: clamp pageSize 1..50 (default 20); page is 1-based.
+        int size = Math.Clamp(pageSize <= 0 ? 20 : pageSize, 1, 50);
+        int pageNo = page <= 0 ? 1 : page;
+
+        var baseQuery = _db.WorkflowInstances.AsNoTracking().Where(i => i.LineageId == lineageId);
+
+        int totalCount = await baseQuery.CountAsync(cancellationToken);
+
+        var items = await baseQuery
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((pageNo - 1) * size)
+            .Take(size)
+            .Select(i => new WorkflowInstanceListItemDto(
+                i.Id,
+                i.EntityId,
+                i.Version,
+                i.Status.ToString(),
+                i.CurrentStepOrder,
+                i.CreatedAt,
+                i.CompletedAt))
+            .ToListAsync(cancellationToken);
+
+        return Result<PagedWorkflowInstancesDto>.Success(
+            new PagedWorkflowInstancesDto(items, totalCount, pageNo, size));
     }
 
     // ── Create (AC-2/FR-1/FR-4/FR-5/BR-2) ─────────────────────────────────────

@@ -54,6 +54,27 @@ public sealed class WorkflowsController : ControllerBase
         return Ok(ApiResponse<WorkflowDetailDto>.Ok(result.Value!));
     }
 
+    /// <summary>
+    /// GET /api/v1/tenant/workflows/{lineageId}/instances — paged list of the runtime instances for a workflow
+    /// definition lineage (US-ADM-011c FR-10). Newest first; pageSize clamped 1..50 (default 20), page 1-based.
+    /// </summary>
+    [HttpGet("{lineageId:guid}/instances")]
+    [RequirePermission("Tenant.ManageWorkflows")]
+    [ProducesResponseType(typeof(ApiResponse<PagedWorkflowInstancesDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListInstances(
+        Guid lineageId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new ListWorkflowInstancesQuery(lineageId, page, pageSize), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<PagedWorkflowInstancesDto>.Ok(result.Value!));
+    }
+
     /// <summary>POST /api/v1/tenant/workflows — create a new workflow definition (v1) (AC-2/FR-1).</summary>
     [HttpPost]
     [RequirePermission("Tenant.ManageWorkflows")]

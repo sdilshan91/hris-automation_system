@@ -10,5 +10,11 @@ public enum WorkflowEntityType
     Attendance = 1,
     Expense = 2,
     Offer = 3,
-    SalaryRevision = 4
+    SalaryRevision = 4,
+
+    /// <summary>
+    /// US-ADM-011c (Q6): overtime pre-approval requests. Appended (int-stored) — no migration/seeding needed,
+    /// as there is no per-entity-type default-workflow seeding (the legacy fallback is the default state).
+    /// </summary>
+    Overtime = 5
 }

@@ -33,6 +33,8 @@ public sealed class OfferService : IOfferService
     private readonly IRecruitmentNotificationService _notifications;
     private readonly IOfferExpiryScheduler? _expiryScheduler;
     private readonly IOfferExpiryReminderScheduler? _expiryReminderScheduler;
+    private readonly ICurrentUser? _currentUser;
+    private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly ILogger<OfferService> _logger;
 
     /// <summary>BR-6: default offer-validity window (days) when no expiry date is supplied.</summary>
@@ -52,7 +54,9 @@ public sealed class OfferService : IOfferService
         IRecruitmentNotificationService notifications,
         ILogger<OfferService> logger,
         IOfferExpiryScheduler? expiryScheduler = null,
-        IOfferExpiryReminderScheduler? expiryReminderScheduler = null)
+        IOfferExpiryReminderScheduler? expiryReminderScheduler = null,
+        ICurrentUser? currentUser = null,
+        IWorkflowRuntime? workflowRuntime = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -61,6 +65,11 @@ public sealed class OfferService : IOfferService
         _logger = logger;
         _expiryScheduler = expiryScheduler;
         _expiryReminderScheduler = expiryReminderScheduler;
+        // US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5: optional so existing US-REC-007 tests keep compiling; DI
+        // always supplies them. When the tenant has an Active Offer workflow, GenerateAsync instantiates it and
+        // SendAsync is gated on the instance being Approved (AC-11 legacy send when there is no definition).
+        _currentUser = currentUser;
+        _workflowRuntime = workflowRuntime;
     }
 
     // ── Generate (AC-1/FR-2/FR-3/FR-9/BR-2/BR-6) ─────────────────────
@@ -163,6 +172,26 @@ public sealed class OfferService : IOfferService
         _dbContext.Offers.Add(offer);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        // US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5: if the tenant has an Active Offer approval workflow,
+        // instantiate it now so the offer must be approved before it can be sent (gated in SendAsync). No active
+        // definition → WorkflowInstanceId stays null and the offer can be sent freely (AC-11).
+        if (_workflowRuntime is not null)
+        {
+            var requesterEmployeeId = await ResolveRequesterEmployeeIdAsync(cancellationToken);
+            var requestData = new Dictionary<string, object?>
+            {
+                ["salary"] = offer.SalaryAmount,
+                ["position"] = offer.OfferedPosition,
+            };
+            var wf = await _workflowRuntime.CreateInstanceOnSubmitAsync(
+                WorkflowEntityType.Offer, offer.Id, requesterEmployeeId, requestData, cancellationToken);
+            if (wf.InstanceCreated)
+            {
+                offer.WorkflowInstanceId = wf.InstanceId;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         _logger.LogInformation(
             "Offer generated (Draft). OfferId={OfferId}, Ref={Ref}, Version={Version}, ApplicantId={ApplicantId}, " +
             "VacancyId={VacancyId}, StorageKey={StorageKey}, TenantId={TenantId}",
@@ -188,6 +217,22 @@ public sealed class OfferService : IOfferService
             return Result<OfferDto>.Failure("A withdrawn offer cannot be sent; generate a new offer.", 409, "offer_withdrawn");
         if (offer.Status != OfferStatus.Draft)
             return Result<OfferDto>.Failure($"Only a draft offer can be sent (current status: {offer.Status}).", 409, "offer_not_draft");
+
+        // US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5: when the offer is workflow-driven, it can only be sent once
+        // its approval-workflow instance is Approved. A still-in-flight (or rejected) instance blocks the send. A
+        // legacy offer (no WorkflowInstanceId) sends freely (AC-11).
+        if (offer.WorkflowInstanceId is { } instanceId)
+        {
+            var instanceStatus = await _dbContext.WorkflowInstances
+                .AsNoTracking()
+                .Where(i => i.Id == instanceId)
+                .Select(i => (WorkflowInstanceStatus?)i.Status)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (instanceStatus != WorkflowInstanceStatus.Approved)
+                return Result<OfferDto>.Failure(
+                    "This offer is pending approval and cannot be sent yet.", 409, "offer_approval_pending");
+        }
 
         offer.Status = OfferStatus.Sent;
         offer.SentAt = DateTime.UtcNow;
@@ -301,6 +346,48 @@ public sealed class OfferService : IOfferService
         await NotifyOfferSafeAsync("offer-withdrawn", offer, cancellationToken);
 
         return await BuildDtoResultAsync(offer.Id, cancellationToken);
+    }
+
+    // ── Decision (US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5) ─────────
+
+    public async Task<Result<OfferApprovalDecisionDto>> DecideApprovalAsync(
+        Guid offerId, WorkflowDecisionAction action, string? comment, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<OfferApprovalDecisionDto>.Failure("Tenant context is not resolved.", 400);
+        if (_workflowRuntime is null)
+            return Result<OfferApprovalDecisionDto>.Failure(
+                "Offer approval workflow is not available.", 400, "workflow_unavailable");
+
+        var offer = await _dbContext.Offers.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == offerId, cancellationToken);
+        if (offer is null)
+            return Result<OfferApprovalDecisionDto>.Failure("Offer not found.", 404, "offer_not_found");
+        if (offer.WorkflowInstanceId is null)
+            return Result<OfferApprovalDecisionDto>.Failure(
+                "This offer is not governed by an approval workflow.", 400, "offer_not_workflow_driven");
+
+        // Offer approval has NO domain side-effect at approval time — Send (5.3) reads the instance status — so
+        // no staged onApproved/onRejected callbacks are needed. The runtime advances/completes the instance and
+        // audits the transition.
+        var decision = await _workflowRuntime.DecideAsync(
+            WorkflowEntityType.Offer, offerId, action, comment,
+            onApproved: null, onRejected: null, cancellationToken: cancellationToken);
+
+        if (decision.IsFailure)
+            return Result<OfferApprovalDecisionDto>.Failure(
+                decision.Error!, decision.StatusCode ?? 400, decision.ErrorCode);
+
+        var outcome = decision.Value!;
+        var status = outcome.Outcome switch
+        {
+            WorkflowDecisionOutcome.InstanceApproved => "Approved",
+            WorkflowDecisionOutcome.InstanceRejected => "Rejected",
+            _ => "Pending", // StepAdvanced / StepRecorded — still in flight
+        };
+
+        return Result<OfferApprovalDecisionDto>.Success(
+            new OfferApprovalDecisionDto(offerId, status, outcome.NextStepOrder));
     }
 
     // ── Reads ─────────────────────────────────────────────────────────
@@ -499,6 +586,21 @@ public sealed class OfferService : IOfferService
         }
 
         return $"{prefix}{(maxSeq + 1):D4}";
+    }
+
+    /// <summary>
+    /// US-ADM-011c: resolves the current user's employee id (for LineManager/DepartmentHead approver resolution).
+    /// Null when no user context / no linked employee record — the workflow then simply cannot resolve those
+    /// relative approver types for the offer (Offer approvers are typically NamedUser / Role).
+    /// </summary>
+    private async Task<Guid?> ResolveRequesterEmployeeIdAsync(CancellationToken cancellationToken)
+    {
+        if (_currentUser is null || !_currentUser.IsAuthenticated)
+            return null;
+        return await _dbContext.Employees.AsNoTracking()
+            .Where(e => e.UserId == _currentUser.UserId)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

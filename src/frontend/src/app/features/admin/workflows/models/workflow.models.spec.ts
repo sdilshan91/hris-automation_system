@@ -1,5 +1,6 @@
 import {
   IWorkflowSummary,
+  WORKFLOW_ENTITY_TYPES,
   approverNeedsIdentifier,
   groupByEntityType,
   parseCondition,
@@ -7,6 +8,14 @@ import {
 } from './workflow.models';
 
 describe('workflow.models helpers', () => {
+  // US-ADM-011c (Part 2, Q6): the Overtime entity type is selectable so admins can author
+  // Overtime approval workflows.
+  describe('WORKFLOW_ENTITY_TYPES', () => {
+    it('includes Overtime (US-ADM-011c)', () => {
+      expect(WORKFLOW_ENTITY_TYPES).toContain('Overtime');
+    });
+  });
+
   describe('serializeCondition', () => {
     it('serializes a numeric value as a number', () => {
       expect(

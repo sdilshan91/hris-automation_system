@@ -17,7 +17,57 @@ public sealed record WorkflowListItemDto(
     bool IsDefault,
     int StepCount,
     DateTime CreatedAt,
-    DateTime? LastModifiedAt);
+    DateTime? LastModifiedAt,
+    // US-ADM-011c FR-10: the real count of live (InProgress) runtime instances on this lineage.
+    int InFlightCount = 0);
+
+// ── US-ADM-011c read models (FR-10/FR-12) ────────────────────────────────────
+
+/// <summary>
+/// US-ADM-011c FR-12: a live workflow INSTANCE with its ordered step chain (materialized skipped + pending +
+/// decided rows). Tenant-scoped via the global query filter (AC-9).
+/// </summary>
+public sealed record WorkflowInstanceDetailDto(
+    Guid InstanceId,
+    string EntityType,
+    Guid EntityId,
+    Guid LineageId,
+    int Version,
+    string Status,
+    int CurrentStepOrder,
+    DateTime CreatedAt,
+    DateTime? CompletedAt,
+    IReadOnlyList<WorkflowInstanceStepDto> Steps);
+
+/// <summary>One step-instance row in a <see cref="WorkflowInstanceDetailDto"/>'s chain.</summary>
+public sealed record WorkflowInstanceStepDto(
+    int StepOrder,
+    bool IsParallel,
+    string ApproverType,
+    Guid? AssignedApproverUserId,
+    string Decision,
+    Guid? DecidedByUserId,
+    DateTime? DecidedAt,
+    string? Comments,
+    DateTime? SlaDueAt,
+    DateTime? EscalatedAt);
+
+/// <summary>US-ADM-011c FR-10: one row in the admin instance list for a workflow definition lineage.</summary>
+public sealed record WorkflowInstanceListItemDto(
+    Guid InstanceId,
+    Guid EntityId,
+    int Version,
+    string Status,
+    int CurrentStepOrder,
+    DateTime CreatedAt,
+    DateTime? CompletedAt);
+
+/// <summary>Paged admin instance list for a definition lineage (FR-10).</summary>
+public sealed record PagedWorkflowInstancesDto(
+    IReadOnlyList<WorkflowInstanceListItemDto> Items,
+    int TotalCount,
+    int Page,
+    int PageSize);
 
 /// <summary>The full workflow definition with its ordered steps (US-ADM-007 Get).</summary>
 public sealed record WorkflowDetailDto(

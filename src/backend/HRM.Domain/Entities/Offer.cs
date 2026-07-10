@@ -109,6 +109,14 @@ public sealed class Offer : BaseEntity
     /// </summary>
     public string? ExpiryReminderJobId { get; set; }
 
+    /// <summary>
+    /// US-ADM-011c (FR-11 / US-REC-007 FR-10/BR-5): the live approval-workflow instance governing this offer,
+    /// when the tenant has an Active Offer workflow definition. Plain nullable UUID column (no FK constraint to
+    /// the workflow table — mirrors how Leave/Attendance/Overtime carry <c>WorkflowInstanceId</c>). Null = legacy
+    /// path (no workflow gate); <see cref="SendAsync"/> is blocked until the linked instance is Approved (BR-5).
+    /// </summary>
+    public Guid? WorkflowInstanceId { get; set; }
+
     /// <summary>True for the active states used by the one-active-offer rule (BR-2): Draft or Sent.</summary>
     public bool IsActive => Status == OfferStatus.Draft || Status == OfferStatus.Sent;
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Workflows;
@@ -404,9 +405,37 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
 
             var seenUsers = new HashSet<Guid>();
             var seenUnresolved = new HashSet<(WorkflowApproverType, Guid?)>();
-            foreach (var (type, id) in specs)
+            for (int si = 0; si < specs.Count; si++)
             {
+                var (type, id) = specs[si];
                 var assigned = await ResolveApproverSpecAsync(type, id, instance, cancellationToken);
+
+                // US-ADM-011c (AC-6/FR-9, Q3 snapshot-at-activation): if delegation is configured on the step and
+                // the step's PRIMARY approver (si == 0) is on an approved leave spanning today, route this row to
+                // the backup (recorded as a reassignment + audit + notification — NOT by flipping Decision, which
+                // stays Pending/actionable; WorkflowStepDecision.Delegated stays reserved/unused). Delegation is a
+                // step-level config applied only to the primary approver of BOTH sequential and parallel steps;
+                // per-child (parallel co-approver) delegation is a documented Phase-3 simplification. Evaluated
+                // once at activation only — never re-evaluated later (Q3).
+                if (si == 0 && step.DelegationEnabled && assigned is Guid primaryUser
+                    && await HasActiveApprovedLeaveAsync(primaryUser, cancellationToken))
+                {
+                    if (step.DelegationBackupUserId is { } backup)
+                    {
+                        assigned = backup;
+                        QueueDelegationNotification(instance, step.StepOrder, backup);
+                        AddAudit("workflow.step.delegated", instance,
+                            $"Step {step.StepOrder} primary approver on leave; delegated to backup {backup}.");
+                    }
+                    else
+                    {
+                        // AC-6: no backup configured → keep the primary approver, notify the Tenant Admin.
+                        await QueueTenantAdminDelegationNotificationAsync(instance, step.StepOrder, cancellationToken);
+                        AddAudit("workflow.step.delegated", instance,
+                            $"Step {step.StepOrder} primary approver on leave but no backup configured; Tenant Admin notified.");
+                    }
+                }
+
                 if (assigned is Guid u)
                 {
                     if (!seenUsers.Add(u))
@@ -561,6 +590,57 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
     }
 
     // ── FR-13 notifications (US-NTF-006) ───────────────────────────────────────
+
+    /// <summary>
+    /// US-ADM-011c (AC-6/FR-9): true when <paramref name="userId"/> maps to an employee who has an APPROVED leave
+    /// request spanning today — the trigger for step delegation at activation. Guard: a user with no employee row
+    /// (e.g. a NamedUser approver who is not an employee) returns false. Mirrors the overlap query in
+    /// <see cref="LeaveRequestService"/>.
+    /// </summary>
+    private async Task<bool> HasActiveApprovedLeaveAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var empId = await _db.Employees.AsNoTracking()
+            .Where(e => e.UserId == userId).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(cancellationToken);
+        if (empId is not { } eid)
+            return false;
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return await _db.LeaveRequests.AsNoTracking().AnyAsync(
+            lr => lr.EmployeeId == eid && lr.Status == LeaveRequestStatus.Approved
+                  && lr.StartDate <= today && lr.EndDate >= today,
+            cancellationToken);
+    }
+
+    /// <summary>Queue a "step delegated" notification for the backup approver a delegated step routed to (FR-9).</summary>
+    private void QueueDelegationNotification(WorkflowInstance instance, int stepOrder, Guid backupUserId)
+    {
+        if (backupUserId == Guid.Empty)
+            return;
+        _pending.Add((backupUserId, "workflow_step_delegated", instance, stepOrder, null));
+    }
+
+    /// <summary>
+    /// AC-6: when a delegated step's primary approver is on leave but NO backup is configured, notify the tenant
+    /// admins (holders of <c>Tenant.ManageWorkflows</c>). Resolves them like <see cref="WorkflowSlaEscalator"/>
+    /// and enqueues one intent per admin (flushed after commit).
+    /// </summary>
+    private async Task QueueTenantAdminDelegationNotificationAsync(
+        WorkflowInstance instance, int stepOrder, CancellationToken cancellationToken)
+    {
+        var adminUserIds = await (
+                from ut in _db.UserTenants.IgnoreQueryFilters()
+                where ut.TenantId == instance.TenantId && ut.Status == UserTenantStatus.Active
+                join utr in _db.UserTenantRoles.IgnoreQueryFilters() on ut.Id equals utr.UserTenantId
+                join rp in _db.RolePermissions.IgnoreQueryFilters() on utr.RoleId equals rp.RoleId
+                where rp.Permission == PermissionCatalog.Tenant.ManageWorkflows
+                select ut.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        foreach (var uid in adminUserIds)
+            if (uid != Guid.Empty)
+                _pending.Add((uid, "workflow_step_delegated", instance, stepOrder, null));
+    }
 
     /// <summary>Queue an "approval step assigned" in-app+email notification for a newly-assigned approver.</summary>
     private void QueueAssignmentNotification(WorkflowInstance instance, int stepOrder, Guid approverUserId)
