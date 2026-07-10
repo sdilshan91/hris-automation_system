@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""
+PreToolUse guardrail: block a Bash command that BYPASSES git hooks.
+
+Why this exists: this repo enforces discipline through git hooks and through the
+PreToolUse guards themselves. An agent can skip pre-commit / commit-msg / pre-push hooks
+with `git commit --no-verify` (or `-n`) or `git -c core.hooksPath=/dev/null ...`. Under an
+unattended /implement-all run that is exactly the kind of shortcut that makes a red gate
+look green. careful-guard covers destructive commands; this covers hook-bypass.
+
+Detects, on Bash commands only:
+  - `--no-verify` on a git subcommand that supports it (commit/push/merge/cherry-pick/
+    rebase/am), and `-n` shorthand on `git commit`.
+  - `-c core.hooksPath=...` overrides (case-insensitive; git config keys are).
+
+Robustness: the command is tokenized with shlex (punctuation_chars=True) so shell
+operators (`&&`, `||`, `;`, `|`) become their own tokens and quoted strings stay intact.
+Each pipeline/segment is scoped to its own leading command, so a commit *message* that
+merely contains the text "--no-verify" (e.g. `git commit -m "note about --no-verify"`)
+is a single token and never matches — no false block.
+
+Behaviour: denies with a specific reason; fails OPEN on any parse error or exception.
+
+Override: set CLAUDE_DISABLE_NOVERIFY_GUARD=1 to bypass.
+
+Ported (MIT) from ECC's scripts/hooks/block-no-verify.js, adapted to this repo's Python
+guard convention (careful-guard.py).
+"""
+import sys
+import os
+import json
+import shlex
+
+GIT_SUBCMDS_WITH_NO_VERIFY = {"commit", "push", "merge", "cherry-pick", "rebase", "am"}
+OPERATOR_TOKENS = {";", "|", "||", "&", "&&", "(", ")", "<", ">", ">>", "&>", "|&"}
+HOOKSPATH_KEY = "core.hookspath="  # compared lowercase; git config keys are case-insensitive
+
+
+def _allow():
+    sys.exit(0)
+
+
+def _deny(reason):
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    sys.exit(0)
+
+
+def _basename(tok):
+    return tok.replace("\\", "/").split("/")[-1].lower()
+
+
+def _segments(tokens):
+    """Split a flat token list on shell operators into per-command segments."""
+    seg = []
+    for t in tokens:
+        if t in OPERATOR_TOKENS:
+            if seg:
+                yield seg
+                seg = []
+        else:
+            seg.append(t)
+    if seg:
+        yield seg
+
+
+def _check_git_segment(seg):
+    """Return a block reason if this git command segment bypasses hooks, else None."""
+    sub = None
+    i = 1  # seg[0] is the git executable
+    n = len(seg)
+    while i < n:
+        t = seg[i]
+        low = t.lower()
+
+        # -c core.hooksPath=...  (global flag; appears before the subcommand)
+        if t == "-c":
+            nxt = seg[i + 1] if i + 1 < n else ""
+            if nxt.lower().startswith(HOOKSPATH_KEY):
+                return "overrides core.hooksPath, disabling git hooks"
+            i += 2
+            continue
+        if low.startswith("-c" + HOOKSPATH_KEY):
+            return "overrides core.hooksPath, disabling git hooks"
+
+        # first non-flag token after `git` is the subcommand
+        if sub is None and not t.startswith("-"):
+            sub = low
+            i += 1
+            continue
+
+        if t == "--no-verify" and sub in GIT_SUBCMDS_WITH_NO_VERIFY:
+            return "uses --no-verify, skipping git hooks on `git %s`" % sub
+
+        # `-n` is --no-verify shorthand for commit only
+        if sub == "commit" and (t == "-n" or (t.startswith("-n") and t[1:].isalpha())):
+            return "uses -n (--no-verify), skipping git hooks on `git commit`"
+
+        i += 1
+    return None
+
+
+def main():
+    if os.environ.get("CLAUDE_DISABLE_NOVERIFY_GUARD") == "1":
+        _allow()
+
+    raw = sys.stdin.read().strip()
+    if not raw:
+        _allow()
+
+    data = json.loads(raw)
+    tool_input = data.get("tool_input", {}) or {}
+    command = tool_input.get("command") or ""
+    if not command or "git" not in command:
+        _allow()
+
+    try:
+        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        tokens = list(lex)
+    except ValueError:
+        _allow()  # unparseable shell -> fail open
+
+    for seg in _segments(tokens):
+        if seg and _basename(seg[0]) in ("git", "git.exe"):
+            reason = _check_git_segment(seg)
+            if reason:
+                _deny(
+                    "no-verify-guard blocked this Bash command:\n"
+                    + "  - it %s.\n\n" % reason
+                    + "Project rule: git hooks (pre-commit / commit-msg / pre-push) must not "
+                    "be bypassed to make a gate pass — fix the underlying failure instead. If "
+                    "you genuinely need to skip hooks, re-run with "
+                    "CLAUDE_DISABLE_NOVERIFY_GUARD=1."
+                )
+    _allow()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        # Fail open — a broken guard must never block a legitimate command.
+        sys.exit(0)
