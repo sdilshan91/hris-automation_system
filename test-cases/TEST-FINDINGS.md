@@ -5847,3 +5847,11 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** ISSUE-263 (PR #227) wired in-app interview notifications, but the in-app leg is gated on a non-null `Employee.UserId` (email-only fallback otherwise). If interviewer Employees are rarely linked to user accounts in this tenant model, in-app delivery for interviewers mostly no-ops and they keep getting email only. The real gap is then employee↔user provisioning, not the notification seam.
 - **Severity rationale:** LOW — no breakage; ISSUE-263 is correct and fail-safe. This caps the *observable value* of in-app-for-interviewers until interviewer Employees are user-linked.
 - **Suggested direction (NOT applied):** confirm interviewers (who log in to submit scorecards) reliably get `Employee.UserId` set; if not, address it in the employee/user provisioning flow. Report only.
+
+### ISSUE-266 — WorkflowService Create/Update drop the `ErrorCode` on a step-validation failure
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building US-ADM-011b, 2026-07-10)
+- **Layer:** BE · **Module:** Admin Console · US-ADM-007 workflow definitions (create/update)
+- **Title:** `WorkflowService.CreateAsync` (~142) and `UpdateAsync` (~214) forward only `stepValidation.Error` + `StatusCode` on a validation failure and **drop** `stepValidation.ErrorCode` (e.g. `invalid_approver`), so the API response loses the machine-readable code that `ValidateStepsAsync` sets. Pre-existing US-ADM-007 behavior, unrelated to 011b's parallel/SLA scope; 011b's new multi-approver membership check flows through the same suppressed path.
+- **Evidence:** surfaced while adding the parallel-approver tenant-membership validation in US-ADM-011b; the new round-trip test asserts on the message text instead of the code as a workaround.
+- **Severity rationale:** LOW — the human-readable message is still returned; only the machine-readable `errorCode` is lost, so a FE relying on the code (rather than the message) can't branch on `invalid_approver`.
+- **Suggested direction (NOT applied):** pass the 3-arg `Result<T>.Failure(error, statusCode, errorCode)` overload in both CreateAsync and UpdateAsync so the code propagates (verify no other create/update error path intentionally suppresses it). Report only.

@@ -157,6 +157,15 @@ public static class NotificationEventCatalog
         "employee.firstName", "employee.lastName", "goal.title", "progress.detail",
     ];
 
+    // ── US-ADM-011b workflow-runtime approval events (US-NTF-006). MUST be declared before _byKey: the eager
+    // BuildCatalog() at type-init references it, so a later declaration would leave it null → NRE in the type
+    // initializer (Phase 2a lesson). The "decided" event adds "workflow.decision" on top of these. ──
+    private static readonly string[] WorkflowPlaceholders =
+    [
+        "workflow.entityType", "workflow.stepOrder", "workflow.requestId",
+        .. TenantPlaceholders,
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1443,6 +1452,85 @@ public static class NotificationEventCatalog
                 "Regards,\n{{tenant.companyName}}",
             Category: NotificationCategory.PerformanceReviews,
             IsMandatory: false);
+
+        // ── US-ADM-011b — approval-workflow runtime events (US-NTF-006). Phase 2 wires Leave only, so these use
+        // the LeaveUpdates category for now (011c can refine per entity type). Recipients: assignment → the newly
+        // assigned approver; escalation → the escalation target or tenant admins; decided → the requester. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "workflow_step_assigned",
+            EventName: "Approval Step Assigned",
+            Placeholders: [.. WorkflowPlaceholders],
+            SampleData: WorkflowSample(),
+            DefaultSubject: "You have a pending {{workflow.entityType}} approval",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>You have a pending <strong>{{workflow.entityType}}</strong> approval " +
+                "(request {{workflow.requestId}}, step {{workflow.stepOrder}}).</p>" +
+                "<p>Please review it in the HRM portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "You have a pending {{workflow.entityType}} approval (request {{workflow.requestId}}, " +
+                "step {{workflow.stepOrder}}).\n\nPlease review it in the HRM portal.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "workflow_step_escalated",
+            EventName: "Approval Escalated",
+            Placeholders: [.. WorkflowPlaceholders],
+            SampleData: WorkflowSample(),
+            DefaultSubject: "An overdue {{workflow.entityType}} approval has been escalated to you",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>An overdue <strong>{{workflow.entityType}}</strong> approval " +
+                "(request {{workflow.requestId}}, step {{workflow.stepOrder}}) has been escalated to you.</p>" +
+                "<p>Please review it in the HRM portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "An overdue {{workflow.entityType}} approval (request {{workflow.requestId}}, " +
+                "step {{workflow.stepOrder}}) has been escalated to you.\n\nPlease review it in the HRM portal.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "workflow_request_decided",
+            EventName: "Approval Decision",
+            Placeholders: [.. WorkflowPlaceholders, "workflow.decision"],
+            SampleData: WorkflowSample(decision: "approved"),
+            DefaultSubject: "Your {{workflow.entityType}} request was {{workflow.decision}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Your <strong>{{workflow.entityType}}</strong> request {{workflow.requestId}} was " +
+                "<strong>{{workflow.decision}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Your {{workflow.entityType}} request {{workflow.requestId}} was {{workflow.decision}}.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
+    }
+
+    // ── Sample-data for the US-ADM-011b workflow-runtime events. ──
+    private static Dictionary<string, object?> WorkflowSample(string? decision = null)
+    {
+        var workflow = new Dictionary<string, object?>
+        {
+            ["entityType"] = "Leave",
+            ["stepOrder"] = 1,
+            ["requestId"] = "019f2607-0000-7000-8000-000000000000",
+        };
+        if (decision is not null)
+            workflow["decision"] = decision;
+        return new Dictionary<string, object?>
+        {
+            ["workflow"] = workflow,
+            ["tenant"] = SampleTenant(),
+        };
     }
 
     // ── Sample-data for the performance events (US-NTF-006 Phase 5b). ──
