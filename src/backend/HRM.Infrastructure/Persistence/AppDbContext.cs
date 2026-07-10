@@ -128,6 +128,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // US-ADM-007: Approval-workflow definitions + steps (tenant-scoped).
     public DbSet<WorkflowDefinition> WorkflowDefinitions => Set<WorkflowDefinition>();
     public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
+    // US-ADM-011: Approval-workflow RUNTIME instances + their step-instances (tenant-scoped).
+    public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
+    public DbSet<WorkflowStepInstance> WorkflowStepInstances => Set<WorkflowStepInstance>();
     // US-ADM-010: tenant data-export requests (tenant-scoped).
     public DbSet<ExportRequest> ExportRequests => Set<ExportRequest>();
     // US-RPT-004: generic HR/leave/attendance report exports (CSV/Excel/PDF) (tenant-scoped).
@@ -534,6 +537,14 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-ADM-007: WorkflowStep tenant isolation + soft-delete filter (BR-7).
         modelBuilder.Entity<WorkflowStep>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ADM-011: WorkflowInstance tenant isolation + soft-delete filter (AC-9 cross-tenant isolation).
+        modelBuilder.Entity<WorkflowInstance>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-ADM-011: WorkflowStepInstance tenant isolation + soft-delete filter (AC-9).
+        modelBuilder.Entity<WorkflowStepInstance>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-ADM-010: ExportRequest tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).

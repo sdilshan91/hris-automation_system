@@ -102,6 +102,13 @@ public sealed class LeaveRequest : BaseEntity, IAuditableEntity
     /// </summary>
     public LopSource? LopSource { get; set; }
 
+    /// <summary>
+    /// FK to the approval-workflow <see cref="WorkflowInstance"/> driving this request's approval (US-ADM-011
+    /// FR-1/FR-11/AC-1). Set on submit when the tenant has an Active Leave workflow definition; stays NULL when
+    /// there is none, in which case the legacy single-level direct-manager approval path applies (AC-11).
+    /// </summary>
+    public Guid? WorkflowInstanceId { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
 
     public Employee? Employee { get; set; }

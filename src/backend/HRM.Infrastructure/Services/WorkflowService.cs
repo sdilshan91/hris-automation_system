@@ -356,11 +356,13 @@ public sealed class WorkflowService : IWorkflowService
         if (workflow is null)
             return Result.Failure("Workflow not found.", 404);
 
-        // BR-6: deletion is only allowed when there are no in-flight instances. The WorkflowInstance table is
-        // DEFERRED (runtime engine not built), so there are never any in-flight instances today and this guard
-        // always passes. It is written as an explicit count so it is correct the moment the instance table
-        // lands: replace `inFlightCount` with a real query over workflow_instances by lineage id.
-        var inFlightCount = 0; // TODO(workflow-runtime): count WorkflowInstance rows referencing this lineage.
+        // BR-6/AC-8 (US-ADM-011): deletion is blocked while the definition lineage has any live (InProgress)
+        // runtime instances. This is the REAL count over workflow_instances (tenant-scoped by the global query
+        // filter), replacing the former hardcoded 0. Archiving remains allowed (handled by ArchiveAsync).
+        var inFlightCount = await _db.WorkflowInstances
+            .CountAsync(
+                i => i.LineageId == workflow.LineageId && i.Status == WorkflowInstanceStatus.InProgress,
+                cancellationToken);
         if (inFlightCount > 0)
             return Result.Failure(
                 "This workflow has in-flight requests and cannot be deleted. Archive it instead.", 409, "workflow_in_flight");
