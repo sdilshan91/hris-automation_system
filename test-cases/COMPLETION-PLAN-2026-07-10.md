@@ -22,13 +22,16 @@
 ### 2. P4 — Workflow runtime, remaining phases (US-ADM-011)
 Story: `user-stories/admin-console/US-ADM-011.md` (§13 decisions, §14 phasing). Runtime core is in
 `src/backend/HRM.Infrastructure/Services/WorkflowRuntimeService.cs` + `WorkflowInstance`/`WorkflowStepInstance`.
-- **011b — Parallel steps + SLA escalation.** **DECISION (Q1): new `WorkflowStepApprover` child table** (a
-  `WorkflowStep` has many approvers) — NOT sibling-rows. Build: the child entity + EF config + migration (add its
-  dormant RLS policy in-migration — see the RLS RULE below); refactor design-time `WorkflowStep`/`WorkflowService`
-  + the US-ADM-007 **editor UI** to author multiple approvers per step; runtime groups a step's approvers for
-  **all-approve / any-reject** join (AC-4); idempotent recurring **Hangfire SLA-timer job** scanning
-  `WorkflowStepInstance` where `Decision=Pending` past `SlaDueAt` → escalate (AC-5/FR-8, resolve **Q2**:
-  SlaDueAt = step-activation time); US-NTF-006 notifications on assignment/escalation/decision.
+- **011b — Parallel steps + SLA escalation. ✅ SHIPPED → PR #239 (2026-07-10, base `test/local-subdomains`,
+  awaiting merge).** Q1 resolved with the `WorkflowStepApprover` child table (approvers = additional NamedUser
+  approvers beyond the step's own approver #1; FE already emitted `parallelApproverIdentifiers` so **no FE change**).
+  Delivered: child entity+config+migration (dormant RLS policy in-migration), `WorkflowService` author/round-trip,
+  group-aware `DecideCoreAsync` (all-approve advances / any-reject short-circuits / new `StepRecorded` partial
+  outcome), idempotent per-tenant `WorkflowSlaEscalationJob` (`*/5`; atomic `ExecuteUpdateAsync` CAS, no nested tx;
+  breached→Escalated+fresh Pending target row, no-target→stays Pending+notify admin, Q2 SlaDueAt=activation),
+  3 US-NTF-006 events dispatched post-commit. 3374/3374 on Postgres; integration-enforcer WIRED + test-authenticator
+  AUTHENTIC. **Auto-healed ISSUE-266** (pre-existing US-ADM-007 validation ErrorCode drop). **⚠ 011c must NOT
+  re-collide the migration** — 011c's new-entity migration stacks on `20260710165359_Admin_WorkflowStepApprovers`.
 - **011c — Delegation + remaining entity wiring.** Delegation at step-activation via approver approved-leave
   lookup (AC-6/FR-9, resolve **Q3**: snapshot-at-activation). Wire **Attendance regularization** + **Overtime**
   (resolve **Q6**: add a `WorkflowEntityType.Overtime` member + migration/seeded default — recommended) + **Offer**
