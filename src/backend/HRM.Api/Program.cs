@@ -236,11 +236,19 @@ try
     });
 
     // ===== Hangfire =====
+    // RLS increment 2b: Hangfire bootstraps its OWN schema (DDL) and its tables carry no tenant policy, so under
+    // RLS the runtime hrm_app role can neither own that schema nor bypass the policies. Point its storage at the
+    // PRIVILEGED (hrm_owner) connection when one is configured; fall back to DefaultConnection when
+    // PrivilegedConnection is blank (the committed default) so nothing changes until the increment-3 flip.
+    var hangfireConnectionString =
+        !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("PrivilegedConnection"))
+            ? builder.Configuration.GetConnectionString("PrivilegedConnection")!
+            : builder.Configuration.GetConnectionString("DefaultConnection")!;
     builder.Services.AddHangfire(config =>
     {
         config.UsePostgreSqlStorage(options =>
         {
-            options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("DefaultConnection")!);
+            options.UseNpgsqlConnection(hangfireConnectionString);
         });
     });
     // The Hangfire background SERVER (job dispatcher + polling) can be disabled via config. The

@@ -33,6 +33,12 @@ public static class DependencyInjection
         // US-NTF-004: automatic generic INSERT/UPDATE/DELETE capture for IAuditableEntity types.
         services.AddScoped<AuditCaptureInterceptor>();
 
+        // P3/RLS increment 2b: routes the DB connection per operation (hrm_app runtime vs hrm_owner privileged)
+        // via the AsyncLocal ambient tenant. Singleton — it holds only the two static connection strings. With a
+        // BLANK PrivilegedConnection (the committed default) it always uses DefaultConnection and never mutates
+        // the connection string, so behaviour is identical to today until the increment-3 flip.
+        services.AddSingleton<ConnectionRoutingInterceptor>();
+
         // P3 (EF second-level cache): transparent query-result caching for slow-changing REFERENCE tables,
         // tenant-safe via a dynamic per-request cache-key prefix (see Caching/CacheTenantPrefix). Registers the
         // SecondLevelCacheInterceptor (a COMMAND interceptor) which is added to AppDbContext below. Must run
@@ -59,8 +65,12 @@ public static class DependencyInjection
             var auditInterceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
             var auditCaptureInterceptor = serviceProvider.GetRequiredService<AuditCaptureInterceptor>();
             var secondLevelCacheInterceptor = serviceProvider.GetRequiredService<SecondLevelCacheInterceptor>();
+            // ConnectionRoutingInterceptor is a CONNECTION interceptor (routes hrm_app vs hrm_owner at open),
+            // independent of the SaveChanges/command interceptors above — ordering among them is irrelevant.
+            var connectionRoutingInterceptor = serviceProvider.GetRequiredService<ConnectionRoutingInterceptor>();
             options.AddInterceptors(
-                tenantInterceptor, auditInterceptor, auditCaptureInterceptor, secondLevelCacheInterceptor);
+                tenantInterceptor, auditInterceptor, auditCaptureInterceptor, secondLevelCacheInterceptor,
+                connectionRoutingInterceptor);
         });
 
         // Register UnitOfWork
