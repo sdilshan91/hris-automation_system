@@ -180,6 +180,13 @@ public sealed class WorkflowDelegationPostgresTests : IAsyncLifetime
         var step = await verify.WorkflowStepInstances.AsNoTracking()
             .FirstAsync(s => s.StepOrder == 1 && s.Decision == WorkflowStepDecision.Pending);
         step.AssignedApproverUserId.Should().Be(primaryUser, "with no backup the primary keeps the step");
+
+        // Delegation DID evaluate (primary on leave) but had no backup → the admin-notified branch runs and
+        // writes a delegated audit row. Asserting it distinguishes "delegation ran, kept primary, admin notified"
+        // from "delegation never ran" (mutation-resistance — the bare kept-primary assertion passes even if the
+        // whole delegation feature were deleted).
+        (await verify.AuditLogs.AsNoTracking().CountAsync(a => a.EventType == "workflow.step.delegated"))
+            .Should().BeGreaterThan(0, "the on-leave-but-no-backup branch records a delegation audit + notifies the Tenant Admin");
     }
 
     // ── Primary NOT on leave → no delegation, the primary keeps the step ──
