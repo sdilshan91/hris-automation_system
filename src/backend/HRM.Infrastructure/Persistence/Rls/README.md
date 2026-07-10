@@ -19,28 +19,58 @@ first layer; RLS is the backstop. Full spec: `user-stories/platform/US-PLT-002.m
 - **`roles.sql`** — ops bootstrap for the `hrm_app` (NOBYPASSRLS) and `hrm_owner`
   (BYPASSRLS) roles. Run once by a DBA; not executed by the app.
 
-## What is DEFERRED (Phase 4 — the switch-on; needs a Docker/Postgres environment)
+## What has landed (increments 2a–3a — plumbing + policies + reconciler, still INERT)
 
-This step changes production behavior and must be staged to a non-prod env first. It was
-deferred because RLS cannot be verified on this dev machine (no Docker, no local Postgres;
-the EF InMemory provider does not implement RLS).
+- **Dormant policies migration** `20260710120000_Platform_RlsPolicies_Dormant` — a self-maintaining
+  PL/pgSQL DO-block that `CREATE POLICY tenant_isolation` on every `public` base table carrying a
+  `tenant_id` column (excl. `users`/`tenants`), strict `WITH CHECK`, nullable-tenant `USING` for
+  `roles`. Dormant (no `ENABLE`) ⇒ enforcement-neutral even though it auto-applies on startup.
+- **`ConnectionRoutingInterceptor`** — routes resolved-non-system tenants to `hrm_app` and
+  startup/system/unresolved/job paths to `hrm_owner`; blank `PrivilegedConnection` ⇒ always
+  `DefaultConnection` (non-breaking today).
+- **`TenantJobRunner`** (`ITenantJobRunner.RunForTenantAsync`) — the job-side GUC helper so per-tenant
+  Hangfire jobs stay inside the RLS backstop.
+- **RLS reconciler** — `DbInitializer.ReconcileRowLevelSecurityAsync`, run on startup AFTER migrate +
+  seed. Flag-gated + idempotent: `Rls:Enabled=true` ⇒ `ENABLE + FORCE` the policy-bearing set;
+  `Rls:Enabled=false` ⇒ `NO FORCE + DISABLE` the same set (so a config rollback ACTIVELY rolls
+  enforcement off — no down-migration). Warns if `Rls:Enabled=true` but the connected role bypasses RLS
+  (superuser/BYPASSRLS). **No-op on every current environment (flag false everywhere).**
+- **End-to-end proof** — `RlsReconcilerPostgresTests` drives the real reconciler + real
+  `TenantTransactionBehavior` on a Postgres Testcontainer (roles from `roles.sql`, migrate/reconcile as
+  `hrm_owner`, request path as `hrm_app`): ENABLE→isolated request→privileged-spans→DISABLE→reversible.
 
-1. **Enable-RLS migration** — `dotnet ef migrations add Platform_RowLevelSecurity`, then add
-   `migrationBuilder.Sql(...)` per tenant-scoped table (every entity with a `TenantId`
-   query filter in `AppDbContext.OnModelCreating`; **exclude** `tenants` and `users`):
-   `ALTER TABLE x ENABLE ROW LEVEL SECURITY; ALTER TABLE x FORCE ROW LEVEL SECURITY;
-   CREATE POLICY tenant_isolation ON x USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
-   WITH CHECK (...);`
-   For nullable-tenant tables (`roles`): `USING (tenant_id IS NULL OR tenant_id = ...)`.
-   `Down` drops the policies and disables RLS.
-2. **Route system/admin paths to `PrivilegedConnection`** — `DbInitializer`, the tenant
-   lookup, system-context requests, and cross-tenant Hangfire jobs must use the BYPASSRLS
-   connection (RLS treats an unset GUC as *see nothing*, the inverse of the EF filters'
-   *unresolved = see all*).
-3. **CI test job** — run RLS integration tests against the existing **postgres:16 service
-   container** in `.github/workflows/ci-gate.yml` (NOT Testcontainers — CI has no Docker
-   daemon for it but does provide a service container). Prove: per-GUC raw-SQL isolation;
-   isolation holds even with `IgnoreQueryFilters()`; `WITH CHECK` rejects mismatched-tenant
-   inserts; no cross-tenant bleed across pooled connections; migrations/seeding work on the
-   privileged path.
-4. **Flip `Rls:Enabled` to true** and point the app connection at the `hrm_app` role.
+## Enablement runbook (the switch-on — per environment, deliberate)
+
+Turning RLS on is a config action, not a deploy: nothing in source flips it. Per environment:
+
+**Dev (`hris_dev_db`)** — the default `developer` role is a superuser and superusers ALWAYS bypass RLS,
+so dev proves nothing until repointed:
+1. `psql -h localhost -U postgres -d hris_dev_db -v hrm_app_password=… -v hrm_owner_password=… -f roles.sql`
+2. Make `hrm_owner` the schema/table owner (it must own the tables so the reconciler's `ALTER TABLE …
+   ENABLE ROW LEVEL SECURITY` succeeds) — e.g. run migrations as `hrm_owner`, or `REASSIGN OWNED BY
+   developer TO hrm_owner` on the existing schema.
+3. In `appsettings.Development.json`: `ConnectionStrings:DefaultConnection` → the `hrm_app` conn string,
+   `ConnectionStrings:PrivilegedConnection` → the `hrm_owner` conn string, `Rls:Enabled` → `true`.
+4. Restart the API → the reconciler `ENABLE + FORCE`s all tenant tables; requests set the GUC on `hrm_app`.
+
+**Staging/Prod** — the ops equivalent: run `roles.sql` (as DBA/superuser), ensure `hrm_owner` owns the
+schema, repoint `DefaultConnection`→`hrm_app` + `PrivilegedConnection`→`hrm_owner` + Hangfire storage →
+`PrivilegedConnection`, set `Rls:Enabled=true`, deploy, restart. **Rollback = set `Rls:Enabled=false` +
+restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatever connection is set).
+
+## Pre-flip checklist (carried from 2c — a hard go/no-go before any non-dev flip)
+
+- [ ] `roles.sql` run; `hrm_app` is `NOBYPASSRLS`/non-owner; `hrm_owner` owns the schema tables.
+- [ ] `DefaultConnection`→`hrm_app`, `PrivilegedConnection`→`hrm_owner`, Hangfire storage→`hrm_owner`.
+- [ ] Dormant policies present on every tenant table (coverage-guard test green).
+- [ ] Every Hangfire job classified privileged-vs-GUC and wrapped/routed accordingly.
+- [ ] Full isolation + reconciler suites green on the target Postgres; rollback rehearsed.
+- [ ] **[MED — follow-up 3b]** long-running by-id jobs (payslips / data-exports / payroll runs) hold ONE
+      transaction for the whole job under RLS via `RunForTenantAsync`; for very long runs consider a
+      set-GUC-per-short-unit variant so a single transaction doesn't span the entire batch.
+- [ ] **[LOW — follow-up 3b]** service-body DI-scope audit: confirm no per-tenant service resolves a
+      DbContext outside the request/job scope that sets the GUC.
+- [ ] **[3b]** CI RLS job wired (postgres service container, not Testcontainers).
+
+These follow-ups are tracked for **increment 3b** (the CI RLS job + long-job GUC granularity); 3a leaves
+RLS **ready, proven, and reversible** with `Rls:Enabled` committed **false**.

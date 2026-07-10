@@ -104,6 +104,14 @@ job on `hrm_app` sees nothing.
 9. Per-job GUC test: `RunForTenantAsync(A)` sees only A; a cross-tenant job on `hrm_owner` spans tenants.
 
 ## 7. Rollout + gates
+
+> **Status (3a landed):** the flag-gated ENABLE/FORCE-or-DISABLE reconciler is live as
+> `DbInitializer.ReconcileRowLevelSecurityAsync` (called after migrate+seed), proven end-to-end by
+> `RlsReconcilerPostgresTests` (real reconciler + real `TenantTransactionBehavior` on `hrm_app`, incl. the
+> reversible DISABLE path), and `SendEmailJob` is restructured to read→send(no tx)→persist(own committed
+> unit)→rethrow so its retry state survives a send failure under RLS. `Rls:Enabled` stays **false** (no-op
+> everywhere). Remaining for **3b**: the CI RLS service-container job + long-running-by-id-job GUC
+> granularity (MED) + service-body DI-scope audit (LOW). See `README.md` for the enablement runbook + checklist.
 **Inc-2 (non-breaking, `Rls:Enabled` stays false):** (1) roles provisioning in dev/CI/Testcontainers;
 (2) dormant policies migration (verify via `pg_policies`); (3) routing interceptor + `IDbRole` (blank-priv
 fallback); (4) Hangfire→privileged (blank fallback); (5) `ITenantJobRunner` + job audit; (6) flag-gated

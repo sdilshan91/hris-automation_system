@@ -3,6 +3,7 @@ using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Notifications;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,132 @@ public static class DbInitializer
         if (environment is not null && environment.IsDevelopment())
         {
             await SeedE2EDevTenantAsync(dbContext, logger, cancellationToken);
+        }
+
+        // RLS increment 3a: reconcile row-level-security ENFORCEMENT to the Rls:Enabled flag. Runs AFTER
+        // migrate + seed so the schema, the dormant policies (migration 20260710120000), and the seed data all
+        // exist first. Gated + idempotent: a no-op on every current environment (Rls:Enabled=false everywhere).
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        await ReconcileRowLevelSecurityAsync(dbContext, configuration, logger, cancellationToken);
+    }
+
+    /// <summary>
+    /// RLS increment 3a — the flag-gated ENABLE/FORCE (and, on rollback, DISABLE) reconciler.
+    ///
+    /// <para>The dormant <c>tenant_isolation</c> policies land via migration
+    /// <c>20260710120000_Platform_RlsPolicies_Dormant</c>; a policy is INERT until its table also has
+    /// <c>ENABLE ROW LEVEL SECURITY</c>. This step couples enforcement to the SAME <c>Rls:Enabled</c> flag that
+    /// gates <c>TenantTransactionBehavior</c> / <c>TenantJobRunner</c> so they turn on together and the flip is
+    /// reversible by config + restart with NO down-migration:</para>
+    /// <list type="bullet">
+    ///   <item><b>Rls:Enabled = true</b> ⇒ <c>ENABLE + FORCE ROW LEVEL SECURITY</c> on every policy-bearing table
+    ///     (the exact §1 set the migration policied: a <c>tenant_id</c> column on a base table, excluding
+    ///     <c>users</c>/<c>tenants</c>). Idempotent — ENABLE/FORCE are no-ops if already set.</item>
+    ///   <item><b>Rls:Enabled = false</b> ⇒ <c>NO FORCE</c> + <c>DISABLE ROW LEVEL SECURITY</c> on that same set,
+    ///     so flipping the flag back to false + restarting ACTIVELY rolls enforcement OFF (critical R7: otherwise a
+    ///     rollback leaves tables enforced while the GUC stops being set → total breakage). Idempotent.</item>
+    /// </list>
+    ///
+    /// <para>Runs on the connection the router selects for a NULL ambient tenant (startup) — the privileged
+    /// <c>hrm_owner</c> (or <c>DefaultConnection</c> when <c>PrivilegedConnection</c> is blank), which owns the
+    /// tables and can run the DDL. No-op on the InMemory provider (RLS is a database-engine feature). When the
+    /// flag is true but the connected role bypasses RLS (superuser/BYPASSRLS — e.g. dev's <c>developer</c>), logs a
+    /// WARNING because isolation is NOT actually enforced for that connection.</para>
+    /// </summary>
+    public static async Task ReconcileRowLevelSecurityAsync(
+        AppDbContext db, IConfiguration configuration, ILogger logger, CancellationToken ct)
+    {
+        // RLS is a real-Postgres feature — the EF InMemory provider implements none of it.
+        if (!db.Database.IsRelational())
+            return;
+
+        var enabled = configuration.GetValue("Rls:Enabled", false);
+
+        // The exact policy-bearing set from migration 20260710120000: a `tenant_id` column on a base table,
+        // excluding the global identity/tenant tables. Discovered by reflection over information_schema (never
+        // hand-maintained) so a future tenant table is picked up automatically. These SQL statements are constant
+        // literals with no interpolated/external input — no injection surface.
+        var affected = await db.Database.SqlQueryRaw<int>("""
+            SELECT count(*)::int AS "Value"
+            FROM information_schema.columns c
+            JOIN information_schema.tables t
+              ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+            WHERE c.table_schema = 'public'
+              AND c.column_name  = 'tenant_id'
+              AND t.table_type   = 'BASE TABLE'
+              AND c.table_name NOT IN ('users', 'tenants')
+            """).SingleAsync(ct);
+
+        if (enabled)
+        {
+            // R3 — if the connected role bypasses RLS (superuser or BYPASSRLS), enforcement is silently ineffective
+            // for this connection. Warn loudly rather than give a false sense of isolation.
+            var currentUser = await db.Database.SqlQueryRaw<string>(
+                """SELECT current_user AS "Value" """).SingleAsync(ct);
+            var bypasses = await db.Database.SqlQueryRaw<bool>(
+                """SELECT (rolsuper OR rolbypassrls) AS "Value" FROM pg_roles WHERE rolname = current_user""")
+                .SingleAsync(ct);
+            if (bypasses)
+            {
+                logger.LogWarning(
+                    "RLS is ENABLED but the app connection (current_user={CurrentUser}) bypasses RLS "
+                    + "(superuser/BYPASSRLS) — isolation is NOT actually enforced for this connection; point "
+                    + "DefaultConnection at hrm_app to enforce.", currentUser);
+            }
+
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $rls$
+                DECLARE r record;
+                BEGIN
+                    FOR r IN
+                        SELECT c.table_name
+                        FROM information_schema.columns c
+                        JOIN information_schema.tables t
+                          ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+                        WHERE c.table_schema = 'public'
+                          AND c.column_name  = 'tenant_id'
+                          AND t.table_type   = 'BASE TABLE'
+                          AND c.table_name NOT IN ('users', 'tenants')
+                    LOOP
+                        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.table_name);
+                        EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', r.table_name);
+                    END LOOP;
+                END
+                $rls$;
+                """, ct);
+
+            logger.LogInformation(
+                "RLS reconciler: ENABLED + FORCED row-level security on {Count} tenant-scoped table(s) "
+                + "(Rls:Enabled=true).", affected);
+        }
+        else
+        {
+            // Rls:Enabled=false ⇒ actively roll enforcement OFF (R7). DISABLE + NO FORCE are no-ops when a table is
+            // already unenforced, so this is behaviour-neutral on every current environment (the committed default).
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $rls$
+                DECLARE r record;
+                BEGIN
+                    FOR r IN
+                        SELECT c.table_name
+                        FROM information_schema.columns c
+                        JOIN information_schema.tables t
+                          ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+                        WHERE c.table_schema = 'public'
+                          AND c.column_name  = 'tenant_id'
+                          AND t.table_type   = 'BASE TABLE'
+                          AND c.table_name NOT IN ('users', 'tenants')
+                    LOOP
+                        EXECUTE format('ALTER TABLE public.%I NO FORCE ROW LEVEL SECURITY', r.table_name);
+                        EXECUTE format('ALTER TABLE public.%I DISABLE ROW LEVEL SECURITY', r.table_name);
+                    END LOOP;
+                END
+                $rls$;
+                """, ct);
+
+            logger.LogInformation(
+                "RLS reconciler: DISABLED row-level security on {Count} tenant-scoped table(s) "
+                + "(Rls:Enabled=false — enforcement off).", affected);
         }
     }
 
