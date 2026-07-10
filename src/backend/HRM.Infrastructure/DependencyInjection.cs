@@ -1,3 +1,4 @@
+using EFCoreSecondLevelCacheInterceptor;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Interfaces;
 using HRM.Infrastructure.Caching;
@@ -32,6 +33,12 @@ public static class DependencyInjection
         // US-NTF-004: automatic generic INSERT/UPDATE/DELETE capture for IAuditableEntity types.
         services.AddScoped<AuditCaptureInterceptor>();
 
+        // P3 (EF second-level cache): transparent query-result caching for slow-changing REFERENCE tables,
+        // tenant-safe via a dynamic per-request cache-key prefix (see Caching/CacheTenantPrefix). Registers the
+        // SecondLevelCacheInterceptor (a COMMAND interceptor) which is added to AppDbContext below. Must run
+        // BEFORE AddDbContext so the interceptor is resolvable in the options factory.
+        services.AddTenantSafeSecondLevelCache(configuration);
+
         // DbContext with PostgreSQL + snake_case naming
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
         {
@@ -45,11 +52,15 @@ public static class DependencyInjection
 
             // Add interceptors. ORDER MATTERS: tenant stamping + audit-field/UUIDv7 stamping must run BEFORE
             // audit CAPTURE so the captured rows see the stamped TenantId and generated resource Id
-            // (US-NTF-004).
+            // (US-NTF-004). The second-level cache is a COMMAND interceptor (not a SaveChanges one), so it
+            // coexists with the three SaveChanges interceptors without ordering interplay; it auto-invalidates
+            // whitelisted tables on SaveChanges. On the InMemory provider it is inert (no relational commands).
             var tenantInterceptor = serviceProvider.GetRequiredService<TenantInterceptor>();
             var auditInterceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
             var auditCaptureInterceptor = serviceProvider.GetRequiredService<AuditCaptureInterceptor>();
-            options.AddInterceptors(tenantInterceptor, auditInterceptor, auditCaptureInterceptor);
+            var secondLevelCacheInterceptor = serviceProvider.GetRequiredService<SecondLevelCacheInterceptor>();
+            options.AddInterceptors(
+                tenantInterceptor, auditInterceptor, auditCaptureInterceptor, secondLevelCacheInterceptor);
         });
 
         // Register UnitOfWork
@@ -647,9 +658,6 @@ public static class DependencyInjection
             services.AddSingleton<IVirusScanner, AllowWithLogVirusScanner>();
         }
 
-        // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
-        services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
-
         var redisConnectionString = configuration.GetConnectionString("Redis")
             ?? configuration["Redis:ConnectionString"];
 
@@ -665,6 +673,9 @@ public static class DependencyInjection
         {
             services.AddDistributedMemoryCache();
         }
+
+        // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
+        services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
 
         // Permission-based authorization
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
