@@ -22,7 +22,7 @@
     <!-- P3 (EF second-level cache): transparent query-result caching via an EF command interceptor with
          auto-invalidation on SaveChanges. Redis-backed when configured, in-memory otherwise (mirrors the
          app's degrade-gracefully pattern). Tenant isolation is enforced via a dynamic per-request cache-key
-         prefix (see Caching/HttpContextCacheTenantKeyProvider) — the library does NOT isolate tenants itself.
+         prefix (see Caching/AmbientTenantCacheKeyProvider) — the library does NOT isolate tenants itself.
          The MemoryCache + StackExchange.Redis providers ship as SEPARATE nuget packages from the core. -->
     <PackageReference Include="EFCoreSecondLevelCacheInterceptor" Version="5.3.13" />
     <PackageReference Include="EFCoreSecondLevelCacheInterceptor.MemoryCache" Version="5.3.13" />

@@ -55,10 +55,11 @@ public static class SecondLevelCacheServiceCollectionExtensions
             cachedTables = DefaultCachedTables;
         }
 
-        // The tenant-prefix provider must reach the CURRENT request scope (the library's prefix provider is a
-        // root singleton) — IHttpContextAccessor is the AsyncLocal seam for that. Idempotent (TryAdd inside).
-        services.AddHttpContextAccessor();
-        services.AddSingleton<ICacheTenantKeyProvider, HttpContextCacheTenantKeyProvider>();
+        // The tenant-prefix provider must reach the CURRENT tenant even though the library's prefix provider is
+        // a root singleton. The AsyncLocal-backed AmbientTenant is that seam: TenantContext.SetTenant/
+        // SetSystemContext publishes to it on BOTH the HTTP path (TenantResolutionMiddleware) and every
+        // Hangfire job, so HTTP requests AND background/startup queries alike get a tenant-scoped prefix.
+        services.AddSingleton<ICacheTenantKeyProvider, AmbientTenantCacheKeyProvider>();
 
         services.AddEFSecondLevelCache(options =>
         {
@@ -73,9 +74,10 @@ public static class SecondLevelCacheServiceCollectionExtensions
                 options.UseMemoryCacheProvider();
             }
 
-            // 🔴 Tenant-safe cache keys: a dynamic prefix bound to the current request's ITenantContext. The
-            // delegate receives the ROOT provider, so it resolves the request-scoped tenant via the singleton
-            // ICacheTenantKeyProvider (→ IHttpContextAccessor → RequestServices). Independent of the SQL text.
+            // 🔴 Tenant-safe cache keys: a dynamic prefix bound to the current async flow's ambient tenant. The
+            // delegate receives the ROOT provider, so it resolves the tenant via the singleton
+            // ICacheTenantKeyProvider (→ AsyncLocal AmbientTenant). Independent of the SQL text, and populated
+            // on both HTTP and background-job flows.
             options.UseCacheKeyPrefix(sp => sp.GetRequiredService<ICacheTenantKeyProvider>().GetCacheKeyPrefix());
 
             // RLS/manual-tx paths (SELECT ... FOR UPDATE, tenant purge) wrap queries in explicit transactions;

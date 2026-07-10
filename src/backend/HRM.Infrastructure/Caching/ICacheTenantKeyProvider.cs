@@ -1,11 +1,11 @@
 namespace HRM.Infrastructure.Caching;
 
 /// <summary>
-/// P3 (EF second-level cache) — resolves the current request's tenant-scoped cache-key prefix. Registered as a
-/// singleton (the library's <c>IEFCacheKeyPrefixProvider</c> is a root singleton), so it must reach the CURRENT
-/// request's scoped <c>ITenantContext</c> indirectly (via <c>IHttpContextAccessor</c>) rather than resolving the
-/// scoped service off the root container. Extracted behind an interface so tests can drive the prefix
-/// deterministically without spinning up an HTTP request.
+/// P3 (EF second-level cache) — resolves the current tenant-scoped cache-key prefix. Registered as a
+/// singleton (the library's <c>IEFCacheKeyPrefixProvider</c> is a root singleton), so it reaches the CURRENT
+/// tenant indirectly via the AsyncLocal <c>AmbientTenant</c> (published by <c>TenantContext</c> on both the
+/// HTTP and background-job flows) rather than resolving the scoped <c>ITenantContext</c> off the root
+/// container. Extracted behind an interface so tests can drive the prefix deterministically.
 /// </summary>
 public interface ICacheTenantKeyProvider
 {
