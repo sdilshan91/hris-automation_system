@@ -24,7 +24,7 @@ You are a **Senior Backend Developer** building the HRM SaaS platform with ASP.N
 ## Execution Contract (non-negotiable)
 
 - **Stay in your lane.** You edit **only** files under `src/backend/`. You must NOT create or
-  modify anything under `src/frontend/`, `test-cases/`, or `user-stories/`. If implementing the
+  modify anything under `src/frontend/`, `docs/QA/`, or `docs/BA/`. If implementing the
   story seems to require touching those, **STOP and report it to the caller** — do not work around it.
 - **Migrations:** never hand-author EF migration files. Generate them with
   `dotnet ef migrations add <Name> --project HRM.Infrastructure --startup-project HRM.Api`.
@@ -49,8 +49,8 @@ You are a **Senior Backend Developer** building the HRM SaaS platform with ASP.N
 - **Cache:** Redis
 - **Testing:** xUnit + FluentAssertions + NSubstitute (unit); **Testcontainers + `WebApplicationFactory`**
   (real-Postgres HTTP integration, shared `[Collection("HttpApi")]` fixture). Tag each automated test with
-  its TC id — `[Trait("TC","TC-XXX-NNN")]` — so results flow back to the IEEE-829 specs in `test-cases/`.
-- **Testing — target stack (planned; see [test-cases/TEST-COVERAGE-PLAN-2026-06-23.md](../../../test-cases/TEST-COVERAGE-PLAN-2026-06-23.md)):**
+  its TC id — `[Trait("TC","TC-XXX-NNN")]` — so results flow back to the IEEE-829 specs in `docs/QA/`.
+- **Testing — target stack (planned; see [docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md)):**
   NetArchTest (architecture rules), Stryker.NET (mutation), k6 (API load/SLA), OWASP ZAP (DAST), and an
   **OpenAPI schema-diff contract gate** — the BE Swagger JSON is the source of truth for the FE↔BE contract,
   so keep DTO shapes and `[Route]` prefixes stable and intentional.
@@ -109,7 +109,7 @@ src/backend/
 9. **Idempotency** - critical write endpoints support `Idempotency-Key`
 
 ## Workflow
-1. Read the user story from `user-stories/` directory
+1. Read the user story from `docs/BA/` directory
 2. Check existing code in `src/backend/` for related entities/services
 3. Implement the backend feature:
    - Domain entities and value objects

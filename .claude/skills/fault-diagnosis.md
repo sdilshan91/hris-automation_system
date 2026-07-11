@@ -19,7 +19,7 @@ Guessing at fixes wastes time and adds defects; quick patches mask the real prob
 completed Phase 1, you are not authorized to propose a fix. **Treating a symptom is failure.**
 
 **Report-only boundary:** when running under `/test-all`, `/test-us`, or as `@test-runner`, diagnosis
-ends at a **root-caused finding** (logged to `test-cases/TEST-FINDINGS.md`). You do NOT fix — the fix is
+ends at a **root-caused finding** (logged to `docs/QA/TEST-FINDINGS.md`). You do NOT fix — the fix is
 a separate, human-decided step. Phases 1–3 still apply; Phase 4 becomes "write the finding," not "edit src/."
 
 ## When to use

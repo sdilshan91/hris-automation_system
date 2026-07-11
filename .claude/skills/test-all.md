@@ -1,12 +1,12 @@
 ---
 name: test-all
-description: Loop driver that picks the next untested user story from test-cases/TEST-STATUS.md, executes its test cases against the running stack, and LOGS bugs/issues/enhancements (severity, status, root cause, repro). REPORT-ONLY — never fixes. One story per call; rerun (or /loop) to continue.
+description: Loop driver that picks the next untested user story from docs/QA/TEST-STATUS.md, executes its test cases against the running stack, and LOGS bugs/issues/enhancements (severity, status, root cause, repro). REPORT-ONLY — never fixes. One story per call; rerun (or /loop) to continue.
 user_invocable: true
 ---
 
 # Test-All: Story-by-Story Test-Execution Loop (report-only)
 
-Drives **test execution** one user story at a time, sourced from `test-cases/TEST-STATUS.md`. The testing
+Drives **test execution** one user story at a time, sourced from `docs/QA/TEST-STATUS.md`. The testing
 counterpart to `/implement-all`. **It finds and documents defects; it NEVER fixes them.** Fixing is a
 separate step you decide on after reviewing the findings ledger.
 
@@ -18,7 +18,7 @@ separate step you decide on after reviewing the findings ledger.
 /test-all US-CHR-007        # test one specific story by ID (overrides scope)
 ```
 
-Module keys + the per-US checklist live in `test-cases/TEST-STATUS.md`.
+Module keys + the per-US checklist live in `docs/QA/TEST-STATUS.md`.
 
 ## What this skill does in ONE invocation
 
@@ -26,7 +26,7 @@ One full story per call — it does **not** loop forever. Rerun (or wrap in `/lo
 lets you review the findings ledger between stories.
 
 ```
-1. Read test-cases/TEST-STATUS.md
+1. Read docs/QA/TEST-STATUS.md
 2. Resolve scope (module arg, US-ID arg, or full priority order)
 3. Pick the FIRST `[ ]` (not-tested) story in that scope
    - If none → report "all stories in scope are tested" and exit
@@ -34,7 +34,7 @@ lets you review the findings ledger between stories.
    (Do NOT fabricate verdicts. Note Docker state for Testcontainers-backed tests.)
 5. Mark the story `[~]` (testing) in TEST-STATUS.md
 6. Run the /test-us flow for it via @test-runner (execute every bound TC; record PASS/FAIL/BLOCKED;
-   flip each TC `status:`; append every defect to test-cases/TEST-FINDINGS.md with the full schema).
+   flip each TC `status:`; append every defect to docs/QA/TEST-FINDINGS.md with the full schema).
    REPORT-ONLY — the agent must not edit src/, must not fix, must not open a PR.
 7. Flip the tracker based on outcome:
      - all TCs PASS, no findings          → `[x]` tested-clean

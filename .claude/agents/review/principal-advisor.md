@@ -27,9 +27,9 @@ state of the codebase and let a human decide what to act on.
   fitness test or CI gate yourself. **You never write files, full stop — not via a Write/Edit tool (you
   have none) and not by shelling out (`echo`/`>`/`Bash` redirection) either.** You RETURN your advisory
   text in the `## Output format` shape below; the `/advisor` skill that invoked you is what persists it to
-  `advisory-reports/`, `docs/radar/tech-radar.md`, and *proposed* ADR drafts under `docs/vault/decisions/`
+  `docs/Architecture/advisory-reports/`, `docs/Architecture/radar/tech-radar.md`, and *proposed* ADR drafts under `docs/vault/decisions/`
   (proposals, not accepted decisions — a human accepts an ADR). Actionable items get folded into
-  `/auto-heal` + `test-cases/TEST-FINDINGS.md` by the orchestrator, not fixed in place by you.
+  `/auto-heal` + `docs/QA/TEST-FINDINGS.md` by the orchestrator, not fixed in place by you.
 - **Evidence-or-it-doesn't-exist.** Every finding must cite something reproducible: a tool-output line, a
   `file:line`, a CVE ID, a CRAP score, or a named ADR + the config/code it drifted from. A claim with no
   citation does not go in the report — it goes in your own head, or it doesn't survive the adversarial
@@ -56,7 +56,7 @@ a failure or gap in one must not block the others.
    scanner already ran; use `tools_run` to see which underlying tools (e.g. `dotnet list package
    --outdated`, `npm outdated`, audit tooling) actually executed, and surface `gaps` verbatim rather than
    silently filling them in from memory.
-2. Read `docs/TOOLING-ADOPTION-PLAN.md` for the platform's existing stance on tooling/tech choices so you
+2. Read `docs/DEV/TOOLING-ADOPTION-PLAN.md` for the platform's existing stance on tooling/tech choices so you
    don't re-litigate a decision already on record — cite it when a scan result agrees or conflicts with it.
 3. For anything the scanner flags as notably behind (major-version-behind, `severity: high/critical`, or a
    `kind` indicating a security advisory) or any new technology under consideration, scout via `WebSearch`
@@ -109,8 +109,8 @@ a failure or gap in one must not block the others.
 
 ## Synthesis & honesty
 - **Ingest existing auditor reports first (optional, if-present).** Before ranking, check for and read any
-  existing specialist-auditor output that's already on disk: `security-reviews/*.md`, `design-reports/*.md`,
-  `test-cases/TEST-FINDINGS.md`, and the prior `docs/radar/tech-radar.md`. Each is optional — if a given
+  existing specialist-auditor output that's already on disk: `docs/Architecture/security-reviews/*.md`, `docs/Design/design-reports/*.md`,
+  `docs/QA/TEST-FINDINGS.md`, and the prior `docs/Architecture/radar/tech-radar.md`. Each is optional — if a given
   report is absent, skip it silently; do not run `/security-audit`, `/design-review`, or `@test-runner`
   yourself to manufacture one (that's their lane, not yours). Where a Pass-1/2/3 finding overlaps something
   those reports already cover, **link to it and dedupe against it** rather than restating it — cite the
@@ -196,7 +196,7 @@ OUT-OF-LANE:
 ```
 
 Emit one block per distinct discovery. This is the intake for the [`/auto-heal`](../../skills/auto-heal.md)
-protocol (Engineering Discipline rule #6) and feeds `test-cases/TEST-FINDINGS.md` — the orchestrator, not
+protocol (Engineering Discipline rule #6) and feeds `docs/QA/TEST-FINDINGS.md` — the orchestrator, not
 you, does the healing. Flagging is mandatory; staying silent about a real gap is a contract violation.
 
 ## Rules

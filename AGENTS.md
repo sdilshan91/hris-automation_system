@@ -11,7 +11,7 @@ Read these files before doing project or automation work:
 - `.claude/skills/*.md` - detailed workflow specs for story automation.
 - `.claude/agents/team/*.md` - role-specific instructions for BA, frontend, backend, QA, and browser debugging.
 - `docs/vault/Home.md` and `docs/vault/README.md` - shared memory conventions.
-- `user-stories/STATUS.md` - tracker used to pick the next story.
+- `docs/BA/STATUS.md` - tracker used to pick the next story.
 
 Do not move, rename, rewrite, or simplify `.claude/` files unless the user explicitly asks for Claude changes.
 
@@ -33,8 +33,8 @@ If sub-agent tools are available and the user explicitly asks for agents, delega
 - Backend agent owns `src/backend/`.
 - Frontend agent owns `src/frontend/`.
 - DB agent owns persistence-specific backend concerns only: EF configurations, migrations, seed data, query filters, database indexes, and database notes. Coordinate with backend before touching shared application/domain files.
-- QA agent owns `test-cases/`.
-- Business analyst owns `user-stories/` and related index/status documentation.
+- QA agent owns `docs/QA/`.
+- Business analyst owns `docs/BA/` and related index/status documentation.
 - Browser debugger is read-only and may inspect the running app, console, network, and DOM.
 
 All implementation agents must be told:
@@ -48,8 +48,8 @@ All implementation agents must be told:
 
 - Check `git status --short` before story automation or broad edits.
 - Do not overwrite user changes.
-- For `/implement-all`, only update `user-stories/STATUS.md` according to the state machine in `.claude/skills/implement-all.md`.
-- For `/implement-story`, do not touch `user-stories/STATUS.md`.
+- For `/implement-all`, only update `docs/BA/STATUS.md` according to the state machine in `.claude/skills/implement-all.md`.
+- For `/implement-story`, do not touch `docs/BA/STATUS.md`.
 - Prefer GitHub MCP tools when available for branches, pushes, issues, and PRs. If not available, use normal git/`gh` commands when configured.
 
 ## Build And Test Commands

@@ -5,7 +5,7 @@ status: draft / not implemented
 
 # Enterprise SSO via Microsoft Entra ID
 
-Spec: [[CR-AUTH-001-entra-sso]] (user-stories/authentication/CR-AUTH-001-entra-sso.md),
+Spec: [[CR-AUTH-001-entra-sso]] (docs/BA/authentication/CR-AUTH-001-entra-sso.md),
 stories US-AUTH-011..016. **Not implemented as of 2026-06-21** — draft for human review.
 
 ## Non-obvious domain rules (get these wrong and isolation breaks)

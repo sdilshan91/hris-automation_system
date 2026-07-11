@@ -29,7 +29,7 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.*" />
   </ItemGroup>
 
-  <!-- P3 observability (docs/observability-otel-grafana-plan.md). OpenTelemetry traces + metrics.
+  <!-- P3 observability (docs/Architecture/observability-otel-grafana-plan.md). OpenTelemetry traces + metrics.
        Exporter is ENDPOINT-GATED (see Observability/ObservabilityExtensions.cs): OTLP when an endpoint
        is configured, else Console-only, so the app runs with no collector. DB spans come from Npgsql's
        STABLE built-in ActivitySource via AddSource("Npgsql") (no extra package — Npgsql core already

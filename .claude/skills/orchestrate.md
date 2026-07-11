@@ -15,7 +15,7 @@ Agents run locally via Claude Code and push to GitHub via MCP server.
 1. Launch the `business-analyst` agent to:
    - Read all documents in `docs/` folder
    - Analyze functional requirements
-   - Write IEEE 830 compliant user stories to `user-stories/` directory
+   - Write IEEE 830 compliant user stories to `docs/BA/` directory
    - Create the story index file
    - Use GitHub MCP to:
      - Create branch `feature/user-stories-{module}`
@@ -60,9 +60,9 @@ claude /orchestrate
 To run individual agents:
 ```
 claude @business-analyst "Analyze docs/ and write user stories for {module}, then push to GitHub via MCP"
-claude @frontend-dev "Implement stories from user-stories/{module}/, push to GitHub via MCP"
-claude @backend-dev "Implement stories from user-stories/{module}/, push to GitHub via MCP"
-claude @qa-engineer "Write test cases for user-stories/{module}/, push to GitHub via MCP"
+claude @frontend-dev "Implement stories from docs/BA/{module}/, push to GitHub via MCP"
+claude @backend-dev "Implement stories from docs/BA/{module}/, push to GitHub via MCP"
+claude @qa-engineer "Write test cases for docs/BA/{module}/, push to GitHub via MCP"
 ```
 
 ## Module Execution Order

@@ -3,7 +3,7 @@
 Defense-in-depth tenant isolation: PostgreSQL RLS enforces `tenant_id` scoping at the
 database engine, so isolation survives application bugs (raw SQL, a misused
 `IgnoreQueryFilters()`, an untenanted job). EF Core global query filters remain the
-first layer; RLS is the backstop. Full spec: `user-stories/platform/US-PLT-002.md`.
+first layer; RLS is the backstop. Full spec: `docs/BA/platform/US-PLT-002.md`.
 
 ## What has landed (Phases 1–3 — plumbing, INERT by default)
 
@@ -84,7 +84,7 @@ restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatev
       42501; `refresh_tokens` UPDATE → silent 0 rows). FIXED by wrapping the 3 fresh-scope writes
       (SignalRNotificationService, RealNotificationDispatcher, SessionActivityMiddleware) in
       `ITenantJobRunner.RunForTenantAsync` (no-ops when RLS off). Proven by `NotificationRlsPostgresTests`
-      (real hrm_app RLS-on). See `test-cases/TEST-FINDINGS.md#ISSUE-268`.
+      (real hrm_app RLS-on). See `docs/QA/TEST-FINDINGS.md#ISSUE-268`.
 - [x] **[MED — ISSUE-269 — RESOLVED PR #246 2026-07-11]** payslip render/email jobs held ONE GUC tx per
       batch (idle-in-tx through PDF render / SMTP). FIXED: `GeneratePayslipsJob` + `SendPayslipEmailsJob`
       split into read-tx → work-outside-tx → per-chunk/per-send write-tx; proven on real Postgres RLS-on

@@ -59,7 +59,7 @@ try
     // ===== Observability (P3: OpenTelemetry traces + metrics) =====
     // Endpoint-gated + safe-by-default: OTLP export when OpenTelemetry:OtlpEndpoint (or the standard
     // OTEL_EXPORTER_OTLP_ENDPOINT env var) is set; Console exporter only when blank, so the app runs with
-    // no collector. See HRM.Api/Observability/ObservabilityExtensions.cs + docs/observability-otel-grafana-plan.md.
+    // no collector. See HRM.Api/Observability/ObservabilityExtensions.cs + docs/Architecture/observability-otel-grafana-plan.md.
     builder.Services.AddObservability(builder.Configuration, builder.Environment);
 
     // ===== Health Checks (P3 infra probes: /health/live, /health/ready — mapped below) =====

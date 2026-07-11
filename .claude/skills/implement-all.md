@@ -1,12 +1,12 @@
 ---
 name: implement-all
-description: Loop driver that picks the next pending user story from user-stories/STATUS.md, implements it end-to-end (BE + FE + QA on one feature branch), opens a PR, and marks it done. Run once per story; rerun to continue.
+description: Loop driver that picks the next pending user story from docs/BA/STATUS.md, implements it end-to-end (BE + FE + QA on one feature branch), opens a PR, and marks it done. Run once per story; rerun to continue.
 user_invocable: true
 ---
 
 # Implement-All: Story-by-Story Automation Loop
 
-Drives the development pipeline one user story at a time, sourced from `user-stories/STATUS.md`.
+Drives the development pipeline one user story at a time, sourced from `docs/BA/STATUS.md`.
 
 ## Usage
 
@@ -17,7 +17,7 @@ Drives the development pipeline one user story at a time, sourced from `user-sto
 /implement-all US-AUTH-005    # implements one specific story by ID (overrides scope)
 ```
 
-Module keys are listed in the table at the bottom of `user-stories/STATUS.md`. Story IDs use the form `US-{MODULE}-{NNN}` (e.g. `US-CHR-007`).
+Module keys are listed in the table at the bottom of `docs/BA/STATUS.md`. Story IDs use the form `US-{MODULE}-{NNN}` (e.g. `US-CHR-007`).
 
 ## What this skill does in ONE invocation
 
@@ -25,7 +25,7 @@ It does NOT loop forever — it does **one full story per call**. Rerun the skil
 This pacing matches the "pause for review" PR strategy: each PR can be reviewed and merged before the next branch is cut from a fresh `main`.
 
 ```
-1. Read user-stories/STATUS.md
+1. Read docs/BA/STATUS.md
 2. Resolve scope (module arg, story ID arg, or full priority order)
 3. Pick the FIRST `[ ]` story in that scope
    - If none → report "all stories in scope are done" and exit
@@ -38,7 +38,7 @@ This pacing matches the "pause for review" PR strategy: each PR can be reviewed 
    (no isolation:worktree — they edit non-overlapping paths):
      - @backend-dev   → writes to src/backend/   (NO git commits)
      - @frontend-dev  → writes to src/frontend/  (NO git commits)
-     - @qa-engineer   → writes to test-cases/    (NO git commits)
+     - @qa-engineer   → writes to docs/QA/    (NO git commits)
    Each agent receives an explicit instruction: "Implement only this one story.
    Do NOT run git add/commit/push — the orchestrator commits at the end."
 10. **Verify, then auto-remediate.** After all three sub-agents return, run the full
@@ -59,7 +59,7 @@ This pacing matches the "pause for review" PR strategy: each PR can be reviewed 
        Frontend: {1-line summary}
        QA: {N test cases added}
 
-       Closes: refs user-stories/{module}/US-XXX.md
+       Closes: refs docs/BA/{module}/US-XXX.md
 12. Push branch via MCP (`mcp__github__push_files`) or `git push -u origin <branch>`
 13. Open PR via MCP (`mcp__github__create_pull_request`) titled:
        "feat: US-XXX — {story title}"
@@ -137,7 +137,7 @@ Each agent gets a self-contained prompt with: the story ID, the absolute path to
 ```
 You are implementing exactly ONE user story end-to-end on the backend.
 
-Story: US-{ID} — read it at user-stories/{module}/US-{ID}.md
+Story: US-{ID} — read it at docs/BA/{module}/US-{ID}.md
 Vault context: check docs/vault/modules/{module}.md and docs/vault/agents/backend-dev.md
 
 Implement in src/backend/ following CLAUDE.md, dev-instructions.md, and your agent guide:
@@ -151,7 +151,7 @@ Implement in src/backend/ following CLAUDE.md, dev-instructions.md, and your age
 IMPORTANT — DO NOT:
   - Run `git add`, `git commit`, or `git push`
   - Create branches or open PRs (the orchestrator does this)
-  - Touch src/frontend/ or test-cases/
+  - Touch src/frontend/ or docs/QA/
   - Modify other stories' code
 
 Verify with `dotnet build src/backend/HRM.sln` AND `dotnet test src/backend/HRM.sln`
@@ -163,7 +163,7 @@ Report a 5-bullet summary of files created/modified.
 ```
 You are implementing exactly ONE user story end-to-end on the frontend.
 
-Story: US-{ID} — read it at user-stories/{module}/US-{ID}.md
+Story: US-{ID} — read it at docs/BA/{module}/US-{ID}.md
 Vault context: check docs/vault/modules/{module}.md and docs/vault/agents/frontend-dev.md
 
 Implement in src/frontend/ following CLAUDE.md, dev-instructions.md, and your agent guide:
@@ -179,7 +179,7 @@ UI must match the Notion-inspired design language from the agent guide
 IMPORTANT — DO NOT:
   - Run `git add`, `git commit`, or `git push`
   - Create branches or open PRs
-  - Touch src/backend/ or test-cases/
+  - Touch src/backend/ or docs/QA/
   - Modify other stories' code
 
 Verify with `npm run build` AND `npx ng test --watch=false --browsers=ChromeHeadless`
@@ -192,10 +192,10 @@ Report a 5-bullet summary of files created/modified.
 ```
 You are writing IEEE 829 test cases for exactly ONE user story.
 
-Story: US-{ID} — read it at user-stories/{module}/US-{ID}.md
+Story: US-{ID} — read it at docs/BA/{module}/US-{ID}.md
 Vault context: check docs/vault/modules/{module}.md and docs/vault/agents/qa-engineer.md
 
-Write test cases in test-cases/{module}/ following your agent template:
+Write test cases in docs/QA/{module}/ following your agent template:
   - 1+ happy path
   - 2+ negative tests
   - 1+ boundary test
@@ -203,7 +203,7 @@ Write test cases in test-cases/{module}/ following your agent template:
   - Performance test if the story has NFR latency/throughput
   - Accessibility test if the story has UI
 
-Update test-cases/{module}/TEST-MATRIX.md and root TRACEABILITY-MATRIX.md
+Update docs/QA/{module}/TEST-MATRIX.md and root TRACEABILITY-MATRIX.md
 to link the new TCs back to US-{ID} and its acceptance criteria.
 
 IMPORTANT — DO NOT:

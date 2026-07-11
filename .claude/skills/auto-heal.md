@@ -57,13 +57,13 @@ deterministic.
 
 ## Heal steps (orchestrator runs these on every trigger)
 
-1. **File the finding.** Append to [test-cases/TEST-FINDINGS.md](../../test-cases/TEST-FINDINGS.md) with the
+1. **File the finding.** Append to [docs/QA/TEST-FINDINGS.md](../../docs/QA/TEST-FINDINGS.md) with the
    full schema (type · severity · status OPEN · layer · module/US/TC · title · root-cause+confidence · repro ·
    evidence · severity rationale · suggested direction). Assign the next free ID (`grep -oE 'BUG-[0-9]+|ISSUE-[0-9]+'`
    → max+1). Cross-link the parent finding/PR with `[[wiki-links]]`. **De-dup first** — if it's the same defect
    as an existing finding, extend that one instead of minting a new ID.
-2. **Fold it into the plan.** Add it to [test-cases/COMPLETION-PLAN-*.md](../../test-cases/) under the phase/theme
-   it belongs to (or the "loop-discovered items" section), tagged `[NEW]` with its finding ID and a one-line
+2. **Fold it into the plan.** Add it to the single living plan [docs/QA/plans/COMPLETION-PLAN.md](../../docs/QA/plans/COMPLETION-PLAN.md)
+   under the phase/theme it belongs to (or the "loop-discovered items" section), tagged `[NEW]` with its finding ID and a one-line
    disposition (build / remove / decision / infra).
 3. **Re-sort the priority order.** Recompute the execution order with:
    `priority ≈ severity × blast-radius × unblocks-others − gated`

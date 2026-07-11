@@ -1,6 +1,6 @@
 ---
 name: verify-fix
-description: Close out a merged fix — re-run the finding's affected test cases against the running stack, flip TEST-STATUS.md, and mark the finding RESOLVED in TEST-FINDINGS.md with the PR#. The authorized close-out step for the human-decided fix cycle. Writes only to test-cases/.
+description: Close out a merged fix — re-run the finding's affected test cases against the running stack, flip TEST-STATUS.md, and mark the finding RESOLVED in TEST-FINDINGS.md with the PR#. The authorized close-out step for the human-decided fix cycle. Writes only to docs/QA/.
 user_invocable: true
 ---
 
@@ -27,7 +27,7 @@ not the test loop — so the rule "the testing loop never closes its own finding
 2. **Pre-flight the stack** — API `http://localhost:5000` and FE `http://localhost:4200` respond; note
    Docker (for Testcontainers) and Redis. If down, STOP and say how to start it — never fabricate a pass.
 3. **Gather scope:**
-   - default: the TCs listed on the finding + every `test-cases/**/TC-*.md` whose `status:` is
+   - default: the TCs listed on the finding + every `docs/QA/**/TC-*.md` whose `status:` is
      `fail`/`blocked` and references this finding ID.
    - `--iso`: the **full cross-module isolation suite** (all `TC-*-ISO-*` / tenant-isolation arms) — use
      for systemic fixes like BUG-003 where the invariant touches every module.
@@ -51,8 +51,8 @@ not the test loop — so the rule "the testing loop never closes its own finding
 7. **Return** — per-TC verdict table, the finding's new status, and the ledger paths.
 
 ## Guardrails (non-negotiable)
-- **Writes only to `test-cases/`** — `TEST-STATUS.md`, `TEST-FINDINGS.md`, and executed TC `status:`
-  frontmatter. Never edits `src/` or `user-stories/`.
+- **Writes only to `docs/QA/`** — `TEST-STATUS.md`, `TEST-FINDINGS.md`, and executed TC `status:`
+  frontmatter. Never edits `src/` or `docs/BA/`.
 - **Never edits a test's logic** — no changes to `*.spec.ts` / `*Tests.cs` bodies or TC steps (the
   `test-integrity-guard` hook enforces this). A test that's wrong is a `TEST`-layer finding, not an edit.
 - **Never fabricate a pass.** A blocked re-run stays blocked with a reason; only close a finding when its
