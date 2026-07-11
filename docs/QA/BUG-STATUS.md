@@ -1,7 +1,7 @@
 # Bug Status Tracker
 
 > Single source of truth for defects found during the 2026-06-19 QA execution baseline.
-> Companion to [BUG-REPORT-2026-06-19.md](./BUG-REPORT-2026-06-19.md) (detail + repro + traces) and
+> Companion to [BUG-REPORT-2026-06-19.md](reports-archive/BUG-REPORT-2026-06-19.md) (detail + repro + traces) and
 > [EXECUTION-LOG-2026-06-19/](./EXECUTION-LOG-2026-06-19/) (evidence). Hand-edit the **Status** column as
 > bugs are picked up / fixed / verified. Do NOT fix yet — analysis & triage phase.
 >
@@ -86,7 +86,7 @@ Not every remaining item is a "just patch it" bug. Honest call on each:
 
 | Item | Disposition | Why |
 |---|---|---|
-| **BUG-5** (no E2E) | **DEFER — separate build** | The real fix is standing up the E2E harness ([TEST-AUTOMATION-PLAN](./TEST-AUTOMATION-PLAN-2026-06-19.md)) — a multi-day effort, not a code patch. Spec role-strings already aligned. |
+| **BUG-5** (no E2E) | **DEFER — separate build** | The real fix is standing up the E2E harness ([TEST-AUTOMATION-PLAN](plans/TEST-AUTOMATION-PLAN-2026-06-19.md)) — a multi-day effort, not a code patch. Spec role-strings already aligned. |
 | **BUG-8** (token tenant not cross-checked) | **DEFER — dedicated security task** | Security-sensitive. Read isolation already scopes by resolved-tenant (`ITenantContext`), so no leak was observed. A correct guard must run post-auth and exempt `/auth/*` (login/switch-tenant/refresh), impersonation, and system context — and needs cross-flow tests I can't safely exercise in a batch. Rushing it risks breaking verified auth/admin flows. **Re-assess severity** (token acceptance across subdomains). |
 | **CT-2** (403 vs 409 for "no employee record") | **WON'T FIX (deliberate)** | Thrown consistently at ~15 sites with passing tests asserting 403; 403 is defensible. Changing to 409/422 = churn ~20 files for a debatable semantic. |
 | **CT-1, CT-3, CT-4** | **DEFER (cosmetic)** | Empty-state/unknown-id status inconsistencies + envelope-shape variety. Low value vs churn; groom opportunistically. |
@@ -96,7 +96,7 @@ Not every remaining item is a "just patch it" bug. Honest call on each:
 
 ## Notes
 - **QA scope covered:** prioritized critical + smoke, all 11 modules, ~262 API+UI checks (NOT the full
-  1,941 designed TCs — see [QA-COVERAGE-REPORT-2026-06-19.md](./QA-COVERAGE-REPORT-2026-06-19.md)).
+  1,941 designed TCs — see [QA-COVERAGE-REPORT-2026-06-19.md](reports-archive/QA-COVERAGE-REPORT-2026-06-19.md)).
 - **Verdict:** backend ~245/262 PASS, 0 isolation breaches; failures = FE auth-wiring (BUG-1/2/3) + the
   date-kind 500 class (BUG-6/7). All Status=OPEN; fixing deferred to the next phase.
 - **Suggested fix order:** BUG-6/7 (one shared date-kind fix, sweep first) → BUG-1 (one-word) → BUG-3/2/4

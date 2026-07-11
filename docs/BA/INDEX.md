@@ -4,7 +4,7 @@
 > Standard: IEEE 830-1998 / ISO/IEC/IEEE 29148:2018
 > Total Stories: 108 + **10 net-new (reconciliation 2026-07-06)** | Total Acceptance Criteria: ~567+
 >
-> **Reconciliation note (2026-07-06):** 10 net-new stories added from [COMPLETION-PLAN Part II](../QA/COMPLETION-PLAN-2026-07-06.md) —
+> **Reconciliation note (2026-07-06):** 10 net-new stories added from [COMPLETION-PLAN Part II](../QA/plans/archive/COMPLETION-PLAN-2026-07-06.md) —
 > US-NTF-006 & US-ADM-011 (FULL); US-ADM-012, US-PRF-011, US-PLT-004, US-PLT-005 (STUBS); US-TRN-EPIC/001/002/003 (Training & Benefits, STUBS).
 > Additionally ~40 `[x]`-done stories carry unbuilt ACs — see the **Deferred-AC Reconciliation** table in [STATUS.md](STATUS.md).
 

@@ -1,6 +1,6 @@
 # Performance (k6) harness — Track B
 
-Companion to [../docs/QA/INTEGRATION-PERF-TEST-PLAN.md](../docs/QA/INTEGRATION-PERF-TEST-PLAN.md).
+Companion to [../docs/QA/plans/INTEGRATION-PERF-TEST-PLAN.md](../docs/QA/plans/INTEGRATION-PERF-TEST-PLAN.md).
 Scripts + seed are **committed**; run results (`results/`, CSV) are **gitignored**.
 
 ## Prerequisites

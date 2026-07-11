@@ -1,10 +1,21 @@
-# HRM — Continuation Plan · 2026-07-11
+# HRM — Completion Plan (living)
 
-> Supersedes [`COMPLETION-PLAN-2026-07-10.md`](COMPLETION-PLAN-2026-07-10.md) (now **CLOSED** — the P4 workflow
-> runtime, Training & Benefits, and the RLS flip-prep it carried all shipped). This plan is built from a full
-> read-only survey of the findings ledger, code TODO/stub markers, the RLS flip state, and the story/test-status
-> ledgers. It is a **living document** — re-sort as reality changes.
-> Base: `test/local-subdomains`. **RLS is committed OFF; the flip is now RE-VALIDATED GO** (see P4).
+> **This is the ONE living completion plan.** It rolls over in place — do not create a new
+> dated `COMPLETION-PLAN-<date>.md`; instead add a dated entry to the **Changelog** below and
+> re-sort the plan body. Full snapshots of superseded plans are archived under
+> [`archive/`](archive/). Built from a read-only survey of the findings ledger, code TODO/stub
+> markers, the RLS flip state, and the story/test-status ledgers. **Living document — re-sort as
+> reality changes.** Base: `test/local-subdomains`. **RLS is committed OFF; flip is RE-VALIDATED GO** (see P4).
+
+## 🗓 Changelog (rollover history)
+
+| Date | Event | Full snapshot |
+|------|-------|---------------|
+| **2026-07-11** | **Current active plan.** Rolled over from 07-10 (all it carried shipped). Rebuilt from a full findings/ledger/RLS survey → P0 ledger reconcile + missing TC suites … P7 LOW tail (body below). | _(this file)_ |
+| 2026-07-10 | CLOSED — shipped US-ADM-011 workflow runtime (011a/b/c), Training & Benefits (US-TRN-001/002/003), Redis command-spans, RLS flip-prep (ISSUE-268/269/277) + flake fix (ISSUE-275). | [archive/COMPLETION-PLAN-2026-07-10.md](archive/COMPLETION-PLAN-2026-07-10.md) |
+| 2026-07-06 | CLOSED — shipped P1–P3 (DataProtection, 8 findings, OTel/health/cache) + the RLS build (flag OFF) + US-ADM-011a + reconciliation Part II (Themes A–M). | [archive/COMPLETION-PLAN-2026-07-06.md](archive/COMPLETION-PLAN-2026-07-06.md) |
+
+_Other closed one-off plans (blocked-TC re-exec/remediation, blocker-verification, fix-findings) also live in [`archive/`](archive/); dated QA reports/snapshots live in [`../reports-archive/`](../reports-archive/)._
 
 ## ✅ What shipped 2026-07-10 → 2026-07-11 (closed plan)
 - **US-ADM-011 workflow runtime epic** — 011a (#238) · 011b parallel+SLA+notifs (#239) · 011c delegation + Attendance/

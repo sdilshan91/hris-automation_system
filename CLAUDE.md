@@ -299,7 +299,9 @@ main
 │   ├── QA/                        # IEEE 829 test cases + findings/plans — was test-cases/
 │   │   ├── {module-name}/TC-{MOD}-001.md
 │   │   ├── TEST-STATUS.md · TEST-FINDINGS.md · BUG-STATUS.md · TRACEABILITY-MATRIX.md
-│   │   ├── COMPLETION-PLAN-*.md · *-PLAN*.md   #   generated plans (active + closed)
+│   │   ├── plans/                 #   COMPLETION-PLAN.md = the ONE living plan (dated changelog, rolls over in place)
+│   │   │   └── archive/           #   superseded dated plans (full snapshots)
+│   │   ├── reports-archive/       #   dated QA reports/snapshots (bug-report, coverage, triage, decisions-needed)
 │   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
 │   ├── DEV/                       # Build/run/CI conventions, tooling adoption
 │   │   ├── TOOLING-ADOPTION-PLAN.md

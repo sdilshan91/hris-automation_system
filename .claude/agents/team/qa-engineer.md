@@ -130,7 +130,7 @@ For EACH user story, write test cases covering:
 You author IEEE-829 **markdown specs**; the **dev agents** bind them to **automated runners**. Keep the two
 in sync so the "0% executed" number becomes a real, rising metric.
 
-- **Runner ownership by test-type** (per [TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md)):
+- **Runner ownership by test-type** (per [TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md)):
 
   | Test type | Runner | Status |
   |---|---|---|

@@ -11,8 +11,8 @@ scope_decisions:
 
 # HRM SaaS — Automated Test Plan
 
-Companion to [BUG-REPORT-2026-06-19.md](./BUG-REPORT-2026-06-19.md) and
-[QA-COVERAGE-REPORT-2026-06-19.md](./QA-COVERAGE-REPORT-2026-06-19.md). Those established the
+Companion to [BUG-REPORT-2026-06-19.md](../reports-archive/BUG-REPORT-2026-06-19.md) and
+[QA-COVERAGE-REPORT-2026-06-19.md](../reports-archive/QA-COVERAGE-REPORT-2026-06-19.md). Those established the
 problem: **1,941 IEEE-829 specs, 0 executed; 0 E2E tests; unit suites mock cross-layer auth so a
 bug that 403s the entire admin UI shipped green.** This plan closes that gap.
 

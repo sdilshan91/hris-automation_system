@@ -10,7 +10,7 @@
 `[ ]` not-started · `[~]` in-progress · `[x]` done-clean · `[!]` done-with-findings · `[b]` blocked
 
 ## Scope (from the 348 currently-blocked TCs, 2026-07-01)
-- **A — needs CODE (out of scope here): ~56** — `[DEFERRED]` features + RLS (US-PLT-002) + BUG-097-gated FE-perf. Tracked in [docs/BA/STATUS.md](../BA/STATUS.md) QA-Surfaced Dev Backlog.
+- **A — needs CODE (out of scope here): ~56** — `[DEFERRED]` features + RLS (US-PLT-002) + BUG-097-gated FE-perf. Tracked in [docs/BA/STATUS.md](../../BA/STATUS.md) QA-Surfaced Dev Backlog.
 - **B — needs TEST SETUP (this plan): ~78** — scale seeds, 2nd instance, cross-browser, WS client.
 - **C — old/un-triaged: ~214** — reclassified by S1; the testable ones then flow into S2–S6.
 - **Caveat:** "unblock" = executable. Several will land **fail** on existing bugs (esp. BUG-003) — passing those still needs the code fixes (bucket A).

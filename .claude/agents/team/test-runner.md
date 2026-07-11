@@ -125,7 +125,7 @@ still fails, append the re-test evidence to the existing finding and leave it `O
 > xUnit + Testcontainers (needs Docker), Karma, Playwright **chromium/firefox/webkit**, **@axe-core/playwright**
 > (a11y), **Chrome DevTools MCP** (lighthouse + perf traces + memory), and **k6** (load) are all available —
 > execute the matching test-type. Still **NOT wired** → mark `blocked: tooling-not-wired`: **OWASP ZAP** (DAST)
-> and the **OpenAPI schema-diff contract gate**. See `docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md`.
+> and the **OpenAPI schema-diff contract gate**. See `docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md`.
 > If a browser MCP is disconnected at runtime, mark the UI/a11y/perf TC `blocked: <mcp>-down` (never fake it).
 
 ## Root-cause from the server logs (Serilog) — DO THIS for every FAIL / 5xx / unexpected status

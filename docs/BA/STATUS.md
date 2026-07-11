@@ -210,7 +210,7 @@
 
 ## Deferred-AC Reconciliation (2026-07-06) — `[x]`-done stories with UNBUILT acceptance criteria
 
-> Source: [docs/QA/COMPLETION-PLAN-2026-07-06.md](../QA/COMPLETION-PLAN-2026-07-06.md) **PART II** (Themes A–M).
+> Source: [docs/QA/COMPLETION-PLAN-2026-07-06.md](../QA/plans/archive/COMPLETION-PLAN-2026-07-06.md) **PART II** (Themes A–M).
 > These stories stay `[x]` — their **data-layer spine is built and wired** — but the listed ACs/FRs are
 > genuinely unimplemented (almost all *outward delivery* or *cross-module seams* stubbed before the dependency
 > existed and never rewired). This is a **status-integrity** annotation, not a re-open. Where a deferred AC is

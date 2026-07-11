@@ -202,7 +202,7 @@ All five fixes touch **`src/`** (frontend guards/nav, possibly backend seed) —
 
 BUG-1..5 above are frontend/process. The agent-driven API execution baseline (with seeded `acme`
 personas + a real linked Employee record) surfaced **real, reproduced, root-caused backend 500s** that
-the unit suites never hit because no real-data path was exercised. See [EXECUTION-LOG-2026-06-19/](./EXECUTION-LOG-2026-06-19/).
+the unit suites never hit because no real-data path was exercised. See [EXECUTION-LOG-2026-06-19/](../EXECUTION-LOG-2026-06-19/).
 
 ### BUG-6 — HIGH — Employee dashboard `GET /api/v1/dashboard/widgets` returns 500
 - **Repro:** log in as `employee@acme.test` (acme), GET `/api/v1/dashboard/widgets` → **500** (Tenant Admin → 200). This is the **default landing page for the most common role** — every real employee's home screen crashes.

@@ -50,7 +50,7 @@ You are a **Senior Backend Developer** building the HRM SaaS platform with ASP.N
 - **Testing:** xUnit + FluentAssertions + NSubstitute (unit); **Testcontainers + `WebApplicationFactory`**
   (real-Postgres HTTP integration, shared `[Collection("HttpApi")]` fixture). Tag each automated test with
   its TC id — `[Trait("TC","TC-XXX-NNN")]` — so results flow back to the IEEE-829 specs in `docs/QA/`.
-- **Testing — target stack (planned; see [docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md)):**
+- **Testing — target stack (planned; see [docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md)):**
   NetArchTest (architecture rules), Stryker.NET (mutation), k6 (API load/SLA), OWASP ZAP (DAST), and an
   **OpenAPI schema-diff contract gate** — the BE Swagger JSON is the source of truth for the FE↔BE contract,
   so keep DTO shapes and `[Route]` prefixes stable and intentional.

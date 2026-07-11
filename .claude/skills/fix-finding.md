@@ -12,7 +12,7 @@ It edits `src/`, adds a guarding regression test, and opens a PR — it is the *
 process**, explicitly **outside** the report-only test loop (`/test-all`, `/test-us`, `@test-runner`).
 
 > Fixing is deliberate: this skill exists because no existing driver accepts a `BUG-###`. See the
-> remediation plan `docs/QA/BLOCKED-TC-REMEDIATION-PLAN-2026-07-02.md` (§4b) for why.
+> remediation plan `docs/QA/plans/archive/BLOCKED-TC-REMEDIATION-PLAN-2026-07-02.md` (§4b) for why.
 
 ## Usage
 

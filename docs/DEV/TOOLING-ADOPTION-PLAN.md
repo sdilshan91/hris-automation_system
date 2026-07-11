@@ -103,7 +103,7 @@ bug is most dangerous. Scheduled (Karma mutation runs are slow). *Owner:* `@test
 ## Wave 4 — Decision-gated bets (planned, but each has an explicit gate)
 
 > **Governance update (2026-07-08) — HRM ships as a hosted SaaS.** We host + are liable for customer
-> HR PII, so several gates now resolve. See [ADR — SaaS data-governance posture](vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md):
+> HR PII, so several gates now resolve. See [ADR — SaaS data-governance posture](../vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md):
 > - **Sentry (#11): DECIDED → self-hosted GlitchTip** (Sentry-compatible) + SDK PII scrubbing — no
 >   third-party ingestion of PII-bearing exceptions.
 > - **Trivy (#15): ADOPT** — as the hosting provider the supply-chain risk is ours.

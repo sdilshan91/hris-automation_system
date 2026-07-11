@@ -1,7 +1,7 @@
 # QA Coverage Plan — Full Testing (prioritized)
 
-> Created 2026-06-27. Companion to [TEST-STATUS.md](TEST-STATUS.md) (per-story state) and
-> [TEST-FINDINGS.md](TEST-FINDINGS.md) (defect ledger). **Report-only** — executing test cases and
+> Created 2026-06-27. Companion to [TEST-STATUS.md](../TEST-STATUS.md) (per-story state) and
+> [TEST-FINDINGS.md](../TEST-FINDINGS.md) (defect ledger). **Report-only** — executing test cases and
 > logging findings; never fixes code. Tracks the remaining full-testing campaign by phase.
 
 ## Reality check
@@ -9,7 +9,7 @@
   all executed at least once — `[!]` (findings logged) / a few `[x]` clean. ~70 stories.
 - **Zero coverage (16 stories):** Onboarding (6), Notifications & Audit (5), Reports & Analytics (5).
 - **SSO epic (US-AUTH-011..016):** shipped in PR #112, **not yet in the tracker**; only AC-1/2/5/7 of
-  US-AUTH-011 live-verified (2026-06-26). See [authentication/SSO-EPIC-STATUS-AND-TODO.md](../BA/authentication/SSO-EPIC-STATUS-AND-TODO.md).
+  US-AUTH-011 live-verified (2026-06-26). See [authentication/SSO-EPIC-STATUS-AND-TODO.md](../../BA/authentication/SSO-EPIC-STATUS-AND-TODO.md).
 - Findings backlog: **BUG-003 (CRIT, cross-tenant write) still OPEN**; ~149 CRIT/HIGH mentions.
 
 ## Phases & priority
@@ -46,11 +46,11 @@ green), and the **k6 perf harness** (Track B — see [INTEGRATION-PERF-TEST-PLAN
 - **P3c — Functional / a11y / integration with seeded data** — `[~]` STARTED 2026-06-30, **FE-blocks first** (~97 TCs: 55 a11y deep-arms + 42 FE-render-perf).
   - **P3c-a11y (55, testable now)** — Playwright keyboard (Tab/focus/Enter/Space/Arrow) + responsive (resize 360px, no h-scroll) + ARIA/SR (a11y snapshot, live regions). ~10 need a data state. By module: payroll 10, attendance 8, recruitment 7, performance 7, leave 7, onboarding 6, core-hr 4, notif/auth 2, reports/admin 1.
   - **P3c-FE-perf (42, partial)** — Chrome DevTools traces. **LIMITATION:** Lighthouse *navigation* mode (FCP/TTI/LCP) reloads → logs out (BUG-097) on authenticated pages, so cold-load FCP/TTI on feature pages stays blocked-on-BUG-097; soft-nav render timing + interaction fps ARE measurable. By module: core-hr 18, admin 5, payroll/recruitment 4, leave 3, perf/notif/auth 2, attendance/reports 1.
-  - **P3c-a11y progress 2026-06-30/07-01:** done core-hr, payroll, attendance, leave, notifications, reports (+partial recruitment/perf/onboarding). suite a11y-blocked **55→38**. **6 net-new = systemic CLASSES: BUG-108** (aria-hidden focusable upload), **BUG-109** (hand-rolled overlays missing focus-trap/inert/escape — recurs on EVERY module's drawers/modals), **BUG-110** (role-misuse tablist), **BUG-111** (missing aria-live counter), **BUG-112** (non-focusable scroll region) + systemic **BUG-096** (contrast). All 6 → fixes in [STATUS.md](../BA/STATUS.md) QA-Surfaced Dev Backlog. **Last 2 batches = 0 net-new** → classes fully characterized; remaining ~31 a11y TCs are systemic re-confirmation + data-gap-blocked (recruitment 0-applicants / performance sparse). **STOPPED the per-TC grind** — actionable output (6 systemic a11y fixes) captured; re-test the remainder after the fixes land.
+  - **P3c-a11y progress 2026-06-30/07-01:** done core-hr, payroll, attendance, leave, notifications, reports (+partial recruitment/perf/onboarding). suite a11y-blocked **55→38**. **6 net-new = systemic CLASSES: BUG-108** (aria-hidden focusable upload), **BUG-109** (hand-rolled overlays missing focus-trap/inert/escape — recurs on EVERY module's drawers/modals), **BUG-110** (role-misuse tablist), **BUG-111** (missing aria-live counter), **BUG-112** (non-focusable scroll region) + systemic **BUG-096** (contrast). All 6 → fixes in [STATUS.md](../../BA/STATUS.md) QA-Surfaced Dev Backlog. **Last 2 batches = 0 net-new** → classes fully characterized; remaining ~31 a11y TCs are systemic re-confirmation + data-gap-blocked (recruitment 0-applicants / performance sparse). **STOPPED the per-TC grind** — actionable output (6 systemic a11y fixes) captured; re-test the remainder after the fixes land.
   - **FE-render-perf (42): blocked-on-BUG-097** — cold-load FCP/TTI on authenticated pages needs a full navigation that logs you out; not cleanly measurable until BUG-097 is fixed.
   - **P3c-functional STARTED 2026-07-01 — Core HR (59 blocked worked): 130P/36F/49B/9draft. NET-NEW: BUG-113 HIGH** (employee Create/Edit API has no `LocationId` → employee↔location linking impossible, per-location count always 0, deactivation-guard dead code), **BUG-114 MED** (tenant storage quota never enforced), **ISSUE-218 MED** (reporting-manager not on employee GET). Higher yield than a11y (real business-logic gaps). **⚠ DATA-SAFETY:** functional write-flows mutate REAL acme rows (BUG-093 blocks throwaway-employee creation, so status/profile tests use real employees); truncation left EMP-0030 mutated twice → manually restored (acme back to 34 total / 27 active baseline). **Continued on a THROWAWAY `fntest` tenant** (clean EMP-NNNN → creates work, dropped after — zero acme risk, verified contained): **Leave 108P/22F/35B · Auth 33P/7F/9B/6draft · Admin 60P/8F/15B — all 0 NET-NEW** (real fails map to known BUG-037/086/040/004/104 etc.; business rules mostly hold). **Pattern: functional net-new was front-loaded in Core HR (BUG-113/114/218); 3 subsequent modules = 0 net-new.** fntest dropped clean. **STOPPED the functional/integration grind** — remaining ~27 functional + ~31 integration TCs would predictably be 0 net-new confirmation; best re-run after the fixes land. Integration also largely overlaps the Track A suite (518 ITs green).
 
-**Hard-blocked — NOT testable, need DEV (tracked in [docs/BA/STATUS.md](../BA/STATUS.md)):**
+**Hard-blocked — NOT testable, need DEV (tracked in [docs/BA/STATUS.md](../../BA/STATUS.md)):**
 - **97** `[DEFERRED]` features (monitoring error-rate/SLA KPIs, PDF exports, magic-link email, async/Hangfire paths…).
 - **19** PostgreSQL RLS / at-rest-encryption → **US-PLT-002** (env precondition now met; needs the migration).
 

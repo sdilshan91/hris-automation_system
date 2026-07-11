@@ -28,7 +28,7 @@ Postgres-specific defects that the InMemory unit tests mask (the **BUG-068 class
 |---|---|---|---|
 | **A0 — Docker up** | Daemon ready | Start Docker Desktop; wait for `docker ps` to succeed; pull `postgres` image if needed | `docker ps` returns 0 |
 | **A1 — Run suite** | Execute integration tests | `dotnet test src/backend/HRM.sln --filter "FullyQualifiedName~Integration"` (no debugger) | Suite runs to completion (containers spin up) |
-| **A2 — Triage** | Classify results | For each FAIL: real defect vs test-env issue; correlate via Serilog/exception. Log genuine defects to [TEST-FINDINGS.md](TEST-FINDINGS.md) (next free IDs) | Every failure has a verdict + (if real) a finding ID |
+| **A2 — Triage** | Classify results | For each FAIL: real defect vs test-env issue; correlate via Serilog/exception. Log genuine defects to [TEST-FINDINGS.md](../TEST-FINDINGS.md) (next free IDs) | Every failure has a verdict + (if real) a finding ID |
 | **A3 — Reconcile ledger** | Update blocked TCs | Map results to the markdown TCs that were `[b]` "needs Docker/Testcontainers"; flip to `[x]`/`[!]`; note in TEST-STATUS.md | Docker-blocked TCs re-classified |
 
 > **Note:** This validates the **integration layer**. RLS-specific TCs (US-PLT-002) need the RLS
@@ -85,7 +85,7 @@ Track A first (smaller, surfaces real Postgres bugs fast); Track B second (more 
 ---
 
 ## ✅ Plan complete (2026-06-30)
-**Track A:** 518/518 integration tests pass on real Postgres; BUG-068 appears resolved (verify the live repro before formally closing). **Track B:** perf harness built (`perf/`), 5k-employee `perf` tenant load-tested and torn down clean; **BUG-095** + **ISSUE-203** logged to [TEST-FINDINGS.md](TEST-FINDINGS.md). Per report-only policy, nothing was fixed — these findings are input to a separate, human-decided fix cycle.
+**Track A:** 518/518 integration tests pass on real Postgres; BUG-068 appears resolved (verify the live repro before formally closing). **Track B:** perf harness built (`perf/`), 5k-employee `perf` tenant load-tested and torn down clean; **BUG-095** + **ISSUE-203** logged to [TEST-FINDINGS.md](../TEST-FINDINGS.md). Per report-only policy, nothing was fixed — these findings are input to a separate, human-decided fix cycle.
 
 ---
 

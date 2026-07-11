@@ -5,7 +5,7 @@
 > sets a downstream fix-state — it only ever appends an `OPEN` finding.
 >
 > Historical baseline defects from the 2026-06-19 manual run live in `BUG-STATUS.md` +
-> `BUG-REPORT-2026-06-19.md`. **This file is the forward ledger** for the automated testing loop.
+> `reports-archive/BUG-REPORT-2026-06-19.md`. **This file is the forward ledger** for the automated testing loop.
 >
 > **Type:** `BUG` broken vs spec · `ISSUE` contract/behavioral nit, drift, flaky · `ENH` improvement (not a defect)
 > **Severity:** `CRIT` blocks core use · `HIGH` breaks a primary flow · `MED` partial/contained · `LOW` cosmetic/defense-in-depth
@@ -19,7 +19,7 @@
 | ISSUE | 103 | 0 | 103 |
 | ENH | 9 | 0 | 9 |
 
-> **Reconciliation note (2026-07-04, Wave 0 of `FIX-FINDINGS-PLAN-2026-07-04.md`):** the table above is the
+> **Reconciliation note (2026-07-04, Wave 0 of `plans/archive/FIX-FINDINGS-PLAN-2026-07-04.md`):** the table above is the
 > historical snapshot and is **not** current. A fix campaign (PRs **#114–#136**, "Phase A/B/D") landed ~38
 > fixes, most already marked RESOLVED inline. This pass flipped **8 remaining stale entries** that had merged
 > fixes but still read OPEN: **BUG-099** (#132), **BUG-020 / BUG-021 / ISSUE-026** + the three **BUG-003
@@ -56,7 +56,7 @@
 > full merged-tree suite is green. **Still genuinely OPEN (not fixed):** ISSUE-243 (vacancy is_deleted — needs a
 > repro), ISSUE-244 (resume-blob-key LOW), BUG-058 (resume magic-byte) — plus the LOW cosmetic tail and the
 > decision/feature-blocked items. **The larger completeness backlog** (unbuilt ACs across ~25 done stories, net-new
-> capabilities) is catalogued in [COMPLETION-PLAN-2026-07-06.md](COMPLETION-PLAN-2026-07-06.md) Part II, not here.
+> capabilities) is catalogued in [COMPLETION-PLAN-2026-07-06.md](plans/archive/COMPLETION-PLAN-2026-07-06.md) Part II, not here.
 
 > 2026-06-30 iso-fixture admin-isolation/lifecycle run (14 TCs): +BUG-106 (suspended-tenant admin 451-exemption broken, HIGH), +BUG-107 (impersonation FR-6 destructive-op block bypassed, HIGH), +ISSUE-217 (terminating data-export wrongly 403, MED). Cross-tenant leak via foreign `X-Tenant-Subdomain` header re-confirmed as the existing systemic **BUG-003** (not re-filed).
 
@@ -621,7 +621,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-021 — Job title `gradeId` is accepted with NO validation: any arbitrary GUID is persisted as the grade link (no SalaryGrade subsystem / FK exists) — AC-4 grade-link integrity unverifiable
-- **Type / Severity / Status:** ISSUE · MED · DEFERRED (feature-blocked: no SalaryGrade entity — see PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
+- **Type / Severity / Status:** ISSUE · MED · DEFERRED (feature-blocked: no SalaryGrade entity — see reports-archive/PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-005 · TC-CHR-037 (create job title with salary-grade link; AC-4)
 - **Title:** `POST /api/v1/tenant/job-titles` (and PUT) stores the `gradeId` field verbatim with **zero validation** — no existence check, no tenant-scope check, no FK constraint. A wholly fabricated GUID (`00000000-0000-0000-0000-0000000000ff`) is accepted and returned on the created record (HTTP 201). There is no SalaryGrade entity, DbSet, controller, or `grade_id` foreign key anywhere in the backend, so AC-4 ("link to an existing salary grade") cannot be satisfied or verified, and any value the client sends becomes a dangling reference.
@@ -2232,7 +2232,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 > Routes: `/api/v1/tenant/performance/*` (NOT `/api/v1/performance/*` as the TCs spec — FE-spec drift, see ISSUE-100). Single-goal POST (no batch). Permissions: writes/reads admit `Performance.SetGoal.Team` (direct manager) OR `Performance.SetGoal.All` (HR override); BR-4 direct-report check + BR-1/AC-5 window gate + BR-2 count + ≤100% weight all enforced in `GoalService`. Personas: `manager@acme.test` (SetGoal.Team → EMP-MGR01, reports John Doe EMP-0001 + Et Contract EMP-0014), `hr@acme.test` (SetGoal.All, NOT employee-linked), `tenantadmin@acme.test` (SetGoal.All). Seeded 3 acme cycles (QA-PRF001-OPEN/CLOSED/FUTURE) + 1 techoneglobal cycle for isolation; all residue cleaned (see report). 16 TCs executed: 10 PASS / 4 FAIL / 2 BLOCKED.
 
 ### BUG-056 — AC-3 / FR-3 "weights must total exactly 100%" is NOT enforced server-side: an under-allocated (<100%) goal set persists silently and the AC-3 error string is never emitted
-- **Type / Severity / Status:** BUG · MED · DEFERRED (feature-blocked: no goal-set finalize seam — see PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
+- **Type / Severity / Status:** BUG · MED · DEFERRED (feature-blocked: no goal-set finalize seam — see reports-archive/PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-02 (also weakens the AC-2 "weights summing to 100%" guarantee)
 - **Title:** AC-3/FR-3 require that goal weights for an employee+cycle sum to **exactly** 100%, with the validation error "Goal weights must total 100%" on violation. The server only enforces the **upper** bound (running total > 100% → 422 `weight_exceeds_100`); it never enforces the lower bound. A manager can create goals summing to 95% (or any value < 100%) and every create returns 201 — the employee is left with an under-weighted goal set indefinitely, and the AC-3 message "Goal weights must total 100%" is **never produced by any endpoint**. The exact-100 invariant is delegated entirely to the (currently-down, untestable) UI via the `EmployeeGoalsDto.TotalWeight` rollup.
@@ -4875,7 +4875,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — no crash and the pages work when reached, but the bulk of the Attendance module (regularization request/approve, shift management, overtime, monthly summary, late policy, payroll reconciliation) is effectively undiscoverable in the UI, so end users cannot reach these features through normal navigation. Not CRIT/HIGH only because clock-in (the daily core action) and the HR dashboard are reachable.
 
 ### ISSUE-209 — Public careers page + apply form not exercisable for acme: public-careers is disabled, so an Open vacancy is invisible to the anonymous careers list/detail
-- **Type / Severity / Status:** ISSUE · MED · WONTFIX-CODE (DATA/tenant-config test-blocker, not a defect — enable acme PublicCareersEnabled; see PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
+- **Type / Severity / Status:** ISSUE · MED · WONTFIX-CODE (DATA/tenant-config test-blocker, not a defect — enable acme PublicCareersEnabled; see reports-archive/PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 - **Layer:** DATA (tenant config) / FE-test-blocker
 - **Module / US / TC:** Recruitment / US-REC-001, US-REC-002 / TC-REC-002-13 (apply-form a11y/responsive), blocks public side of TC-REC-001-12
 - **Title:** On `http://acme.myhrm.org:4200/careers` the public careers page renders but shows "No open positions"; the anonymous vacancy-detail `/careers/{openId}` shows "This position is no longer available" — even though acme has **two Open vacancies** (VAC-2026-0027, VAC-2026-0028) visible in the authenticated admin list. The public application form (drag-drop upload, the subject of TC-REC-002-13) therefore never mounts and cannot be a11y/responsive-tested.

@@ -5,7 +5,7 @@
 > ISSUE-268 (#244), ISSUE-269 (#246), the critical ISSUE-277 GUC-interceptor rewrite + roles.sql fix (#247/#248, RLS
 > flip re-validated **GO**), and the ISSUE-275 test-flake stabilization (#249). Remaining/deferred items (the RLS ops
 > flip, the long-tx tail, deferred FE, and the broader findings backlog) carry forward to the new plan.
-> **→ Active plan: [`COMPLETION-PLAN-2026-07-11.md`](COMPLETION-PLAN-2026-07-11.md).**
+> **→ Active plan: [`COMPLETION-PLAN-2026-07-11.md`](../COMPLETION-PLAN.md).**
 
 > Supersedes `COMPLETION-PLAN-2026-07-06.md` (now CLOSED — P1–P3 + P4-011a shipped). This plan carries the
 > remaining work: the rest of the workflow runtime, Training & Benefits, and the deferred infra hardening.

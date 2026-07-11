@@ -158,7 +158,7 @@
 
 > **Corrected 2026-06-27** — the prior 67/1/21 split was stale (it predated the modules 1–8 test passes).
 > Per-module sections above are the source of truth. Remaining zero-coverage: Onboarding, Notifications,
-> Reports. See [QA-COVERAGE-PLAN.md](QA-COVERAGE-PLAN.md) for the prioritized campaign.
+> Reports. See [QA-COVERAGE-PLAN.md](plans/QA-COVERAGE-PLAN.md) for the prioritized campaign.
 
 ## 1b. Enterprise SSO epic (shipped PR #112 — now in scope for QA)
 > Was excluded "until shipped"; PR #112 shipped the POC. US-AUTH-012/016 not built yet (test once implemented).

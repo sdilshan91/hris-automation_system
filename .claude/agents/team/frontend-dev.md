@@ -45,7 +45,7 @@ You are a **Senior Frontend Developer** building the HRM SaaS platform with Angu
 - **Testing:** Jasmine + Karma (unit/component — note: Karma is **deprecated**, a Jest/Web-Test-Runner
   migration is on the roadmap), **Playwright** (E2E). Tag each automated test with its TC id —
   `test('@TC-XXX-NNN …')` — so results flow back to the IEEE-829 specs in `docs/QA/`.
-- **Testing — target stack (planned; see [docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md)):**
+- **Testing — target stack (planned; see [docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md](../../../docs/QA/plans/TEST-COVERAGE-PLAN-2026-06-23.md)):**
   @axe-core/playwright (WCAG a11y), Playwright firefox/webkit projects (cross-browser), StrykerJS (mutation),
   Lighthouse (page-perf budgets). FE models/URLs must match the BE Swagger contract — never diverge silently.
 - **Animations:** Angular Animations + Tailwind transitions

@@ -9,7 +9,7 @@ target: running local stack (FE http://localhost:4200, API http://localhost:5000
 # QA Execution Baseline (2026-06-19) — before any bug fixes
 
 Purpose: record the **actual delivered state** of the system by executing prioritized test cases
-against the running app, BEFORE fixing the bugs in [BUG-REPORT-2026-06-19.md](../BUG-REPORT-2026-06-19.md).
+against the running app, BEFORE fixing the bugs in [BUG-REPORT-2026-06-19.md](../reports-archive/BUG-REPORT-2026-06-19.md).
 This is the "before" snapshot; re-run after fixes for the "after".
 
 ## Methodology
@@ -87,7 +87,7 @@ Only surfaced because we seeded a REAL employee + real data — empty-data happy
   tenant-persona behavior validated at the API layer only.
 - Designed-TC ↔ catalog **permission drift** is pervasive — feeds the "specs ≠ runnable" coverage finding.
 
-Bugs are catalogued in [../BUG-REPORT-2026-06-19.md](../BUG-REPORT-2026-06-19.md) (BUG-6/7/8 addendum).
+Bugs are catalogued in [../BUG-REPORT-2026-06-19.md](../reports-archive/BUG-REPORT-2026-06-19.md) (BUG-6/7/8 addendum).
 **Next:** fix BUG-6/7 (one date-kind class) + BUG-1, then re-run this baseline for the "after" snapshot.
 
 ## Cross-cutting findings (wave 1)
