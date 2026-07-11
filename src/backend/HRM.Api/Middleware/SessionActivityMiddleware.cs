@@ -62,6 +62,18 @@ public sealed class SessionActivityMiddleware
         // Update the timestamp and record the time
         _lastUpdateTimes[sessionId.Value] = now;
 
+        // ISSUE-268: RLS-on GUC gap. The fire-and-forget Task runs on a detached fresh scope whose AppDbContext gets
+        // no app.current_tenant GUC from the caller, so under RLS-on the RLS-policy-bearing refresh_tokens UPDATE
+        // would silently affect 0 rows (IgnoreQueryFilters does NOT bypass DB RLS). Capture the resolved tenant id
+        // HERE on the request scope (AsyncLocal/AmbientTenant does not reliably flow into a detached Task.Run) so we
+        // can route the update through ITenantJobRunner in the fresh scope. System/unresolved contexts fall back to
+        // the legacy direct call (the platform-admin session case, which the runner cannot cleanly tenant-scope).
+        var tenantContext = context.RequestServices.GetService<ITenantContext>();
+        Guid? scopeTenantId = tenantContext is { IsResolved: true, IsSystemContext: false } tc && tc.TenantId != Guid.Empty
+            ? tc.TenantId
+            : null;
+        var scopeSubdomain = tenantContext?.Subdomain ?? string.Empty;
+
         // Fire-and-forget to avoid adding latency to the request
         // The update is non-critical; if it fails, the next request will retry
         _ = Task.Run(async () =>
@@ -74,7 +86,21 @@ public sealed class SessionActivityMiddleware
 
                 using var scope = scopeFactory.CreateScope();
                 var scopedAuthService = scope.ServiceProvider.GetRequiredService<IAuthService>();
-                await scopedAuthService.UpdateSessionActivityAsync(sessionId.Value);
+
+                if (scopeTenantId is { } tenantId)
+                {
+                    // Route through the runner so the GUC is set on the fresh scope's AppDbContext (the same scoped
+                    // instance AuthService uses). No-ops under Rls:Enabled=false / InMemory — behaviour unchanged.
+                    var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
+                    await runner.RunForTenantAsync(
+                        tenantId, scopeSubdomain,
+                        ct => scopedAuthService.UpdateSessionActivityAsync(sessionId.Value, ct),
+                        CancellationToken.None);
+                }
+                else
+                {
+                    await scopedAuthService.UpdateSessionActivityAsync(sessionId.Value);
+                }
             }
             catch
             {

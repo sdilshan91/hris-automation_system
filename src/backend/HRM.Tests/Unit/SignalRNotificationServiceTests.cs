@@ -9,10 +9,13 @@
 using FluentAssertions;
 using HRM.Api.Hubs;
 using HRM.Api.Notifications;
+using HRM.Application.Common.Interfaces;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -30,6 +33,12 @@ public sealed class SignalRNotificationServiceTests
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => TestDbContextFactory.Create(_tenantId, _dbName));
+        // ISSUE-268: the service now resolves ITenantJobRunner from its fresh scope to route the notification write
+        // through the tenant GUC under RLS-on. On the InMemory provider the runner no-ops (IsRelational() is false),
+        // so these registrations are behaviour-neutral here — they just satisfy the new scoped dependency.
+        services.AddScoped<ITenantContext, TenantContext>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
         var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IServiceScopeFactory>();
     }
