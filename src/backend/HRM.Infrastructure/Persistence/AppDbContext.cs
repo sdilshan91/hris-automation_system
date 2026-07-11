@@ -176,6 +176,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<CourseEnrollment> CourseEnrollments => Set<CourseEnrollment>();
     public DbSet<BenefitPlan> BenefitPlans => Set<BenefitPlan>();
 
+    // US-TRN-003: benefit eligibility rules + employee enrollments (tenant-scoped).
+    public DbSet<BenefitEligibilityRule> BenefitEligibilityRules => Set<BenefitEligibilityRule>();
+    public DbSet<BenefitEnrollment> BenefitEnrollments => Set<BenefitEnrollment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -642,6 +646,13 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-TRN-002 (AC-8, FR-6): tenant isolation for benefit plans.
         modelBuilder.Entity<BenefitPlan>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-TRN-003 (AC-9, FR-8): tenant isolation for eligibility rules + enrollments.
+        modelBuilder.Entity<BenefitEligibilityRule>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        modelBuilder.Entity<BenefitEnrollment>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

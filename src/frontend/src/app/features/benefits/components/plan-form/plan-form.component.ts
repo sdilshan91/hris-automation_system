@@ -19,6 +19,7 @@ import {
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { BenefitService } from '../../services/benefit.service';
+import { EligibilityRulesComponent } from '../eligibility-rules/eligibility-rules.component';
 import {
   IBenefitPlan,
   ICreateBenefitPlan,
@@ -40,7 +41,7 @@ import {
 @Component({
   selector: 'app-plan-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, EligibilityRulesComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="form-container">
@@ -249,6 +250,13 @@ import {
           </button>
         </div>
       </form>
+
+      <!-- Eligibility rules (US-TRN-003) — only for a persisted plan. -->
+      @if (plan(); as p) {
+        <div class="px-6 pb-6">
+          <app-eligibility-rules [planId]="p.id" />
+        </div>
+      }
     </div>
   `,
   styles: [`

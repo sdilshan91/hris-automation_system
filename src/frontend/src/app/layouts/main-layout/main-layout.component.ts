@@ -908,6 +908,15 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      // US-TRN-003: Employee self-service benefit enrollment. Gated on the
+      // self permission ONLY — matching the /benefits/my-benefits child route
+      // guard so nav visibility == route access (ISSUE-210).
+      label: 'My Benefits',
+      route: '/benefits/my-benefits',
+      permission: 'Benefits.View.Own',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.661 2.237a.531.531 0 0 1 .678 0 11.947 11.947 0 0 0 7.078 2.749.5.5 0 0 1 .479.425c.069.52.104 1.05.104 1.59 0 5.162-3.26 9.563-7.834 11.256a.48.48 0 0 1-.332 0C4.923 16.549 1.66 12.148 1.66 6.986c0-.54.035-1.07.104-1.59a.5.5 0 0 1 .48-.425 11.947 11.947 0 0 0 7.417-2.734Zm4.502 5.771a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
       // US-ADM-005: Tenant Admin user & role-assignment management.
       label: 'Users',
       route: '/admin/users',
