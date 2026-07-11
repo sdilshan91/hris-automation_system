@@ -65,12 +65,27 @@ restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatev
 - [ ] Dormant policies present on every tenant table (coverage-guard test green).
 - [ ] Every Hangfire job classified privileged-vs-GUC and wrapped/routed accordingly.
 - [ ] Full isolation + reconciler suites green on the target Postgres; rollback rehearsed.
-- [ ] **[MED — follow-up 3b]** long-running by-id jobs (payslips / data-exports / payroll runs) hold ONE
-      transaction for the whole job under RLS via `RunForTenantAsync`; for very long runs consider a
-      set-GUC-per-short-unit variant so a single transaction doesn't span the entire batch.
-- [ ] **[LOW — follow-up 3b]** service-body DI-scope audit: confirm no per-tenant service resolves a
-      DbContext outside the request/job scope that sets the GUC.
-- [ ] **[3b]** CI RLS job wired (postgres service container, not Testcontainers).
+- [ ] **[MED — BLOCKER, ISSUE-268]** notification persistence writes on a FRESH DI scope
+      (`SignalRNotificationService.cs:63`, `RealNotificationDispatcher.cs:82`) route to `hrm_app` with NO
+      GUC (the runner/request GUC is tx-local on a different connection) → strict `WITH CHECK` rejects the
+      INSERT fail-closed. Under RLS-on this silently drops payroll/HR notifications AND falsely fails HR
+      report exports, on **both** the job and normal HTTP paths. **Fix before the flip** + add an RLS-on
+      test of the DI notification chain (currently untested). See `test-cases/TEST-FINDINGS.md#ISSUE-268`.
+- [ ] **[MED — ISSUE-269]** long-running payslip render/email jobs hold ONE GUC transaction for the whole
+      batch (heavy non-DB PDF-render / SMTP work sits idle-in-transaction). Restructure
+      `GeneratePayslipsJob` + `SendPayslipEmailsJob` to set-GUC-per-short-unit (read-tx → work outside tx →
+      write-tx); **keep `ProcessPayrollRunJob` atomic** (add `statement_timeout` + monitoring instead);
+      `DataExport`/`HrReportExport` low-frequency → defer. See `TEST-FINDINGS.md#ISSUE-269`.
+- [x] **[LOW — 3b, DONE 2026-07-11]** service-body DI-scope audit: the five wrapped per-tenant services are
+      clean (use the injected scoped DbContext); the only fresh-scope hazard is the notification writers →
+      folded into ISSUE-268 above.
+- [x] **[3b, RESOLVED 2026-07-11]** CI RLS coverage: NOT a gap — `ci-gate.yml`'s `backend` job runs the full
+      unfiltered `dotnet test` on `ubuntu-latest`, which executes the RLS isolation + reconciler
+      Testcontainers suites (Docker available there). A separate postgres-service-container job is NOT
+      required for coverage; the backend gate does hard-require Docker on the runner (ci-gate triggers on
+      PRs into `main` only).
 
-These follow-ups are tracked for **increment 3b** (the CI RLS job + long-job GUC granularity); 3a leaves
-RLS **ready, proven, and reversible** with `Rls:Enabled` committed **false**.
+These follow-ups are tracked for **increment 3b**; 3a leaves RLS **ready, proven, and reversible** with
+`Rls:Enabled` committed **false**. **The 2026-07-11 readiness audit resolved the CI + DI-scope items and
+surfaced ISSUE-268 as a real flip-blocker** — do ISSUE-268 (and ideally ISSUE-269) as a dedicated flip-prep
+story before setting `Rls:Enabled=true`.

@@ -2,9 +2,16 @@ name: CI Gate
 
 # Required-status-check gate for PRs into main.
 # Runs the SAME verify gate the /implement-all loop runs locally:
-#   backend  -> dotnet build + dotnet test  (EF Core InMemory; no DB service needed)
+#   backend  -> dotnet build + dotnet test
 #   frontend -> npm run build + ng test     (Karma + headless Chrome)
 # No Anthropic API / secrets required — this is free CI (GitHub Actions minutes only).
+#
+# NOTE: `dotnet test` runs the FULL suite unfiltered, which includes ~45 Testcontainers
+# classes (real Docker PostgreSQL 17), among them the RLS isolation + reconciler suites.
+# So this backend job HARD-REQUIRES Docker on the runner (fine on GitHub `ubuntu-latest`,
+# where Testcontainers works out of the box). It is NOT "EF Core InMemory, no DB needed" —
+# the RLS Testcontainers tests already run here, so no separate RLS service-container job
+# is required (see Rls/README.md §3b).
 
 on:
   pull_request:
