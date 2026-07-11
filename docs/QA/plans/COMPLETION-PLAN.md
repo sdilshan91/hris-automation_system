@@ -11,7 +11,8 @@
 
 | Date | Event | Full snapshot |
 |------|-------|---------------|
-| **2026-07-11** | **Current active plan.** Rolled over from 07-10 (all it carried shipped). Rebuilt from a full findings/ledger/RLS survey → P0 ledger reconcile + missing TC suites … P7 LOW tail (body below). | _(this file)_ |
+| **2026-07-11 (b)** | **Dev-plan execution refresh.** Ran the P0 triage-verify pass — reconciliation confirmed the **14 open HIGH** figure (heading-by-heading ledger parse); flagged BUG-003/086/002/005 as RESOLVED-token-but-body-conflict (re-verify). Added the **📊 Item-wise Status Tracker** (below) as the execution ledger; began executing P0→P7 one branch+PR per item. | _(this file)_ |
+| **2026-07-11 (a)** | **Current active plan.** Rolled over from 07-10 (all it carried shipped). Rebuilt from a full findings/ledger/RLS survey → P0 ledger reconcile + missing TC suites … P7 LOW tail (body below). | _(this file)_ |
 | 2026-07-10 | CLOSED — shipped US-ADM-011 workflow runtime (011a/b/c), Training & Benefits (US-TRN-001/002/003), Redis command-spans, RLS flip-prep (ISSUE-268/269/277) + flake fix (ISSUE-275). | [archive/COMPLETION-PLAN-2026-07-10.md](archive/COMPLETION-PLAN-2026-07-10.md) |
 | 2026-07-06 | CLOSED — shipped P1–P3 (DataProtection, 8 findings, OTel/health/cache) + the RLS build (flag OFF) + US-ADM-011a + reconciliation Part II (Themes A–M). | [archive/COMPLETION-PLAN-2026-07-06.md](archive/COMPLETION-PLAN-2026-07-06.md) |
 
@@ -33,6 +34,45 @@ The ledger holds **244 OPEN findings (14 HIGH · 78 MED · 152 LOW)**. Many LOW/
 be **stale** (fixed-but-not-re-verified, or test-env/persona artifacts). **Do a triage-verify pass on the HIGH/MED band
 first** (`/verify-fix` or a quick re-exec) before scheduling fixes — don't assume all 244 are live. Two ledgers are
 **stale and must be reconciled** (P0). Line anchors below are into `docs/QA/TEST-FINDINGS.md`.
+
+**Triage-verify result (2026-07-11b):** heading-by-heading reconciliation **confirms 14 genuinely-OPEN HIGH** (BUG-060-Payroll,
+071, 077, 078, 080, 082, 084, 097, 100, 113, 123, 124, 125, 243) — the P1 list stands. **Re-verify-before-trusting (RESOLVED
+token but body says "STILL PRESENT"):** **BUG-003 (CRIT** cross-tenant settings write — but memory's 2026-07-03 note says
+CLOSED via #119 `TenantAccessGuardMiddleware`, so body is likely stale), **BUG-086** (HIGH, Leave 'Accrued' enum 500 — dup of
+BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 lead P1.
+
+## 📊 Item-wise Status Tracker (execution ledger — update per branch+PR+merge)
+
+> Legend: `TODO` · `WIP` (branch cut) · `PR#nnn` (PR open) · `MERGED` · `VERIFIED` (post-merge re-test green) · `BLOCKED` ·
+> `PARKED` (decision/ops-gated). One row = one branch. Findings/IDs in parentheses. Keep this table authoritative;
+> re-sort as reality changes.
+
+| Item | Priority | Scope (findings/story) | Status | PR | Notes |
+|------|----------|------------------------|--------|----|-------|
+| P0-1 Reconcile ledgers | P0 | BA/STATUS.md + TEST-STATUS.md drift (ADM-011, TRN-001/002/003 shipped) | WIP | — | docs-only; branch docs/dev-plan-reconcile |
+| P0-2 Missing TC suites | P0 | TC-TRN-001/002/003, TC-ADM-011-*, US-NTF-006 delivery + ISSUE-273 | TODO | — | qa-engineer |
+| P1-0 Re-verify body-conflicts | P1 | BUG-003(CRIT)/086/002/005 | TODO | — | verify before fixing |
+| P1-1 RBAC payroll lockouts | P1 | BUG-060(Payroll)/071/077 | TODO | — | one role-bundle fix likely |
+| P1-2 OT overpay | P1 | BUG-078 (OT base EARNINGS→BASIC) | TODO | — | payroll correctness |
+| P1-3 Payroll audit completeness | P1 | BUG-080/082/084 | TODO | — | audit interceptor + jsonb search |
+| P1-4 Scale / SLA | P1 | BUG-123/124/125 | TODO | — | N+1 + query perf |
+| P1-5 FE session/contract | P1 | BUG-097/100/113/243 | TODO | — | Angular; 243=Perf routes |
+| P2-1 Notification delivery | P2/P3 | US-NTF-006: 13 LogOnly* → RealNotificationDispatcher (ISSUE-221/228/214) | TODO | — | biggest surface |
+| P2-2 MED clusters | P2 | ISSUE-195/BUG-120 RBAC-scope; audit gaps; payroll semantics; a11y; UTC; Redis | TODO | — | fan-out after P2-1 |
+| P2-3 Red FE base | P2 | ISSUE-245 (~26 pre-existing Angular spec fails) | TODO | — | do early — gates FE |
+| P3-1 ClamAV | P3 | AllowWithLogVirusScanner → ClamAvVirusScanner | TODO | — | security |
+| P3-2 JWT denylist | P3 | NoOpSessionRevoker → Redis denylist | TODO | — | security |
+| P3-3 Permission cache→Redis | P3 | InMemoryPermissionCache (NFR-2) | TODO | — | scale |
+| P3-4 PII at rest | P3 | US-PLT-005 pgcrypto (Recommendation/Pip/Budget) | TODO | — | plan-HIGH |
+| P4-1 RLS code finalize | P4 | US-PLT-002 code parts (prod flip = ops) | TODO | — | ISSUE-269 long-tx tail |
+| P5-1 US-ADM-012 | P5 | plan/module governance enforcement | TODO | — | net-new |
+| P5-2 US-PRF-011 | P5 | calibration workspace | TODO | — | net-new |
+| P5-3 US-PLT-004 | P5 | observability NFRs | TODO | — | net-new |
+| P5-4 SSO | P5 | US-AUTH-012/016 + 5 [b] SSO TCs | TODO | — | net-new; some ops-gated |
+| P6-1 Workflow viewer FE | P6 | ISSUE-272/267 (US-ADM-011 FR-12 UI) | TODO | — | BE-complete |
+| P6-2 Eligible-plans UI | P6 | ISSUE-271 (US-TRN-003 AC-8) | TODO | — | BE-complete |
+| P7-1 LOW tail | P7 | 82–152 LOW, batch by module | TODO | — | ISSUE-270/274, ChangeTracker.Clear tidy |
+| — ISSUE-021 / BUG-056 | park | SalaryGrade entity / goal-finalize seam | PARKED | — | decision-gated |
 
 ## ▶ Remaining work — priority order
 
