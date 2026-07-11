@@ -41,6 +41,11 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.16.0" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.16.0" />
+    <!-- Redis command-spans (plan §5): instruments the SHARED IConnectionMultiplexer used by IDistributedCache +
+         the SignalR backplane (registered in Program.cs, resolved from DI by AddRedisInstrumentation). Only the
+         1.x-beta line ships for this instrumentation; pinned to 1.16.0-beta.1 to match the OTel 1.16.0 core above.
+         The EF second-level cache uses its OWN provider-internal multiplexer and is NOT covered (see ISSUE-274). -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.16.0-beta.1" />
   </ItemGroup>
 
   <!-- P3 infra health probes (/health/live, /health/ready). Postgres readiness via AspNetCore.HealthChecks.Npgsql;
