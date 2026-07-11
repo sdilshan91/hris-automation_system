@@ -105,7 +105,16 @@ public sealed class WorkflowRuntimeConcurrencyPostgresTests : IAsyncLifetime
     private AppDbContext Db(ICurrentUser user) =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(_postgres.GetConnectionString(), n =>
-                n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+            {
+                n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
+                // ISSUE-275: match production (DependencyInjection.cs EnableRetryOnFailure(3)). Without it,
+                // DecideAsync's CreateExecutionStrategy is the NON-retrying default, so a transient Postgres
+                // timeout on the concurrent FOR UPDATE under full-suite container load throws instead of being
+                // retried (as prod would) — the sole remaining ISSUE-275 flake after the parallelism cap. The
+                // single-winner guarantee is unaffected (FOR UPDATE + the step-already-decided idempotency check
+                // hold across retries), so this is a faithfulness fix, not a weakening.
+                n.EnableRetryOnFailure(maxRetryCount: 3);
+            })
             .UseSnakeCaseNamingConvention()
             .AddInterceptors(new TenantInterceptor(_tc), new AuditInterceptor(user))
             .Options, _tc);
