@@ -694,9 +694,20 @@ public static class DependencyInjection
         {
             services.AddStackExchangeRedisCache(options =>
             {
-                options.Configuration = redisConnectionString;
                 options.InstanceName = configuration["Redis:InstanceName"] ?? "hrm:";
+                // Configuration is intentionally NOT set here; the ConnectionMultiplexerFactory below supplies the
+                // shared, OTel-instrumented multiplexer instead (RedisCacheOptions prefers the factory when set).
             });
+            // Route IDistributedCache onto the shared IConnectionMultiplexer registered by the API host
+            // (Program.cs AddSharedRedisMultiplexer) — so its Redis commands are covered by AddRedisInstrumentation
+            // and share the single connection pool. Configure<IConnectionMultiplexer> is LAZY: it runs only when
+            // RedisCacheOptions is materialized (i.e. when IDistributedCache/RedisCache is first built), so this
+            // never resolves the multiplexer unless the cache is actually used. NOTE: the only production host that
+            // sets a Redis connection string is HRM.Api, which registers the multiplexer; a Redis-configured non-API
+            // host (e.g. a tool) would also need to register IConnectionMultiplexer for the cache to build.
+            services.AddOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>()
+                .Configure<StackExchange.Redis.IConnectionMultiplexer>((o, mux) =>
+                    o.ConnectionMultiplexerFactory = () => Task.FromResult(mux));
         }
         else
         {

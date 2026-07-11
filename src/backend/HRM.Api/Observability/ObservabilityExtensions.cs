@@ -27,6 +27,11 @@ namespace HRM.Api.Observability;
 /// <c>OpenTelemetry.Instrumentation.EntityFrameworkCore</c> is still pre-release, so per the plan doc's
 /// "pick ONE DB span source" guidance we take the stable Npgsql one. Serilog is left untouched (file sink stays
 /// the QA root-cause log). Per-tenant enrichment / custom meters (plan §1.3/§1.6) are deferred to a later slice.</para>
+///
+/// <para><b>Redis command-spans</b> (plan §5) are added via <c>AddRedisInstrumentation()</c>, gated on Redis being
+/// configured. They cover the <b>shared</b> <c>IConnectionMultiplexer</c> — used by <c>IDistributedCache</c> and the
+/// SignalR backplane (registered in <c>Program.cs</c>). The EF second-level cache uses its own provider-internal
+/// multiplexer and is <b>NOT</b> covered (library limitation — see ISSUE-274).</para>
 /// </summary>
 public static class ObservabilityExtensions
 {
@@ -44,6 +49,13 @@ public static class ObservabilityExtensions
         }
         var useOtlp = !string.IsNullOrWhiteSpace(otlpEndpoint);
 
+        // Redis command-spans (plan §5) are gated on Redis being configured: AddRedisInstrumentation() resolves the
+        // shared IConnectionMultiplexer from DI (registered by Program.cs AddSharedRedisMultiplexer), which only
+        // exists when a Redis connection string is set. In dev/in-memory mode (no Redis) it must NOT be added, or it
+        // would try to resolve a missing multiplexer.
+        var redisConfigured = !string.IsNullOrWhiteSpace(
+            configuration.GetConnectionString("Redis") ?? configuration["Redis:ConnectionString"]);
+
         var serviceVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
 
         services.AddOpenTelemetry()
@@ -60,6 +72,13 @@ public static class ObservabilityExtensions
                     .AddHttpClientInstrumentation()
                     .AddSource("Npgsql")  // stable, built-in Npgsql DB spans
                     .AddSource("HRM.*");  // any future manual ActivitySources
+
+                // Redis command-spans for the SHARED multiplexer (IDistributedCache + SignalR backplane). Resolves
+                // the DI-registered IConnectionMultiplexer; only added when Redis is configured (see gate above).
+                if (redisConfigured)
+                {
+                    tracing.AddRedisInstrumentation();
+                }
 
                 if (useOtlp)
                 {

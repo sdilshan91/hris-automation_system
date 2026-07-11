@@ -4,6 +4,7 @@ using Hangfire.PostgreSql;
 using HRM.Api.Filters;
 using HRM.Api.Middleware;
 using HRM.Api.Observability;
+using HRM.Api.Redis;
 using HRM.Application.Common.Behaviors;
 using HRM.Infrastructure;
 using HRM.Infrastructure.Identity;
@@ -40,6 +41,17 @@ try
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", "HRM.Api");
     });
+
+    // ===== Shared Redis multiplexer (Redis command-spans, plan §5) =====
+    // Build ONE IConnectionMultiplexer (Redis-gated, fail-open) BEFORE AddInfrastructure + AddSignalR so both
+    // IDistributedCache and the SignalR backplane route through the same instance — which lets OTel's
+    // AddRedisInstrumentation (ObservabilityExtensions) emit command-spans for both and consolidates the pools.
+    // Returns null when no Redis connection string is configured (the shipped default) → in-memory fallbacks.
+    var sharedRedis = builder.Services.AddSharedRedisMultiplexer(builder.Configuration);
+    if (sharedRedis is not null)
+    {
+        Log.Information("Shared Redis multiplexer registered (IDistributedCache + SignalR backplane + OTel instrumentation).");
+    }
 
     // ===== Infrastructure (DbContext, Auth, JWT, TenantContext) =====
     builder.Services.AddInfrastructure(builder.Configuration);
@@ -170,16 +182,19 @@ try
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
-    var signalRRedis = builder.Configuration.GetConnectionString("Redis")
-        ?? builder.Configuration["Redis:ConnectionString"];
-    if (!string.IsNullOrWhiteSpace(signalRRedis))
+    if (sharedRedis is not null)
     {
-        signalRBuilder.AddStackExchangeRedis(signalRRedis, options =>
+        // Route the backplane onto the SHARED, OTel-instrumented multiplexer (built above) instead of letting
+        // AddStackExchangeRedis open its own connection — so SignalR's Redis commands are covered by the same
+        // AddRedisInstrumentation and share the single connection pool. ConnectionFactory is
+        // Func<TextWriter, Task<IConnectionMultiplexer>>; we return the already-connected shared instance.
+        signalRBuilder.AddStackExchangeRedis(options =>
         {
+            options.ConnectionFactory = _ => Task.FromResult(sharedRedis);
             options.Configuration.ChannelPrefix =
                 StackExchange.Redis.RedisChannel.Literal(builder.Configuration["Redis:InstanceName"] ?? "hrm:signalr:");
         });
-        Log.Information("SignalR Redis backplane enabled.");
+        Log.Information("SignalR Redis backplane enabled (shared multiplexer).");
     }
     else
     {

@@ -95,6 +95,11 @@ public static class SecondLevelCacheServiceCollectionExtensions
             {
                 // Redis outage degrades to a cache miss → DB (the conn string carries abortConnect=false), it
                 // never throws the query. Provider caches serialized results under the tenant-prefixed key.
+                // NOTE (Redis command-spans / OTel): this provider builds and owns its OWN private
+                // IConnectionMultiplexer from the connection string — the package (5.3.13) neither exposes nor
+                // accepts a shared one — so its Redis commands are NOT covered by the shared-multiplexer
+                // AddRedisInstrumentation (which only instruments IDistributedCache + the SignalR backplane).
+                // Covering it would need a custom IEFCacheServiceProvider on the shared multiplexer. See ISSUE-274.
                 options.UseStackExchangeRedisCacheProvider(redisConnectionString, ttl);
             }
             else
