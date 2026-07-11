@@ -71,11 +71,15 @@ restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatev
       (SignalRNotificationService, RealNotificationDispatcher, SessionActivityMiddleware) in
       `ITenantJobRunner.RunForTenantAsync` (no-ops when RLS off). Proven by `NotificationRlsPostgresTests`
       (real hrm_app RLS-on). See `test-cases/TEST-FINDINGS.md#ISSUE-268`.
-- [ ] **[MED — ISSUE-269]** long-running payslip render/email jobs hold ONE GUC transaction for the whole
-      batch (heavy non-DB PDF-render / SMTP work sits idle-in-transaction). Restructure
-      `GeneratePayslipsJob` + `SendPayslipEmailsJob` to set-GUC-per-short-unit (read-tx → work outside tx →
-      write-tx); **keep `ProcessPayrollRunJob` atomic** (add `statement_timeout` + monitoring instead);
-      `DataExport`/`HrReportExport` low-frequency → defer. See `TEST-FINDINGS.md#ISSUE-269`.
+- [x] **[MED — ISSUE-269 — RESOLVED PR #246 2026-07-11]** payslip render/email jobs held ONE GUC tx per
+      batch (idle-in-tx through PDF render / SMTP). FIXED: `GeneratePayslipsJob` + `SendPayslipEmailsJob`
+      split into read-tx → work-outside-tx → per-chunk/per-send write-tx; proven on real Postgres RLS-on
+      (`PayslipJobRlsPostgresTests`). `ProcessPayrollRunJob` intentionally LEFT ATOMIC (run aggregates +
+      destructive replace); `DataExportGeneration`/`HrReportExport` low-frequency → still deferred (below).
+      See `TEST-FINDINGS.md#ISSUE-269`.
+- [ ] **[LOW — remaining]** `DataExportGeneration` + `HrReportExport` still hold one GUC tx per run (build
+      outside tx if dumps/reports grow); low frequency (export rate-limited, only ≥1000-row reports go async)
+      → acceptable to defer past the initial flip.
 - [x] **[LOW — 3b, DONE 2026-07-11]** service-body DI-scope audit: the five wrapped per-tenant services are
       clean (use the injected scoped DbContext); the only fresh-scope hazard is the notification writers →
       folded into ISSUE-268 above.
