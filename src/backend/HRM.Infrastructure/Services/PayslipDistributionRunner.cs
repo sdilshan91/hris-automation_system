@@ -57,24 +57,65 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
         _logger = logger;
     }
 
+    /// <summary>
+    /// Thin convenience for non-job callers (tests): runs the READ → per-item WORK → per-send WRITE phases in
+    /// sequence (identical result to the pre-ISSUE-269 single-method version). The Hangfire job orchestrates the
+    /// phases so each SMTP send runs outside any tenant-GUC transaction and each result is committed per-send.
+    /// </summary>
     public async Task<Result<PayslipDistributionSummaryDto>> RunAsync(
         Guid runId, IReadOnlyCollection<Guid>? targetEmployeeIds, CancellationToken cancellationToken = default)
     {
+        var planResult = await LoadSendPlanAsync(runId, targetEmployeeIds, cancellationToken);
+        if (planResult.IsFailure)
+            return Result<PayslipDistributionSummaryDto>.Failure(
+                planResult.Error!, planResult.StatusCode ?? 400, planResult.ErrorCode);
+
+        var plan = planResult.Value!;
+
+        foreach (var item in plan.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // NFR-3: never re-send an employee already Sent for this run (idempotent/resumable).
+            if (plan.AlreadySent.Contains(item.EmployeeId))
+                continue;
+
+            var outcome = await SendOneAsync(item, cancellationToken);
+            await PersistSendOutcomeAsync(outcome, cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Payslip email distribution batch complete. RunId={RunId}, Tenant={TenantId}, Targeted={Targeted}.",
+            runId, plan.TenantId, plan.Items.Count);
+
+        return Result<PayslipDistributionSummaryDto>.Success(await SummaryFor(runId, cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<PayslipSendPlan>> LoadSendPlanAsync(
+        Guid runId, IReadOnlyCollection<Guid>? targetEmployeeIds, CancellationToken cancellationToken = default)
+    {
         if (!_tenantContext.IsResolved)
-            return Result<PayslipDistributionSummaryDto>.Failure("Tenant context is not resolved.", 400);
+            return Result<PayslipSendPlan>.Failure("Tenant context is not resolved.", 400);
 
         var run = await _dbContext.PayrollRuns.AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
         if (run is null)
-            return Result<PayslipDistributionSummaryDto>.Failure("Payroll run not found.", 404, "run_not_found");
+            return Result<PayslipSendPlan>.Failure("Payroll run not found.", 404, "run_not_found");
 
         // BR-1: only Finalized runs are distributable. (The enqueue path already guards this; defence in depth.)
         if (run.Status != PayrollRunStatus.Finalized)
-            return Result<PayslipDistributionSummaryDto>.Failure(
+            return Result<PayslipSendPlan>.Failure(
                 "Payslip emails can only be sent for a Finalized payroll run.", 409, "run_not_finalized");
 
-        var slips = await _dbContext.PayrollSlips
+        var tenantId = _tenantContext.TenantId;
+        var companyName = string.IsNullOrWhiteSpace(_tenantContext.Subdomain) ? "Company" : _tenantContext.Subdomain;
+        var fromAddress = ResolveFromAddress(); // BR-4: tenant sender domain deferred -> system default.
+
+        // ISSUE-269: load slips AsNoTracking + project — no tracked entities carried into the WORK phase.
+        var slips = await _dbContext.PayrollSlips.AsNoTracking()
             .Where(s => s.PayrollRunId == runId)
+            .Select(s => new { s.Id, s.EmployeeId, s.PayMonth, s.PayYear, s.PdfStatus, s.PdfStoragePath })
             .ToListAsync(cancellationToken);
 
         // Optional FR-4 targeting: a selective re-send only touches the named employees.
@@ -85,113 +126,152 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
         }
 
         if (slips.Count == 0)
-            return await GetSummaryInternalAsync(run, cancellationToken);
+            return Result<PayslipSendPlan>.Success(new PayslipSendPlan(
+                runId, tenantId, companyName!, fromAddress, [], new HashSet<Guid>()));
 
         var employeeIds = slips.Select(s => s.EmployeeId).Distinct().ToList();
         var employees = await _dbContext.Employees.AsNoTracking()
             .Where(e => employeeIds.Contains(e.Id))
+            .Select(e => new { e.Id, e.EmployeeNo, e.FirstName, e.LastName, e.Email })
             .ToDictionaryAsync(e => e.Id, cancellationToken);
 
         // Existing log rows for these employees in this run (NFR-3 resume + selective re-send overwrite).
-        var existingLogs = (await _dbContext.PayslipEmailLogs
+        var existingLogs = (await _dbContext.PayslipEmailLogs.AsNoTracking()
                 .Where(l => l.PayrollRunId == runId && employeeIds.Contains(l.EmployeeId))
                 .ToListAsync(cancellationToken))
             .GroupBy(l => l.EmployeeId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(l => l.CreatedAt).First());
 
-        var companyName = string.IsNullOrWhiteSpace(_tenantContext.Subdomain) ? "Company" : _tenantContext.Subdomain;
-        var fromAddress = ResolveFromAddress(); // BR-4: tenant sender domain deferred -> system default.
-        var tenantId = _tenantContext.TenantId;
-        var retryPolicy = BuildRetryPolicy();
+        var alreadySent = existingLogs
+            .Where(kv => kv.Value.Status == EmailDeliveryStatus.Sent)
+            .Select(kv => kv.Key)
+            .ToHashSet();
 
-        var throttle = MaxEmailsPerMinute > 0 ? TimeSpan.FromMinutes(1) / MaxEmailsPerMinute : TimeSpan.Zero;
-
-        foreach (var slip in slips)
+        var items = slips.Select(s =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            existingLogs.TryGetValue(slip.EmployeeId, out var existing);
-
-            // NFR-3: never re-send an employee already Sent for this run (idempotent/resumable).
-            if (existing is { Status: EmailDeliveryStatus.Sent })
-                continue;
-
-            employees.TryGetValue(slip.EmployeeId, out var employee);
-            var email = employee?.Email?.Trim();
-
-            // AC-3: no email on file -> Skipped + warning; loop continues.
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                _logger.LogWarning(
-                    "Payslip email skipped: employee {EmployeeId} has no email on file (run {RunId}, tenant {TenantId}).",
-                    slip.EmployeeId, runId, tenantId);
-                UpsertLog(existing, slip, runId, tenantId, recipient: string.Empty,
-                    EmailDeliveryStatus.Skipped, sentAt: null, failureReason: "No email address on file.",
-                    retryCount: 0);
-                continue;
-            }
-
-            // BR-7/AC-2: the PDF must exist; a slip without a generated PDF cannot be emailed -> Failed.
-            byte[]? pdf = null;
-            if (slip.PdfStatus == PayslipPdfStatus.Generated && !string.IsNullOrWhiteSpace(slip.PdfStoragePath))
-                pdf = await ReadPdfAsync(slip.PdfStoragePath!, cancellationToken);
-
-            if (pdf is null)
-            {
-                _logger.LogWarning(
-                    "Payslip email failed: no generated PDF for employee {EmployeeId} (run {RunId}, tenant {TenantId}).",
-                    slip.EmployeeId, runId, tenantId);
-                UpsertLog(existing, slip, runId, tenantId, recipient: email,
-                    EmailDeliveryStatus.Failed, sentAt: null, failureReason: "Payslip PDF has not been generated.",
-                    retryCount: existing?.RetryCount ?? 0);
-                continue;
-            }
-
+            employees.TryGetValue(s.EmployeeId, out var employee);
             var employeeName = employee is null ? "Employee" : $"{employee.FirstName} {employee.LastName}".Trim();
-            var fileName = PayslipStoragePath.DownloadFileName(
-                employee?.EmployeeNo ?? slip.EmployeeId.ToString(), slip.PayMonth, slip.PayYear);
+            var employeeNo = employee?.EmployeeNo ?? s.EmployeeId.ToString();
+            existingLogs.TryGetValue(s.EmployeeId, out var existing);
+            return new PayslipSendItem(
+                runId, tenantId, s.Id, s.EmployeeId, employee?.Email?.Trim(), employeeName, employeeNo,
+                s.PayMonth, s.PayYear, companyName!, fromAddress,
+                s.PdfStatus == PayslipPdfStatus.Generated && !string.IsNullOrWhiteSpace(s.PdfStoragePath),
+                s.PdfStoragePath, existing?.RetryCount ?? 0);
+        }).ToList();
 
-            var message = new PayslipEmailMessage(
-                tenantId, email, employeeName,
-                PayslipEmailTemplate.BuildSubject(slip.PayMonth, slip.PayYear),
-                PayslipEmailTemplate.BuildBody(employeeName, slip.PayMonth, slip.PayYear, companyName),
-                fileName, pdf, "application/pdf", fromAddress);
+        return Result<PayslipSendPlan>.Success(new PayslipSendPlan(
+            runId, tenantId, companyName!, fromAddress, items, alreadySent));
+    }
 
-            var attempts = 0;
-            try
+    /// <inheritdoc />
+    public async Task<PayslipSendOutcome> SendOneAsync(PayslipSendItem item, CancellationToken cancellationToken = default)
+    {
+        // AC-3: no email on file -> Skipped + warning (no DB, no send).
+        if (string.IsNullOrWhiteSpace(item.RecipientEmail))
+        {
+            _logger.LogWarning(
+                "Payslip email skipped: employee {EmployeeId} has no email on file (run {RunId}, tenant {TenantId}).",
+                item.EmployeeId, item.RunId, item.TenantId);
+            return new PayslipSendOutcome(item.RunId, item.PayrollSlipId, item.EmployeeId, string.Empty,
+                EmailDeliveryStatus.Skipped, SentAt: null, FailureReason: "No email address on file.", RetryCount: 0);
+        }
+
+        // BR-7/AC-2: the PDF must exist; a slip without a generated PDF cannot be emailed -> Failed. A storage
+        // fault here propagates (a real mid-batch crash); already-persisted sends survive it (phase 3 committed them).
+        byte[]? pdf = null;
+        if (item.PdfGenerated)
+            pdf = await ReadPdfAsync(item.PdfStoragePath!, cancellationToken);
+
+        if (pdf is null)
+        {
+            _logger.LogWarning(
+                "Payslip email failed: no generated PDF for employee {EmployeeId} (run {RunId}, tenant {TenantId}).",
+                item.EmployeeId, item.RunId, item.TenantId);
+            return new PayslipSendOutcome(item.RunId, item.PayrollSlipId, item.EmployeeId, item.RecipientEmail,
+                EmailDeliveryStatus.Failed, SentAt: null, FailureReason: "Payslip PDF has not been generated.",
+                RetryCount: item.RetryCountBaseline);
+        }
+
+        var fileName = PayslipStoragePath.DownloadFileName(item.EmployeeNo, item.PayMonth, item.PayYear);
+        var message = new PayslipEmailMessage(
+            item.TenantId, item.RecipientEmail, item.EmployeeName,
+            PayslipEmailTemplate.BuildSubject(item.PayMonth, item.PayYear),
+            PayslipEmailTemplate.BuildBody(item.EmployeeName, item.PayMonth, item.PayYear, item.CompanyName),
+            fileName, pdf, "application/pdf", item.FromAddress);
+
+        var retryPolicy = BuildRetryPolicy();
+        var attempts = 0;
+        PayslipSendOutcome outcome;
+        try
+        {
+            await retryPolicy.ExecuteAsync(async ct =>
             {
-                await retryPolicy.ExecuteAsync(async ct =>
-                {
-                    attempts++;
-                    await _emailSender.SendAsync(message, ct);
-                }, cancellationToken);
+                attempts++;
+                await _emailSender.SendAsync(message, ct);
+            }, cancellationToken);
 
-                UpsertLog(existing, slip, runId, tenantId, recipient: email,
-                    EmailDeliveryStatus.Sent, sentAt: DateTime.UtcNow, failureReason: null,
-                    retryCount: attempts - 1);
-            }
-            catch (Exception ex)
+            outcome = new PayslipSendOutcome(item.RunId, item.PayrollSlipId, item.EmployeeId, item.RecipientEmail,
+                EmailDeliveryStatus.Sent, SentAt: DateTime.UtcNow, FailureReason: null, RetryCount: attempts - 1);
+        }
+        catch (Exception ex)
+        {
+            // AC-4: permanent failure (or transient exhausted after MaxRetries) -> Failed + reason.
+            _logger.LogError(ex,
+                "Payslip email failed permanently for employee {EmployeeId} after {Attempts} attempt(s) " +
+                "(run {RunId}, tenant {TenantId}).", item.EmployeeId, attempts, item.RunId, item.TenantId);
+            outcome = new PayslipSendOutcome(item.RunId, item.PayrollSlipId, item.EmployeeId, item.RecipientEmail,
+                EmailDeliveryStatus.Failed, SentAt: null, FailureReason: Truncate(ex.Message, 2000),
+                RetryCount: Math.Max(attempts - 1, 0));
+        }
+
+        // FR-6 throttle (documented; off by default) — held in the WORK phase, only after an actual send attempt.
+        var throttle = MaxEmailsPerMinute > 0 ? TimeSpan.FromMinutes(1) / MaxEmailsPerMinute : TimeSpan.Zero;
+        if (throttle > TimeSpan.Zero)
+            await Task.Delay(throttle, cancellationToken);
+
+        return outcome;
+    }
+
+    /// <inheritdoc />
+    public async Task PersistSendOutcomeAsync(PayslipSendOutcome outcome, CancellationToken cancellationToken = default)
+    {
+        // Upsert the (run, employee) row fresh so a re-send overwrites the prior status rather than accumulating
+        // rows (the summary reads the per-employee latest state). Committing per-send is what makes the batch
+        // resumable — a crash after this returns cannot lose an already-recorded send (ISSUE-269).
+        var existing = await _dbContext.PayslipEmailLogs
+            .Where(l => l.PayrollRunId == outcome.RunId && l.EmployeeId == outcome.EmployeeId)
+            .OrderByDescending(l => l.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existing is null)
+        {
+            _dbContext.PayslipEmailLogs.Add(new PayslipEmailLog
             {
-                // AC-4: permanent failure (or transient exhausted after MaxRetries) -> Failed + reason.
-                _logger.LogError(ex,
-                    "Payslip email failed permanently for employee {EmployeeId} after {Attempts} attempt(s) " +
-                    "(run {RunId}, tenant {TenantId}).", slip.EmployeeId, attempts, runId, tenantId);
-                UpsertLog(existing, slip, runId, tenantId, recipient: email,
-                    EmailDeliveryStatus.Failed, sentAt: null, failureReason: Truncate(ex.Message, 2000),
-                    retryCount: Math.Max(attempts - 1, 0));
-            }
-
-            if (throttle > TimeSpan.Zero)
-                await Task.Delay(throttle, cancellationToken);
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                PayrollRunId = outcome.RunId,
+                PayrollSlipId = outcome.PayrollSlipId,
+                EmployeeId = outcome.EmployeeId,
+                RecipientEmail = outcome.Recipient,
+                Status = outcome.Status,
+                SentAt = outcome.SentAt,
+                FailureReason = outcome.FailureReason,
+                RetryCount = outcome.RetryCount,
+            });
+        }
+        else
+        {
+            existing.PayrollSlipId = outcome.PayrollSlipId;
+            existing.RecipientEmail = outcome.Recipient;
+            existing.Status = outcome.Status;
+            existing.SentAt = outcome.SentAt;
+            existing.FailureReason = outcome.FailureReason;
+            existing.RetryCount = outcome.RetryCount;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Payslip email distribution batch complete. RunId={RunId}, Tenant={TenantId}, Targeted={Targeted}.",
-            runId, tenantId, slips.Count);
-
-        return await GetSummaryInternalAsync(run, cancellationToken);
+        _dbContext.ChangeTracker.Clear(); // keep the tracker bounded across per-send commits of a large run.
     }
 
     /// <summary>NFR-2/AC-4: retry only transient failures, with exponential backoff (2^n seconds).</summary>
@@ -199,41 +279,6 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
         => Policy
             .Handle<PayslipEmailTransientException>()
             .WaitAndRetryAsync(MaxRetries, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-
-    /// <summary>
-    /// Inserts a new log row or updates the existing one for this (run, employee) — so a re-send overwrites the
-    /// prior status rather than accumulating rows (the summary reads the per-employee latest state).
-    /// </summary>
-    private void UpsertLog(
-        PayslipEmailLog? existing, PayrollSlip slip, Guid runId, Guid tenantId, string recipient,
-        string status, DateTime? sentAt, string? failureReason, int retryCount)
-    {
-        if (existing is null)
-        {
-            _dbContext.PayslipEmailLogs.Add(new PayslipEmailLog
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = tenantId,
-                PayrollRunId = runId,
-                PayrollSlipId = slip.Id,
-                EmployeeId = slip.EmployeeId,
-                RecipientEmail = recipient,
-                Status = status,
-                SentAt = sentAt,
-                FailureReason = failureReason,
-                RetryCount = retryCount,
-            });
-        }
-        else
-        {
-            existing.PayrollSlipId = slip.Id;
-            existing.RecipientEmail = recipient;
-            existing.Status = status;
-            existing.SentAt = sentAt;
-            existing.FailureReason = failureReason;
-            existing.RetryCount = retryCount;
-        }
-    }
 
     private async Task<PayslipDistributionSummaryDto> SummaryFor(Guid runId, CancellationToken ct)
     {
@@ -294,9 +339,6 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
             Recipients = recipients,
         };
     }
-
-    private async Task<Result<PayslipDistributionSummaryDto>> GetSummaryInternalAsync(PayrollRun run, CancellationToken ct)
-        => Result<PayslipDistributionSummaryDto>.Success(await SummaryFor(run.Id, ct));
 
     /// <summary>Reads a stored PDF into memory via the tenant-isolated storage abstraction (path is GUID-derived).</summary>
     private async Task<byte[]?> ReadPdfAsync(string relativePath, CancellationToken ct)
