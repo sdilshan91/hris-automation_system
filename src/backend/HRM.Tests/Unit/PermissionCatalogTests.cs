@@ -206,6 +206,51 @@ public sealed class PermissionCatalogTests
             $"role '{roleName}' does not configure leave policy — the fix must add it to HR Officer only, not broadly (BUG-027/BUG-034)");
     }
 
+    // ── BUG-060 / BUG-071 / BUG-077: HR Officer is the named payroll operator per US-PAY-001 (persona: ──
+    // ── Tenant Admin / HR Officer) and US-PAY-003 (persona: HR Officer, "has Payroll.Run"), yet the seed ──
+    // ── granted HR Officer ZERO Payroll.* permissions → 403 on salary-component config (BUG-060), payroll ──
+    // ── run (BUG-071), and payroll reports/analytics (BUG-077). Fix: grant Payroll.View/Run/Configure/    ──
+    // ── Export to HR Officer — but NOT Payroll.Approve (separation of duties) nor Payroll.ViewSensitive    ──
+    // ── (unmasked bank PII, deliberately HR-Manager+ only per PermissionCatalog.Payroll.ViewSensitive doc).──
+
+    [Fact]
+    public void HrOfficer_HasPayrollRunConfigureExport_BUG060_071_077()
+    {
+        // KEY REGRESSION: pre-fix HR Officer's default set has NO Payroll.* -> red on all three.
+        // Keyed on the real catalog map (DefaultPermissionsFor), not a hand-copied literal.
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.HROfficer);
+
+        perms.Should().Contain(PermissionCatalog.Payroll.Configure, "HR Officer configures salary components/structures (BUG-060)");
+        perms.Should().Contain(PermissionCatalog.Payroll.Run, "HR Officer runs payroll (BUG-071, US-PAY-003)");
+        perms.Should().Contain(PermissionCatalog.Payroll.Export, "HR Officer generates/exports payroll reports (BUG-077)");
+        perms.Should().Contain(PermissionCatalog.Payroll.View, "HR Officer views payroll they run/configure");
+    }
+
+    [Fact]
+    public void HrOfficer_DoesNotHavePayrollApproveOrViewSensitive_BUG060_071_077()
+    {
+        // NEGATIVE ARM (proves the fix is not a blanket grant): HR Officer must still NOT hold
+        // Payroll.Approve (separation of duties — a different role approves what HR Officer runs) nor
+        // Payroll.ViewSensitive (unmasked bank account PII — HR Manager / Tenant Admin / Owner only).
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.HROfficer);
+
+        perms.Should().NotContain(PermissionCatalog.Payroll.Approve, "separation of duties: HR Officer runs but does not approve payroll");
+        perms.Should().NotContain(PermissionCatalog.Payroll.ViewSensitive, "HR Officer is not trusted with unmasked bank PII");
+    }
+
+    [Theory]
+    [InlineData("Manager")]
+    [InlineData("Employee")]
+    [InlineData("Recruiter")]
+    public void DefaultPermissionsFor_NonPayrollRoles_DoNotHavePayrollRun_BUG060_071_077(string roleName)
+    {
+        // The Payroll grant must land on HR Officer only, not broadly. Non-payroll roles stay clear.
+        var perms = PermissionCatalog.DefaultPermissionsFor(roleName);
+
+        perms.Should().NotContain(PermissionCatalog.Payroll.Run,
+            $"role '{roleName}' does not run payroll — the fix must add Payroll.* to HR Officer only");
+    }
+
     [Fact]
     public void DefaultPermissionsFor_AllBuiltInRoles_ShouldContainOnlyValidPermissions()
     {

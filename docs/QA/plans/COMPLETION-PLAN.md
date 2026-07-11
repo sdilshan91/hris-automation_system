@@ -49,10 +49,10 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 
 | Item | Priority | Scope (findings/story) | Status | PR | Notes |
 |------|----------|------------------------|--------|----|-------|
-| P0-1 Reconcile ledgers | P0 | BA/STATUS.md + TEST-STATUS.md drift (ADM-011, TRN-001/002/003 shipped) | WIP | — | docs-only; branch docs/dev-plan-reconcile |
+| P0-1 Reconcile ledgers | P0 | BA/STATUS.md + TEST-STATUS.md drift (ADM-011, TRN-001/002/003 shipped) | MERGED | #253 | done |
 | P0-2 Missing TC suites | P0 | TC-TRN-001/002/003, TC-ADM-011-*, US-NTF-006 delivery + ISSUE-273 | TODO | — | qa-engineer |
-| P1-0 Re-verify body-conflicts | P1 | BUG-003(CRIT)/086/002/005 | TODO | — | verify before fixing |
-| P1-1 RBAC payroll lockouts | P1 | BUG-060(Payroll)/071/077 | TODO | — | one role-bundle fix likely |
+| P1-0 Re-verify body-conflicts | P1 | BUG-003(CRIT)/086/002/005 | VERIFIED | — | all 4 statically LIKELY-FIXED (code-grounded); BUG-003 family formal closure needs a live `/verify-fix --iso` re-run (park as verify task); 086/002/005 fixed at code layer, stale "STILL PRESENT" wording |
+| P1-1 RBAC payroll lockouts | P1 | BUG-060(Payroll)/071/077 | PR#254 | #254 | seed fix; 42/42 unit green; merging |
 | P1-2 OT overpay | P1 | BUG-078 (OT base EARNINGS→BASIC) | TODO | — | payroll correctness |
 | P1-3 Payroll audit completeness | P1 | BUG-080/082/084 | TODO | — | audit interceptor + jsonb search |
 | P1-4 Scale / SLA | P1 | BUG-123/124/125 | TODO | — | N+1 + query perf |
