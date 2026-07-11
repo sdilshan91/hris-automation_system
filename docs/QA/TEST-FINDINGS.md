@@ -2551,7 +2551,8 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-060 — HR Officer cannot configure salary components/structures (403 on read AND write) despite US-PAY-001 requiring it
 
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #254, 2026-07-11) · **Layer:** BE
+- **Resolution:** Added `Payroll.Configure` (+ `View/Run/Export`) to the HR Officer role in `PermissionCatalog.DefaultPermissionsFor`; idempotent startup reconcile applies it to existing tenants. Regression: `PermissionCatalogTests.HrOfficer_HasPayrollRunConfigureExport_BUG060_071_077`.
 - **Module / US / TC:** Payroll / US-PAY-001 / TC-PAY-001-08 (also breaks the AC-1/AC-3 persona)
 - **Title:** The `HR Officer` role holds no `Payroll.Configure` permission, so every payroll-config endpoint returns 403 for HR — but the story names "Tenant Admin **or HR Officer**" as the persona and AC-1/AC-3/preconditions explicitly require HR to create/edit components and structures.
 - **Root cause:** Role->permission seeding gap (confidence 90%). The `HR Officer` role's permission set (decoded live from the JWT: 48 perms, **zero** Payroll perms) does not include `Payroll.Configure`; only `Tenant Admin` carries the full Payroll bundle (`Payroll.Approve/Configure/Export/Run/View/ViewSensitive`). The controllers gate every action with `[RequirePermission("Payroll.Configure")]`, so HR is uniformly denied. No server log line (clean 403 from the authz filter). Same "HR locked out of a module they own" class seen in Leave (BUG-027/034) and Attendance (BUG-049).
@@ -3313,7 +3314,8 @@ Scope: 12 functional TCs (TC-PAY-002-01..12) + 4 isolation TCs (TC-PAY-ISO-005..
 Scope: 12 TC-PAY-003-* + 4 TC-PAY-ISO-009..012, API-layer (curl + JWT) on acme tenant; FE :4200 + Docker down → UI/a11y/perf-load TCs blocked. Routes: `POST /api/v1/payroll/runs` (initiate, 202), `GET .../runs`, `GET .../runs/{id}`, `.../{id}/summary`, `.../{id}/progress` — all gated `Payroll.Run`. Processing is the Hangfire `ProcessPayrollRunJob` → `PayrollRunProcessor`. No cancel/re-run/finalize endpoints on this controller (status transitions live in US-PAY-004 approval surface). Initiate is fail-closed on attendance-period-lock (`attendance_not_finalized` 409). New findings start at BUG-071/ISSUE-153/ENH-016.
 
 ### BUG-071 — HR Officer role lacks `Payroll.Run`; the story's named persona cannot run payroll (authz/persona gap)
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #254, 2026-07-11) · **Layer:** BE
+- **Resolution:** Added `Payroll.Run` to the HR Officer role in `PermissionCatalog.DefaultPermissionsFor`. Regression: `PermissionCatalogTests.HrOfficer_HasPayrollRunConfigureExport_BUG060_071_077`.
 - **Module/US/TC:** Payroll / US-PAY-003 / TC-PAY-003-09, TC-PAY-003-01
 - **Title:** US-PAY-003 persona is "HR Officer" but the `HROfficer` built-in role is not granted `Payroll.Run`; only `TenantAdmin` and `HRManager` hold it. `hr@acme.test` (HROfficer) and `manager@acme.test` get 403 on `POST /api/v1/payroll/runs`.
 - **Root cause:** `PermissionCatalog.DefaultRolePermissions` — `TenantAdmin` (line 609) and `HRManager` (line 635) include `Payroll.View, Payroll.Run, ...`; the `HROfficer` block (line ~644) has NO payroll permission at all. The entire US-PAY-003 story is written from the HR Officer's perspective ("As an HR Officer, I want to initiate and execute a monthly payroll run"; AC-1/precondition "HR Officer has Payroll.Run permission") yet that role cannot. Confidence: 95% (read the catalog + live 403 for hr@acme.test/manager@acme.test, 202 only for tenantadmin@acme.test). Same class as BUG-060 (HR lacks Payroll.Configure) — payroll permissions are TenantAdmin-centric vs the story personas.
@@ -3744,7 +3746,8 @@ Scope: TC-PAY-007-01..12 + ISO TC-PAY-ISO-025..028. API-layer (curl + JWT), acme
 Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..036 against acme tenant on the lone Finalized June 2026 run. Routes under `PayrollReportsController` (`/api/v1/payroll/reports*`, `/analytics/{chartType}`). Perms: `Payroll.Export` (reports/analytics/export/masked-preview) + `Payroll.ViewSensitive` (bank-advice full). FE :4200 pinned-platform + Docker down → UI/a11y/cross-browser/perf TCs BLOCKED. Findings below.
 
 ### BUG-077 — HR Officer (the named report consumer) is locked out of all Payroll Reports/Analytics (403)
-- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (PR #254, 2026-07-11) · **Layer:** BE
+- **Resolution:** Added `Payroll.Export` to the HR Officer role in `PermissionCatalog.DefaultPermissionsFor` (deliberately NOT `Payroll.ViewSensitive` — unmasked bank PII stays HR-Manager+). Regression: `PermissionCatalogTests.HrOfficer_HasPayrollRunConfigureExport_BUG060_071_077`.
 - **Module / US / TC:** Payroll / US-PAY-009 / TC-PAY-009-01, TC-PAY-009-09
 - **Title:** `hr@acme.test` (role "HR Officer") gets 403 on every `/api/v1/payroll/reports*` and `/analytics/*` endpoint, contradicting AC-1 / persona ("HR Officer or Tenant Admin") and the controller's own doc-comment ("Payroll.Export … held by Tenant Admin + HR Officer").
 - **Root cause:** Authz/seed gap. All report endpoints are `[RequirePermission("Payroll.Export")]`; the seeded "HR Officer" role does NOT grant `Payroll.Export`, so HR is denied the surface the story designates them the primary user of. Same persona-gap class as BUG-060 (HR no Payroll.Configure) / BUG-071 (HR/Mgr no Payroll.Run) but a distinct, separately-gated surface (reports/analytics/export). Serilog not consulted — 403 is an authz decision, not an exception. Confidence: 90% (HTTP 403 for HR vs 200 for Tenant Admin on identical request; HR confirmed to hold only the "HR Officer" role).
