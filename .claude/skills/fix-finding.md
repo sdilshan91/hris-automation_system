@@ -1,6 +1,6 @@
 ---
 name: fix-finding
-description: Fix ONE finding (BUG-###/ISSUE-###) from test-cases/TEST-FINDINGS.md end-to-end (BE/FE code + a regression TC + security/wiring review on one fix branch + PR). The finding-driven counterpart to /implement-story. Does NOT close the finding — run /verify-fix after the PR merges.
+description: Fix ONE finding (BUG-###/ISSUE-###) from docs/QA/TEST-FINDINGS.md end-to-end (BE/FE code + a regression TC + security/wiring review on one fix branch + PR). The finding-driven counterpart to /implement-story. Does NOT close the finding — run /verify-fix after the PR merges.
 user_invocable: true
 ---
 
@@ -12,7 +12,7 @@ It edits `src/`, adds a guarding regression test, and opens a PR — it is the *
 process**, explicitly **outside** the report-only test loop (`/test-all`, `/test-us`, `@test-runner`).
 
 > Fixing is deliberate: this skill exists because no existing driver accepts a `BUG-###`. See the
-> remediation plan `test-cases/BLOCKED-TC-REMEDIATION-PLAN-2026-07-02.md` (§4b) for why.
+> remediation plan `docs/QA/BLOCKED-TC-REMEDIATION-PLAN-2026-07-02.md` (§4b) for why.
 
 ## Usage
 
@@ -33,7 +33,7 @@ before the next — do not stack colliding branches.)
 
 ## Process
 
-1. **Validate input** — ID matches `(BUG|ISSUE)-\d+` and exists in `test-cases/TEST-FINDINGS.md` with
+1. **Validate input** — ID matches `(BUG|ISSUE)-\d+` and exists in `docs/QA/TEST-FINDINGS.md` with
    status `OPEN`. If it's `RESOLVED`/`WONTFIX` → stop. If the finding is tagged **ENV/DATA/DEFERRED**
    (persona gap, perf-harness, unbuilt feature) → stop: "not code-clearable, see plan §6."
 2. **Read the finding** — pull its module, layer (BE/FE/DB), root cause + `file:line`, affected TCs,
@@ -67,7 +67,7 @@ before the next — do not stack colliding branches.)
    Fix: {summary}
    Regression test: {TC-ID added}
 
-   Refs: test-cases/TEST-FINDINGS.md ({ID})
+   Refs: docs/QA/TEST-FINDINGS.md ({ID})
    ```
 10. **Push + PR** — `mcp__github__push_files` + `mcp__github__create_pull_request`. PR body links the
     finding, the affected TCs, the new regression TC, and any `/security-audit` verdict.

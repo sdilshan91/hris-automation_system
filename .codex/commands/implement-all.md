@@ -10,19 +10,19 @@ Use this when the user asks Codex to run `/implement-all`, `implement-all`, "nex
 ## Codex Adaptation
 
 1. Read the two Claude source files above in full.
-2. Read `CLAUDE.md`, `.claude/dev-instructions.md`, and `user-stories/STATUS.md`.
+2. Read `CLAUDE.md`, `.claude/dev-instructions.md`, and `docs/BA/STATUS.md`.
 3. Resolve the argument exactly like the Claude command:
    - Empty: first pending `[ ]` story across modules in priority order.
    - Module key: first pending `[ ]` story in that module.
    - Story ID: that exact story, warning before redoing a completed story.
 4. Verify the working tree is clean and the current branch is `main`.
-5. Mark the selected story `[~]` in `user-stories/STATUS.md` and commit `chore(status): start US-XXX`.
+5. Mark the selected story `[~]` in `docs/BA/STATUS.md` and commit `chore(status): start US-XXX`.
 6. Create `feature/US-XXX`.
 7. If Codex sub-agent tools are available, spawn four parallel agents with controlled write scopes:
    - Backend: `src/backend/`
    - Frontend: `src/frontend/`
    - DB: persistence-specific backend files such as EF configurations, migrations, seed data, query filters, and database indexes
-   - QA: `test-cases/{module}/`
+   - QA: `docs/QA/{module}/`
 8. Give backend, frontend, and QA agents the matching prompt template from `.claude/skills/implement-all.md`. Give DB the wrapper at `.codex/agents/team/db-engineer.md`, the story file, and the backend context. Add this Codex-specific rule to every agent:
    - "You are not alone in the codebase. Do not revert unrelated changes or edits made by other agents."
 9. After agents finish, run an integration/bug-fix pass locally:

@@ -10,7 +10,7 @@
 --        -f roles.sql
 --
 -- Two roles implement the "non-bypass app role + privileged connection" design
--- (see user-stories/platform/US-PLT-002.md §9.3):
+-- (see docs/BA/platform/US-PLT-002.md §9.3):
 --
 --   hrm_app    — the RUNTIME role. LOGIN, NO BYPASSRLS. Every normal request connects
 --                as this role, so RLS policies always apply (even to raw SQL). Wired to

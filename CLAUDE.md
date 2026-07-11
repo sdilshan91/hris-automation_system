@@ -2,7 +2,7 @@
 
 ## Project Overview
 Multi-tenant HRM SaaS platform built with **Angular 20 + ASP.NET Core 10 + PostgreSQL**.
-Reference: `docs/hrm_technical_document_v4.0.md`
+Reference: `docs/Architecture/hrm_technical_document_v4.0.md`
 Repo: `sdilshan91/hris-automation_system`
 
 ## Engineering Discipline (how every agent should work)
@@ -49,7 +49,7 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    these in a structured `OUT-OF-LANE:` block (type · severity · where · what · why-out-of-lane
    · suggested action) and do **not** scope-creep to fix them (a trivial, clearly-correct,
    same-file correction is the only exception, and it's still noted). The **orchestrator HEALS**:
-   files the finding to `test-cases/TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and
+   files the finding to `docs/QA/TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and
    **re-sorts the priority order** (severity × blast-radius × unblocks-others; decision/infra-gated
    items park at the decision-gate). The completion plan is a **living document** — it changes every
    time reality does. Protocol: [`/auto-heal`](.claude/skills/auto-heal.md). This does **not** bypass
@@ -149,7 +149,7 @@ diagnosis). **Read-only on the codebase.**
 | `@backend-dev` | Implements ASP.NET Core 10 API | `feature/backend-{module}` | create_branch, push_files, create_pull_request |
 | `@qa-engineer` | Writes IEEE 829 test cases | `feature/qa-{module}` | create_branch, push_files, create_pull_request, create_issue |
 | `@browser-debugger` | Drives Chrome to debug UI (console, network, DOM) — read-only investigator | _(no branch — diagnoses only)_ | playwright (navigate, console_messages, network_requests, snapshot, evaluate, screenshot, interactions) + chrome-devtools (lighthouse, perf-trace, heapsnapshot, emulate) |
-| `@test-runner` | **Executes** test cases against the running stack + **triages** findings (bug/issue/enhancement: severity, root cause, repro). **REPORT-ONLY — never fixes, never opens PRs.** Writes only to `test-cases/` ledgers. | _(no branch — diagnoses only)_ | playwright (UI/a11y/cross-browser) + chrome-devtools (lighthouse/perf-trace/memory) + create_issue (optional); runs xUnit/Karma/Playwright/axe/k6/curl via Bash |
+| `@test-runner` | **Executes** test cases against the running stack + **triages** findings (bug/issue/enhancement: severity, root cause, repro). **REPORT-ONLY — never fixes, never opens PRs.** Writes only to `docs/QA/` ledgers. | _(no branch — diagnoses only)_ | playwright (UI/a11y/cross-browser) + chrome-devtools (lighthouse/perf-trace/memory) + create_issue (optional); runs xUnit/Karma/Playwright/axe/k6/curl via Bash |
 | `@test-authenticator` | **Read-only auditor** of test quality — flags "test theater" (mock-everything, tautologies, happy-path-only, InMemory-masks-Postgres, fake isolation arms). Reports a verdict; **never edits/weakens a test.** Use after test code changes. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 | `@integration-enforcer` | **Read-only auditor** of wiring — catches orphaned code (undispatched MediatR handlers, missing DI, unrouted Angular components, entities missing tenant query filters). Reports a verdict; **never wires it itself.** Use after implementation. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 | `@principal-advisor` | **Read-only technical-consultant synthesizer.** Runs the /advisor v1 passes (dependency currency, ADR-drift, complexity/dead-code) + ingests existing auditor reports → ONE ranked, evidence-anchored advisory. REPORT-ONLY — never edits code/opens PRs. | _(no branch — advisory only)_ | _none (read-only: Read/Glob/Grep/Bash/WebSearch/WebFetch + microsoft-learn)_ |
@@ -163,22 +163,22 @@ diagnosis). **Read-only on the codebase.**
 
 | Command | Mode | Description |
 |---------|------|-------------|
-| `/implement-all [module\|US-ID]` | Local + MCP | **Loop driver.** Picks the next pending story from `user-stories/STATUS.md`, builds it end-to-end (BE + FE + QA in parallel), runs the full verify gate with an autonomous remediation loop, then commits + opens a PR. One story per call; rerun (or `/loop`) to continue. See below. |
+| `/implement-all [module\|US-ID]` | Local + MCP | **Loop driver.** Picks the next pending story from `docs/BA/STATUS.md`, builds it end-to-end (BE + FE + QA in parallel), runs the full verify gate with an autonomous remediation loop, then commits + opens a PR. One story per call; rerun (or `/loop`) to continue. See below. |
 | `/orchestrate` | Local + MCP | Full pipeline: BA → (FE + BE + QA in parallel via worktrees) |
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
-| `/research-story US-{ID}` | Local + MCP | **Feasibility gate (RPI-style).** Read-only: reads ONE story + codebase + vault and writes `research/US-{ID}.md` with a GO / GO-WITH-CONDITIONS / NO-GO verdict. Run before implementing a large/risky/unclear story. |
+| `/research-story US-{ID}` | Local + MCP | **Feasibility gate (RPI-style).** Read-only: reads ONE story + codebase + vault and writes `docs/DEV/research/US-{ID}.md` with a GO / GO-WITH-CONDITIONS / NO-GO verdict. Run before implementing a large/risky/unclear story. |
 | `/implement-story US-{ID}` | Local + MCP | Implement ONE specific story end-to-end (manual single-shot; does NOT touch STATUS.md) |
-| `/test-all [module\|US-ID]` | Local + MCP | **Test loop driver (REPORT-ONLY).** Picks the next untested story from `test-cases/TEST-STATUS.md`, executes its test cases against the running stack via `@test-runner`, and logs bugs/issues/enhancements to `test-cases/TEST-FINDINGS.md` (severity, status, root cause, repro). **Never fixes; never opens PRs.** One story per call; rerun (or `/loop`) to continue. See below. |
+| `/test-all [module\|US-ID]` | Local + MCP | **Test loop driver (REPORT-ONLY).** Picks the next untested story from `docs/QA/TEST-STATUS.md`, executes its test cases against the running stack via `@test-runner`, and logs bugs/issues/enhancements to `docs/QA/TEST-FINDINGS.md` (severity, status, root cause, repro). **Never fixes; never opens PRs.** One story per call; rerun (or `/loop`) to continue. See below. |
 | `/test-us US-{ID}` | Local + MCP | Execute the test cases for ONE specific story (manual single-shot; **REPORT-ONLY**; does NOT touch TEST-STATUS.md). |
-| `/fix-finding {BUG-ID\|ISSUE-ID}` | Local + MCP | **Finding-driven fix driver.** Fixes ONE finding from `test-cases/TEST-FINDINGS.md` end-to-end (dev agent + a regression TC via `@qa-engineer` + `@test-authenticator`/`@integration-enforcer`/`/security-audit` gates) on one `fix/{ID}` branch + PR. Edits `src/`; **does NOT touch the ledgers** — run `/verify-fix` after merge. The finding-driven counterpart to `/implement-story`. |
-| `/verify-fix {BUG-ID\|ISSUE-ID}` | Local + MCP | **Fix close-out.** After a `/fix-finding` PR merges: re-runs the finding's affected TCs via `@test-runner` (TC-scoped, or `--iso` for a cross-module isolation re-run), flips `TEST-STATUS.md`, and marks the finding **RESOLVED** in `TEST-FINDINGS.md` with the PR#. The only skill authorized to close a finding; writes only to `test-cases/`. |
-| `/security-audit [scope]` | Local + MCP | **HRM security gate.** Reviews a diff (branch/US-ID/path) against this platform's threat model — tenant isolation, authz, injection, secrets, PII — and writes `security-reviews/{scope}.md` with severity-by-exploitability findings + fixes. Read-only; run before opening a PR. `--deep` fans out parallel reviewers. |
+| `/fix-finding {BUG-ID\|ISSUE-ID}` | Local + MCP | **Finding-driven fix driver.** Fixes ONE finding from `docs/QA/TEST-FINDINGS.md` end-to-end (dev agent + a regression TC via `@qa-engineer` + `@test-authenticator`/`@integration-enforcer`/`/security-audit` gates) on one `fix/{ID}` branch + PR. Edits `src/`; **does NOT touch the ledgers** — run `/verify-fix` after merge. The finding-driven counterpart to `/implement-story`. |
+| `/verify-fix {BUG-ID\|ISSUE-ID}` | Local + MCP | **Fix close-out.** After a `/fix-finding` PR merges: re-runs the finding's affected TCs via `@test-runner` (TC-scoped, or `--iso` for a cross-module isolation re-run), flips `TEST-STATUS.md`, and marks the finding **RESOLVED** in `TEST-FINDINGS.md` with the PR#. The only skill authorized to close a finding; writes only to `docs/QA/`. |
+| `/security-audit [scope]` | Local + MCP | **HRM security gate.** Reviews a diff (branch/US-ID/path) against this platform's threat model — tenant isolation, authz, injection, secrets, PII — and writes `docs/Architecture/security-reviews/{scope}.md` with severity-by-exploitability findings + fixes. Read-only; run before opening a PR. `--deep` fans out parallel reviewers. |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
-| `/design-review [URL\|--diff]` | Local + MCP (Playwright/Chrome-DevTools) | **Designer's-eye visual + UX audit (REPORT-ONLY).** Drives `@browser-debugger` to grade the *rendered* UI: first-impression, **AI-slop blacklist**, WCAG/typography/spacing/interaction checklist, trunk test + goodwill reservoir → a screenshot-backed report with **Design Score + AI-Slop Score** in `design-reports/`. The visual-taste counterpart to `/debug-ui` (correctness); never edits code. Adapted (MIT) from gstack `/design-review`, retargeted to our Angular 20 **App-UI** + multi-tenant stack. |
+| `/design-review [URL\|--diff]` | Local + MCP (Playwright/Chrome-DevTools) | **Designer's-eye visual + UX audit (REPORT-ONLY).** Drives `@browser-debugger` to grade the *rendered* UI: first-impression, **AI-slop blacklist**, WCAG/typography/spacing/interaction checklist, trunk test + goodwill reservoir → a screenshot-backed report with **Design Score + AI-Slop Score** in `docs/Design/design-reports/`. The visual-taste counterpart to `/debug-ui` (correctness); never edits code. Adapted (MIT) from gstack `/design-review`, retargeted to our Angular 20 **App-UI** + multi-tenant stack. |
 | `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
 | `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
-| `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `test-cases/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Read-only on code. Adapted (MIT) from gstack `/retro`. |
-| `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical-consultant advisory (REPORT-ONLY).** Evidence-anchored, ranked advisory over 3 net-new passes — tech-radar/dependency currency, ADR-drift, complexity/dead-code — plus light synthesis that links (never re-runs) the existing auditors. Writes `advisory-reports/`, updates `docs/radar/tech-radar.md`, proposes ADRs; folds actionable items into `/auto-heal`. Never edits src / deletes / bumps deps. Drives `@principal-advisor`. |
+| `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `docs/QA/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Read-only on code. Adapted (MIT) from gstack `/retro`. |
+| `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical-consultant advisory (REPORT-ONLY).** Evidence-anchored, ranked advisory over 3 net-new passes — tech-radar/dependency currency, ADR-drift, complexity/dead-code — plus light synthesis that links (never re-runs) the existing auditors. Writes `docs/Architecture/advisory-reports/`, updates `docs/Architecture/radar/tech-radar.md`, proposes ADRs; folds actionable items into `/auto-heal`. Never edits src / deletes / bumps deps. Drives `@principal-advisor`. |
 | `/auto-heal` | Local | **Living-plan self-healing (breadth).** On any `OUT-OF-LANE:` flag or discovered adjacent gap: files the finding to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and **re-sorts the priority order** (severity × blast-radius × unblocks-others; gated items park at the decision-gate). Encodes Engineering-Discipline rule #6. The orchestrator's counterpart to every agent's out-of-lane contract; complements `/error-recovery` + `/fault-diagnosis` (depth). Never bypasses report-only / test-integrity / decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
@@ -201,7 +201,7 @@ diagnosis). **Read-only on the codebase.**
 
 Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.md). Per story it:
 
-1. Picks the first `[ ]` story in `user-stories/STATUS.md` (scoped by module/ID arg, else priority order), marks it `[~]`, and cuts `feature/US-{MODULE}-{NNN}` from fresh `main`.
+1. Picks the first `[ ]` story in `docs/BA/STATUS.md` (scoped by module/ID arg, else priority order), marks it `[~]`, and cuts `feature/US-{MODULE}-{NNN}` from fresh `main`.
 2. Runs `@backend-dev` (incl. DB/EF/migrations), `@frontend-dev`, and `@qa-engineer` **in parallel** on non-overlapping paths; sub-agents do **not** commit.
 3. **Verify gate:** `dotnet build` → `dotnet test` → `npm run build` → `ng test` (headless). Any failure enters the **remediation loop** — up to 3 attempts that hand the verbatim errors to the owning dev agent and re-run the whole gate. It may **never** weaken/skip a test to go green; if it can't fix cleanly in 3 attempts it reverts the story to `[ ]` and stops without a PR.
 4. On green: commits `feat(US-XXX)`, pushes, opens a PR, flips STATUS.md `[~]`→`[x]` on `main`.
@@ -215,12 +215,12 @@ Source of truth: [.claude/skills/test-all.md](.claude/skills/test-all.md). The *
 them.** It has **no remediation loop** — a failing test produces a *finding*, not a fix attempt. Fixing is a
 separate step the human decides on after reviewing the ledger. Per story it:
 
-1. Picks the first `[ ]` (not-tested) story in [test-cases/TEST-STATUS.md](test-cases/TEST-STATUS.md) (scoped by module/ID arg, else priority order), pre-flights the running stack, marks it `[~]`.
+1. Picks the first `[ ]` (not-tested) story in [docs/QA/TEST-STATUS.md](docs/QA/TEST-STATUS.md) (scoped by module/ID arg, else priority order), pre-flights the running stack, marks it `[~]`.
 2. Dispatches `@test-runner` to execute every test case bound to that story — bound automated test (xUnit/Karma/Playwright) if present, else API-layer (curl + JWT) / UI-layer (Playwright MCP) per the TC steps.
-3. Records each TC verdict (flips the TC `status:` `draft → automated → pass | fail | blocked`) and appends **every** defect to [test-cases/TEST-FINDINGS.md](test-cases/TEST-FINDINGS.md) with the full schema: **type** (BUG/ISSUE/ENH), **severity**, **status** (`OPEN`), **layer**, module/US/TC, **root cause + confidence**, **reproduction steps**, and evidence.
+3. Records each TC verdict (flips the TC `status:` `draft → automated → pass | fail | blocked`) and appends **every** defect to [docs/QA/TEST-FINDINGS.md](docs/QA/TEST-FINDINGS.md) with the full schema: **type** (BUG/ISSUE/ENH), **severity**, **status** (`OPEN`), **layer**, module/US/TC, **root cause + confidence**, **reproduction steps**, and evidence.
 4. Flips TEST-STATUS.md: `[x]` tested-clean · `[!]` tested-with-findings (lists the finding IDs) · `[b]` blocked.
 
-`@test-runner` writes **only** to `test-cases/` ledgers — it must never edit `src/`, never weaken a test to
+`@test-runner` writes **only** to `docs/QA/` ledgers — it must never edit `src/`, never weaken a test to
 go green, and never open a PR. Run continuously with `/loop /test-all [scope]`; because nothing is auto-fixed
 and no PRs are opened, this is **safe to run unattended** — the worst case is a longer findings ledger to
 triage. `/test-us US-{ID}` is the manual single-shot variant (does not touch TEST-STATUS.md). The findings in
@@ -250,7 +250,7 @@ or hand a finding to a dev agent).
    │
    ▼
 @business-analyst ─────────────────────── MCP ──► branch: feature/user-stories-{module}
-   │  (writes user-stories/)                      PR: "IEEE 830 stories for {module}"
+   │  (writes docs/BA/)                      PR: "IEEE 830 stories for {module}"
    │                                              Issues: epic per module
    │
    ├── Stage 2 (parallel via git worktrees) ──┐
@@ -285,18 +285,33 @@ main
 ├── .env.example                   # Template for .env
 ├── .mcp.json                      # MCP server definitions (github, playwright) — loaded by Claude Code
 ├── .gitignore
-├── docs/                          # Technical documentation (source of truth)
-│   └── vault/                     # Obsidian vault — shared agent memory (see Shared Memory section)
-├── user-stories/                  # IEEE 830 user stories (by module)
-│   ├── {module-name}/
-│   │   └── US-{MOD}-001.md
-│   └── INDEX.md
-├── test-cases/                    # IEEE 829 test cases (by module)
-│   ├── {module-name}/
-│   │   ├── TC-{MOD}-001.md
-│   │   └── TEST-MATRIX.md
-│   ├── TRACEABILITY-MATRIX.md
-│   └── TEST-PLAN.md
+├── docs/                          # Discipline-based documentation (source of truth)
+│   ├── Architecture/              # System design, tech-radar, ADR index, tech doc, security reviews
+│   │   ├── radar/                 #   tech-radar (moved from docs/radar/)
+│   │   ├── advisory-reports/      #   /advisor output
+│   │   ├── security-reviews/      #   /security-audit output
+│   │   ├── hrm_technical_document_v4.0.md
+│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
+│   ├── BA/                        # IEEE 830 user stories (by module) — was user-stories/
+│   │   ├── {module-name}/US-{MOD}-001.md
+│   │   ├── INDEX.md · STATUS.md   #   STATUS.md = implement-all source of truth
+│   │   └── {README,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
+│   ├── QA/                        # IEEE 829 test cases + findings/plans — was test-cases/
+│   │   ├── {module-name}/TC-{MOD}-001.md
+│   │   ├── TEST-STATUS.md · TEST-FINDINGS.md · BUG-STATUS.md · TRACEABILITY-MATRIX.md
+│   │   ├── COMPLETION-PLAN-*.md · *-PLAN*.md   #   generated plans (active + closed)
+│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
+│   ├── DEV/                       # Build/run/CI conventions, tooling adoption
+│   │   ├── TOOLING-ADOPTION-PLAN.md
+│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md   # links local-dev/, ops/, perf/
+│   ├── Frontend/                  # Angular 20 conventions + FE findings
+│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
+│   ├── Design/                    # Visual/UX; /design-review output
+│   │   ├── design-reports/
+│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
+│   ├── vault/                     # Obsidian vault — shared agent memory (UNCHANGED; see Shared Memory)
+│   └── superpowers/               # brainstorming/writing-plans specs+plans (UNCHANGED)
+├── local-dev/ · ops/ · perf/      # Operational config/scripts (NOT docs — stay top-level)
 ├── src/
 │   ├── frontend/                  # Angular 20 SPA
 │   └── backend/                   # ASP.NET Core 10 API
@@ -451,4 +466,4 @@ Tenant isolation is enforced in **three coordinated layers** — when adding ent
 - UI stack: Angular Material + Tailwind CSS, ngx-translate (i18n), ngx-toastr (notifications).
 
 ### Traceability convention
-Code, user stories (`user-stories/`, IEEE 830), and test cases (`test-cases/`, IEEE 829) are cross-referenced by ID — e.g. `US-AUTH-007` appears in both `TenantService` comments and `test-cases/authentication/`. Preserve these references when modifying related code.
+Code, user stories (`docs/BA/`, IEEE 830), and test cases (`docs/QA/`, IEEE 829) are cross-referenced by ID — e.g. `US-AUTH-007` appears in both `TenantService` comments and `docs/QA/authentication/`. Preserve these references when modifying related code.

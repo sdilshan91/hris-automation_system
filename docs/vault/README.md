@@ -34,8 +34,8 @@ Agents (`@business-analyst`, `@frontend-dev`, `@backend-dev`, `@qa-engineer`) re
 ## What does NOT go in the vault
 
 - Secrets, tokens, passwords — use `.env` or `dotnet user-secrets`
-- User stories — those live in [user-stories/](../../user-stories/)
-- Test cases — those live in [test-cases/](../../test-cases/)
+- User stories — those live in [docs/BA/](../../docs/BA/)
+- Test cases — those live in [docs/QA/](../../docs/QA/)
 - Code — that's in [src/](../../src/)
 - Generated logs or transient task state
 

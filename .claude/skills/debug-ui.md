@@ -41,7 +41,7 @@ You can pass a free-text symptom, a URL, a tenant, and/or a story ID to verify.
 3. **Delegate to `@browser-debugger`** — launch the sub-agent with the parsed context. It will:
    navigate, reproduce the steps, then collect **console messages**, **network requests**,
    **accessibility snapshot**, runtime state via `browser_evaluate`, and a screenshot if useful.
-4. **If verifying a story** — read `user-stories/{module}/US-{ID}.md`, drive the relevant flow, and
+4. **If verifying a story** — read `docs/BA/{module}/US-{ID}.md`, drive the relevant flow, and
    check each acceptance criterion against observed behavior.
 5. **Return the diagnosis** in the agent's report format (Symptom → Reproduction → Evidence → Likely
    root cause → Suggested fix / next agent). Screenshots/traces are saved under

@@ -50,8 +50,8 @@ jobs:
           model: claude-opus-4-6
           prompt: |
             You are the @business-analyst agent. Read the agent definition at .claude/agents/team/business-analyst.md.
-            Analyze docs/hrm_technical_document_v4.0.md and generate IEEE 830 user stories for module: ${{ inputs.module || 'authentication' }}.
-            Write stories to user-stories/${{ inputs.module || 'authentication' }}/ directory.
+            Analyze docs/Architecture/hrm_technical_document_v4.0.md and generate IEEE 830 user stories for module: ${{ inputs.module || 'authentication' }}.
+            Write stories to docs/BA/${{ inputs.module || 'authentication' }}/ directory.
             Create an INDEX.md if it doesn't exist.
           allowed_tools: "Read,Write,Glob,Grep,Bash"
         env:
@@ -63,7 +63,7 @@ jobs:
           git config user.email "claude-bot@users.noreply.github.com"
           BRANCH="feature/user-stories-${{ inputs.module || 'authentication' }}"
           git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
-          git add user-stories/
+          git add docs/BA/
           git commit -m "docs(user-stories): add ${{ inputs.module || 'authentication' }} user stories [IEEE 830]
 
           Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>" || echo "No changes"
@@ -109,7 +109,7 @@ jobs:
           model: claude-opus-4-6
           prompt: |
             You are the @frontend-dev agent. Read the agent definition at .claude/agents/team/frontend-dev.md.
-            Read user stories from user-stories/${{ inputs.module || 'authentication' }}/ directory.
+            Read user stories from docs/BA/${{ inputs.module || 'authentication' }}/ directory.
             Implement the Angular 20 frontend components for these stories.
             Write code to src/frontend/ following the architecture in the agent definition.
           allowed_tools: "Read,Write,Edit,Glob,Grep,Bash"
@@ -160,7 +160,7 @@ jobs:
           model: claude-opus-4-6
           prompt: |
             You are the @backend-dev agent. Read the agent definition at .claude/agents/team/backend-dev.md.
-            Read user stories from user-stories/${{ inputs.module || 'authentication' }}/ directory.
+            Read user stories from docs/BA/${{ inputs.module || 'authentication' }}/ directory.
             Implement the ASP.NET Core 10 backend for these stories.
             Write code to src/backend/ following Clean Architecture.
           allowed_tools: "Read,Write,Edit,Glob,Grep,Bash"
@@ -211,8 +211,8 @@ jobs:
           model: claude-opus-4-6
           prompt: |
             You are the @qa-engineer agent. Read the agent definition at .claude/agents/team/qa-engineer.md.
-            Read user stories from user-stories/${{ inputs.module || 'authentication' }}/ directory.
-            Write IEEE 829 test cases to test-cases/${{ inputs.module || 'authentication' }}/ directory.
+            Read user stories from docs/BA/${{ inputs.module || 'authentication' }}/ directory.
+            Write IEEE 829 test cases to docs/QA/${{ inputs.module || 'authentication' }}/ directory.
             Create TEST-MATRIX.md and update TRACEABILITY-MATRIX.md.
           allowed_tools: "Read,Write,Glob,Grep,Bash"
         env:
@@ -224,7 +224,7 @@ jobs:
           git config user.email "claude-bot@users.noreply.github.com"
           BRANCH="feature/qa-${{ inputs.module || 'authentication' }}"
           git checkout -b "$BRANCH"
-          git add test-cases/
+          git add docs/QA/
           git commit -m "test(qa/${{ inputs.module || 'authentication' }}): add IEEE 829 test cases
 
           Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>" || echo "No changes"

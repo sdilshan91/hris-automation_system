@@ -52,7 +52,7 @@ Chrome DevTools MCP and is read-only). Give it this skill's phases as its brief.
 screenshots, extracts the rendered design system via `browser_evaluate`, and runs
 `lighthouse_audit` for perf/a11y. Keep the *report*, not the raw tool dumps. Screenshots save to
 `.playwright-artifacts/` (gitignored); the graded report is written to
-`design-reports/{tenant}-{scope}-{YYYY-MM-DD}.md`.
+`docs/Design/design-reports/{tenant}-{scope}-{YYYY-MM-DD}.md`.
 
 **Classifier first:** our HRM screens are **APP UI** (data-dense workspace: dashboards, employee
 lists, admin console, settings). Apply the **App UI rules** below, not Landing-Page rules. The only
@@ -210,7 +210,7 @@ Material components, one-off divergence usually means a component wasn't reused 
 
 ## Phase 6 — Compile the graded report
 
-Write `design-reports/{tenant}-{scope}-{YYYY-MM-DD}.md` with:
+Write `docs/Design/design-reports/{tenant}-{scope}-{YYYY-MM-DD}.md` with:
 
 - **Two headline grades:** **Design Score {A-F}** (weighted average) and **AI Slop Score {A-F}**
   (standalone, with a one-line verdict).

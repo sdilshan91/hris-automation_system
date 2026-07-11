@@ -7,7 +7,7 @@ user_invocable: true
 # Retro (engineering retrospective)
 
 > Adapted for this repo (MIT) from the gstack `/retro` skill. Retargeted to our git history, PRs,
-> `test-cases/` ledgers, and the Obsidian vault as the trend store.
+> `docs/QA/` ledgers, and the Obsidian vault as the trend store.
 
 Turns raw git/PR/ledger activity over a window into an honest retrospective: what actually shipped,
 whether quality and velocity are trending up or down **vs the previous retro**, what hurt, and a
@@ -27,9 +27,9 @@ short list of action items. Read-only on the codebase — it only writes the ret
 1. **Commits & PRs in the window** — `git log --since=<date> --stat`, merged PRs
    (`gh pr list --state merged --search "merged:>=<date>"` or the GitHub MCP). Group by area
    (module / `src/backend` / `src/frontend` / `.claude` tooling / docs).
-2. **Findings deltas** — diff `test-cases/TEST-FINDINGS.md` and `TEST-STATUS.md` over the window:
+2. **Findings deltas** — diff `docs/QA/TEST-FINDINGS.md` and `TEST-STATUS.md` over the window:
    how many findings **opened** vs **RESOLVED**, by severity; net open count; any new **CRITICAL/HIGH**.
-   (Use `git log -p --since=<date> -- test-cases/TEST-FINDINGS.md` to see the churn.)
+   (Use `git log -p --since=<date> -- docs/QA/TEST-FINDINGS.md` to see the churn.)
 3. **Incidents** — any new notes in `docs/vault/incidents/` this window.
 4. **Previous retro** — read the most recent `docs/vault/retros/*.md` to compute **trend deltas**
    (this is what makes a retro more than a changelog). If none exists, this is the baseline.

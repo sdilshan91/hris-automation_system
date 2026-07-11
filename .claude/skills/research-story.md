@@ -1,6 +1,6 @@
 ---
 name: research-story
-description: Feasibility / GO–NO-GO gate for ONE user story before it is coded. Reads the story, explores the current codebase + vault, and writes research/US-{ID}.md with a verdict. Run this before /implement-story or /implement-all when a story is large, risky, or architecturally unclear.
+description: Feasibility / GO–NO-GO gate for ONE user story before it is coded. Reads the story, explores the current codebase + vault, and writes docs/DEV/research/US-{ID}.md with a verdict. Run this before /implement-story or /implement-all when a story is large, risky, or architecturally unclear.
 user_invocable: true
 ---
 
@@ -34,11 +34,11 @@ Small, well-specified CRUD stories don't need this — go straight to `/implemen
 ## Process
 
 1. **Validate input** — story ID matches `US-[A-Z]+-\d{3}` and the file exists at
-   `user-stories/{module}/US-{ID}.md`. Abort with a clear message if not.
+   `docs/BA/{module}/US-{ID}.md`. Abort with a clear message if not.
 2. **Load context** (read-only — no code changes):
    - The story file (goal, acceptance criteria, NFRs).
    - `docs/vault/modules/{module}.md` and `docs/vault/decisions/` for prior domain rules / ADRs.
-   - `user-stories/STATUS.md` for dependencies on not-yet-built stories.
+   - `docs/BA/STATUS.md` for dependencies on not-yet-built stories.
 3. **Explore the codebase** — use the `Explore` agent (or Grep/Glob) to map what already
    exists for this area: entities, CQRS handlers, controllers, EF configs, Angular
    features/services, and existing test cases. Identify what is reusable vs. net-new.
@@ -58,10 +58,10 @@ Small, well-specified CRUD stories don't need this — go straight to `/implemen
    Include a **confidence %** on the verdict.
 6. **Open questions** — if anything is genuinely ambiguous, list the questions and
    **stop**; surface them to the user rather than guessing (CLAUDE.md advisor stance).
-7. **Write the report** to `research/US-{ID}.md` (create `research/` if absent) using the
+7. **Write the report** to `docs/DEV/research/US-{ID}.md` (create `docs/DEV/research/` if absent) using the
    template below, and print the verdict + report path.
 
-## Output template (`research/US-{ID}.md`)
+## Output template (`docs/DEV/research/US-{ID}.md`)
 
 ```markdown
 # Research: US-{ID} — {story title}
@@ -91,7 +91,7 @@ Small, well-specified CRUD stories don't need this — go straight to `/implemen
 ## Open questions
 - ...
 
-Refs: user-stories/{module}/US-{ID}.md
+Refs: docs/BA/{module}/US-{ID}.md
 ```
 
 ## Relationship to the other skills
@@ -106,5 +106,5 @@ until the conditions are resolved.
 ## Does NOT
 
 - Write or modify application code, branches, commits, or PRs.
-- Touch `user-stories/STATUS.md`.
+- Touch `docs/BA/STATUS.md`.
 - Run the build/test verify gate (that's the implement skills' job).

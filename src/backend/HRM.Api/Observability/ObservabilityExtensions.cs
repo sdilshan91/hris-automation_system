@@ -9,7 +9,7 @@ using OpenTelemetry.Trace;
 namespace HRM.Api.Observability;
 
 /// <summary>
-/// P3 observability wiring (see <c>docs/observability-otel-grafana-plan.md</c>): OpenTelemetry traces + metrics
+/// P3 observability wiring (see <c>docs/Architecture/observability-otel-grafana-plan.md</c>): OpenTelemetry traces + metrics
 /// for the HRM API. Grouped into a single extension (mirrors <c>AddInfrastructure</c>) so <c>Program.cs</c>
 /// gains just one call.
 ///

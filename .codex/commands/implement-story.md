@@ -11,7 +11,7 @@ Use this when the user asks Codex to run `/implement-story US-XXX-000`, `impleme
 ## Codex Adaptation
 
 1. Validate the story ID matches `US-[A-Z]+-[0-9]{3}`.
-2. Locate the story under `user-stories/{module}/`.
+2. Locate the story under `docs/BA/{module}/`.
 3. Read `CLAUDE.md`, `.claude/dev-instructions.md`, the story file, and related vault notes.
 4. Verify the working tree is clean and the current branch is `main`.
 5. Create `feature/US-XXX`.
@@ -19,7 +19,7 @@ Use this when the user asks Codex to run `/implement-story US-XXX-000`, `impleme
    - Backend: `src/backend/`
    - Frontend: `src/frontend/`
    - DB: persistence-specific backend files such as EF configurations, migrations, seed data, query filters, and database indexes
-   - QA: `test-cases/{module}/`
+   - QA: `docs/QA/{module}/`
 7. Give backend, frontend, and QA agents the matching prompt template from `.claude/skills/implement-all.md`. Give DB the wrapper at `.codex/agents/team/db-engineer.md`, the story file, and the backend context. Add this Codex-specific rule to every agent:
    - "You are not alone in the codebase. Do not revert unrelated changes or edits made by other agents."
 8. Run an integration/bug-fix pass locally:
@@ -34,4 +34,4 @@ Use this when the user asks Codex to run `/implement-story US-XXX-000`, `impleme
 11. Push and open a PR using GitHub MCP if available, otherwise `git push` and `gh pr create` if configured.
 12. Return the PR URL.
 
-Do not modify `user-stories/STATUS.md`; that is the main difference from `implement-all`.
+Do not modify `docs/BA/STATUS.md`; that is the main difference from `implement-all`.

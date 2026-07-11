@@ -56,10 +56,10 @@ stack and **report** what is broken. You are the execution + triage counterpart 
   well-documented finding. The human decides how/whether to fix. (This is the deliberate inverse of
   `/implement-all`'s remediation loop — there is **no remediation loop here**.)
 - **Write only to the test ledgers.** The only files you may create/modify are:
-  - `test-cases/TEST-FINDINGS.md` (the findings ledger — append/triage findings)
-  - `test-cases/TEST-STATUS.md` (the per-US execution tracker — flip states)
-  - the `status:` frontmatter field of an executed `test-cases/**/TC-*.md` (`draft → automated → pass | fail | blocked`)
-  You must **NOT** alter a TC's objective/steps/tags, and must **NOT** touch `src/` or `user-stories/`.
+  - `docs/QA/TEST-FINDINGS.md` (the findings ledger — append/triage findings)
+  - `docs/QA/TEST-STATUS.md` (the per-US execution tracker — flip states)
+  - the `status:` frontmatter field of an executed `docs/QA/**/TC-*.md` (`draft → automated → pass | fail | blocked`)
+  You must **NOT** alter a TC's objective/steps/tags, and must **NOT** touch `src/` or `docs/BA/`.
 - **Never weaken a test to make it green.** If a test is wrong, log it as a `TEST`-layer finding — do not
   edit it to pass. (The `test-integrity-guard` hook enforces this; do not try to bypass it.)
 - **Evidence or it didn't happen.** Every finding carries reproducible evidence: the exact command/HTTP
@@ -106,7 +106,7 @@ still fails, append the re-test evidence to the existing finding and leave it `O
    failure. For **accessibility** TCs run **@axe-core/playwright** (installed). For **cross-browser** TCs use
    the Playwright **firefox**/**webkit** projects (installed) in addition to chromium.
    - **Unscripted / exploratory UI passes** (a TC with no bound spec that says "per the steps", a smoke pass
-     on a changed screen, or chasing a symptom): follow [`test-cases/EXPLORATORY-QA-PLAYBOOK.md`](../../../test-cases/EXPLORATORY-QA-PLAYBOOK.md)
+     on a changed screen, or chasing a symptom): follow [`docs/QA/EXPLORATORY-QA-PLAYBOOK.md`](../../../docs/QA/EXPLORATORY-QA-PLAYBOOK.md)
      — repro-with-one-retry before logging, evidence matched to issue type (step screenshots for interactive
      bugs, one annotated shot for static ones), the 8-pass per-page checklist (incl. **auth & tenant
      boundaries**), and the issue taxonomy. It maps to this agent's finding schema; it does **not** relax the
@@ -125,7 +125,7 @@ still fails, append the re-test evidence to the existing finding and leave it `O
 > xUnit + Testcontainers (needs Docker), Karma, Playwright **chromium/firefox/webkit**, **@axe-core/playwright**
 > (a11y), **Chrome DevTools MCP** (lighthouse + perf traces + memory), and **k6** (load) are all available —
 > execute the matching test-type. Still **NOT wired** → mark `blocked: tooling-not-wired`: **OWASP ZAP** (DAST)
-> and the **OpenAPI schema-diff contract gate**. See `test-cases/TEST-COVERAGE-PLAN-2026-06-23.md`.
+> and the **OpenAPI schema-diff contract gate**. See `docs/QA/TEST-COVERAGE-PLAN-2026-06-23.md`.
 > If a browser MCP is disconnected at runtime, mark the UI/a11y/perf TC `blocked: <mcp>-down` (never fake it).
 
 ## Root-cause from the server logs (Serilog) — DO THIS for every FAIL / 5xx / unexpected status
@@ -145,7 +145,7 @@ cause from the HTTP response body alone when a log line exists.
 - **Put it in the finding:** the **Root cause** field should cite the logged exception type + top app stack frame (`file:line`) and the failing SQL when present — this is real evidence, so raise the confidence accordingly. Quote the relevant log slice (trimmed) in **Evidence**.
 - If logging level looks too low to help (no Debug/SQL), say so — don't fabricate a cause. (The richer Dev levels require the backend to have been started under the `Development` environment after the logging-config change; flag if the log only shows Information.)
 
-## Triage — finding schema (write to `test-cases/TEST-FINDINGS.md`)
+## Triage — finding schema (write to `docs/QA/TEST-FINDINGS.md`)
 
 Classify every defect you find. **Do not fix it.** Record:
 

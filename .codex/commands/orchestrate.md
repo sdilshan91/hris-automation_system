@@ -15,12 +15,12 @@ Use this when the user asks Codex to run `/orchestrate`, `orchestrate`, or the f
 1. Read the Claude source files above, `CLAUDE.md`, and `.claude/dev-instructions.md`.
 2. Ask for or infer the target module. Follow the module priority in `CLAUDE.md` if the user asks for the next module.
 3. Stage 1: run business analysis first.
-   - Preferred write scope: `user-stories/{module}/`, `user-stories/INDEX.md`, and `user-stories/STATUS.md`.
+   - Preferred write scope: `docs/BA/{module}/`, `docs/BA/INDEX.md`, and `docs/BA/STATUS.md`.
    - Use the business analyst role spec.
 4. Stage 2: run implementation and QA in parallel only when scopes are disjoint.
    - Frontend owns `src/frontend/`.
    - Backend owns `src/backend/`.
-   - QA owns `test-cases/{module}/` and traceability matrices.
+   - QA owns `docs/QA/{module}/` and traceability matrices.
 5. Tell all worker agents:
    - They are not alone in the codebase.
    - Do not revert unrelated changes.

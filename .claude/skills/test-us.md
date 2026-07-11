@@ -18,23 +18,23 @@ Executes the test cases bound to a single user story and triages the results. Th
 
 ## Relationship to the other skills
 
-- `/test-us` = manual one-shot for a specific story you name. **Does NOT** update `test-cases/TEST-STATUS.md`.
-- `/test-all` = picks the next untested story from `test-cases/TEST-STATUS.md`, runs essentially this same
+- `/test-us` = manual one-shot for a specific story you name. **Does NOT** update `docs/QA/TEST-STATUS.md`.
+- `/test-all` = picks the next untested story from `docs/QA/TEST-STATUS.md`, runs essentially this same
   flow, and flips the tracker afterward.
 - Both are **report-only** and drive the `@test-runner` agent. Neither edits `src/` or opens a PR.
 
 ## Process
 
 1. **Validate input** — ID matches `US-[A-Z]+-\d{3}` and the story is **implemented** (`[x]` in
-   `user-stories/STATUS.md`). If the story isn't built yet → stop: "nothing to test."
+   `docs/BA/STATUS.md`). If the story isn't built yet → stop: "nothing to test."
 2. **Pre-flight the stack** — confirm API `http://localhost:5000` and FE `http://localhost:4200` respond.
    If down, STOP and tell the user how to start it (do not fabricate verdicts). Note whether Docker is up
    (Testcontainers-backed backend integration needs it).
-3. **Gather the TCs** — find every `test-cases/**/TC-*.md` whose `user_story:` == the target US. Read the
+3. **Gather the TCs** — find every `docs/QA/**/TC-*.md` whose `user_story:` == the target US. Read the
    story's ACs for context.
 4. **Dispatch `@test-runner`** with: the US id, the list of TC files, the running-stack URLs, and the
    personas/credentials. It executes each TC (bound automated test → else API/UI probe), records a verdict,
-   and appends findings to `test-cases/TEST-FINDINGS.md`. Pass the explicit contract:
+   and appends findings to `docs/QA/TEST-FINDINGS.md`. Pass the explicit contract:
    ```
    Execute the TCs for US-{ID}. REPORT-ONLY: do NOT edit src/, do NOT fix anything, do NOT open a PR.
    For each TC pick the layer by its test-type: bound automated test if present; API (curl+JWT); UI
@@ -42,7 +42,7 @@ Executes the test cases bound to a single user story and triages the results. Th
    performance (Chrome DevTools MCP — lighthouse_audit / perf trace); API load (k6). Record PASS/FAIL/BLOCKED
    and flip the TC `status:` frontmatter. Only mark `blocked: tooling-not-wired` for OWASP ZAP / OpenAPI
    contract gate (not yet wired); if a browser MCP is disconnected, `blocked: <mcp>-down` — never fake it.
-   For every FAIL/defect, append a finding to test-cases/TEST-FINDINGS.md with the full schema
+   For every FAIL/defect, append a finding to docs/QA/TEST-FINDINGS.md with the full schema
    (type, severity, layer, module, US, TC, title, root-cause+confidence, repro steps, evidence).
    Do NOT weaken any test to go green. Return a per-TC verdict table + new finding IDs.
    ```

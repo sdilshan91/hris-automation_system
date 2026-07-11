@@ -100,7 +100,7 @@ where this platform gets breached — weight it hardest.
 
 ## Output
 
-Write the report to `security-reviews/{scope}.md` (create the folder if absent; `{scope}`
+Write the report to `docs/Architecture/security-reviews/{scope}.md` (create the folder if absent; `{scope}`
 = branch name or US-ID) using this structure, and print the verdict + path:
 
 ```markdown

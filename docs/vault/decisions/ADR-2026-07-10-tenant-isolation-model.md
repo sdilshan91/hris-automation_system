@@ -7,7 +7,7 @@ tags: [multi-tenancy, architecture, postgres, ef-core, security, rls]
 supersedes: none
 related:
   - "[[ADR-2026-07-08-saas-data-governance-posture]]"
-  - "user-stories/platform/US-PLT-002.md"
+  - "docs/BA/platform/US-PLT-002.md"
   - "src/backend/HRM.Infrastructure/Persistence/Rls/README.md"
 ---
 
@@ -221,4 +221,4 @@ Redis — and only needs the `hrm_owner`/`hrm_app` roles from `roles.sql` create
 - PgBouncer connection pooling at SaaS scale:
   https://www.pgbouncer.org/config.html
 - Internal: `src/backend/HRM.Infrastructure/Persistence/Rls/README.md`,
-  `user-stories/platform/US-PLT-002.md`, `[[ADR-2026-07-08-saas-data-governance-posture]]`
+  `docs/BA/platform/US-PLT-002.md`, `[[ADR-2026-07-08-saas-data-governance-posture]]`

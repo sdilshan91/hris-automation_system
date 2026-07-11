@@ -81,7 +81,7 @@ keeps the main-loop context lean and matches `/design-review` → `@browser-debu
 `TOOLING-ADOPTION-PLAN.md` (adopted vs planned vs landed). Scouts new/relevant tech via `WebSearch` +
 the **microsoft-learn MCP** — *disciplined*: new tech defaults to **Assess/Hold**, and every
 Adopt/Trial move must state fit-for-this-stack + migration cost (guards against radar hype inflation).
-→ updates `docs/radar/tech-radar.md`.
+→ updates `docs/Architecture/radar/tech-radar.md`.
 
 **B. ADR-drift.** Reads `docs/vault/decisions/*.md`. For each ADR, verifies its **Decision /
 Consequences** still hold in the code/config (examples: governance ADR says "RLS planned" → is
@@ -99,8 +99,8 @@ false positives. → dead-code **candidates (human-confirm only)** + complexity/
 
 ## 6. Synthesis & the honesty contract (the differentiator)
 
-`@principal-advisor` merges the 3 passes, optionally ingests existing reports (`security-reviews/`,
-`design-reports/`, `TEST-FINDINGS.md`) to **link** rather than re-run them, dedupes, and ranks by
+`@principal-advisor` merges the 3 passes, optionally ingests existing reports (`docs/Architecture/security-reviews/`,
+`docs/Design/design-reports/`, `TEST-FINDINGS.md`) to **link** rather than re-run them, dedupes, and ranks by
 **severity × effort × blast-radius**. Non-negotiable rules (inherit CLAUDE.md Advisor Stance):
 1. **Evidence-or-it-doesn't-exist** — every finding cites a tool output / `file:line` / CVE / CRAP
    number / drifted-ADR reference. Un-anchored "consider improving X" is banned.
@@ -114,8 +114,8 @@ false positives. → dead-code **candidates (human-confirm only)** + complexity/
 6. **No ledger spam** — cap findings per run; "would a senior engineer bother?" filter.
 
 ## 7. Outputs (the "document" mandate)
-- `advisory-reports/{scope}-{YYYY-MM-DD}.md` — the ranked, evidence-anchored advisory.
-- `docs/radar/tech-radar.md` — living, versioned Adopt/Trial/Assess/Hold radar.
+- `docs/Architecture/advisory-reports/{scope}-{YYYY-MM-DD}.md` — the ranked, evidence-anchored advisory.
+- `docs/Architecture/radar/tech-radar.md` — living, versioned Adopt/Trial/Assess/Hold radar.
 - Proposed ADR stubs/updates in `docs/vault/decisions/` (drift + new-decision candidates) for human
   acceptance.
 - Actionable items fold into **`/auto-heal` + `TEST-FINDINGS.md`** (the existing seam) — the advisor
