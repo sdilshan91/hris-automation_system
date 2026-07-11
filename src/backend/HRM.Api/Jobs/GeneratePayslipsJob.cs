@@ -33,18 +33,48 @@ public sealed class GeneratePayslipsJob
         var tenantRunner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var renderer = scope.ServiceProvider.GetRequiredService<IPayslipBatchRenderer>();
 
-        // RLS increment 2c: run the render via the shared runner so it sets the tenant context (and, gated on
-        // Rls:Enabled, the app.current_tenant GUC) — this payroll-run-by-id job stays inside the RLS backstop.
+        // ISSUE-269: split the batch render into READ → WORK → WRITE so the heavy PDF render + upload never sits
+        // inside one long tenant-GUC transaction (RLS idle-in-transaction). The READ and each per-chunk WRITE run
+        // via the shared runner (so the tenant context — and, gated on Rls:Enabled, the app.current_tenant GUC —
+        // is set for the DB work); the WORK phase runs OUTSIDE any runner call, so no transaction is held idle
+        // through the minutes-long render. Under RLS-off the runner no-ops the transaction, so this is identical
+        // to the prior single-call behaviour.
+        PayslipRenderPlan? plan = null;
         await tenantRunner.RunForTenantAsync(tenantId, tenantSubdomain, async ct =>
         {
-            var result = await renderer.RenderRunAsync(runId, ct);
-
-            if (result.IsFailure)
-                Log.Warning("GeneratePayslipsJob did not complete. RunId={RunId}, Error={Error}", runId, result.Error);
+            var planResult = await renderer.LoadRenderPlanAsync(runId, ct);
+            if (planResult.IsSuccess)
+                plan = planResult.Value;
             else
-                Log.Information(
-                    "Completed GeneratePayslipsJob. RunId={RunId}, Generated={Generated}, Failed={Failed}",
-                    runId, result.Value!.Generated, result.Value.Failed);
+                Log.Warning("GeneratePayslipsJob did not complete. RunId={RunId}, Error={Error}", runId, planResult.Error);
         }, cancellationToken);
+
+        if (plan is null)
+            return;
+
+        if (plan.Items.Count == 0)
+        {
+            Log.Information("Completed GeneratePayslipsJob. RunId={RunId}, Generated=0, Failed=0", runId);
+            return;
+        }
+
+        // WORK — outside any runner call / tenant-GUC transaction (pure CPU + storage IO).
+        var outcomes = await renderer.RenderAndUploadAsync(plan, cancellationToken);
+
+        // WRITE — commit each chunk in its own short transaction (chunk of 200; no run-level aggregate to keep atomic).
+        foreach (var chunk in outcomes.Chunk(WriteChunkSize))
+        {
+            await tenantRunner.RunForTenantAsync(tenantId, tenantSubdomain,
+                ct => renderer.PersistRenderResultsAsync(chunk, ct), cancellationToken);
+        }
+
+        var generated = outcomes.Count(o => o.Ok);
+        var failed = outcomes.Count(o => !o.Ok);
+        Log.Information(
+            "Completed GeneratePayslipsJob. RunId={RunId}, Generated={Generated}, Failed={Failed}",
+            runId, generated, failed);
     }
+
+    /// <summary>ISSUE-269: slips per WRITE transaction. Free to pick (no run-level aggregate to keep atomic).</summary>
+    private const int WriteChunkSize = 200;
 }

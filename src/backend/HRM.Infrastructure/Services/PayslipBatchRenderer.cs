@@ -50,21 +50,64 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
         _logger = logger;
     }
 
+    /// <summary>
+    /// Thin convenience for non-job callers (tests): runs the READ → WORK → WRITE phases in sequence in one flow
+    /// (identical result to the pre-ISSUE-269 single-method version). The Hangfire job orchestrates the phases
+    /// itself so the heavy WORK phase runs outside any tenant-GUC transaction.
+    /// </summary>
     public async Task<Result<PayslipBatchResult>> RenderRunAsync(Guid runId, CancellationToken cancellationToken = default)
     {
+        var planResult = await LoadRenderPlanAsync(runId, cancellationToken);
+        if (planResult.IsFailure)
+            return Result<PayslipBatchResult>.Failure(planResult.Error!, planResult.StatusCode ?? 400, planResult.ErrorCode);
+
+        var plan = planResult.Value!;
+        if (plan.Items.Count == 0)
+            return Result<PayslipBatchResult>.Success(new PayslipBatchResult(0, 0));
+
+        var outcomes = await RenderAndUploadAsync(plan, cancellationToken);
+        await PersistRenderResultsAsync(outcomes, cancellationToken);
+
+        var generated = outcomes.Count(o => o.Ok);
+        var failed = outcomes.Count(o => !o.Ok);
+
+        _logger.LogInformation(
+            "Payslip batch render complete. RunId={RunId}, Generated={Generated}, Failed={Failed}, Tenant={TenantId}",
+            plan.RunId, generated, failed, plan.TenantId);
+
+        return Result<PayslipBatchResult>.Success(new PayslipBatchResult(generated, failed));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, CancellationToken cancellationToken = default)
+    {
         if (!_tenantContext.IsResolved)
-            return Result<PayslipBatchResult>.Failure("Tenant context is not resolved.", 400);
+            return Result<PayslipRenderPlan>.Failure("Tenant context is not resolved.", 400);
 
         var run = await _dbContext.PayrollRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
         if (run is null)
-            return Result<PayslipBatchResult>.Failure("Payroll run not found.", 404, "run_not_found");
+            return Result<PayslipRenderPlan>.Failure("Payroll run not found.", 404, "run_not_found");
 
-        var slips = await _dbContext.PayrollSlips
+        var tenantId = _tenantContext.TenantId;
+
+        // ISSUE-269: load slips AsNoTracking + project to SlipId — no tracked entities are carried into WORK.
+        var slips = await _dbContext.PayrollSlips.AsNoTracking()
             .Where(s => s.PayrollRunId == runId)
+            .Select(s => new
+            {
+                s.Id, s.EmployeeId, s.PayMonth, s.PayYear,
+                s.GrossEarnings, s.TotalDeductions, s.NetSalary, s.WorkingDays, s.PaidDays, s.LopDays,
+            })
             .ToListAsync(cancellationToken);
 
         if (slips.Count == 0)
-            return Result<PayslipBatchResult>.Success(new PayslipBatchResult(0, 0));
+        {
+            var emptyPlan = new PayslipRenderPlan(
+                runId, tenantId, new PayslipBranding { CompanyName = "Company" },
+                new Dictionary<Guid, string>(), new Dictionary<Guid, string>(),
+                false, null, []);
+            return Result<PayslipRenderPlan>.Success(emptyPlan);
+        }
 
         // Bulk-load the supporting data ONCE (avoids N+1 across 5,000 slips, NFR-1).
         var employeeIds = slips.Select(s => s.EmployeeId).Distinct().ToList();
@@ -72,7 +115,11 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
 
         var employees = await _dbContext.Employees.AsNoTracking()
             .Where(e => employeeIds.Contains(e.Id))
-            .ToDictionaryAsync(e => e.Id, cancellationToken);
+            .ToDictionaryAsync(
+                e => e.Id,
+                e => new PayslipEmployeeSnapshot(
+                    e.FirstName, e.LastName, e.EmployeeNo, e.DepartmentId, e.JobTitleId, e.DateOfJoining),
+                cancellationToken);
 
         var departments = await _dbContext.Departments.AsNoTracking()
             .ToDictionaryAsync(d => d.Id, d => d.Name, cancellationToken);
@@ -81,16 +128,18 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
 
         var detailsBySlip = (await _dbContext.PayrollSlipDetails.AsNoTracking()
                 .Where(d => slipIds.Contains(d.PayrollSlipId))
+                .Select(d => new { d.PayrollSlipId, d.ComponentName, d.ComponentType, d.Amount })
                 .ToListAsync(cancellationToken))
             .GroupBy(d => d.PayrollSlipId)
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<PayslipDetailSnapshot>)g
+                    .Select(d => new PayslipDetailSnapshot(d.ComponentName, d.ComponentType, d.Amount)).ToList());
 
         var showYtd = TenantYtdEnabled();
         var ytdByComponent = showYtd
             ? await BuildYtdAsync(run.PayYear, run.PayMonth, employeeIds, cancellationToken)
             : null;
-
-        var tenantId = _tenantContext.TenantId;
 
         // ISSUE-158: per-tenant branding (name/address/colour + logo) applied to every slip in the run. The
         // Tenant row is NOT covered by the global query filter (it IS the tenant), so it is loaded strictly by
@@ -105,41 +154,54 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
                 CompanyName = string.IsNullOrWhiteSpace(_tenantContext.Subdomain) ? "Company" : _tenantContext.Subdomain!,
             };
 
-        var generated = 0;
-        var failed = 0;
-        var updates = new ConcurrentBag<(Guid SlipId, bool Ok, string? Path, int Size)>();
+        var items = slips.Select(s => new PayslipRenderItem(
+            s.Id, s.EmployeeId,
+            new PayslipSlipSnapshot(
+                s.EmployeeId, s.PayMonth, s.PayYear, s.GrossEarnings, s.TotalDeductions, s.NetSalary,
+                s.WorkingDays, s.PaidDays, s.LopDays),
+            employees.GetValueOrDefault(s.EmployeeId),
+            detailsBySlip.GetValueOrDefault(s.Id, []))).ToList();
+
+        return Result<PayslipRenderPlan>.Success(new PayslipRenderPlan(
+            runId, tenantId, branding, departments, jobTitles, showYtd, ytdByComponent, items));
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PayslipRenderOutcome>> RenderAndUploadAsync(
+        PayslipRenderPlan plan, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId; // still set by the runner's SetTenant across phases (ISSUE-269).
+        var outcomes = new ConcurrentBag<PayslipRenderOutcome>();
 
         using var gate = new SemaphoreSlim(MaxConcurrency);
-        var tasks = slips.Select(async slip =>
+        var tasks = plan.Items.Select(async item =>
         {
             await gate.WaitAsync(cancellationToken);
             try
             {
-                var relativePath = PayslipStoragePath.ForSlip(run.Id, slip.EmployeeId); // NFR-6: GUID-derived, asserted safe.
+                var relativePath = PayslipStoragePath.ForSlip(plan.RunId, item.EmployeeId); // NFR-6: GUID-derived, asserted safe.
                 try
                 {
-                    employees.TryGetValue(slip.EmployeeId, out var employee);
-                    var details = detailsBySlip.GetValueOrDefault(slip.Id, new List<PayrollSlipDetail>());
-
                     var model = BuildModel(
-                        slip, employee, details, branding, departments, jobTitles, showYtd,
-                        ytdByComponent?.GetValueOrDefault((slip.EmployeeId, false)),
-                        ytdByComponent?.GetValueOrDefault((slip.EmployeeId, true)));
+                        item.Slip, item.Employee, item.Details, plan.Branding, plan.Departments, plan.JobTitles,
+                        plan.ShowYtd,
+                        plan.YtdByComponent?.GetValueOrDefault((item.EmployeeId, false)),
+                        plan.YtdByComponent?.GetValueOrDefault((item.EmployeeId, true)));
 
                     var bytes = PayslipPdfRenderer.Render(model);
 
                     using var stream = new MemoryStream(bytes, writable: false);
                     await _fileStorage.UploadAsync(tenantId, relativePath, stream, "application/pdf", cancellationToken);
 
-                    updates.Add((slip.Id, true, relativePath, bytes.Length));
+                    outcomes.Add(new PayslipRenderOutcome(item.SlipId, true, relativePath, bytes.Length));
                 }
                 catch (Exception ex)
                 {
                     // FR-8: individual failure — flag + log, keep the batch going (retryable on regenerate).
                     _logger.LogError(ex,
                         "Payslip render failed. RunId={RunId}, SlipId={SlipId}, EmployeeId={EmployeeId}, Tenant={TenantId}",
-                        run.Id, slip.Id, slip.EmployeeId, tenantId);
-                    updates.Add((slip.Id, false, null, 0));
+                        plan.RunId, item.SlipId, item.EmployeeId, tenantId);
+                    outcomes.Add(new PayslipRenderOutcome(item.SlipId, false, null, 0));
                 }
             }
             finally
@@ -149,37 +211,45 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
         });
 
         await Task.WhenAll(tasks);
+        return outcomes.ToList();
+    }
 
-        // Apply the updates on the tracked slip entities + persist once.
-        var now = DateTime.UtcNow;
+    /// <inheritdoc />
+    public async Task PersistRenderResultsAsync(
+        IReadOnlyList<PayslipRenderOutcome> chunk, CancellationToken cancellationToken = default)
+    {
+        if (chunk.Count == 0)
+            return;
+
+        var ids = chunk.Select(c => c.SlipId).ToList();
+        var slips = await _dbContext.PayrollSlips
+            .Where(s => ids.Contains(s.Id))
+            .ToListAsync(cancellationToken);
         var slipById = slips.ToDictionary(s => s.Id);
-        foreach (var (slipId, ok, path, size) in updates)
+
+        var now = DateTime.UtcNow;
+        foreach (var outcome in chunk)
         {
-            var slip = slipById[slipId];
-            if (ok)
+            if (!slipById.TryGetValue(outcome.SlipId, out var slip))
+                continue;
+
+            if (outcome.Ok)
             {
                 slip.PdfStatus = PayslipPdfStatus.Generated;
-                slip.PdfStoragePath = path;
+                slip.PdfStoragePath = outcome.Path;
                 slip.PdfGeneratedAt = now;
-                slip.PdfFileSizeBytes = size;
-                generated++;
+                slip.PdfFileSizeBytes = outcome.Size;
             }
             else
             {
                 slip.PdfStatus = PayslipPdfStatus.Failed;
                 slip.PdfGeneratedAt = null;
                 slip.PdfFileSizeBytes = null;
-                failed++;
             }
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Payslip batch render complete. RunId={RunId}, Generated={Generated}, Failed={Failed}, Tenant={TenantId}",
-            run.Id, generated, failed, tenantId);
-
-        return Result<PayslipBatchResult>.Success(new PayslipBatchResult(generated, failed));
+        _dbContext.ChangeTracker.Clear(); // keep the tracker bounded across chunks of a large run.
     }
 
     /// <summary>
@@ -221,9 +291,9 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
     }
 
     private static PayslipDocumentModel BuildModel(
-        PayrollSlip slip,
-        Employee? employee,
-        List<PayrollSlipDetail> details,
+        PayslipSlipSnapshot slip,
+        PayslipEmployeeSnapshot? employee,
+        IReadOnlyList<PayslipDetailSnapshot> details,
         PayslipBranding branding,
         IReadOnlyDictionary<Guid, string> departments,
         IReadOnlyDictionary<Guid, string> jobTitles,
@@ -231,7 +301,7 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
         IReadOnlyDictionary<string, decimal>? earningYtd,
         IReadOnlyDictionary<string, decimal>? deductionYtd)
     {
-        PayslipLine ToLine(PayrollSlipDetail d, bool deductionSide)
+        PayslipLine ToLine(PayslipDetailSnapshot d, bool deductionSide)
         {
             var isStatutory = string.Equals(d.ComponentType, nameof(SalaryComponentType.Statutory), StringComparison.OrdinalIgnoreCase);
             decimal? ytd = null;

@@ -39,18 +39,50 @@ public sealed class SendPayslipEmailsJob
         var tenantRunner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var runner = scope.ServiceProvider.GetRequiredService<IPayslipDistributionRunner>();
 
-        // RLS increment 2c: run the send loop via the shared runner so it sets the tenant context (and, gated on
-        // Rls:Enabled, the app.current_tenant GUC) — this payroll-run-by-id job stays inside the RLS backstop.
+        // ISSUE-269: split the send loop into READ → per-item WORK → per-send WRITE so no SMTP send sits inside a
+        // long tenant-GUC transaction (RLS idle-in-transaction), and each result is committed per-send. The READ
+        // and each per-send WRITE run via the shared runner (tenant context + GUC gated on Rls:Enabled); the SMTP
+        // send runs OUTSIDE any runner call. Committing per-send also fixes the crash-resumability bug: a mid-batch
+        // crash keeps the already-sent rows (previously all log rows were saved only at the very end). Under RLS-off
+        // the runner no-ops the transaction, so this is identical to the prior single-call behaviour.
+        PayslipSendPlan? plan = null;
         await tenantRunner.RunForTenantAsync(tenantId, tenantSubdomain, async ct =>
         {
-            var result = await runner.RunAsync(runId, targetEmployeeIds, ct);
-
-            if (result.IsFailure)
-                Log.Warning("SendPayslipEmailsJob did not complete. RunId={RunId}, Error={Error}", runId, result.Error);
+            var planResult = await runner.LoadSendPlanAsync(runId, targetEmployeeIds, ct);
+            if (planResult.IsSuccess)
+                plan = planResult.Value;
             else
-                Log.Information(
-                    "Completed SendPayslipEmailsJob. RunId={RunId}, Sent={Sent}, Failed={Failed}, Skipped={Skipped}",
-                    runId, result.Value!.EmailsSent, result.Value.EmailsFailed, result.Value.EmailsSkipped);
+                Log.Warning("SendPayslipEmailsJob did not complete. RunId={RunId}, Error={Error}", runId, planResult.Error);
         }, cancellationToken);
+
+        if (plan is null)
+            return;
+
+        var sent = 0;
+        var failed = 0;
+        var skipped = 0;
+        foreach (var item in plan.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // NFR-3 / resume: never re-send an employee already Sent for this run.
+            if (plan.AlreadySent.Contains(item.EmployeeId))
+                continue;
+
+            // WORK — SMTP send outside any runner call / tenant-GUC transaction.
+            var outcome = await runner.SendOneAsync(item, cancellationToken);
+
+            // WRITE — commit this one send in its own short transaction (resumability).
+            await tenantRunner.RunForTenantAsync(tenantId, tenantSubdomain,
+                ct => runner.PersistSendOutcomeAsync(outcome, ct), cancellationToken);
+
+            if (outcome.Status == HRM.Domain.Payroll.EmailDeliveryStatus.Sent) sent++;
+            else if (outcome.Status == HRM.Domain.Payroll.EmailDeliveryStatus.Skipped) skipped++;
+            else failed++;
+        }
+
+        Log.Information(
+            "Completed SendPayslipEmailsJob. RunId={RunId}, Sent={Sent}, Failed={Failed}, Skipped={Skipped}",
+            runId, sent, failed, skipped);
     }
 }

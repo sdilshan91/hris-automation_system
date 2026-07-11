@@ -49,11 +49,76 @@ public interface IPayslipDistributionRunner
     /// <summary>
     /// Sends payslip emails for the run. When <paramref name="targetEmployeeIds"/> is null, processes every
     /// employee in the run (skipping those already Sent, NFR-3); otherwise only the targeted employees (FR-4
-    /// selective re-send). Returns the resulting summary.
+    /// selective re-send). Returns the resulting summary. Thin convenience that runs the three phases below in
+    /// sequence for non-job callers (tests) — the Hangfire job orchestrates the phases so each SMTP send runs
+    /// OUTSIDE any tenant-GUC transaction and each result is committed per-send (ISSUE-269).
     /// </summary>
     Task<Result<PayslipDistributionSummaryDto>> RunAsync(
         Guid runId, IReadOnlyCollection<Guid>? targetEmployeeIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-269 phase 1 — READ. Loads (AsNoTracking) the run + slips + employees + already-Sent set and projects
+    /// them to non-tracked send-items. Keeps the BR-1 Finalized guard (409). Runs inside a short tenant-GUC
+    /// transaction (the job wraps it in <see cref="ITenantJobRunner"/>). 404 when the run does not exist.
+    /// </summary>
+    Task<Result<PayslipSendPlan>> LoadSendPlanAsync(
+        Guid runId, IReadOnlyCollection<Guid>? targetEmployeeIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-269 phase 2 — WORK (no DB, no transaction). Reads the PDF from storage and sends ONE email with the
+    /// existing Polly retry (NFR-2); the job runs it OUTSIDE any runner call so SMTP is never inside a tenant-GUC
+    /// transaction. Preserves the AC-3 no-email → Skipped and no-PDF → Failed branches. Returns the send outcome.
+    /// A storage/infra fault propagates (a real mid-batch crash) — already-persisted sends survive it (phase 3).
+    /// </summary>
+    Task<PayslipSendOutcome> SendOneAsync(PayslipSendItem item, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-269 phase 3 — WRITE (one short transaction per send). Upserts the (run, employee) PayslipEmailLog row
+    /// for this outcome, SaveChanges, then clears the change tracker. Committing per-send is what makes a partial
+    /// run resumable: a crash after this returns cannot lose an already-recorded send.
+    /// </summary>
+    Task PersistSendOutcomeAsync(PayslipSendOutcome outcome, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// ISSUE-269: an immutable snapshot of everything the per-send WORK phase needs — NO tracked entities, so it can
+/// safely outlive the READ transaction and be processed with no DbContext access.
+/// </summary>
+public sealed record PayslipSendPlan(
+    Guid RunId,
+    Guid TenantId,
+    string CompanyName,
+    string? FromAddress,
+    IReadOnlyList<PayslipSendItem> Items,
+    IReadOnlySet<Guid> AlreadySent);
+
+/// <summary>One employee's non-tracked send inputs.</summary>
+public sealed record PayslipSendItem(
+    Guid RunId,
+    Guid TenantId,
+    Guid PayrollSlipId,
+    Guid EmployeeId,
+    string? RecipientEmail,
+    string EmployeeName,
+    string EmployeeNo,
+    int PayMonth,
+    int PayYear,
+    string CompanyName,
+    string? FromAddress,
+    bool PdfGenerated,
+    string? PdfStoragePath,
+    int RetryCountBaseline);
+
+/// <summary>Result of attempting one employee's send (persisted per-send in phase 3).</summary>
+public sealed record PayslipSendOutcome(
+    Guid RunId,
+    Guid PayrollSlipId,
+    Guid EmployeeId,
+    string Recipient,
+    string Status,
+    DateTime? SentAt,
+    string? FailureReason,
+    int RetryCount);
 
 /// <summary>
 /// Seam that enqueues the tenant-aware SendPayslipEmailsJob (US-PAY-011 FR-1/FR-8). Implemented in HRM.Api

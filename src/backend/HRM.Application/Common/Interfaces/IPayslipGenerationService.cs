@@ -1,5 +1,6 @@
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
+using HRM.Domain.Payroll;
 
 namespace HRM.Application.Common.Interfaces;
 
@@ -50,12 +51,80 @@ public interface IPayslipGenerationService
 /// </summary>
 public interface IPayslipBatchRenderer
 {
-    /// <summary>Renders + stores all slips for the run; returns (generated, failed) counts.</summary>
+    /// <summary>
+    /// Renders + stores all slips for the run; returns (generated, failed) counts. Thin convenience that runs
+    /// the three phases below in sequence for non-job callers (tests) — the Hangfire job orchestrates the
+    /// phases itself so the heavy render/upload runs OUTSIDE any tenant-GUC transaction (ISSUE-269).
+    /// </summary>
     Task<Result<PayslipBatchResult>> RenderRunAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-269 phase 1 — READ. Bulk-loads (AsNoTracking) the run + slips + employees + details + branding and
+    /// projects them to non-tracked value snapshots so the WORK phase carries no tracked entities. Runs inside a
+    /// short tenant-GUC transaction (the job wraps it in <see cref="ITenantJobRunner"/>). Returns the render plan
+    /// (empty Items when the run has no slips). 404 when the run does not exist for the tenant.
+    /// </summary>
+    Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-269 phase 2 — WORK (no DB, no transaction). The bounded-concurrency (NFR-3) render + storage-upload
+    /// loop over the plan snapshots. Pure CPU + file IO; the job runs it OUTSIDE any runner call so no tenant-GUC
+    /// transaction is held idle through the minutes-long render. Returns one outcome per slip.
+    /// </summary>
+    Task<IReadOnlyList<PayslipRenderOutcome>> RenderAndUploadAsync(
+        PayslipRenderPlan plan, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-269 phase 3 — WRITE (one short transaction per chunk). Loads just this chunk's slips fresh, applies
+    /// the four PDF fields (success/failure exactly as before), SaveChanges, then clears the change tracker so it
+    /// stays bounded across chunks of a large run. The job calls this per ~200-slip chunk.
+    /// </summary>
+    Task PersistRenderResultsAsync(
+        IReadOnlyList<PayslipRenderOutcome> chunk, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a payslip batch render (US-PAY-004 FR-7/FR-8).</summary>
 public sealed record PayslipBatchResult(int Generated, int Failed);
+
+/// <summary>
+/// ISSUE-269: an immutable snapshot of everything the render+upload WORK phase needs — NO tracked entities, so it
+/// can safely outlive the READ transaction and be processed with no DbContext access.
+/// </summary>
+public sealed record PayslipRenderPlan(
+    Guid RunId,
+    Guid TenantId,
+    PayslipBranding Branding,
+    IReadOnlyDictionary<Guid, string> Departments,
+    IReadOnlyDictionary<Guid, string> JobTitles,
+    bool ShowYtd,
+    IReadOnlyDictionary<(Guid EmployeeId, bool IsDeductionSide), Dictionary<string, decimal>>? YtdByComponent,
+    IReadOnlyList<PayslipRenderItem> Items);
+
+/// <summary>One slip's non-tracked render inputs.</summary>
+public sealed record PayslipRenderItem(
+    Guid SlipId,
+    Guid EmployeeId,
+    PayslipSlipSnapshot Slip,
+    PayslipEmployeeSnapshot? Employee,
+    IReadOnlyList<PayslipDetailSnapshot> Details);
+
+/// <summary>The <see cref="PayslipBatchResult"/>-relevant scalars of a slip, copied off the tracked entity.</summary>
+public sealed record PayslipSlipSnapshot(
+    Guid EmployeeId,
+    int PayMonth, int PayYear,
+    decimal GrossEarnings, decimal TotalDeductions, decimal NetSalary,
+    decimal WorkingDays, decimal PaidDays, decimal LopDays);
+
+/// <summary>The employee scalars the payslip model needs, copied off the tracked entity.</summary>
+public sealed record PayslipEmployeeSnapshot(
+    string FirstName, string LastName, string EmployeeNo,
+    Guid DepartmentId, Guid JobTitleId, DateTime? DateOfJoining);
+
+/// <summary>One payslip line's scalars, copied off the tracked detail entity.</summary>
+public sealed record PayslipDetailSnapshot(string ComponentName, string ComponentType, decimal Amount);
+
+/// <summary>Result of rendering + uploading one slip's PDF (the WORK phase output persisted per chunk).</summary>
+public sealed record PayslipRenderOutcome(Guid SlipId, bool Ok, string? Path, int Size);
 
 /// <summary>
 /// Seam that enqueues the tenant-aware GeneratePayslipsJob (US-PAY-004 FR-4). Implemented in HRM.Api over

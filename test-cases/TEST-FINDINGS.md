@@ -5908,3 +5908,15 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** The Redis command-span instrumentation (`AddRedisInstrumentation` on the shared `IConnectionMultiplexer`) covers `IDistributedCache` + the SignalR backplane, but NOT the EF second-level cache: `EFCoreSecondLevelCacheInterceptor.StackExchange.Redis` 5.3.13 owns a PRIVATE multiplexer (its public API — `UseStackExchangeRedisCacheProvider(string|ConfigurationOptions, TimeSpan, bool)` — neither exposes nor accepts a shared one). Covering it would need a custom `IEFCacheServiceProvider` built on the shared multiplexer (deferred).
 - **Note:** the shared-multiplexer change also **consolidates Redis connection pools** (one pool instead of two/three).
 - **Suggested (NOT applied):** either a custom `IEFCacheServiceProvider` on the shared multiplexer, or accept the EF cache is observed via cache.hit/miss metrics (`InstrumentedEFCacheServiceProvider`) + DB spans (a miss shows as a Postgres span) instead of Redis command-spans. Report only.
+
+### ISSUE-275 — WorkflowRuntimeConcurrencyPostgresTests intermittently flakes under full-suite parallel load
+- **Type / Severity / Status:** TEST-HEALTH · LOW · OPEN (auto-healed from the ISSUE-268 build, 2026-07-11)
+- **Layer:** BE tests · **Module:** Workflows (US-ADM-011 runtime)
+- **Title:** `WorkflowRuntimeConcurrencyPostgresTests.ConcurrentApprovals_SameStep_ExactlyOneWins_NoDoubleAdvance_AC12` intermittently fails when the whole `dotnet test` suite runs under parallel Testcontainers load; it passes reliably in isolation and on a clean full re-run (verified twice this session). A parallel-resource-contention flake, not a product defect (the AC-12 single-winner guarantee is sound).
+- **Suggested (NOT applied):** stabilize under contention — e.g. give this concurrency test its own container/collection to reduce shared-pool pressure, or add a bounded retry on the *test harness* (never on the assertion). Report only; could redden CI intermittently.
+
+### ISSUE-276 — Redis IDistributedCache→shared-multiplexer coupling would break a future Redis-configured non-API host
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from the Redis command-spans build, 2026-07-11)
+- **Layer:** BE / DI composition · **Module:** Caching / observability
+- **Title:** After PR #245, `AddInfrastructure`'s `IDistributedCache` uses `AddOptions<RedisCacheOptions>().Configure<IConnectionMultiplexer>(...)`, so a host that sets a Redis connection string but does NOT register the shared `IConnectionMultiplexer` (a future worker/tool host) would throw when the cache is first built. Only the API host (HRM.Api) registers it today, so no live defect; documented in-code at `DependencyInjection.cs:705-707`.
+- **Suggested (NOT applied):** if a worker/tool host is ever added, register the shared multiplexer there too, OR move `AddSharedRedisMultiplexer` into a shared composition helper that `AddInfrastructure` invokes when Redis is configured. Report only.
