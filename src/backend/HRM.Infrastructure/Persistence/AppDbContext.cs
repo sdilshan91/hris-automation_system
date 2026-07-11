@@ -174,6 +174,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // US-TRN-001: training catalog + course enrollments (tenant-scoped).
     public DbSet<TrainingCourse> TrainingCourses => Set<TrainingCourse>();
     public DbSet<CourseEnrollment> CourseEnrollments => Set<CourseEnrollment>();
+    public DbSet<BenefitPlan> BenefitPlans => Set<BenefitPlan>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -637,6 +638,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         modelBuilder.Entity<CourseEnrollment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-TRN-002 (AC-8, FR-6): tenant isolation for benefit plans.
+        modelBuilder.Entity<BenefitPlan>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
