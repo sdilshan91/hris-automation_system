@@ -658,6 +658,7 @@ public static class DependencyInjection
         // ── Training & Benefits (US-TRN-001 / US-TRN-002) ──
         services.AddScoped<ITrainingService, TrainingService>();
         services.AddScoped<IBenefitPlanService, BenefitPlanService>();
+        services.AddScoped<IBenefitEnrollmentService, BenefitEnrollmentService>();
 
         // HTML sanitizer (NFR-4 XSS) — stateless/thread-safe, registered as a singleton.
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();

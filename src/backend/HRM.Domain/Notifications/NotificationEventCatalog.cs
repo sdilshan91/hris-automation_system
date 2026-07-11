@@ -175,6 +175,15 @@ public static class NotificationEventCatalog
         .. TenantPlaceholders,
     ];
 
+    // ── Shared placeholders for the US-TRN-003 benefit-enrollment events (US-NTF-006). MUST be declared before
+    // _byKey: the eager BuildCatalog() at type-init references it, so a later declaration would leave it null →
+    // NRE in the type initializer (Phase 2a lesson). ──
+    private static readonly string[] BenefitPlaceholders =
+    [
+        "plan.name", "employee.firstName", "employee.lastName", "enrollment.status",
+        .. TenantPlaceholders,
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1633,12 +1642,56 @@ public static class NotificationEventCatalog
                 "Regards,\n{{tenant.companyName}}",
             Category: NotificationCategory.OnboardingOffboarding,
             IsMandatory: false);
+
+        // ── US-TRN-003 benefit-enrollment lifecycle (US-NTF-006). Recipient = the affected employee. No dedicated
+        // Benefits preference category exists, so these use OnboardingOffboarding (the closest HR bucket) — see the
+        // ENH flagged for the training events; the same applies here. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "benefit_enrolled",
+            EventName: "Benefit Enrollment Confirmed",
+            Placeholders: [.. BenefitPlaceholders],
+            SampleData: BenefitSample(),
+            DefaultSubject: "You're enrolled in {{plan.name}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your enrollment in <strong>{{plan.name}}</strong> is <strong>confirmed</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your enrollment in {{plan.name}} is confirmed.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "benefit_terminated",
+            EventName: "Benefit Enrollment Terminated",
+            Placeholders: [.. BenefitPlaceholders],
+            SampleData: BenefitSample(status: "Terminated"),
+            DefaultSubject: "Your enrollment in {{plan.name}} has ended",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your enrollment in <strong>{{plan.name}}</strong> has been <strong>terminated</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your enrollment in {{plan.name}} has been terminated.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
     }
 
     // ── Sample-data for the US-TRN-001 training events. ──
     private static Dictionary<string, object?> TrainingSample(string status = "Enrolled") => new()
     {
         ["course"] = new Dictionary<string, object?> { ["title"] = "Workplace Safety 101" },
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["enrollment"] = new Dictionary<string, object?> { ["status"] = status },
+        ["tenant"] = SampleTenant(),
+    };
+
+    // ── Sample-data for the US-TRN-003 benefit-enrollment events. ──
+    private static Dictionary<string, object?> BenefitSample(string status = "Active") => new()
+    {
+        ["plan"] = new Dictionary<string, object?> { ["name"] = "Gold Health" },
         ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
         ["enrollment"] = new Dictionary<string, object?> { ["status"] = status },
         ["tenant"] = SampleTenant(),

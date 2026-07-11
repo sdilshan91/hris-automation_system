@@ -7,6 +7,12 @@ import {
   ICreateBenefitPlan,
   IUpdateBenefitPlan,
   IChangeBenefitPlanStatus,
+  IEligibilityRule,
+  ICreateEligibilityRule,
+  IEligiblePlan,
+  IEnrollRequest,
+  IBenefitEnrollment,
+  ITerminateEnrollmentRequest,
 } from '../models/benefit.models';
 
 /**
@@ -72,6 +78,97 @@ export class BenefitService {
     return this.http.post<IBenefitPlan>(
       `${this.baseUrl}/plans/${planId}/status`,
       request,
+      { withCredentials: true }
+    );
+  }
+
+  // =============================================================
+  // US-TRN-003: Eligibility rules (Manage) + enrollment
+  //
+  // Backend contract (`api/v1/tenant/benefits`):
+  //   GET    /plans/:planId/eligibility-rules      - list rules (View.All/Manage)
+  //   POST   /plans/:planId/eligibility-rules      - add rule (Manage)
+  //   DELETE /eligibility-rules/:id                - remove rule (Manage)
+  //   GET    /eligible                             - plans I qualify for (View.Own+)
+  //   POST   /enrollments                          - enroll self/other
+  //   POST   /enrollments/:id/terminate            - terminate an enrollment
+  //   GET    /me/enrollments                       - my enrollments (View.Own+)
+  //   GET    /employees/:employeeId/enrollments    - an employee's enrollments
+  // =============================================================
+
+  /** List the eligibility rules for a plan (View.All/Manage). */
+  getEligibilityRules(planId: string): Observable<IEligibilityRule[]> {
+    return this.http.get<IEligibilityRule[]>(
+      `${this.baseUrl}/plans/${planId}/eligibility-rules`,
+      { withCredentials: true }
+    );
+  }
+
+  /** Add an eligibility rule to a plan (Manage). */
+  createEligibilityRule(
+    planId: string,
+    request: ICreateEligibilityRule
+  ): Observable<IEligibilityRule> {
+    return this.http.post<IEligibilityRule>(
+      `${this.baseUrl}/plans/${planId}/eligibility-rules`,
+      request,
+      { withCredentials: true }
+    );
+  }
+
+  /** Remove an eligibility rule (Manage). */
+  deleteEligibilityRule(ruleId: string): Observable<void> {
+    return this.http.delete<void>(
+      `${this.baseUrl}/eligibility-rules/${ruleId}`,
+      { withCredentials: true }
+    );
+  }
+
+  /** Plans the current user's employee qualifies for right now (self-service). */
+  getEligiblePlans(): Observable<IEligiblePlan[]> {
+    return this.http.get<IEligiblePlan[]>(`${this.baseUrl}/eligible`, {
+      withCredentials: true,
+    });
+  }
+
+  /**
+   * Enroll in a plan. Null employeeId → the current user's employee (View.Own);
+   * a non-null employeeId enrolls another employee (Manage).
+   */
+  enroll(request: IEnrollRequest): Observable<IBenefitEnrollment> {
+    return this.http.post<IBenefitEnrollment>(
+      `${this.baseUrl}/enrollments`,
+      request,
+      { withCredentials: true }
+    );
+  }
+
+  /** Terminate an enrollment (Terminated + EndDate; default today). */
+  terminate(
+    enrollmentId: string,
+    request: ITerminateEnrollmentRequest = {}
+  ): Observable<IBenefitEnrollment> {
+    return this.http.post<IBenefitEnrollment>(
+      `${this.baseUrl}/enrollments/${enrollmentId}/terminate`,
+      request,
+      { withCredentials: true }
+    );
+  }
+
+  /** The current user's employee's enrollments (self-service). */
+  getMyEnrollments(): Observable<IBenefitEnrollment[]> {
+    return this.http.get<IBenefitEnrollment[]>(
+      `${this.baseUrl}/me/enrollments`,
+      { withCredentials: true }
+    );
+  }
+
+  /** An employee's enrollments (self via View.Own, others via View.All/Manage). */
+  getEmployeeEnrollments(
+    employeeId: string
+  ): Observable<IBenefitEnrollment[]> {
+    return this.http.get<IBenefitEnrollment[]>(
+      `${this.baseUrl}/employees/${employeeId}/enrollments`,
       { withCredentials: true }
     );
   }
