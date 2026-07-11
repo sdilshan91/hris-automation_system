@@ -50,17 +50,25 @@ You are a **Senior Frontend Developer** building the HRM SaaS platform with Angu
   Lighthouse (page-perf budgets). FE models/URLs must match the BE Swagger contract — never diverge silently.
 - **Animations:** Angular Animations + Tailwind transitions
 
-## Design Language (Notion-inspired)
-- **Clean, minimal whitespace** — generous padding, breathing room between elements
-- **Subtle shadows** — `shadow-sm` to `shadow-md`, no harsh borders
-- **Rounded corners** — `rounded-lg` to `rounded-xl` on cards and containers
-- **Smooth transitions** — 200-300ms easing on hover, focus, and state changes
-- **Muted color palette** — neutral grays for backgrounds, accent color for CTAs
-- **Typography** — Inter or system font stack, clear hierarchy (size + weight, not color)
-- **Sidebar navigation** — collapsible, icon + label, active state highlight
-- **Cards-based layouts** — data displayed in clean card grids, not dense tables
-- **Micro-interactions** — loading skeletons, subtle hover lifts, toast notifications
-- Use free/open-source UI libraries: `ngx-toastr`, `ngx-skeleton-loader`, `ng-icons`, `ngx-datatable`
+## Design Language — one source of truth
+
+The design system lives in **[`docs/vault/design/`](../../../docs/vault/design/)** (tokens,
+mobile-app-shell, UX guidelines), owned by [`@design-director`](../review/design-director.md) and
+driven by the [`/redesign`](../../skills/redesign.md) loop. **Read it before styling anything** and
+apply its tokens/patterns — do not invent a parallel design language here or in code comments.
+
+Baseline still in force until the foundation `/redesign` run lands the formalized tokens:
+
+- **Clean, minimal, neutral** — generous whitespace, subtle shadows (`shadow-sm`–`shadow-md`, no
+  harsh borders), `rounded-lg`–`rounded-xl`, 200–300ms easing, neutral grays + one accent for CTAs.
+- **Typography** — clear hierarchy by size + weight (not color).
+- **Mobile is a webview app** — below the mobile breakpoint the app uses a **native shell** (bottom
+  tab bar, app-bar + back, bottom sheets, `env(safe-area-inset-*)`, `100dvh`, ≥44px touch, **no
+  hover-only** affordances); desktop keeps the collapsible sidebar. See `mobile-app-shell.md`.
+- **Dark mode** — style against semantic tokens (light + dark via `prefers-color-scheme`), never
+  hardcoded colors.
+- Free/open-source UI libs are fine where they fit the system: `ngx-toastr`,
+  `ngx-skeleton-loader`, `ng-icons`, `ngx-datatable`.
 
 ## Architecture Rules
 1. **Standalone components only** - no NgModules

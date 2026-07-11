@@ -153,11 +153,13 @@ diagnosis). **Read-only on the codebase.**
 | `@test-authenticator` | **Read-only auditor** of test quality — flags "test theater" (mock-everything, tautologies, happy-path-only, InMemory-masks-Postgres, fake isolation arms). Reports a verdict; **never edits/weakens a test.** Use after test code changes. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 | `@integration-enforcer` | **Read-only auditor** of wiring — catches orphaned code (undispatched MediatR handlers, missing DI, unrouted Angular components, entities missing tenant query filters). Reports a verdict; **never wires it itself.** Use after implementation. | _(no branch — review only)_ | _none (read-only: Read/Glob/Grep/Bash)_ |
 | `@principal-advisor` | **Read-only technical-consultant synthesizer.** Runs the /advisor v1 passes (dependency currency, ADR-drift, complexity/dead-code) + ingests existing auditor reports → ONE ranked, evidence-anchored advisory. REPORT-ONLY — never edits code/opens PRs. | _(no branch — advisory only)_ | _none (read-only: Read/Glob/Grep/Bash/WebSearch/WebFetch + microsoft-learn)_ |
+| `@design-director` | **Report-only product-design + design-systems authority.** Audits the rendered UI (directing `@browser-debugger` for evidence), owns the mobile-webview design system in [`docs/vault/design/`](docs/vault/design/) (tokens, native app-shell, UX rules), and writes build-ready per-screen redesign **briefs** for `@frontend-dev`. PRESCRIBES the target (design-review only *grades*); never edits `src/`/opens PRs. Drives the [`/redesign`](.claude/skills/redesign.md) loop. | _(no branch — design only)_ | _none (read-only on code: Read/Glob/Grep/Bash; Write/Edit scoped to `docs/vault/design/` + `docs/Design/design-reports/`)_ |
 
-> The last three are **auxiliary local review agents** in [`.claude/agents/review/`](.claude/agents/review/)
-> (adapted from third-party MIT agent definitions, retargeted to this stack). They are read-only and
-> report-only — separate from the pipeline `team/` agents above; invoke them explicitly or let them
-> auto-delegate after dev/test changes.
+> The last four are **auxiliary local review agents** in [`.claude/agents/review/`](.claude/agents/review/)
+> (the first three adapted from third-party MIT agent definitions, retargeted to this stack;
+> `@design-director` is repo-native). They are read-only/report-only on code — separate from the
+> pipeline `team/` agents above; invoke them explicitly or let them auto-delegate after dev/test
+> changes.
 
 ## Skills (Slash Commands)
 
@@ -175,6 +177,7 @@ diagnosis). **Read-only on the codebase.**
 | `/security-audit [scope]` | Local + MCP | **HRM security gate.** Reviews a diff (branch/US-ID/path) against this platform's threat model — tenant isolation, authz, injection, secrets, PII — and writes `docs/Architecture/security-reviews/{scope}.md` with severity-by-exploitability findings + fixes. Read-only; run before opening a PR. `--deep` fans out parallel reviewers. |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
 | `/design-review [URL\|--diff]` | Local + MCP (Playwright/Chrome-DevTools) | **Designer's-eye visual + UX audit (REPORT-ONLY).** Drives `@browser-debugger` to grade the *rendered* UI: first-impression, **AI-slop blacklist**, WCAG/typography/spacing/interaction checklist, trunk test + goodwill reservoir → a screenshot-backed report with **Design Score + AI-Slop Score** in `docs/Design/design-reports/`. The visual-taste counterpart to `/debug-ui` (correctness); never edits code. Adapted (MIT) from gstack `/design-review`, retargeted to our Angular 20 **App-UI** + multi-tenant stack. |
+| `/redesign [foundation\|{module}]` | Local + MCP | **Design-system + UX redesign loop** (the design counterpart to `/implement-all`) driving the UI toward a modern, fully-responsive **webview mobile app**. Sequences `@design-director` (prescribes tokens/app-shell/briefs) → `@frontend-dev` (builds — the only code editor) → `/design-review` (verifies score) into **one reviewable PR per run**. Run 1 = the design-token foundation + **native mobile app-shell** (bottom tabs, safe-area, dark mode); runs 2..N redesign one module each. Resumable via [`docs/vault/design/REDESIGN-STATUS.md`](docs/vault/design/REDESIGN-STATUS.md); never weakens a test to go green. |
 | `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
 | `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
 | `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `docs/QA/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Read-only on code. Adapted (MIT) from gstack `/retro`. |
@@ -327,13 +330,15 @@ main
 │   ├── agents/review/             # Auxiliary read-only review agents (local, adapted)
 │   │   ├── test-authenticator.md  # Flags fake/theatrical tests (report-only)
 │   │   ├── integration-enforcer.md # Flags orphaned/unwired code (report-only)
-│   │   └── principal-advisor.md   # Read-only technical-consultant synthesizer
+│   │   ├── principal-advisor.md   # Read-only technical-consultant synthesizer
+│   │   └── design-director.md     # Report-only design-system + UX authority (prescribes briefs)
 │   ├── skills/                    # Slash command skills
 │   │   ├── orchestrate.md         # Local + MCP pipeline
 │   │   ├── analyze-module.md
 │   │   ├── implement-story.md
 │   │   ├── debug-ui.md            # Browser debugging via Playwright MCP
 │   │   ├── design-review.md       # Designer's-eye visual + UX audit (report-only)
+│   │   ├── redesign.md            # Design-system + UX redesign loop (director → builder → verify)
 │   │   ├── fault-diagnosis.md     # Root-cause-before-fix discipline (local)
 │   │   ├── error-recovery.md      # Stuck-loop breaker / failure-counter (local)
 │   │   ├── retro.md               # Engineering retrospective from git + ledgers (local)
