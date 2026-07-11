@@ -99,10 +99,10 @@ try
     // FR-6 destructive ops even under a full impersonation. Runs before the handler (and before the tenant
     // transaction) so a forbidden write never touches the database.
     builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ImpersonationReadOnlyBehavior<,>));
-    // US-PLT-002: ambient SET LOCAL app.current_tenant for RLS. Registered last so it is
-    // the innermost behavior (its transaction spans the handler). Inert until Rls:Enabled
-    // (Phase-4 switch-on) and a no-op on non-relational providers / system context.
-    builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(HRM.Infrastructure.Behaviors.TenantTransactionBehavior<,>));
+    // US-PLT-002 (ISSUE-277): the RLS app.current_tenant GUC is now set at connection-open by
+    // TenantGucConnectionInterceptor (a single tx-less set_config), NOT a per-request transaction. The former
+    // TenantTransactionBehavior was retired because its request-wide tx broke under EnableRetryOnFailure and
+    // nested with handlers that open their own transaction.
 
     // ===== FluentValidation =====
     builder.Services.AddValidatorsFromAssembly(typeof(HRM.Application.Common.Behaviors.ValidationBehavior<,>).Assembly);

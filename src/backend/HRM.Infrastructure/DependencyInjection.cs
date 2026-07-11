@@ -45,6 +45,12 @@ public static class DependencyInjection
         // the connection string, so behaviour is identical to today until the increment-3 flip.
         services.AddSingleton<ConnectionRoutingInterceptor>();
 
+        // US-PLT-002 (ISSUE-277): sets the app.current_tenant GUC at SESSION scope on every connection open (a
+        // single, tx-less set_config), replacing the retired per-request TenantTransactionBehavior — whose
+        // request-wide transaction broke under EnableRetryOnFailure and nested with handlers that open their own
+        // transaction. Singleton — it holds only the Rls:Enabled flag. INERT while Rls:Enabled is false.
+        services.AddSingleton<TenantGucConnectionInterceptor>();
+
         // P3 (EF second-level cache): transparent query-result caching for slow-changing REFERENCE tables,
         // tenant-safe via a dynamic per-request cache-key prefix (see Caching/CacheTenantPrefix). Registers the
         // SecondLevelCacheInterceptor (a COMMAND interceptor) which is added to AppDbContext below. Must run
@@ -74,9 +80,13 @@ public static class DependencyInjection
             // ConnectionRoutingInterceptor is a CONNECTION interceptor (routes hrm_app vs hrm_owner at open),
             // independent of the SaveChanges/command interceptors above — ordering among them is irrelevant.
             var connectionRoutingInterceptor = serviceProvider.GetRequiredService<ConnectionRoutingInterceptor>();
+            // TenantGucConnectionInterceptor is also a CONNECTION interceptor but hooks the POST-open events
+            // (ConnectionOpened/Async) to run set_config on the now-open connection — ordering vs the routing
+            // interceptor (which hooks pre-open) is irrelevant. Inert while Rls:Enabled is false.
+            var tenantGucConnectionInterceptor = serviceProvider.GetRequiredService<TenantGucConnectionInterceptor>();
             options.AddInterceptors(
                 tenantInterceptor, auditInterceptor, auditCaptureInterceptor, secondLevelCacheInterceptor,
-                connectionRoutingInterceptor);
+                connectionRoutingInterceptor, tenantGucConnectionInterceptor);
         });
 
         // Register UnitOfWork
