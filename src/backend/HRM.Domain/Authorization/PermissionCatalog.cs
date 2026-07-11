@@ -654,6 +654,11 @@ public static class PermissionCatalog
             Attendance.ViewAll, Attendance.Edit, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
+            // US-PAY-001 (persona: Tenant Admin / HR Officer) + US-PAY-003 (persona: HR Officer, "has Payroll.Run").
+            // HR Officer configures/runs payroll and generates/exports payroll reports. Deliberately NOT
+            // Payroll.Approve (separation of duties) nor Payroll.ViewSensitive (unmasked bank PII). Fixes
+            // BUG-060 (config 403), BUG-071 (run 403), BUG-077 (reports 403).
+            Payroll.View, Payroll.Run, Payroll.Configure, Payroll.Export,
             Reports.View,
             Training.ViewAll,
             Onboarding.View, Onboarding.Manage,
