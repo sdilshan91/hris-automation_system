@@ -41,6 +41,11 @@ first layer; RLS is the backstop. Full spec: `user-stories/platform/US-PLT-002.m
 
 ## Enablement runbook (the switch-on — per environment, deliberate)
 
+> ⛔ **DO NOT FLIP YET — the 2026-07-11 local end-to-end validation returned NO-GO.** A per-request GUC-transaction
+> design bug (**ISSUE-277**) makes **every** tenant request 500 under `Rls:Enabled=true` (retry-strategy conflict +
+> own-tx handler nesting). Resolve ISSUE-277 (+ add the missing pipeline-under-retry test) BEFORE using this runbook.
+> Full evidence + recommended fix: [`FLIP-VALIDATION-2026-07-11.md`](FLIP-VALIDATION-2026-07-11.md).
+
 Turning RLS on is a config action, not a deploy: nothing in source flips it. Per environment:
 
 **Dev (`hris_dev_db`)** — the default `developer` role is a superuser and superusers ALWAYS bypass RLS,
@@ -51,7 +56,13 @@ so dev proves nothing until repointed:
    developer TO hrm_owner` on the existing schema.
 3. In `appsettings.Development.json`: `ConnectionStrings:DefaultConnection` → the `hrm_app` conn string,
    `ConnectionStrings:PrivilegedConnection` → the `hrm_owner` conn string, `Rls:Enabled` → `true`.
-4. Restart the API → the reconciler `ENABLE + FORCE`s all tenant tables; requests set the GUC on `hrm_app`.
+4. **Greenfield/fresh DB only (ISSUE-278):** `GRANT CREATE ON DATABASE <db> TO hrm_owner;` (or pre-provision the
+   `hangfire` schema owned by `hrm_owner`) so Hangfire can bootstrap its own schema — otherwise startup crashes with
+   `42501 permission denied for database`. An existing (already-migrated) DB already has the `hangfire` schema and
+   needs no grant.
+5. Restart the API → the reconciler `ENABLE + FORCE`s all tenant tables; requests set the GUC on `hrm_app`.
+   (Note: the startup `hrm_owner bypasses RLS` warning is expected — the reconciler runs on the privileged
+   connection — see ISSUE-279; it does not mean `DefaultConnection` is misconfigured.)
 
 **Staging/Prod** — the ops equivalent: run `roles.sql` (as DBA/superuser), ensure `hrm_owner` owns the
 schema, repoint `DefaultConnection`→`hrm_app` + `PrivilegedConnection`→`hrm_owner` + Hangfire storage →

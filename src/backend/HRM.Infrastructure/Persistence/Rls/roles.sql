@@ -24,23 +24,19 @@
 -- these roles are optional — the app runs on DefaultConnection as today.
 
 -- ── Runtime role (RLS always enforced) ──────────────────────────────────────
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hrm_app') THEN
-    CREATE ROLE hrm_app LOGIN PASSWORD :'hrm_app_password';
-  END IF;
-END
-$$;
+-- NOTE: the CREATE ROLE must stay at psql TOP LEVEL (not inside a DO $$…$$ block):
+-- psql only interpolates :'var' in the outer SQL text, NOT inside dollar-quoted
+-- bodies, so a `DO $$ … CREATE ROLE … PASSWORD :'hrm_app_password' … $$` never
+-- substitutes the password (it errors with "syntax error at or near ':'"). We keep
+-- idempotency with a conditional `\gexec`: the SELECT emits the CREATE statement only
+-- when the role is absent, and \gexec runs it (no-op if the role already exists).
+SELECT format('CREATE ROLE hrm_app LOGIN PASSWORD %L', :'hrm_app_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hrm_app')\gexec
 ALTER ROLE hrm_app NOBYPASSRLS;
 
 -- ── Privileged role (schema owner, bypasses RLS) ────────────────────────────
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hrm_owner') THEN
-    CREATE ROLE hrm_owner LOGIN PASSWORD :'hrm_owner_password' BYPASSRLS;
-  END IF;
-END
-$$;
+SELECT format('CREATE ROLE hrm_owner LOGIN PASSWORD %L BYPASSRLS', :'hrm_owner_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hrm_owner')\gexec
 
 -- Schema/table privileges (adjust schema name as needed; default 'public').
 GRANT USAGE ON SCHEMA public TO hrm_app;
