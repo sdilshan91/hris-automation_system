@@ -4,10 +4,11 @@
 //
 // Unlike RlsIsolationPostgresTests (2a) — which hand-runs `ENABLE + FORCE` to exercise the DORMANT policies — this
 // suite drives the ACTUAL production reconciler (DbInitializer.ReconcileRowLevelSecurityAsync) to turn enforcement
-// on and off, and the ACTUAL production pipeline behavior (TenantTransactionBehavior) to set the GUC on a request.
-// It proves the whole stack, not just the policies:
+// on and off, and the ACTUAL production request-path GUC mechanism (TenantGucConnectionInterceptor, ISSUE-277 — the
+// replacement for the retired TenantTransactionBehavior) to set the GUC on a request. It proves the whole stack,
+// not just the policies:
 //   • Rls:Enabled=true  ⇒ the reconciler ENABLE/FORCEs every tenant table (pg_class flags flip).
-//   • A request through TenantTransactionBehavior on hrm_app is tenant-isolated (GUC set by the real behavior).
+//   • A request through TenantGucConnectionInterceptor on hrm_app is tenant-isolated (GUC set at connection open).
 //   • The privileged (hrm_owner/BYPASSRLS) path spans tenants — startup/system/cross-tenant work keeps working.
 //   • Rls:Enabled=false ⇒ the reconciler DISABLEs enforcement (pg_class flags clear) → hrm_app behaves pre-RLS
 //     (sees all rows with no GUC) — the reversibility / rollback proof (critical R7).
@@ -21,9 +22,9 @@ using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
-using HRM.Infrastructure.Behaviors;
+using HRM.Infrastructure.Multitenancy;
 using HRM.Infrastructure.Persistence;
-using MediatR;
+using HRM.Infrastructure.Persistence.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -73,8 +74,6 @@ public sealed class RlsReconcilerPostgresTests : IAsyncLifetime
             => TenantId = tenantId;
         public void SetSystemContext() { }
     }
-
-    private sealed record CountEmployeesRequest : IRequest<int>;
 
     public async Task InitializeAsync()
     {
@@ -148,22 +147,23 @@ public sealed class RlsReconcilerPostgresTests : IAsyncLifetime
         // hrm_app with NO GUC ⇒ fail-closed (0 rows) — the inverse of the EF filter's unresolved=see-all.
         (await RawCountAsync(_appConnString, guc: null, "employees")).Should().Be(0);
 
-        // ── (3) A REQUEST through the real TenantTransactionBehavior on hrm_app is tenant-isolated end-to-end. ──
-        // The behavior opens the per-request tx and sets app.current_tenant to the resolved tenant; the handler
-        // counts with IgnoreQueryFilters() so RLS (set by the behavior) is the SOLE isolation — the headline proof
-        // that the request path enforces tenant isolation at the database engine.
-        await using (var appDb = OwnerAwareDb(_appConnString, new MutableTenantContext { TenantId = _tenantA }))
+        // ── (3) A REQUEST-PATH read through the real TenantGucConnectionInterceptor on hrm_app is tenant-isolated
+        //        end-to-end. The interceptor sets app.current_tenant at SESSION scope on every connection open
+        //        (ISSUE-277 — a single tx-less set_config, replacing the retired per-request transaction), driven
+        //        by the AmbientTenant. The read uses IgnoreQueryFilters() with an UNRESOLVED EF tenant context, so
+        //        the interceptor-set GUC (RLS) is the SOLE isolation — the headline proof that the request path
+        //        enforces tenant isolation at the database engine. ──
+        AmbientTenant.SetTenant(_tenantA);
+        try
         {
-            var behavior = new TenantTransactionBehavior<CountEmployeesRequest, int>(
-                appDb, new MutableTenantContext { TenantId = _tenantA }, RlsConfig(enabled: true));
-
-            var seen = await behavior.Handle(
-                new CountEmployeesRequest(),
-                async _ => await appDb.Employees.IgnoreQueryFilters().CountAsync(),
-                CancellationToken.None);
-
+            await using var appDb = AppDbWithGucInterceptor(_appConnString, new MutableTenantContext());
+            var seen = await appDb.Employees.IgnoreQueryFilters().CountAsync();
             seen.Should().Be(EmployeesA,
-                "the request-path behavior set the GUC to tenant A, so RLS caps the query to A's rows");
+                "the interceptor set the GUC to tenant A on connection open, so RLS caps the query to A's rows");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
         }
 
         // ── (4) The privileged (hrm_owner/BYPASSRLS) path spans tenants with no GUC — startup/system/cross-tenant
@@ -182,7 +182,7 @@ public sealed class RlsReconcilerPostgresTests : IAsyncLifetime
             "the reconciler must DISABLE + NO FORCE row-level security when Rls:Enabled=false (reversible rollback)");
 
         // … and hrm_app now behaves exactly as PRE-RLS: with no GUC it sees ALL rows (enforcement is off), so a
-        // config rollback + restart leaves the app working while TenantTransactionBehavior stops setting the GUC.
+        // config rollback + restart leaves the app working while the interceptor is inert (Rls:Enabled=false).
         (await RawCountAsync(_appConnString, guc: null, "employees")).Should().Be(EmployeesA + EmployeesB,
             "with RLS disabled the app connection is unconstrained again — the flip is reversible by config");
     }
@@ -205,6 +205,16 @@ public sealed class RlsReconcilerPostgresTests : IAsyncLifetime
             .UseNpgsql(connString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
             .UseSnakeCaseNamingConvention()
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options, tc);
+
+    // Same as OwnerAwareDb but WITH the production TenantGucConnectionInterceptor (Rls:Enabled=true) — it sets the
+    // app.current_tenant GUC from the AmbientTenant on every connection open, the ISSUE-277 request-path mechanism.
+    private AppDbContext AppDbWithGucInterceptor(string connString, ITenantContext tc) =>
+        new(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(connString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+            .UseSnakeCaseNamingConvention()
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .AddInterceptors(new TenantGucConnectionInterceptor(RlsConfig(enabled: true)))
             .Options, tc);
 
     // (relrowsecurity, relforcerowsecurity) for a table — the two pg_class flags the reconciler toggles.

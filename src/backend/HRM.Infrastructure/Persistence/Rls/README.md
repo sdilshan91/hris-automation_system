@@ -41,10 +41,13 @@ first layer; RLS is the backstop. Full spec: `user-stories/platform/US-PLT-002.m
 
 ## Enablement runbook (the switch-on — per environment, deliberate)
 
-> ⛔ **DO NOT FLIP YET — the 2026-07-11 local end-to-end validation returned NO-GO.** A per-request GUC-transaction
-> design bug (**ISSUE-277**) makes **every** tenant request 500 under `Rls:Enabled=true` (retry-strategy conflict +
-> own-tx handler nesting). Resolve ISSUE-277 (+ add the missing pipeline-under-retry test) BEFORE using this runbook.
-> Full evidence + recommended fix: [`FLIP-VALIDATION-2026-07-11.md`](FLIP-VALIDATION-2026-07-11.md).
+> ✅ **RE-VALIDATED GO (2026-07-11).** The initial validation found **ISSUE-277** (a per-request GUC-transaction
+> design bug that 500'd every request under RLS-on); it is now **RESOLVED** — the tenant GUC is set via
+> `TenantGucConnectionInterceptor` (session-scope `set_config` on connection open, no request-wide tx). A second live
+> end-to-end run under `Rls:Enabled=true` confirmed login + tenant CRUD + the previously-failing own-tx handlers
+> (training enrol, etc.) all return 2xx, plus a pipeline-under-retry regression test. `roles.sql` password-interpolation
+> bug also fixed. Full record: [`FLIP-VALIDATION-2026-07-11.md`](FLIP-VALIDATION-2026-07-11.md). This runbook is now
+> safe to follow (mind the greenfield Hangfire grant in step 4 and the deferred long-tx items above).
 
 Turning RLS on is a config action, not a deploy: nothing in source flips it. Per environment:
 

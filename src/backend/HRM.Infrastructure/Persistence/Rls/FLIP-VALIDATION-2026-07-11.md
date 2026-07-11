@@ -7,7 +7,18 @@ tenant** (subdomain `e2e`, so requests route to `hrm_app` and hit the GUC path) 
 handler, and the session-activity/notification path. This exercises what the RLS Testcontainers suites do NOT: the
 whole app end-to-end with the **production DbContext config**.
 
-## VERDICT: ⛔ NO-GO — do NOT set `Rls:Enabled=true` yet.
+## VERDICT: ✅ GO (after remediation) — initial pass NO-GO; ISSUE-277 fixed + re-validated live the same day.
+
+> **UPDATE (2026-07-11, post-fix):** ISSUE-277 was resolved by `TenantGucConnectionInterceptor` (session-scope GUC on
+> connection open; `TenantTransactionBehavior` retired). A **second** live end-to-end run under `Rls:Enabled=true`
+> (same method) confirmed **all** flows return 2xx — login, tenant read/write, and the previously-failing **own-tx**
+> handler **training enrol** (HTTP 200, `Enrolled`), plus workflows/departments; the ISSUE-268 notification write +
+> Hangfire `SendEmailJob` also ran under RLS-on (only the deliberately-blackholed SMTP transport "failed"). A new
+> `TenantGucInterceptorRlsPostgresTests` (DbContext WITH `EnableRetryOnFailure` + the interceptor — the config the old
+> suites omitted) regression-proofs both faces + isolation. **Net verdict: GO** once this branch merges. The original
+> NO-GO analysis below is retained for the record.
+
+## (Original pass) VERDICT: ⛔ NO-GO — do NOT set `Rls:Enabled=true` yet.
 
 Two independent blockers make **every** tenant request fail under RLS-on. One is a small fix; the other is an
 architectural incompatibility in how the tenant GUC is set. Both were **invisible to the test suite** because the RLS
