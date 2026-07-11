@@ -81,96 +81,117 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
 
-        // Restore tenant context so the template RESOLUTION query is scoped to the right tenant's override.
-        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-        var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
-        if (tenant is null)
-        {
-            _logger.LogWarning(
-                "RealNotificationDispatcher: tenant {TenantId} not found; dropping email for {EventKey}.",
-                tenantId, eventKey);
-            return;
-        }
-        tenantContext.SetTenant(tenantId, tenant.Subdomain, tenant.Status);
-
-        // Category + mandatory come from the catalog (single source of truth). Unknown events default to a
-        // suppressible SystemAnnouncement — template resolution will then fail below and write a Failed row.
-        var definition = NotificationEventCatalog.Get(eventKey);
-        var category = definition?.Category ?? NotificationCategory.SystemAnnouncements;
-        var isMandatory = definition?.IsMandatory ?? false;
-
-        // Resolve the recipient's email: the raw override wins, else the User table (global — not tenant-filtered).
-        var recipientEmail = request.RecipientEmail;
-        if (string.IsNullOrWhiteSpace(recipientEmail) && request.RecipientUserId is { } userId)
-        {
-            recipientEmail = await db.Users
-                .Where(u => u.Id == userId)
-                .Select(u => u.Email)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
-
-        if (string.IsNullOrWhiteSpace(recipientEmail))
-        {
-            await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey, null, null,
-                NotificationDeliveryStatus.Failed, "No email address resolved for recipient.", cancellationToken);
-            _logger.LogWarning(
-                "RealNotificationDispatcher: no email resolved for event {EventKey} (tenant {TenantId}); not sent.",
-                eventKey, tenantId);
-            return;
-        }
-
-        // Preference gate (BR-1: non-suppressible security types always send, bypassing the gate). The gate is
-        // per-user, so it only applies when we have a recipient user id (raw-email recipients always send).
+        // Outcome captured OUT of the runner block so the Hangfire enqueue (not a tenant DB write) stays outside it.
+        NotificationDelivery? delivery = null;
+        EmailMessage? emailMessage = null;
         DateTime? deferUntilUtc = null;
-        if (!isMandatory && request.RecipientUserId is { } prefUserId)
-        {
-            var decision = await scope.ServiceProvider.GetRequiredService<INotificationPreferenceService>()
-                .ShouldDeliverAsync(tenantId, prefUserId, category, NotificationChannel.Email, cancellationToken);
 
-            switch (decision.Kind)
+        // ISSUE-268: all tenant AppDbContext reads/writes (template resolution + the NotificationDelivery INSERT)
+        // run inside ONE RunForTenantAsync block so the fresh scope's connection carries the app.current_tenant GUC
+        // under RLS-on (the strict WITH CHECK tenant_isolation policy would otherwise reject the INSERT — 42501).
+        // The runner + AppDbContext come from the SAME scope so the GUC applies to the db we write. Under
+        // Rls:Enabled=false / InMemory the runner no-ops (just sets context) — behaviour is unchanged. The Hangfire
+        // enqueue is done AFTER the block (an enqueue is not a tenant DB write and must not sit in the tx).
+        await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
+        {
+            // Restore tenant context so the template RESOLUTION query is scoped to the right tenant's override.
+            // (The runner already SetTenant; we still read the tenant to confirm existence + preserve status.)
+            var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+            var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId, ct);
+            if (tenant is null)
             {
-                case DeliveryDecisionKind.Suppressed:
-                    await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
-                        recipientEmail, null, NotificationDeliveryStatus.Suppressed, null, cancellationToken);
-                    _logger.LogDebug(
-                        "RealNotificationDispatcher: email {EventKey} suppressed by preferences for user {UserId}.",
-                        eventKey, prefUserId);
-                    return;
-
-                case DeliveryDecisionKind.DeferredUntilQuietHoursEnd:
-                    deferUntilUtc = decision.DeferUntilUtc;
-                    break;
+                _logger.LogWarning(
+                    "RealNotificationDispatcher: tenant {TenantId} not found; dropping email for {EventKey}.",
+                    tenantId, eventKey);
+                return;
             }
-        }
+            tenantContext.SetTenant(tenantId, tenant.Subdomain, tenant.Status);
 
-        // Resolve + render the tenant's email template for this catalog event.
-        var templateService = scope.ServiceProvider.GetRequiredService<IEmailTemplateService>();
-        var resolved = await templateService.ResolveAsync(eventKey, language: null, cancellationToken);
-        if (resolved.IsFailure || resolved.Value is null)
-        {
-            await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey, recipientEmail, null,
-                NotificationDeliveryStatus.Failed, $"No email template for event '{eventKey}'.", cancellationToken);
-            _logger.LogWarning(
-                "RealNotificationDispatcher: no template for event {EventKey}; email not sent.", eventKey);
+            // Category + mandatory come from the catalog (single source of truth). Unknown events default to a
+            // suppressible SystemAnnouncement — template resolution will then fail below and write a Failed row.
+            var definition = NotificationEventCatalog.Get(eventKey);
+            var category = definition?.Category ?? NotificationCategory.SystemAnnouncements;
+            var isMandatory = definition?.IsMandatory ?? false;
+
+            // Resolve the recipient's email: the raw override wins, else the User table (global — not tenant-filtered).
+            var recipientEmail = request.RecipientEmail;
+            if (string.IsNullOrWhiteSpace(recipientEmail) && request.RecipientUserId is { } userId)
+            {
+                recipientEmail = await db.Users
+                    .Where(u => u.Id == userId)
+                    .Select(u => u.Email)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            if (string.IsNullOrWhiteSpace(recipientEmail))
+            {
+                await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey, null, null,
+                    NotificationDeliveryStatus.Failed, "No email address resolved for recipient.", ct);
+                _logger.LogWarning(
+                    "RealNotificationDispatcher: no email resolved for event {EventKey} (tenant {TenantId}); not sent.",
+                    eventKey, tenantId);
+                return;
+            }
+
+            // Preference gate (BR-1: non-suppressible security types always send, bypassing the gate). The gate is
+            // per-user, so it only applies when we have a recipient user id (raw-email recipients always send).
+            if (!isMandatory && request.RecipientUserId is { } prefUserId)
+            {
+                var decision = await scope.ServiceProvider.GetRequiredService<INotificationPreferenceService>()
+                    .ShouldDeliverAsync(tenantId, prefUserId, category, NotificationChannel.Email, ct);
+
+                switch (decision.Kind)
+                {
+                    case DeliveryDecisionKind.Suppressed:
+                        await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
+                            recipientEmail, null, NotificationDeliveryStatus.Suppressed, null, ct);
+                        _logger.LogDebug(
+                            "RealNotificationDispatcher: email {EventKey} suppressed by preferences for user {UserId}.",
+                            eventKey, prefUserId);
+                        return;
+
+                    case DeliveryDecisionKind.DeferredUntilQuietHoursEnd:
+                        deferUntilUtc = decision.DeferUntilUtc;
+                        break;
+                }
+            }
+
+            // Resolve + render the tenant's email template for this catalog event.
+            var templateService = scope.ServiceProvider.GetRequiredService<IEmailTemplateService>();
+            var resolved = await templateService.ResolveAsync(eventKey, language: null, ct);
+            if (resolved.IsFailure || resolved.Value is null)
+            {
+                await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey, recipientEmail, null,
+                    NotificationDeliveryStatus.Failed, $"No email template for event '{eventKey}'.", ct);
+                _logger.LogWarning(
+                    "RealNotificationDispatcher: no template for event {EventKey}; email not sent.", eventKey);
+                return;
+            }
+
+            var template = resolved.Value;
+            var data = ParsePayload(request.PayloadJson);
+            var rendered = templateService.Render(template.Subject, template.BodyHtml, template.BodyText, data);
+
+            var status = deferUntilUtc.HasValue
+                ? NotificationDeliveryStatus.Deferred
+                : NotificationDeliveryStatus.Queued;
+
+            delivery = await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
+                recipientEmail, rendered.Subject, status, null, ct);
+
+            emailMessage = new EmailMessage(
+                tenantId, recipientEmail, rendered.Subject, rendered.BodyHtml, rendered.BodyText);
+        }, cancellationToken);
+
+        // Nothing to send — an early-return path (no tenant / no email / suppressed / no template) ran inside the
+        // runner and left no queued delivery.
+        if (delivery is null || emailMessage is null)
             return;
-        }
-
-        var template = resolved.Value;
-        var data = ParsePayload(request.PayloadJson);
-        var rendered = templateService.Render(template.Subject, template.BodyHtml, template.BodyText, data);
-
-        var status = deferUntilUtc.HasValue
-            ? NotificationDeliveryStatus.Deferred
-            : NotificationDeliveryStatus.Queued;
-
-        var delivery = await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
-            recipientEmail, rendered.Subject, status, null, cancellationToken);
-
-        var emailMessage = new EmailMessage(
-            tenantId, recipientEmail, rendered.Subject, rendered.BodyHtml, rendered.BodyText);
 
         // Enqueue (or schedule past quiet-hours) the send job that drives the delivery row to a terminal state.
+        // OUTSIDE the runner block — the enqueue is not a tenant DB write.
         if (deferUntilUtc.HasValue)
         {
             var delay = deferUntilUtc.Value - DateTime.UtcNow;

@@ -5877,3 +5877,27 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** Per-tenant jobs wrap the ENTIRE service body in one `RunForTenantAsync` retry-safe tx (GUC set transaction-local). `GeneratePayslipsJob`→`PayslipBatchRenderer.RenderRunAsync` and `SendPayslipEmailsJob`→`PayslipDistributionRunner.RunAsync` do heavy **non-DB** work (PDF render + file upload; per-employee SMTP with Polly backoff) INSIDE the open GUC tx → minutes of **idle-in-transaction** (pins connection + xmin/vacuum horizon). Not a lock-contention problem (they only INSERT new rows / briefly UPDATE status), a tx-**duration** one.
 - **Severity rationale:** MED, high-volume-flip concern — negligible today; worst under a large-tenant prod flip.
 - **Suggested direction (NOT applied — flip-prep):** set-GUC-per-short-unit for GeneratePayslips + SendPayslipEmails (read in a short tx → render/upload/send OUTSIDE any tx → write in a short tx; periodic-commit the email log rows, which also improves crash resumability). **Leave `ProcessPayrollRunJob` atomic** (a run should be all-or-nothing) — add `statement_timeout` + tx-duration monitoring instead. `DataExportGeneration`/`HrReportExport` are low-frequency → defer. Report only; do BEFORE a high-volume RLS flip.
+
+### ISSUE-270 — No dedicated notification-preference Category for Training/Benefits (reuse OnboardingOffboarding)
+- **Type / Severity / Status:** ENH · LOW · OPEN (auto-healed from US-TRN-001/003 build flags, 2026-07-11)
+- **Layer:** BE · **Module:** Notifications (cross-cutting) · Training & Benefits
+- **Title:** The new training (`training_*`) and benefit (`benefit_*`) US-NTF-006 catalog events reuse `NotificationCategory.OnboardingOffboarding` because there is no Training/Benefits category. Users can't set notification preferences for training/benefits separately from onboarding.
+- **Suggested (NOT applied):** add a `BenefitsAndDevelopment` (or split) `NotificationCategory` covering training + benefits and re-point those events; wire the preference UI. Shared-enum change → own small story. Report only.
+
+### ISSUE-271 — Manager-view "eligible plans for employee X" endpoint has no frontend consumer
+- **Type / Severity / Status:** GAP · LOW · OPEN (auto-healed from US-TRN-003 integration-enforcer, 2026-07-11)
+- **Layer:** FE↔BE · **Module:** Benefits · US-TRN-003 AC-8
+- **Title:** `GET /api/v1/tenant/benefits/employees/{employeeId}/eligible` is fully wired/permission-gated on the BE but the FE `benefit.service.ts` has no `getEmployeeEligiblePlans(id)` method and no manager UI consumes it (8 FE methods vs 9 BE endpoints). Self-service eligible-plans works; the manager-side view is API-only.
+- **Suggested (NOT applied):** add the FE service method + a manager screen (HR/ViewAll) showing an employee's eligible plans, OR accept as API-only. Report only.
+
+### ISSUE-272 — FE workflow-instance detail / step-chain viewer deferred (US-ADM-011 FR-12 UI)
+- **Type / Severity / Status:** ENH · MED · OPEN — DEFERRED (flagged during US-ADM-011c, 2026-07-11)
+- **Layer:** FE · **Module:** Admin Console / cross-module request-detail (Leave/Attendance/Overtime/Offer)
+- **Title:** 011c delivered the BE read API (`GET /workflow-instances/{id}` step chain + `/workflows/{lineageId}/instances`) but NO frontend consumes it: requesters/approvers can't see the approval chain/status on a request detail, and there's no admin instance-list UI. FR-12's UI portion is unbuilt.
+- **Suggested (NOT applied):** a follow-up FE story — an instance step-chain widget embedded in each request-detail page + an admin instance list per workflow definition. Cross-module; net-new. Report only.
+
+### ISSUE-273 — Additive test-hardening arms across US-ADM-011 + Training/Benefits (batch)
+- **Type / Severity / Status:** TEST-HEALTH · LOW · OPEN (auto-healed from test-authenticator/integration-enforcer notes, 2026-07-11)
+- **Layer:** BE tests · **Module:** Workflows / Training / Benefits
+- **Title:** Auditors rated all suites AUTHENTIC but flagged additive (non-blocking) missing arms: (a) TRN-003 partial-unique-index concurrency backstop (23505→409) + `already_terminated` 409 + cross-employee 403 authz + persisted EffectiveDate/ElectedBy; (b) TRN-002 status-change audit-row + illegal-transition no-side-effect re-read; (c) TRN-001 FE↔BE course status-transition-matrix contract test (two hand-copied matrices, no test pins them equal); (d) recurring: the new-module integration tests drive services directly, not the controller→MediatR→RequirePermission HTTP chain (a WebApplicationFactory smoke test per module would cover the authz/route edge). None are mutation-holes in shipped ACs.
+- **Suggested (NOT applied):** hand to @qa-engineer to add the arms; strengthen only, never weaken. Report only.

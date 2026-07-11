@@ -60,11 +60,20 @@ public sealed class SignalRNotificationService : INotificationService
         };
 
         // Persist in a fresh scope so the dispatcher is safe to call from any context (request or job).
+        // ISSUE-268: route the write through ITenantJobRunner so the fresh scope's AppDbContext carries the
+        // app.current_tenant GUC under RLS-on (the fresh pooled connection routes to hrm_app but has no GUC from
+        // the caller's context, so the strict WITH CHECK tenant_isolation policy would reject the INSERT — 42501).
+        // The runner + AppDbContext are resolved from the SAME scope so the GUC it sets applies to the db we write.
+        // Under Rls:Enabled=false / InMemory the runner no-ops (just sets context) — behaviour is unchanged.
         using (var scope = _scopeFactory.CreateScope())
         {
+            var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            db.Notifications.Add(notification);
-            await db.SaveChangesAsync(cancellationToken);
+            await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async ct =>
+            {
+                db.Notifications.Add(notification);
+                await db.SaveChangesAsync(ct);
+            }, cancellationToken);
         }
 
         // Best-effort real-time push (FR-4). A failure here must not undo the durable record (BR-4).

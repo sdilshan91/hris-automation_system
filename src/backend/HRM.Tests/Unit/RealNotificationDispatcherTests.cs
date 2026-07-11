@@ -37,6 +37,7 @@ using Hangfire;
 using Hangfire.Common;
 using Hangfire.States;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -69,6 +70,11 @@ public sealed class RealNotificationDispatcherTests
         });
         services.AddSingleton(_prefs);
         services.AddSingleton(_templates);
+        // ISSUE-268: the dispatcher now resolves ITenantJobRunner from its fresh scope to route the delivery write
+        // through the tenant GUC under RLS-on. On the InMemory provider the runner no-ops (IsRelational() is false),
+        // so this registration is behaviour-neutral here — it just satisfies the new scoped dependency.
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddScoped<ITenantJobRunner, TenantJobRunner>();
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
