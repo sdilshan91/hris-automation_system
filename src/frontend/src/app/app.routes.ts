@@ -381,6 +381,25 @@ export const appRoutes: Routes = [
           ]),
         ],
       },
+      // ─── Training & Benefits / Benefit Plans (US-TRN-002) ────
+      {
+        path: 'benefits',
+        loadChildren: () =>
+          import('./features/benefits/benefits.routes').then(
+            (m) => m.BENEFITS_ROUTES
+          ),
+        // Read-only users (Benefits.View.Own/View.All) list/view plans while
+        // create/edit/status stay Manage-only (enforced at the API and hidden in
+        // the UI). Gate the route by the SAME permission set as the nav item so
+        // visibility == access (ISSUE-210 class), not admin roles.
+        canActivate: [
+          permissionGuard([
+            'Benefits.View.Own',
+            'Benefits.View.All',
+            'Benefits.Manage',
+          ]),
+        ],
+      },
       // ─── Leave Management / Leave Types (US-LV-001) ─────────
       {
         path: 'leave-types',
