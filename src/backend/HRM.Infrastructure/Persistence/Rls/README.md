@@ -65,12 +65,12 @@ restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatev
 - [ ] Dormant policies present on every tenant table (coverage-guard test green).
 - [ ] Every Hangfire job classified privileged-vs-GUC and wrapped/routed accordingly.
 - [ ] Full isolation + reconciler suites green on the target Postgres; rollback rehearsed.
-- [ ] **[MED — BLOCKER, ISSUE-268]** notification persistence writes on a FRESH DI scope
-      (`SignalRNotificationService.cs:63`, `RealNotificationDispatcher.cs:82`) route to `hrm_app` with NO
-      GUC (the runner/request GUC is tx-local on a different connection) → strict `WITH CHECK` rejects the
-      INSERT fail-closed. Under RLS-on this silently drops payroll/HR notifications AND falsely fails HR
-      report exports, on **both** the job and normal HTTP paths. **Fix before the flip** + add an RLS-on
-      test of the DI notification chain (currently untested). See `test-cases/TEST-FINDINGS.md#ISSUE-268`.
+- [x] **[MED — BLOCKER, ISSUE-268 — RESOLVED PR #244 2026-07-11]** notification/session persistence writes
+      on a FRESH DI scope routed to `hrm_app` with NO GUC → fail-closed under RLS-on (notification INSERT →
+      42501; `refresh_tokens` UPDATE → silent 0 rows). FIXED by wrapping the 3 fresh-scope writes
+      (SignalRNotificationService, RealNotificationDispatcher, SessionActivityMiddleware) in
+      `ITenantJobRunner.RunForTenantAsync` (no-ops when RLS off). Proven by `NotificationRlsPostgresTests`
+      (real hrm_app RLS-on). See `test-cases/TEST-FINDINGS.md#ISSUE-268`.
 - [ ] **[MED — ISSUE-269]** long-running payslip render/email jobs hold ONE GUC transaction for the whole
       batch (heavy non-DB PDF-render / SMTP work sits idle-in-transaction). Restructure
       `GeneratePayslipsJob` + `SendPayslipEmailsJob` to set-GUC-per-short-unit (read-tx → work outside tx →
