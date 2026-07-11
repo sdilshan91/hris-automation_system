@@ -52,11 +52,15 @@ Story: `user-stories/admin-console/US-ADM-011.md` (§13 decisions, §14 phasing)
 - LOW follow-up from 011a: `WorkflowRuntimeService.DecideCoreAsync` should `ChangeTracker.Clear()`/detach on the
   onApproved-callback-failure path (harmless in Phase 1; tidy under RLS/reuse).
 
-### 3. P4 — Training & Benefits (greenfield module)
-Stories authored: `user-stories/training-benefits/US-TRN-{EPIC,001,002,003}.md`. Permission constants exist
-(`PermissionCatalog` `Training.*`/`Benefits.*`). Entities: `TrainingCourse` + `CourseEnrollment` (001);
-`BenefitPlan` (002); `BenefitEligibilityRule` + `BenefitEnrollment` (003). Sequence: 001 ∥ 002, then **003 after
-002**. Full BE+FE per module. All new tenant tables → apply the RLS RULE.
+### 3. P4 — Training & Benefits (greenfield module) — ✅ COMPLETE (merged 2026-07-11)
+Stories: `user-stories/training-benefits/US-TRN-{EPIC,001,002,003}.md`. **US-TRN-001 → PR #241** (TrainingCourse +
+CourseEnrollment; race-safe waitlist via FOR-UPDATE, FIFO promotion; guard=permissionGuard so employees self-enrol).
+**US-TRN-002 → PR #242** (BenefitPlan CRUD + status machine; currency default from Tenant.Currency; archive-only).
+**US-TRN-003 → PR #243** (BenefitEligibilityRule + BenefitEnrollment; pure `BenefitEligibilityEvaluator` AND-of-rules;
+enroll gate plan-active→window→eligibility→duplicate; my-benefits self-service). All new tenant tables carry their
+dormant RLS policy in-migration (RLS RULE). Both auditors clean per story (WIRED + AUTHENTIC). Suite 3361→3502.
+Deferred/flagged: FE workflow-instance viewer (011c), manager-view eligible-plans UI (003 endpoint is API-complete),
+benefit notifications reuse OnboardingOffboarding category (shared-enum decision).
 
 ### 4. RLS 3b — pre-prod-flip hardening (only before actually enabling RLS in prod)
 - CI RLS postgres-service-container job (the RLS tests are Testcontainers-only → need a harness param to run
