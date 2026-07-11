@@ -71,10 +71,20 @@ benefit notifications reuse OnboardingOffboarding category (shared-enum decision
 - **[LOW]** audit the wrapped service bodies for internal DI-scope/DbContext creation escaping the runner tx.
 
 ### 5. Misc / deferred
-- **Redis command-spans** [LOW] — `OpenTelemetry.Instrumentation.StackExchangeRedis` (needs the cache provider's
-  `IConnectionMultiplexer` shared for instrumentation).
-- **`chore/agent-config-guards`** branch (pushed, not merged) — commit `3c4c9dda` adds config-protection +
-  no-verify git-hook-bypass guards (`.claude/hooks/scripts/*`). User decides whether to merge to base.
+- **Redis command-spans** [LOW] — ✅ SHIPPED → PR #245 (merged 2026-07-11). Shared instrumented
+  `IConnectionMultiplexer` for `IDistributedCache` + SignalR backplane + `AddRedisInstrumentation` (also
+  consolidates connection pools). The EF second-level cache keeps its private multiplexer (library 5.3.13
+  can't share it) → **ISSUE-274** (deferred; observed via cache metrics + DB spans instead).
+- **`chore/agent-config-guards`** branch — ✅ already merged as **PR #237** (moot; config-protection +
+  no-verify guards live on base).
+
+### 6. RLS flip-prep (from the 2026-07-11 readiness audit — do before `Rls:Enabled=true`)
+- **ISSUE-268** [MED, flip-BLOCKER] — ✅ RESOLVED → PR #244. Notification/session fresh-scope writes now
+  routed through `ITenantJobRunner` so they carry the tenant GUC under RLS-on (proven by
+  `NotificationRlsPostgresTests`).
+- **ISSUE-269** [MED] — still OPEN: payslip render/email jobs hold one idle-in-tx GUC tx per batch;
+  restructure `GeneratePayslips`/`SendPayslipEmails` before a high-volume flip (keep `ProcessPayrollRun`
+  atomic). Deferred to the actual flip.
 
 ## 🔒 Standing rules learned this arc (apply going forward)
 - **NEW-TENANT-TABLE RLS RULE:** every new table with a `tenant_id` column MUST add its own dormant
