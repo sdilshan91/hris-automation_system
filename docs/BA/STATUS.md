@@ -165,7 +165,7 @@
 - [x] US-ADM-008 — View audit logs *(PR #92)*
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
 - [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
-- [ ] US-ADM-011 — Approval-workflow RUNTIME engine (instances/routing/SLA-escalation/delegation) *(**net-new, reconciliation 2026-07-06, Theme C** — US-ADM-007 built design-time only; runtime is inert. FULL story authored + build-ready 2026-07-09: 12 ACs grounded in real code, payroll-scope decision (keep bespoke), open design Qs, **3-phase breakdown 011a/b/c**. Unblocks US-LV-005 AC-4, US-ATT-004 AC-4, US-REC-007 FR-10.)*
+- [x] US-ADM-011 — Approval-workflow RUNTIME engine (instances/routing/SLA-escalation/delegation) *(**SHIPPED 2026-07-10** — 011a #238 · 011b parallel+SLA+notifs #239 · 011c delegation + Attendance/Overtime/Offer wiring + read API #240. Wired US-LV-005 AC-4, US-ATT-004 AC-4, US-REC-007 FR-10. FE instance/step-chain viewer deferred → ISSUE-272 (P6).)*
 - [ ] US-ADM-012 — Plan/module governance enforcement (runtime gating + usage limits) *(**net-new STUB, reconciliation 2026-07-06, Theme H** — US-ADM-009 config not enforced; disabled-module APIs not 403'd, limits config-only (BUG-114).)*
 
 ## 9. Onboarding / Offboarding (6 stories) — COMPLETE ✅
@@ -193,10 +193,10 @@
 
 ## 12. Training & Benefits (epic + 3 core stories) — NET-NEW, backlog
 > **Reconciliation 2026-07-06, Theme M** — module had ZERO coverage (no stories/test-cases, never executed). Stubs authored to put it in the backlog; flesh out before build.
-- [ ] US-TRN-EPIC — Training & Benefits module epic *(authored 2026-07-09 — entity model + sequence + v1/future split)*
-- [ ] US-TRN-001 — Training catalog & course enrollment *(FULL IEEE-830 authored 2026-07-09; greenfield, one `/implement-story` unit)*
-- [ ] US-TRN-002 — Benefits plan administration *(FULL IEEE-830 authored 2026-07-09; greenfield; build before 003)*
-- [ ] US-TRN-003 — Benefit eligibility & employee enrollment *(FULL IEEE-830 authored 2026-07-09; depends on US-TRN-002)*
+- [x] US-TRN-EPIC — Training & Benefits module epic *(v1 SHIPPED 2026-07-10 — 001/002/003 merged; future-split items remain backlog)*
+- [x] US-TRN-001 — Training catalog & course enrollment *(SHIPPED 2026-07-10, PR #241 — BE + FE)*
+- [x] US-TRN-002 — Benefits plan administration *(SHIPPED 2026-07-10, PR #242 — BE + FE)*
+- [x] US-TRN-003 — Benefit eligibility & employee enrollment *(SHIPPED 2026-07-10, PR #243 — BE + FE; manager eligible-plans UI deferred → ISSUE-271 (P6))*
 
 ---
 
@@ -205,8 +205,8 @@
 - Done spine: **103** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010** (#75–#84), **Admin Console US-ADM-001..010** (#85–#94), **Onboarding US-ONB-001..006** (#95–#100), **Notifications & Audit US-NTF-001..005** (#101–#105), **Reports & Analytics US-RPT-001..005** (#106–#110).
   - ⚠️ **BUT** ~40 of these `[x]` stories carry **unbuilt ACs** — see the **Deferred-AC Reconciliation** table below. They are not fully done; the spine is.
 - In progress: **1** (US-PLT-002 RLS Phase 4 deferred).
-- **Net-new backlog (2026-07-06 reconciliation): 10** — US-NTF-006 (full), US-ADM-011 (full), US-ADM-012/US-PRF-011/US-PLT-004/US-PLT-005 (stubs), US-TRN-EPIC/001/002/003 (Training & Benefits stubs). All `[ ]`.
-- **Recommended next build order:** US-NTF-006 (delivery layer — unblocks the most deferred ACs) → US-ADM-011 (workflow runtime) → US-PLT-005 (MFA-secret encryption, HIGH) → US-PLT-002 (RLS) → US-PRF-011/US-ADM-012/US-PLT-004 → Training & Benefits.
+- **Net-new backlog (2026-07-06 reconciliation): 10 → 5 shipped 2026-07-10, 5 remain.** SHIPPED: US-ADM-011 (#238-240), US-TRN-EPIC/001/002/003 (#241-243). REMAINING `[ ]`: US-NTF-006 (full, next), US-ADM-012 / US-PRF-011 / US-PLT-004 / US-PLT-005 (stubs).
+- **Recommended next build order (updated 2026-07-11):** US-NTF-006 (delivery layer — unblocks the most deferred ACs) → US-PLT-005 (MFA-secret encryption, HIGH) → US-PLT-002 (RLS) → US-PRF-011/US-ADM-012/US-PLT-004.
 
 ## Deferred-AC Reconciliation (2026-07-06) — `[x]`-done stories with UNBUILT acceptance criteria
 

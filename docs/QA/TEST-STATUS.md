@@ -149,16 +149,21 @@
 ## Tally
 | State | Count |
 |---|---|
-| `[ ]` not-tested | 16 (Onboarding 6 · Notifications 5 · Reports 5) |
+| `[ ]` not-tested | 0 among implemented spine stories (all modules 1–11 executed) |
 | `[~]` testing (in progress) | 0 |
 | `[x]` tested-clean | 3 (US-LV-004, US-PLT-001, US-ADM-001) |
-| `[!]` tested-findings | modules 1–8 (~70) |
-| `[b]` blocked | 0 |
-| **Total implemented US** | **89** |
+| `[!]` tested-findings | modules 1–11 (~86) |
+| `[b]` blocked | 5 (SSO epic — US-AUTH-011/012/013/014/016) |
+| **Total implemented spine US** | **89** |
 
-> **Corrected 2026-06-27** — the prior 67/1/21 split was stale (it predated the modules 1–8 test passes).
-> Per-module sections above are the source of truth. Remaining zero-coverage: Onboarding, Notifications,
-> Reports. See [QA-COVERAGE-PLAN.md](plans/QA-COVERAGE-PLAN.md) for the prioritized campaign.
+> **Corrected 2026-06-27** — the prior 67/1/21 split was stale. **Re-corrected 2026-07-11** — the "16 not-tested
+> (Onboarding/Notifications/Reports)" line was itself stale: sections 9–11 above show those modules all `[!]` executed.
+> Per-module sections above are the source of truth.
+>
+> **⚠ Actual zero test coverage (NOT in this tracker at all) — author TC suites (COMPLETION-PLAN P0-2):** the net-new
+> stories shipped 2026-07-10 — **US-ADM-011** (workflow runtime), **US-TRN-001/002/003** (Training & Benefits) — and the
+> not-yet-built **US-NTF-006** have no TC suite / TEST-STATUS rows. See
+> [QA-COVERAGE-PLAN.md](plans/QA-COVERAGE-PLAN.md).
 
 ## 1b. Enterprise SSO epic (shipped PR #112 — now in scope for QA)
 > Was excluded "until shipped"; PR #112 shipped the POC. US-AUTH-012/016 not built yet (test once implemented).
