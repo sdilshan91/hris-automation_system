@@ -4,6 +4,7 @@ using HRM.Domain.Interfaces;
 using HRM.Domain.Performance;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace HRM.Infrastructure.Persistence;
 
@@ -14,12 +15,30 @@ namespace HRM.Infrastructure.Persistence;
 public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyContext
 {
     private readonly ITenantContext _tenantContext;
+    private readonly IFieldEncryptor _fieldEncryptor;
 
-    public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext tenantContext)
+    /// <param name="fieldEncryptor">
+    /// P3-4 field-at-rest encryptor. OPTIONAL so the many isolated unit tests that build the context with the
+    /// plain <c>(options, tenantContext)</c> constructor keep compiling; when absent the identity
+    /// <see cref="NoOpFieldEncryptor"/> is used (plaintext round-trips through the converters). The production DI
+    /// composition registers the real <c>AesGcmFieldEncryptor</c> singleton, which EF injects here.
+    /// </param>
+    public AppDbContext(
+        DbContextOptions<AppDbContext> options,
+        ITenantContext tenantContext,
+        IFieldEncryptor? fieldEncryptor = null)
         : base(options)
     {
         _tenantContext = tenantContext;
+        _fieldEncryptor = fieldEncryptor ?? NoOpFieldEncryptor.Instance;
     }
+
+    /// <summary>
+    /// Discriminates the compiled model by the field-encryptor implementation (see
+    /// <see cref="EncryptorAwareModelCacheKeyFactory"/>) so a no-op-encryptor model and the real encrypting model
+    /// never collide in EF's per-context-type model cache.
+    /// </summary>
+    internal string FieldEncryptorDiscriminator => _fieldEncryptor.GetType().Name;
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
@@ -180,12 +199,28 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<BenefitEligibilityRule> BenefitEligibilityRules => Set<BenefitEligibilityRule>();
     public DbSet<BenefitEnrollment> BenefitEnrollments => Set<BenefitEnrollment>();
 
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+
+        // P3-4: the Pip/Recommendation encryption value converters close over this context's field encryptor, so
+        // the compiled model must be cached per encryptor implementation (no-op vs real AES-GCM). Idempotent.
+        optionsBuilder.ReplaceService<IModelCacheKeyFactory, EncryptorAwareModelCacheKeyFactory>();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         // Apply all entity configurations from this assembly
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        // P3-4: apply the field-at-rest encryption value converters to the sensitive Pip notes + Recommendation
+        // per-employee compensation columns. Kept in the entity configurations (static ApplyEncryption) but invoked
+        // here because they need this context's injected IFieldEncryptor (the configs are parameterless so the
+        // ApplyConfigurationsFromAssembly scan above is unaffected).
+        Configurations.PipConfiguration.ApplyEncryption(modelBuilder.Entity<Pip>(), _fieldEncryptor);
+        Configurations.RecommendationConfiguration.ApplyEncryption(modelBuilder.Entity<Recommendation>(), _fieldEncryptor);
 
         // Global query filters for tenant isolation
         modelBuilder.Entity<UserTenant>()

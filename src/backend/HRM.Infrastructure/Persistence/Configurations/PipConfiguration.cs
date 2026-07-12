@@ -1,4 +1,6 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Domain.Performance;
+using HRM.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -25,8 +27,9 @@ public sealed class PipConfiguration : IEntityTypeConfiguration<Pip>
         builder.Property(p => p.MentorEmployeeId);
         builder.Property(p => p.OriginManagerReviewId);
 
-        // SENSITIVE (NFR-4 encryption seam — stored plain text today; see Pip xmldoc).
-        builder.Property(p => p.Reason).HasMaxLength(4000).IsRequired();
+        // SENSITIVE (NFR-4 / P3-4): encrypted at rest via IFieldEncryptor (see ApplyEncryption). Stored as `text`
+        // — no length cap, because the AES-GCM ciphertext is longer than the 4000-char plaintext.
+        builder.Property(p => p.Reason).IsRequired();
 
         builder.Property(p => p.StartDate).IsRequired();
         builder.Property(p => p.EndDate).IsRequired();
@@ -54,12 +57,13 @@ public sealed class PipConfiguration : IEntityTypeConfiguration<Pip>
         builder.Property(p => p.AcknowledgedAt);
 
         builder.Property(p => p.OutcomeSetAt);
-        builder.Property(p => p.FinalOutcomeNotes).HasMaxLength(4000);
+        // SENSITIVE (NFR-4 / P3-4): encrypted at rest (see ApplyEncryption); stored as `text` (no length cap).
+        builder.Property(p => p.FinalOutcomeNotes);
 
         builder.Property(p => p.EscalationConfirmed).HasDefaultValue(false).IsRequired();
         builder.Property(p => p.EscalationConfirmedAt);
-        // SENSITIVE (NFR-4 encryption seam — stored plain text today; see Pip xmldoc).
-        builder.Property(p => p.EscalationNotes).HasMaxLength(4000);
+        // SENSITIVE (NFR-4 / P3-4): encrypted at rest (see ApplyEncryption); stored as `text` (no length cap).
+        builder.Property(p => p.EscalationNotes);
 
         builder.Property(p => p.IsDeleted).HasDefaultValue(false).IsRequired();
 
@@ -91,5 +95,20 @@ public sealed class PipConfiguration : IEntityTypeConfiguration<Pip>
 
         // FKs to Employee / ManagerReview are stored as UUID columns without hard FK constraints, mirroring the
         // codebase pattern for cross-module references (tenant-scoped existence validated in the service).
+    }
+
+    /// <summary>
+    /// P3-4: applies the field-at-rest encryption value converters to the sensitive free-text notes
+    /// (<see cref="Pip.Reason"/>, <see cref="Pip.FinalOutcomeNotes"/>, <see cref="Pip.EscalationNotes"/>). Invoked
+    /// from <c>AppDbContext.OnModelCreating</c> with the context's injected <see cref="IFieldEncryptor"/> (this
+    /// config is parameterless so the assembly-scan is unaffected). Columns are <c>text</c> — the ciphertext is
+    /// longer than the plaintext, so no length cap is applied.
+    /// </summary>
+    public static void ApplyEncryption(EntityTypeBuilder<Pip> builder, IFieldEncryptor encryptor)
+    {
+        var nullable = EncryptedFieldConverters.NullableString(encryptor);
+        builder.Property(p => p.Reason).HasConversion(EncryptedFieldConverters.RequiredString(encryptor)).HasColumnType("text");
+        builder.Property(p => p.FinalOutcomeNotes).HasConversion(nullable).HasColumnType("text");
+        builder.Property(p => p.EscalationNotes).HasConversion(nullable).HasColumnType("text");
     }
 }

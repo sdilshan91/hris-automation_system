@@ -17,11 +17,14 @@ namespace HRM.Domain.Performance;
 /// Recommendation history is naturally retained across cycles (FR-7/BR-7): rows are cycle-scoped and never
 /// deleted, so trend analysis reads the full set.
 ///
-/// ENCRYPTION SEAM (NFR-3): the compensation fields (<see cref="BonusAmount"/>, <see cref="IncrementAmount"/>,
-/// the percentages) are sensitive financial PII. They are stored as plain numeric today — the codebase has no
-/// field/PII (pgcrypto) encryption mechanism and building one is an infra concern out of scope here (same decision
-/// as US-PRF-008). When a platform PII-encryption strategy lands, apply it via an EF ValueConverter with no schema
-/// change. TODO(US-PLT PII-encryption).
+/// ENCRYPTION (NFR-3): the per-employee compensation fields (<see cref="CurrentCompensation"/>,
+/// <see cref="BonusAmount"/>, <see cref="BonusPercent"/>, <see cref="IncrementAmount"/>,
+/// <see cref="IncrementPercent"/>) are sensitive financial PII and are ENCRYPTED AT REST (P3-4) via the app-side
+/// AES-256-GCM <c>IFieldEncryptor</c>, applied as an EF value converter in
+/// <c>RecommendationConfiguration.ApplyEncryption</c> — stored as <c>enc:v1:</c> ciphertext (<c>text</c> columns)
+/// and transparently decrypted on read. The <see cref="RecommendationBudget"/> pool amounts are deliberately NOT
+/// encrypted (aggregate budget arithmetic, not individual PII); all Sum/GroupBy over the encrypted figures is
+/// app-side over already-materialized lists (never a DB aggregate), so encryption does not break any query.
 ///
 /// Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>
 /// (NFR-2). Maps to the "recommendation" table.
@@ -68,19 +71,19 @@ public sealed class Recommendation : BaseEntity
 
     // ── Compensation details (NFR-3 encryption seam) ────────────────────
 
-    /// <summary>SENSITIVE (NFR-3). The current compensation figure (FR-5 comparison view, optional).</summary>
+    /// <summary>SENSITIVE (NFR-3 — encrypted at rest, P3-4). The current compensation figure (FR-5 comparison view, optional).</summary>
     public decimal? CurrentCompensation { get; set; }
 
-    /// <summary>SENSITIVE (NFR-3). The bonus amount (FR-1 — for a Bonus). Charged to the budget (FR-8).</summary>
+    /// <summary>SENSITIVE (NFR-3 — encrypted at rest, P3-4). The bonus amount (FR-1 — for a Bonus). Charged to the budget (FR-8).</summary>
     public decimal? BonusAmount { get; set; }
 
-    /// <summary>The bonus as a percentage of compensation (FR-1 — alternative to <see cref="BonusAmount"/>).</summary>
+    /// <summary>SENSITIVE (NFR-3 — encrypted at rest, P3-4). The bonus as a percentage of compensation (FR-1 — alternative to <see cref="BonusAmount"/>).</summary>
     public decimal? BonusPercent { get; set; }
 
-    /// <summary>SENSITIVE (NFR-3). The increment amount (FR-1 — for an Increment). Charged to the budget (FR-8).</summary>
+    /// <summary>SENSITIVE (NFR-3 — encrypted at rest, P3-4). The increment amount (FR-1 — for an Increment). Charged to the budget (FR-8).</summary>
     public decimal? IncrementAmount { get; set; }
 
-    /// <summary>The increment as a percentage of compensation (FR-1 — alternative to <see cref="IncrementAmount"/>).</summary>
+    /// <summary>SENSITIVE (NFR-3 — encrypted at rest, P3-4). The increment as a percentage of compensation (FR-1 — alternative to <see cref="IncrementAmount"/>).</summary>
     public decimal? IncrementPercent { get; set; }
 
     // ── Training / custom details ───────────────────────────────────────

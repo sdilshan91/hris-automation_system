@@ -23,6 +23,13 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        // P3-4: field-at-rest encryptor (AES-256-GCM key ring). Singleton — stateless/thread-safe, so the EF value
+        // converters on Pip notes / Recommendation compensation can safely close over the one instance. Fail-fast:
+        // its constructor throws if no usable Encryption:ActiveKeyId + base64 32-byte Encryption:Keys key is
+        // configured (never silently stores plaintext). Registered BEFORE AddDbContext so it is injectable into
+        // AppDbContext's constructor.
+        services.AddSingleton<IFieldEncryptor, AesGcmFieldEncryptor>();
+
         // Tenant context (scoped per request)
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ICurrentUser, CurrentUser>();
@@ -492,8 +499,8 @@ public static class DependencyInjection
         // FR-8 visibility restriction (employee / manager / HR / mentor) are enforced in PipService. PIP data is
         // intentionally NOT surfaced in the general performance dashboard (BR-5). The reminder/not-acknowledged
         // sweep (FR-3/BR-4) is driven by the PipReminderJob via the same log-only performance notification seam.
-        // Encryption of the sensitive Reason/EscalationNotes (NFR-4) is a documented seam (no PII-encryption
-        // mechanism exists in the codebase — stored plain text today).
+        // The sensitive Reason/EscalationNotes/FinalOutcomeNotes (NFR-4) are ENCRYPTED AT REST (P3-4) via the
+        // AES-256-GCM IFieldEncryptor value converter in PipConfiguration.ApplyEncryption.
         services.AddScoped<IPipService, PipService>();
         services.AddScoped<IPipReminderService, PipReminderService>();
 
@@ -537,9 +544,9 @@ public static class DependencyInjection
         // is a SOFT warning (FR-8/BR-4, never a hard block). The immutable approval audit lives in append-only
         // RecommendationEvent rows (FR-7). On final approval the BR-6 downstream-integration seam is raised via
         // IRecommendationIntegrationService (promotions→Core HR, bonuses→Payroll, training→Training) — log-only,
-        // real cross-module wiring deferred. Compensation fields are an encryption seam (NFR-3 — no pgcrypto/PII
-        // mechanism exists, stored plain numeric, same decision as US-PRF-008). Excel export via ClosedXML (reuses
-        // the US-PRF-007 approach); PDF is a documented seam.
+        // real cross-module wiring deferred. The per-employee compensation fields are ENCRYPTED AT REST (NFR-3 /
+        // P3-4) via the AES-256-GCM IFieldEncryptor value converter in RecommendationConfiguration.ApplyEncryption.
+        // Excel export via ClosedXML (reuses the US-PRF-007 approach); PDF is a documented seam.
         services.AddScoped<IRecommendationService, RecommendationService>();
         services.AddScoped<IRecommendationIntegrationService, LogOnlyRecommendationIntegrationService>();
 
