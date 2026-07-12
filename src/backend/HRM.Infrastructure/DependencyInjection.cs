@@ -194,6 +194,11 @@ public static class DependencyInjection
         // Report-export storage seam (US-LV-012 FR-5) — local/log-only until a real blob store exists.
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
 
+        // US-NTF-006 Phase 6: real in-app + email delivery for attendance/overtime/regularization notifications.
+        // LogOnlyAttendanceNotificationService is kept as a sibling (integration tests may register it); this Real
+        // impl supersedes it in the app composition.
+        services.AddScoped<IAttendanceNotificationService, RealAttendanceNotificationService>();
+
         // Attendance clock-in service (US-ATT-001)
         services.AddScoped<IAttendanceService, AttendanceService>();
 

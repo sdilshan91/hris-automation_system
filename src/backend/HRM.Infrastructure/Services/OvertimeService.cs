@@ -31,6 +31,7 @@ public sealed class OvertimeService : IOvertimeService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IWorkflowRuntime? _workflowRuntime;
+    private readonly IAttendanceNotificationService? _notifications;
     private readonly ILogger<OvertimeService> _logger;
 
     public OvertimeService(
@@ -38,7 +39,8 @@ public sealed class OvertimeService : IOvertimeService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         ILogger<OvertimeService> logger,
-        IWorkflowRuntime? workflowRuntime = null)
+        IWorkflowRuntime? workflowRuntime = null,
+        IAttendanceNotificationService? notifications = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -46,6 +48,8 @@ public sealed class OvertimeService : IOvertimeService
         // US-ADM-011c FR-11: optional so existing US-ATT-006 unit tests keep compiling; DI always supplies it.
         // When a pre-approval is workflow-driven (WorkflowInstanceId set), decisions route through the runtime.
         _workflowRuntime = workflowRuntime;
+        // US-NTF-006 Phase 6: optional so existing US-ATT-006 unit tests keep compiling; DI always supplies the Real impl.
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -137,12 +141,27 @@ public sealed class OvertimeService : IOvertimeService
 
         if (computation.CapApplied || weeklyExceeded)
         {
-            // FR-8: alert HR when daily/weekly maxima are exceeded. DEFERRED — no notification infra.
-            // TODO(US-NTF): emit an HR alert. The flags above persist the condition for now.
+            // FR-8: alert the attendance-admin/HR pool when daily/weekly maxima are exceeded (US-NTF-006 Phase 6).
+            // The flags above persist the condition; the notification service never throws, so a delivery failure
+            // cannot break the clock-out that owns this record.
             _logger.LogWarning(
                 "Overtime cap exceeded for employee {EmployeeId} on {Date} (tenant {TenantId}): " +
                 "dailyCapApplied={DailyCap}, weeklyCapExceeded={WeeklyCap}.",
                 employee.Id, date, _tenantContext.TenantId, computation.CapApplied, weeklyExceeded);
+
+            if (_notifications is not null)
+            {
+                // Weekly breach takes precedence when both trip; report the exceeded period + its configured limit.
+                var (period, limitMinutes) = weeklyExceeded
+                    ? ("weekly", settings.MaxWeeklyOvertimeMinutes)
+                    : ("daily", settings.MaxDailyOvertimeMinutes);
+                await _notifications.NotifyOvertimeMaximaExceededAsync(
+                    employee.Id,
+                    computation.OvertimeMinutes / 60m,
+                    limitMinutes / 60m,
+                    period,
+                    cancellationToken);
+            }
         }
 
         return record;
@@ -231,7 +250,12 @@ public sealed class OvertimeService : IOvertimeService
             }
         }
 
-        // FR-8 (notify manager of pending pre-approval): DEFERRED — no notification infra (TODO US-NTF).
+        // FR-8: notify the employee's manager that a pre-approval is pending (US-NTF-006 Phase 6). Never throws.
+        if (_notifications is not null)
+        {
+            await _notifications.NotifyOvertimePreApprovalRequestedAsync(
+                employee.Id, record.Date, record.OvertimeMinutes / 60m, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Employee {EmployeeId} submitted overtime pre-approval {Id} for {Date} (tenant {TenantId}).",
@@ -370,7 +394,12 @@ public sealed class OvertimeService : IOvertimeService
         // NFR-3: single atomic SaveChanges (status + approved minutes + payroll flag + history).
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // FR-8 (notify employee of approval): DEFERRED — no notification infra (TODO US-NTF).
+        // FR-8: notify the employee that their overtime was approved (US-NTF-006 Phase 6). Never throws.
+        if (_notifications is not null)
+        {
+            await _notifications.NotifyOvertimeDecidedAsync(
+                approved: true, record.EmployeeId, record.Date, finalApproved / 60m, reason: null, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Overtime {Id} APPROVED by approver {ApproverEmployeeId} (user {UserId}) for employee {EmployeeId}: " +
@@ -422,7 +451,12 @@ public sealed class OvertimeService : IOvertimeService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // FR-8 (notify employee of rejection with reason): DEFERRED — no notification infra (TODO US-NTF).
+        // FR-8: notify the employee that their overtime was rejected, with the reason (US-NTF-006 Phase 6). Never throws.
+        if (_notifications is not null)
+        {
+            await _notifications.NotifyOvertimeDecidedAsync(
+                approved: false, record.EmployeeId, record.Date, record.OvertimeMinutes / 60m, trimmed, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Overtime {Id} REJECTED by approver {ApproverEmployeeId} (user {UserId}) for employee {EmployeeId} (tenant {TenantId}).",

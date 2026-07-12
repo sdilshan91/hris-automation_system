@@ -22,8 +22,11 @@ namespace HRM.Infrastructure.Services;
 ///     SINGLE-LEVEL approval — the manager's approve is the FINAL approve and immediately mutates the
 ///     attendance_log. workflow_instance_id stays null. AC-4 (status stays Pending until all levels
 ///     approve) CANNOT be satisfied without the engine; documented, not faked.
-///   - Notifications (FR-5): no notification infrastructure — DEFERRED (TODO US-NTF), not stubbed.
 ///   - Redis dashboard cache (FR-8): no Redis in this codebase — skipped (same as US-ATT-001/002/003).
+///
+/// Notifications (FR-5): the employee is notified of the approve/reject decision via
+/// IAttendanceNotificationService (US-NTF-006 Phase 6) — real in-app + email delivery through
+/// the notification dispatcher (best-effort; a delivery failure never blocks the committed decision).
 /// </summary>
 public sealed class RegularizationApprovalService : IRegularizationApprovalService
 {
@@ -32,6 +35,7 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
     private readonly ICurrentUser _currentUser;
     private readonly IShiftService _shiftService;
     private readonly IWorkflowRuntime? _workflowRuntime;
+    private readonly IAttendanceNotificationService? _notifications;
     private readonly ILogger<RegularizationApprovalService> _logger;
 
     public RegularizationApprovalService(
@@ -40,7 +44,8 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         ICurrentUser currentUser,
         IShiftService shiftService,
         ILogger<RegularizationApprovalService> logger,
-        IWorkflowRuntime? workflowRuntime = null)
+        IWorkflowRuntime? workflowRuntime = null,
+        IAttendanceNotificationService? notifications = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -49,6 +54,8 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         // US-ADM-011c FR-11: optional so existing US-ATT-004 unit tests keep compiling; DI always supplies it.
         // When the regularization is workflow-driven (WorkflowInstanceId set), decisions route through the runtime.
         _workflowRuntime = workflowRuntime;
+        // US-NTF-006 Phase 6: optional so existing US-ATT-004 unit tests keep compiling; DI always supplies the Real impl.
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -190,8 +197,13 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         // NFR-2: single atomic SaveChanges (status + immutable history together).
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // FR-5 (notify employee with the reason): DEFERRED — no notification infra (TODO US-NTF).
+        // FR-5: notify the employee that their request was rejected, with the reason (US-NTF-006 Phase 6). Never throws.
         // FR-8 (Redis cache update): skipped — no Redis in this codebase.
+        if (_notifications is not null)
+        {
+            await _notifications.NotifyRegularizationDecidedAsync(
+                approved: false, regularization.EmployeeId, regularization.Date, trimmed, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Regularization {RegId} REJECTED by manager {ManagerEmployeeId} for employee {EmployeeId} " +
@@ -342,8 +354,13 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         // attendance_log create/update, AND the immutable history row together — or none of them.
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // FR-5 (notify employee): DEFERRED — no notification infra (TODO US-NTF).
+        // FR-5: notify the employee that their request was approved (US-NTF-006 Phase 6). Never throws.
         // FR-8 (Redis daily-status cache): skipped — no Redis in this codebase.
+        if (_notifications is not null)
+        {
+            await _notifications.NotifyRegularizationDecidedAsync(
+                approved: true, regularization.EmployeeId, regularization.Date, regularization.Reason, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Regularization {RegId} APPROVED by manager {ManagerEmployeeId} for employee {EmployeeId}: " +
