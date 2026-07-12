@@ -316,6 +316,13 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         // Approved full-day leave days per employee in the range (counts toward neither present nor absent).
         var leaveByEmp = await ApprovedLeaveDaysByEmployeeAsync(empIds, from, to, ct);
 
+        // BUG-125: resolve every employee's working-weekday set in a FIXED number of queries (was a
+        // per-employee 2-3-query N+1 via ScheduledWorkingDaysAsync in the loop below). Shift selection is
+        // as-of `from` — identical to the former per-employee ResolveWorkingDaysAsync — and the [from, to]
+        // count range is the same for every employee.
+        var workingDaySets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
+            _dbContext, empIds.ToList(), from, ct);
+
         // Scheduled working days per employee over the range (for absent = scheduled − present − leave).
         var rows = new List<CustomReportRowDto>();
         foreach (var emp in employees)
@@ -325,7 +332,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
             int work = byEmp.TryGetValue(emp.Id, out var c) ? c.WorkMinutes : 0;
             decimal leave = leaveByEmp.GetValueOrDefault(emp.Id, 0m);
 
-            int scheduled = await ScheduledWorkingDaysAsync(emp.Id, from, to, ct);
+            int scheduled = ShiftScheduleResolver.CountWorkingDays(workingDaySets[emp.Id], from, to);
             decimal absent = scheduled - present - leave;
             if (absent < 0m) absent = 0m;
 
@@ -698,43 +705,6 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         return result;
     }
 
-    /// <summary>
-    /// Counts scheduled working days for an employee over the range, using the employee's effective (or
-    /// default) shift working-days. No shift → every calendar day is treated as working (matches the
-    /// summary service's "empty working-days = all days" rule).
-    /// </summary>
-    private async Task<int> ScheduledWorkingDaysAsync(Guid employeeId, DateOnly from, DateOnly to, CancellationToken ct)
-    {
-        var workingDays = await ResolveWorkingDaysAsync(employeeId, from, ct);
-
-        int count = 0;
-        for (var d = from; d <= to; d = d.AddDays(1))
-        {
-            if (workingDays.Count == 0 || workingDays.Contains(IsoDay(d)))
-                count++;
-        }
-        return count;
-    }
-
-    private async Task<HashSet<int>> ResolveWorkingDaysAsync(Guid employeeId, DateOnly date, CancellationToken ct)
-    {
-        var assignment = await _dbContext.EmployeeShifts.AsNoTracking()
-            .Where(es => es.EmployeeId == employeeId
-                && es.EffectiveFrom <= date
-                && (es.EffectiveTo == null || es.EffectiveTo >= date))
-            .OrderByDescending(es => es.EffectiveFrom)
-            .FirstOrDefaultAsync(ct);
-
-        Shift? shift = null;
-        if (assignment is not null)
-            shift = await _dbContext.Shifts.AsNoTracking()
-                .FirstOrDefaultAsync(s => s.Id == assignment.ShiftId, ct);
-        shift ??= await _dbContext.Shifts.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.IsDefault, ct);
-
-        return shift?.WorkingDays.ToHashSet() ?? new HashSet<int>();
-    }
-
     private async Task<Dictionary<Guid, string>> DepartmentNamesAsync(
         IReadOnlyList<Employee> employees, CancellationToken ct)
     {
@@ -748,12 +718,6 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     }
 
     private static string FullName(Employee e) => $"{e.FirstName} {e.LastName}".Trim();
-
-    private static int IsoDay(DateOnly date)
-    {
-        var dow = (int)date.DayOfWeek;   // Sun=0..Sat=6
-        return dow == 0 ? 7 : dow;       // 1=Mon..7=Sun
-    }
 
     private static string? NormalizeFormat(string? format)
     {

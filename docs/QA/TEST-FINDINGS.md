@@ -5452,7 +5452,9 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-125
 - **Type:** BUG (performance / scalability)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #257, 2026-07-12)
+- **⚠ Root-cause correction:** the finding's ~70% hypothesis (recompute per-employee over raw `attendance_log`) was WRONG. The rollup already comes from the materialized monthly summary (fast — the sibling `reconciliation` on the same call measures 0.21s). The real cause was `AttendancePayrollService.WorkingDaysAsync` — a **shift-resolution N+1** (2-3 queries per employee inside the loop → ~15k round-trips at 5k).
+- **Resolution:** Extracted a shared batched `ShiftScheduleResolver` (default shift + all effective assignments + referenced shifts = 3 fixed queries regardless of employee count; latest-effective + default fallback resolved in memory, byte-for-byte identical selection). `GetPayrollDataAsync` now resolves working-days once for all employees. Same fix applied to the sibling N+1 → **BUG-283**. No migration (existing indexes cover it). Regression: `AttendancePayrollIntegrationTests...BUG125` (calendar-oracle, assigned-vs-default). Verified build clean + 40/40 attendance tests. **Note:** the p95-under-SLA-at-5k claim itself is a perf-rig assertion — the fix removes the N+1 (query count now constant); on-rig confirmation deferred (see ISSUE-282-class perf-rig note).
 - **Layer:** BE
 - **Module / US / TC:** Attendance / US-ATT (payroll-data handoff) / TC-ATT-126
 - **Title:** `GET /api/v1/attendance/payroll-data?month=2026-06` returns all 5,000 rows correctly but at **P95 28.4s / min 11.2s / p50 12.7s** — grossly over the <=5s NFR-1. The sibling materialized reads (`summary/monthly` 0.34s, `reconciliation` 0.21s) are fast, so payroll-data is NOT reading the pre-materialized `attendance_monthly_summary` path the TC assumes.
@@ -5998,3 +6000,29 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** The 3 job-driven BUG-080 audit emitters live inside Hangfire job paths (`PayrollRunProcessor`, `PayslipBatchRenderer`, `PayslipDistributionRunner`). Their regression tests run on the InMemory provider. For these specific scalar-column assertions InMemory does not mask a Postgres failure (no jsonb `Contains`, no manual tx in the insert path), so the tests are valid — but there is no real-Postgres arm proving the audit row commits under prod `EnableRetryOnFailure` semantics (the BUG-068/ISSUE-277 class this repo has been burned by).
 - **Note:** A related test-fidelity bug WAS fixed in PR #256 — `PayslipJobRlsPostgresTests` force-enabled RLS on `audit_log` (which has tenant_id but no `tenant_isolation` policy per RLS R1), which would fail-close the new audit inserts under a rule production never applies (the reconciler only force-enables policy-backed tables). The test's ENABLE/FORCE loop now excludes `audit_log` to match production.
 - **Suggested action:** Add a Testcontainers arm for the 3 job-path emitters when Docker is in the gate. Also (separate, R1 decision — leave to RLS owner): whether `audit_log` should get a nullable-form RLS policy.
+
+---
+
+### ISSUE-284 — Leave accrual job does a per-(employee×leave-type) SaveChanges N+1 (~65k saves at 5k employees); plus unprojected full-entity dashboard scans
+- **Type:** ISSUE (perf debt — background job + read projection)
+- **Severity:** MED
+- **Status:** OPEN (deferred — P3/P7 perf batch; not a request-SLA path)
+- **Layer:** BE
+- **Module / US / TC:** Leave / Attendance / (auto-healed from BUG-124/125 OUT-OF-LANE)
+- **Title / detail (3 related perf traps found while fixing BUG-124/125):**
+  1. `LeaveEntitlementService.ProcessAccrualsAsync` (`:473-483`) nests `foreach employee × foreach leaveType` → `ProcessSingleAccrualAsync` does multiple reads **and a `SaveChangesAsync` per pair** (`:546`) → ~5,000×13 = ~65,000 saves. It's a Hangfire job (batched 500) so not a request SLA, but very heavy — batch the ledger writes into one save per batch.
+  2. `AttendanceDashboardService.ResolveScopeEmployeesAsync` (`:656-658`) + `GetLiveBoardAsync` load whole `Employee` entities for "all" scope when only a few columns are used → project. (Feeds BUG-123.)
+  3. `LeaveEntitlementService.BulkCreateRulesAsync` (`:208-218`) loops `CreateRuleAsync` per item (own validation queries + SaveChanges each). Minor, admin-only.
+- **Suggested action:** batch the accrual ledger writes; add projections to the dashboard scope loaders (ties into BUG-123); batch bulk-rule creation. No index/migration. Park until the P3/perf pass.
+
+---
+
+### BUG-283 — Same shift-resolution N+1 in the attendance custom-report path (dashboard + CSV/XLSX/PDF export) — auto-healed with BUG-125
+- **Type:** BUG (performance / scalability)
+- **Severity:** MED (HIGH at scale on the export path)
+- **Status:** RESOLVED (PR #257, 2026-07-12)
+- **Layer:** BE
+- **Module / US / TC:** Attendance / US-ATT (custom report/export) / (auto-healed from BUG-125 OUT-OF-LANE OL-1)
+- **Title:** `AttendanceDashboardService.ComputeCustomRowsAsync` (`:321-348`) called `ScheduledWorkingDaysAsync` → `ResolveWorkingDaysAsync` per employee — the identical 2-3-query-per-employee shift-resolution N+1 as BUG-125 — feeding both `GetCustomReportAsync` and its CSV/XLSX/PDF export.
+- **Provenance:** Flagged during BUG-125 investigation; auto-healed (Engineering-Discipline #6). Fixed in the SAME PR because it is the same defect at a sibling call site and shares the fix.
+- **Resolution:** Both call sites now use the shared `ShiftScheduleResolver` (3 fixed queries; orphaned per-employee methods deleted). Regression: `AttendanceDashboardIntegrationTests...BUG125` (full-week oracle, default=5 / assigned Mon-Sat=6). Build clean + 40/40 attendance tests green.
