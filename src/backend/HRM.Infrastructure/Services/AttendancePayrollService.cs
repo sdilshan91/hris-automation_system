@@ -99,6 +99,13 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
         var employeesWithRecords = await EmployeesWithAttendanceRecordsAsync(monthStart, monthEnd, tenantZone, cancellationToken);
 
+        // BUG-125: resolve every employee's working-weekday set in a FIXED number of queries (was a
+        // per-employee 2-3-query N+1 via WorkingDaysAsync in the loop below). Shift selection is as-of
+        // monthStart — identical to the former per-employee resolution — while each employee's own
+        // effectiveEnd still bounds the in-memory day count.
+        var workingDaySets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
+            _dbContext, employees.Select(e => e.Id).ToList(), monthStart, cancellationToken);
+
         var rows = new List<AttendancePayrollRowDto>();
         foreach (var emp in employees)
         {
@@ -123,7 +130,8 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
             if (emp.Status != EmployeeStatus.Terminated && !employeesWithRecords.Contains(emp.Id))
                 continue;
 
-            int workingDays = await WorkingDaysAsync(emp.Id, monthStart, effectiveEnd, cancellationToken);
+            int workingDays = ShiftScheduleResolver.CountWorkingDays(
+                workingDaySets[emp.Id], monthStart, effectiveEnd);
 
             // Core rollup from the summary (non-terminated). Terminated employees have no summary row
             // (they were excluded) — compute their minimal rollup from the overtime + a zeroed base;
@@ -442,42 +450,6 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     }
 
     /// <summary>
-    /// §7: scheduled working days in [start, end] from the employee's resolved shift (assignment
-    /// effective at the start, else the tenant default). When no shift / no working-day set resolves,
-    /// every calendar day in the range counts (consistent with the summary's empty-working-days rule).
-    /// Public holidays are NOT subtracted here — total_working_days is the shift/calendar baseline the
-    /// payroll module divides salary by; holiday handling is a payroll policy decision.
-    /// </summary>
-    private async Task<int> WorkingDaysAsync(Guid employeeId, DateOnly start, DateOnly end, CancellationToken ct)
-    {
-        if (end < start) return 0;
-
-        var assignment = await _dbContext.EmployeeShifts.AsNoTracking()
-            .Where(es => es.EmployeeId == employeeId
-                && es.EffectiveFrom <= start
-                && (es.EffectiveTo == null || es.EffectiveTo >= start))
-            .OrderByDescending(es => es.EffectiveFrom)
-            .FirstOrDefaultAsync(ct);
-
-        Shift? shift = null;
-        if (assignment is not null)
-            shift = await _dbContext.Shifts.AsNoTracking()
-                .FirstOrDefaultAsync(s => s.Id == assignment.ShiftId, ct);
-        shift ??= await _dbContext.Shifts.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.IsDefault, ct);
-
-        var workingDays = shift?.WorkingDays.ToHashSet() ?? new HashSet<int>();
-
-        int count = 0;
-        for (var d = start; d <= end; d = d.AddDays(1))
-        {
-            if (workingDays.Count == 0 || workingDays.Contains(IsoDay(d)))
-                count++;
-        }
-        return count;
-    }
-
-    /// <summary>
     /// The late-deduction-days portion of the summary row's LOP. The summary's LopDays bakes in both
     /// unexcused absences AND the late-deduction days (BR-4). We surface the late portion as
     /// LopDays − AbsentDays-not-covered-by-leave; since the summary's absent days are already
@@ -542,11 +514,5 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     {
         var start = new DateOnly(year, month, 1);
         return (start, start.AddMonths(1).AddDays(-1));
-    }
-
-    private static int IsoDay(DateOnly date)
-    {
-        var dow = (int)date.DayOfWeek;   // Sun=0..Sat=6
-        return dow == 0 ? 7 : dow;       // 1=Mon..7=Sun
     }
 }

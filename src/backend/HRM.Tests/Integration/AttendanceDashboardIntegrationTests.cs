@@ -447,6 +447,70 @@ public sealed class AttendanceDashboardIntegrationTests
         row.AbsentDays.Should().Be(1m);
     }
 
+    [Fact]
+    public async Task CustomReport_ScheduledWorkingDays_BatchResolution_AssignedAndDefaultShift_BUG125()
+    {
+        // BUG-125: scheduled-working-days resolution was hoisted OUT of the per-employee loop into a batch
+        // (fixed query count regardless of employee count). The per-employee scheduled count — surfaced here
+        // as AbsentDays (= scheduled − present − leave; with no logs/leave, AbsentDays == scheduled) — must
+        // be identical to the former per-employee resolution for both an assigned non-default shift and the
+        // default-shift fallback.
+        SeedSettings(_tenantA);
+
+        var sixDayShift = Guid.NewGuid();
+        var empSix = Guid.NewGuid();   // Mon–Sat via an explicit assignment
+        using (var db = Db(_tenantA))
+        {
+            db.Shifts.Add(new Shift
+            {
+                Id = sixDayShift, TenantId = _tenantA, Name = "Six-Day",
+                Type = ShiftType.Single,
+                StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+                BreakDurationMinutes = 0, GracePeriodMinutes = 15,
+                WorkingDays = new List<int> { 1, 2, 3, 4, 5, 6 },   // Mon–Sat
+                IsDefault = false, IsActive = true,
+            });
+            db.Employees.Add(Emp(empSix, _tenantA, _deptEng, "A-SIX"));
+            db.EmployeeShifts.Add(new EmployeeShift
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                EmployeeId = empSix, ShiftId = sixDayShift,
+                EffectiveFrom = new DateOnly(2026, 1, 1), EffectiveTo = null,
+            });
+            db.SaveChanges();
+        }
+
+        // A full Mon–Sun week (Apr 6 = Monday .. Apr 12 = Sunday). No logs / no leave, so every scheduled
+        // day is absent → AbsentDays == the shift's scheduled working days over the range.
+        var from = new DateOnly(2026, 4, 6);
+        var to = new DateOnly(2026, 4, 12);
+
+        var (mediator, _) = BuildPipeline(_tenantA);
+        var result = await mediator.Send(new GetCustomReportQuery(from, to, new CustomReportFilter()));
+        result.IsSuccess.Should().BeTrue();
+
+        int Expected(HashSet<int> workingWeekdays)
+        {
+            int c = 0;
+            for (var d = from; d <= to; d = d.AddDays(1))
+            {
+                int iso = (int)d.DayOfWeek == 0 ? 7 : (int)d.DayOfWeek;
+                if (workingWeekdays.Count == 0 || workingWeekdays.Contains(iso)) c++;
+            }
+            return c;
+        }
+        var monFri = new HashSet<int> { 1, 2, 3, 4, 5 };
+        var monSat = new HashSet<int> { 1, 2, 3, 4, 5, 6 };
+
+        // _empA1 has no assignment → default Mon–Fri; empSix → assigned Mon–Sat.
+        var defaultRow = result.Value!.Rows.Single(r => r.EmployeeId == _empA1);
+        var sixRow = result.Value.Rows.Single(r => r.EmployeeId == empSix);
+
+        defaultRow.AbsentDays.Should().Be(Expected(monFri));   // 5 (Mon–Fri)
+        sixRow.AbsentDays.Should().Be(Expected(monSat));       // 6 (Mon–Sat)
+        sixRow.AbsentDays.Should().BeGreaterThan(defaultRow.AbsentDays);
+    }
+
     [Theory]
     [InlineData("csv")]
     [InlineData("xlsx")]

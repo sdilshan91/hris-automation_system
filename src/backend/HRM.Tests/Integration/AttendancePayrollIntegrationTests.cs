@@ -296,6 +296,75 @@ public sealed class AttendancePayrollIntegrationTests
         withRec.TotalAbsentDays.Should().BeLessThan(workingDays);
     }
 
+    // ── BUG-125: batched shift/working-days resolution (values must be unchanged) ───────────
+
+    [Fact]
+    public async Task PayrollData_WorkingDays_BatchResolution_AssignedAndDefaultShift_BUG125()
+    {
+        // BUG-125: shift/working-days resolution was hoisted OUT of the per-employee loop into a batch
+        // (fixed query count regardless of employee count). The per-employee TotalWorkingDays VALUES must
+        // be identical to the former per-employee resolution: an assigned (non-default) shift, a
+        // default-shift fallback, and their mix all resolve exactly as before.
+        var sixDayShift = Guid.NewGuid();
+        var empAssigned = Guid.NewGuid();   // Mon–Sat via an explicit effective-dated assignment
+        var empDefault = Guid.NewGuid();    // Mon–Fri via the default-shift fallback (no assignment)
+
+        using (var db = Db(_tenantA))
+        {
+            db.Shifts.Add(new Shift
+            {
+                Id = sixDayShift, TenantId = _tenantA, Name = "Six-Day",
+                Type = ShiftType.Single,
+                StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+                BreakDurationMinutes = 0, GracePeriodMinutes = 15,
+                WorkingDays = new List<int> { 1, 2, 3, 4, 5, 6 },   // Mon–Sat
+                IsDefault = false, IsActive = true,
+            });
+            db.Employees.AddRange(
+                Emp(empAssigned, _tenantA, Guid.NewGuid(), "A-ASSIGNED"),
+                Emp(empDefault, _tenantA, Guid.NewGuid(), "A-DEFAULT"));
+            db.EmployeeShifts.Add(new EmployeeShift
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                EmployeeId = empAssigned, ShiftId = sixDayShift,
+                EffectiveFrom = new DateOnly(2026, 1, 1), EffectiveTo = null,
+            });
+            db.SaveChanges();
+        }
+
+        // Real tracked data so ISSUE-090 does not omit either employee (2026-04-06 is a Monday).
+        SeedLog(_tenantA, empAssigned, new DateOnly(2026, 4, 6));
+        SeedLog(_tenantA, empDefault, new DateOnly(2026, 4, 6));
+
+        var (mediator, _) = BuildPipeline(_tenantA, _userA);
+        var result = await mediator.Send(new GetPayrollDataQuery(2026, 4, null));
+        result.IsSuccess.Should().BeTrue();
+
+        // Independent oracle: count the shift's working weekdays across April 2026 (the effectiveEnd for an
+        // active employee is the month end), matching the former per-employee calendar iteration exactly.
+        int Expected(HashSet<int> workingWeekdays)
+        {
+            int c = 0;
+            for (var d = new DateOnly(2026, 4, 1); d <= new DateOnly(2026, 4, 30); d = d.AddDays(1))
+            {
+                int iso = (int)d.DayOfWeek == 0 ? 7 : (int)d.DayOfWeek;
+                if (workingWeekdays.Count == 0 || workingWeekdays.Contains(iso)) c++;
+            }
+            return c;
+        }
+        var monFri = new HashSet<int> { 1, 2, 3, 4, 5 };
+        var monSat = new HashSet<int> { 1, 2, 3, 4, 5, 6 };
+
+        var assignedRow = result.Value!.Rows.Single(r => r.EmployeeId == empAssigned);
+        var defaultRow = result.Value.Rows.Single(r => r.EmployeeId == empDefault);
+
+        assignedRow.TotalWorkingDays.Should().Be(Expected(monSat));
+        defaultRow.TotalWorkingDays.Should().Be(Expected(monFri));
+        // The six-day shift must schedule strictly more working days than the five-day default — proves the
+        // per-employee shift selection survived the hoist (not a single shared value for all employees).
+        assignedRow.TotalWorkingDays.Should().BeGreaterThan(defaultRow.TotalWorkingDays);
+    }
+
     // ── Multi-tenant isolation (NFR-3) ──────────────────────────────────────
 
     [Fact]
