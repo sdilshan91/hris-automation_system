@@ -211,7 +211,7 @@ public sealed class StatutoryRuleIntegrationTests
             earningId = BaseEntity.NewUuidV7();
             statutoryId = BaseEntity.NewUuidV7();
             structureId = BaseEntity.NewUuidV7();
-            db.SalaryComponents.Add(new SalaryComponent { Id = earningId, TenantId = _tenantA, Name = "Basic", Code = "BASIC", Type = SalaryComponentType.Earning, CalculationMethod = CalculationMethod.Fixed, DefaultValue = 50_000m, IsActive = true });
+            db.SalaryComponents.Add(new SalaryComponent { Id = earningId, TenantId = _tenantA, Name = "Basic Salary", Code = "BASIC", Type = SalaryComponentType.Earning, CalculationMethod = CalculationMethod.Fixed, DefaultValue = 50_000m, IsActive = true });
             db.SalaryComponents.Add(new SalaryComponent { Id = statutoryId, TenantId = _tenantA, Name = "EPF", Code = "EPF", Type = SalaryComponentType.Statutory, CalculationMethod = CalculationMethod.PercentageOfBasic, DefaultValue = 12m, IsStatutory = true, IsActive = true });
             db.SalaryStructures.Add(new SalaryStructure { Id = structureId, TenantId = _tenantA, Name = "Std", Code = "STD", EffectiveFrom = new DateOnly(2026, 1, 1), IsActive = true });
             db.SalaryStructureComponents.Add(new SalaryStructureComponent { Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, SalaryStructureId = structureId, SalaryComponentId = earningId, ProcessingOrder = 0, IsMandatory = false });

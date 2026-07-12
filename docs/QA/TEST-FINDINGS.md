@@ -3813,8 +3813,9 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 ### BUG-078 — Overtime hourly-rate base is total structural EARNINGS, not BASIC (ResolvedBasic name-match "Basic" never matches the seeded line name "Basic Salary"); OT over-paid ~2.5x
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #255, 2026-07-12)
 - **Layer:** BE
+- **Resolution:** `PayrollRunProcessor.ResolvedBasic` now identifies BASIC by component **Code** ("BASIC") → ComponentId → slip line, instead of the display Name — so a line named "Basic Salary" resolves correctly (was falling through to `GrossEarnings`). Regression: `PayrollBasicResolutionTests` (multi-component structure asserts hourly = basic/(days×8) = 60.59, not gross-based 151.47). Verified 10 unit + 29 payroll integration tests on Postgres. See sibling **BUG-280** (same defect in statutory) fixed in the same PR.
 - **Module / US / TC:** Payroll / US-PAY-010 / TC-PAY-010-02, -07, -08
 - **Title:** The overtime earning derives its base hourly rate from the sum of ALL structural earning lines (basic+conveyance+HRA+special) instead of BASIC, so OT is materially over-paid. FR-4/BR-5 + the code's own doc-comment say the OT base is the employee's BASIC.
 - **Root cause:** `PayrollRunProcessor.ResolvedBasic(result)` (src/backend/HRM.Infrastructure/Services/PayrollRunProcessor.cs:552-560) finds the BASIC line by matching `PayrollSlipLine.Name == "Basic"` / `"BASIC"`. The seeded/real BASIC component's **Name** is `"Basic Salary"` (its **Code** is `"BASIC"`), so the `FirstOrDefault` never matches and it falls back to `result.GrossEarnings`. `ComputeOvertime` then passes that gross as `monthlyBasic` to `PayrollOvertimeCalculator.Compute`, which derives `hourly = monthlyBasic/(workingDays*8)`. The matcher should compare against the component **Code** (`BASIC`), which `PayrollSlipLine` does not carry — so the line name is the only available key and it is the wrong one. Confidence: 97% (verified against the live finalized June slip below; arithmetic exact).
@@ -5943,3 +5944,25 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Layer:** BE / logging · **Module:** Platform (DbInitializer)
 - **Title:** On startup the reconciler warns `RLS is ENABLED but the app connection (current_user=hrm_owner) bypasses RLS … point DefaultConnection at hrm_app`. It fires because `DbInitializer` runs on the privileged (`hrm_owner`) connection BY DESIGN — it does not mean `DefaultConnection` is wrong. Misleading in the correct setup.
 - **Suggested (NOT applied):** scope the bypass-check to the request-path role (e.g. probe a `hrm_app` connection), not the reconciler's own privileged connection; or downgrade/reword to note it's expected for the reconciler. Report only.
+
+---
+
+### BUG-280 — Basic-based statutory (EPF/ETF) contributions compute on GROSS not BASIC (same Name-match defect as BUG-078) — over-deducts wherever statutory rules are active
+- **Type:** BUG
+- **Severity:** HIGH
+- **Status:** RESOLVED (PR #255, 2026-07-12)
+- **Layer:** BE
+- **Module / US / TC:** Payroll / US-PAY-006 / (auto-healed from BUG-078 OUT-OF-LANE OL-1)
+- **Title:** `PayrollRunProcessor.ApplyStatutoryRulesAsync` derived `StatutoryWageInput.MonthlyBasic` with the identical buggy matcher as BUG-078 (`l.Name == "Basic"/"BASIC"`, else fall back to `GrossEarnings`). For real structures (line named "Basic Salary") it fell through to gross, so any Basic-based EPF/ETF contribution was computed on total earnings → **over-deduction of employee statutory contributions** (real money).
+- **Root cause:** Same as BUG-078 — BASIC must be identified by component **Code**, not display Name. Only manifests when US-PAY-006 statutory rules are configured for the fiscal year (fail-open no-op otherwise), which is why BUG-078's evidence run didn't surface it.
+- **Provenance:** Discovered while fixing BUG-078; flagged OUT-OF-LANE and auto-healed (Engineering-Discipline #6). Fixed in the same PR because it is the same defect class at adjacent lines in the same method and leaving it would knowingly ship a money-losing bug.
+- **Resolution:** `ApplyStatutoryRulesAsync` now calls the shared `ResolvedBasic(result, inputs)` (Code-based). Regression: `StatutoryRuleIntegrationTests` fixture updated to the production-representative name "Basic Salary" so it exercises the real path (29 payroll integration tests green on Postgres).
+
+### ISSUE-280 — Codebase is split on how it identifies the BASIC salary component (by Code vs by display Name); `PayrollSlipLine` drops `Code`, forcing post-slip consumers to re-string-match names
+- **Type:** ISSUE
+- **Severity:** LOW
+- **Status:** OPEN (deferred — durable refactor)
+- **Layer:** BE
+- **Module / US / TC:** Payroll / US-PAY-003/006/010 / (auto-healed from BUG-078 OUT-OF-LANE OL-3)
+- **Title:** BASIC is identified correctly-by-Code in `PayrollSlipCalculator` (LOP base), `CtcResidualBalancer`, `CtcBreakdownCalculator`, `LeaveEncashmentService`, but was wrongly-by-Name in `PayrollRunProcessor` (BUG-078/BUG-280, now fixed) and via a name/basis heuristic in `PayrollReportService`. The root enabler is that `PayrollSlipLine`/`PayrollSlipDetail` carry only `Name`+`ComponentId`, not `Code`, so every consumer downstream of the slip has to re-identify BASIC.
+- **Suggested action:** Carry `Code` (or an explicit `IsBasic` marker) on `PayrollSlipLine` so no consumer string-matches display names. Not required for BUG-078/280 (the Code→ComponentId-via-inputs lookup is sufficient); filed as tech-debt so the same trap doesn't recur. Park in P7.

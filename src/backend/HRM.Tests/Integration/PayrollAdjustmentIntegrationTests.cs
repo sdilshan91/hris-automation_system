@@ -152,7 +152,7 @@ public sealed class PayrollAdjustmentIntegrationTests
             var componentId = BaseEntity.NewUuidV7();
             db.SalaryComponents.Add(new SalaryComponent
             {
-                Id = componentId, TenantId = tenantId, Name = "Basic", Code = "BASIC",
+                Id = componentId, TenantId = tenantId, Name = "Basic Salary", Code = "BASIC",
                 Type = SalaryComponentType.Earning, CalculationMethod = CalculationMethod.Fixed,
                 IsActive = true, ProcessingOrder = 1,
             });
