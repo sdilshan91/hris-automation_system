@@ -759,8 +759,17 @@ public static class DependencyInjection
             services.AddDistributedMemoryCache();
         }
 
-        // Permission cache (in-memory default; TODO: swap to Redis for production — see NFR-2)
-        services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
+        // Permission cache (NFR-2): Redis-backed when configured so lookups scale across instances and
+        // invalidations propagate cross-instance; else the per-instance in-memory cache. Both Singleton.
+        // Same Redis gate as the shared multiplexer / token-denylist above.
+        if (!string.IsNullOrWhiteSpace(redisConnectionString))
+        {
+            services.AddSingleton<IPermissionCache, RedisPermissionCache>();
+        }
+        else
+        {
+            services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
+        }
 
         // Permission-based authorization
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
