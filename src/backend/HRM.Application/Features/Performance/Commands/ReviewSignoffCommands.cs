@@ -69,6 +69,38 @@ public sealed class DisputeReviewCommandHandler
         => _service.DisputeAsync(request.Input, cancellationToken);
 }
 
+// ── Caller-scoped self acknowledge & sign (AC-3, ISSUE-288) ─────────────
+
+/// <summary>The caller acknowledges &amp; signs their OWN review for the active cycle (US-PRF-006 AC-3, ISSUE-288).</summary>
+public sealed record AcknowledgeMyReviewCommand(string? ClientIpAddress)
+    : IRequest<Result<ReviewMeetingNotesDto>>;
+
+public sealed class AcknowledgeMyReviewCommandHandler
+    : IRequestHandler<AcknowledgeMyReviewCommand, Result<ReviewMeetingNotesDto>>
+{
+    private readonly IReviewSignoffService _service;
+    public AcknowledgeMyReviewCommandHandler(IReviewSignoffService service) => _service = service;
+
+    public Task<Result<ReviewMeetingNotesDto>> Handle(AcknowledgeMyReviewCommand request, CancellationToken cancellationToken)
+        => _service.AcknowledgeMyReviewAsync(request.ClientIpAddress, cancellationToken);
+}
+
+// ── Caller-scoped self dispute (AC-3/FR-5, ISSUE-288) ───────────────────
+
+/// <summary>The caller disputes their OWN review for the active cycle with mandatory comments (US-PRF-006 AC-3, ISSUE-288).</summary>
+public sealed record DisputeMyReviewCommand(string Comments, string? ClientIpAddress)
+    : IRequest<Result<ReviewMeetingNotesDto>>;
+
+public sealed class DisputeMyReviewCommandHandler
+    : IRequestHandler<DisputeMyReviewCommand, Result<ReviewMeetingNotesDto>>
+{
+    private readonly IReviewSignoffService _service;
+    public DisputeMyReviewCommandHandler(IReviewSignoffService service) => _service = service;
+
+    public Task<Result<ReviewMeetingNotesDto>> Handle(DisputeMyReviewCommand request, CancellationToken cancellationToken)
+        => _service.DisputeMyReviewAsync(request.Comments, request.ClientIpAddress, cancellationToken);
+}
+
 // ── HR resolve dispute (BR-4) ───────────────────────────────────────────
 
 /// <summary>HR resolves a disputed review by confirming or amending (US-PRF-006 BR-4).</summary>

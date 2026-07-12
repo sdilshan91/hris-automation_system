@@ -67,4 +67,30 @@ public interface IReviewSignoffService
     /// </summary>
     Task<Result<ReviewExportDto>> GetExportRecordAsync(
         Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default);
+
+    // ── Caller-scoped self-service (ISSUE-288) ──────────────────────────
+    // The employee self-view holds neither its employeeId nor a cycleId. These resolve BOTH server-side
+    // (employeeId from the caller's Employee row, cycleId from the active appraisal cycle) and then reuse the
+    // manager-side notes / acknowledge / dispute logic verbatim. 403 no_employee_record when the caller has no
+    // Employee row; 404 no_active_cycle when none is active.
+
+    /// <summary>
+    /// Returns the caller's OWN meeting notes + sign-off state for the active cycle (US-PRF-006 AC-1/AC-3,
+    /// ISSUE-288). Read.Self — the reviewed employee reading their own review; no manager/HR authz applies.
+    /// </summary>
+    Task<Result<ReviewMeetingNotesDto>> GetMyMeetingNotesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The caller acknowledges &amp; signs their own review for the active cycle (US-PRF-006 AC-3, ISSUE-288).
+    /// Resolves employeeId + cycleId from the caller, then forwards to the immutable-signature acknowledge path.
+    /// </summary>
+    Task<Result<ReviewMeetingNotesDto>> AcknowledgeMyReviewAsync(
+        string? clientIpAddress, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The caller disputes their own review for the active cycle (US-PRF-006 AC-3/FR-4/FR-5, ISSUE-288).
+    /// Resolves employeeId + cycleId from the caller, then forwards to the dispute path (comments mandatory).
+    /// </summary>
+    Task<Result<ReviewMeetingNotesDto>> DisputeMyReviewAsync(
+        string? comments, string? clientIpAddress, CancellationToken cancellationToken = default);
 }

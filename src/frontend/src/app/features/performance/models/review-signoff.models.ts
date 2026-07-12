@@ -9,45 +9,24 @@
  * The service layer (`ReviewSignoffService`) is intentionally thin so a route/DTO
  * mismatch is a one-file fix once the backend lands (like US-PRF-001..005).
  *
- * ── ASSUMED backend contract (backend agent must confirm/reconcile) ────────────
- * `apiBaseUrl` already includes `/api/v1`. All under `/performance/sign-off`. Tenant
- * + acting user resolved server-side from the session (FE sends no tenant/user id);
- * `Performance.Review.Team`/`.All` (manager/HR notes + request) and review-ownership
- * (employee acknowledge/dispute) + RLS (NFR-2). Sign-off records are append-only and
- * IMMUTABLE once recorded (NFR-3) — the server rejects any mutation of a signature.
+ * ── Backend contract (reconciled — BUG-243 re-keying + ISSUE-288 self endpoints) ─
+ * `apiBaseUrl` already includes `/api/v1`; all under `/tenant/performance`. Tenant +
+ * acting user resolved server-side from the session (FE sends no tenant/user id). Sign-off
+ * records are append-only and IMMUTABLE once recorded (NFR-3).
  *
- *   GET   /performance/sign-off/reviews/{reviewId}
- *         → IReviewSignoff (the whole sign-off record: meeting notes, status, the
- *           manager + employee signatures/dispute, the goal+rating snapshot, and the
- *           workflow timeline). One call drives every US-PRF-006 screen.
+ * MANAGER / HR (keyed by cycleId + employeeId; `Performance.Review.Team`/`.All`) — the FE
+ * resolves cycleId via `cycles/active`, employeeId from the route:
+ *   GET  reviews/cycles/{cycleId}/employees/{employeeId}/notes            → IReviewSignoff
+ *   PUT  reviews/cycles/{cycleId}/employees/{employeeId}/notes            (save meeting notes)
+ *   POST reviews/cycles/{cycleId}/employees/{employeeId}/request-signoff  (AC-2: request sign-off)
+ *   POST reviews/cycles/{cycleId}/employees/{employeeId}/resolve-dispute  (BR-4: HR resolves; `.All`)
+ *   GET  reviews/cycles/{cycleId}/employees/{employeeId}/export           (AC-4/FR-6: review record)
  *
- *   PUT   /performance/sign-off/reviews/{reviewId}/notes
- *         body ISaveMeetingNotesRequest → IReviewSignoff
- *         Saves/updates the meeting notes (sanitized HTML). Allowed only while the
- *         status is NotesDraft (BR-1/BR-5: locked once sign-off is requested).
- *
- *   POST  /performance/sign-off/reviews/{reviewId}/request
- *         body ISaveMeetingNotesRequest → IReviewSignoff
- *         AC-2: persists the notes, records the MANAGER signature (name+timestamp+IP
- *         server-side), flips status → PendingEmployeeSignOff, notifies the employee.
- *
- *   POST  /performance/sign-off/reviews/{reviewId}/acknowledge → IReviewSignoff
- *         AC-3: records the EMPLOYEE signature (name+timestamp+IP server-side), flips
- *         status → SignedOff (and Completed once the cycle closes). No body.
- *
- *   POST  /performance/sign-off/reviews/{reviewId}/dispute
- *         body IDisputeRequest → IReviewSignoff
- *         AC-3/FR-4/FR-5: records the employee's dispute comments, flips status →
- *         Disputed, notifies the manager + HR for resolution.
- *
- *   POST  /performance/sign-off/reviews/{reviewId}/resolve
- *         body IResolveDisputeRequest → IReviewSignoff
- *         BR-4: HR resolves a dispute by Amend (reopen notes → NotesDraft) or Confirm
- *         (uphold the review → back to PendingEmployeeSignOff). HR-only.
- *
- *   GET   /performance/sign-off/reviews/{reviewId}/export (OPTIONAL) →
- *         application/pdf (HttpResponse<Blob> + Content-Disposition filename). FR-6.
- *         The FE wires "Export PDF" only when `exportAvailable` is true.
+ * EMPLOYEE SELF-SERVICE (ISSUE-288 — caller-scoped; `Performance.Read.Self`; the server
+ * resolves the caller's OWN employeeId + the active cycleId, so the FE sends neither):
+ *   GET  reviews/cycles/active/me/notes        → IReviewSignoff (drives the employee sign-off screen)
+ *   POST reviews/cycles/active/me/acknowledge  (AC-3/FR-4: records the employee signature → SignedOff + lock)
+ *   POST reviews/cycles/active/me/dispute       body { comments } (AC-3/FR-4/FR-5: → Disputed; notifies manager + HR)
  *
  * Bare payloads (US-PLT-001 unwrap); PascalCase enum strings (US-PLT-003), never ints.
  */

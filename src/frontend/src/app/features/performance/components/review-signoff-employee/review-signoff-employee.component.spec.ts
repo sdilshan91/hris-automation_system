@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, ActivatedRoute } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { ToastrService } from 'ngx-toastr';
 
@@ -41,6 +41,12 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
     serviceSpy = jasmine.createSpyObj<ReviewSignoffService>(
       'ReviewSignoffService',
       [
+        // ISSUE-288: the employee self view uses the caller-scoped `*My` methods
+        // (no cycleId/employeeId params); the manager-side methods below stay on
+        // the spy only to prove the employee view NEVER calls them.
+        'getMySignoff',
+        'acknowledgeMy',
+        'disputeMy',
         'getSignoff',
         'saveNotes',
         'requestSignoff',
@@ -54,7 +60,7 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
       'success',
       'error',
     ]);
-    serviceSpy.getSignoff.and.returnValue(of(record));
+    serviceSpy.getMySignoff.and.returnValue(of(record));
 
     await TestBed.configureTestingModule({
       imports: [ReviewSignoffEmployeeComponent],
@@ -62,12 +68,6 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
         provideRouter([]),
         { provide: ReviewSignoffService, useValue: serviceSpy },
         { provide: ToastrService, useValue: toastrSpy },
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'rv-1' } },
-          },
-        },
       ],
     }).compileComponents();
 
@@ -75,6 +75,16 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
     component = fixture.componentInstance;
     fixture.detectChanges();
   }
+
+  it('loads the caller-scoped self record with no route params (ISSUE-288)', async () => {
+    await setup(makeRecord());
+    // The employee view resolves its OWN record server-side — the manager-keyed
+    // getSignoff(employeeId) must never be called.
+    expect(serviceSpy.getMySignoff).toHaveBeenCalledTimes(1);
+    expect(serviceSpy.getMySignoff).toHaveBeenCalledWith();
+    expect(serviceSpy.getSignoff).not.toHaveBeenCalled();
+    expect(component.record()).toBeTruthy();
+  });
 
   it('renders the meeting notes and the sign-off timeline (AC-4)', async () => {
     await setup(makeRecord());
@@ -97,7 +107,7 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
 
   it('acknowledge flow opens the confirmation modal then records the signature (AC-3)', async () => {
     await setup(makeRecord());
-    serviceSpy.acknowledge.and.returnValue(
+    serviceSpy.acknowledgeMy.and.returnValue(
       of(
         makeRecord({
           status: 'SignedOff',
@@ -120,7 +130,9 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
     );
 
     component.acknowledge();
-    expect(serviceSpy.acknowledge).toHaveBeenCalledWith('rv-1');
+    // ISSUE-288: caller-scoped acknowledge takes NO args.
+    expect(serviceSpy.acknowledgeMy).toHaveBeenCalledWith();
+    expect(serviceSpy.acknowledge).not.toHaveBeenCalled();
     expect(component.record()?.status).toBe('SignedOff');
     expect(component.record()?.employeeSignature?.name).toBe('Alex Doe');
     expect(component.confirmOpen()).toBeFalse();
@@ -128,7 +140,7 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
 
   it('dispute submit is gated on mandatory comments ≥ minimum (FR-4)', async () => {
     await setup(makeRecord());
-    serviceSpy.dispute.and.returnValue(
+    serviceSpy.disputeMy.and.returnValue(
       of(makeRecord({ status: 'Disputed', disputeComments: 'A'.repeat(20) })),
     );
 
@@ -137,7 +149,7 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
     component.disputeControl.setValue('nope');
     expect(component.disputeValid()).toBeFalse();
     component.submitDispute();
-    expect(serviceSpy.dispute).not.toHaveBeenCalled();
+    expect(serviceSpy.disputeMy).not.toHaveBeenCalled();
 
     // Long enough → submits with the trimmed comments.
     const comments = 'I disagree with the rating on goal 1, here is why.';
@@ -145,7 +157,9 @@ describe('ReviewSignoffEmployeeComponent (employee side)', () => {
     expect(component.disputeValid()).toBeTrue();
     component.submitDispute();
 
-    expect(serviceSpy.dispute).toHaveBeenCalledWith('rv-1', { comments });
+    // ISSUE-288: caller-scoped dispute takes ONLY the trimmed comments string.
+    expect(serviceSpy.disputeMy).toHaveBeenCalledWith(comments);
+    expect(serviceSpy.dispute).not.toHaveBeenCalled();
     expect(component.record()?.status).toBe('Disputed');
     expect(component.disputing()).toBeFalse();
   });
