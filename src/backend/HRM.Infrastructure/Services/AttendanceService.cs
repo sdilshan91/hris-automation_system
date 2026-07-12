@@ -31,6 +31,7 @@ public sealed class AttendanceService : IAttendanceService
     private readonly IOvertimeService _overtimeService;
     private readonly IShiftService _shiftService;
     private readonly IWorkflowRuntime? _workflowRuntime;
+    private readonly IAttendanceNotificationService? _notifications;
     private readonly ILogger<AttendanceService> _logger;
 
     public AttendanceService(
@@ -40,7 +41,8 @@ public sealed class AttendanceService : IAttendanceService
         IOvertimeService overtimeService,
         IShiftService shiftService,
         ILogger<AttendanceService> logger,
-        IWorkflowRuntime? workflowRuntime = null)
+        IWorkflowRuntime? workflowRuntime = null,
+        IAttendanceNotificationService? notifications = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -51,6 +53,8 @@ public sealed class AttendanceService : IAttendanceService
         // present AND the tenant has an Active Attendance workflow definition, a submitted regularization routes
         // through the generic runtime; otherwise the legacy single-level manager approval runs (AC-11).
         _workflowRuntime = workflowRuntime;
+        // US-NTF-006 Phase 6: optional so existing US-ATT unit tests keep compiling; DI always supplies the Real impl.
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -164,8 +168,10 @@ public sealed class AttendanceService : IAttendanceService
         // departure is NOT evaluated here (no clock-out yet) — it is computed on clock-out.
         var shiftSignals = await ResolveShiftSignalsAsync(
             employee.Id, TenantClock.LocalDateOf(log.ClockIn, tenantZone), settings, cancellationToken);
+        TimeOnly? expectedShiftStart = null;
         if (shiftSignals is { } ss)
         {
+            expectedShiftStart = ss.Start;
             // ISSUE-065: the punch instant is stored in UTC, but the shift start is configured in the
             // tenant's local time zone — compare LOCAL wall-clock to local shift start (UTC fallback).
             var lateEarly = LateEarlyCalculator.Evaluate(
@@ -207,9 +213,18 @@ public sealed class AttendanceService : IAttendanceService
                 "You have already clocked in. Please clock out first.", 409, "already_clocked_in");
         }
 
-        // FR-5 (late notification) DEFERRED — no notification infra (TODO US-NTF). The AC-4 deduction
-        // FLAG is implemented via the persisted is_late field feeding the monthly summary; only the
-        // notify half is deferred. log.IsLate carries the in-app "you were late" signal for later.
+        // FR-5: notify the employee when this clock-in was marked late (US-NTF-006 Phase 6). The AC-4 deduction
+        // FLAG is the persisted is_late field feeding the monthly summary; this delivers the "you were late" signal.
+        // The service never throws, so a delivery failure cannot break the committed punch.
+        if (log.IsLate && _notifications is not null)
+        {
+            await _notifications.NotifyLateAsync(
+                employee.Id,
+                TenantClock.LocalDateOf(log.ClockIn, tenantZone),
+                TenantClock.LocalTimeOfDay(log.ClockIn, tenantZone),
+                expectedShiftStart,
+                cancellationToken);
+        }
 
         var dto = MapToDto(log);
 
@@ -501,8 +516,13 @@ public sealed class AttendanceService : IAttendanceService
             }
         }
 
-        // FR-4 (notify approver): DEFERRED — no notification infrastructure exists yet.
-        // TODO(US-NTF): emit an in-app (and optional email) notification to the line manager here.
+        // FR-4: notify the employee's line manager that a regularization request awaits approval (US-NTF-006
+        // Phase 6). The service never throws, so a delivery failure cannot break the committed request.
+        if (_notifications is not null)
+        {
+            await _notifications.NotifyRegularizationRequestedAsync(
+                employee.Id, regularization.Date, regularization.Reason, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Employee {EmployeeId} submitted regularization {RegId} ({Type}) for {Date} (tenant {TenantId}).",

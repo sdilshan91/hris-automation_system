@@ -184,6 +184,34 @@ public static class NotificationEventCatalog
         .. TenantPlaceholders,
     ];
 
+    // ── Shared placeholders for the attendance-family events (US-NTF-006 Phase 6, US-ATT-001/004/006). The Real
+    // service loads the subject employee for the name fields; the trigger site supplies the date / time / hours.
+    // MUST be declared before _byKey: the eager BuildCatalog() at type-init references them, so a later declaration
+    // would leave them null → NRE in the type initializer (Phase 2a lesson). ──
+    private static readonly string[] AttendanceLatePlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "attendance.date", "attendance.checkIn", "attendance.expected",
+    ];
+
+    private static readonly string[] RegularizationPlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "attendance.date", "regularization.reason",
+    ];
+
+    private static readonly string[] OvertimeMaximaPlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "overtime.hours", "overtime.limit", "overtime.period",
+    ];
+
+    private static readonly string[] OvertimePlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "overtime.date", "overtime.hours",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1677,6 +1705,205 @@ public static class NotificationEventCatalog
                 "Your enrollment in {{plan.name}} has been terminated.\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.OnboardingOffboarding,
             IsMandatory: false);
+
+        // ── US-NTF-006 Phase 6 — attendance / overtime / regularization delivery (US-ATT-001 FR-5, US-ATT-004
+        // FR-4/FR-5, US-ATT-006 FR-8). Recipients are resolved in the Real service (the employee, the reporting-line
+        // manager, or the attendance-admin/HR pool); the payload carries the date / time / hours the trigger site
+        // has in scope. All AttendanceAlerts, none mandatory. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_late",
+            EventName: "Attendance Marked Late",
+            Placeholders: [.. AttendanceLatePlaceholders, .. TenantPlaceholders],
+            SampleData: AttendanceLateSample(),
+            DefaultSubject: "You were marked late on {{attendance.date}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your clock-in on <strong>{{attendance.date}}</strong> at {{attendance.checkIn}} was after the " +
+                "expected start time of {{attendance.expected}}, so it has been marked <strong>late</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your clock-in on {{attendance.date}} at {{attendance.checkIn}} was after the expected start time " +
+                "of {{attendance.expected}}, so it has been marked late.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_regularization_requested",
+            EventName: "Attendance Regularization Requested",
+            Placeholders: [.. RegularizationPlaceholders, .. TenantPlaceholders],
+            SampleData: RegularizationSample(),
+            DefaultSubject: "A regularization request needs your approval",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has submitted an attendance " +
+                "regularization request for <strong>{{attendance.date}}</strong> that needs your approval.</p>" +
+                "<p>Reason: {{regularization.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has submitted an attendance regularization request " +
+                "for {{attendance.date}} that needs your approval.\n\n" +
+                "Reason: {{regularization.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_regularization_approved",
+            EventName: "Attendance Regularization Approved",
+            Placeholders: [.. RegularizationPlaceholders, .. TenantPlaceholders],
+            SampleData: RegularizationSample(),
+            DefaultSubject: "Your regularization request for {{attendance.date}} was approved",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your attendance regularization request for <strong>{{attendance.date}}</strong> has been " +
+                "<strong>approved</strong>.</p>" +
+                "<p>Reason: {{regularization.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your attendance regularization request for {{attendance.date}} has been approved.\n\n" +
+                "Reason: {{regularization.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_regularization_rejected",
+            EventName: "Attendance Regularization Rejected",
+            Placeholders: [.. RegularizationPlaceholders, .. TenantPlaceholders],
+            SampleData: RegularizationSample(reason: "Insufficient supporting evidence for the requested change."),
+            DefaultSubject: "Your regularization request for {{attendance.date}} was rejected",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your attendance regularization request for <strong>{{attendance.date}}</strong> has been " +
+                "<strong>rejected</strong>.</p>" +
+                "<p>Reason: {{regularization.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your attendance regularization request for {{attendance.date}} has been rejected.\n\n" +
+                "Reason: {{regularization.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "overtime_maxima_exceeded",
+            EventName: "Overtime Maxima Exceeded",
+            Placeholders: [.. OvertimeMaximaPlaceholders, .. TenantPlaceholders],
+            SampleData: OvertimeMaximaSample(),
+            DefaultSubject: "Overtime limit exceeded for {{employee.firstName}} {{employee.lastName}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Recorded overtime for <strong>{{employee.firstName}} {{employee.lastName}}</strong> " +
+                "({{overtime.hours}} hour(s)) has exceeded the {{overtime.period}} maximum of " +
+                "{{overtime.limit}} hour(s).</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Recorded overtime for {{employee.firstName}} {{employee.lastName}} ({{overtime.hours}} hour(s)) " +
+                "has exceeded the {{overtime.period}} maximum of {{overtime.limit}} hour(s).\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "overtime_preapproval_requested",
+            EventName: "Overtime Pre-Approval Requested",
+            Placeholders: [.. OvertimePlaceholders, .. TenantPlaceholders],
+            SampleData: OvertimeSample(),
+            DefaultSubject: "An overtime pre-approval needs your review",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has requested pre-approval for " +
+                "<strong>{{overtime.hours}}</strong> hour(s) of overtime on {{overtime.date}}.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has requested pre-approval for {{overtime.hours}} " +
+                "hour(s) of overtime on {{overtime.date}}.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "overtime_approved",
+            EventName: "Overtime Approved",
+            Placeholders: [.. OvertimePlaceholders, .. TenantPlaceholders],
+            SampleData: OvertimeSample(),
+            DefaultSubject: "Your overtime for {{overtime.date}} was approved",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your overtime of <strong>{{overtime.hours}}</strong> hour(s) on {{overtime.date}} has been " +
+                "<strong>approved</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your overtime of {{overtime.hours}} hour(s) on {{overtime.date}} has been approved.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "overtime_rejected",
+            EventName: "Overtime Rejected",
+            Placeholders: [.. OvertimePlaceholders, "overtime.reason", .. TenantPlaceholders],
+            SampleData: OvertimeSample(reason: "The overtime was not pre-authorized for this period."),
+            DefaultSubject: "Your overtime for {{overtime.date}} was rejected",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your overtime of <strong>{{overtime.hours}}</strong> hour(s) on {{overtime.date}} has been " +
+                "<strong>rejected</strong>.</p>" +
+                "<p>Reason: {{overtime.reason}}</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your overtime of {{overtime.hours}} hour(s) on {{overtime.date}} has been rejected.\n\n" +
+                "Reason: {{overtime.reason}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+    }
+
+    // ── Sample-data for the attendance-family events (US-NTF-006 Phase 6). ──
+    private static Dictionary<string, object?> AttendanceLateSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["attendance"] = new Dictionary<string, object?>
+        {
+            ["date"] = "2026-07-01", ["checkIn"] = "09:22", ["expected"] = "09:00",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> RegularizationSample(string? reason = null) => new()
+    {
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["attendance"] = new Dictionary<string, object?> { ["date"] = "2026-07-01" },
+        ["regularization"] = new Dictionary<string, object?>
+        {
+            ["reason"] = reason ?? "Forgot to clock in; badge records confirm on-site presence.",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> OvertimeMaximaSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["overtime"] = new Dictionary<string, object?>
+        {
+            ["hours"] = "3.5", ["limit"] = "3.0", ["period"] = "daily",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> OvertimeSample(string? reason = null)
+    {
+        var overtime = new Dictionary<string, object?> { ["date"] = "2026-07-01", ["hours"] = "2.0" };
+        if (reason is not null) overtime["reason"] = reason;
+        return new Dictionary<string, object?>
+        {
+            ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+            ["overtime"] = overtime,
+            ["tenant"] = SampleTenant(),
+        };
     }
 
     // ── Sample-data for the US-TRN-001 training events. ──
