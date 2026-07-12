@@ -87,6 +87,17 @@ public sealed class EmployeeService : IEmployeeService
         if (!jobTitleExists)
             return Result<EmployeeDto>.Failure("Job title not found or is not active.", 400);
 
+        // US-CHR-007 / BUG-113: optional structured location assignment. When provided, the location
+        // must exist, be active, and belong to this tenant (the global query filter enforces tenant scope).
+        if (request.LocationId.HasValue)
+        {
+            var locationExists = await _dbContext.Locations
+                .AnyAsync(l => l.Id == request.LocationId.Value && l.IsActive, cancellationToken);
+
+            if (!locationExists)
+                return Result<EmployeeDto>.Failure("Location not found or is not active.", 400);
+        }
+
         // AC-5 / FR-5: Plan-level employee count limit enforcement
         var planLimitResult = await CheckPlanLimitAsync(cancellationToken);
         if (planLimitResult.IsFailure)
@@ -125,6 +136,7 @@ public sealed class EmployeeService : IEmployeeService
             EmploymentType = request.EmploymentType,
             Status = status,
             Location = request.Location,
+            LocationId = request.LocationId,
             CustomFields = request.CustomFields,
             UserId = request.UserId,
             IsActive = true,
@@ -152,6 +164,7 @@ public sealed class EmployeeService : IEmployeeService
         var employee = await _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
+            .Include(e => e.LocationEntity)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
 
@@ -175,6 +188,7 @@ public sealed class EmployeeService : IEmployeeService
         var query = _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
+            .Include(e => e.LocationEntity)
             .AsNoTracking();
 
         if (activeOnly == true)
@@ -339,6 +353,7 @@ public sealed class EmployeeService : IEmployeeService
         var employee = await _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
+            .Include(e => e.LocationEntity)
             .Include(e => e.EmergencyContacts)
             .Include(e => e.EmploymentHistories)
             .AsNoTracking()
@@ -392,6 +407,7 @@ public sealed class EmployeeService : IEmployeeService
         var employee = await _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
+            .Include(e => e.LocationEntity)
             .Include(e => e.EmergencyContacts)
             .Include(e => e.EmploymentHistories)
             .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
@@ -561,6 +577,47 @@ public sealed class EmployeeService : IEmployeeService
                     NewValue = newJt.TitleName,
                     PreviousReferenceId = before["JobTitleId"] as Guid?,
                     NewReferenceId = newJtId,
+                    EffectiveDate = effectiveDate,
+                    Reason = request.EmploymentInfo.Reason,
+                    ChangedBy = changedBy,
+                });
+            }
+
+            // Location change (US-CHR-007 / BUG-113). Mirrors the Department/JobTitle change pattern:
+            // validate the target location exists + is active (tenant-scoped via the global filter),
+            // reassign the FK, and record an employment-history entry. A null LocationId leaves the
+            // current assignment unchanged (matching DepartmentId/JobTitleId semantics).
+            if (request.EmploymentInfo.LocationId.HasValue &&
+                request.EmploymentInfo.LocationId.Value != employee.LocationId)
+            {
+                var newLocId = request.EmploymentInfo.LocationId.Value;
+                var locExists = await _dbContext.Locations
+                    .AnyAsync(l => l.Id == newLocId && l.IsActive, cancellationToken);
+                if (!locExists)
+                    return Result<EmployeeProfileDto>.Failure("Location not found or is not active.", 400);
+
+                var oldLocName = employee.LocationEntity?.Name ?? employee.LocationId?.ToString();
+                var newLoc = await _dbContext.Locations.AsNoTracking()
+                    .FirstAsync(l => l.Id == newLocId, cancellationToken);
+
+                before["LocationId"] = employee.LocationId;
+                before["LocationName"] = oldLocName;
+
+                employee.LocationId = newLocId;
+
+                after["LocationId"] = employee.LocationId;
+                after["LocationName"] = newLoc.Name;
+
+                _dbContext.EmploymentHistories.Add(new EmploymentHistory
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    ChangeType = "Location",
+                    PreviousValue = oldLocName,
+                    NewValue = newLoc.Name,
+                    PreviousReferenceId = before["LocationId"] as Guid?,
+                    NewReferenceId = newLocId,
                     EffectiveDate = effectiveDate,
                     Reason = request.EmploymentInfo.Reason,
                     ChangedBy = changedBy,
@@ -752,6 +809,8 @@ public sealed class EmployeeService : IEmployeeService
         DepartmentName = e.Department?.Name,
         JobTitleId = e.JobTitleId,
         JobTitleName = e.JobTitle?.TitleName,
+        LocationId = e.LocationId,
+        LocationName = e.LocationEntity?.Name,
         EmploymentType = e.EmploymentType.ToString(),
         Status = e.Status.ToString(),
         ProfilePhotoUrl = e.ProfilePhotoUrl,
@@ -872,6 +931,7 @@ public sealed class EmployeeService : IEmployeeService
         var employee = await _dbContext.Employees
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
+            .Include(e => e.LocationEntity)
             .AsNoTracking()
             .FirstAsync(e => e.Id == employeeId, cancellationToken);
 
@@ -897,6 +957,8 @@ public sealed class EmployeeService : IEmployeeService
         Status = e.Status.ToString(),
         ProfilePhotoUrl = e.ProfilePhotoUrl,
         Location = e.Location,
+        LocationId = e.LocationId,
+        LocationName = e.LocationEntity?.Name,
         CustomFields = e.CustomFields,
         UserId = e.UserId,
         IsActive = e.IsActive,

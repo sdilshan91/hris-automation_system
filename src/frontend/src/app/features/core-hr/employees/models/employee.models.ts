@@ -95,6 +95,9 @@ export interface IEmployee {
   departmentName: string | null;
   jobTitleId: string;
   jobTitleName: string | null;
+  /** BUG-113: structured work location FK + display name (EmployeeDto) */
+  locationId: string | null;
+  locationName: string | null;
   employmentType: EmploymentType;
   status: EmployeeStatus;
   profilePhotoUrl: string | null;
@@ -117,6 +120,8 @@ export interface ICreateEmployeeRequest {
   dateOfJoining: string;
   departmentId: string;
   jobTitleId: string;
+  /** BUG-113: optional structured work location FK (Guid). Omitted/null when unset. */
+  locationId?: string | null;
   employmentType: EmploymentType;
   status?: EmployeeStatus;
   customFields?: Record<string, unknown> | null;

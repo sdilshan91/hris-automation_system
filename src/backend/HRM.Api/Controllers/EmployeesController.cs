@@ -132,7 +132,7 @@ public sealed class EmployeesController : ControllerBase
             request.Phone, request.DateOfBirth, request.Gender,
             request.DateOfJoining, request.DepartmentId, request.JobTitleId,
             request.EmploymentType, request.Status, request.Location,
-            request.CustomFields, request.UserId);
+            request.LocationId, request.CustomFields, request.UserId);
 
         var result = await _mediator.Send(command, cancellationToken);
 

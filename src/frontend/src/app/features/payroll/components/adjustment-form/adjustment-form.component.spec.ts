@@ -25,6 +25,8 @@ function makeEmployee(over: Partial<IEmployee> = {}): IEmployee {
     departmentName: 'People',
     jobTitleId: 'j-1',
     jobTitleName: 'HR Officer',
+    locationId: null,
+    locationName: null,
     employmentType: 'FullTime' as IEmployee['employmentType'],
     status: 'active' as IEmployee['status'],
     profilePhotoUrl: null,

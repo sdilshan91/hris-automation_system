@@ -36,6 +36,28 @@ describe('EmployeeProfileComponent', () => {
 
   const profileUrl = `${environment.apiBaseUrl}/tenant/employees/emp-1/profile`;
   const customFieldsUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
+  const locationsUrl = `${environment.apiBaseUrl}/tenant/locations`;
+
+  // BUG-113: active locations feeding the employment-section Location select
+  const mockLocations = [
+    {
+      locationId: 'loc-1',
+      tenantId: 'tenant-1',
+      name: 'Colombo HQ',
+      addressLine1: null,
+      addressLine2: null,
+      city: null,
+      stateProvince: null,
+      country: null,
+      postalCode: null,
+      timeZone: 'Asia/Colombo',
+      phone: null,
+      isActive: true,
+      employeeCount: 0,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ];
 
   /** Minimal profile fixture matching IEmployeeProfile */
   const mockProfile: IEmployeeProfile = {
@@ -53,6 +75,8 @@ describe('EmployeeProfileComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Software Engineer',
+    locationId: null,
+    locationName: null,
     employmentType: 'FullTime',
     status: 'Active',
     profilePhotoUrl: null,
@@ -152,6 +176,9 @@ describe('EmployeeProfileComponent', () => {
     // US-CHR-012: Flush any outstanding custom field requests before verify
     const cfReqs = httpMock.match(customFieldsUrl);
     cfReqs.forEach(r => { if (!r.cancelled) { r.flush([]); } });
+    // BUG-113: flush any outstanding locations requests before verify
+    const locReqs = httpMock.match(locationsUrl);
+    locReqs.forEach(r => { if (!r.cancelled) { r.flush(mockLocations); } });
     httpMock.verify();
   });
 
@@ -1031,6 +1058,78 @@ describe('EmployeeProfileComponent', () => {
 
       expect(component.formatChangeType('status_change')).toBe('Status Change');
     });
+  });
+
+  // ─── BUG-113: work-location assignment on the employment section ────
+  describe('BUG-113: employment-section location', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('should load active locations for the Location select', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(locationsUrl).flush(mockLocations);
+      tick();
+
+      expect(component.locations().length).toBe(1);
+      expect(component.locations()[0].name).toBe('Colombo HQ');
+    }));
+
+    it('should expose a locationId control on the employment form populated from the profile', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock
+        .expectOne(profileUrl)
+        .flush({ ...mockProfile, locationId: 'loc-1', locationName: 'Colombo HQ' });
+      httpMock.expectOne(locationsUrl).flush(mockLocations);
+      tick();
+
+      component.toggleEdit('employment');
+
+      expect(component.employmentForm.get('locationId')).toBeTruthy();
+      expect(component.employmentForm.value.locationId).toBe('loc-1');
+    }));
+
+    it('should include locationId in the employment-update payload when a location is selected', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(locationsUrl).flush(mockLocations);
+      tick();
+
+      component.toggleEdit('employment');
+      component.employmentForm.patchValue({ locationId: 'loc-1' });
+      component.saveSection('employment');
+      tick();
+
+      const patchReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/employment`
+      );
+      expect(patchReq.request.method).toBe('PATCH');
+      expect(patchReq.request.body.data.locationId).toBe('loc-1');
+
+      patchReq.flush({ xmin: '12346', profile: { ...mockProfile, xmin: '12346' } });
+      tick();
+    }));
+
+    it('should send locationId null in the employment-update payload when cleared', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(locationsUrl).flush(mockLocations);
+      tick();
+
+      component.toggleEdit('employment');
+      component.employmentForm.patchValue({ locationId: '' });
+      component.saveSection('employment');
+      tick();
+
+      const patchReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/employment`
+      );
+      expect(patchReq.request.body.data.locationId).toBeNull();
+
+      patchReq.flush({ xmin: '12346', profile: { ...mockProfile, xmin: '12346' } });
+      tick();
+    }));
   });
 });
 

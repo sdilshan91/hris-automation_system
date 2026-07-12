@@ -49,6 +49,8 @@ describe('EmployeeListComponent', () => {
     departmentName: 'Engineering',
     jobTitleId: 'jt-1',
     jobTitleName: 'Software Engineer',
+    locationId: null,
+    locationName: null,
     employmentType: 'FullTime',
     status: 'Active',
     profilePhotoUrl: null,

@@ -22,6 +22,8 @@ public sealed record EmployeeProfileDto
     public string? DepartmentName { get; init; }
     public Guid JobTitleId { get; init; }
     public string? JobTitleName { get; init; }
+    public Guid? LocationId { get; init; }
+    public string? LocationName { get; init; }
     public string EmploymentType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public string? ProfilePhotoUrl { get; init; }

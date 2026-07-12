@@ -77,6 +77,12 @@ public sealed record EmploymentInfoUpdate
 {
     public Guid? DepartmentId { get; init; }
     public Guid? JobTitleId { get; init; }
+    /// <summary>
+    /// Optional FK to a structured Location entity (US-CHR-007 / BUG-113). When set and different
+    /// from the current value, reassigns the employee's location and records an employment-history entry.
+    /// A null value leaves the current location unchanged (mirrors DepartmentId/JobTitleId).
+    /// </summary>
+    public Guid? LocationId { get; init; }
     public EmploymentType? EmploymentType { get; init; }
     public EmployeeStatus? Status { get; init; }
     /// <summary>

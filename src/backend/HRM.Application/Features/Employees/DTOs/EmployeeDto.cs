@@ -24,6 +24,14 @@ public sealed record EmployeeDto
     public string Status { get; init; } = string.Empty;
     public string? ProfilePhotoUrl { get; init; }
     public string? Location { get; init; }
+    /// <summary>
+    /// FK to the structured Location entity (US-CHR-007). Null when unassigned (BR-6).
+    /// </summary>
+    public Guid? LocationId { get; init; }
+    /// <summary>
+    /// Name of the assigned location, resolved from the Location entity (US-CHR-007).
+    /// </summary>
+    public string? LocationName { get; init; }
     public string? CustomFields { get; init; }
     public Guid? UserId { get; init; }
     public bool IsActive { get; init; }
@@ -59,6 +67,10 @@ public sealed record CreateEmployeeRequest
     public EmploymentType EmploymentType { get; init; }
     public EmployeeStatus? Status { get; init; }
     public string? Location { get; init; }
+    /// <summary>
+    /// Optional FK to a structured Location entity (US-CHR-007 / BUG-113). Null when unassigned (BR-6).
+    /// </summary>
+    public Guid? LocationId { get; init; }
     public string? CustomFields { get; init; }
     public Guid? UserId { get; init; }
 }
