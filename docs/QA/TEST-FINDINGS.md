@@ -5439,7 +5439,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-124
 - **Type:** BUG (performance / scalability)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #258, 2026-07-12)
+- **Resolution:** Replaced the per-(employee×leave-type) entitlement resolution (~325k sequential round-trips at 5k×13) with a new `ILeaveEntitlementService.ComputeProratedEntitlementsBatchAsync` — TWO queries (overrides + active rules) then in-memory resolution via the pure `LeaveEntitlementEngine`, mirroring `ComputeEffectiveEntitlementAsync` exactly (probation gate → override → most-specific rule → default → pro-rata; identical UTC reference date). Rewrote both call sites (`BuildBalanceSummaryAsync`, `ComputeUtilizationAggregatesAsync` — the latter also fixes the UtilizationByDepartment chart); removed the orphaned per-pair wrapper. No index/migration. Regression: correctness test asserts batch == per-pair for every branch incl. a mid-year joiner (Jane=10.08=20×184/365), + a "one batch, not N" assertion. Build clean + 89/89 leave tests. (Perf-rig SLA confirmation deferred — N+1 removed, query count now constant.) Partially unblocks ISSUE-230 (oversized-export routing still builds full report first — separate ticket).
 - **Layer:** BE
 - **Module / US / TC:** Leave Management / US-LV (reports/export) / TC-LV-248, TC-LV-249, TC-LV-240
 - **Title:** `LeaveReportService.BuildBalanceSummaryAsync` resolves entitlement **per employee × leave-type** (`ResolveEntitlementAsync` in a nested loop → ~5,000 × 13 sequential EF round-trips); `BuildUtilizationAsync`/`ComputeUtilizationAggregatesAsync` has the same non-scaling shape. At the platform's own NFR-1 target scale (5,000 employees) neither report completes — the request returns **500 after ~90s**. The lighter reports that do NOT resolve per-employee entitlement (Absenteeism, LopSummary) return in ~100ms, isolating the N+1 as the cause.

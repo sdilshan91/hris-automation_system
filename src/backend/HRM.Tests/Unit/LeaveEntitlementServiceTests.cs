@@ -14,6 +14,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -407,6 +408,70 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         result.Value!.BaseEntitlementDays.Should().Be(7); // Sick leave default
         result.Value.ProratedEntitlementDays.Should().Be(7);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  BUG-124: batch prorated entitlement resolution == per-pair
+    // ══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ComputeProratedEntitlementsBatch_MatchesPerPair_IncludingMidYearJoiner_BUG124()
+    {
+        // BUG-124: the batch resolver must produce byte-identical prorated values to the per-pair
+        // ComputeEffectiveEntitlementAsync it replaces in the reports. Exercise all three resolution
+        // branches (override / rule / leave-type default) plus a mid-year joiner whose proration != full.
+        //
+        //  - John (joined 2026-01-01): annual has a dept rule (20) AND a per-employee override (30) →
+        //    override wins → 30 full-year; sick falls back to the default 7.
+        //  - Jane (joined 2026-07-01): annual takes the dept rule (20) pro-rated for a mid-year joiner;
+        //    sick takes the default 7 pro-rated.
+        var janeId = Guid.NewGuid();
+        using (var db = CreateDbContext())
+        {
+            db.Employees.Add(new Employee
+            {
+                Id = janeId, TenantId = _tenantId, EmployeeNo = "EMP-0002",
+                FirstName = "Jane", LastName = "Roe", Email = "jane@test.com",
+                DateOfJoining = new DateTime(2026, 7, 1),
+                DepartmentId = _departmentId, JobTitleId = _jobTitleId,
+                EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var svc = CreateService();
+        await svc.CreateRuleAsync(MakeRuleRequest());               // Engineering annual rule = 20 days
+        await svc.UpsertOverrideAsync(new UpsertLeaveEntitlementOverrideRequest
+        {
+            EmployeeId = _employeeId, LeaveTypeId = _leaveTypeId, LeaveYear = 2026,
+            EntitlementDays = 30, Reason = "Override John annual",
+        });
+
+        List<Employee> employees;
+        List<LeaveType> leaveTypes;
+        using (var db = CreateDbContext())
+        {
+            employees = db.Employees.AsNoTracking().OrderBy(e => e.EmployeeNo).ToList();
+            leaveTypes = db.LeaveTypes.AsNoTracking().OrderBy(l => l.Name).ToList();
+        }
+
+        var batch = await svc.ComputeProratedEntitlementsBatchAsync(employees, leaveTypes, 2026);
+
+        // Every (employee × leave type) pair must equal the per-pair path exactly.
+        foreach (var e in employees)
+        {
+            foreach (var lt in leaveTypes)
+            {
+                var perPair = await svc.ComputeEffectiveEntitlementAsync(e.Id, lt.Id, 2026);
+                perPair.IsSuccess.Should().BeTrue();
+                batch[(e.Id, lt.Id)].Should().Be(perPair.Value!.ProratedEntitlementDays,
+                    $"batch must equal per-pair for {e.EmployeeNo} / {lt.Name}");
+            }
+        }
+
+        // Explicit anchors so proration is demonstrably exercised (not all pairs full-year):
+        batch[(_employeeId, _leaveTypeId)].Should().Be(30m);   // John: override 30, full year
+        batch[(janeId, _leaveTypeId)].Should().Be(10.08m);     // Jane: rule 20 * 184/365 = 10.08 (half-up)
     }
 
     // ══════════════════════════════════════════════════════════════

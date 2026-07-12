@@ -1,5 +1,6 @@
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveEntitlements.DTOs;
+using HRM.Domain.Entities;
 
 namespace HRM.Application.Common.Interfaces;
 
@@ -62,6 +63,22 @@ public interface ILeaveEntitlementService
         Guid employeeId,
         Guid leaveTypeId,
         int leaveYear,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-124: batched, set-based resolution of the <b>prorated</b> effective entitlement for every
+    /// (employee × leave type) pair, for reporting/analytics at scale (NFR-1: 5,000 employees × 13 types).
+    /// Runs ONE query for overrides and ONE query for active rules, then resolves each pair in memory via
+    /// the same pure entitlement engine that <see cref="ComputeEffectiveEntitlementAsync"/> uses — so the
+    /// per-pair <c>ProratedEntitlementDays</c> is byte-identical to calling it N times, without the N+1
+    /// round-trips (it deliberately does NOT compute the ledger balance, which reports discard).
+    /// The <paramref name="employees"/> and <paramref name="leaveTypes"/> are supplied by the caller (the
+    /// report has already materialised them) and are not re-queried.
+    /// </summary>
+    Task<Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>> ComputeProratedEntitlementsBatchAsync(
+        IReadOnlyList<Employee> employees,
+        IReadOnlyList<LeaveType> leaveTypes,
+        int year,
         CancellationToken cancellationToken = default);
 
     // ── Accrual Processing ─────────────────────────────────────────

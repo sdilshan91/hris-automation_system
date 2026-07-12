@@ -431,6 +431,101 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         });
     }
 
+    /// <summary>
+    /// BUG-124: set-based counterpart to <see cref="ComputeEffectiveEntitlementAsync"/> for the leave
+    /// reports. Replicates its EXACT proration logic (probation gate → override → most-specific active
+    /// rule → leave-type default, then <see cref="LeaveEntitlementEngine.CalculateProRata"/>) but resolves
+    /// every (employee × leave type) pair from just two queries — one for overrides, one for active rules —
+    /// instead of ~5 round-trips per pair. The ledger balance is intentionally NOT computed (reports use
+    /// only the prorated entitlement). Values are byte-identical to the per-pair path.
+    /// </summary>
+    public async Task<Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>> ComputeProratedEntitlementsBatchAsync(
+        IReadOnlyList<Employee> employees,
+        IReadOnlyList<LeaveType> leaveTypes,
+        int year,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>();
+        if (employees.Count == 0 || leaveTypes.Count == 0)
+            return result;
+
+        var employeeIds = employees.Select(e => e.Id).ToList();
+        var leaveTypeIds = leaveTypes.Select(lt => lt.Id).ToList();
+
+        // ONE query for per-employee overrides (AC-3) covering all scoped pairs for the year.
+        var overrideRows = await _dbContext.LeaveEntitlementOverrides
+            .AsNoTracking()
+            .Where(o => employeeIds.Contains(o.EmployeeId)
+                        && leaveTypeIds.Contains(o.LeaveTypeId)
+                        && o.LeaveYear == year)
+            .Select(o => new { o.EmployeeId, o.LeaveTypeId, o.EntitlementDays })
+            .ToListAsync(cancellationToken);
+
+        var overrideByKey = new Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>();
+        foreach (var o in overrideRows)
+            overrideByKey[(o.EmployeeId, o.LeaveTypeId)] = o.EntitlementDays;
+
+        // ONE query for the active rules effective at the year's reference date (mirrors the per-pair
+        // ResolveEntitlementAsync: EffectiveFrom/To are timestamptz, so the reference date is UTC-kinded).
+        var referenceDate = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var ruleRows = await _dbContext.LeaveEntitlementRules
+            .AsNoTracking()
+            .Where(r => leaveTypeIds.Contains(r.LeaveTypeId)
+                        && r.IsActive
+                        && r.EffectiveFrom <= referenceDate
+                        && (!r.EffectiveTo.HasValue || r.EffectiveTo.Value >= referenceDate))
+            .ToListAsync(cancellationToken);
+
+        var rulesByLeaveType = ruleRows
+            .GroupBy(r => r.LeaveTypeId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<LeaveEntitlementRule>)g.ToList());
+        var emptyRules = (IReadOnlyList<LeaveEntitlementRule>)Array.Empty<LeaveEntitlementRule>();
+
+        foreach (var employee in employees)
+        {
+            // Tenure depends only on the employee + reference date (not the leave type) — compute once.
+            var tenureMonths = LeaveEntitlementEngine.ComputeTenureMonths(
+                employee.DateOfJoining, referenceDate);
+
+            foreach (var leaveType in leaveTypes)
+            {
+                var key = (employee.Id, leaveType.Id);
+
+                // BR-3: probation employees only get probation-eligible types (gate applied FIRST, exactly
+                // as ComputeEffectiveEntitlementAsync does — before override/rule resolution).
+                if (employee.Status == EmployeeStatus.Probation && !leaveType.ProbationEligible)
+                {
+                    result[key] = 0m;
+                    continue;
+                }
+
+                decimal baseEntitlement;
+                if (overrideByKey.TryGetValue(key, out var overrideDays))
+                {
+                    // Override beats rules and default (AC-3).
+                    baseEntitlement = overrideDays;
+                }
+                else
+                {
+                    var rules = rulesByLeaveType.TryGetValue(leaveType.Id, out var r) ? r : emptyRules;
+                    baseEntitlement = LeaveEntitlementEngine.Resolve(
+                        rules,
+                        employee.DepartmentId,
+                        employee.JobTitleId,
+                        employee.EmploymentType,
+                        tenureMonths,
+                        leaveType.AnnualEntitlement).BaseEntitlementDays;
+                }
+
+                // Pro-rata for mid-year joiners (FR-3, AC-4), identical inputs to the per-pair path.
+                result[key] = LeaveEntitlementEngine.CalculateProRata(
+                    baseEntitlement, employee.DateOfJoining, year, fte: 1.0m);
+            }
+        }
+
+        return result;
+    }
+
     // ══════════════════════════════════════════════════════════════
     //  Accrual Processing (Hangfire job)
     // ══════════════════════════════════════════════════════════════
