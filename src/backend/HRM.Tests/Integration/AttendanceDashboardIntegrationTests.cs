@@ -355,6 +355,77 @@ public sealed class AttendanceDashboardIntegrationTests
         result.Value!.Rows.Should().OnlyContain(r => r.Status == "HOLIDAY");
     }
 
+    // BUG-123 / ISSUE-284 #2: the "all"-scope loaders now PROJECT only the consumed columns
+    // (Id + LocationId for status precedence; FirstName/LastName/EmployeeNo/DepartmentId for the
+    // live-board row) instead of materializing whole Employee entities. This oracle proves the
+    // projection changed only the SQL column set, not the output: a multi-employee, multi-location
+    // seed (present / on-leave / location-holiday / not-in across TWO locations) must yield the exact
+    // same KPI counts and live-board statuses + identity fields as the full-entity path did. It fails
+    // loudly if any consumed column were dropped from the projection (e.g. LocationId → the location
+    // holiday would be missed; EmployeeNo/name → wrong live-board identity).
+    [Fact]
+    public async Task Dashboard_MultiLocation_ProjectionPreservesKpiAndLiveBoard_BUG123()
+    {
+        SeedSettings(_tenantA);
+        var day = Weekday(0);
+
+        var locA = Guid.NewGuid();
+        var locB = Guid.NewGuid();
+
+        // Assign the 4 tenant-A employees across two locations: MGR/A1 -> locA, A2/A3 -> locB.
+        using (var db = Db(_tenantA))
+        {
+            foreach (var (id, loc) in new[]
+                { (_managerEmpId, locA), (_empA1, locA), (_empA2, locB), (_empA3, locB) })
+            {
+                var e = db.Employees.Single(x => x.Id == id);
+                e.LocationId = loc;
+            }
+            db.SaveChanges();
+        }
+
+        // A1 clocks in; A2 on full-day approved leave; a location-specific PUBLIC holiday at locB.
+        SeedLog(_tenantA, _empA1, day, 9, 0, 480);
+        SeedApprovedLeave(_tenantA, _empA2, day, day);
+        using (var db = Db(_tenantA))
+        {
+            db.Holidays.Add(new Holiday
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, Name = "LocB Holiday",
+                Date = day, Type = HolidayType.Public, IsActive = true, LocationId = locB,
+            });
+            db.SaveChanges();
+        }
+
+        var (mediator, _) = BuildPipeline(_tenantA);
+
+        // Live board: precedence CLOCKED_IN > ON_LEAVE > HOLIDAY > NOT_CLOCKED_IN, per location.
+        var board = await mediator.Send(new GetLiveBoardQuery(day, "all"));
+        board.IsSuccess.Should().BeTrue();
+        var rows = board.Value!.Rows;
+        rows.Single(r => r.EmployeeId == _empA1).Status.Should().Be("CLOCKED_IN");        // clocked in wins
+        rows.Single(r => r.EmployeeId == _empA2).Status.Should().Be("ON_LEAVE");          // leave wins over locB holiday
+        rows.Single(r => r.EmployeeId == _empA3).Status.Should().Be("HOLIDAY");           // locB holiday
+        rows.Single(r => r.EmployeeId == _managerEmpId).Status.Should().Be("NOT_CLOCKED_IN"); // locA, no holiday
+
+        // Projected identity fields survive the Select.
+        var a1 = rows.Single(r => r.EmployeeId == _empA1);
+        a1.EmployeeName.Should().Be("A1 X");
+        a1.EmployeeNumber.Should().Be("A1");
+        a1.DepartmentName.Should().Be("Engineering");
+
+        // KPIs over the same seed: expected = 4 active - 1 leave - 1 holiday = 2 (MGR + A1).
+        var kpi = await mediator.Send(new GetDashboardKpisQuery(day, "all"));
+        kpi.IsSuccess.Should().BeTrue();
+        var k = kpi.Value!;
+        k.OnLeave.Should().Be(1);              // A2
+        k.ExpectedHeadcount.Should().Be(2);    // 4 - 1 leave - 1 holiday
+        k.ClockedIn.Should().Be(1);            // A1
+        k.PendingClockIn.Should().Be(1);       // MGR
+        k.Absent.Should().Be(1);
+        k.AttendancePercent.Should().BeApproximately(50m, 0.01m);   // 1/2
+    }
+
     // ════════════════════════════════════════════════════════════════
     //  Team-scope narrowing (BR-4)
     // ════════════════════════════════════════════════════════════════

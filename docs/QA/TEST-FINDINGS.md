@@ -5400,7 +5400,9 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-123
 - **Type:** BUG (performance — SLA breach + request timeouts at scale)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** PARTIALLY RESOLVED (PR #259, 2026-07-12) — remainder split to ISSUE-285 (decision-gated)
+- **Done (PR #259):** the attendance-today KPI + live-board "all"/"team" scope loaders no longer materialize whole `Employee` entities — they project to a 6-column `DashboardEmployee(Id, FirstName, LastName, EmployeeNo, DepartmentId, LocationId)` (LocationId is load-bearing for location-specific-holiday precedence). Removes a full-table entity scan on the hot path; also resolves ISSUE-284 item #2. Output identical (new multi-location oracle test; 56/56 dashboard tests green, build clean).
+- **Remainder → [[ISSUE-285]] (decision-gated, P4-perf):** (1) UpcomingBirthdays in-memory month/day scan needs an indexed day-of-year computed column (**EF migration** — a schema decision) or cache-warming; (2) 8 widgets run sequentially — parallelism needs `IDbContextFactory`; (3) the p95<800ms/no-60s-timeout **SLA at 50k/50-VU is a k6 perf-rig assertion**, not confirmable in-loop. Do NOT close BUG-123 until ISSUE-285 lands on the rig.
 - **Layer:** BE
 - **Module / US / TC:** Reports/Dashboard / US-RPT-005 (dashboard) / perf scale TCs (TC-ADM-002-12 class, dashboard-at-scale)
 - **Title:** k6 at **50,000 employees / 50 VU** (5 min): `GET /api/v1/dashboard/widgets` p95 **829.66ms** (SLA <800ms), **avg 951ms, max 60s**, with **13 request TIMEOUTS** (http_req_failed). Employee list p95 also regresses to **477ms** (>400 SLA; was 145ms at 5k). By contrast the HR **report aggregations** (headcount/dept-distribution/employment-type) stay fast at 50k (p95 166–169ms) — so the problem is specific to the **dashboard widget** composition path, not aggregation in general.
@@ -6027,3 +6029,17 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** `AttendanceDashboardService.ComputeCustomRowsAsync` (`:321-348`) called `ScheduledWorkingDaysAsync` → `ResolveWorkingDaysAsync` per employee — the identical 2-3-query-per-employee shift-resolution N+1 as BUG-125 — feeding both `GetCustomReportAsync` and its CSV/XLSX/PDF export.
 - **Provenance:** Flagged during BUG-125 investigation; auto-healed (Engineering-Discipline #6). Fixed in the SAME PR because it is the same defect at a sibling call site and shares the fix.
 - **Resolution:** Both call sites now use the shared `ShiftScheduleResolver` (3 fixed queries; orphaned per-employee methods deleted). Regression: `AttendanceDashboardIntegrationTests...BUG125` (full-week oracle, default=5 / assigned Mon-Sat=6). Build clean + 40/40 attendance tests green.
+
+---
+
+### ISSUE-285 — Dashboard p95/50k SLA: remaining fixes need an index migration + widget parallelism + a perf-rig to confirm (decision-gated)
+- **Type:** ISSUE (performance / scalability — the non-code-only remainder of BUG-123)
+- **Severity:** MED (HIGH under 50k/50-VU load)
+- **Status:** OPEN (DECISION-GATED — needs schema decision + perf rig)
+- **Layer:** BE
+- **Module / US / TC:** Reports/Dashboard / US-RPT-005 / (split from BUG-123)
+- **Title:** BUG-123's clean hot-path projection (attendance-today / live-board) is fixed in PR #259, but three pieces cannot be done as a plain in-loop code fix:
+  1. **UpcomingBirthdays widget** (`DashboardService.cs:393-430`) loads all Active/Probation employees and filters the month/day-within-7-days window IN MEMORY (a plain index can't express day-of-year). Durable fix = a **persisted `birth_day_of_year` (+ `joining_day_of_year`) computed column with an index**, filtered in SQL → **requires an EF migration** (`dotnet ef migrations add`, never hand-write) + a `HasIndex` in `EmployeeConfiguration`. Alternative: lean on the existing 3-min per-widget cache + cache-warming so cold recompute never happens under load. **Schema-vs-caching = a design decision (decision-gate).**
+  2. **Widget parallelism** — the 8 HR widgets run sequentially on one `DbContext` (`DashboardService.cs:168-190`); true parallelization needs `IDbContextFactory` (EF forbids concurrent ops on one context) — a structural change.
+  3. **The SLA claim itself** (p95 <800ms, no 60s timeouts at 50k / 50 VU) is a **perf-rig assertion** — provable only via `perf/seed/seed-perf-tenant.sql -v emp_count=50000` + `k6 run perf/scripts/01-hot-reads.js`, not an in-loop test.
+- **Suggested action:** (a) decide birthday-window: indexed computed column (migration) vs cache-warm; (b) parallelize widgets via IDbContextFactory; (c) run the k6 rig to confirm p95. Park at the decision-gate / perf-rig track (COMPLETION-PLAN P4-perf).
