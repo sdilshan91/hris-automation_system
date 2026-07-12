@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Features.AuditLog;
 using HRM.Domain.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -186,8 +187,13 @@ public sealed class AuditCaptureInterceptor : SaveChangesInterceptor
         return string.Equals(a.ToString(), b.ToString(), StringComparison.Ordinal);
     }
 
-    /// <summary>Full snapshot of all mapped, non-ignored scalar properties (used for INSERT/DELETE).</summary>
-    private static string? SerializeAll(EntityEntry entry)
+    /// <summary>
+    /// Full snapshot of all mapped, non-ignored scalar properties (used for INSERT/DELETE).
+    /// BUG-281: the serialized JSON is passed through <see cref="SensitiveFieldMasker.Mask"/> at WRITE time so
+    /// PII (e.g. bank account, national id, salary) is never persisted in cleartext in the audit before/after
+    /// JSONB — the read-path masking in AuditLogService is no longer the only line of defence.
+    /// </summary>
+    internal static string? SerializeAll(EntityEntry entry)
     {
         var map = new Dictionary<string, object?>();
         foreach (var prop in entry.Properties)
@@ -197,14 +203,16 @@ public sealed class AuditCaptureInterceptor : SaveChangesInterceptor
             map[prop.Metadata.Name] = entry.State == EntityState.Deleted ? prop.OriginalValue : prop.CurrentValue;
         }
 
-        return map.Count == 0 ? null : Serialize(map);
+        return map.Count == 0 ? null : SensitiveFieldMasker.Mask(Serialize(map));
     }
 
     /// <summary>
     /// BR-3: capture ONLY the properties whose value actually changed, into separate before/after maps.
     /// Returns (null, null) when no meaningful property changed.
+    /// BUG-281: both the before and after JSON are passed through <see cref="SensitiveFieldMasker.Mask"/> at
+    /// WRITE time so PII field values are redacted before they are persisted to the audit table.
     /// </summary>
-    private static (string? before, string? after) SerializeChanged(EntityEntry entry)
+    internal static (string? before, string? after) SerializeChanged(EntityEntry entry)
     {
         var before = new Dictionary<string, object?>();
         var after = new Dictionary<string, object?>();
@@ -225,7 +233,7 @@ public sealed class AuditCaptureInterceptor : SaveChangesInterceptor
         if (before.Count == 0)
             return (null, null);
 
-        return (Serialize(before), Serialize(after));
+        return (SensitiveFieldMasker.Mask(Serialize(before)), SensitiveFieldMasker.Mask(Serialize(after)));
     }
 
     /// <summary>

@@ -36,6 +36,8 @@ public sealed class SensitiveFieldMaskerTests
     [InlineData("NationalId")]
     [InlineData("bankAccountNumber")]
     [InlineData("mfaSecret")]
+    [InlineData("salary")]        // BUG-281: at-rest coverage for compensation fields
+    [InlineData("Salary")]
     public void Mask_CamelAndPascalVariants_AreRedacted(string key)
     {
         var json = $"{{\"{key}\":\"secret-value\"}}";
