@@ -5,6 +5,7 @@ using HRM.Application.Features.Attendance.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     private readonly IPayrollNotificationService _notifications;
     private readonly IStatutoryDeductionResolver _statutoryResolver;
     private readonly IPayrollAdjustmentResolver _adjustmentResolver;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayrollRunProcessor> _logger;
 
     /// <summary>Synthetic component id for the LOP deduction line (BR-2). Stable so the slip detail FK is consistent.</summary>
@@ -63,6 +65,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         IPayrollNotificationService notifications,
         IStatutoryDeductionResolver statutoryResolver,
         IPayrollAdjustmentResolver adjustmentResolver,
+        IPayrollAuditLogger audit,
         ILogger<PayrollRunProcessor> logger)
     {
         _dbContext = dbContext;
@@ -71,6 +74,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _notifications = notifications;
         _statutoryResolver = statutoryResolver;
         _adjustmentResolver = adjustmentResolver;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -279,6 +283,15 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         run.Status = PayrollRunStatus.ReviewPending;
         run.CompletedAt = DateTime.UtcNow;
         run.RunLog = runLog.Length > 0 ? runLog.ToString().TrimEnd() : null;
+
+        // US-PAY-012 (BUG-080): audit run completion. This runs in a Hangfire job with no HTTP user, so it is a
+        // system actor (BR-7). Staged into the SAME SaveChanges that persists the completed run/slips so the
+        // audit row is committed atomically with the completion.
+        _audit.Log(PA.PayrollRunCompleted, PA.ResourceType.PayrollRun,
+            run.Id.ToString(),
+            before: null,
+            after: new { run.PayYear, run.PayMonth, Status = run.Status.ToString(), Processed = processed, Skipped = skipped },
+            systemActor: true);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

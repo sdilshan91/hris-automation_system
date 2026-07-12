@@ -22,6 +22,7 @@ using HRM.Application.Features.Payroll.Commands;
 using HRM.Application.Features.Payroll.Queries;
 using HRM.Domain.Enums;
 using HRM.Domain.Entities;
+using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using MediatR;
@@ -81,6 +82,12 @@ public sealed class SalaryStructureIntegrationTests
         services.AddScoped<ISalaryStructureService, SalaryStructureService>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(CreateSalaryComponentCommand).Assembly));
         return services.BuildServiceProvider().GetRequiredService<IMediator>();
+    }
+
+    private AppDbContext Db(Guid tenantId)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        return new AppDbContext(options, new MutableTenantContext { TenantId = tenantId });
     }
 
     private static CreateSalaryComponentCommand Earning(string code = "BASIC")
@@ -186,6 +193,71 @@ public sealed class SalaryStructureIntegrationTests
 
         structure.IsFailure.Should().BeTrue();
         structure.ErrorCode.Should().Be("no_earning_component");
+    }
+
+    // ── US-PAY-012 / BUG-080: every payroll write emits an audit action ───────
+
+    [Fact]
+    public async Task CreateStructure_EmitsSalaryStructureCreatedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning());
+        var structure = await mediator.Send(new CreateSalaryStructureCommand(
+            "FT", "FT", null, new DateOnly(2026, 1, 1), false, true,
+            new[] { new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false) }));
+        structure.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureCreated
+            && a.ResourceId == structure.Value!.Id.ToString());
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.SalaryStructure);
+        entry.TenantId.Should().Be(_tenantA);
+        entry.Before.Should().BeNull();
+        entry.After.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task UpdateStructure_EmitsSalaryStructureUpdatedAudit_WithBeforeAfter()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning());
+        var comp = new[] { new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false) };
+        var created = await mediator.Send(new CreateSalaryStructureCommand(
+            "FT", "FT", null, new DateOnly(2026, 1, 1), false, true, comp));
+
+        var updated = await mediator.Send(new UpdateSalaryStructureCommand(
+            created.Value!.Id, "Full-Time Renamed", "FT", "desc", new DateOnly(2026, 2, 1), false, true, comp));
+        updated.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureUpdated
+            && a.ResourceId == created.Value.Id.ToString());
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.SalaryStructure);
+        entry.Before.Should().NotBeNullOrWhiteSpace();
+        entry.After.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task CloneStructure_EmitsSalaryStructureCreatedAudit_ForTheClone()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning());
+        var source = await mediator.Send(new CreateSalaryStructureCommand(
+            "Src", "SRC", null, new DateOnly(2026, 1, 1), false, true,
+            new[] { new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false) }));
+
+        var clone = await mediator.Send(new CloneSalaryStructureCommand(source.Value!.Id, "Clone", "CLONE"));
+        clone.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        // The clone (a new structure id) has its own Created audit row.
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureCreated
+            && a.ResourceId == clone.Value!.Id.ToString());
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.SalaryStructure);
+        entry.ResourceId.Should().NotBe(source.Value.Id.ToString());
     }
 
     [Fact]

@@ -117,12 +117,22 @@ public sealed class PayslipDistributionTests
         return new AppDbContext(options, ctx);
     }
 
+    /// <summary>No-op payroll audit logger — these unit tests don't assert BUG-080 audit emission.</summary>
+    private sealed class NoOpAudit : IPayrollAuditLogger
+    {
+        public void Log(string action, string resourceType, string resourceId, object? before = null,
+            object? after = null, string? ipAddress = null, string? userAgent = null, bool systemActor = false) { }
+        public Task LogAndSaveAsync(string action, string resourceType, string resourceId, object? before = null,
+            object? after = null, string? ipAddress = null, string? userAgent = null, bool systemActor = false,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     private PayslipDistributionRunner Runner(IPayslipEmailSender sender, FakeFileStorage storage)
-        => new(Db(), new MutableTenantContext { TenantId = _tenant }, storage, sender, NullLogger<PayslipDistributionRunner>.Instance);
+        => new(Db(), new MutableTenantContext { TenantId = _tenant }, storage, sender, new NoOpAudit(), NullLogger<PayslipDistributionRunner>.Instance);
 
     private PayslipDistributionService Service(FakeFileStorage storage, IPayslipEmailSender sender)
         => new(Db(), new MutableTenantContext { TenantId = _tenant },
-            new PayslipDistributionRunner(Db(), new MutableTenantContext { TenantId = _tenant }, storage, sender, NullLogger<PayslipDistributionRunner>.Instance),
+            new PayslipDistributionRunner(Db(), new MutableTenantContext { TenantId = _tenant }, storage, sender, new NoOpAudit(), NullLogger<PayslipDistributionRunner>.Instance),
             NullLogger<PayslipDistributionService>.Instance, jobScheduler: null);
 
     /// <summary>Seeds a Finalized run with one slip per (employeeNo, email); a null email means none on file.</summary>

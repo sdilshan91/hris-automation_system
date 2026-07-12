@@ -5,6 +5,7 @@ using HRM.Application.Common.Payroll;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -36,17 +37,20 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly IFileStorage _fileStorage;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayslipBatchRenderer> _logger;
 
     public PayslipBatchRenderer(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IFileStorage fileStorage,
+        IPayrollAuditLogger audit,
         ILogger<PayslipBatchRenderer> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _fileStorage = fileStorage;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -239,6 +243,15 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
                 slip.PdfStoragePath = outcome.Path;
                 slip.PdfGeneratedAt = now;
                 slip.PdfFileSizeBytes = outcome.Size;
+
+                // US-PAY-012 (BUG-080): audit each generated payslip PDF (BR-1 "no exceptions" → one row per
+                // slip). Job-driven (no HTTP user) → system actor (BR-7). Staged into THIS SaveChanges so the
+                // audit row commits atomically with the slip's PDF-fields update.
+                _audit.Log(PA.PayslipPdfGenerated, PA.ResourceType.PayrollSlip,
+                    slip.Id.ToString(),
+                    before: null,
+                    after: new { SlipId = slip.Id, slip.EmployeeId, slip.PayYear, slip.PayMonth },
+                    systemActor: true);
             }
             else
             {

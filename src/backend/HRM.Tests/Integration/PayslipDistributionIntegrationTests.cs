@@ -57,6 +57,21 @@ public sealed class PayslipDistributionIntegrationTests
         public void SetSystemContext() { }
     }
 
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public Guid UserId { get; init; } = Guid.NewGuid();
+        public string Email => "hr@t.com";
+        public Guid TenantId { get; init; }
+        public Guid UserTenantId => TenantId;
+        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Permissions => [];
+        public bool IsAuthenticated => true;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
+    }
+
     private sealed class InMemoryFileStorage : IFileStorage
     {
         public Dictionary<(Guid, string), byte[]> Files { get; } = new();
@@ -90,9 +105,11 @@ public sealed class PayslipDistributionIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ITenantContext>(new MutableTenantContext { TenantId = tenantId });
+        services.AddSingleton<ICurrentUser>(new FakeCurrentUser { TenantId = tenantId });
         services.AddSingleton<IFileStorage>(_storage);
         services.AddSingleton<IPayslipEmailSender>(_sender);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<IPayslipDistributionRunner, PayslipDistributionRunner>();
         services.AddScoped<IPayslipDistributionService, PayslipDistributionService>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(SendPayslipEmailsCommand).Assembly));
@@ -168,6 +185,30 @@ public sealed class PayslipDistributionIntegrationTests
         var logs = await db.PayslipEmailLogs.Where(l => l.PayrollRunId == runId).ToListAsync();
         logs.Should().HaveCount(2);
         logs.Should().OnlyContain(l => l.Status == EmailDeliveryStatus.Sent && l.SentAt != null);
+    }
+
+    // ── US-PAY-012 / BUG-080: a successful send emits a system-actor audit ────
+
+    [Fact]
+    public async Task Run_SuccessfulSend_EmitsPayslipEmailSentAudit_AsSystemActor()
+    {
+        var (runId, emps) = await SeedFinalizedRun(_tenantA, ("EMP-1", "e1@t.com"), ("EMP-2", null));
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        await mediator.Send(new SendPayslipEmailsCommand(runId, false));
+        var run = await provider.GetRequiredService<IPayslipDistributionRunner>().RunAsync(runId, null);
+        run.Value!.EmailsSent.Should().Be(1);   // EMP-1 sent; EMP-2 (no email) skipped.
+
+        using var db = Db(_tenantA);
+        // Exactly one PayslipEmail.Sent audit — the Skipped employee produces no send audit.
+        var sentAudits = await db.AuditLogs.AsNoTracking()
+            .Where(a => a.Action == PayrollAuditAction.PayslipEmailSent
+                        && a.ResourceType == PayrollAuditAction.ResourceType.PayrollSlip)
+            .ToListAsync();
+        sentAudits.Should().ContainSingle();
+        sentAudits[0].TenantId.Should().Be(_tenantA);
+        sentAudits[0].UserId.Should().Be(PayrollAuditAction.SystemActorUserId);   // BR-7 job actor.
     }
 
     // ── AC-3: an employee without an email is Skipped; the rest Sent ──────────

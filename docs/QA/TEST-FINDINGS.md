@@ -3943,7 +3943,8 @@ Of the 20 standardized action names in the US-PAY-012 S7 catalog, only **12 are 
 - **ID:** BUG-080
 - **Type:** BUG (broken vs spec — FR-2/BR-1)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #256, 2026-07-12)
+- **Resolution:** Wired 7 explicit `IPayrollAuditLogger.Log(...)` emitters (staged atomically into each op's SaveChanges): SalaryStructure.Created/Updated (+clone→Created) in `SalaryStructureService`; EmployeeSalary.Assigned/Revised in `SalaryAssignmentService` (revise vs assign by prior-active-assignment); and the 3 job-driven system-actor actions PayrollRun.Completed (`PayrollRunProcessor`), PayslipPDF.Generated (`PayslipBatchRenderer`, per slip), PayslipEmail.Sent (`PayslipDistributionRunner`, only on Status==Sent). Payloads carry structural fields only — no gross/CTC/PII. **8th action PayrollRun.Cancelled left unemitted — no run-cancel operation exists (design gap, not a wiring miss).** Regression: 8 mutation-resistant integration tests querying real `audit_logs` (verified AUTHENTIC by test-authenticator; my re-run 62/62 green + build clean). Hardening gap → ISSUE-282.
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-012 / TC-PAY-012-04 (also fails TC-PAY-012-06 system-actor entries)
 - **Title:** Salary-structure CRUD, employee-salary assign/revise, PayrollRun.Completed, PayslipPDF.Generated, PayslipEmail.Sent write NO audit_log entry — breaking the "every payroll write logs, no exceptions" rule
@@ -4181,7 +4182,12 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-082
 - **Type:** BUG (core AC unmet -- AC-1/FR-1 promise automatic capture of INSERT/UPDATE/DELETE for data changes; in reality only 3 entities are auto-captured)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** OPEN — **RE-SCOPED + GATED (2026-07-12 triage, COMPLETION-PLAN P3)**
+- **⚠ Triage refresh (2026-07-12):** The *core* is still valid (interceptor is opt-in via `IAuditableEntity`; still only 3 implementers; FR-1 "all business entities via the interceptor" unmet). BUT (a) the headline evidence is **stale** — Holiday now HAS an explicit writer (`HolidayService.cs:610`, regression `HolidayAuditRegressionTests`), so "Holiday → 0 rows" is false; many more entities gained explicit writers since. The real gap is entities with NEITHER the marker NOR an explicit writer (Notification*, Attendance, generic Employee field paths). (b) **The fix is NOT a simple "audit everything" flip** — it is GATED on two prerequisites, or it introduces worse bugs:
+  - **BLOCKED-BY [[BUG-281]]** (write-time PII redaction) — broadening auto-audit to Employee/salary/bank entities WITHOUT redaction persists bank_account/national_id/salary in **cleartext** in the before/after jsonb (masking is currently READ-only). Fixing BUG-082 first would create a PII-at-rest leak. **BUG-281 must land first.**
+  - **Requires an exclusion set** (opt-out marker `IAuditExempt`), not a blanket grant, else it **double-audits** every entity that already self-audits (Department/JobTitle/LeaveRequest/Holiday/LeaveType/Location/all payroll) and violates NFR-1 (≤50ms/save) on high-volume tables (Attendance clock-punches, Notification delivery, RefreshToken).
+  - Existing test `AuditCaptureInterceptorTests.Non_auditable_entity_is_not_captured` encodes the opt-in premise and will need updating as part of the real fix.
+- **Recommended fix (deferred to P3, after BUG-281):** option (c) opt-out — audit every `BaseEntity` EXCEPT an exclusion set (audit-infra, already-self-audited entities, security tokens, high-volume/noise tables). Own PR with dedicated coverage.
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-004 / TC-NTF-004-01, -02, -03, -12 (AC-1, AC-3, FR-1, BR-2/3)
 - **Title:** The automatic AuditCaptureInterceptor only records entities implementing IAuditableEntity, and only THREE entities implement it (Department, JobTitle, LeaveRequest). Every other tenant entity (Employee, Holiday, NotificationTemplate, NotificationPreference, Notification, Attendance, etc.) produces NO automatic audit row on create/update/delete -- they are audited ONLY where a developer hand-wrote an explicit per-service audit writer.
@@ -4246,7 +4252,8 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-084
 - **Type:** BUG (broken feature -- the US-NTF-005 headline delta keyword-search is unusable)
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — already fixed under BUG-241; re-verified 2026-07-12)
+- **Resolution:** The `.Contains`-on-jsonb predicate at the cited line no longer exists. `AuditLogService.BuildFilteredQuery` (`AuditLogService.cs:212-256`) now branches by provider: the Postgres path runs a parameterized, tenant-scoped `FromSql` `before::text ILIKE {pattern} OR after::text ILIKE {pattern}` (LIKE-escaped), OR-ed with the translatable text columns; the InMemory path matches client-side. Covered by 4 passing Postgres integration tests in `AuditLogSearchPostgresTests.cs` (`Search_MatchesTermInsideAfterJsonb_Postgres_BUG241`, `...InsideBeforeJsonb...`, etc.). No code change needed — this finding was stale.
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-005 / TC-NTF-005-05 (AC-2, FR-2, NFR-7)
 - **Title:** GET /api/v1/tenant/audit-logs?search=<q> returns 500 for ANY non-empty search term -- the keyword filter calls .Contains on the Before/After JSONB columns, which EF translates to the Postgres LIKE operator (~~) on jsonb, an operator Postgres does not provide.
@@ -5966,3 +5973,28 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Module / US / TC:** Payroll / US-PAY-003/006/010 / (auto-healed from BUG-078 OUT-OF-LANE OL-3)
 - **Title:** BASIC is identified correctly-by-Code in `PayrollSlipCalculator` (LOP base), `CtcResidualBalancer`, `CtcBreakdownCalculator`, `LeaveEncashmentService`, but was wrongly-by-Name in `PayrollRunProcessor` (BUG-078/BUG-280, now fixed) and via a name/basis heuristic in `PayrollReportService`. The root enabler is that `PayrollSlipLine`/`PayrollSlipDetail` carry only `Name`+`ComponentId`, not `Code`, so every consumer downstream of the slip has to re-identify BASIC.
 - **Suggested action:** Carry `Code` (or an explicit `IsBasic` marker) on `PayrollSlipLine` so no consumer string-matches display names. Not required for BUG-078/280 (the Code→ComponentId-via-inputs lookup is sufficient); filed as tech-debt so the same trap doesn't recur. Park in P7.
+
+---
+
+### BUG-281 — Audit interceptor has no write-time PII redaction: sensitive fields would be persisted in cleartext in before/after JSONB (masking is READ-only)
+- **Type:** BUG (latent security / PII-at-rest) — currently low blast-radius because auto-audit covers only 3 non-PII entities, but it BLOCKS the BUG-082 fix
+- **Severity:** MED (HIGH the moment BUG-082 broadens auto-audit coverage)
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Notifications / US-NTF-004 / (auto-healed from BUG-082 OUT-OF-LANE OL-3-audit; AC-2/FR-4 "sensitive values not stored")
+- **Title:** `AuditCaptureInterceptor.SerializeAll`/`SerializeChanged` (`AuditCaptureInterceptor.cs:190-229`) serialize ALL mapped scalar properties (minus 4 audit-bookkeeping fields) into `before`/`after` jsonb with NO sensitive-field redaction. Redaction happens only on the READ path (`SensitiveFieldMasker.Mask` in `AuditLogService.GetAsync`). US-NTF-004 FR-2 stores before/after as JSONB but AC-2/FR-4 require sensitive values NOT to be stored — so once auto-audit covers PII-bearing entities (Employee, salary/bank/national-id), that PII lands in the audit table in cleartext.
+- **Root cause:** No write-time allow-list/redaction on the interceptor's serializer. Today it is dormant because the only 3 auto-audited entities (Department/JobTitle/LeaveRequest) carry no PII.
+- **Why filed / dependency:** **BUG-082 (audit all entities) is BLOCKED-BY this** — fixing BUG-082 first would create a PII-at-rest leak. Build write-time redaction (reuse `SensitiveFieldMasker`'s field set, applied at serialize time) BEFORE broadening auto-audit coverage.
+- **Suggested action:** Add a write-time redaction pass in `AuditCaptureInterceptor` (mask/omit a configured sensitive-field set per entity), with tests asserting bank_account/national_id/salary are masked in the persisted `after`. Sequence in P3 immediately before BUG-082.
+
+---
+
+### ISSUE-282 — Payroll job-path audit emitters (Completed/PdfGenerated/EmailSent) covered only on InMemory, not Testcontainers Postgres
+- **Type:** TEST-HEALTH (defence-in-depth gap)
+- **Severity:** LOW
+- **Status:** OPEN (deferred — P7 hardening)
+- **Layer:** BE (tests)
+- **Module / US / TC:** Payroll / US-PAY-012 / (auto-healed from BUG-080 test-authenticator + backend-dev OUT-OF-LANE)
+- **Title:** The 3 job-driven BUG-080 audit emitters live inside Hangfire job paths (`PayrollRunProcessor`, `PayslipBatchRenderer`, `PayslipDistributionRunner`). Their regression tests run on the InMemory provider. For these specific scalar-column assertions InMemory does not mask a Postgres failure (no jsonb `Contains`, no manual tx in the insert path), so the tests are valid — but there is no real-Postgres arm proving the audit row commits under prod `EnableRetryOnFailure` semantics (the BUG-068/ISSUE-277 class this repo has been burned by).
+- **Note:** A related test-fidelity bug WAS fixed in PR #256 — `PayslipJobRlsPostgresTests` force-enabled RLS on `audit_log` (which has tenant_id but no `tenant_isolation` policy per RLS R1), which would fail-close the new audit inserts under a rule production never applies (the reconciler only force-enables policy-backed tables). The test's ENABLE/FORCE loop now excludes `audit_log` to match production.
+- **Suggested action:** Add a Testcontainers arm for the 3 job-path emitters when Docker is in the gate. Also (separate, R1 decision — leave to RLS owner): whether `audit_log` should get a nullable-form RLS policy.

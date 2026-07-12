@@ -50,7 +50,7 @@ public sealed class SalaryAssignmentResidualBalanceTests
     {
         var ctx = Tenant(tenantId);
         var db = TestDbContextFactory.Create(ctx, _dbName);
-        return new SalaryAssignmentService(db, ctx, _currentUser, Substitute.For<ILogger<SalaryAssignmentService>>());
+        return new SalaryAssignmentService(db, ctx, _currentUser, Substitute.For<IPayrollAuditLogger>(), Substitute.For<ILogger<SalaryAssignmentService>>());
     }
 
     private SalaryComponentService Components(Guid tenantId)
@@ -64,7 +64,7 @@ public sealed class SalaryAssignmentResidualBalanceTests
     {
         var ctx = Tenant(tenantId);
         return new SalaryStructureService(TestDbContextFactory.Create(ctx, _dbName), ctx, _currentUser,
-            Substitute.For<ILogger<SalaryStructureService>>());
+            Substitute.For<IPayrollAuditLogger>(), Substitute.For<ILogger<SalaryStructureService>>());
     }
 
     private async Task<Guid> SeedEmployee(Guid tenantId, string no = "EMP-0001")

@@ -80,6 +80,22 @@ public sealed class PayslipJobRlsPostgresTests : IAsyncLifetime
         public void SetSystemContext() { }
     }
 
+    /// <summary>Minimal current-user for the audit logger — the job paths audit as the system actor (BR-7).</summary>
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public Guid UserId => Guid.Empty;
+        public string Email => "system@t.com";
+        public Guid TenantId => Guid.Empty;
+        public Guid UserTenantId => Guid.Empty;
+        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Permissions => [];
+        public bool IsAuthenticated => false;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
+    }
+
     private sealed class InMemoryFileStorage : IFileStorage
     {
         public ConcurrentDictionary<(Guid, string), byte[]> Files { get; } = new();
@@ -151,6 +167,12 @@ public sealed class PayslipJobRlsPostgresTests : IAsyncLifetime
                       AND c.column_name  = 'tenant_id'
                       AND t.table_type   = 'BASE TABLE'
                       AND c.table_name NOT IN ('users', 'tenants')
+                      -- audit_log is a documented RLS coverage gap (Rls IMPLEMENTATION-DESIGN R1): it carries
+                      -- tenant_id but has NO tenant_isolation policy, so the PRODUCTION reconciler never enables
+                      -- RLS on it (it enables only policy-backed tables). Excluding it here keeps this simulation
+                      -- faithful to production — otherwise FORCE RLS with no policy is default-deny and the payslip
+                      -- jobs' US-PAY-012 audit-row writes (BUG-080) would fail-closed under a rule prod never applies.
+                      AND c.table_name <> 'audit_log'
                 LOOP
                     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.table_name);
                     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', r.table_name);
@@ -243,6 +265,8 @@ public sealed class PayslipJobRlsPostgresTests : IAsyncLifetime
         services.AddSingleton<IPayslipEmailSender>(_sender);
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ITenantJobRunner, TenantJobRunner>();
+        services.AddSingleton<ICurrentUser>(new FakeCurrentUser());
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<IPayslipBatchRenderer, PayslipBatchRenderer>();
         services.AddScoped<IPayslipDistributionRunner, PayslipDistributionRunner>();
         // AppDbContext hardwired to hrm_app (RLS enforced); shares the scope's ITenantContext for the query filter.

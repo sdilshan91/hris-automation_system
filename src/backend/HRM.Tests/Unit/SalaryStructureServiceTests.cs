@@ -42,7 +42,7 @@ public sealed class SalaryStructureServiceTests
     {
         var ctx = Tenant(tenantId);
         var db = TestDbContextFactory.Create(ctx, _dbName);
-        return new SalaryStructureService(db, ctx, _currentUser, Substitute.For<ILogger<SalaryStructureService>>());
+        return new SalaryStructureService(db, ctx, _currentUser, Substitute.For<IPayrollAuditLogger>(), Substitute.For<ILogger<SalaryStructureService>>());
     }
 
     private SalaryComponentService Components(Guid tenantId)

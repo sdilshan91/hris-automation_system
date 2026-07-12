@@ -11,6 +11,7 @@
 
 | Date | Event | Full snapshot |
 |------|-------|---------------|
+| **2026-07-12 (b)** | **P1-3 shipped + triage/auto-heal.** BUG-080 fixed (7 payroll audit emitters, 8 authentic tests). BUG-084 found stale→RESOLVED (already fixed under BUG-241). BUG-082 re-scoped + gated: filed **BUG-281** (write-time PII redaction) as its blocker → moved BUG-082 to P3-5. Auto-healed **ISSUE-282** (job-path audit Postgres arm) + a PayslipJobRls test-fidelity fix. | _(this file)_ |
 | **2026-07-12** | **P1-2 shipped + auto-heal.** Fixed BUG-078 (OT rate off gross not basic). Auto-healed 2 out-of-lane discoveries: **BUG-280** (HIGH — identical defect over-deducted statutory EPF/ETF; fixed same PR #255) and **ISSUE-280** (LOW — carry `Code` on `PayrollSlipLine`; parked P7). Re-sorted plan. | _(this file)_ |
 | **2026-07-11 (b)** | **Dev-plan execution refresh.** Ran the P0 triage-verify pass — reconciliation confirmed the **14 open HIGH** figure (heading-by-heading ledger parse); flagged BUG-003/086/002/005 as RESOLVED-token-but-body-conflict (re-verify). Added the **📊 Item-wise Status Tracker** (below) as the execution ledger; began executing P0→P7 one branch+PR per item. | _(this file)_ |
 | **2026-07-11 (a)** | **Current active plan.** Rolled over from 07-10 (all it carried shipped). Rebuilt from a full findings/ledger/RLS survey → P0 ledger reconcile + missing TC suites … P7 LOW tail (body below). | _(this file)_ |
@@ -55,7 +56,8 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P1-0 Re-verify body-conflicts | P1 | BUG-003(CRIT)/086/002/005 | VERIFIED | — | all 4 statically LIKELY-FIXED (code-grounded); BUG-003 family formal closure needs a live `/verify-fix --iso` re-run (park as verify task); 086/002/005 fixed at code layer, stale "STILL PRESENT" wording |
 | P1-1 RBAC payroll lockouts | P1 | BUG-060(Payroll)/071/077 | PR#254 | #254 | seed fix; 42/42 unit green; merging |
 | P1-2 OT overpay | P1 | BUG-078 (OT base EARNINGS→BASIC) + **BUG-280** (same defect in statutory EPF/ETF, auto-healed) | PR#255 | #255 | Code-based BASIC resolution; 10 unit + 29 payroll integ green on Postgres; merging |
-| P1-3 Payroll audit completeness | P1 | BUG-080/082/084 | TODO | — | audit interceptor + jsonb search |
+| P1-3 Payroll audit emitters | P1 | **BUG-080** (7 payroll audit actions) | PR#256 | #256 | 7 emitters + 8 authentic tests; BUG-084 stale→RESOLVED (BUG-241); BUG-082→P3-5; ISSUE-282(P7); merging |
+| P3-5 Audit-all (gated) | P3 | **BUG-281** (write-time PII redaction) → then **BUG-082** (opt-out audit-all) | TODO | — | auto-healed; BUG-082 BLOCKED-BY BUG-281 (else cleartext-PII leak) |
 | P1-4 Scale / SLA | P1 | BUG-123/124/125 | TODO | — | N+1 + query perf |
 | P1-5 FE session/contract | P1 | BUG-097/100/113/243 | TODO | — | Angular; 243=Perf routes |
 | P2-1 Notification delivery | P2/P3 | US-NTF-006: 13 LogOnly* → RealNotificationDispatcher (ISSUE-221/228/214) | TODO | — | biggest surface |
@@ -72,7 +74,7 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P5-4 SSO | P5 | US-AUTH-012/016 + 5 [b] SSO TCs | TODO | — | net-new; some ops-gated |
 | P6-1 Workflow viewer FE | P6 | ISSUE-272/267 (US-ADM-011 FR-12 UI) | TODO | — | BE-complete |
 | P6-2 Eligible-plans UI | P6 | ISSUE-271 (US-TRN-003 AC-8) | TODO | — | BE-complete |
-| P7-1 LOW tail | P7 | 82–152 LOW, batch by module | TODO | — | ISSUE-270/274/**280** (carry Code on PayrollSlipLine — auto-healed OL-3), ChangeTracker.Clear tidy |
+| P7-1 LOW tail | P7 | 82–152 LOW, batch by module | TODO | — | ISSUE-270/274/**280**/**282** (auto-healed: PayrollSlipLine Code; job-path audit Postgres arm), ChangeTracker.Clear tidy |
 | — ISSUE-021 / BUG-056 | park | SalaryGrade entity / goal-finalize seam | PARKED | — | decision-gated |
 
 ## ▶ Remaining work — priority order

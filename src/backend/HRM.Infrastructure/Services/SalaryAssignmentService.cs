@@ -4,6 +4,7 @@ using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed class SalaryAssignmentService : ISalaryAssignmentService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<SalaryAssignmentService> _logger;
 
     /// <summary>FR-6 tolerance: |sum(earnings) - CTC| must be within ±1 currency unit.</summary>
@@ -31,11 +33,13 @@ public sealed class SalaryAssignmentService : ISalaryAssignmentService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IPayrollAuditLogger audit,
         ILogger<SalaryAssignmentService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -314,6 +318,17 @@ public sealed class SalaryAssignmentService : ISalaryAssignmentService
             ChangedAt = DateTime.UtcNow,
             IsDeleted = false,
         });
+
+        // US-PAY-012 (BUG-080): audit the assignment, staged into the caller's SaveChanges. A prior active
+        // assignment means this SUPERSEDES an existing salary → Revised; otherwise it is a first-time Assigned.
+        // Payload carries only structural fields (employee/structure/effective date) — never the gross/CTC amounts.
+        var isRevision = currentRows.Count > 0;
+        _audit.Log(
+            isRevision ? PA.EmployeeSalaryRevised : PA.EmployeeSalaryAssigned,
+            PA.ResourceType.EmployeeSalary,
+            employeeId.ToString(),
+            before: isRevision ? new { EmployeeId = employeeId, StructureId = oldStructureId } : null,
+            after: new { EmployeeId = employeeId, StructureId = structureId, EffectiveFrom = effectiveFrom });
 
         return Result<CtcBreakdownDto>.Success(breakdown);
     }
