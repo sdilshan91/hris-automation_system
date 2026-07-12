@@ -184,7 +184,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             // (BR-4 — pending/rejected are excluded upstream) per multiplier bucket (BR-5 holiday OT = its
             // bucket multiplier). hourly_rate = monthly_basic / (working_days * standard_hours_per_day). The
             // overtime line is added BEFORE statutory so it is in the tax base. Zero OT → no line, no-op.
-            var overtime = ComputeOvertime(result, attendance, workingDays);
+            var overtime = ComputeOvertime(result, inputs, attendance, workingDays);
             if (!overtime.IsZero)
                 result = ApplyOvertime(result, overtime);
 
@@ -203,7 +203,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
 
             // US-PAY-006: when statutory rules are configured for the period, replace the structure's as-is
             // statutory lines with rule-computed deductions. No-op (returns `result`) when no rules exist.
-            result = await ApplyStatutoryRulesAsync(result, run.PayYear, run.PayMonth, runLog, cancellationToken);
+            result = await ApplyStatutoryRulesAsync(result, inputs, run.PayYear, run.PayMonth, runLog, cancellationToken);
 
             // US-PAY-007: remaining (non-tax-base) adjustment lines, then track applied ids for FR-4.
             result = ApplyNonTaxableAdjustments(result, employeeAdjustments);
@@ -348,15 +348,11 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// keeping every existing US-PAY-003 test green.</para>
     /// </summary>
     private async Task<PayrollSlipResult> ApplyStatutoryRulesAsync(
-        PayrollSlipResult result, int payYear, int payMonth, StringBuilder runLog, CancellationToken ct)
+        PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, int payYear, int payMonth, StringBuilder runLog, CancellationToken ct)
     {
-        var basic = result.Lines
-            .Where(l => l.Type == SalaryComponentType.Earning)
-            .FirstOrDefault(l => string.Equals(l.Name, "Basic", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(l.Name, BasicCode, StringComparison.OrdinalIgnoreCase))
-            .Amount;
-        if (basic == 0m)
-            basic = result.GrossEarnings; // no identifiable BASIC line → use gross as the contribution base.
+        // OL-1 (BUG-078 sibling): identify BASIC by component Code, not display Name — otherwise Basic-based
+        // EPF/ETF fell through to gross and over-deducted. Shared with the OT rate base via ResolvedBasic.
+        var basic = ResolvedBasic(result, inputs);
 
         var wage = new StatutoryWageInput(
             MonthlyGross: result.GrossEarnings,
@@ -525,14 +521,14 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// <see cref="PayrollOvertimeCalculator.OvertimeResult.Zero"/> when there is no attendance row or no approved OT.
     /// </summary>
     private static PayrollOvertimeCalculator.OvertimeResult ComputeOvertime(
-        PayrollSlipResult result, AttendancePayrollRowDto? attendance, decimal workingDays)
+        PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, AttendancePayrollRowDto? attendance, decimal workingDays)
     {
         if (attendance is null
             || (attendance.ApprovedOvertimeMinutes <= 0
                 && (attendance.OvertimeMultiplierDetails is null || attendance.OvertimeMultiplierDetails.Count == 0)))
             return PayrollOvertimeCalculator.OvertimeResult.Zero;
 
-        var basic = ResolvedBasic(result);
+        var basic = ResolvedBasic(result, inputs);
         return PayrollOvertimeCalculator.Compute(
             basic, workingDays, attendance.OvertimeMultiplierDetails, attendance.ApprovedOvertimeMinutes);
     }
@@ -548,14 +544,24 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         return RollUp(result, lines);
     }
 
-    /// <summary>The resolved BASIC earning on a slip (for the OT hourly-rate base); falls back to gross when none.</summary>
-    private static decimal ResolvedBasic(PayrollSlipResult result)
+    /// <summary>
+    /// The resolved (pro-rated) BASIC earning on a slip — the base for the OT hourly rate (US-PAY-010) and for
+    /// Basic-based statutory contributions (US-PAY-006). Falls back to gross only when the structure has no
+    /// identifiable BASIC line.
+    /// <para>BUG-078 / OL-1: BASIC is identified by its component <b>Code</b> ("BASIC"), resolved to a
+    /// ComponentId via <paramref name="inputs"/>, then read off the matching slip line — NOT by the display
+    /// Name. Real structures name the line "Basic Salary", so the old Name-match fell through to
+    /// <see cref="PayrollSlipResult.GrossEarnings"/>, over-basing the OT rate ~2.5× and over-deducting
+    /// Basic-based EPF/ETF. This mirrors how every other consumer (LOP base, CTC, encashment) identifies BASIC.</para>
+    /// </summary>
+    internal static decimal ResolvedBasic(PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs)
     {
-        var basic = result.Lines
-            .Where(l => l.Type == SalaryComponentType.Earning)
-            .FirstOrDefault(l => string.Equals(l.Name, "Basic", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(l.Name, BasicCode, StringComparison.OrdinalIgnoreCase))
-            .Amount;
+        var basicId = inputs
+            .FirstOrDefault(i => string.Equals(i.Code, BasicCode, StringComparison.OrdinalIgnoreCase))
+            .ComponentId;
+        var basic = basicId == Guid.Empty
+            ? 0m
+            : result.Lines.FirstOrDefault(l => l.ComponentId == basicId).Amount;
         return basic > 0m ? basic : result.GrossEarnings;
     }
 
