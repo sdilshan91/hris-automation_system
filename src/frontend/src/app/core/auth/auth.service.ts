@@ -1,7 +1,7 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, BehaviorSubject, throwError, of } from 'rxjs';
+import { Observable, BehaviorSubject, throwError, of, firstValueFrom } from 'rxjs';
 import { tap, catchError, switchMap, finalize, filter, take, map } from 'rxjs/operators';
 import { ToastrService } from 'ngx-toastr';
 import { environment } from '../../../environments/environment';
@@ -187,20 +187,65 @@ export class AuthService {
           withCredentials: true,
         })
       ),
-      tap((me) => {
-        this.currentUser.set({
-          userId: me.userId,
-          email: me.email,
-          displayName: me.displayName,
-          mfaEnabled: me.mfaEnabled,
-        });
-        this.currentTenant.set(me.tenant);
-        this.tenantService.setTenantFromAuth(me.tenant);
-        this.roles.set(me.roles ?? []);
-        this.permissions.set(me.permissions ?? []);
-      }),
+      tap((me) => this.hydrateFromMe(me)),
       map(() => undefined)
     );
+  }
+
+  // ─── Bootstrap session restore (BUG-097) ─────────────────
+
+  /**
+   * Restore an authenticated session on a full page load / deep link.
+   *
+   * The access token is in-memory only (XSS posture), so a browser reload wipes
+   * it and nothing re-mints it — the route guard then bounces every deep link to
+   * /auth/login even though a valid httpOnly refresh cookie is still present.
+   * This runs as an APP_INITIALIZER (after tenant resolution) to silently mint a
+   * fresh access token from the refresh cookie and hydrate the session signals.
+   *
+   * CRITICAL: this is a SILENT restore. Unlike refreshToken(), a failure here
+   * (e.g. a genuinely-anonymous first-load visitor with no refresh cookie → 401)
+   * must NOT navigate to login, NOT toast "Session expired", and must still
+   * resolve so app bootstrap completes cleanly. It simply leaves the user
+   * unauthenticated and lets the normal guard/login flow take over.
+   */
+  restoreSession(): Promise<void> {
+    return firstValueFrom(
+      this.http
+        .post<IRefreshResponse>(`${this.apiUrl}/auth/refresh`, null, {
+          withCredentials: true,
+        })
+        .pipe(
+          tap((response) => this.setAccessToken(response.accessToken)),
+          switchMap(() =>
+            this.http.get<ICurrentUserResponse>(`${this.apiUrl}/auth/me`, {
+              withCredentials: true,
+            })
+          ),
+          tap((me) => this.hydrateFromMe(me)),
+          map(() => undefined),
+          // Swallow ANY failure (no refresh cookie / expired) — boot must not be
+          // blocked and an anonymous visitor must see no error or redirect.
+          catchError(() => of(undefined))
+        )
+    );
+  }
+
+  /**
+   * Hydrate the reactive session signals from a GET /auth/me response.
+   * Shared by completeSsoLogin() (SSO callback) and restoreSession() (bootstrap).
+   */
+  private hydrateFromMe(me: ICurrentUserResponse): void {
+    this.currentUser.set({
+      userId: me.userId,
+      email: me.email,
+      displayName: me.displayName,
+      mfaEnabled: me.mfaEnabled,
+    });
+    this.currentTenant.set(me.tenant);
+    this.tenantService.setTenantFromAuth(me.tenant);
+    this.roles.set(me.roles ?? []);
+    this.permissions.set(me.permissions ?? []);
   }
 
   // ─── Forgot Password ────────────────────────────────────
