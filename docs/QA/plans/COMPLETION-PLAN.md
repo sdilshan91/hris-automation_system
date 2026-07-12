@@ -52,6 +52,20 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 > `PARKED` (decision/ops-gated). One row = one branch. Findings/IDs in parentheses. Keep this table authoritative;
 > re-sort as reality changes.
 
+### 🔝 Active execution queue (prioritized OPEN items — refreshed 2026-07-12; execute top-down, PR+merge each; auto-heal out-of-lane into this queue)
+
+Ranked by **severity × blast-radius × unblocks-others**, implementable-now first (decision/ops-gated items park below):
+
+1. **ISSUE-288 (HIGH)** — employee self-service review sign-off is broken (manager side shipped in BUG-243, but employees can't acknowledge/dispute). Build caller-scoped BE self endpoints (`reviews/cycles/active/me/{notes|acknowledge|dispute}`, resolve employeeId from `ICurrentUser` + cycleId from active cycle, `Read.Self`) + rewire `review-signoff-employee.component`. **Highest open severity; unblocks US-PRF-006 AC-3.**
+2. **US-NTF-006 Phase 8 (P2-1c)** — `LeaveReportExportJob:70` (thread `requestedByUserId` from the enqueue controller) + `BulkEmployeeImportService:316` (recipient = `InitiatedBy`). Completes US-NTF-006 delivery (closes the story).
+3. **BUG-281 (P3-5, security)** — write-time PII redaction in audit `before`/`after`; unblocks **BUG-082** (opt-out audit-all, currently BLOCKED-BY-281 to avoid a cleartext-PII leak).
+4. **P3-2 JWT denylist** — `NoOpSessionRevoker` → Redis token-revocation (access tokens currently can't be revoked; Redis is available on host).
+5. **P2-2 RBAC-scope** — **ISSUE-195** (manager `Reports.View.Team` unimplemented → sees full tenant) + **BUG-120** (Directory gated `ViewOwn` → Manager/HR/Admin 403). Real authz gaps.
+6. **P3-3 Permission cache → Redis** (NFR-2 scale) · **P3-4 PII-at-rest** pgcrypto (Recommendation/Pip/Budget) · **P3-1 ClamAV** (wire client; the live scan needs a ClamAV daemon → infra-gated).
+7. **P0-2 Missing TC suites** (qa-engineer, report-only) · **P2-2 remaining MED clusters** (audit gaps, payroll semantics, a11y, UTC, Redis) · **P7 LOW tail**.
+
+> **Gated/parked (not in the active queue):** ISSUE-285 (dashboard SLA — birthday-index migration decision + k6), RLS prod flip (ops step), P4-1 RLS code tail, P5 net-new stories (US-ADM-012/US-PRF-011/US-PLT-004/SSO), P6 deferred FE (ISSUE-271/272/267), ISSUE-021/BUG-056 (decision-gated).
+
 | Item | Priority | Scope (findings/story) | Status | PR | Notes |
 |------|----------|------------------------|--------|----|-------|
 | P0-1 Reconcile ledgers | P0 | BA/STATUS.md + TEST-STATUS.md drift (ADM-011, TRN-001/002/003 shipped) | MERGED | #253 | done |
