@@ -37,6 +37,9 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
+using Hangfire;
+using Hangfire.Common;
+using Hangfire.States;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -842,6 +845,49 @@ public sealed class LeaveReportServiceTests
         export.RowCount.Should().BeGreaterThan(LeaveReportService.SyncExportRowThreshold);
         export.Queued.Should().BeTrue();
         export.FileContent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Export_LargeDataset_EnqueuesJob_ThreadingRequesterUserId()
+    {
+        // US-NTF-006 Phase 8: the caller's user id must be threaded into the enqueued LeaveReportExportJob so the job
+        // can notify the requester when the export is ready. Seed a >5,000-row report to force the background path.
+        var bigCount = LeaveReportService.SyncExportRowThreshold + 1;
+        using (var db = CreateDbContext())
+        {
+            for (int i = 0; i < bigCount; i++)
+                db.Employees.Add(Emp(Guid.NewGuid(), $"Bulk{i}", $"BULK-{i:D5}", _engineeringDeptId));
+            db.SaveChanges();
+        }
+
+        _entitlementService
+            .ComputeEffectiveEntitlementAsync(Arg.Any<Guid>(), _annualLeaveTypeId, Year, Arg.Any<CancellationToken>())
+            .Returns(ci => Result<EffectiveEntitlementDto>.Success(new EffectiveEntitlementDto
+            {
+                EmployeeId = ci.ArgAt<Guid>(0), LeaveTypeId = _annualLeaveTypeId, LeaveYear = Year,
+                ProratedEntitlementDays = 10m,
+            }));
+
+        // Capture the Job the Enqueue<T> extension builds (it calls IBackgroundJobClient.Create under the hood).
+        Job? captured = null;
+        var backgroundJobs = Substitute.For<IBackgroundJobClient>();
+        backgroundJobs.Create(Arg.Do<Job>(j => captured = j), Arg.Any<IState>()).Returns("job-1");
+
+        var svc = new LeaveReportService(CreateDbContext(), _tenantContext, _hrUser, _entitlementService,
+            _exportStorage, _logger, backgroundJobs);
+
+        var result = await svc.ExportReportAsync(
+            LeaveReportType.BalanceSummary, ReportExportFormat.Csv, Params(leaveTypeId: _annualLeaveTypeId));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Queued.Should().BeTrue();
+        result.Value.JobId.Should().Be("job-1");
+
+        // RunAsync(tenantId, reportId, requestedByUserId, scopeKind, scopeEmployeeId, reportType, format, params, ct)
+        captured.Should().NotBeNull("the export must be enqueued as a Hangfire job");
+        captured!.Method.Name.Should().Be(nameof(ILeaveReportExportJob.RunAsync));
+        captured.Args[0].Should().Be(_tenantId);
+        captured.Args[2].Should().Be(_hrUserId, "the caller's user id is threaded through as requestedByUserId");
     }
 
     // ══════════════════════════════════════════════════════════════

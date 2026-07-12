@@ -60,4 +60,10 @@
     <ProjectReference Include="..\HRM.Infrastructure\HRM.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Expose internals to the test project so job-level helpers (e.g. LeaveReportExportJob.DispatchReportReadyAsync,
+       US-NTF-006 Phase 8) can be unit-tested directly without going public. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="HRM.Tests" />
+  </ItemGroup>
+
 </Project>

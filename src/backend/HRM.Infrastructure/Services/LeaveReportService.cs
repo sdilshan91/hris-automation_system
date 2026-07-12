@@ -204,9 +204,11 @@ public sealed class LeaveReportService : ILeaveReportService
             var tenantId = _tenantContext.TenantId;
 
             // Enqueue the export job (HRM.Api LeaveReportExportJob) with the resolved scope + filter
-            // inputs, so the background file reproduces this caller's exact view (BR-2).
+            // inputs, so the background file reproduces this caller's exact view (BR-2). The caller's user id is
+            // threaded through so the job can notify the requester when the export is ready (US-NTF-006 Phase 8).
             var jobId = _backgroundJobs.Enqueue<ILeaveReportExportJob>(j => j.RunAsync(
-                tenantId, reportId, scope.Kind.ToString(), scope.Me != null ? scope.Me.Id : (Guid?)null,
+                tenantId, reportId, _currentUser.UserId, scope.Kind.ToString(),
+                scope.Me != null ? scope.Me.Id : (Guid?)null,
                 reportType, format, queryParams, CancellationToken.None));
 
             _logger.LogInformation(
