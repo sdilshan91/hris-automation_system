@@ -67,6 +67,28 @@ public sealed class UpdateGoalCommandHandler : IRequestHandler<UpdateGoalCommand
             request.ParentGoalId, request.RowVersion), cancellationToken);
 }
 
+// ── Bulk save (full-replace) ───────────────────────────────────────────────
+
+/// <summary>
+/// Bulk full-replace of an employee's goals for a cycle (US-PRF-001, BUG-243). The <see cref="Goals"/>
+/// list is the complete desired set: items with an <c>Id</c> are updated, items without are created as
+/// Draft, and any existing goal absent from the set is soft-deleted — all in one atomic SaveChanges.
+/// </summary>
+public sealed record SaveGoalsCommand(
+    Guid EmployeeId,
+    Guid CycleId,
+    IReadOnlyList<SaveGoalItem> Goals
+) : IRequest<Result<EmployeeGoalsDto>>;
+
+public sealed class SaveGoalsCommandHandler : IRequestHandler<SaveGoalsCommand, Result<EmployeeGoalsDto>>
+{
+    private readonly IGoalService _service;
+    public SaveGoalsCommandHandler(IGoalService service) => _service = service;
+
+    public Task<Result<EmployeeGoalsDto>> Handle(SaveGoalsCommand request, CancellationToken cancellationToken)
+        => _service.SaveGoalsAsync(request.EmployeeId, request.CycleId, request.Goals, cancellationToken);
+}
+
 // ── Delete ───────────────────────────────────────────────────────────────
 
 /// <summary>Soft-deletes a goal (US-PRF-001 FR-1).</summary>

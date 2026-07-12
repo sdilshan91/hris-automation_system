@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using FluentValidation;
 using HRM.Application.Features.Performance.Commands;
+using HRM.Application.Features.Performance.DTOs;
 
 namespace HRM.Application.Features.Performance.Validators;
 
@@ -70,5 +71,34 @@ public sealed class UpdateGoalValidator : AbstractValidator<UpdateGoalCommand>
             this,
             x => x.Title, x => x.Description,
             x => x.Weight, x => x.TargetValue, x => x.MeasurementUnit);
+    }
+}
+
+/// <summary>
+/// Validates one <see cref="SaveGoalItem"/> in a bulk full-replace save (BUG-243). Applies the same
+/// per-goal field shape as create/update (FR-2 field limits + BR-3 5%-increment weight rule). The
+/// cross-goal rules (≤10 count, ≤100% total) depend on the whole set + DB and are enforced in GoalService.
+/// </summary>
+public sealed class SaveGoalItemValidator : AbstractValidator<SaveGoalItem>
+{
+    public SaveGoalItemValidator()
+    {
+        RuleFor(x => x.Category).IsInEnum().WithMessage("Goal category is invalid.");
+        GoalFieldRules.Apply(
+            this,
+            x => x.Title, x => x.Description,
+            x => x.Weight, x => x.TargetValue, x => x.MeasurementUnit);
+    }
+}
+
+/// <summary>Validates <see cref="SaveGoalsCommand"/> — the bulk full-replace save (BUG-243).</summary>
+public sealed class SaveGoalsValidator : AbstractValidator<SaveGoalsCommand>
+{
+    public SaveGoalsValidator()
+    {
+        RuleFor(x => x.EmployeeId).NotEmpty().WithMessage("An employee is required.");
+        RuleFor(x => x.CycleId).NotEmpty().WithMessage("A cycle is required.");
+        RuleFor(x => x.Goals).NotNull().WithMessage("A goals list is required.");
+        RuleForEach(x => x.Goals).SetValidator(new SaveGoalItemValidator());
     }
 }

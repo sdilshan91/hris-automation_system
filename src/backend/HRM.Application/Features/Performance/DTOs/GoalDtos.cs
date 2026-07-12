@@ -91,6 +91,29 @@ public sealed record UpdateGoalRequest(
     // BUG-057: optimistic concurrency token (the xmin the client read). Echoed back to guard the UPDATE.
     uint RowVersion = 0);
 
+/// <summary>
+/// One goal in a bulk full-replace save (US-PRF-001, BUG-243). <see cref="Id"/> present → update the
+/// matching goal; absent (or unknown) → create a new Draft goal. Existing goals for the (employee, cycle)
+/// not present in the incoming set are soft-deleted.
+/// </summary>
+public sealed record SaveGoalItem(
+    Guid? Id,
+    string Title,
+    string? Description,
+    GoalCategory Category,
+    int Weight,
+    string TargetValue,
+    string MeasurementUnit,
+    DateOnly DueDate,
+    Guid? ParentGoalId);
+
+/// <summary>
+/// API request body for the bulk full-replace SaveGoals endpoint (US-PRF-001, BUG-243). The incoming
+/// <see cref="Goals"/> list is the complete desired set for the (employee, cycle) — items are created/updated,
+/// and any existing goal absent from the list is soft-deleted, in a single atomic SaveChanges.
+/// </summary>
+public sealed record SaveGoalsRequest(List<SaveGoalItem> Goals);
+
 /// <summary>Service-layer input for create/update of a single goal (decouples handler records from the service).</summary>
 public sealed record GoalInput(
     Guid CycleId,

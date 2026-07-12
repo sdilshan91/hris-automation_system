@@ -198,8 +198,11 @@ describe('ManagerReviewComponent', () => {
     fixture.detectChanges();
 
     expect(serviceSpy.submit).toHaveBeenCalledWith(
-      'rv-1',
-      jasmine.objectContaining({ flag: 'None' }),
+      jasmine.objectContaining({
+        flag: 'None',
+        cycleId: 'cyc-1',
+        employeeId: 'e-1',
+      }),
     );
     expect(component.isLocked()).toBeTrue();
     expect(component.canEdit()).toBeFalse();

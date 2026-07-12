@@ -42,8 +42,6 @@ export class RecommendationService {
       .get<
         ICompletedCycleOption[] | { data: ICompletedCycleOption[] }
       >(`${this.baseUrl}/cycles/completed`, { withCredentials: true })
-      // BUG-243: no backend route — RecommendationController exposes no
-      // completed-cycles picker. Needs a BE endpoint (see COMPLETION-PLAN Theme F/K).
       .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
   }
 
@@ -100,22 +98,41 @@ export class RecommendationService {
   }
 
   /**
-   * §8 inline edit / FR-3 manual override. The server re-validates the
-   * mandatory-justification rule and recomputes the budget; returns the updated row.
+   * §8 inline edit / FR-3 manual override. An override is the `POST recommendations`
+   * upsert (RecommendationController.Save) keyed by employee + cycle, NOT a
+   * PUT /{recommendationId}. The flat editor amount/percentage map to the
+   * type-specific bonus/increment fields of `SaveRecommendationRequest.Details`. The
+   * server re-validates the mandatory-justification rule and recomputes the budget;
+   * returns the updated row.
    */
   updateRecommendation(
-    recommendationId: string,
+    employeeId: string,
+    cycleId: string,
     request: IUpdateRecommendationRequest,
   ): Observable<IRecommendationRow> {
-    // BUG-243: no backend route — an override is a POST to the collection root
-    // (SaveRecommendationRequest with employee/cycle/justification), NOT a
-    // PUT /{recommendationId}. Reconciling needs a BE endpoint or a FE re-model
-    // (see COMPLETION-PLAN Theme F/K).
-    return this.http.put<IRecommendationRow>(
-      `${this.baseUrl}/${recommendationId}`,
-      request,
-      { withCredentials: true },
-    );
+    const isBonus = request.type === 'Bonus';
+    const isIncrement = request.type === 'Increment';
+    const body = {
+      employeeId,
+      cycleId,
+      type: request.type,
+      details: {
+        targetGrade: request.targetGrade,
+        targetTitle: request.targetTitle,
+        effectiveDate: request.effectiveDate,
+        bonusAmount: isBonus ? request.amount : null,
+        bonusPercent: isBonus ? request.percentage : null,
+        incrementAmount: isIncrement ? request.amount : null,
+        incrementPercent: isIncrement ? request.percentage : null,
+        trainingCourse: request.trainingCourse,
+        customTypeLabel: null,
+        budgetId: null,
+      },
+      justification: request.justification,
+    };
+    return this.http.post<IRecommendationRow>(this.baseUrl, body, {
+      withCredentials: true,
+    });
   }
 
   /** AC-3: submit a finalized recommendation into the approval workflow (FR-4). */
@@ -136,9 +153,8 @@ export class RecommendationService {
     decision: 'Approve' | 'Reject',
     comment?: string,
   ): Observable<IRecommendationRow> {
-    // BUG-243: the backend has separate approve/reject routes (not a single
-    // /decision endpoint); the decision selects the path and the body carries only
-    // the comment (DecideRecommendationRequest).
+    // The backend has separate approve/reject routes (not a single /decision
+    // endpoint); the decision selects the path and the body carries only the comment.
     const action = decision === 'Approve' ? 'approve' : 'reject';
     return this.http.post<IRecommendationRow>(
       `${this.baseUrl}/${recommendationId}/${action}`,
@@ -167,20 +183,18 @@ export class RecommendationService {
 
   /**
    * AC-5: a MANAGER's direct reports only (final score + recommendation status).
-   * Distinct from the HR workspace; the backend hard-restricts to direct reports.
-   * Tolerates a bare array or a `{ data }` page.
+   * There is no dedicated `/team` route — a manager uses the workspace GET, which the
+   * backend hard-scopes to direct reports server-side (Performance.Review.Team). We
+   * return just the row page so the manager list stays a simple array.
    */
   getTeamRecommendations(cycleId: string): Observable<IRecommendationRow[]> {
     const params = new HttpParams().set('cycleId', cycleId);
     return this.http
-      .get<
-        IRecommendationRow[] | { data: IRecommendationRow[] }
-      >(`${this.baseUrl}/team`, { params, withCredentials: true })
-      // BUG-243: no backend route — there is no dedicated manager "team
-      // recommendations" endpoint; a manager uses the workspace GET scoped to direct
-      // reports server-side (Performance.Review.Team). Needs a BE endpoint or a FE
-      // re-model (see COMPLETION-PLAN Theme F/K).
-      .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
+      .get<IRecommendationWorkspace>(`${this.baseUrl}/workspace`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((ws) => ws?.page?.rows ?? []));
   }
 
   /**
@@ -195,8 +209,7 @@ export class RecommendationService {
     const params = new HttpParams()
       .set('format', format)
       .set('cycleId', cycleId);
-    // BUG-243: the backend export route is GET recommendations/summary/export
-    // (ExportSummary), not a bare /export.
+    // The backend export route is GET recommendations/summary/export (ExportSummary).
     return this.http.get(`${this.baseUrl}/summary/export`, {
       params,
       withCredentials: true,

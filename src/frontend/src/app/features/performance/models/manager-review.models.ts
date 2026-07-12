@@ -184,9 +184,14 @@ export interface IManagerReviewGoalInput {
   managerComment: string;
 }
 
-/** Draft-save / submit request body (AC-2 / AC-3). */
+/**
+ * Draft-save / submit request body (AC-2 / AC-3). Matches the backend
+ * `SaveManagerReviewRequest` (cycleId + employeeId + items in the body — BUG-243).
+ */
 export interface ISaveManagerReviewRequest {
-  goals: IManagerReviewGoalInput[];
+  cycleId: string;
+  employeeId: string;
+  items: IManagerReviewGoalInput[];
   summaryComment: string;
   flag: ReviewFlag;
 }

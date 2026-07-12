@@ -1096,7 +1096,9 @@ export class RecommendationWorkspaceComponent implements OnInit {
       return;
     }
     this.savingEdit.set(true);
-    this.service.updateRecommendation(row.recommendationId, this.form).subscribe({
+    this.service
+      .updateRecommendation(row.employeeId, this.cycleId(), this.form)
+      .subscribe({
       next: () => {
         this.savingEdit.set(false);
         this.editRow.set(null);

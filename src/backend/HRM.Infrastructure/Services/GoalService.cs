@@ -218,6 +218,148 @@ public sealed class GoalService : IGoalService
         return Result.Success();
     }
 
+    public async Task<Result<EmployeeGoalsDto>> SaveGoalsAsync(
+        Guid employeeId, Guid cycleId, IReadOnlyList<SaveGoalItem> goals, CancellationToken cancellationToken = default)
+    {
+        goals ??= [];
+
+        if (!_tenantContext.IsResolved)
+            return Result<EmployeeGoalsDto>.Failure("Tenant context is not resolved.", 400);
+
+        // BR-4: caller must hold SetGoal.All (HR) or be the employee's direct manager (SetGoal.Team).
+        var authz = await AuthorizeForEmployeeAsync(employeeId, cancellationToken);
+        if (authz.IsFailure)
+            return Result<EmployeeGoalsDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        // BR-1/AC-5: the cycle's goal-setting window must be open.
+        var cycleResult = await GetOpenCycleAsync(cycleId, cancellationToken);
+        if (cycleResult.IsFailure)
+            return Result<EmployeeGoalsDto>.Failure(cycleResult.Error!, cycleResult.StatusCode ?? 400, cycleResult.ErrorCode);
+
+        // BR-2: the resulting set (== the incoming set) may hold at most 10 goals (0..10 allowed).
+        if (goals.Count > MaxGoalsPerEmployee)
+            return Result<EmployeeGoalsDto>.Failure(
+                $"An employee can have at most {MaxGoalsPerEmployee} goals per cycle.", 409, "goal_limit_reached");
+
+        // FR-3/AC-3: the running total must never exceed 100% (==100 is a submit-time gate, not enforced here).
+        var totalWeight = goals.Sum(g => g.Weight);
+        if (totalWeight > RequiredTotalWeight)
+            return Result<EmployeeGoalsDto>.Failure(
+                $"Goal weights for this employee would total {totalWeight}%, which exceeds 100%.",
+                422, "weight_exceeds_100");
+
+        // FR-4: every referenced parent goal must exist in-tenant (global filter ⇒ found row is in-tenant).
+        // A goal may not be its own parent. Parents pointing at a to-be-created (Id-less) item are unsupported.
+        var parentIds = goals
+            .Where(g => g.ParentGoalId is not null)
+            .Select(g => g.ParentGoalId!.Value)
+            .Distinct()
+            .ToList();
+        if (parentIds.Count > 0)
+        {
+            var existingParentIds = await _dbContext.Goals
+                .Where(g => parentIds.Contains(g.Id))
+                .Select(g => g.Id)
+                .ToListAsync(cancellationToken);
+            foreach (var item in goals)
+            {
+                if (item.ParentGoalId is { } parentId &&
+                    (parentId == item.Id || !existingParentIds.Contains(parentId)))
+                    return Result<EmployeeGoalsDto>.Failure(
+                        "The specified parent goal does not exist.", 400, "parent_goal_not_found");
+            }
+        }
+
+        // Full-replace: load the current (non-deleted, in-tenant) goal set for this employee+cycle.
+        var existing = await _dbContext.Goals
+            .Where(g => g.EmployeeId == employeeId && g.CycleId == cycleId)
+            .ToListAsync(cancellationToken);
+        var existingById = existing.ToDictionary(g => g.Id);
+
+        var resulting = new List<Goal>(goals.Count);
+        var matchedIds = new HashSet<Guid>();
+
+        foreach (var item in goals)
+        {
+            if (item.Id is { } id && existingById.TryGetValue(id, out var goal))
+            {
+                // Update in place.
+                matchedIds.Add(id);
+                var beforeSnapshot = SnapshotGoal(goal);
+
+                goal.Title = item.Title.Trim();
+                goal.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+                goal.Category = item.Category;
+                goal.Weight = item.Weight;
+                goal.TargetValue = item.TargetValue.Trim();
+                goal.MeasurementUnit = item.MeasurementUnit.Trim();
+                goal.DueDate = item.DueDate;
+                goal.ParentGoalId = item.ParentGoalId;
+
+                AddGoalAudit("Goal.Updated", goal.Id, before: beforeSnapshot, after: SnapshotGoal(goal),
+                    $"Goal '{goal.Title}' updated (bulk save).");
+                resulting.Add(goal);
+            }
+            else
+            {
+                // Create new (item without Id, or an unknown Id) as a Draft goal.
+                var created = new Goal
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    CycleId = cycleId,
+                    EmployeeId = employeeId,
+                    Title = item.Title.Trim(),
+                    Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim(),
+                    Category = item.Category,
+                    Weight = item.Weight,
+                    TargetValue = item.TargetValue.Trim(),
+                    MeasurementUnit = item.MeasurementUnit.Trim(),
+                    DueDate = item.DueDate,
+                    ParentGoalId = item.ParentGoalId,
+                    Status = GoalStatus.Draft,
+                    IsDeleted = false,
+                };
+                _dbContext.Goals.Add(created);
+                AddGoalAudit("Goal.Created", created.Id, before: null, after: SnapshotGoal(created),
+                    $"Goal '{created.Title}' created (bulk save).");
+                resulting.Add(created);
+            }
+        }
+
+        // Any existing goal not present in the incoming set is soft-deleted.
+        foreach (var stale in existing)
+        {
+            if (matchedIds.Contains(stale.Id))
+                continue;
+            var beforeSnapshot = SnapshotGoal(stale);
+            stale.IsDeleted = true;
+            AddGoalAudit("Goal.Deleted", stale.Id, before: beforeSnapshot, after: SnapshotGoal(stale),
+                $"Goal '{stale.Title}' deleted (bulk save).");
+        }
+
+        // Atomicity: a single SaveChanges is atomic — no manual transaction (avoids the BUG-068 retry-vs-tx pitfall).
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Goals bulk-saved. EmployeeId={EmployeeId}, CycleId={CycleId}, Count={Count}, TenantId={TenantId}, By={User}",
+            employeeId, cycleId, resulting.Count, _tenantContext.TenantId, _currentUser.Email);
+
+        // FR-7: send exactly ONE aggregate notification (not one per goal); skip if the set was emptied.
+        if (resulting.Count > 0)
+            await _notifications.NotifyGoalChangedAsync(
+                "goal-assigned", resulting[0].Id, employeeId, cycleId, cancellationToken);
+
+        return Result<EmployeeGoalsDto>.Success(new EmployeeGoalsDto
+        {
+            EmployeeId = employeeId,
+            CycleId = cycleId,
+            TotalWeight = resulting.Sum(g => g.Weight),
+            IsGoalSettingOpen = true, // window is open — GetOpenCycleAsync gated the write above.
+            Goals = resulting.OrderBy(g => g.CreatedAt).Select(ToDto).ToList(),
+        });
+    }
+
     public async Task<Result<EmployeeGoalsDto>> GetEmployeeGoalsAsync(
         Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
     {

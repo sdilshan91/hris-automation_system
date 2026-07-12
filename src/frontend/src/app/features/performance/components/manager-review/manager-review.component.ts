@@ -740,7 +740,7 @@ export class ManagerReviewComponent implements OnInit {
   private buildRequest(): ISaveManagerReviewRequest {
     const review = this.review();
     const values = this.goals.value as IManagerGoalFormValue[];
-    const goals: IManagerReviewGoalInput[] = (review?.goals ?? []).map(
+    const items: IManagerReviewGoalInput[] = (review?.goals ?? []).map(
       (g, i) => ({
         goalId: g.goalId,
         managerRating: values[i]?.managerRating ?? null,
@@ -748,7 +748,9 @@ export class ManagerReviewComponent implements OnInit {
       }),
     );
     return {
-      goals,
+      cycleId: review?.cycleId ?? '',
+      employeeId: review?.employeeId ?? this.employeeId,
+      items,
       summaryComment: this.summaryControl.value ?? '',
       flag: this.flagControl.value ?? 'None',
     };
@@ -760,7 +762,7 @@ export class ManagerReviewComponent implements OnInit {
       return;
     }
     this.savingDraft.set(true);
-    this.service.saveDraft(review.id, this.buildRequest()).subscribe({
+    this.service.saveDraft(this.buildRequest()).subscribe({
       next: (saved) => {
         this.savingDraft.set(false);
         // Sync server-side score/status state without clobbering live edits.
@@ -788,7 +790,7 @@ export class ManagerReviewComponent implements OnInit {
     }
     this.showUnratedError.set(false);
     this.submitting.set(true);
-    this.service.submit(review.id, this.buildRequest()).subscribe({
+    this.service.submit(this.buildRequest()).subscribe({
       next: (saved) => {
         this.submitting.set(false);
         this.review.set(saved);

@@ -59,11 +59,17 @@ export class PerformanceGoalService {
     employeeId: string,
   ): Observable<IGoal[]> {
     return this.http
-      .get<IGoal[] | { data: IGoal[] }>(
+      .get<IGoal[] | { goals?: IGoal[]; data?: IGoal[] }>(
         `${this.baseUrl}/employees/${employeeId}/cycles/${cycleId}/goals`,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      // Same endpoint returns EmployeeGoalsDto ({ goals, totalWeight, … }); read its
+      // `goals`, tolerating a bare array / legacy `{ data }` shape too (BUG-243).
+      .pipe(
+        map((res) =>
+          Array.isArray(res) ? res : (res?.goals ?? res?.data ?? []),
+        ),
+      );
   }
 
   /**
@@ -76,16 +82,19 @@ export class PerformanceGoalService {
     employeeId: string,
     request: ISaveGoalsRequest,
   ): Observable<IGoal[]> {
-    // BUG-243: no backend route — GoalsController exposes only per-goal CRUD
-    // (POST goals, PUT/DELETE goals/{id}), NOT a bulk full-replace PUT. Needs a BE
-    // endpoint (see COMPLETION-PLAN Theme F/K) before this can work end-to-end.
     return this.http
-      .put<IGoal[] | { data: IGoal[] }>(
+      .put<IGoal[] | { goals?: IGoal[]; data?: IGoal[] }>(
         `${this.baseUrl}/employees/${employeeId}/cycles/${cycleId}/goals`,
         request,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      // The bulk endpoint returns EmployeeGoalsDto ({ goals, totalWeight, … }); read
+      // its `goals`, tolerating a bare array / legacy `{ data }` shape too.
+      .pipe(
+        map((res) =>
+          Array.isArray(res) ? res : (res?.goals ?? res?.data ?? []),
+        ),
+      );
   }
 
   /** Accept either a bare array or a `{ data }` page; default to []. */

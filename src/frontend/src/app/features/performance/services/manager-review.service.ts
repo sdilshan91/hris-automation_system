@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { map, switchMap } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IManagerReview,
@@ -14,12 +14,18 @@ import {
  * rates direct reports). Sibling to PerformanceGoalService (goal-setting, US-PRF-001)
  * and SelfAssessmentService (employee self-rating, US-PRF-002).
  *
- * The route strings live HERE ONLY, so a backend contract change is a one-file fix
- * (reconcile at US-PRF-004). All requests use withCredentials (httpOnly cookie auth)
- * and are tenant-scoped via the tenantInterceptor (X-Tenant-Subdomain header). The
- * backend resolves the manager + tenant from the session and enforces
- * `Performance.Review.Team` (BR-2: only direct reports) / `Performance.Review.All`
- * (BR-3: HR) + RLS (NFR-2), so the FE sends no tenant id.
+ * The route strings live HERE ONLY, so a backend contract change is a one-file fix.
+ * All requests use withCredentials (httpOnly cookie auth) and are tenant-scoped via
+ * the tenantInterceptor (X-Tenant-Subdomain header). The backend resolves the manager
+ * + tenant from the session and enforces `Performance.Review.Team` (BR-2: only direct
+ * reports) / `Performance.Review.All` (BR-3: HR) + RLS (NFR-2), so the FE sends no
+ * tenant id.
+ *
+ * BUG-243: reconciled to the real ManagerReviewController routes under
+ * `.../tenant/performance/reviews`, which are keyed by an explicit cycleId. The
+ * team/per-employee reads resolve the active cycleId INSIDE this service via
+ * `GET .../cycles/active` (CyclesController.GetActive) + `switchMap`, so the public
+ * method signatures stay stable; draft/submit carry cycleId + employeeId in the body.
  *
  * Envelope: the global ApiResponse unwrap interceptor (US-PLT-001) strips the
  * `{ data }` wrapper, so these methods consume BARE payloads. Enums arrive as
@@ -28,60 +34,60 @@ import {
 @Injectable({ providedIn: 'root' })
 export class ManagerReviewService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/manager-review`;
-  // BUG-243: CANNOT FIX FE-ONLY. ManagerReviewController keys every route by an
-  // explicit cycleId (+ employeeId), whereas this service + its components
-  // (TeamReviewsComponent, ManagerReviewComponent) are built on an "active cycle"
-  // abstraction and only ever hold an employeeId (route param) — never a cycleId.
-  // The correct BE routes are:
-  //   getTeam()            -> GET  reviews/cycles/{cycleId}/team
-  //   getEmployeeReview()  -> GET  reviews/cycles/{cycleId}/employees/{employeeId}
-  //   saveDraft()          -> PUT  reviews/draft   (cycleId+employeeId+items in BODY)
-  //   submit()             -> POST reviews/submit  (cycleId+employeeId+items in BODY)
-  // Reconciling needs a BE "current cycle" resolver (or a FE cycle-selection re-model)
-  // to supply cycleId, plus a request-body remodel for draft/submit (goals -> items).
-  // See COMPLETION-PLAN Theme F/K.
+  private readonly perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+  private readonly reviewsBase = `${this.perfBase}/reviews`;
+
+  /** Resolve the active cycle's id (CyclesController.GetActive admits Review.Team). */
+  private activeCycleId(): Observable<string> {
+    return this.http
+      .get<{ id: string }>(`${this.perfBase}/cycles/active`, {
+        withCredentials: true,
+      })
+      .pipe(map((c) => c.id));
+  }
 
   /**
    * The manager's direct reports for the active cycle with their review status
-   * (AC-4). Tolerates either a bare array or a `{ data }`-style page so a backend
-   * pagination choice doesn't break the dashboard.
+   * (AC-4). Resolves the active cycleId first. Tolerates either a bare array or a
+   * `{ data }`-style page so a backend pagination choice doesn't break the dashboard.
    */
   getTeam(): Observable<IManagerTeamRow[]> {
-    return this.http
-      .get<IManagerTeamRow[] | { data: IManagerTeamRow[] }>(
-        `${this.baseUrl}/cycles/active/team`,
-        { withCredentials: true },
-      )
-      .pipe(map((res) => this.toArray(res)));
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get<IManagerTeamRow[] | { data: IManagerTeamRow[] }>(
+          `${this.reviewsBase}/cycles/${cycleId}/team`,
+          { withCredentials: true },
+        ),
+      ),
+      map((res) => this.toArray(res)),
+    );
   }
 
   /**
    * Load one employee's manager review for the active cycle (AC-1): each goal with
    * the employee's self-rating/comment + the manager's rating/comment, the rating
-   * scale, the window/lock state, and any computed scores. One call drives the whole
-   * per-employee review screen (NFR-1 ≤400ms).
+   * scale, the window/lock state, and any computed scores. Resolves the active
+   * cycleId, then loads the per-employee workspace (NFR-1 ≤400ms).
    */
   getEmployeeReview(employeeId: string): Observable<IManagerReview> {
-    return this.http.get<IManagerReview>(
-      `${this.baseUrl}/employees/${employeeId}/active`,
-      { withCredentials: true },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get<IManagerReview>(
+          `${this.reviewsBase}/cycles/${cycleId}/employees/${employeeId}`,
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
   /**
    * Persist a partial draft (NFR-3). No all-goals-rated gate server-side; status is
-   * unchanged. Returns the persisted review.
+   * unchanged. cycleId + employeeId travel in the body. Returns the persisted review.
    */
-  saveDraft(
-    reviewId: string,
-    request: ISaveManagerReviewRequest,
-  ): Observable<IManagerReview> {
-    return this.http.put<IManagerReview>(
-      `${this.baseUrl}/${reviewId}/draft`,
-      request,
-      { withCredentials: true },
-    );
+  saveDraft(request: ISaveManagerReviewRequest): Observable<IManagerReview> {
+    return this.http.put<IManagerReview>(`${this.reviewsBase}/draft`, request, {
+      withCredentials: true,
+    });
   }
 
   /**
@@ -89,14 +95,11 @@ export class ManagerReviewService {
    * each manager comment ≥20 chars (AC-3), computes the weighted manager score +
    * final combined score (FR-4 / BR-4), flips the status to `ManagerReviewSubmitted`,
    * locks edits (AC-5), and notifies the employee. Rejects when the window is closed
-   * (BR-1). Returns the locked review.
+   * (BR-1). cycleId + employeeId travel in the body. Returns the locked review.
    */
-  submit(
-    reviewId: string,
-    request: ISaveManagerReviewRequest,
-  ): Observable<IManagerReview> {
+  submit(request: ISaveManagerReviewRequest): Observable<IManagerReview> {
     return this.http.post<IManagerReview>(
-      `${this.baseUrl}/${reviewId}/submit`,
+      `${this.reviewsBase}/submit`,
       request,
       { withCredentials: true },
     );

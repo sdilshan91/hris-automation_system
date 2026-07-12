@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   ICompletionTracker,
@@ -35,19 +36,21 @@ import {
 export class Feedback360Service {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/feedback-360`;
-  // BUG-243: CANNOT FIX FE-ONLY. Feedback360Controller keys every route by an
-  // explicit cycleId (+ employeeId), whereas this service + its components only hold
-  // an employeeId / assignmentId (route params) under an "active cycle" abstraction —
-  // never a cycleId. Several FE methods also have NO backend equivalent at all.
-  //   getReviewerConfig()  -> GET    360/cycles/{cycleId}/employees/{employeeId}/reviewers  (lacks cycleId)
-  //   saveReviewers()      -> NO BE ROUTE (BE has POST add-one + DELETE reviewers/{id}, no full-replace PUT)
-  //   getTracker()         -> NO BE ROUTE (completion tracker is embedded in the results payload)
-  //   getFeedbackForm()    -> NO BE ROUTE (no get-form-by-assignmentId; BE keys by cycle+employee)
-  //   submitFeedback()     -> POST   360/cycles/{cycleId}/employees/{employeeId}/feedback  (needs cycleId+employeeId, not assignmentId)
-  //   getResults()         -> GET    360/cycles/{cycleId}/employees/{employeeId}/results   (lacks cycleId)
-  //   exportResultsPdf()   -> GET    360/cycles/{cycleId}/employees/{employeeId}/report    (lacks cycleId)
-  // Reconciling needs a BE "current cycle" resolver + new BE endpoints (tracker /
-  // form-by-assignment / reviewer full-replace) or a FE re-model. See COMPLETION-PLAN Theme F/K.
+  private readonly perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+
+  // BUG-243: the config/reviewers/tracker/form/submit routes already match
+  // Feedback360Controller (the BUG-244 employeeId-keyed + assignment-keyed endpoints).
+  // Only the two cycle-keyed aggregate reads (results/report) needed reconciling — they
+  // resolve the active cycleId INSIDE this service via GET .../cycles/active + switchMap.
+
+  /** Resolve the active cycle's id (CyclesController.GetActive). */
+  private activeCycleId(): Observable<string> {
+    return this.http
+      .get<{ id: string }>(`${this.perfBase}/cycles/active`, {
+        withCredentials: true,
+      })
+      .pipe(map((c) => c.id));
+  }
 
   /**
    * Reviewer-nomination screen for an employee in the active 360-enabled cycle (AC-1):
@@ -121,9 +124,13 @@ export class Feedback360Service {
    * returns exactly what the API sends.
    */
   getResults(employeeId: string): Observable<IFeedback360Results> {
-    return this.http.get<IFeedback360Results>(
-      `${this.baseUrl}/employees/${employeeId}/results`,
-      { withCredentials: true },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get<IFeedback360Results>(
+          `${this.perfBase}/360/cycles/${cycleId}/employees/${employeeId}/results`,
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
@@ -134,9 +141,13 @@ export class Feedback360Service {
    * HttpResponse so the caller can read the Content-Disposition filename.
    */
   exportResultsPdf(employeeId: string): Observable<HttpResponse<Blob>> {
-    return this.http.get(
-      `${this.baseUrl}/employees/${employeeId}/results/export`,
-      { withCredentials: true, responseType: 'blob', observe: 'response' },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get(
+          `${this.perfBase}/360/cycles/${cycleId}/employees/${employeeId}/report`,
+          { withCredentials: true, responseType: 'blob', observe: 'response' },
+        ),
+      ),
     );
   }
 }

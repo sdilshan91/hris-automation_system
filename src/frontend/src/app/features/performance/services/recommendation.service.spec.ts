@@ -148,8 +148,8 @@ describe('RecommendationService (US-PRF-010)', () => {
     req.flush({ applied: true, rows: [], affectedCount: 0 });
   });
 
-  it('updateRecommendation() PUTs the override body', () => {
-    const body: IUpdateRecommendationRequest = {
+  it('updateRecommendation() POSTs the Save upsert body keyed by employee + cycle', () => {
+    const form: IUpdateRecommendationRequest = {
       type: 'Bonus',
       amount: 5000,
       percentage: null,
@@ -159,12 +159,29 @@ describe('RecommendationService (US-PRF-010)', () => {
       trainingCourse: null,
       justification: 'High impact this cycle',
     };
-    service.updateRecommendation('r-1', body).subscribe();
+    service.updateRecommendation('e-1', 'c-1', form).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/r-1`);
-    expect(req.request.method).toBe('PUT');
-    expect(req.request.body).toEqual(body);
+    const req = httpMock.expectOne(`${baseUrl}`);
+    expect(req.request.method).toBe('POST');
     expect(req.request.withCredentials).toBeTrue();
+    expect(req.request.body).toEqual({
+      employeeId: 'e-1',
+      cycleId: 'c-1',
+      type: 'Bonus',
+      details: {
+        targetGrade: null,
+        targetTitle: null,
+        effectiveDate: null,
+        bonusAmount: 5000,
+        bonusPercent: null,
+        incrementAmount: null,
+        incrementPercent: null,
+        trainingCourse: null,
+        customTypeLabel: null,
+        budgetId: null,
+      },
+      justification: 'High impact this cycle',
+    });
     req.flush(row);
   });
 
@@ -231,24 +248,38 @@ describe('RecommendationService (US-PRF-010)', () => {
     });
   });
 
-  it('getTeamRecommendations() GETs the manager team list (bare array)', () => {
+  it('getTeamRecommendations() GETs the workspace and returns its row page', () => {
     let result: IRecommendationRow[] | undefined;
     service.getTeamRecommendations('c-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/team`);
+    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/workspace`);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('cycleId')).toBe('c-1');
-    req.flush([row]);
+    req.flush({
+      cycleId: 'c-1',
+      cycleName: '2026 Annual',
+      page: { rows: [row], totalCount: 1, page: 1, pageSize: 25 },
+      budget: { enabled: true, currency: 'USD', allocated: 100000, consumed: 0 },
+      compensationVisible: true,
+      availableExportFormats: ['Excel'],
+    });
 
     expect(result).toEqual([row]);
   });
 
-  it('getTeamRecommendations() unwraps a { data } page', () => {
+  it('getTeamRecommendations() returns [] when the workspace page is empty', () => {
     let result: IRecommendationRow[] | undefined;
     service.getTeamRecommendations('c-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/team`);
-    req.flush({ data: [] });
+    const req = httpMock.expectOne((r) => r.url === `${baseUrl}/workspace`);
+    req.flush({
+      cycleId: 'c-1',
+      cycleName: '2026 Annual',
+      page: { rows: [], totalCount: 0, page: 1, pageSize: 25 },
+      budget: { enabled: false, currency: 'USD', allocated: 0, consumed: 0 },
+      compensationVisible: false,
+      availableExportFormats: [],
+    });
 
     expect(result).toEqual([]);
   });

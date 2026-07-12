@@ -12,7 +12,10 @@ import { IReviewSignoff } from '../models/review-signoff.models';
 describe('ReviewSignoffService', () => {
   let service: ReviewSignoffService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/sign-off`;
+  const perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+  const activeCycleUrl = `${perfBase}/cycles/active`;
+  // reviews/cycles/{cycleId}/employees/{employeeId}
+  const notesBase = `${perfBase}/reviews/cycles/cyc-1/employees/e-1`;
 
   const mockRecord: IReviewSignoff = {
     reviewId: 'rv-1',
@@ -49,11 +52,17 @@ describe('ReviewSignoffService', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('getSignoff() GETs the record with credentials', () => {
-    let result: IReviewSignoff | undefined;
-    service.getSignoff('rv-1').subscribe((r) => (result = r));
+  /** Every method first resolves the active cycle. */
+  function flushActiveCycle(): void {
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+  }
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1`);
+  it('getSignoff() resolves the cycle then GETs the notes record', () => {
+    let result: IReviewSignoff | undefined;
+    service.getSignoff('e-1').subscribe((r) => (result = r));
+
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/notes`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockRecord);
@@ -61,24 +70,26 @@ describe('ReviewSignoffService', () => {
     expect(result).toEqual(mockRecord);
   });
 
-  it('saveNotes() PUTs the notes body to the notes route', () => {
-    const body = { meetingNotesHtml: '<p>Updated</p>' };
-    service.saveNotes('rv-1', body).subscribe();
+  it('saveNotes() PUTs the notes mapped to the backend Body field', () => {
+    service.saveNotes('e-1', { meetingNotesHtml: '<p>Updated</p>' }).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1/notes`);
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/notes`);
     expect(req.request.method).toBe('PUT');
-    expect(req.request.body).toEqual(body);
+    expect(req.request.body).toEqual({ body: '<p>Updated</p>' });
     req.flush(mockRecord);
   });
 
-  it('requestSignoff() POSTs the notes and returns the pending record', () => {
-    const body = { meetingNotesHtml: '<p>Final notes</p>' };
+  it('requestSignoff() POSTs the notes to request-signoff and returns the pending record', () => {
     let result: IReviewSignoff | undefined;
-    service.requestSignoff('rv-1', body).subscribe((r) => (result = r));
+    service
+      .requestSignoff('e-1', { meetingNotesHtml: '<p>Final notes</p>' })
+      .subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1/request`);
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/request-signoff`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual(body);
+    expect(req.request.body).toEqual({ body: '<p>Final notes</p>' });
     req.flush({ ...mockRecord, status: 'PendingEmployeeSignOff' });
 
     expect(result?.status).toBe('PendingEmployeeSignOff');
@@ -86,9 +97,10 @@ describe('ReviewSignoffService', () => {
 
   it('acknowledge() POSTs an empty body to the acknowledge route', () => {
     let result: IReviewSignoff | undefined;
-    service.acknowledge('rv-1').subscribe((r) => (result = r));
+    service.acknowledge('e-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1/acknowledge`);
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/acknowledge`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
     req.flush({
@@ -104,9 +116,10 @@ describe('ReviewSignoffService', () => {
   it('dispute() POSTs the comments and returns the disputed record', () => {
     const body = { comments: 'I disagree with the rating on goal 1.' };
     let result: IReviewSignoff | undefined;
-    service.dispute('rv-1', body).subscribe((r) => (result = r));
+    service.dispute('e-1', body).subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1/dispute`);
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/dispute`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     req.flush({
@@ -118,20 +131,22 @@ describe('ReviewSignoffService', () => {
     expect(result?.status).toBe('Disputed');
   });
 
-  it('resolveDispute() POSTs the resolution to the resolve route', () => {
-    service.resolveDispute('rv-1', { resolution: 'Amend' }).subscribe();
+  it('resolveDispute() POSTs Amend + comments to the resolve-dispute route', () => {
+    service.resolveDispute('e-1', { resolution: 'Amend' }).subscribe();
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1/resolve`);
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/resolve-dispute`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ resolution: 'Amend' });
+    expect(req.request.body).toEqual({ amend: true, comments: null });
     req.flush({ ...mockRecord, status: 'NotesDraft' });
   });
 
   it('exportPdf() GETs a blob with credentials and the full response', () => {
     let status: number | undefined;
-    service.exportPdf('rv-1').subscribe((resp) => (status = resp.status));
+    service.exportPdf('e-1').subscribe((resp) => (status = resp.status));
 
-    const req = httpMock.expectOne(`${baseUrl}/reviews/rv-1/export`);
+    flushActiveCycle();
+    const req = httpMock.expectOne(`${notesBase}/export`);
     expect(req.request.method).toBe('GET');
     expect(req.request.responseType).toBe('blob');
     expect(req.request.withCredentials).toBeTrue();

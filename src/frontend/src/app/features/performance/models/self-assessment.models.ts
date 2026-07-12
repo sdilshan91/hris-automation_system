@@ -128,17 +128,24 @@ export interface ISelfAssessment {
   goals: ISelfAssessmentGoal[];
 }
 
-/** One goal's self-rating sent on draft-save / submit. */
+/**
+ * One goal's self-rating sent on draft-save / submit. Field names match the backend
+ * `SelfAssessmentItemInput` (BUG-243) — note `achievementPercentage`, not `-Percent`.
+ */
 export interface ISelfAssessmentGoalInput {
   goalId: string;
   selfRating: number | null;
-  achievementPercent: number | null;
+  achievementPercentage: number | null;
   comment: string;
 }
 
-/** Draft-save / submit request body (AC-2 / AC-3). */
+/**
+ * Draft-save / submit request body (AC-2 / AC-3). Matches the backend
+ * `SaveSelfAssessmentRequest` (cycleId + items in the body — BUG-243).
+ */
 export interface ISaveSelfAssessmentRequest {
-  goals: ISelfAssessmentGoalInput[];
+  cycleId: string;
+  items: ISelfAssessmentGoalInput[];
 }
 
 // ─── Validation constants (mirror the backend) ────────────────
