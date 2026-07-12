@@ -20,6 +20,7 @@ describe('EmployeeWizardComponent', () => {
   const deptsUrl = `${environment.apiBaseUrl}/tenant/departments`;
   const jtUrl = `${environment.apiBaseUrl}/tenant/job-titles`;
   const cfUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
+  const locUrl = `${environment.apiBaseUrl}/tenant/locations`;
   const empUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
   const mockDepartments = [
@@ -47,6 +48,27 @@ describe('EmployeeWizardComponent', () => {
       description: null,
       gradeId: null,
       gradeName: null,
+      isActive: true,
+      employeeCount: 0,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ];
+
+  // BUG-113: active locations feeding the optional Location dropdown
+  const mockLocations = [
+    {
+      locationId: 'loc-1',
+      tenantId: 'tenant-1',
+      name: 'Colombo HQ',
+      addressLine1: null,
+      addressLine2: null,
+      city: null,
+      stateProvince: null,
+      country: null,
+      postalCode: null,
+      timeZone: 'Asia/Colombo',
+      phone: null,
       isActive: true,
       employeeCount: 0,
       createdAt: '2026-01-01T00:00:00Z',
@@ -98,6 +120,10 @@ describe('EmployeeWizardComponent', () => {
     const cfReq = httpMock.expectOne(cfUrl);
     cfReq.flush([]);
 
+    // BUG-113: also flush active locations
+    const locReq = httpMock.expectOne(locUrl);
+    locReq.flush(mockLocations);
+
     fixture.detectChanges();
   }
 
@@ -137,6 +163,9 @@ describe('EmployeeWizardComponent', () => {
 
     const cfReq = httpMock.expectOne(cfUrl);
     cfReq.flush([]);
+
+    const locReq = httpMock.expectOne(locUrl);
+    locReq.flush(mockLocations);
     fixture.detectChanges();
 
     expect(component.departments().length).toBe(1);
@@ -575,6 +604,80 @@ describe('EmployeeWizardComponent', () => {
     it('should navigate back to employee list when goBack is called', () => {
       component.goBack();
       expect(router.navigate).toHaveBeenCalledWith(['/employees']);
+    });
+  });
+
+  // BUG-113: optional structured work-location assignment on Create
+  describe('location assignment (BUG-113)', () => {
+    beforeEach(() => {
+      flushReferenceData();
+    });
+
+    function fillAllRequired(): void {
+      component.form.patchValue({
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@test.com',
+        dateOfJoining: '2026-07-01',
+        departmentId: 'dept-1',
+        jobTitleId: 'jt-1',
+        employmentType: 'Full-Time',
+      });
+    }
+
+    it('should expose a locationId control populated from the locations endpoint', () => {
+      expect(component.form.get('locationId')).toBeTruthy();
+      expect(component.locations().length).toBe(1);
+      expect(component.locations()[0].name).toBe('Colombo HQ');
+    });
+
+    it('should keep locationId optional (valid when empty)', () => {
+      const control = component.form.get('locationId')!;
+      expect(control.valid).toBeTrue();
+    });
+
+    it('should include locationId in the create payload when a location is selected', fakeAsync(() => {
+      fillAllRequired();
+      component.form.get('locationId')!.setValue('loc-1');
+      component.onSubmit();
+
+      const req = httpMock.expectOne(empUrl);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.locationId).toBe('loc-1');
+
+      req.flush({ employeeId: 'emp-new', firstName: 'John', lastName: 'Doe' });
+      tick();
+    }));
+
+    it('should send locationId null in the create payload when no location is selected', fakeAsync(() => {
+      fillAllRequired();
+      component.onSubmit();
+
+      const req = httpMock.expectOne(empUrl);
+      expect(req.request.body.locationId).toBeNull();
+
+      req.flush({ employeeId: 'emp-new', firstName: 'John', lastName: 'Doe' });
+      tick();
+    }));
+  });
+
+  // BUG-113 / ISSUE-206: a failing locations endpoint must not break the whole
+  // reference-data load (departments/job-titles still populate).
+  describe('location load resilience (BUG-113)', () => {
+    it('should still load departments when the locations endpoint errors', () => {
+      fixture.detectChanges();
+
+      httpMock.expectOne(deptsUrl).flush(mockDepartments);
+      httpMock.expectOne(jtUrl).flush(mockJobTitles);
+      httpMock.expectOne(cfUrl).flush([]);
+      httpMock
+        .expectOne(locUrl)
+        .flush('boom', { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+
+      expect(component.isLoadingData()).toBeFalse();
+      expect(component.departments().length).toBe(1);
+      expect(component.locations().length).toBe(0);
     });
   });
 });

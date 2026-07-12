@@ -49,6 +49,8 @@ import {
   ICustomFieldDefinition,
   fieldTypeToInputType,
 } from '../../../custom-fields/models/custom-field.models';
+import { LocationService } from '../../../locations/services/location.service';
+import { ILocation } from '../../../locations/models/location.models';
 
 /**
  * US-CHR-002: Comprehensive Employee Profile view + edit component.
@@ -577,6 +579,16 @@ import {
                       <label class="label-notion" for="emp-jobTitle">Job Title</label>
                       <input id="emp-jobTitle" type="text" formControlName="jobTitleName" class="input-notion" />
                     </div>
+                    <!-- BUG-113: work location (optional, active locations from US-CHR-007) -->
+                    <div class="form-field">
+                      <label class="label-notion" for="emp-location">Location</label>
+                      <select id="emp-location" formControlName="locationId" class="input-notion">
+                        <option [ngValue]="''">No location</option>
+                        @for (loc of locations(); track loc.locationId) {
+                          <option [ngValue]="loc.locationId">{{ loc.name }}</option>
+                        }
+                      </select>
+                    </div>
                     <div class="form-field">
                       <label class="label-notion" for="emp-type">Employment Type</label>
                       <input id="emp-type" type="text" formControlName="employmentType" class="input-notion" />
@@ -606,6 +618,10 @@ import {
                   <div class="data-field">
                     <dt class="data-label">Job Title</dt>
                     <dd class="data-value">{{ profile()!.jobTitleName || 'Not assigned' }}</dd>
+                  </div>
+                  <div class="data-field">
+                    <dt class="data-label">Location</dt>
+                    <dd class="data-value">{{ profile()!.locationName || 'Not assigned' }}</dd>
                   </div>
                   <div class="data-field">
                     <dt class="data-label">Employment Type</dt>
@@ -1746,6 +1762,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   private readonly employeeService = inject(EmployeeService);
   private readonly authService = inject(AuthService);
   private readonly customFieldService = inject(CustomFieldService);
+  private readonly locationService = inject(LocationService);
 
   private readonly destroy$ = new Subject<void>();
 
@@ -1801,6 +1818,9 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   // US-CHR-012: Custom fields
   readonly activeCustomFields = signal<ICustomFieldDefinition[]>([]);
 
+  // BUG-113: active work locations for the employment-section Location select
+  readonly locations = signal<ILocation[]>([]);
+
   /** Computed reporting chain from profile data */
   readonly reportingChain = computed<IReportingChainNode[]>(() => {
     const p = this.profile();
@@ -1855,6 +1875,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     this.initForms();
     this.loadProfile();
     this.loadCustomFieldDefinitions();
+    this.loadLocations();
   }
 
   ngOnDestroy(): void {
@@ -2132,6 +2153,25 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       });
   }
 
+  /**
+   * BUG-113: load active work locations for the employment-section Location
+   * select. Non-fatal — a missing/empty locations endpoint just leaves the
+   * dropdown with only the "No location" option.
+   */
+  private loadLocations(): void {
+    this.locationService
+      .getLocations()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (locations) => {
+          this.locations.set(locations.filter((l) => l.isActive));
+        },
+        error: () => {
+          // Non-fatal: Location select will only offer "No location"
+        },
+      });
+  }
+
   private buildCustomFieldsForm(fields: ICustomFieldDefinition[]): void {
     const group: Record<string, unknown> = {};
     for (const field of fields) {
@@ -2249,9 +2289,16 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
 
     this.isSaving.set(true);
 
+    const data: Record<string, unknown> = { ...form.value };
+    // BUG-113: send an unset optional location as null (not '') so the BE
+    // can bind/clear the Guid FK rather than reject an empty string.
+    if (section === 'employment' && data['locationId'] === '') {
+      data['locationId'] = null;
+    }
+
     const request: IUpdateSectionRequest = {
       xmin: p.xmin,
-      data: form.value,
+      data,
     };
 
     this.employeeService
@@ -2346,6 +2393,8 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     this.employmentForm = this.fb.group({
       departmentName: [''],
       jobTitleName: [''],
+      // BUG-113: optional structured work location FK (Guid)
+      locationId: [''],
       employmentType: [''],
       status: [''],
       dateOfJoining: [''],
@@ -2414,6 +2463,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
         this.employmentForm.patchValue({
           departmentName: p.departmentName ?? '',
           jobTitleName: p.jobTitleName ?? '',
+          locationId: p.locationId ?? '',
           employmentType: p.employmentType,
           status: p.status,
           dateOfJoining: p.dateOfJoining,

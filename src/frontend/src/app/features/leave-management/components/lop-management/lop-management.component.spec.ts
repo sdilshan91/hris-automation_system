@@ -83,6 +83,8 @@ describe('LopManagementComponent', () => {
     departmentName: 'Eng',
     jobTitleId: 'j-1',
     jobTitleName: 'Dev',
+    locationId: null,
+    locationName: null,
     employmentType: 'FullTime',
     status: 'Active',
     profilePhotoUrl: null,

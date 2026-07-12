@@ -21,8 +21,8 @@ import { Router } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
-import { Subject, forkJoin } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { Subject, forkJoin, of } from 'rxjs';
+import { takeUntil, catchError } from 'rxjs/operators';
 import { EmployeeService } from '../../services/employee.service';
 import {
   ICreateEmployeeRequest,
@@ -37,6 +37,8 @@ import { DepartmentService } from '../../../departments/services/department.serv
 import { IDepartment } from '../../../departments/models/department.models';
 import { JobTitleService } from '../../../job-titles/services/job-title.service';
 import { IJobTitle } from '../../../job-titles/models/job-title.models';
+import { LocationService } from '../../../locations/services/location.service';
+import { ILocation } from '../../../locations/models/location.models';
 import { PhotoUploadComponent } from '../photo-upload/photo-upload.component';
 import { CustomFieldService } from '../../../custom-fields/services/custom-field.service';
 import {
@@ -579,6 +581,26 @@ import {
                       <option value="Probation">Probation</option>
                     </select>
                     <p class="field-hint">Default: Active (BR-3)</p>
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <!-- Location (BUG-113 — optional, active locations from US-CHR-007) -->
+                  <div class="form-section">
+                    <label class="label-notion" for="locationId">
+                      Location
+                    </label>
+                    <select
+                      id="locationId"
+                      formControlName="locationId"
+                      class="input-notion select-input"
+                    >
+                      <option [ngValue]="''">No location</option>
+                      @for (loc of locations(); track loc.locationId) {
+                        <option [ngValue]="loc.locationId">{{ loc.name }}</option>
+                      }
+                    </select>
+                    <p class="field-hint">Optional — the employee's work location</p>
                   </div>
                 </div>
 
@@ -1134,6 +1156,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   private readonly employeeService = inject(EmployeeService);
   private readonly departmentService = inject(DepartmentService);
   private readonly jobTitleService = inject(JobTitleService);
+  private readonly locationService = inject(LocationService);
   private readonly customFieldService = inject(CustomFieldService);
 
   private readonly destroy$ = new Subject<void>();
@@ -1152,6 +1175,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   readonly isLoadingData = signal(true);
   readonly departments = signal<IDepartment[]>([]);
   readonly jobTitles = signal<IJobTitle[]>([]);
+  readonly locations = signal<ILocation[]>([]);
   readonly selectedPhoto = signal<File | null>(null);
   readonly duplicateEmailError = signal<string | null>(null);
   readonly planLimitError = signal<string | null>(null);
@@ -1220,6 +1244,8 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       dateOfJoining: ['', [Validators.required, this.dateOfJoiningValidator]],
       departmentId: ['', [Validators.required]],
       jobTitleId: ['', [Validators.required]],
+      // BUG-113: work location is OPTIONAL (no required validator)
+      locationId: [''],
       employmentType: ['' as EmploymentType | '', [Validators.required]],
       status: ['Active'],
 
@@ -1243,13 +1269,21 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       departments: this.departmentService.getDepartments(),
       jobTitles: this.jobTitleService.getJobTitles(),
       customFields: this.customFieldService.getActiveCustomFields('employee'),
+      // BUG-113: load active locations for the optional Location dropdown.
+      // Isolated with catchError so a missing/empty locations endpoint can never
+      // break the whole reference-data load (see ISSUE-206 forkJoin fragility).
+      locations: this.locationService
+        .getLocations()
+        .pipe(catchError(() => of([] as ILocation[]))),
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: ({ departments, jobTitles, customFields }) => {
+        next: ({ departments, jobTitles, customFields, locations }) => {
           // Filter to only active items (BR-5: inactive departments hidden from assignment)
           this.departments.set(departments.filter((d) => d.isActive));
           this.jobTitles.set(jobTitles.filter((jt) => jt.isActive));
+          // BUG-113: only active locations are assignable (mirror Department filter)
+          this.locations.set(locations.filter((l) => l.isActive));
           // US-CHR-012: Store active custom fields and add dynamic controls
           this.customFields.set(customFields);
           this.addCustomFieldControls(customFields);
@@ -1425,6 +1459,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
           'dateOfJoining',
           'departmentId',
           'jobTitleId',
+          'locationId',
           'employmentType',
           'status',
         ];
@@ -1543,6 +1578,8 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       dateOfJoining: formValue.dateOfJoining,
       departmentId: formValue.departmentId,
       jobTitleId: formValue.jobTitleId,
+      // BUG-113: optional location FK — null when no location selected
+      locationId: formValue.locationId || null,
       employmentType: formValue.employmentType,
       status: formValue.status || 'Active',
       address: formValue.address?.trim() || null,

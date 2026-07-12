@@ -32,6 +32,7 @@ public sealed class CreateEmployeeCommandHandler
             EmploymentType = request.EmploymentType,
             Status = request.Status,
             Location = request.Location,
+            LocationId = request.LocationId,
             CustomFields = request.CustomFields,
             UserId = request.UserId,
         };

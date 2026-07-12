@@ -843,6 +843,153 @@ public sealed class EmployeeServiceTests : IDisposable
         result.Value.PageSize.Should().Be(2);
     }
 
+    // ── BUG-113: Employee ↔ Location structured FK reachable from create ──
+    // Regression for BUG-113: the create flow accepted no LocationId, so Employee.LocationId was
+    // never set from the UI, LocationDto.EmployeeCount was permanently 0, and the location
+    // deactivation guard was dead code. These prove the FK is now assignable + counted end-to-end.
+
+    private async Task<Guid> SeedLocation(string name = "Head Office", bool isActive = true, Guid? tenantId = null)
+    {
+        var tid = tenantId ?? _tenantId;
+        ITenantContext ctx;
+        if (tenantId.HasValue && tenantId.Value != _tenantId)
+        {
+            ctx = Substitute.For<ITenantContext>();
+            ctx.TenantId.Returns(tid);
+            ctx.IsResolved.Returns(true);
+        }
+        else
+        {
+            ctx = _tenantContext;
+        }
+
+        using var db = TestDbContextFactory.Create(ctx, _dbName);
+        var location = new Location
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tid,
+            Name = name,
+            TimeZone = "Asia/Colombo",
+            IsActive = isActive,
+            IsDeleted = false,
+        };
+        db.Locations.Add(location);
+        await db.SaveChangesAsync();
+        return location.Id;
+    }
+
+    [Fact]
+    public async Task Create_WithValidLocationId_ShouldPersistFk_AndSurfaceOnDto_BUG113()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var locationId = await SeedLocation("Colombo HQ");
+        var service = CreateService();
+
+        var request = MakeRequest(deptId, jtId) with { LocationId = locationId };
+        var result = await service.CreateAsync(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.LocationId.Should().Be(locationId);
+        result.Value.LocationName.Should().Be("Colombo HQ");
+
+        // Persisted FK on the row (not just the DTO)
+        using var db = CreateDbContext();
+        var emp = db.Employees.First(e => e.Id == result.Value.Id);
+        emp.LocationId.Should().Be(locationId);
+    }
+
+    [Fact]
+    public async Task Create_WithValidLocationId_ShouldIncrementLocationEmployeeCount_BUG113()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var locationId = await SeedLocation("Kandy Branch");
+
+        // Pre-condition: the finding's core symptom — count starts at 0.
+        var locServiceBefore = new LocationService(
+            CreateDbContext(), _tenantContext, _currentUser, Substitute.For<ILogger<LocationService>>());
+        (await locServiceBefore.GetByIdAsync(locationId)).Value!.EmployeeCount.Should().Be(0);
+
+        // Assign an employee to the location via the standard create flow.
+        var service = CreateService();
+        var created = await service.CreateAsync(MakeRequest(deptId, jtId) with { LocationId = locationId });
+        created.IsSuccess.Should().BeTrue();
+
+        // Post-condition: the location now reports 1 active employee (BUG-113 fixed).
+        var locServiceAfter = new LocationService(
+            CreateDbContext(), _tenantContext, _currentUser, Substitute.For<ILogger<LocationService>>());
+        (await locServiceAfter.GetByIdAsync(locationId)).Value!.EmployeeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_WithNonExistentLocationId_ShouldFailValidation_NotThrow_BUG113()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var service = CreateService();
+
+        var result = await service.CreateAsync(MakeRequest(deptId, jtId) with { LocationId = Guid.NewGuid() });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("Location not found");
+    }
+
+    [Fact]
+    public async Task Create_WithInactiveLocationId_ShouldFailValidation_BUG113()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var inactiveLocationId = await SeedLocation("Closed Branch", isActive: false);
+        var service = CreateService();
+
+        var result = await service.CreateAsync(MakeRequest(deptId, jtId) with { LocationId = inactiveLocationId });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("Location not found or is not active");
+    }
+
+    [Fact]
+    public async Task Create_WithLocationFromAnotherTenant_ShouldFailValidation_BUG113()
+    {
+        // Cross-tenant safety: a location that exists in another tenant is invisible via the
+        // global query filter, so it must be rejected as "not found" (no cross-tenant assignment).
+        var otherTenant = Guid.NewGuid();
+        var foreignLocationId = await SeedLocation("Foreign Office", tenantId: otherTenant);
+
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var service = CreateService();
+
+        var result = await service.CreateAsync(MakeRequest(deptId, jtId) with { LocationId = foreignLocationId });
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Contain("Location not found");
+    }
+
+    [Fact]
+    public async Task Create_WithoutLocationId_ShouldSucceed_WithNullLocation_BUG113()
+    {
+        // Location assignment is optional (BR-6) — a create with no LocationId still succeeds.
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var service = CreateService();
+
+        var result = await service.CreateAsync(MakeRequest(deptId, jtId));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.LocationId.Should().BeNull();
+        result.Value.LocationName.Should().BeNull();
+    }
+
     // ── GetById ─────────────────────────────────────────────────────
 
     [Fact]

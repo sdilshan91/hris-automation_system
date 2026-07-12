@@ -65,7 +65,7 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P1-5a FE session restore | P1 | BUG-097 (silent refresh on bootstrap) | PR#260 | #260 | FE-only; chained APP_INITIALIZER; 17/17 auth spec green; merging |
 | P1-5b Custom-fields crash | P1 | BUG-100 | RESOLVED | 46d7ebb2 | stale — already fixed (shape-drift); closed |
 | P1-5c Perf FE routes | P1 | BUG-243 (mostly FE re-model) + saveGoals BE gap | TODO | — | BE half shipped via BUG-244; FE re-models 5 services (cycleId+employeeId keying) + clean stale comments; 1 BE endpoint (bulk goal save) |
-| P1-5d Employee↔Location | P1 | BUG-113 (full-stack) | TODO | — | BE: LocationId on create/update cmd + DTO; FE: Location dropdown + payload |
+| P1-5d Employee↔Location | P1 | BUG-113 (full-stack) | PR#261 | #261 | BE+FE; profile-DTO prefill healed inline; count 0→1; 473 BE + 105 FE green; ISSUE-286 parked; merging |
 | P2-1 Notification delivery | P2/P3 | US-NTF-006: 13 LogOnly* → RealNotificationDispatcher (ISSUE-221/228/214) | TODO | — | biggest surface |
 | P2-2 MED clusters | P2 | ISSUE-195/BUG-120 RBAC-scope; audit gaps; payroll semantics; a11y; UTC; Redis | TODO | — | fan-out after P2-1 |
 | P2-3 Red FE base | P2 | ISSUE-245 (~26 pre-existing Angular spec fails) | TODO | — | do early — gates FE |

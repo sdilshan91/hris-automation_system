@@ -583,6 +583,80 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         entry.NewValue.Should().Be("Senior Software Engineer");
     }
 
+    // ── BUG-113: Location reassignment via the employment-info update path ──
+
+    private async Task<Guid> SeedLocation(string name = "Head Office", bool isActive = true)
+    {
+        using var db = CreateDbContext();
+        var location = new Location
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            Name = name,
+            TimeZone = "Asia/Colombo",
+            IsActive = isActive,
+            IsDeleted = false,
+        };
+        db.Locations.Add(location);
+        await db.SaveChangesAsync();
+        return location.Id;
+    }
+
+    [Fact]
+    public async Task UpdateProfile_LocationChange_ShouldPersistFk_AndCreateHistoryEntry_BUG113()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+        var newLocationId = await SeedLocation("Galle Office");
+
+        var service = CreateService();
+        var result = await service.UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            EmploymentInfo = new EmploymentInfoUpdate
+            {
+                LocationId = newLocationId,
+                EffectiveDate = DateTime.UtcNow.Date,
+                Reason = "Relocation",
+            },
+        });
+
+        result.IsSuccess.Should().BeTrue();
+
+        // FK persisted on the row
+        using var db = CreateDbContext();
+        var emp = db.Employees.First(e => e.Id == empId);
+        emp.LocationId.Should().Be(newLocationId);
+
+        // Employment-history entry mirrors the Department/JobTitle pattern
+        result.Value!.EmploymentHistory.Should().ContainSingle(h => h.ChangeType == "Location");
+        var entry = result.Value.EmploymentHistory.First(h => h.ChangeType == "Location");
+        entry.NewValue.Should().Be("Galle Office");
+        entry.NewReferenceId.Should().Be(newLocationId);
+        entry.Reason.Should().Be("Relocation");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_LocationChangeToInactive_ShouldFail_BUG113()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+        var inactiveLocationId = await SeedLocation("Shuttered Office", isActive: false);
+
+        var service = CreateService();
+        var result = await service.UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            EmploymentInfo = new EmploymentInfoUpdate { LocationId = inactiveLocationId },
+        });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("Location not found or is not active");
+    }
+
     [Fact]
     public async Task UpdateProfile_StatusChange_ShouldCreateHistoryEntry()
     {
