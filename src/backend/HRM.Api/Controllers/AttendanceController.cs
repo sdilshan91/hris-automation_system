@@ -1192,7 +1192,7 @@ public sealed class AttendanceController : ControllerBase
         return Ok(ApiResponse<TrendsResult>.Ok(result.Value!));
     }
 
-    // ── Scheduled report config CRUD (FR-8; email delivery deferred — US-NTF) ──
+    // ── Scheduled report config CRUD (FR-8; recipients emailed on generation — US-NTF-006 Phase 7) ──
 
     /// <summary>
     /// GET /api/v1/attendance/reports/scheduled
