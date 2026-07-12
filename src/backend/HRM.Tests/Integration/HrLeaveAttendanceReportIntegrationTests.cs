@@ -93,6 +93,23 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
                 LeaveYear = ci.ArgAt<int>(2),
                 ProratedEntitlementDays = entitlementDays,
             }));
+        // ISSUE-287: LeaveReportService switched to the batch resolver in the BUG-124 (#258) N+1 fix;
+        // the mock must stub it too or NSubstitute returns null → ArgumentNullException in the report.
+        // Mirror the per-pair stub: a constant `entitlementDays` for every (employee × leave type) pair.
+        entitlement
+            .ComputeProratedEntitlementsBatchAsync(
+                Arg.Any<IReadOnlyList<Employee>>(), Arg.Any<IReadOnlyList<LeaveType>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var employees = ci.ArgAt<IReadOnlyList<Employee>>(0);
+                var leaveTypes = ci.ArgAt<IReadOnlyList<LeaveType>>(1);
+                var map = new Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>();
+                foreach (var emp in employees)
+                    foreach (var lt in leaveTypes)
+                        map[(emp.Id, lt.Id)] = entitlementDays;
+                return map;
+            });
 
         var services = new ServiceCollection();
         services.AddLogging();
