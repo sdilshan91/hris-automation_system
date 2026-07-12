@@ -9,10 +9,12 @@ namespace HRM.Application.Features.AuditLog;
 /// match is case-insensitive and covers common naming variants (snake_case, camelCase, PascalCase) of each
 /// configured key, so <c>password_hash</c>, <c>passwordHash</c> and <c>PasswordHash</c> are all caught.
 ///
-/// <para>Applied to the <c>before</c>/<c>after</c> JSON in the audit list summary, the detail view, AND the
-/// export (BR-4). It NEVER mutates the stored row — masking is a read-time projection only (the table stays
-/// the immutable source of truth). The visual diff (FR-3) is computed on the FRONTEND from the masked
-/// before/after; the backend does not diff.</para>
+/// <para>Applied at TWO points: (1) WRITE time as the primary line of defence — <c>AuditCaptureInterceptor</c>
+/// masks the serialized <c>before</c>/<c>after</c> before they are persisted, so sensitive values never land in
+/// the audit JSONB in cleartext (BUG-281, ahead of BUG-082 broadening auto-audit to PII-bearing entities); and
+/// (2) READ time as defence-in-depth on the audit list summary, detail view, AND export (BR-4). <c>Mask</c> is
+/// pure and idempotent, so re-masking an already-redacted row on read is safe. The visual diff (FR-3) is computed
+/// on the FRONTEND from the masked before/after; the backend does not diff.</para>
 /// </summary>
 public static class SensitiveFieldMasker
 {
@@ -31,6 +33,10 @@ public static class SensitiveFieldMasker
         Normalize("mfa_secret"),
         Normalize("bank_account_number"),
         Normalize("national_id"),
+        // BUG-281: at-rest coverage for BUG-082's Employee/compensation entities — when auto-audit is
+        // broadened to PII-bearing entities, any "salary"-named field value must be redacted before it is
+        // persisted to the audit before/after JSONB (write-time), not just masked on the read path.
+        Normalize("salary"),
     };
 
     /// <summary>

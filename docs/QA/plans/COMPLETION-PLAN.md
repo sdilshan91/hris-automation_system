@@ -58,7 +58,7 @@ Ranked by **severity × blast-radius × unblocks-others**, implementable-now fir
 
 1. ~~**ISSUE-288 (HIGH)** — employee self-service review sign-off.~~ ✅ **DONE (PR #267)** — 3 caller-scoped `reviews/cycles/active/me/*` self endpoints + FE rewire; BE 3596/3596, FE 3763 green; auditors WIRED+AUTHENTIC. Unblocked US-PRF-006 AC-3.
 2. ~~**US-NTF-006 Phase 8 (P2-1c)**~~ ✅ **DONE (PR #268)** — LeaveReportExport (`requestedByUserId` threaded) + BulkImport (`InitiatedBy`) notify; 2 catalog events; BE 3609/3609 + leave-side dispatch test; auditors WIRED+AUTHENTIC. **Auto-healed a 3rd analogous gap → P2-1d** (`AttendanceSummaryExportJob` US-ATT-010 FR-7 export-ready notify, same Site-B pattern).
-3. **BUG-281 (P3-5, security)** — write-time PII redaction in audit `before`/`after`; unblocks **BUG-082** (opt-out audit-all, currently BLOCKED-BY-281 to avoid a cleartext-PII leak).
+3. ~~**BUG-281 (P3-5, security)** — write-time PII redaction in audit.~~ ✅ **DONE (PR #269)** — interceptor masks before/after at write time (+ `salary` key); BE 3615/3615; test-authenticator AUTHENTIC. **BUG-082 now UNBLOCKED** (can broaden auto-audit without a PII-at-rest leak — sequence it into P2-2/P3 next).
 4. **P3-2 JWT denylist** — `NoOpSessionRevoker` → Redis token-revocation (access tokens currently can't be revoked; Redis is available on host).
 5. **P2-2 RBAC-scope** — **ISSUE-195** (manager `Reports.View.Team` unimplemented → sees full tenant) + **BUG-120** (Directory gated `ViewOwn` → Manager/HR/Admin 403). Real authz gaps.
 6. **P3-3 Permission cache → Redis** (NFR-2 scale) · **P3-4 PII-at-rest** pgcrypto (Recommendation/Pip/Budget) · **P3-1 ClamAV** (wire client; the live scan needs a ClamAV daemon → infra-gated).
@@ -74,7 +74,7 @@ Ranked by **severity × blast-radius × unblocks-others**, implementable-now fir
 | P1-1 RBAC payroll lockouts | P1 | BUG-060(Payroll)/071/077 | PR#254 | #254 | seed fix; 42/42 unit green; merging |
 | P1-2 OT overpay | P1 | BUG-078 (OT base EARNINGS→BASIC) + **BUG-280** (same defect in statutory EPF/ETF, auto-healed) | PR#255 | #255 | Code-based BASIC resolution; 10 unit + 29 payroll integ green on Postgres; merging |
 | P1-3 Payroll audit emitters | P1 | **BUG-080** (7 payroll audit actions) | PR#256 | #256 | 7 emitters + 8 authentic tests; BUG-084 stale→RESOLVED (BUG-241); BUG-082→P3-5; ISSUE-282(P7); merging |
-| P3-5 Audit-all (gated) | P3 | **BUG-281** (write-time PII redaction) → then **BUG-082** (opt-out audit-all) | TODO | — | auto-healed; BUG-082 BLOCKED-BY BUG-281 (else cleartext-PII leak) |
+| P3-5 Audit-all (gated) | P3 | **BUG-281** (write-time PII redaction) → then **BUG-082** (opt-out audit-all) | PARTIAL | #269 | BUG-281 MERGED (#269 — write-time mask + `salary` key; BUG-082 now UNBLOCKED). BUG-082 (broaden auto-audit coverage) still TODO |
 | P1-4a Attendance N+1 | P1 | **BUG-125** + **BUG-283** (shift-resolution N+1, shared resolver) | PR#257 | #257 | ~15k round-trips→3; no migration; 40/40 green; merging |
 | P1-4b Leave report N+1 | P1 | BUG-124 (batch entitlement resolution) | PR#258 | #258 | ~325k round-trips→2; no migration; 89/89 green; merging |
 | P1-4c Dashboard scale | P1 | BUG-123 (hot-path projection) | PR#259 | #259 | attendance-today/live-board projection; folds ISSUE-284#2; 56/56 green; remainder→ISSUE-285; merging |

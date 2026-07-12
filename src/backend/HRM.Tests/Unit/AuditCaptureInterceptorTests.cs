@@ -10,6 +10,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Features.AuditLog;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -257,5 +258,125 @@ public sealed class AuditCaptureInterceptorTests
         row.IpAddress.Should().Be(Ip);
         row.UserAgent.Should().Be(Ua);
         row.TraceId.Should().NotBeNullOrEmpty();
+    }
+
+    // ── BUG-281: WRITE-TIME PII redaction of the serialized before/after JSONB ──
+    // Once BUG-082 broadens auto-audit to PII-bearing entities (Employee, bank/national-id/salary),
+    // those values must NEVER be persisted in cleartext. Redaction is applied inside SerializeAll (the
+    // INSERT/DELETE snapshot) and SerializeChanged (the UPDATE before+after), BEFORE the JSON is stored.
+    // Driven directly against a real EF EntityEntry (the internal serializers) with a probe entity that
+    // carries sensitive-named scalar props — none of the 3 currently auto-audited entities carry PII.
+
+    private sealed class PiiProbe
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;   // non-sensitive → must pass through
+        public string? NationalId { get; set; }
+        public string? BankAccountNumber { get; set; }
+        public decimal Salary { get; set; }
+    }
+
+    private sealed class ProbeDbContext : DbContext
+    {
+        public ProbeDbContext(DbContextOptions<ProbeDbContext> options) : base(options) { }
+        public DbSet<PiiProbe> Probes => Set<PiiProbe>();
+    }
+
+    private static ProbeDbContext ProbeDb(string dbName)
+        => new(new DbContextOptionsBuilder<ProbeDbContext>().UseInMemoryDatabase(dbName).Options);
+
+    [Fact]
+    public void SerializeAll_redacts_sensitive_pii_values_at_write_time()
+    {
+        using var db = ProbeDb(Guid.NewGuid().ToString());
+        var probe = new PiiProbe
+        {
+            Id = Guid.NewGuid(),
+            Name = "Jane Doe",
+            NationalId = "NID-42",
+            BankAccountNumber = "9988776655",
+            Salary = 125000m,
+        };
+        db.Probes.Add(probe); // State = Added → SerializeAll uses CurrentValue
+
+        var json = AuditCaptureInterceptor.SerializeAll(db.Entry(probe))!;
+        var map = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
+
+        map["NationalId"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        map["BankAccountNumber"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        map["Salary"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        // Non-sensitive field passes through untouched.
+        map["Name"].GetString().Should().Be("Jane Doe");
+        // Cleartext PII must not survive anywhere in the persisted payload.
+        json.Should().NotContain("9988776655").And.NotContain("NID-42").And.NotContain("125000");
+    }
+
+    [Fact]
+    public void SerializeChanged_redacts_sensitive_pii_values_in_before_and_after()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var probeId = Guid.NewGuid();
+
+        using (var seed = ProbeDb(dbName))
+        {
+            seed.Probes.Add(new PiiProbe
+            {
+                Id = probeId,
+                Name = "Jane",
+                NationalId = "NID-1",
+                BankAccountNumber = "1111",
+                Salary = 100m,
+            });
+            seed.SaveChanges();
+        }
+
+        using var db = ProbeDb(dbName);
+        var probe = db.Probes.Single(p => p.Id == probeId);
+        probe.Name = "Janet";                 // non-sensitive change
+        probe.NationalId = "NID-2";
+        probe.BankAccountNumber = "2222";
+        probe.Salary = 200m;
+
+        var (before, after) = AuditCaptureInterceptor.SerializeChanged(db.Entry(probe));
+
+        var beforeMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(before!)!;
+        var afterMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(after!)!;
+
+        beforeMap["NationalId"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        afterMap["NationalId"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        beforeMap["BankAccountNumber"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        afterMap["BankAccountNumber"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        beforeMap["Salary"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+        afterMap["Salary"].GetString().Should().Be(SensitiveFieldMasker.Redacted);
+
+        // Non-sensitive field keeps its real old/new values.
+        beforeMap["Name"].GetString().Should().Be("Jane");
+        afterMap["Name"].GetString().Should().Be("Janet");
+
+        // No cleartext PII in either side of the diff.
+        before.Should().NotContain("NID-1").And.NotContain("1111");
+        after.Should().NotContain("NID-2").And.NotContain("2222");
+    }
+
+    [Fact]
+    public async Task Audited_non_pii_entity_serializes_fields_without_redaction()
+    {
+        // The 3 currently auto-audited entities (Department/JobTitle/LeaveRequest) carry no PII, so their
+        // real serialized values must survive intact — the write-time masker must not over-redact.
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            db.Departments.Add(NewDepartment(Guid.NewGuid(), "Engineering"));
+            await db.SaveChangesAsync();
+        }
+
+        using var read = Db(dbName, ctx, User(), null);
+        var row = await read.AuditLogs.IgnoreQueryFilters()
+            .SingleAsync(a => a.ResourceType == "Department");
+
+        row.After!.Should().Contain("Engineering");
+        row.After!.Should().NotContain(SensitiveFieldMasker.Redacted);
     }
 }
