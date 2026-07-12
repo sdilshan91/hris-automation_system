@@ -69,11 +69,17 @@ public sealed class JwtService : IJwtService
 
     public string GenerateAccessToken(User user, Guid tenantId, Guid userTenantId, IEnumerable<string> roles, IEnumerable<string> permissions)
     {
+        // P3-2: emit an explicit issued-at (iat) so the session-revocation denylist can compare a token's issue
+        // time against the per-(tenant,user) "revoked-before" cutoff. The JwtSecurityToken(...) ctor used below
+        // sets nbf/exp but NOT iat, so we add it here (unix seconds, Integer64) rather than rely on the handler.
+        var issuedAtUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Iat, issuedAtUnix.ToString(), ClaimValueTypes.Integer64),
             new("tenant_id", tenantId.ToString()),
             new("user_tenant_id", userTenantId.ToString()),
             new("is_impersonation", "false"),
@@ -128,6 +134,9 @@ public sealed class JwtService : IJwtService
             new(JwtRegisteredClaimNames.Sub, targetUser.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, targetUser.Email),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            // P3-2: explicit issued-at so an ended impersonation (denylist cutoff on the target user) rejects this
+            // token too. `now` is captured above as the token's notBefore.
+            new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new("tenant_id", targetTenantId.ToString()),
             new("user_tenant_id", targetUserTenantId.ToString()),
             // is_impersonation flips to "true" for this token type (it is "false" on a normal access token).

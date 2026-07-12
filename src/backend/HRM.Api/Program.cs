@@ -1,11 +1,13 @@
 using FluentValidation;
 using Hangfire;
 using Hangfire.PostgreSql;
+using HRM.Api.Auth;
 using HRM.Api.Filters;
 using HRM.Api.Middleware;
 using HRM.Api.Observability;
 using HRM.Api.Redis;
 using HRM.Application.Common.Behaviors;
+using HRM.Application.Common.Interfaces;
 using HRM.Infrastructure;
 using HRM.Infrastructure.Identity;
 using HRM.Infrastructure.Persistence;
@@ -146,6 +148,22 @@ try
                     context.Token = accessToken;
                 }
                 return Task.CompletedTask;
+            },
+            // P3-2: real session revocation. After signature/lifetime validation, check the per-(tenant,user)
+            // "revoked-before" cutoff in the ITokenDenylist (Redis-backed when configured, no-op otherwise) and
+            // reject (401) any access token issued before a revoke — so offboarding / admin force-logout /
+            // impersonation-end invalidate already-issued access tokens instead of leaving them valid to expiry.
+            // MUST FAIL OPEN: any Redis/parse error or missing key → token accepted, so a Redis blip can never
+            // lock everyone out.
+            OnTokenValidated = async context =>
+            {
+                var denylist = context.HttpContext.RequestServices.GetService<ITokenDenylist>();
+                if (await SessionRevocationCheck.IsRevokedAsync(
+                        context.Principal, denylist, context.HttpContext.RequestAborted))
+                {
+                    Log.Information("Rejected access token: session revoked (issued before revocation cutoff).");
+                    context.Fail("Session revoked");
+                }
             }
         };
     });

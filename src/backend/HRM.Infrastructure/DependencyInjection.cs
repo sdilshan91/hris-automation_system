@@ -274,10 +274,27 @@ public static class DependencyInjection
         services.AddScoped<IAssetService, AssetService>();
 
         // US-ONB-005: offboarding / exit clearance. Reuses IAuthService (refresh-token revocation) + the
-        // ISessionRevoker (FR-7 Redis denylist seam, no-op) + IPayrollFnFIntegration (FR-6 F&F trigger seam).
+        // ISessionRevoker (FR-7 access-token revocation) + IPayrollFnFIntegration (FR-6 F&F trigger seam).
         services.AddScoped<IOffboardingService, OffboardingService>();
-        services.AddScoped<ISessionRevoker, NoOpSessionRevoker>();
         services.AddScoped<IPayrollFnFIntegration, LogOnlyPayrollFnFIntegration>();
+
+        // P3-2: real JWT access-token denylist / session revocation. When Redis is configured, revoking a user's
+        // sessions writes a per-(tenant,user) "revoked-before" cutoff to Redis and the OnTokenValidated hook rejects
+        // pre-cutoff access tokens (fail-open on any Redis error). Without Redis, keep the no-op pair so the app runs
+        // (and the denylist check no-ops gracefully). The IConnectionMultiplexer is registered by the API host's
+        // AddSharedRedisMultiplexer (Program.cs) under the same Redis-configured condition.
+        var revokerRedisConn = configuration.GetConnectionString("Redis")
+            ?? configuration["Redis:ConnectionString"];
+        if (!string.IsNullOrWhiteSpace(revokerRedisConn))
+        {
+            services.AddScoped<ITokenDenylist, RedisTokenDenylist>();
+            services.AddScoped<ISessionRevoker, RedisSessionRevoker>();
+        }
+        else
+        {
+            services.AddScoped<ITokenDenylist, NoOpTokenDenylist>();
+            services.AddScoped<ISessionRevoker, NoOpSessionRevoker>();
+        }
 
         // US-ONB-006: exit-interview recording + analytics. Reuses the onboarding notification outbox (FR-8)
         // and the offboarding instance/task link (FR-3/AC-2). Anonymized analytics (FR-5).
