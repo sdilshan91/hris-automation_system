@@ -8,7 +8,7 @@ namespace HRM.Domain.Entities;
 /// unique index (BR-3, NFR-3). Termination is a soft state change to <see cref="BenefitEnrollmentStatus.Terminated"/>
 /// with an <see cref="EndDate"/> (BR-5), preserving history.
 /// </summary>
-public sealed class BenefitEnrollment : BaseEntity
+public sealed class BenefitEnrollment : BaseEntity, IAuditExempt
 {
     /// <summary>The elected plan (FK → <see cref="BenefitPlan"/>).</summary>
     public Guid BenefitPlanId { get; set; }

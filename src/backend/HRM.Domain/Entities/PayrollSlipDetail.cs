@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>.
 /// Maps to the "payroll_slip_detail" table.
 /// </summary>
-public sealed class PayrollSlipDetail : BaseEntity
+public sealed class PayrollSlipDetail : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the owning payslip (FR-5, required).</summary>
     public Guid PayrollSlipId { get; set; }

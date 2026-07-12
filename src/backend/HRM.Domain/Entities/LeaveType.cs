@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// Represents a configurable leave type within a tenant (US-LV-001).
 /// Supports tenant-scoped CRUD, soft-delete, and rich policy configuration.
 /// </summary>
-public sealed class LeaveType : BaseEntity
+public sealed class LeaveType : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Leave type name, unique within a tenant (case-insensitive) (FR-2, BR-1).

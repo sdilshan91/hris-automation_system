@@ -7,7 +7,7 @@ namespace HRM.Domain.Entities;
 /// + <c>TenantInterceptor</c>. Maps to the "salary_revision_history" table. Never updated or deleted in
 /// normal operation (history is append-only).
 /// </summary>
-public sealed class SalaryRevisionHistory : BaseEntity
+public sealed class SalaryRevisionHistory : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the employee whose compensation changed (BR-3, required).</summary>
     public Guid EmployeeId { get; set; }

@@ -18,7 +18,7 @@ namespace HRM.Domain.Entities;
 /// global query filter (no PostgreSQL RLS — same deferral as the rest of the module).
 /// Maps to the "attendance_period_lock" table.
 /// </summary>
-public sealed class AttendancePeriodLock : BaseEntity
+public sealed class AttendancePeriodLock : BaseEntity, IAuditExempt
 {
     /// <summary>Inclusive first locked date.</summary>
     public DateOnly PeriodStart { get; set; }

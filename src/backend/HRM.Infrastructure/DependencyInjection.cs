@@ -36,7 +36,8 @@ public static class DependencyInjection
         // EF Core interceptors
         services.AddScoped<AuditInterceptor>();
         services.AddScoped<TenantInterceptor>();
-        // US-NTF-004: automatic generic INSERT/UPDATE/DELETE capture for IAuditableEntity types.
+        // US-NTF-004 / BUG-082: automatic generic INSERT/UPDATE/DELETE capture for all tenant BaseEntity
+        // types EXCEPT those marked IAuditExempt (explicit-writer or high-volume — opt-OUT).
         services.AddScoped<AuditCaptureInterceptor>();
 
         // P3/RLS increment 2b: routes the DB connection per operation (hrm_app runtime vs hrm_owner privileged)

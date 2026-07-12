@@ -9,7 +9,7 @@ namespace HRM.Domain.Entities;
 /// <para>Composite index on (tenant_id, payroll_run_id, employee_id) per the data spec (§19.12) backs the
 /// "slips for a run" read and the re-run replacement (FR-7).</para>
 /// </summary>
-public sealed class PayrollSlip : BaseEntity
+public sealed class PayrollSlip : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the owning payroll run (FR-5, required).</summary>
     public Guid PayrollRunId { get; set; }

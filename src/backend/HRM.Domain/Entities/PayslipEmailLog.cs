@@ -10,7 +10,7 @@ namespace HRM.Domain.Entities;
 /// re-send (FR-4) re-attempts only the targeted / failed rows. The combination of (payroll_run_id,
 /// employee_id) is the natural per-run-per-employee key — the latest row reflects the current delivery state.</para>
 /// </summary>
-public sealed class PayslipEmailLog : BaseEntity
+public sealed class PayslipEmailLog : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the owning payroll run (§7, required).</summary>
     public Guid PayrollRunId { get; set; }

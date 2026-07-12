@@ -4,7 +4,7 @@ namespace HRM.Domain.Entities;
 /// Per-employee override for a specific leave type and year (US-LV-002 AC-3).
 /// Takes precedence over all rule-based entitlements.
 /// </summary>
-public sealed class LeaveEntitlementOverride : BaseEntity
+public sealed class LeaveEntitlementOverride : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// FK to the employee this override applies to.

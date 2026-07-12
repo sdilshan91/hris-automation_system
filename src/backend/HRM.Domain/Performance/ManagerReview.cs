@@ -12,7 +12,7 @@ namespace HRM.Domain.Performance;
 /// rows. Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter +
 /// <c>TenantInterceptor</c> (NFR-2). Maps to the "manager_review" table.
 /// </summary>
-public sealed class ManagerReview : BaseEntity
+public sealed class ManagerReview : BaseEntity, IAuditExempt
 {
     /// <summary>The appraisal cycle this review belongs to (FK, required).</summary>
     public Guid CycleId { get; set; }

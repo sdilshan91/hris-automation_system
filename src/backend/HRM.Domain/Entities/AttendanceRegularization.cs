@@ -7,7 +7,7 @@ namespace HRM.Domain.Entities;
 /// NOT touch the log. Tenant-scoped via <see cref="BaseEntity.TenantId"/> and the EF global query
 /// filter. Maps to the "attendance_regularization" table.
 /// </summary>
-public sealed class AttendanceRegularization : BaseEntity
+public sealed class AttendanceRegularization : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// FK to the employee the regularization belongs to (FR-2).

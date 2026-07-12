@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// (US-PAY-001 FR-2). Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter
 /// + <c>TenantInterceptor</c>. Maps to the "salary_structure" table.
 /// </summary>
-public sealed class SalaryStructure : BaseEntity
+public sealed class SalaryStructure : BaseEntity, IAuditExempt
 {
     /// <summary>Display name (FR-2, required, max 100 chars), e.g. "Full-Time India".</summary>
     public string Name { get; set; } = string.Empty;

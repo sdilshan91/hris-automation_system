@@ -12,7 +12,7 @@ namespace HRM.Domain.Entities;
 /// driven through its lifecycle (BR-6) by the Hangfire <c>ProcessPayrollRunJob</c>. The summary totals
 /// (FR-8) and processed/skipped counters are stamped as the job runs and on completion.</para>
 /// </summary>
-public sealed class PayrollRun : BaseEntity
+public sealed class PayrollRun : BaseEntity, IAuditExempt
 {
     /// <summary>Pay period month, 1-12 (FR-1, required).</summary>
     public int PayMonth { get; set; }

@@ -11,7 +11,7 @@ namespace HRM.Domain.Entities;
 /// <c>UserTenantStatus</c> has no "Invited" value. Only the token HASH is stored — the raw one-time
 /// token is embedded in the (log-only) invitation email and never persisted (mirrors RefreshToken).</para>
 /// </summary>
-public sealed class UserInvitation : BaseEntity
+public sealed class UserInvitation : BaseEntity, IAuditExempt
 {
     public string Email { get; set; } = string.Empty;
 

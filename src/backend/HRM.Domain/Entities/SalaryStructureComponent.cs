@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// per-structure overrides (US-PAY-001 FR-3). Tenant-scoped via <see cref="BaseEntity.TenantId"/> +
 /// the EF global query filter + <c>TenantInterceptor</c>. Maps to the "salary_structure_component" table.
 /// </summary>
-public sealed class SalaryStructureComponent : BaseEntity
+public sealed class SalaryStructureComponent : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the owning salary structure (FR-3, required).</summary>
     public Guid SalaryStructureId { get; set; }

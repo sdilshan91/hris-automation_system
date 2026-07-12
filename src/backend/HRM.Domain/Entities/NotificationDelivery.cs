@@ -13,7 +13,7 @@ namespace HRM.Domain.Entities;
 /// outside a resolved tenant context (from the notification outbox worker), so <see cref="BaseEntity.TenantId"/>
 /// is set EXPLICITLY on write (mirroring <c>SignalRNotificationService</c>). Maps to "notification_delivery".</para>
 /// </summary>
-public sealed class NotificationDelivery : BaseEntity
+public sealed class NotificationDelivery : BaseEntity, IAuditExempt
 {
     /// <summary>The channel this row tracks (Email / InApp).</summary>
     public NotificationDeliveryChannel Channel { get; set; }

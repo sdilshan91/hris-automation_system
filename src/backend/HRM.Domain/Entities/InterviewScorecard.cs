@@ -13,7 +13,7 @@ namespace HRM.Domain.Entities;
 /// Editable until <see cref="LockedAt"/> (interview time + a configurable lock period, BR-4); after that it
 /// is immutable. <see cref="AverageScore"/> is computed from the criterion ratings on submit/edit (FR-3).
 /// </summary>
-public sealed class InterviewScorecard : BaseEntity
+public sealed class InterviewScorecard : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the evaluated <see cref="Interview"/> (FR-1, required). Plain UUID column.</summary>
     public Guid InterviewId { get; set; }

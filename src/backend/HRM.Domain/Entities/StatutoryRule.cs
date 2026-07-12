@@ -14,7 +14,7 @@ namespace HRM.Domain.Entities;
 /// countries later is non-breaking (the calc engine simply filters by country when a multi-country surface
 /// lands).</para>
 /// </summary>
-public sealed class StatutoryRule : BaseEntity
+public sealed class StatutoryRule : BaseEntity, IAuditExempt
 {
     /// <summary>Statutory type (FR-3, required). Drives whether tax slabs or a social-security rule apply.</summary>
     public StatutoryRuleType RuleType { get; set; }

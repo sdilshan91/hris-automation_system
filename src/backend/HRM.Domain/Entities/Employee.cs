@@ -9,7 +9,7 @@ namespace HRM.Domain.Entities;
 /// US-CHR-002: View and Edit Employee Profile (extended with address, personal email,
 ///   emergency contacts, employment history, concurrency token).
 /// </summary>
-public sealed class Employee : BaseEntity
+public sealed class Employee : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Auto-generated employee number, unique per tenant (FR-2, BR-1).

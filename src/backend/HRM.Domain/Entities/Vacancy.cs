@@ -8,7 +8,7 @@ namespace HRM.Domain.Entities;
 /// (this codebase enforces tenant isolation with EF query filters, not Postgres RLS — see the
 /// module note). Maps to the "vacancy" table.
 /// </summary>
-public sealed class Vacancy : BaseEntity
+public sealed class Vacancy : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Human-readable, tenant+year sequential reference, e.g. "VAC-2026-0001" (§7, §10). Auto-generated

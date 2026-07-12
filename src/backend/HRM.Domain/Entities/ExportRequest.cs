@@ -7,7 +7,7 @@ namespace HRM.Domain.Entities;
 /// then Expired (after the 72h download window). The generated bundle path, manifest, row count and expiry are
 /// recorded on completion so the history/status/download endpoints can read everything from this single row.
 /// </summary>
-public sealed class ExportRequest : BaseEntity
+public sealed class ExportRequest : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// The requested scope: the literal "full" (every exportable entity) OR a comma-separated list of entity

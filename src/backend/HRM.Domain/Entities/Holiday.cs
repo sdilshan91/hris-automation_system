@@ -8,7 +8,7 @@ namespace HRM.Domain.Entities;
 /// and recurring annual generation. Public holidays are excluded from leave
 /// day calculations (AC-2) via the DB-backed <c>IHolidayProvider</c>.
 /// </summary>
-public sealed class Holiday : BaseEntity
+public sealed class Holiday : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Holiday name, e.g. "New Year's Day" (FR-2).

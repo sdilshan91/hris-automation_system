@@ -13,7 +13,7 @@ namespace HRM.Domain.Entities;
 /// it. Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter (NFR-3 RLS
 /// is NOT used — same as the rest of the Attendance module). Maps to "attendance_monthly_summary".
 /// </summary>
-public sealed class AttendanceMonthlySummary : BaseEntity
+public sealed class AttendanceMonthlySummary : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the employee the summary belongs to (§7).</summary>
     public Guid EmployeeId { get; set; }

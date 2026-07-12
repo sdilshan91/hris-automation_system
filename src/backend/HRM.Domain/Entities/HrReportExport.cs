@@ -14,7 +14,7 @@ namespace HRM.Domain.Entities;
 /// <para>NOTE: this is SEPARATE from payroll exports (US-PAY-009) and the US-ADM-010 tenant data export — those
 /// have their own entities. This row covers ONLY the generic reports surface.</para>
 /// </summary>
-public sealed class HrReportExport : BaseEntity
+public sealed class HrReportExport : BaseEntity, IAuditExempt
 {
     /// <summary>The user who initiated the export (drives the FR-10 per-user concurrency limit + ownership check).</summary>
     public Guid RequestedByUserId { get; set; }

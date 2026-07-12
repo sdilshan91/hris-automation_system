@@ -26,7 +26,7 @@ public static class ShiftType
 /// For ROTATING shifts the rotation pattern is stored in <see cref="RotationSteps"/> and the
 /// applicable concrete shift for a given date is computed by the service (FR-7).
 /// </summary>
-public sealed class Shift : BaseEntity
+public sealed class Shift : BaseEntity, IAuditExempt
 {
     /// <summary>Display name, unique per tenant (AC-1, BR-1 — partial unique index excludes soft-deleted).</summary>
     public string Name { get; set; } = string.Empty;

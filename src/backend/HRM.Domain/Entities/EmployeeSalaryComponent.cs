@@ -13,7 +13,7 @@ namespace HRM.Domain.Entities;
 /// (BR-1); a future-dated assignment leaves the current rows untouched until its date arrives (BR-2).
 /// </para>
 /// </summary>
-public sealed class EmployeeSalaryComponent : BaseEntity
+public sealed class EmployeeSalaryComponent : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the employee this compensation row belongs to (FR-1, required).</summary>
     public Guid EmployeeId { get; set; }

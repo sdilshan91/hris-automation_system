@@ -7,7 +7,7 @@ namespace HRM.Domain.Entities;
 /// plans within their effective window (US-TRN-003). Costs are stored as <c>decimal</c> with a currency code
 /// (NFR-3). A plan with enrollments is archivable, not hard-deletable (BR-4) — enforced in US-TRN-003.
 /// </summary>
-public sealed class BenefitPlan : BaseEntity
+public sealed class BenefitPlan : BaseEntity, IAuditExempt
 {
     /// <summary>Plan name (required) (FR-1, AC-1).</summary>
     public string Name { get; set; } = string.Empty;
