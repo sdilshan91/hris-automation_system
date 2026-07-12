@@ -212,6 +212,33 @@ public static class NotificationEventCatalog
         "overtime.date", "overtime.hours",
     ];
 
+    // ── Shared placeholders for the Core-HR events (US-NTF-006 Phase 7, US-CHR-008/009/011). The Real service loads
+    // the subject employee for the name fields; the trigger site supplies the dates / counts / document metadata.
+    // MUST be declared before _byKey: the eager BuildCatalog() at type-init references them, so a later declaration
+    // would leave them null → NRE in the type initializer (Phase 2a lesson). ──
+    private static readonly string[] ProbationEndingPlaceholders =
+    [
+        "employee.firstName", "employee.lastName", "employee.employeeNo",
+        "probation.endDate", "probation.daysRemaining",
+    ];
+
+    private static readonly string[] ManagerReassignmentPlaceholders =
+    [
+        "manager.firstName", "manager.lastName", "manager.newStatus",
+        "reassignment.directReportCount",
+    ];
+
+    private static readonly string[] DocumentExpiryPlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "document.fileName", "document.category", "document.expiryDate", "document.daysUntilExpiry",
+    ];
+
+    private static readonly string[] ScheduledReportPlaceholders =
+    [
+        "report.type", "report.frequency", "report.downloadUrl",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1860,7 +1887,133 @@ public static class NotificationEventCatalog
                 "Reason: {{overtime.reason}}\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.AttendanceAlerts,
             IsMandatory: false);
+
+        // ── US-NTF-006 Phase 7 — Core-HR inline "deferred notify" sites (US-CHR-008 FR-8/BR-4, US-CHR-009 FR-6/BR-6,
+        // US-CHR-011 BR-4). Recipients are resolved in the Real service (the HR pool, or the document-owner employee);
+        // the payload carries the dates / counts / document metadata the trigger site has in scope. None mandatory. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "employee_probation_ending",
+            EventName: "Employee Probation Ending",
+            Placeholders: [.. ProbationEndingPlaceholders, .. TenantPlaceholders],
+            SampleData: ProbationEndingSample(),
+            DefaultSubject: "Probation ending soon for {{employee.firstName}} {{employee.lastName}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> (employee no. " +
+                "{{employee.employeeNo}}) has probation ending on <strong>{{probation.endDate}}</strong> " +
+                "({{probation.daysRemaining}} day(s) remaining).</p>" +
+                "<p>Please confirm the transition to Active or extend the probation.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} (employee no. {{employee.employeeNo}}) has probation " +
+                "ending on {{probation.endDate}} ({{probation.daysRemaining}} day(s) remaining).\n\n" +
+                "Please confirm the transition to Active or extend the probation.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "manager_reassignment_needed",
+            EventName: "Manager Reassignment Needed",
+            Placeholders: [.. ManagerReassignmentPlaceholders, .. TenantPlaceholders],
+            SampleData: ManagerReassignmentSample(),
+            DefaultSubject: "Direct reports need reassignment for {{manager.firstName}} {{manager.lastName}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{manager.firstName}} {{manager.lastName}}</strong> has been " +
+                "<strong>{{manager.newStatus}}</strong> and has {{reassignment.directReportCount}} direct report(s) " +
+                "that need to be reassigned to another manager.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{manager.firstName}} {{manager.lastName}} has been {{manager.newStatus}} and has " +
+                "{{reassignment.directReportCount}} direct report(s) that need to be reassigned to another " +
+                "manager.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "document_expiry_warning",
+            EventName: "Document Expiry Warning",
+            Placeholders: [.. DocumentExpiryPlaceholders, .. TenantPlaceholders],
+            SampleData: DocumentExpirySample(),
+            DefaultSubject: "Your document {{document.fileName}} expires on {{document.expiryDate}}",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Your document <strong>{{document.fileName}}</strong> ({{document.category}}) expires on " +
+                "<strong>{{document.expiryDate}}</strong> ({{document.daysUntilExpiry}} day(s) remaining).</p>" +
+                "<p>Please upload a renewed copy in the HRM portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Your document {{document.fileName}} ({{document.category}}) expires on {{document.expiryDate}} " +
+                "({{document.daysUntilExpiry}} day(s) remaining).\n\n" +
+                "Please upload a renewed copy in the HRM portal.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
+
+        yield return new NotificationEventDefinition(
+            EventKey: "scheduled_report_ready",
+            EventName: "Scheduled Report Ready",
+            Placeholders: [.. ScheduledReportPlaceholders, .. TenantPlaceholders],
+            SampleData: ScheduledReportSample(),
+            DefaultSubject: "Your scheduled {{report.type}} report is ready",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Your scheduled <strong>{{report.type}}</strong> report ({{report.frequency}}) has been " +
+                "generated and is ready to download.</p>" +
+                "<p><a href=\"{{report.downloadUrl}}\">Download your report</a></p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Your scheduled {{report.type}} report ({{report.frequency}}) has been generated and is ready to " +
+                "download.\n\n{{report.downloadUrl}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
     }
+
+    // ── Sample-data for the Core-HR events (US-NTF-006 Phase 7). ──
+    private static Dictionary<string, object?> ProbationEndingSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Jane", ["lastName"] = "Doe", ["employeeNo"] = "EMP-0042",
+        },
+        ["probation"] = new Dictionary<string, object?> { ["endDate"] = "2026-07-08", ["daysRemaining"] = 5 },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> ManagerReassignmentSample() => new()
+    {
+        ["manager"] = new Dictionary<string, object?>
+        {
+            ["firstName"] = "Morgan", ["lastName"] = "Hale", ["newStatus"] = "Terminated",
+        },
+        ["reassignment"] = new Dictionary<string, object?> { ["directReportCount"] = 4 },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> DocumentExpirySample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["document"] = new Dictionary<string, object?>
+        {
+            ["fileName"] = "passport.pdf", ["category"] = "Passport",
+            ["expiryDate"] = "2026-08-01", ["daysUntilExpiry"] = 30,
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> ScheduledReportSample() => new()
+    {
+        ["report"] = new Dictionary<string, object?>
+        {
+            ["type"] = "Attendance Summary", ["frequency"] = "MONTHLY",
+            ["downloadUrl"] = "https://app.example.com/reports/019f2607/download?token=sample",
+        },
+        ["tenant"] = SampleTenant(),
+    };
 
     // ── Sample-data for the attendance-family events (US-NTF-006 Phase 6). ──
     private static Dictionary<string, object?> AttendanceLateSample() => new()

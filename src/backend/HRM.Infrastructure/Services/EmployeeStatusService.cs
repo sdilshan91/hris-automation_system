@@ -21,6 +21,7 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<EmployeeStatusService> _logger;
+    private readonly ICoreHrNotificationService? _notifications;
 
     private const string OperationName = "ChangeEmployeeStatus";
 
@@ -28,12 +29,14 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        ILogger<EmployeeStatusService> logger)
+        ILogger<EmployeeStatusService> logger,
+        ICoreHrNotificationService? notifications = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _logger = logger;
+        _notifications = notifications;
     }
 
     public async Task<Result<ChangeEmployeeStatusResult>> ChangeStatusAsync(
@@ -365,14 +368,12 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
         {
             var daysUntilEnd = (emp.ProbationEndDate - today).Days;
 
-            // TODO(notification): Dispatch an actual HR notification when the Notification module is built.
-            // For now, log the reminder as structured data so it can be picked up by log-based alerts.
-            _logger.LogWarning(
-                "PROBATION_REMINDER: Employee {EmployeeNo} ({FirstName} {LastName}) in tenant {TenantId} " +
-                "has probation ending on {ProbationEndDate} ({DaysRemaining} days remaining). " +
-                "HR should confirm transition to Active or extend probation.",
-                emp.EmployeeNo, emp.FirstName, emp.LastName, emp.TenantId,
-                emp.ProbationEndDate, daysUntilEnd);
+            // US-NTF-006 Phase 7: dispatch the real HR reminder (in-app + email to the tenant's HR pool). This is a
+            // cross-tenant sweep under the system context, so the employee's own TenantId is passed EXPLICITLY. The
+            // dispatch never throws — a delivery failure must not break the sweep.
+            await (_notifications?.NotifyProbationEndingAsync(
+                emp.TenantId, emp.Id, DateOnly.FromDateTime(emp.ProbationEndDate), daysUntilEnd, cancellationToken)
+                ?? Task.CompletedTask);
         }
 
         if (probationEmployees.Count > 0)
@@ -439,9 +440,10 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
     }
 
     /// <summary>
-    /// US-CHR-011 BR-4: When a manager is terminated or suspended, log an HR reminder
-    /// to reassign their direct reports. Does NOT auto-reassign.
-    /// TODO(notification): Dispatch an actual notification when the Notification module is built.
+    /// US-CHR-011 BR-4: When a manager is terminated or suspended, notify the HR pool to reassign their direct
+    /// reports (US-NTF-006 Phase 7 — real in-app + email dispatch). Does NOT auto-reassign. Reached from both the
+    /// request-scoped side-effect path and the system-context future-dated job; the notification service resolves
+    /// the tenant from the manager's own record, so it is correct in either scope and never throws.
     /// </summary>
     private async Task NotifyDirectReportsReassignmentAsync(
         Employee employee,
@@ -454,13 +456,9 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
         if (directReportCount == 0)
             return;
 
-        // TODO(notification): Replace with actual notification dispatch when Notification module is built.
-        _logger.LogWarning(
-            "MANAGER_STATUS_CHANGE_REASSIGNMENT_NEEDED: Manager {EmployeeId} ({FirstName} {LastName}) " +
-            "has been {NewStatus}. They have {DirectReportCount} direct report(s) that need to be reassigned. " +
-            "TenantId={TenantId}.",
-            employee.Id, employee.FirstName, employee.LastName, newStatus,
-            directReportCount, employee.TenantId);
+        await (_notifications?.NotifyManagerReassignmentNeededAsync(
+            employee.Id, newStatus, directReportCount, cancellationToken)
+            ?? Task.CompletedTask);
     }
 
     /// <summary>

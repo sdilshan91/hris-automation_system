@@ -9,9 +9,9 @@ namespace HRM.Api.Jobs;
 /// Hangfire recurring job that checks for documents approaching expiry (US-CHR-008 FR-8, BR-4, AC-5).
 /// Runs daily at 09:00. Scans all tenants for documents expiring within 30/7/1 days.
 ///
-/// DEFERRED: Actual notification dispatch is not implemented because the Notification module
-/// does not exist yet. This job logs and records intent only.
-/// TODO(notification-module): Wire INotificationService.SendDocumentExpiryWarningAsync() when available.
+/// US-NTF-006 Phase 7: for each expiring document it dispatches a real warning (in-app + email) to the
+/// document-owner employee via <see cref="ICoreHrNotificationService"/>. This is a cross-tenant scan under the
+/// system context, so each document's own <c>TenantId</c> is passed EXPLICITLY into the notify call.
 /// </summary>
 public sealed class DocumentExpiryNotificationJob
 {
@@ -36,6 +36,7 @@ public sealed class DocumentExpiryNotificationJob
             scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
 
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var notifications = scope.ServiceProvider.GetRequiredService<ICoreHrNotificationService>();
 
             var today = DateTime.UtcNow.Date;
             var thresholds = new[] { 30, 7, 1 };
@@ -71,17 +72,11 @@ public sealed class DocumentExpiryNotificationJob
 
                     foreach (var doc in expiringDocs)
                     {
-                        // TODO(notification-module): Replace this log with actual notification dispatch:
-                        //   await notificationService.SendDocumentExpiryWarningAsync(
-                        //       doc.TenantId, doc.EmployeeId, doc.Id, doc.FileName, doc.ExpiryDate, days);
-                        Log.Information(
-                            "DocumentExpiryNotificationJob: NOTIFICATION INTENT - " +
-                            "DocumentId={DocumentId}, FileName={FileName}, Category={Category}, " +
-                            "ExpiryDate={ExpiryDate}, DaysUntilExpiry={Days}, " +
-                            "TenantId={TenantId}, EmployeeId={EmployeeId}",
-                            doc.Id, doc.FileName, doc.Category,
-                            doc.ExpiryDate, days,
-                            doc.TenantId, doc.EmployeeId);
+                        // US-NTF-006 Phase 7: dispatch the real expiry warning to the document-owner employee. Cross-
+                        // tenant scan → pass the document's own TenantId explicitly. The notify call never throws.
+                        await notifications.NotifyDocumentExpiryAsync(
+                            doc.TenantId, doc.EmployeeId, doc.FileName, doc.Category.ToString(),
+                            DateOnly.FromDateTime(doc.ExpiryDate!.Value), days);
                     }
                 }
             }

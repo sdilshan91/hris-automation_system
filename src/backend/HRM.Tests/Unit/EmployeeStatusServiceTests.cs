@@ -28,6 +28,7 @@ public sealed class EmployeeStatusServiceTests : IDisposable
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<EmployeeStatusService> _logger;
+    private readonly ICoreHrNotificationService _coreHrNotifications;
 
     public EmployeeStatusServiceTests()
     {
@@ -44,12 +45,16 @@ public sealed class EmployeeStatusServiceTests : IDisposable
         _currentUser.Permissions.Returns(new List<string> { "Employee.ChangeStatus", "Employee.Edit" });
 
         _logger = Substitute.For<ILogger<EmployeeStatusService>>();
+
+        // US-NTF-006 Phase 7: the probation reminder + manager-reassignment side effects now dispatch through this
+        // collaborator instead of logging. A substitute lets the probation tests assert on the real dispatch.
+        _coreHrNotifications = Substitute.For<ICoreHrNotificationService>();
     }
 
     private EmployeeStatusService CreateService()
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
-        return new EmployeeStatusService(dbContext, _tenantContext, _currentUser, _logger);
+        return new EmployeeStatusService(dbContext, _tenantContext, _currentUser, _logger, _coreHrNotifications);
     }
 
     private AppDbContext CreateDbContext()
@@ -844,26 +849,23 @@ public sealed class EmployeeStatusServiceTests : IDisposable
     // ── Probation Reminder Tests ─────────────────────────────────
 
     [Fact]
-    public async Task CheckProbationEndDates_LogsReminderForApproachingEndDate()
+    public async Task CheckProbationEndDates_DispatchesReminderForApproachingEndDate()
     {
         // Employee on probation, joining date set so probation ends in 5 days
         var joiningDate = DateTime.UtcNow.Date.AddDays(-85); // 90 - 85 = 5 days until end
-        await SeedEmployee(EmployeeStatus.Probation, dateOfJoining: joiningDate);
+        var empId = await SeedEmployee(EmployeeStatus.Probation, dateOfJoining: joiningDate);
 
         var service = CreateService();
         await service.CheckProbationEndDatesAsync();
 
-        // Verify the logger was called with PROBATION_REMINDER
-        _logger.Received().Log(
-            LogLevel.Warning,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(v => v.ToString()!.Contains("PROBATION_REMINDER")),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
+        // US-NTF-006 Phase 7: the reminder is now a real HR-pool notification dispatch (not a log line), carrying
+        // the employee's own tenant id (cross-tenant sweep), the employee id, and 5 days remaining.
+        await _coreHrNotifications.Received(1).NotifyProbationEndingAsync(
+            _tenantId, empId, Arg.Any<DateOnly>(), 5, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CheckProbationEndDates_DoesNotLogForDistantEndDate()
+    public async Task CheckProbationEndDates_DoesNotDispatchForDistantEndDate()
     {
         // Employee on probation, joining date set so probation ends in 30 days
         var joiningDate = DateTime.UtcNow.Date.AddDays(-60); // 90 - 60 = 30 days until end
@@ -872,13 +874,9 @@ public sealed class EmployeeStatusServiceTests : IDisposable
         var service = CreateService();
         await service.CheckProbationEndDatesAsync();
 
-        // Should NOT log a PROBATION_REMINDER warning
-        _logger.DidNotReceive().Log(
-            LogLevel.Warning,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(v => v.ToString()!.Contains("PROBATION_REMINDER")),
-            Arg.Any<Exception?>(),
-            Arg.Any<Func<object, Exception?, string>>());
+        // Should NOT dispatch a probation-ending notification (outside the 7-day reminder window).
+        await _coreHrNotifications.DidNotReceive().NotifyProbationEndingAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     // ── Tenant Isolation Tests ───────────────────────────────────

@@ -7,9 +7,8 @@ namespace HRM.Domain.Entities;
 /// Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter (NFR-4 RLS is NOT
 /// used — same deferral as the rest of the Attendance module). Maps to "scheduled_report_config".
 ///
-/// EMAIL DELIVERY DEFERRED (US-NTF): there is no notification/email infrastructure in this codebase.
-/// The Hangfire recurring job (<c>ScheduledReportJob</c>) finds due configs and GENERATES the report,
-/// but the actual send is logged/no-op (TODO US-NTF). The entity + CRUD + job are the deliverable here.
+/// US-NTF-006 Phase 7: the Hangfire recurring job (<c>ScheduledReportJob</c>) finds due configs, GENERATES the
+/// report, and emails each recipient user a <c>scheduled_report_ready</c> notification with the download locator.
 /// </summary>
 public sealed class ScheduledReportConfig : BaseEntity
 {
@@ -22,7 +21,7 @@ public sealed class ScheduledReportConfig : BaseEntity
     /// <summary>Saved filter configuration serialized as JSON (jsonb, §7). Empty object when no filters.</summary>
     public string FiltersJson { get; set; } = "{}";
 
-    /// <summary>Recipient user IDs (uuid[], §7). Email delivery is deferred (US-NTF).</summary>
+    /// <summary>Recipient user IDs (uuid[], §7). Emailed a scheduled_report_ready notification (US-NTF-006 Phase 7).</summary>
     public List<Guid> Recipients { get; set; } = new();
 
     /// <summary>Time of day to send, wall-clock "HH:mm" (treated as UTC — no tenant-timezone infra, §7/BR-6).</summary>

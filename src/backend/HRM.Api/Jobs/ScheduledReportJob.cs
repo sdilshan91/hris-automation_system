@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Attendance.DTOs;
 using HRM.Domain.Entities;
@@ -15,9 +16,9 @@ namespace HRM.Api.Jobs;
 /// time, not yet run for this period), generates the report file (via <see cref="IAttendanceDashboardService"/>),
 /// stores it through <see cref="IReportExportStorage"/>, and stamps <c>LastRunAt</c>.
 ///
-/// EMAIL DELIVERY DEFERRED (US-NTF): there is no notification/email infrastructure in this codebase. The
-/// actual send to the configured recipients is LOGGED (no-op) here — the generation half is real, the
-/// send half is a TODO. The job NEVER fails over the missing email infra.
+/// US-NTF-006 Phase 7: once a report is generated, each configured recipient user (<c>config.Recipients</c> is a
+/// list of user IDs) is emailed a <c>scheduled_report_ready</c> notification (carrying the download locator) via
+/// <see cref="INotificationDispatcher"/>. Per-recipient sends are guarded so a delivery failure never fails the job.
 ///
 /// TENANT TIMEZONE: due-time is evaluated in UTC (no tenant-timezone infra — same deferral as the other
 /// attendance jobs, BR-6 not satisfied via tz). Idempotent and tenant-safe; mirrors MonthlySummaryDailyJob.
@@ -70,6 +71,7 @@ public sealed class ScheduledReportJob
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var dashboard = scope.ServiceProvider.GetRequiredService<IAttendanceDashboardService>();
         var storage = scope.ServiceProvider.GetRequiredService<IReportExportStorage>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<INotificationDispatcher>();
 
         // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context (and,
         // gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
@@ -93,13 +95,55 @@ public sealed class ScheduledReportJob
             config.LastRunAt = now;
             await dbContext.SaveChangesAsync();
 
-            // EMAIL DELIVERY DEFERRED (US-NTF): log the send instead of emailing the recipients.
+            // US-NTF-006 Phase 7: email each configured recipient user a scheduled_report_ready notification carrying
+            // the download locator. Runs inside runner.RunForTenantAsync so the tenant context is set. Per-recipient
+            // sends are guarded so a delivery failure never fails the job.
+            var sent = await DispatchReportReadyAsync(dispatcher, tenantId, config, locator);
             Log.Information(
                 "ScheduledReportJob: generated report {Id} ({Type}/{Frequency}) for tenant {TenantId} -> {Locator}. " +
-                "Email delivery to {RecipientCount} recipient(s) is DEFERRED (US-NTF).",
-                config.Id, config.ReportType, config.Frequency, tenantId, locator, config.Recipients.Count);
+                "Emailed {SentCount}/{RecipientCount} recipient(s).",
+                config.Id, config.ReportType, config.Frequency, tenantId, locator, sent, config.Recipients.Count);
         }
         });
+    }
+
+    /// <summary>
+    /// Sends a <c>scheduled_report_ready</c> email to each recipient user of the config (US-NTF-006 Phase 7). Each
+    /// send is individually guarded so one bad recipient never aborts the run. Returns the count delivered.
+    /// </summary>
+    private static async Task<int> DispatchReportReadyAsync(
+        INotificationDispatcher dispatcher, Guid tenantId, ScheduledReportConfig config, string locator)
+    {
+        var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["report"] = new Dictionary<string, object?>
+            {
+                ["type"] = config.ReportType,
+                ["frequency"] = config.Frequency,
+                ["downloadUrl"] = locator,
+            },
+        });
+
+        var sent = 0;
+        foreach (var recipientUserId in config.Recipients.Distinct())
+        {
+            try
+            {
+                var request = new NotificationRequest(
+                    TenantId: tenantId, EventKey: "scheduled_report_ready", PayloadJson: payloadJson,
+                    RecipientUserId: recipientUserId, NotificationType: "scheduled_report_ready");
+                await dispatcher.SendEmailAsync(request, CancellationToken.None);
+                sent++;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex,
+                    "ScheduledReportJob: failed to email scheduled_report_ready for config {Id} to user {UserId}.",
+                    config.Id, recipientUserId);
+            }
+        }
+
+        return sent;
     }
 
     /// <summary>

@@ -199,6 +199,11 @@ public static class DependencyInjection
         // impl supersedes it in the app composition.
         services.AddScoped<IAttendanceNotificationService, RealAttendanceNotificationService>();
 
+        // US-NTF-006 Phase 7: real in-app + email delivery for the Core-HR "deferred notify" sites
+        // (probation-ending / manager-reassignment / document-expiry). LogOnlyCoreHrNotificationService is kept as a
+        // sibling (tests may register it); this Real impl supersedes it in the app composition.
+        services.AddScoped<ICoreHrNotificationService, RealCoreHrNotificationService>();
+
         // Attendance clock-in service (US-ATT-001)
         services.AddScoped<IAttendanceService, AttendanceService>();
 

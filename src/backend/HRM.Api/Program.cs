@@ -682,7 +682,8 @@ try
 
         // US-ATT-010 FR-8: scheduled attendance-report generation. Runs hourly so configs with various
         // delivery times are picked up close to their scheduled hour; the job itself de-dupes per period
-        // (DAILY/WEEKLY/MONTHLY) via LastRunAt. Email delivery is DEFERRED (US-NTF) — generation only.
+        // (DAILY/WEEKLY/MONTHLY) via LastRunAt. US-NTF-006 Phase 7: recipients are emailed a scheduled_report_ready
+        // notification with the download locator once generated.
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.ScheduledReportJob>(
             "attendance-scheduled-reports",
             job => job.RunAsync(),

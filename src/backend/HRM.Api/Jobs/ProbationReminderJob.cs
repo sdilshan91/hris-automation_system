@@ -4,10 +4,9 @@ using Serilog;
 namespace HRM.Api.Jobs;
 
 /// <summary>
-/// Daily Hangfire job that checks for employees whose probation period ends within 7 days
-/// and logs HR reminders (US-CHR-009 FR-6, AC-4, BR-6).
-/// TODO(notification): When the Notification module is built, dispatch actual notifications
-/// instead of just logging.
+/// Daily Hangfire job that checks for employees whose probation period ends within 7 days and dispatches HR
+/// reminders (US-CHR-009 FR-6, AC-4, BR-6). US-NTF-006 Phase 7: the reminder is now a real in-app + email
+/// notification to the tenant's HR pool (via <c>ICoreHrNotificationService</c>), not just a log line.
 /// </summary>
 public sealed class ProbationReminderJob
 {
