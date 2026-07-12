@@ -29,7 +29,10 @@ using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace HRM.Tests.Integration;
@@ -77,6 +80,13 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     }
 
     private IMediator BuildPipeline(Guid tenantId, Guid userId, decimal entitlementDays, params string[] permissions)
+        => BuildPipeline(tenantId, userId, entitlementDays, sharedCache: null, permissions);
+
+    // Overload injecting a SHARED IDistributedCache so the cross-scope cache-key isolation (ISSUE-195 /
+    // IsScopedReport, the anti-leak control) can be exercised — a manager and an HR caller with identical
+    // filters must NEVER share a cached aggregate (BUG-116 class).
+    private IMediator BuildPipeline(
+        Guid tenantId, Guid userId, decimal entitlementDays, IDistributedCache? sharedCache, string[] permissions)
     {
         var tenantContext = new MutableTenantContext { TenantId = tenantId };
         var currentUser = Substitute.For<ICurrentUser>();
@@ -118,6 +128,8 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
         services.AddSingleton(entitlement);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
+        if (sharedCache is not null)
+            services.AddSingleton(sharedCache); // exercises HrReportService._cache (the scoped cache-key path)
         services.AddScoped<ILeaveReportService, LeaveReportService>();
         services.AddScoped<IHrReportService, HrReportService>();
         services.AddMediatR(cfg =>
@@ -375,6 +387,105 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
         seen.Should().NotContain("B-BEN");
         // Late total = Ann 3 + Art 1 = 4 (Carol's 5 excluded by scope).
         report.Metadata.Summary.Single(s => s.Label == "Total Late Arrivals").Value.Should().Be(4);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ISSUE-195 — the US-RPT-001 HR-employee report builders (headcount / turnover / demographics /
+    //  joiners-leavers / department-distribution / employment-type-breakdown) must apply the SAME BR-2 role
+    //  scope the leave/attendance reports already do: a Manager sees ONLY their direct reports (+ self) and
+    //  the emitted Scope reads "Manager"; HR (holding an .View.All permission) sees the whole tenant as "All".
+    //  Before the fix these builders always aggregated the entire workforce and emitted no scope.
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── ISSUE-195: headcount — manager sees only direct reports (Ann + Art), Scope='Manager' ────
+    [Fact]
+    public async Task Headcount_ManagerScope_CountsOnlyDirectReportsAndSelf()
+    {
+        // Ann (manager) holds Reports.View + Employee.View.Team (NO .View.All) -> Manager scope.
+        var mediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewTeam);
+
+        var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+
+        result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        // Manager scope: Ann (self) + Art (direct report) = 2. Carol (other line) and Ben (Tenant B) excluded.
+        report.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(2);
+        report.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("Manager");
+    }
+
+    // ── ISSUE-195: headcount — HR (View.All) sees the whole tenant (3), Scope='All' ─────────────
+    [Fact]
+    public async Task Headcount_HrScope_CountsWholeTenant_AsAll()
+    {
+        // HR holds Employee.View.All -> All scope (whole tenant).
+        var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewAll);
+
+        var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+
+        result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        // All scope: Ann + Art + Carol = 3 (Tenant B's Ben still excluded by the tenant filter).
+        report.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(3);
+        report.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("All");
+    }
+
+    // ── ISSUE-195: department-distribution — second builder, manager scoped to their team ───────
+    [Fact]
+    public async Task DepartmentDistribution_ManagerScope_ShowsOnlyManagersDepartment()
+    {
+        var managerMediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewTeam);
+        var hrMediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewAll);
+
+        var managerResult = await managerMediator.Send(new GenerateHrReportQuery("department-distribution", JuneWindow()));
+        var hrResult = await hrMediator.Send(new GenerateHrReportQuery("department-distribution", JuneWindow()));
+
+        managerResult.IsSuccess.Should().BeTrue();
+        hrResult.IsSuccess.Should().BeTrue();
+
+        // Manager: only Ann + Art (both Engineering) = 2 active, Engineering only.
+        var manager = managerResult.Value!;
+        manager.Metadata.Summary.Single(s => s.Label == "Total Active Headcount").Value.Should().Be(2);
+        manager.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("Manager");
+        manager.Table.Rows.Should().OnlyContain(r => (string?)r[0] == "Engineering");
+
+        // HR: whole tenant — Engineering (Ann+Art) + Sales (Carol) = 3 active across both departments.
+        var hr = hrResult.Value!;
+        hr.Metadata.Summary.Single(s => s.Label == "Total Active Headcount").Value.Should().Be(3);
+        hr.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("All");
+        hr.Table.Rows.Select(r => (string?)r[0]).Should().Contain(new[] { "Engineering", "Sales" });
+    }
+
+    // ── ISSUE-195: cache-key folds the caller's scope — a Manager must NOT be served HR's cached
+    //    full-tenant aggregate (guards IsScopedReport; a cross-scope cache leak is the BUG-116 class) ──
+    [Fact]
+    public async Task HrReport_CacheKey_FoldsScope_ManagerNotServedHrsCachedAllAggregate()
+    {
+        // ONE shared cache across both callers. Same tenant, same report, same filters — the ONLY thing that
+        // may keep their answers apart is the scope segment folded into the cache key by IsScopedReport.
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+
+        // HR runs first and CACHES the full-tenant headcount (3, Scope='All').
+        var hr = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m, cache,
+            new[] { PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewAll });
+        var hrResult = await hr.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+        hrResult.IsSuccess.Should().BeTrue();
+        hrResult.Value!.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(3);
+
+        // The Manager requests the SAME report+filters on the SAME cache. If the key did not fold scope it would
+        // hit HR's cached {3, All}; instead it must compute its OWN scoped {2, Manager}.
+        var mgr = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m, cache,
+            new[] { PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewTeam });
+        var mgrResult = await mgr.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+
+        mgrResult.IsSuccess.Should().BeTrue();
+        var mgrReport = mgrResult.Value!;
+        mgrReport.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value
+            .Should().Be(2, "the manager must get its own team-scoped count, NOT HR's cached full-tenant aggregate");
+        mgrReport.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("Manager");
     }
 
     // ── AC-1: leave-utilization reuses the US-LV-012 utilization aggregation ─────────────────────

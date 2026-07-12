@@ -4353,7 +4353,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-195
 - **Type:** ISSUE (spec-vs-impl gap; not a leak — stays within tenant)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** **RESOLVED (PR #271, merged 2026-07-12).** The 6 HR-employee report builders in `HrReportService` (headcount/turnover/demographics/joiners-leavers/department-distribution/employment-type-breakdown) now route their base Employee population through the EXISTING shared `ResolveScopeAsync`→`ApplyScopeToEmployees` resolver — the same one the leave/attendance reports in the catalog already use (no new resolver, no new permission invented): a manager (holds the report perm, has direct reports, lacks `.View.All`) aggregates only their direct-reports+self and emits `Scope='Manager'`; HR/Admin gets the full tenant + `Scope='All'`. All 6 were added to `IsScopedReport` so the report cache key folds the caller's scope (closes a cross-scope cache leak, BUG-116 class). Backward-safe (null current-user / all-scope → unchanged query). Tests: manager-vs-HR scope on headcount + department-distribution (mutation-resistant subset assertions) **plus a cache-key isolation test** (shared `MemoryDistributedCache`: a manager is not served HR's cached full-tenant aggregate). Verified BE 3635/3635; integration-enforcer WIRED (all 6 scoped + in `IsScopedReport`), test-authenticator AUTHENTIC. **Follow-up parked (needs-decision):** whether `Reports.*` gets its own `Reports.View.Team`/`.All` permissions vs continuing to borrow the module `.View.All` perms (current behavior, consistent with leave/attendance reports).
 - **Layer:** BE
 - **Module / US / TC:** Reports & Analytics / US-RPT-001 / TC-RPT-001-08
 - **Title:** No `Reports.View.Team` permission exists; the Manager role holds `Reports.View` and the report returns full-tenant aggregates (34), not just the manager's direct reports
@@ -5318,7 +5318,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-120
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** **RESOLVED — duplicate of ISSUE-018, already fixed on base via #147 (verified 2026-07-12 during P2-2).** `EmployeesController.GetDirectory` (`:157`) is already `[RequirePermission("Employee.View.Own","Employee.View.Team","Employee.View.All")]` with a `ResolveVisibility` row-scoping handler, and is fully covered by `EmployeeDirectoryAuthorizationTests.cs` (6 tests, incl. View.Team→200 / View.All→200 / unrelated-perm→403, resolved from the live attribute via reflection so they can't drift). No further dev work; closed as a stale/duplicate finding.
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-002 / TC-CHR-139 (manager directory scope), TC-CHR-121/210 dir-render arms
 - **Title:** `EmployeesController.GetDirectory` (`EmployeesController.cs:151-152`) is annotated `[RequirePermission("Employee.View.Own")]`. Because permissions are **not hierarchical** in this system, a higher-tier permission does NOT imply `View.Own`. Result: the **Employee** role (which holds `Employee.View.Own`) gets **200**, but **Manager** (`Employee.View.Team`), **HR Officer** and **Tenant Admin** (`Employee.View.All`) all get **403**. TC-CHR-139 explicitly requires a Manager to receive 200 with the tenant employees; instead the manager is denied. The whole directory feature is thus available only to the lowest-privilege role plus the platform super-admin.
