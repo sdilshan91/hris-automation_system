@@ -175,9 +175,9 @@ describe('MyReviewComponent', () => {
       fillGoal(0, 3, ''); // partial — would never pass submit
       component.saveDraft();
       expect(serviceSpy.saveDraft).toHaveBeenCalledTimes(1);
-      const [, request] = serviceSpy.saveDraft.calls.mostRecent().args;
-      expect(request.goals[0].goalId).toBe('g-1');
-      expect(request.goals[0].selfRating).toBe(3);
+      const [request] = serviceSpy.saveDraft.calls.mostRecent().args;
+      expect(request.items[0].goalId).toBe('g-1');
+      expect(request.items[0].selfRating).toBe(3);
     });
   });
 

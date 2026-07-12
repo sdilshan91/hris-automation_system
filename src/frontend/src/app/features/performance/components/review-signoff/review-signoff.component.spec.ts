@@ -95,7 +95,7 @@ describe('ReviewSignoffComponent (manager side)', () => {
     component.notesHtml.set('<p>Edited notes</p>');
     component.saveNotes();
 
-    expect(serviceSpy.saveNotes).toHaveBeenCalledWith('rv-1', {
+    expect(serviceSpy.saveNotes).toHaveBeenCalledWith('e-1', {
       meetingNotesHtml: '<p>Edited notes</p>',
     });
     expect(toastrSpy.success).toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('ReviewSignoffComponent (manager side)', () => {
     component.notesHtml.set('<p>Final notes</p>');
     component.requestSignoff();
 
-    expect(serviceSpy.requestSignoff).toHaveBeenCalledWith('rv-1', {
+    expect(serviceSpy.requestSignoff).toHaveBeenCalledWith('e-1', {
       meetingNotesHtml: '<p>Final notes</p>',
     });
     expect(component.record()?.status).toBe('PendingEmployeeSignOff');
@@ -144,7 +144,7 @@ describe('ReviewSignoffComponent (manager side)', () => {
     ).toBeTruthy();
 
     component.resolve('Amend');
-    expect(serviceSpy.resolveDispute).toHaveBeenCalledWith('rv-1', {
+    expect(serviceSpy.resolveDispute).toHaveBeenCalledWith('e-1', {
       resolution: 'Amend',
     });
     expect(component.record()?.status).toBe('NotesDraft');

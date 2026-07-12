@@ -32,6 +32,17 @@ public interface IGoalService
     Task<Result> DeleteAsync(Guid goalId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Bulk full-replace of an employee's goals for a cycle (BUG-243). The incoming list is the complete
+    /// desired set: items with an Id are updated, items without are created as Draft, and any existing goal
+    /// absent from the set is soft-deleted — all in a single atomic SaveChanges. Reuses the same authz (BR-4),
+    /// goal-setting-window gate (BR-1/AC-5), ≤10-count (BR-2) and ≤100% total-weight (FR-3) rules as
+    /// <see cref="CreateAsync"/>. Emits per-change Goal.Created/Updated/Deleted audit rows (FR-6) and one
+    /// aggregate notification (FR-7). Returns the resulting goal set with the rolled-up weight total.
+    /// </summary>
+    Task<Result<EmployeeGoalsDto>> SaveGoalsAsync(
+        Guid employeeId, Guid cycleId, IReadOnlyList<SaveGoalItem> goals, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all goals for an employee within a cycle plus the rolled-up weight total (AC-2/AC-3).
     /// Caller must be the direct manager (SetGoal.Team / View.Team) or hold SetGoal.All / View.All.
     /// </summary>

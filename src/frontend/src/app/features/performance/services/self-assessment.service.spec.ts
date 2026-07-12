@@ -17,6 +17,7 @@ describe('SelfAssessmentService', () => {
   let service: SelfAssessmentService;
   let httpMock: HttpTestingController;
   const baseUrl = `${environment.apiBaseUrl}/tenant/performance/self-assessments`;
+  const activeCycleUrl = `${environment.apiBaseUrl}/tenant/performance/cycles/active`;
 
   const mockAssessment: ISelfAssessment = {
     id: 'sa-1',
@@ -70,11 +71,12 @@ describe('SelfAssessmentService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('getActive GETs the active self-assessment (bare payload, withCredentials)', () => {
+  it('getActive resolves the active cycle then GETs the caller record', () => {
     let result: ISelfAssessment | undefined;
     service.getActive().subscribe((a) => (result = a));
 
-    const req = httpMock.expectOne(`${baseUrl}/active`);
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/me`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockAssessment);
@@ -82,21 +84,22 @@ describe('SelfAssessmentService', () => {
     expect(result).toEqual(mockAssessment);
   });
 
-  it('saveDraft PUTs the goal inputs to the draft endpoint', () => {
+  it('saveDraft PUTs the cycleId + items to the draft endpoint', () => {
     const request: ISaveSelfAssessmentRequest = {
-      goals: [
+      cycleId: 'cyc-1',
+      items: [
         {
           goalId: 'g-1',
           selfRating: 4,
-          achievementPercent: 80,
+          achievementPercentage: 80,
           comment: 'A sufficiently long self-assessment comment.',
         },
       ],
     };
     let result: ISelfAssessment | undefined;
-    service.saveDraft('sa-1', request).subscribe((a) => (result = a));
+    service.saveDraft(request).subscribe((a) => (result = a));
 
-    const req = httpMock.expectOne(`${baseUrl}/sa-1/draft`);
+    const req = httpMock.expectOne(`${baseUrl}/draft`);
     expect(req.request.method).toBe('PUT');
     expect(req.request.body).toEqual(request);
     req.flush(mockAssessment);
@@ -104,8 +107,8 @@ describe('SelfAssessmentService', () => {
     expect(result).toEqual(mockAssessment);
   });
 
-  it('submit POSTs the goal inputs to the submit endpoint', () => {
-    const request: ISaveSelfAssessmentRequest = { goals: [] };
+  it('submit POSTs the cycleId + items to the submit endpoint', () => {
+    const request: ISaveSelfAssessmentRequest = { cycleId: 'cyc-1', items: [] };
     const submitted: ISelfAssessment = {
       ...mockAssessment,
       status: 'Submitted',
@@ -113,21 +116,21 @@ describe('SelfAssessmentService', () => {
       weightedScore: 80,
     };
     let result: ISelfAssessment | undefined;
-    service.submit('sa-1', request).subscribe((a) => (result = a));
+    service.submit(request).subscribe((a) => (result = a));
 
-    const req = httpMock.expectOne(`${baseUrl}/sa-1/submit`);
+    const req = httpMock.expectOne(`${baseUrl}/submit`);
     expect(req.request.method).toBe('POST');
     req.flush(submitted);
 
     expect(result?.status).toBe('Submitted');
   });
 
-  it('uploadAttachment POSTs multipart and emits progress then done', () => {
+  it('uploadAttachment POSTs multipart to the cycle/goal route and emits progress then done', () => {
     const file = new File(['x'], 'evidence.pdf', { type: 'application/pdf' });
     const events: string[] = [];
     let received: IAssessmentAttachment | undefined;
 
-    service.uploadAttachment('sa-1', 'g-1', file).subscribe((e) => {
+    service.uploadAttachment('cyc-1', 'g-1', file).subscribe((e) => {
       events.push(e.type);
       if (e.type === 'done') {
         received = e.attachment;
@@ -135,7 +138,7 @@ describe('SelfAssessmentService', () => {
     });
 
     const req = httpMock.expectOne(
-      `${baseUrl}/sa-1/goals/g-1/attachments`,
+      `${baseUrl}/cycles/cyc-1/goals/g-1/attachments`,
     );
     expect(req.request.method).toBe('POST');
     expect(req.request.body instanceof FormData).toBeTrue();

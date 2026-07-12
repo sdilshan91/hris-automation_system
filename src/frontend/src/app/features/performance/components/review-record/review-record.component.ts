@@ -221,7 +221,7 @@ export class ReviewRecordComponent {
       return;
     }
     this.exporting.set(true);
-    this.service.exportPdf(this.record().reviewId).subscribe({
+    this.service.exportPdf(this.record().employeeId).subscribe({
       next: (resp) => {
         this.exporting.set(false);
         this.triggerDownload(resp);

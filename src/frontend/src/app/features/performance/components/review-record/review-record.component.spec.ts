@@ -123,7 +123,7 @@ describe('ReviewRecordComponent', () => {
 
     component.exportPdf();
 
-    expect(serviceSpy.exportPdf).toHaveBeenCalledWith('rv-1');
+    expect(serviceSpy.exportPdf).toHaveBeenCalledWith('e-1');
     expect(anchor.download).toBe('review-rv-1.pdf');
     expect(anchor.click).toHaveBeenCalled();
     expect(revoke).toHaveBeenCalledWith('blob:url');

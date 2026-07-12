@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IDisputeRequest,
@@ -21,6 +22,13 @@ import {
  * user + tenant from the session and enforces `Performance.Review.Team`/`.All` +
  * review ownership + RLS (NFR-2); sign-off records are immutable (NFR-3).
  *
+ * BUG-243: reconciled to the real ReviewSignoffController routes, all keyed by
+ * `reviews/cycles/{cycleId}/employees/{employeeId}/…`. Each method takes the
+ * `employeeId` (the manager workspace holds it) and resolves the active cycleId INSIDE
+ * this service via `GET .../cycles/active` + `switchMap`. The notes body is mapped to
+ * the backend `SaveMeetingNotesRequest.Body` field and dispute-resolution to
+ * `ResolveDisputeRequest.{Amend,Comments}` here, so the components stay unchanged.
+ *
  * Envelope: the global ApiResponse unwrap interceptor (US-PLT-001) strips the
  * `{ data }` wrapper, so these methods consume BARE payloads. Enums arrive as
  * PascalCase STRINGS (US-PLT-003) — see review-signoff.models.ts.
@@ -28,26 +36,32 @@ import {
 @Injectable({ providedIn: 'root' })
 export class ReviewSignoffService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/sign-off`;
-  // BUG-243: CANNOT FIX FE-ONLY. ReviewSignoffController keys every route by
-  // cycleId + employeeId, whereas this service + its components are keyed by a single
-  // reviewId (route/query param) with no cycleId or employeeId in scope. The correct
-  // BE routes (all under reviews/cycles/{cycleId}/employees/{employeeId}/…) are:
-  //   getSignoff()      -> GET  …/notes
-  //   saveNotes()       -> PUT  …/notes
-  //   requestSignoff()  -> POST …/request-signoff   (FE currently posts …/request)
-  //   acknowledge()     -> POST …/acknowledge
-  //   dispute()         -> POST …/dispute
-  //   resolveDispute()  -> POST …/resolve-dispute   (FE currently posts …/resolve)
-  //   exportPdf()       -> GET  …/export
-  // Reconciling needs the reviewId->{cycleId,employeeId} mapping surfaced FE-side (a
-  // BE resolver or a FE re-model keyed by cycle+employee). See COMPLETION-PLAN Theme F/K.
+  private readonly perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+  private readonly reviewsBase = `${this.perfBase}/reviews`;
 
-  /** Load the full sign-off record for a review (drives every US-PRF-006 screen). */
-  getSignoff(reviewId: string): Observable<IReviewSignoff> {
-    return this.http.get<IReviewSignoff>(
-      `${this.baseUrl}/reviews/${reviewId}`,
-      { withCredentials: true },
+  /** Resolve the active cycle's id (CyclesController.GetActive admits Review.Team/Self). */
+  private activeCycleId(): Observable<string> {
+    return this.http
+      .get<{ id: string }>(`${this.perfBase}/cycles/active`, {
+        withCredentials: true,
+      })
+      .pipe(map((c) => c.id));
+  }
+
+  /** Base path for an employee's sign-off record in the active cycle. */
+  private notesBase(cycleId: string, employeeId: string): string {
+    return `${this.reviewsBase}/cycles/${cycleId}/employees/${employeeId}`;
+  }
+
+  /** Load the full sign-off record for an employee (drives every US-PRF-006 screen). */
+  getSignoff(employeeId: string): Observable<IReviewSignoff> {
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get<IReviewSignoff>(
+          `${this.notesBase(cycleId, employeeId)}/notes`,
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
@@ -56,13 +70,17 @@ export class ReviewSignoffService {
    * Returns the persisted record. Status is unchanged.
    */
   saveNotes(
-    reviewId: string,
+    employeeId: string,
     request: ISaveMeetingNotesRequest,
   ): Observable<IReviewSignoff> {
-    return this.http.put<IReviewSignoff>(
-      `${this.baseUrl}/reviews/${reviewId}/notes`,
-      request,
-      { withCredentials: true },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.put<IReviewSignoff>(
+          `${this.notesBase(cycleId, employeeId)}/notes`,
+          { body: request.meetingNotesHtml },
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
@@ -71,13 +89,17 @@ export class ReviewSignoffService {
    * PendingEmployeeSignOff, notify the employee. Returns the updated record.
    */
   requestSignoff(
-    reviewId: string,
+    employeeId: string,
     request: ISaveMeetingNotesRequest,
   ): Observable<IReviewSignoff> {
-    return this.http.post<IReviewSignoff>(
-      `${this.baseUrl}/reviews/${reviewId}/request`,
-      request,
-      { withCredentials: true },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.post<IReviewSignoff>(
+          `${this.notesBase(cycleId, employeeId)}/request-signoff`,
+          { body: request.meetingNotesHtml },
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
@@ -85,11 +107,15 @@ export class ReviewSignoffService {
    * AC-3: employee acknowledges & signs. The server records the signature
    * (name+timestamp+IP) and flips status to SignedOff. No body.
    */
-  acknowledge(reviewId: string): Observable<IReviewSignoff> {
-    return this.http.post<IReviewSignoff>(
-      `${this.baseUrl}/reviews/${reviewId}/acknowledge`,
-      {},
-      { withCredentials: true },
+  acknowledge(employeeId: string): Observable<IReviewSignoff> {
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.post<IReviewSignoff>(
+          `${this.notesBase(cycleId, employeeId)}/acknowledge`,
+          {},
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
@@ -98,25 +124,33 @@ export class ReviewSignoffService {
    * dispute, flips status to Disputed, notifies the manager + HR (FR-5).
    */
   dispute(
-    reviewId: string,
+    employeeId: string,
     request: IDisputeRequest,
   ): Observable<IReviewSignoff> {
-    return this.http.post<IReviewSignoff>(
-      `${this.baseUrl}/reviews/${reviewId}/dispute`,
-      request,
-      { withCredentials: true },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.post<IReviewSignoff>(
+          `${this.notesBase(cycleId, employeeId)}/dispute`,
+          { comments: request.comments },
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
   /** BR-4: HR resolves a dispute (Amend reopens notes; Confirm upholds the review). */
   resolveDispute(
-    reviewId: string,
+    employeeId: string,
     request: IResolveDisputeRequest,
   ): Observable<IReviewSignoff> {
-    return this.http.post<IReviewSignoff>(
-      `${this.baseUrl}/reviews/${reviewId}/resolve`,
-      request,
-      { withCredentials: true },
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.post<IReviewSignoff>(
+          `${this.notesBase(cycleId, employeeId)}/resolve-dispute`,
+          { amend: request.resolution === 'Amend', comments: request.note ?? null },
+          { withCredentials: true },
+        ),
+      ),
     );
   }
 
@@ -125,11 +159,15 @@ export class ReviewSignoffService {
    * Returns the raw HttpResponse so the caller can read the Content-Disposition
    * filename. Wired only when `record.exportAvailable` is true.
    */
-  exportPdf(reviewId: string): Observable<HttpResponse<Blob>> {
-    return this.http.get(`${this.baseUrl}/reviews/${reviewId}/export`, {
-      responseType: 'blob',
-      observe: 'response',
-      withCredentials: true,
-    });
+  exportPdf(employeeId: string): Observable<HttpResponse<Blob>> {
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get(`${this.notesBase(cycleId, employeeId)}/export`, {
+          responseType: 'blob',
+          observe: 'response',
+          withCredentials: true,
+        }),
+      ),
+    );
   }
 }

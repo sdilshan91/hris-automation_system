@@ -290,7 +290,6 @@ export class ReviewSignoffComponent implements OnInit {
   readonly notesHtml = signal('');
 
   employeeId = '';
-  private reviewId = '';
 
   readonly busy = computed(
     () => this.savingNotes() || this.requesting() || this.resolving(),
@@ -312,21 +311,15 @@ export class ReviewSignoffComponent implements OnInit {
 
   ngOnInit(): void {
     this.employeeId = this.route.snapshot.paramMap.get('employeeId') ?? '';
-    // The sign-off record is keyed by reviewId; for a clean deep link we accept it
-    // as a query param or fall back to the employeeId-driven lookup id the server
-    // returns. The active per-employee review id flows in via `reviewId` query.
-    this.reviewId =
-      this.route.snapshot.queryParamMap.get('reviewId') ?? this.employeeId;
     this.load();
   }
 
   load(): void {
     this.loading.set(true);
     this.loadError.set(null);
-    this.service.getSignoff(this.reviewId).subscribe({
+    this.service.getSignoff(this.employeeId).subscribe({
       next: (record) => {
         this.record.set(record);
-        this.reviewId = record.reviewId;
         this.hydrateNotes(record);
         this.loading.set(false);
       },
@@ -373,7 +366,7 @@ export class ReviewSignoffComponent implements OnInit {
     }
     this.savingNotes.set(true);
     this.service
-      .saveNotes(this.reviewId, { meetingNotesHtml: this.notesHtml() })
+      .saveNotes(this.employeeId, { meetingNotesHtml: this.notesHtml() })
       .subscribe({
         next: (saved) => {
           this.savingNotes.set(false);
@@ -399,7 +392,7 @@ export class ReviewSignoffComponent implements OnInit {
     }
     this.requesting.set(true);
     this.service
-      .requestSignoff(this.reviewId, { meetingNotesHtml: this.notesHtml() })
+      .requestSignoff(this.employeeId, { meetingNotesHtml: this.notesHtml() })
       .subscribe({
         next: (saved) => {
           this.requesting.set(false);
@@ -422,7 +415,7 @@ export class ReviewSignoffComponent implements OnInit {
       return;
     }
     this.resolving.set(true);
-    this.service.resolveDispute(this.reviewId, { resolution }).subscribe({
+    this.service.resolveDispute(this.employeeId, { resolution }).subscribe({
       next: (saved) => {
         this.resolving.set(false);
         this.record.set(saved);

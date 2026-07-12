@@ -16,7 +16,9 @@ import {
 describe('ManagerReviewService', () => {
   let service: ManagerReviewService;
   let httpMock: HttpTestingController;
-  const baseUrl = `${environment.apiBaseUrl}/tenant/performance/manager-review`;
+  const perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+  const reviewsBase = `${perfBase}/reviews`;
+  const activeCycleUrl = `${perfBase}/cycles/active`;
 
   const mockTeam: IManagerTeamRow[] = [
     {
@@ -77,11 +79,15 @@ describe('ManagerReviewService', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('getTeam() GETs the active-cycle team and returns the array', () => {
+  it('getTeam() resolves the active cycle then GETs the team and returns the array', () => {
     let result: IManagerTeamRow[] | undefined;
     service.getTeam().subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/cycles/active/team`);
+    const cycleReq = httpMock.expectOne(activeCycleUrl);
+    expect(cycleReq.request.method).toBe('GET');
+    cycleReq.flush({ id: 'cyc-1' });
+
+    const req = httpMock.expectOne(`${reviewsBase}/cycles/cyc-1/team`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockTeam);
@@ -93,17 +99,19 @@ describe('ManagerReviewService', () => {
     let result: IManagerTeamRow[] | undefined;
     service.getTeam().subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/cycles/active/team`);
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    const req = httpMock.expectOne(`${reviewsBase}/cycles/cyc-1/team`);
     req.flush({ data: mockTeam });
 
     expect(result).toEqual(mockTeam);
   });
 
-  it('getEmployeeReview() GETs the per-employee active review', () => {
+  it('getEmployeeReview() resolves the active cycle then GETs the per-employee review', () => {
     let result: IManagerReview | undefined;
     service.getEmployeeReview('e-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/employees/e-1/active`);
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    const req = httpMock.expectOne(`${reviewsBase}/cycles/cyc-1/employees/e-1`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockReview);
@@ -111,16 +119,18 @@ describe('ManagerReviewService', () => {
     expect(result).toEqual(mockReview);
   });
 
-  it('saveDraft() PUTs the request body to the draft route', () => {
+  it('saveDraft() PUTs the request body (cycleId + employeeId + items) to the draft route', () => {
     const body: ISaveManagerReviewRequest = {
-      goals: [{ goalId: 'g-1', managerRating: 4, managerComment: 'Solid work' }],
+      cycleId: 'cyc-1',
+      employeeId: 'e-1',
+      items: [{ goalId: 'g-1', managerRating: 4, managerComment: 'Solid work' }],
       summaryComment: 'Overall good',
       flag: 'Recognition',
     };
     let result: IManagerReview | undefined;
-    service.saveDraft('rv-1', body).subscribe((r) => (result = r));
+    service.saveDraft(body).subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/rv-1/draft`);
+    const req = httpMock.expectOne(`${reviewsBase}/draft`);
     expect(req.request.method).toBe('PUT');
     expect(req.request.body).toEqual(body);
     req.flush(mockReview);
@@ -130,7 +140,9 @@ describe('ManagerReviewService', () => {
 
   it('submit() POSTs the request body to the submit route', () => {
     const body: ISaveManagerReviewRequest = {
-      goals: [
+      cycleId: 'cyc-1',
+      employeeId: 'e-1',
+      items: [
         {
           goalId: 'g-1',
           managerRating: 5,
@@ -148,9 +160,9 @@ describe('ManagerReviewService', () => {
       submittedOn: '2026-06-10T10:00:00Z',
     };
     let result: IManagerReview | undefined;
-    service.submit('rv-1', body).subscribe((r) => (result = r));
+    service.submit(body).subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/rv-1/submit`);
+    const req = httpMock.expectOne(`${reviewsBase}/submit`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     req.flush(submitted);

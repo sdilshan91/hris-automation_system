@@ -121,6 +121,32 @@ public sealed class GoalsController : ControllerBase
     }
 
     /// <summary>
+    /// PUT /api/v1/tenant/performance/employees/{employeeId}/cycles/{cycleId}/goals
+    /// Bulk full-replace of an employee's goals for a cycle (BUG-243). The request body is the complete
+    /// desired set: items with an Id are updated, items without are created as Draft, and any existing goal
+    /// absent from the set is soft-deleted — in one atomic SaveChanges. Returns the resulting goal set.
+    /// </summary>
+    [HttpPut("employees/{employeeId:guid}/cycles/{cycleId:guid}/goals")]
+    [RequirePermission("Performance.SetGoal.Team", "Performance.SetGoal.All")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeGoalsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> SaveGoals(
+        Guid employeeId, Guid cycleId, [FromBody] SaveGoalsRequest request, CancellationToken cancellationToken)
+    {
+        var command = new SaveGoalsCommand(employeeId, cycleId, request.Goals ?? []);
+
+        var result = await _mediator.Send(command, cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<EmployeeGoalsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// DELETE /api/v1/tenant/performance/goals/{id}
     /// Soft-deletes a goal (FR-1).
     /// </summary>

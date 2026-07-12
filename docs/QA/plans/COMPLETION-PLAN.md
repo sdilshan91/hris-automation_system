@@ -11,6 +11,7 @@
 
 | Date | Event | Full snapshot |
 |------|-------|---------------|
+| **2026-07-12 (d)** | **P1-5c BUG-243 shipped (LAST P1 HIGH) + auto-heal.** FE re-model of 6 Performance services to the real routes (cycleId via `cycles/active`+`switchMap`) + the bulk `SaveGoals` BE endpoint (8 authentic tests). Verified FE 3759 / BE 3545 green (2 reds = pre-existing ISSUE-287). Auto-healed **ISSUE-287** (test-double staleness → new **P1-6, do next**), **ISSUE-288** (HIGH employee self-service sign-off BE gap → P5-5), **ISSUE-289** (LOW). **All 14 P1 HIGH now addressed.** Next: P1-6 (green BE gate) then P2 (US-NTF-006). | _(this file)_ |
 | **2026-07-12 (c)** | **ISSUE-245 verify-closed (no code).** Full Angular Karma suite green ×2 runs (**3757/3757**, deterministic order) on `test/local-subdomains` — the ~26 red specs were cleared incidentally by the P1 merges (#254–261). FE gate now trustworthy. Next: BUG-243 (last P1). | _(this file)_ |
 | **2026-07-12 (b)** | **P1-3 shipped + triage/auto-heal.** BUG-080 fixed (7 payroll audit emitters, 8 authentic tests). BUG-084 found stale→RESOLVED (already fixed under BUG-241). BUG-082 re-scoped + gated: filed **BUG-281** (write-time PII redaction) as its blocker → moved BUG-082 to P3-5. Auto-healed **ISSUE-282** (job-path audit Postgres arm) + a PayslipJobRls test-fidelity fix. | _(this file)_ |
 | **2026-07-12** | **P1-2 shipped + auto-heal.** Fixed BUG-078 (OT rate off gross not basic). Auto-healed 2 out-of-lane discoveries: **BUG-280** (HIGH — identical defect over-deducted statutory EPF/ETF; fixed same PR #255) and **ISSUE-280** (LOW — carry `Code` on `PayrollSlipLine`; parked P7). Re-sorted plan. | _(this file)_ |
@@ -65,7 +66,9 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P4-perf Dashboard SLA remainder | P4 | **ISSUE-285** (split from BUG-123) | GATED | — | birthday-index MIGRATION (decision) + widget parallelism (IDbContextFactory) + k6 p95/50k confirmation |
 | P1-5a FE session restore | P1 | BUG-097 (silent refresh on bootstrap) | PR#260 | #260 | FE-only; chained APP_INITIALIZER; 17/17 auth spec green; merging |
 | P1-5b Custom-fields crash | P1 | BUG-100 | RESOLVED | 46d7ebb2 | stale — already fixed (shape-drift); closed |
-| P1-5c Perf FE routes | P1 | BUG-243 (mostly FE re-model) + saveGoals BE gap | TODO | — | BE half shipped via BUG-244; FE re-models 5 services (cycleId+employeeId keying) + clean stale comments; 1 BE endpoint (bulk goal save) |
+| P1-5c Perf FE routes | P1 | BUG-243 (mostly FE re-model) + saveGoals BE gap | MERGED | #263 | 6 FE services re-modeled (cycleId via cycles/active resolver) + bulk SaveGoals BE endpoint (8 tests); FE 3759 green, BE 3545 (only 2 pre-existing ISSUE-287 reds); auto-healed ISSUE-287/288/289 |
+| P1-6 Restore green BE gate | P1 | **ISSUE-287** (entitlement mock not stubbed for BUG-124 batch resolver → 2 red HrLeaveAttendanceReport tests) | TODO | — | DO NEXT — small test-fidelity fix (stub `ComputeProratedEntitlementsBatchAsync` on the mock); red on base, blocks a clean BE gate |
+| P5-5 Employee self sign-off | P5 | **ISSUE-288** (HIGH — caller-scoped BE self endpoint for employee acknowledge/dispute) | TODO | — | BE build; unblocks US-PRF-006 AC-3; employee component documented as known gap |
 | P1-5d Employee↔Location | P1 | BUG-113 (full-stack) | PR#261 | #261 | BE+FE; profile-DTO prefill healed inline; count 0→1; 473 BE + 105 FE green; ISSUE-286 parked; merging |
 | P2-1 Notification delivery | P2/P3 | US-NTF-006: 13 LogOnly* → RealNotificationDispatcher (ISSUE-221/228/214) | TODO | — | biggest surface |
 | P2-2 MED clusters | P2 | ISSUE-195/BUG-120 RBAC-scope; audit gaps; payroll semantics; a11y; UTC; Redis | TODO | — | fan-out after P2-1 |

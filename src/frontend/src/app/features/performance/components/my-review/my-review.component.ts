@@ -643,7 +643,7 @@ export class MyReviewComponent implements OnInit, OnDestroy {
     this.uploadingIndex.set(index);
     this.uploadProgress.set(0);
     this.service
-      .uploadAttachment(assessment.id, goal.goalId, file)
+      .uploadAttachment(assessment.cycleId, goal.goalId, file)
       .subscribe({
         next: (event) => {
           if (event.type === 'progress') {
@@ -704,15 +704,15 @@ export class MyReviewComponent implements OnInit, OnDestroy {
   private buildRequest(): ISaveSelfAssessmentRequest {
     const assessment = this.assessment();
     const values = this.goals.value as IGoalFormValue[];
-    const goals: ISelfAssessmentGoalInput[] = (assessment?.goals ?? []).map(
+    const items: ISelfAssessmentGoalInput[] = (assessment?.goals ?? []).map(
       (g, i) => ({
         goalId: g.goalId,
         selfRating: values[i]?.selfRating ?? null,
-        achievementPercent: values[i]?.achievementPercent ?? null,
+        achievementPercentage: values[i]?.achievementPercent ?? null,
         comment: values[i]?.comment ?? '',
       }),
     );
-    return { goals };
+    return { cycleId: assessment?.cycleId ?? '', items };
   }
 
   /** AC-3 / NFR-3: persist a partial draft. `silent` suppresses the toast for auto-save. */
@@ -722,7 +722,7 @@ export class MyReviewComponent implements OnInit, OnDestroy {
       return;
     }
     this.savingDraft.set(true);
-    this.service.saveDraft(assessment.id, this.buildRequest()).subscribe({
+    this.service.saveDraft(this.buildRequest()).subscribe({
       next: (saved) => {
         this.savingDraft.set(false);
         this.pendingChanges = false;
@@ -749,7 +749,7 @@ export class MyReviewComponent implements OnInit, OnDestroy {
       return;
     }
     this.submitting.set(true);
-    this.service.submit(assessment.id, this.buildRequest()).subscribe({
+    this.service.submit(this.buildRequest()).subscribe({
       next: (saved) => {
         this.submitting.set(false);
         this.pendingChanges = false;

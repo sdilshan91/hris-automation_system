@@ -141,6 +141,47 @@ describe('PerformanceGoalService', () => {
     expect(result).toEqual([mockGoal]);
   });
 
+  it('getEmployeeGoals unwraps the EmployeeGoalsDto { goals } envelope', () => {
+    // BUG-243: the endpoint now returns EmployeeGoalsDto ({ goals, totalWeight, … }),
+    // not a bare array. Guard the `goals` unwrap so a revert to the old array-only
+    // mapper (which would drop the goals) is caught.
+    let result: IGoal[] | undefined;
+    service.getEmployeeGoals('cyc-1', 'e-1').subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(
+      `${baseUrl}/employees/e-1/cycles/cyc-1/goals`,
+    );
+    req.flush({ goals: [mockGoal], totalWeight: 100, employeeId: 'e-1', cycleId: 'cyc-1' });
+
+    expect(result).toEqual([mockGoal]);
+  });
+
+  it('saveGoals unwraps the EmployeeGoalsDto { goals } envelope', () => {
+    const request: ISaveGoalsRequest = {
+      goals: [
+        {
+          title: 'Improve NPS',
+          description: 'Lift NPS',
+          category: 'KPI',
+          weight: 100,
+          targetValue: '85',
+          measurementUnit: 'score',
+          dueDate: '2026-06-30',
+        },
+      ],
+    };
+    let result: IGoal[] | undefined;
+    service.saveGoals('cyc-1', 'e-1', request).subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(
+      `${baseUrl}/employees/e-1/cycles/cyc-1/goals`,
+    );
+    expect(req.request.method).toBe('PUT');
+    req.flush({ goals: [mockGoal], totalWeight: 100, employeeId: 'e-1', cycleId: 'cyc-1' });
+
+    expect(result).toEqual([mockGoal]);
+  });
+
   it('getEmployeeGoals returns [] for a null/empty payload', () => {
     let result: IGoal[] | undefined;
     service.getEmployeeGoals('cyc-1', 'e-1').subscribe((r) => (result = r));

@@ -5,7 +5,7 @@ import {
   HttpEventType,
 } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { filter, map } from 'rxjs/operators';
+import { filter, map, switchMap } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IAssessmentAttachment,
@@ -29,9 +29,11 @@ import {
  * PascalCase strings). The multipart upload observes raw events for progress and so
  * does not go through the JSON envelope.
  *
- * ⚠️ The attachment endpoints (FR-5) are an ASSUMED contract — see self-assessment.models.ts.
- * If the backend ships a different upload route/field, `uploadAttachment` /
- * `deleteAttachment` are the single change point.
+ * BUG-243: reconciled to the real SelfAssessmentController routes. `getActive()`
+ * resolves the active cycleId INSIDE this service via `GET .../cycles/active`
+ * (CyclesController.GetActive admits Read.Self) + `switchMap`; draft/submit carry
+ * cycleId + items in the body; upload takes the cycleId. `deleteAttachment` targets
+ * the real `{assessmentId}/attachments/{attachmentId}` route (BUG-244 #4).
  */
 
 /** Progress/result events surfaced to the form during an evidence upload. */
@@ -43,59 +45,55 @@ export type IAttachmentUploadEvent =
 export class SelfAssessmentService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/tenant/performance/self-assessments`;
-  // BUG-243: CANNOT FIX FE-ONLY. SelfAssessmentController keys reads by an explicit
-  // cycleId and keys draft/submit by cycleId-in-BODY (no assessmentId path segment),
-  // whereas this service + MyReviewComponent are built on an "active cycle" abstraction
-  // keyed by assessmentId. The correct BE routes are:
-  //   getActive()          -> GET    cycles/{cycleId}/me         (lacks cycleId; chicken/egg on first load)
-  //   saveDraft()          -> PUT    draft                       (cycleId+items in BODY; drop assessmentId)
-  //   submit()             -> POST   submit                      (cycleId+items in BODY; drop assessmentId)
-  //   uploadAttachment()   -> POST   cycles/{cycleId}/goals/{goalId}/attachments  (needs cycleId; drop assessmentId)
-  //   deleteAttachment()   -> NO BE ROUTE (attachments are GET-only server-side)
-  // Reconciling needs a BE "current cycle" resolver + a request-body remodel + a BE
-  // attachment-delete endpoint, or a FE re-model. See COMPLETION-PLAN Theme F/K.
+  private readonly perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+
+  /** Resolve the active cycle's id (CyclesController.GetActive admits Read.Self). */
+  private activeCycleId(): Observable<string> {
+    return this.http
+      .get<{ id: string }>(`${this.perfBase}/cycles/active`, {
+        withCredentials: true,
+      })
+      .pipe(map((c) => c.id));
+  }
 
   /**
    * Load the authenticated employee's self-assessment for the active cycle: the
    * assigned goals, any saved draft ratings, the rating scale, and the authoritative
-   * window/lock state (AC-1 / AC-4). One call drives the whole "My Review" screen.
+   * window/lock state (AC-1 / AC-4). Resolves the active cycleId first, then loads
+   * the caller's own record — one screen's worth of data (NFR-1).
    */
   getActive(): Observable<ISelfAssessment> {
-    return this.http.get<ISelfAssessment>(`${this.baseUrl}/active`, {
-      withCredentials: true,
-    });
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.get<ISelfAssessment>(`${this.baseUrl}/cycles/${cycleId}/me`, {
+          withCredentials: true,
+        }),
+      ),
+    );
   }
 
   /**
    * Persist a partial draft (AC-3 / FR-6 / NFR-3 auto-save). Status stays `Draft`;
-   * no all-goals-rated gate server-side. Returns the persisted assessment.
+   * no all-goals-rated gate server-side. cycleId + items travel in the body. Returns
+   * the persisted assessment.
    */
-  saveDraft(
-    assessmentId: string,
-    request: ISaveSelfAssessmentRequest,
-  ): Observable<ISelfAssessment> {
-    return this.http.put<ISelfAssessment>(
-      `${this.baseUrl}/${assessmentId}/draft`,
-      request,
-      { withCredentials: true },
-    );
+  saveDraft(request: ISaveSelfAssessmentRequest): Observable<ISelfAssessment> {
+    return this.http.put<ISelfAssessment>(`${this.baseUrl}/draft`, request, {
+      withCredentials: true,
+    });
   }
 
   /**
    * Submit the self-assessment (AC-2). The backend re-validates all-goals-rated +
    * each comment ≥20 chars (BR-2), computes the weighted self-score (FR-4), flips
    * the status to `Submitted`, locks edits (BR-3), and notifies the manager. Rejects
-   * when the window is closed (BR-1). Returns the locked assessment.
+   * when the window is closed (BR-1). cycleId + items travel in the body. Returns the
+   * locked assessment.
    */
-  submit(
-    assessmentId: string,
-    request: ISaveSelfAssessmentRequest,
-  ): Observable<ISelfAssessment> {
-    return this.http.post<ISelfAssessment>(
-      `${this.baseUrl}/${assessmentId}/submit`,
-      request,
-      { withCredentials: true },
-    );
+  submit(request: ISaveSelfAssessmentRequest): Observable<ISelfAssessment> {
+    return this.http.post<ISelfAssessment>(`${this.baseUrl}/submit`, request, {
+      withCredentials: true,
+    });
   }
 
   /**
@@ -104,7 +102,7 @@ export class SelfAssessmentService {
    * tenant-scoped path (NFR-4) and returns the created attachment row.
    */
   uploadAttachment(
-    assessmentId: string,
+    cycleId: string,
     goalId: string,
     file: File,
   ): Observable<IAttachmentUploadEvent> {
@@ -112,7 +110,7 @@ export class SelfAssessmentService {
     form.append('file', file, file.name);
     return this.http
       .post<IAssessmentAttachment>(
-        `${this.baseUrl}/${assessmentId}/goals/${goalId}/attachments`,
+        `${this.baseUrl}/cycles/${cycleId}/goals/${goalId}/attachments`,
         form,
         {
           reportProgress: true,

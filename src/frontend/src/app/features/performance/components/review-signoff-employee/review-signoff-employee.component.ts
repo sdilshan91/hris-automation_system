@@ -265,6 +265,15 @@ export class ReviewSignoffEmployeeComponent implements OnInit {
     this.record() ? SIGNOFF_STATUS_LABEL[this.record()!.status] : '',
   );
 
+  // ⚠ ISSUE-288 (KNOWN GAP — employee self-service sign-off not yet functional):
+  // BUG-243 re-keyed ReviewSignoffService to `reviews/cycles/{cycleId}/employees/{employeeId}/…`
+  // (resolving cycleId internally via `cycles/active`). The MANAGER sign-off flow supplies
+  // employeeId from its route and works. This EMPLOYEE self view only holds an opaque route
+  // `:reviewId` and has no way to resolve the caller's own employeeId before load, so the calls
+  // below pass reviewId where the service now expects employeeId → 404/403 at runtime. This flow
+  // was already non-functional on base (the old `/sign-off/reviews/{reviewId}` route never existed);
+  // making it work needs a NEW caller-scoped BE self endpoint (e.g. `reviews/cycles/active/me/…`,
+  // authorized `Read.Self`). Tracked as ISSUE-288 — do NOT treat these calls as correct.
   ngOnInit(): void {
     this.reviewId = this.route.snapshot.paramMap.get('reviewId') ?? '';
     this.load();

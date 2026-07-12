@@ -20,6 +20,8 @@ describe('Feedback360Service', () => {
   let service: Feedback360Service;
   let httpMock: HttpTestingController;
   const baseUrl = `${environment.apiBaseUrl}/tenant/performance/feedback-360`;
+  const perfBase = `${environment.apiBaseUrl}/tenant/performance`;
+  const activeCycleUrl = `${perfBase}/cycles/active`;
 
   const mockConfig: IReviewerConfig = {
     cycleId: 'cyc-1',
@@ -171,11 +173,14 @@ describe('Feedback360Service', () => {
     expect(result?.submitted).toBeTrue();
   });
 
-  it('getResults() GETs the results route', () => {
+  it('getResults() resolves the active cycle then GETs the cycle-keyed results route', () => {
     let result: IFeedback360Results | undefined;
     service.getResults('e-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${baseUrl}/employees/e-1/results`);
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    const req = httpMock.expectOne(
+      `${perfBase}/360/cycles/cyc-1/employees/e-1/results`,
+    );
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockResults);
@@ -183,11 +188,14 @@ describe('Feedback360Service', () => {
     expect(result?.compositeScore).toBe(82);
   });
 
-  it('exportResultsPdf() GETs a blob with response observed', () => {
+  it('exportResultsPdf() resolves the cycle then GETs the report blob', () => {
     let status: number | undefined;
     service.exportResultsPdf('e-1').subscribe((r) => (status = r.status));
 
-    const req = httpMock.expectOne(`${baseUrl}/employees/e-1/results/export`);
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    const req = httpMock.expectOne(
+      `${perfBase}/360/cycles/cyc-1/employees/e-1/report`,
+    );
     expect(req.request.method).toBe('GET');
     expect(req.request.responseType).toBe('blob');
     req.flush(new Blob(['pdf']), {
