@@ -1,4 +1,6 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Domain.Performance;
+using HRM.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -44,12 +46,11 @@ public sealed class RecommendationConfiguration : IEntityTypeConfiguration<Recom
         builder.Property(r => r.TargetTitle).HasMaxLength(200);
         builder.Property(r => r.EffectiveDate);
 
-        // SENSITIVE (NFR-3 encryption seam — stored plain numeric today; see Recommendation xmldoc).
-        builder.Property(r => r.CurrentCompensation).HasPrecision(18, 2);
-        builder.Property(r => r.BonusAmount).HasPrecision(18, 2);
-        builder.Property(r => r.BonusPercent).HasPrecision(9, 4);
-        builder.Property(r => r.IncrementAmount).HasPrecision(18, 2);
-        builder.Property(r => r.IncrementPercent).HasPrecision(9, 4);
+        // SENSITIVE (NFR-3 / P3-4): the per-employee compensation figures are encrypted at rest via IFieldEncryptor
+        // (see ApplyEncryption). Encryption turns them from `numeric` into `text` columns (the ciphertext is a
+        // string), so the numeric precision + column type are configured there, not here. NOTE: RecommendationBudget
+        // pool amounts are deliberately NOT encrypted (aggregate budget arithmetic); all Sum/GroupBy over these
+        // fields is app-side over materialized lists (RecommendationService.BuildSummaryAsync), never a DB aggregate.
 
         builder.Property(r => r.TrainingCourse).HasMaxLength(300);
         builder.Property(r => r.CustomTypeLabel).HasMaxLength(100);
@@ -84,5 +85,24 @@ public sealed class RecommendationConfiguration : IEntityTypeConfiguration<Recom
             .WithMany()
             .HasForeignKey(r => r.BudgetId)
             .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    /// <summary>
+    /// P3-4: applies the field-at-rest encryption value converters to the per-employee compensation figures
+    /// (<see cref="Recommendation.CurrentCompensation"/>, <see cref="Recommendation.BonusAmount"/>,
+    /// <see cref="Recommendation.BonusPercent"/>, <see cref="Recommendation.IncrementAmount"/>,
+    /// <see cref="Recommendation.IncrementPercent"/>). Invoked from <c>AppDbContext.OnModelCreating</c> with the
+    /// context's injected <see cref="IFieldEncryptor"/>. The decimal converter stores the invariant-culture decimal
+    /// string encrypted, so these become <c>text</c> columns (numeric→text migration). Aggregation over these
+    /// fields is app-side (decrypt-then-sum in C#), never a DB-level Sum/Where, so encryption is safe.
+    /// </summary>
+    public static void ApplyEncryption(EntityTypeBuilder<Recommendation> builder, IFieldEncryptor encryptor)
+    {
+        var decimalConverter = EncryptedFieldConverters.Decimal(encryptor);
+        builder.Property(r => r.CurrentCompensation).HasConversion(decimalConverter).HasColumnType("text");
+        builder.Property(r => r.BonusAmount).HasConversion(decimalConverter).HasColumnType("text");
+        builder.Property(r => r.BonusPercent).HasConversion(decimalConverter).HasColumnType("text");
+        builder.Property(r => r.IncrementAmount).HasConversion(decimalConverter).HasColumnType("text");
+        builder.Property(r => r.IncrementPercent).HasConversion(decimalConverter).HasColumnType("text");
     }
 }

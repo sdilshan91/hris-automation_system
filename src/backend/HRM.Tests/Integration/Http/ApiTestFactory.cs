@@ -69,6 +69,10 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
                 ["ConnectionStrings:Redis"] = "",
                 // Runtime-generated RSA key (appsettings ships this blank). Not persisted anywhere.
                 ["Jwt:PrivateKey"] = _jwtPrivateKeyPem,
+                // P3-4: a test-only field-encryption key so the AES-GCM encryptor (fail-fast without one) is
+                // satisfied and the sensitive PIP/Recommendation columns encrypt at rest end-to-end.
+                ["Encryption:ActiveKeyId"] = "hrm-field-key-1",
+                ["Encryption:Keys:hrm-field-key-1"] = "ChvBEPLThNv30ZpGbzNQ6lKvo249XGvNBDjKLQhUVn4=",
                 // Keep the Hangfire client/storage but never start the background worker loop — it
                 // only adds polling noise and races the test DB lifecycle. (Gated in Program.cs.)
                 ["Hangfire:DisableServer"] = "true",

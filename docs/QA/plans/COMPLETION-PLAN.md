@@ -96,7 +96,7 @@ Ranked by **severity × blast-radius × unblocks-others**, implementable-now fir
 | P3-1 ClamAV | P3 | AllowWithLogVirusScanner → ClamAvVirusScanner | TODO | — | security |
 | P3-2 JWT denylist | P3 | NoOpSessionRevoker → Redis denylist | MERGED | #270 | Redis "revoked-before" cutoff + OnTokenValidated fail-open + iat claim; DI-gated Redis/NoOp; 3630/3630; auditors WIRED+AUTHENTIC. Impersonation-end already covered by ImpersonationEnforcementMiddleware (not the per-user cutoff — would over-revoke) |
 | P3-3 Permission cache→Redis | P3 | InMemoryPermissionCache (NFR-2) | TODO | — | scale |
-| P3-4 PII at rest | P3 | US-PLT-005 pgcrypto (Recommendation/Pip/Budget) | TODO | — | plan-HIGH |
+| P3-4 PII at rest | P3 | ISSUE-134 (PIP) + ISSUE-150 (Recommendation comp) | MERGED | #273 | **app-side AES-256-GCM** (user decision, not pgcrypto) via EF value converters; 8 fields (Pip 3 + Recommendation comp 5); config key-ring rotation-ready; `numeric→text` migration + idempotent DbInitializer back-fill; 23/23 Postgres + full suite green; auditors WIRED+AUTHENTIC. **⚠ DEPLOY-GATE (ops):** prod/staging MUST set `Encryption__Keys__hrm-field-key-1` (base64 32-byte) via env/secret or the app fail-fasts (dev+tests carry a key). Rotation SOP = a follow-up needs-decision. Budget pool amounts intentionally NOT encrypted. |
 | P4-1 RLS code finalize | P4 | US-PLT-002 code parts (prod flip = ops) | TODO | — | ISSUE-269 long-tx tail |
 | P5-1 US-ADM-012 | P5 | plan/module governance enforcement | TODO | — | net-new |
 | P5-2 US-PRF-011 | P5 | calibration workspace | TODO | — | net-new |

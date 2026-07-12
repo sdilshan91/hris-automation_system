@@ -14,11 +14,10 @@ namespace HRM.Domain.Performance;
 /// Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>
 /// (NFR-2). Maps to the "pip" table.
 ///
-/// ENCRYPTION SEAM (NFR-4): the sensitive free-text fields (<see cref="Reason"/>, <see cref="EscalationNotes"/>,
-/// <see cref="FinalOutcomeNotes"/>) are stored as plain text today. The codebase has NO field/PII encryption
-/// mechanism (no pgcrypto/IEncryption/ValueConverter); building one is an infra concern out of scope for this
-/// story. When a platform PII-encryption strategy lands, apply it to these columns via an EF ValueConverter —
-/// no schema change to the model. TODO(US-PLT PII-encryption).
+/// ENCRYPTION (NFR-4): the sensitive free-text fields (<see cref="Reason"/>, <see cref="EscalationNotes"/>,
+/// <see cref="FinalOutcomeNotes"/>) are ENCRYPTED AT REST (P3-4) via the app-side AES-256-GCM
+/// <c>IFieldEncryptor</c>, applied as an EF value converter in <c>PipConfiguration.ApplyEncryption</c> — the
+/// columns are stored as <c>enc:v1:</c> ciphertext (<c>text</c>) and transparently decrypt on read.
 /// </summary>
 public sealed class Pip : BaseEntity
 {
@@ -40,7 +39,7 @@ public sealed class Pip : BaseEntity
     /// </summary>
     public Guid? OriginManagerReviewId { get; set; }
 
-    /// <summary>SENSITIVE (NFR-4 encryption seam). The reason for the PIP (free text, max 4000 chars, FR-1).</summary>
+    /// <summary>SENSITIVE (NFR-4 — encrypted at rest, P3-4). The reason for the PIP (free text, FR-1).</summary>
     public string Reason { get; set; } = string.Empty;
 
     /// <summary>PIP start date (FR-1).</summary>
@@ -79,7 +78,7 @@ public sealed class Pip : BaseEntity
     /// <summary>UTC timestamp the final outcome was set (AC-4). Null until SuccessfullyCompleted/NotMet.</summary>
     public DateTime? OutcomeSetAt { get; set; }
 
-    /// <summary>Optional free-text notes recorded with the final outcome (AC-4).</summary>
+    /// <summary>SENSITIVE (NFR-4 — encrypted at rest, P3-4). Optional free-text notes recorded with the final outcome (AC-4).</summary>
     public string? FinalOutcomeNotes { get; set; }
 
     /// <summary>True once HR has confirmed the escalation for a Not-Met PIP (AC-5/BR-6).</summary>
@@ -88,7 +87,7 @@ public sealed class Pip : BaseEntity
     /// <summary>UTC timestamp the escalation decision was confirmed (AC-5). Null otherwise.</summary>
     public DateTime? EscalationConfirmedAt { get; set; }
 
-    /// <summary>SENSITIVE (NFR-4 encryption seam). HR's escalation decision notes (max 4000 chars, AC-5).</summary>
+    /// <summary>SENSITIVE (NFR-4 — encrypted at rest, P3-4). HR's escalation decision notes (AC-5).</summary>
     public string? EscalationNotes { get; set; }
 
     /// <summary>

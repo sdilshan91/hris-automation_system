@@ -1,3 +1,6 @@
+using System.Data;
+using System.Data.Common;
+using HRM.Application.Common.Interfaces;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -34,6 +37,12 @@ public static class DbInitializer
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DbInitializer");
 
         await MigrateAsync(dbContext, logger, cancellationToken);
+
+        // P3-4: one-time (idempotent) encryption of any pre-existing plaintext values in the sensitive PIP /
+        // Recommendation columns that this release moved behind IFieldEncryptor. Runs AFTER Migrate (the schema +
+        // the numeric→text column changes must exist first) and is a no-op once every value is already enc:v1:.
+        var fieldEncryptor = scope.ServiceProvider.GetRequiredService<IFieldEncryptor>();
+        await EncryptSensitiveFieldsAtRestAsync(dbContext, fieldEncryptor, logger, cancellationToken);
 
         await SeedAsync(dbContext, logger, cancellationToken);
 
@@ -213,6 +222,109 @@ public static class DbInitializer
                 await Task.Delay(delay, ct);
             }
         }
+    }
+
+    /// <summary>
+    /// The columns that P3-4 moved behind <see cref="IFieldEncryptor"/> — the sensitive PIP free-text notes and the
+    /// per-employee Recommendation compensation figures (now stored as encrypted <c>text</c>). Deliberately EXCLUDES
+    /// the RecommendationBudget pool amounts (aggregate arithmetic, not individual PII).
+    /// </summary>
+    private static readonly (string Table, string[] Columns)[] EncryptedColumns =
+    {
+        ("pip", new[] { "reason", "final_outcome_notes", "escalation_notes" }),
+        ("recommendation", new[]
+        {
+            "current_compensation", "bonus_amount", "bonus_percent", "increment_amount", "increment_percent",
+        }),
+    };
+
+    /// <summary>
+    /// P3-4 — idempotent, one-time back-fill that encrypts any existing plaintext values in the columns listed in
+    /// <see cref="EncryptedColumns"/>. A raw SQL migration cannot run the app encryptor, so this runs in code after
+    /// <see cref="MigrateAsync"/>: for each column it reads rows whose value is non-null and does NOT already start
+    /// with <c>enc:v1:</c>, encrypts the raw value via <paramref name="encryptor"/>, and writes it back — so it is
+    /// SAFE to run on every startup (already-encrypted values are skipped by the <c>NOT LIKE 'enc:v1:%'</c> filter).
+    /// Tenant-agnostic (raw SQL over the base tables, no query filter). Relational-only: on the InMemory provider the
+    /// value converters already encrypt on write and there is no distinct raw stored form to back-fill.
+    /// </summary>
+    public static async Task EncryptSensitiveFieldsAtRestAsync(
+        AppDbContext db, IFieldEncryptor encryptor, ILogger logger, CancellationToken ct)
+    {
+        if (!db.Database.IsRelational())
+            return;
+
+        var connection = db.Database.GetDbConnection();
+        var openedHere = false;
+        if (connection.State != ConnectionState.Open)
+        {
+            await db.Database.OpenConnectionAsync(ct);
+            openedHere = true;
+        }
+
+        try
+        {
+            var total = 0;
+            foreach (var (table, columns) in EncryptedColumns)
+            {
+                foreach (var column in columns)
+                {
+                    total += await BackfillColumnAsync(connection, table, column, encryptor, ct);
+                }
+            }
+
+            if (total > 0)
+            {
+                logger.LogInformation(
+                    "P3-4: encrypted {Count} pre-existing plaintext value(s) across the sensitive PIP/Recommendation "
+                    + "columns (idempotent back-fill).", total);
+            }
+        }
+        finally
+        {
+            if (openedHere)
+                await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    /// <summary>
+    /// Encrypts every not-yet-encrypted value in one column. Table/column names come from the constant
+    /// <see cref="EncryptedColumns"/> list (no external input — no injection surface); the value is parameterized.
+    /// </summary>
+    private static async Task<int> BackfillColumnAsync(
+        DbConnection connection, string table, string column, IFieldEncryptor encryptor, CancellationToken ct)
+    {
+        var pending = new List<(object Id, string Raw)>();
+
+        await using (var select = connection.CreateCommand())
+        {
+            select.CommandText =
+                $"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL AND {column} NOT LIKE 'enc:v1:%'";
+            await using var reader = await select.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                pending.Add((reader.GetValue(0), reader.GetString(1)));
+            }
+        }
+
+        foreach (var (id, raw) in pending)
+        {
+            await using var update = connection.CreateCommand();
+            update.CommandText = $"UPDATE {table} SET {column} = @val WHERE id = @id";
+
+            var valueParam = update.CreateParameter();
+            valueParam.ParameterName = "val";
+            valueParam.Value = encryptor.Encrypt(raw)!;
+            update.Parameters.Add(valueParam);
+
+            var idParam = update.CreateParameter();
+            idParam.ParameterName = "id";
+            idParam.Value = id;
+            update.Parameters.Add(idParam);
+
+            await update.ExecuteNonQueryAsync(ct);
+        }
+
+        return pending.Count;
     }
 
     private static async Task SeedAsync(AppDbContext db, ILogger logger, CancellationToken ct)
