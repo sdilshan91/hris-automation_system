@@ -11,6 +11,7 @@
 
 | Date | Event | Full snapshot |
 |------|-------|---------------|
+| **2026-07-12 (c)** | **ISSUE-245 verify-closed (no code).** Full Angular Karma suite green ×2 runs (**3757/3757**, deterministic order) on `test/local-subdomains` — the ~26 red specs were cleared incidentally by the P1 merges (#254–261). FE gate now trustworthy. Next: BUG-243 (last P1). | _(this file)_ |
 | **2026-07-12 (b)** | **P1-3 shipped + triage/auto-heal.** BUG-080 fixed (7 payroll audit emitters, 8 authentic tests). BUG-084 found stale→RESOLVED (already fixed under BUG-241). BUG-082 re-scoped + gated: filed **BUG-281** (write-time PII redaction) as its blocker → moved BUG-082 to P3-5. Auto-healed **ISSUE-282** (job-path audit Postgres arm) + a PayslipJobRls test-fidelity fix. | _(this file)_ |
 | **2026-07-12** | **P1-2 shipped + auto-heal.** Fixed BUG-078 (OT rate off gross not basic). Auto-healed 2 out-of-lane discoveries: **BUG-280** (HIGH — identical defect over-deducted statutory EPF/ETF; fixed same PR #255) and **ISSUE-280** (LOW — carry `Code` on `PayrollSlipLine`; parked P7). Re-sorted plan. | _(this file)_ |
 | **2026-07-11 (b)** | **Dev-plan execution refresh.** Ran the P0 triage-verify pass — reconciliation confirmed the **14 open HIGH** figure (heading-by-heading ledger parse); flagged BUG-003/086/002/005 as RESOLVED-token-but-body-conflict (re-verify). Added the **📊 Item-wise Status Tracker** (below) as the execution ledger; began executing P0→P7 one branch+PR per item. | _(this file)_ |
@@ -68,7 +69,7 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P1-5d Employee↔Location | P1 | BUG-113 (full-stack) | PR#261 | #261 | BE+FE; profile-DTO prefill healed inline; count 0→1; 473 BE + 105 FE green; ISSUE-286 parked; merging |
 | P2-1 Notification delivery | P2/P3 | US-NTF-006: 13 LogOnly* → RealNotificationDispatcher (ISSUE-221/228/214) | TODO | — | biggest surface |
 | P2-2 MED clusters | P2 | ISSUE-195/BUG-120 RBAC-scope; audit gaps; payroll semantics; a11y; UTC; Redis | TODO | — | fan-out after P2-1 |
-| P2-3 Red FE base | P2 | ISSUE-245 (~26 pre-existing Angular spec fails) | TODO | — | do early — gates FE |
+| P2-3 Red FE base | P2 | ISSUE-245 (~26 pre-existing Angular spec fails) | VERIFIED | — | RESOLVED 2026-07-12 no-code — cleared by #254–261; full Karma suite 3757/3757 green ×2 runs, deterministic order; FE gate trustworthy |
 | P3-1 ClamAV | P3 | AllowWithLogVirusScanner → ClamAvVirusScanner | TODO | — | security |
 | P3-2 JWT denylist | P3 | NoOpSessionRevoker → Redis denylist | TODO | — | security |
 | P3-3 Permission cache→Redis | P3 | InMemoryPermissionCache (NFR-2) | TODO | — | scale |
