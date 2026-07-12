@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// Immutable transaction log for leave balance changes (US-LV-002 FR-5).
 /// Records accruals, usage, adjustments, encashments, carry-forwards, and expirations.
 /// </summary>
-public sealed class LeaveLedger : BaseEntity
+public sealed class LeaveLedger : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Type of ledger entry.

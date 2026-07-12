@@ -12,7 +12,7 @@ namespace HRM.Domain.Entities;
 /// <see cref="LineageId"/>/<see cref="Version"/>. A later edit that creates a new version on the same lineage
 /// does NOT retroactively re-route an in-flight instance.</para>
 /// </summary>
-public sealed class WorkflowInstance : BaseEntity
+public sealed class WorkflowInstance : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the SPECIFIC definition version row this instance snapshotted (BR-1).</summary>
     public Guid WorkflowDefinitionId { get; set; }

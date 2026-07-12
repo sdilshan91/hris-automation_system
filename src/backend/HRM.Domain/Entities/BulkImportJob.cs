@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// Tracks bulk employee import operations (US-CHR-010).
 /// Used for both sync (status set to Completed immediately) and async (Hangfire) imports.
 /// </summary>
-public sealed class BulkImportJob : BaseEntity
+public sealed class BulkImportJob : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Original uploaded file name.

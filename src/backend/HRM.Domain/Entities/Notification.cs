@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// read-isolated by the AppDbContext global query filter). Real-time delivery is layered on top
 /// via the SignalR <c>NotificationHub</c>; this row is the durable record behind the bell/panel.
 /// </summary>
-public sealed class Notification : BaseEntity
+public sealed class Notification : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Recipient user id (FR-3, BR-1). Maps to the platform user (UserTenant.UserId), not the

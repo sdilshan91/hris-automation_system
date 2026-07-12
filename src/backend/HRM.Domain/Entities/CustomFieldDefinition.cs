@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// Tenant-scoped via BaseEntity.TenantId. Supports soft-delete (IsDeleted).
 /// US-CHR-012: Custom Fields per Tenant.
 /// </summary>
-public sealed class CustomFieldDefinition : BaseEntity
+public sealed class CustomFieldDefinition : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// The entity type this custom field applies to. Phase 1: "employee".

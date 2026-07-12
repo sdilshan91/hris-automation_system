@@ -18,7 +18,7 @@ namespace HRM.Domain.Entities;
 /// <para>Steps are a CHILD TABLE (<see cref="WorkflowStep"/>) rather than an owned jsonb collection — they are
 /// individually queryable, conventional for the codebase, and each step carries its own tenant-scoped row.</para>
 /// </summary>
-public sealed class WorkflowDefinition : BaseEntity
+public sealed class WorkflowDefinition : BaseEntity, IAuditExempt
 {
     /// <summary>Human-readable workflow name (FR-1). Required.</summary>
     public string Name { get; set; } = string.Empty;

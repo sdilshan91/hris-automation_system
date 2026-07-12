@@ -13,7 +13,7 @@ namespace HRM.Domain.Entities;
 /// <c>TenantInterceptor</c> (Postgres RLS is the deferred US-PLT-002). Maps to the "payroll_adjustment"
 /// table.</para>
 /// </summary>
-public sealed class PayrollAdjustment : BaseEntity
+public sealed class PayrollAdjustment : BaseEntity, IAuditExempt
 {
     /// <summary>Employee this adjustment applies to (FR-1, required). Must have an active salary assignment (BR-1).</summary>
     public Guid EmployeeId { get; set; }

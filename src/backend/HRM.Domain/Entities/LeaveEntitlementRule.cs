@@ -7,7 +7,7 @@ namespace HRM.Domain.Entities;
 /// specific employee dimensions (department, job title, employment type, tenure).
 /// US-LV-002 FR-1, FR-2: Entitlement rules with priority/specificity engine.
 /// </summary>
-public sealed class LeaveEntitlementRule : BaseEntity
+public sealed class LeaveEntitlementRule : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// FK to the leave type this rule applies to (required).

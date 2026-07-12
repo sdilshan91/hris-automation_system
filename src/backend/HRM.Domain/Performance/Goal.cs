@@ -9,7 +9,7 @@ namespace HRM.Domain.Performance;
 /// <see cref="BaseEntity.TenantId"/> + the EF global query filter + <c>TenantInterceptor</c>.
 /// Maps to the "goal" table.
 /// </summary>
-public sealed class Goal : BaseEntity
+public sealed class Goal : BaseEntity, IAuditExempt
 {
     /// <summary>The appraisal cycle this goal belongs to (FK, required).</summary>
     public Guid CycleId { get; set; }

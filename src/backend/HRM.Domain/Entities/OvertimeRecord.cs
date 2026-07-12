@@ -46,7 +46,7 @@ public static class OvertimeStatus
 /// exists yet, US-ADM-007, so <see cref="WorkflowInstanceId"/> is left null). Tenant-scoped via
 /// <see cref="BaseEntity.TenantId"/> and the EF global query filter. Maps to the "overtime_record" table.
 /// </summary>
-public sealed class OvertimeRecord : BaseEntity
+public sealed class OvertimeRecord : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the employee the overtime belongs to (FR-2).</summary>
     public Guid EmployeeId { get; set; }

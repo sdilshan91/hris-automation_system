@@ -1,10 +1,13 @@
 // ============================================================================
-// US-NTF-004: AuditCaptureInterceptor — automatic generic INSERT/UPDATE/DELETE
-// capture into the shared audit_log table for IAuditableEntity types.
-// Covers: insert→after-only (BR-2), update→only-changed-props before/after (BR-3),
-// soft-delete→Delete action (AC-3), non-auditable entity NOT captured, no
-// recursion (writing AuditLog rows produces no further rows), and tenant + actor
-// + IP/UA/trace enrichment (FR-7/FR-8). EF Core InMemory only.
+// US-NTF-004 / BUG-082: AuditCaptureInterceptor — automatic generic INSERT/UPDATE/
+// DELETE capture into the shared audit_log table. Since BUG-082 this is opt-OUT:
+// EVERY tenant BaseEntity is captured EXCEPT those marked IAuditExempt (explicit-
+// writer or high-volume). Covers: insert→after-only (BR-2), update→only-changed-
+// props before/after (BR-3), soft-delete→Delete action (AC-3), an IAuditExempt
+// entity NOT captured, a previously-unaudited business entity now captured
+// (BUG-082 fix), no double-audit for an explicit-writer entity (the key guard),
+// no recursion, and tenant + actor + IP/UA/trace enrichment (FR-7/FR-8).
+// EF Core InMemory only.
 // ============================================================================
 
 using System.Text.Json;
@@ -15,8 +18,10 @@ using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Persistence.Interceptors;
+using HRM.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace HRM.Tests.Unit;
@@ -38,12 +43,14 @@ public sealed class AuditCaptureInterceptorTests
         return ctx;
     }
 
-    private ICurrentUser User()
+    private ICurrentUser User() => UserWithEmail(ActorEmail);
+
+    private ICurrentUser UserWithEmail(string email)
     {
         var u = Substitute.For<ICurrentUser>();
         u.IsAuthenticated.Returns(true);
         u.UserId.Returns(_actor);
-        u.Email.Returns(ActorEmail);
+        u.Email.Returns(email);
         return u;
     }
 
@@ -184,29 +191,149 @@ public sealed class AuditCaptureInterceptorTests
         after["IsDeleted"].GetBoolean().Should().BeTrue();
     }
 
-    // ── Non-auditable entity is NOT captured ──────────────────────────────────
+    // ── IAuditExempt entity is NOT captured (opt-OUT, BUG-082) ────────────────
+    // Notification is marked IAuditExempt (high-volume / infra, NFR-1), so the interceptor must
+    // skip it even though it is a tenant BaseEntity. (Previously this test used Holiday, which is
+    // NOW audited-by-default under opt-out — Holiday is itself IAuditExempt via its explicit writer,
+    // but Notification is the clearer high-volume exemption and cannot be confused with a List-5 gap.)
 
     [Fact]
-    public async Task Non_auditable_entity_is_not_captured()
+    public async Task Exempt_entity_is_not_captured()
     {
         var dbName = Guid.NewGuid().ToString();
         var ctx = TenantCtx();
 
         using (var db = Db(dbName, ctx, User(), HttpAccessor()))
         {
-            // Holiday does NOT implement IAuditableEntity.
-            db.Holidays.Add(new Holiday
+            // Notification implements IAuditExempt → interceptor must NOT capture it.
+            db.Notifications.Add(new Notification
             {
                 Id = Guid.NewGuid(),
-                Name = "New Year",
-                Date = new DateOnly(2026, 1, 1),
+                TenantId = _tenant,
+                UserId = _actor,
+                Type = "leave_approved",
+                Title = "Leave approved",
+                Message = "Your leave was approved.",
             });
             await db.SaveChangesAsync();
         }
 
         using var read = Db(dbName, ctx, User(), null);
-        (await read.AuditLogs.IgnoreQueryFilters().AnyAsync(a => a.ResourceType == "Holiday"))
+        (await read.AuditLogs.IgnoreQueryFilters().AnyAsync(a => a.ResourceType == "Notification"))
             .Should().BeFalse();
+        // No stray rows at all from an exempt-only save.
+        (await read.AuditLogs.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+    }
+
+    // ── BUG-082 FIX PROVEN: a previously-unaudited business entity is NOW captured ──
+    // EmergencyContact (census "List 5") had no explicit writer, so under the old opt-IN model it
+    // produced NO audit trail. Under opt-OUT it must now yield Create/Update/Delete rows with the
+    // correct before/after diff.
+
+    private EmergencyContact NewEmergencyContact(Guid id, string name = "Jane Kin")
+        => new()
+        {
+            Id = id,
+            TenantId = _tenant,
+            EmployeeId = Guid.NewGuid(),
+            ContactName = name,
+            Relationship = "Spouse",
+            Phone = "555-0100",
+            IsPrimary = true,
+        };
+
+    [Fact]
+    public async Task Previously_unaudited_business_entity_is_now_captured()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+        var contactId = Guid.NewGuid();
+
+        // CREATE → after-only row.
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            db.EmergencyContacts.Add(NewEmergencyContact(contactId));
+            await db.SaveChangesAsync();
+        }
+
+        // UPDATE → only-changed-props before/after row.
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            var contact = await db.EmergencyContacts.IgnoreQueryFilters().SingleAsync(c => c.Id == contactId);
+            contact.Phone = "555-0999"; // only Phone changes
+            await db.SaveChangesAsync();
+        }
+
+        // HARD DELETE → before-only row.
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            var contact = await db.EmergencyContacts.IgnoreQueryFilters().SingleAsync(c => c.Id == contactId);
+            db.EmergencyContacts.Remove(contact);
+            await db.SaveChangesAsync();
+        }
+
+        using var read = Db(dbName, ctx, User(), null);
+        var rows = await read.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.ResourceType == "EmergencyContact")
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync();
+
+        rows.Select(r => r.Action).Should().Contain(new[]
+        {
+            "EmergencyContact.Create", "EmergencyContact.Update", "EmergencyContact.Delete",
+        });
+
+        var create = rows.Single(r => r.Action == "EmergencyContact.Create");
+        create.Before.Should().BeNull();
+        create.After.Should().NotBeNull();
+        create.After!.Should().Contain("Jane Kin");
+        create.ResourceId.Should().Be(contactId.ToString());
+
+        var update = rows.Single(r => r.Action == "EmergencyContact.Update");
+        var before = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(update.Before!)!;
+        var after = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(update.After!)!;
+        before["Phone"].GetString().Should().Be("555-0100");
+        after["Phone"].GetString().Should().Be("555-0999");
+        before.Should().NotContainKey("ContactName"); // BR-3: unchanged props excluded
+
+        var delete = rows.Single(r => r.Action == "EmergencyContact.Delete");
+        delete.Before.Should().NotBeNull();
+        delete.After.Should().BeNull();
+    }
+
+    // ── BUG-082 KEY SAFETY GUARD: an exempt explicit-writer entity is NOT double-audited ──
+    // Location is IAuditExempt because LocationService writes its OWN "OfficeLocation.*" audit row.
+    // Driving a create through the REAL service (both write paths live) must yield EXACTLY the ONE
+    // explicit-writer row — NOT a second interceptor "Location.Create" row.
+
+    [Fact]
+    public async Task Exempt_explicit_writer_entity_is_not_double_audited()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+        var user = User();
+
+        using (var db = Db(dbName, ctx, user, HttpAccessor()))
+        {
+            var service = new LocationService(db, ctx, user, NullLogger<LocationService>.Instance);
+            var result = await service.CreateAsync(
+                name: "Head Office", addressLine1: null, addressLine2: null,
+                city: null, stateProvince: null, country: null,
+                postalCode: null, timeZone: "UTC", phone: null);
+            result.IsSuccess.Should().BeTrue();
+        }
+
+        using var read = Db(dbName, ctx, user, null);
+        var all = await read.AuditLogs.IgnoreQueryFilters().ToListAsync();
+
+        // EXACTLY one audit row total for the create, and it is the explicit-writer "OfficeLocation" row.
+        all.Should().ContainSingle();
+        all[0].ResourceType.Should().Be("OfficeLocation");
+        all[0].Action.Should().Be("OfficeLocation.Created");
+
+        // The interceptor must NOT have added a duplicate row for the exempt Location entity.
+        all.Should().NotContain(a => a.ResourceType == "Location");
+        all.Should().NotContain(a => a.Action == "Location.Create");
     }
 
     // ── No recursion: writing AuditLog rows produces no further audit rows ─────
@@ -258,6 +385,34 @@ public sealed class AuditCaptureInterceptorTests
         row.IpAddress.Should().Be(Ip);
         row.UserAgent.Should().Be(Ua);
         row.TraceId.Should().NotBeNullOrEmpty();
+    }
+
+    // ── BUG-082: the actor email is truncated to the varchar(50) ActorEmployeeNo column width ──
+    // Under opt-out the interceptor writes ActorEmployeeNo on ~every audited save; an actor email longer than
+    // 50 chars must be truncated in-code, else a 22001 overflow would abort the whole business transaction on
+    // Postgres. (InMemory doesn't enforce the length, but the C# Truncate runs before persistence and is
+    // asserted here; the fix is the guard against the prod-only overflow.)
+    [Fact]
+    public async Task Long_actor_email_is_truncated_to_ActorEmployeeNo_column_width()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+        const string longEmail =
+            "an.extremely.long.actor.email.address@really-long-corporate-subdomain.example.com"; // > 50 chars
+        longEmail.Length.Should().BeGreaterThan(50);
+
+        using (var db = Db(dbName, ctx, UserWithEmail(longEmail), HttpAccessor()))
+        {
+            db.Departments.Add(NewDepartment(Guid.NewGuid()));
+            await db.SaveChangesAsync();
+        }
+
+        using var read = Db(dbName, ctx, User(), null);
+        var row = await read.AuditLogs.IgnoreQueryFilters().SingleAsync(a => a.ResourceType == "Department");
+
+        row.ActorEmployeeNo.Should().NotBeNull();
+        row.ActorEmployeeNo!.Length.Should().Be(50, "ActorEmployeeNo is varchar(50); a longer actor email must be truncated");
+        row.ActorEmployeeNo.Should().Be(longEmail[..50]);
     }
 
     // ── BUG-281: WRITE-TIME PII redaction of the serialized before/after JSONB ──

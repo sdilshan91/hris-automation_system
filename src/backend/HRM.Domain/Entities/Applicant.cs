@@ -8,7 +8,7 @@ namespace HRM.Domain.Entities;
 /// (this codebase enforces tenant isolation with EF query filters, not Postgres RLS — RLS/NFR-3 is a
 /// separate deferred story; see the module note). Maps to the "applicant" table.
 /// </summary>
-public sealed class Applicant : BaseEntity
+public sealed class Applicant : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the <see cref="Vacancy"/> applied to (FR-1, required). Stored as a plain UUID column.</summary>
     public Guid VacancyId { get; set; }

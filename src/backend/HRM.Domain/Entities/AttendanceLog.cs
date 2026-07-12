@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// (a later story). Tenant-scoped via <see cref="BaseEntity.TenantId"/> and the EF global
 /// query filter. Maps to the "attendance_log" table.
 /// </summary>
-public sealed class AttendanceLog : BaseEntity
+public sealed class AttendanceLog : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// FK to the employee the punch belongs to (FR-1).

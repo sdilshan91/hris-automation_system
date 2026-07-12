@@ -9,7 +9,7 @@ namespace HRM.Domain.Entities;
 /// <see cref="WaitlistPosition"/>; cancelling an <see cref="EnrollmentStatus.Enrolled"/> seat promotes the
 /// head of the waitlist (BR-3).
 /// </summary>
-public sealed class CourseEnrollment : BaseEntity
+public sealed class CourseEnrollment : BaseEntity, IAuditExempt
 {
     /// <summary>FK → <see cref="TrainingCourse"/> (FR-2).</summary>
     public Guid CourseId { get; set; }

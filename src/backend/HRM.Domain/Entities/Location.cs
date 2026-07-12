@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// Supports tenant-scoped CRUD, soft-delete, and IANA time zone tracking.
 /// US-CHR-007: Manage Office Locations.
 /// </summary>
-public sealed class Location : BaseEntity
+public sealed class Location : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// Location name, unique within a tenant (FR-2, BR-1).

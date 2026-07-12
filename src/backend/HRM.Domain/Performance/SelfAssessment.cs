@@ -10,7 +10,7 @@ namespace HRM.Domain.Performance;
 /// child <see cref="SelfAssessmentItem"/> rows. Tenant-scoped via <see cref="BaseEntity.TenantId"/> + the
 /// EF global query filter + <c>TenantInterceptor</c> (NFR-2). Maps to the "self_assessment" table.
 /// </summary>
-public sealed class SelfAssessment : BaseEntity
+public sealed class SelfAssessment : BaseEntity, IAuditExempt
 {
     /// <summary>The appraisal cycle this self-assessment belongs to (FK, required).</summary>
     public Guid CycleId { get; set; }

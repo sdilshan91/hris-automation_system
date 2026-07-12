@@ -10,7 +10,7 @@ namespace HRM.Domain.Entities;
 /// while the Notifications module (US-NTF-001/002) does not yet exist. Tenant-scoped via
 /// <see cref="BaseEntity.TenantId"/> + the global query filter. Maps to "onboarding_notification_outbox".
 /// </summary>
-public sealed class OnboardingNotificationOutbox : BaseEntity
+public sealed class OnboardingNotificationOutbox : BaseEntity, IAuditExempt
 {
     /// <summary>The checklist instance this notification relates to.</summary>
     public Guid ChecklistInstanceId { get; set; }

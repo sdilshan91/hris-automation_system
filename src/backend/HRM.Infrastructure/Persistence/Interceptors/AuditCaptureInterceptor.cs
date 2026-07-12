@@ -11,13 +11,18 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace HRM.Infrastructure.Persistence.Interceptors;
 
 /// <summary>
-/// US-NTF-004: EF Core <see cref="SaveChangesInterceptor"/> that AUTOMATICALLY captures generic
-/// INSERT / UPDATE / DELETE operations on OPT-IN business entities (those implementing
-/// <see cref="IAuditableEntity"/>) into the SHARED <see cref="AuditLog"/> table, with property-level
-/// before/after diffs. This is the missing piece the existing audit infra did not provide — the
-/// <c>AuditInterceptor</c> only stamps <see cref="BaseEntity"/> audit fields + impersonation attribution,
-/// and the various services (Auth, Payroll, Employee field-audit, Admin) write only their OWN explicit
-/// audit rows. There is intentionally NO second audit table (FR-1/FR-2).
+/// US-NTF-004 / BUG-082: EF Core <see cref="SaveChangesInterceptor"/> that AUTOMATICALLY captures generic
+/// INSERT / UPDATE / DELETE operations on business entities into the SHARED <see cref="AuditLog"/> table,
+/// with property-level before/after diffs. This is the missing piece the existing audit infra did not
+/// provide — the <c>AuditInterceptor</c> only stamps <see cref="BaseEntity"/> audit fields + impersonation
+/// attribution, and the various services (Auth, Payroll, Employee field-audit, Admin) write only their OWN
+/// explicit audit rows. There is intentionally NO second audit table (FR-1/FR-2).
+///
+/// <para><b>Opt-OUT model (BUG-082).</b> Every tenant <see cref="BaseEntity"/> is captured EXCEPT those
+/// marked <see cref="IAuditExempt"/>. An entity is exempt for exactly one of two reasons: (1) it already
+/// writes its own domain-specific audit row (capturing it here would double-audit), or (2) it is
+/// high-volume/infrastructure (NFR-1). Previously this was opt-IN via <c>IAuditableEntity</c>, which left
+/// most business entities with no audit trail at all (US-NTF-004 AC-1/FR-1 unmet).</para>
 ///
 /// <para><b>Design / ordering.</b> Registered AFTER <c>TenantInterceptor</c> and <c>AuditInterceptor</c>,
 /// so by the time this runs in <c>SavingChanges(Async)</c> the new entities already have their UUIDv7
@@ -27,8 +32,8 @@ namespace HRM.Infrastructure.Persistence.Interceptors;
 /// SaveChanges needed).</para>
 ///
 /// <para><b>Recursion guard.</b> <see cref="AuditLog"/>, <see cref="EmployeeFieldAuditLog"/> and any other
-/// audit/log infrastructure entity are never captured (they don't implement <see cref="IAuditableEntity"/>
-/// anyway) — so writing audit rows never generates more audit rows.</para>
+/// audit/log infrastructure entity are never captured (they are not <see cref="BaseEntity"/> types anyway,
+/// so they never enter the capture set) — so writing audit rows never generates more audit rows.</para>
 ///
 /// <para><b>Rules.</b> BR-2: <c>Before</c> is null for INSERT, <c>After</c> is null for DELETE. A soft-delete
 /// (<c>IsDeleted</c> false→true) is captured as a "{Entity}.Delete" with before/after on the changed flags
@@ -76,8 +81,12 @@ public sealed class AuditCaptureInterceptor : SaveChangesInterceptor
 
         // Snapshot first: building the audit rows below mutates the change tracker (adds AuditLog entries),
         // so we must not enumerate it lazily while adding.
+        // BUG-082: opt-OUT — capture EVERY tenant BaseEntity change EXCEPT entities marked IAuditExempt
+        // (those either write their own explicit audit row, or are high-volume/infra — see IAuditExempt).
+        // AuditLog/EmployeeFieldAuditLog are not BaseEntity, so they stay unreachable (no audit-of-audit).
         var auditable = context.ChangeTracker
-            .Entries<IAuditableEntity>()
+            .Entries<BaseEntity>()
+            .Where(e => e.Entity is not IAuditExempt)
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
             .ToList();
 
@@ -145,7 +154,10 @@ public sealed class AuditCaptureInterceptor : SaveChangesInterceptor
             Id = BaseEntity.NewUuidV7(),
             TenantId = enrichment.TenantId,
             UserId = enrichment.UserId,
-            ActorEmployeeNo = enrichment.ActorEmail,    // best-effort actor display (no employee_no in claims)
+            // Best-effort actor display (no employee_no in claims). ActorEmployeeNo is varchar(50); an email can
+            // exceed that, so truncate — under BUG-082 opt-out this column is written on ~every audited save, and an
+            // overflow would 22001-fail the whole business transaction, not just the audit row.
+            ActorEmployeeNo = enrichment.ActorEmail is { } actorEmail ? Truncate(actorEmail, 50) : null,
             // Keep EventType in sync with Action so the legacy (EventType-based) reads still see the entry.
             EventType = action,
             Action = action,

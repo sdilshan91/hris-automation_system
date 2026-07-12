@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// A tenant-scoped training course in the catalog (US-TRN-001 FR-1). Employees enroll via
 /// <see cref="CourseEnrollment"/>. Capacity is optional (null = unlimited, never waitlists — BR-5).
 /// </summary>
-public sealed class TrainingCourse : BaseEntity
+public sealed class TrainingCourse : BaseEntity, IAuditExempt
 {
     /// <summary>Course title (required) (FR-1, AC-1).</summary>
     public string Title { get; set; } = string.Empty;

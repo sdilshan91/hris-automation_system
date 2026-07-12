@@ -8,7 +8,7 @@ namespace HRM.Domain.Entities;
 /// approval/rejection/cancellation transitions are handled by later stories
 /// (US-LV-004/005). Maps to the "leave_request" table (§7).
 /// </summary>
-public sealed class LeaveRequest : BaseEntity, IAuditableEntity
+public sealed class LeaveRequest : BaseEntity
 {
     /// <summary>
     /// FK to the employee applying for leave.

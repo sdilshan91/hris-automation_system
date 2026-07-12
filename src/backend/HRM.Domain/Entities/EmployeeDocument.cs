@@ -6,7 +6,7 @@ namespace HRM.Domain.Entities;
 /// Represents a document attached to an employee record (US-CHR-008).
 /// Tenant-scoped via BaseEntity.TenantId. Supports soft-delete (IsDeleted).
 /// </summary>
-public sealed class EmployeeDocument : BaseEntity
+public sealed class EmployeeDocument : BaseEntity, IAuditExempt
 {
     /// <summary>
     /// FK to the owning employee (required).

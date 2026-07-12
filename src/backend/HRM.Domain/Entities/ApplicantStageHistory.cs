@@ -12,7 +12,7 @@ namespace HRM.Domain.Entities;
 /// the EF global query filter + <c>TenantInterceptor</c> (this codebase enforces tenant isolation with
 /// EF query filters, not Postgres RLS — RLS/NFR-3 is a separate deferred story; see the module note).
 /// </summary>
-public sealed class ApplicantStageHistory : BaseEntity
+public sealed class ApplicantStageHistory : BaseEntity, IAuditExempt
 {
     /// <summary>FK to the <see cref="Applicant"/> this transition belongs to (required). Plain UUID column.</summary>
     public Guid ApplicantId { get; set; }

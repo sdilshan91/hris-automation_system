@@ -8,7 +8,7 @@ namespace HRM.Domain.Entities;
 /// <c>TenantInterceptor</c> (this codebase enforces tenant isolation with EF query filters; Postgres
 /// RLS is the deferred US-PLT-002 — see the payroll module note). Maps to the "salary_component" table.
 /// </summary>
-public sealed class SalaryComponent : BaseEntity
+public sealed class SalaryComponent : BaseEntity, IAuditExempt
 {
     /// <summary>Display name (FR-1, required, max 100 chars), e.g. "Basic Salary".</summary>
     public string Name { get; set; } = string.Empty;

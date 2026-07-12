@@ -10,7 +10,7 @@ namespace HRM.Domain.Entities;
 /// US-NTF-006 Phase 7: the Hangfire recurring job (<c>ScheduledReportJob</c>) finds due configs, GENERATES the
 /// report, and emails each recipient user a <c>scheduled_report_ready</c> notification with the download locator.
 /// </summary>
-public sealed class ScheduledReportConfig : BaseEntity
+public sealed class ScheduledReportConfig : BaseEntity, IAuditExempt
 {
     /// <summary>The pre-built report type, e.g. "DEPARTMENT_COMPARISON" / "CUSTOM" (§7).</summary>
     public string ReportType { get; set; } = string.Empty;
