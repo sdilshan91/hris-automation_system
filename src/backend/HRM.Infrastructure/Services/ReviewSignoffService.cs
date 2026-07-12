@@ -418,6 +418,81 @@ public sealed class ReviewSignoffService : IReviewSignoffService
         return Result<ReviewExportDto>.Success(dto);
     }
 
+    // ── Caller-scoped self-service (ISSUE-288) ────────────────────────
+
+    public async Task<Result<ReviewMeetingNotesDto>> GetMyMeetingNotesAsync(CancellationToken cancellationToken = default)
+    {
+        var ctxResult = await ResolveMyContextAsync(cancellationToken);
+        if (ctxResult.IsFailure)
+            return Result<ReviewMeetingNotesDto>.Failure(ctxResult.Error!, ctxResult.StatusCode ?? 400, ctxResult.ErrorCode);
+
+        var (cycleId, employeeId) = ctxResult.Value;
+
+        // The caller reads their OWN review — employeeId was resolved FROM the caller, so the manager/HR authz
+        // gate (which guards the manager-side notes surface) does not apply here. The "caller IS the reviewed
+        // employee" invariant is satisfied by construction.
+        var (loadResult, ctx) = await LoadContextAsync(employeeId, cycleId, tracking: false, cancellationToken);
+        if (loadResult is not null)
+            return loadResult;
+
+        return Result<ReviewMeetingNotesDto>.Success(BuildNotesDto(ctx!));
+    }
+
+    public async Task<Result<ReviewMeetingNotesDto>> AcknowledgeMyReviewAsync(
+        string? clientIpAddress, CancellationToken cancellationToken = default)
+    {
+        var ctxResult = await ResolveMyContextAsync(cancellationToken);
+        if (ctxResult.IsFailure)
+            return Result<ReviewMeetingNotesDto>.Failure(ctxResult.Error!, ctxResult.StatusCode ?? 400, ctxResult.ErrorCode);
+
+        var (cycleId, employeeId) = ctxResult.Value;
+        // Reuse the existing acknowledge logic verbatim (immutable signature + lock + notify). Its "caller IS the
+        // reviewed employee" guard is trivially satisfied since employeeId came from the caller.
+        return await AcknowledgeAsync(
+            new SignoffActionInput(cycleId, employeeId, Comments: null, clientIpAddress), cancellationToken);
+    }
+
+    public async Task<Result<ReviewMeetingNotesDto>> DisputeMyReviewAsync(
+        string? comments, string? clientIpAddress, CancellationToken cancellationToken = default)
+    {
+        var ctxResult = await ResolveMyContextAsync(cancellationToken);
+        if (ctxResult.IsFailure)
+            return Result<ReviewMeetingNotesDto>.Failure(ctxResult.Error!, ctxResult.StatusCode ?? 400, ctxResult.ErrorCode);
+
+        var (cycleId, employeeId) = ctxResult.Value;
+        // Reuse the existing dispute logic verbatim (mandatory-comments 422 + Disputed + notify manager/HR).
+        return await DisputeAsync(
+            new SignoffActionInput(cycleId, employeeId, comments, clientIpAddress), cancellationToken);
+    }
+
+    /// <summary>
+    /// Resolves the caller's self-service context (ISSUE-288): employeeId from the caller's Employee row and
+    /// cycleId from the active appraisal cycle. Mirrors <see cref="AppraisalCycleService.GetActiveAsync"/>'s
+    /// active-cycle selection inline (most recently started Active cycle) rather than injecting the cycle
+    /// service, because the sign-off service is hard-constructed by its unit tests. 403 when the caller is not
+    /// linked to an employee; 404 when no cycle is active.
+    /// </summary>
+    private async Task<Result<(Guid CycleId, Guid EmployeeId)>> ResolveMyContextAsync(CancellationToken cancellationToken)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<(Guid CycleId, Guid EmployeeId)>.Failure("Tenant context is not resolved.", 400);
+
+        var actor = await GetCurrentEmployeeAsync(cancellationToken);
+        if (actor is null)
+            return Result<(Guid CycleId, Guid EmployeeId)>.Failure(
+                "The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        var cycle = await _dbContext.AppraisalCycles.AsNoTracking()
+            .Where(c => c.Status == AppraisalCycleStatus.Active)
+            .OrderByDescending(c => c.StartDate)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (cycle is null)
+            return Result<(Guid CycleId, Guid EmployeeId)>.Failure(
+                "No active performance cycle.", 404, "no_active_cycle");
+
+        return Result<(Guid CycleId, Guid EmployeeId)>.Success((cycle.Id, actor.Id));
+    }
+
     // ── Shared helpers ────────────────────────────────────────────────
 
     /// <summary>Loaded review + cycle + employee for an operation.</summary>

@@ -141,6 +141,58 @@ describe('ReviewSignoffService', () => {
     req.flush({ ...mockRecord, status: 'NotesDraft' });
   });
 
+  // ── Employee self-service (ISSUE-288) ──────────────────────────────────────
+  // Caller-scoped: NO active-cycle prefetch, NO cycleId/employeeId in the URL.
+  const selfBase = `${perfBase}/reviews/cycles/active/me`;
+
+  it('getMySignoff() GETs the caller-scoped notes with NO active-cycle prefetch', () => {
+    let result: IReviewSignoff | undefined;
+    service.getMySignoff().subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${selfBase}/notes`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(mockRecord);
+
+    // No secondary call to cycles/active — the server resolves the cycle itself.
+    httpMock.expectNone(activeCycleUrl);
+    expect(result).toEqual(mockRecord);
+  });
+
+  it('acknowledgeMy() POSTs an empty body to the caller-scoped acknowledge route', () => {
+    let result: IReviewSignoff | undefined;
+    service.acknowledgeMy().subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${selfBase}/acknowledge`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush({
+      ...mockRecord,
+      status: 'SignedOff',
+      employeeSignature: { name: 'Alex Doe', signedOn: '2026-06-12T10:00:00Z' },
+    });
+
+    httpMock.expectNone(activeCycleUrl);
+    expect(result?.status).toBe('SignedOff');
+    expect(result?.employeeSignature?.name).toBe('Alex Doe');
+  });
+
+  it('disputeMy() POSTs the comments to the caller-scoped dispute route', () => {
+    const comments = 'I disagree with the rating on goal 1.';
+    let result: IReviewSignoff | undefined;
+    service.disputeMy(comments).subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${selfBase}/dispute`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ comments });
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush({ ...mockRecord, status: 'Disputed', disputeComments: comments });
+
+    httpMock.expectNone(activeCycleUrl);
+    expect(result?.status).toBe('Disputed');
+  });
+
   it('exportPdf() GETs a blob with credentials and the full response', () => {
     let status: number | undefined;
     service.exportPdf('e-1').subscribe((resp) => (status = resp.status));

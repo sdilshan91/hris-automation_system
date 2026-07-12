@@ -8,7 +8,6 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startWith } from 'rxjs/operators';
 import { ToastrService } from 'ngx-toastr';
@@ -26,7 +25,7 @@ import {
 
 /**
  * US-PRF-006 EMPLOYEE side (AC-3/AC-4/FR-4). Reached from the employee self-service
- * area at `/my-review/sign-off/:reviewId`. The employee reviews the meeting notes,
+ * area at `/my-review/sign-off`. The employee reviews the meeting notes,
  * then either:
  *
  * - "Acknowledge & Sign" → a CONFIRMATION MODAL (SIGNOFF_CONFIRM_MESSAGE) → on
@@ -217,7 +216,6 @@ import {
   `,
 })
 export class ReviewSignoffEmployeeComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
   private readonly service = inject(ReviewSignoffService);
   private readonly toastr = inject(ToastrService);
 
@@ -231,8 +229,6 @@ export class ReviewSignoffEmployeeComponent implements OnInit {
   readonly record = signal<IReviewSignoff | null>(null);
   readonly confirmOpen = signal(false);
   readonly disputing = signal(false);
-
-  private reviewId = '';
 
   readonly disputeControl = new FormControl('', {
     nonNullable: true,
@@ -265,24 +261,16 @@ export class ReviewSignoffEmployeeComponent implements OnInit {
     this.record() ? SIGNOFF_STATUS_LABEL[this.record()!.status] : '',
   );
 
-  // ⚠ ISSUE-288 (KNOWN GAP — employee self-service sign-off not yet functional):
-  // BUG-243 re-keyed ReviewSignoffService to `reviews/cycles/{cycleId}/employees/{employeeId}/…`
-  // (resolving cycleId internally via `cycles/active`). The MANAGER sign-off flow supplies
-  // employeeId from its route and works. This EMPLOYEE self view only holds an opaque route
-  // `:reviewId` and has no way to resolve the caller's own employeeId before load, so the calls
-  // below pass reviewId where the service now expects employeeId → 404/403 at runtime. This flow
-  // was already non-functional on base (the old `/sign-off/reviews/{reviewId}` route never existed);
-  // making it work needs a NEW caller-scoped BE self endpoint (e.g. `reviews/cycles/active/me/…`,
-  // authorized `Read.Self`). Tracked as ISSUE-288 — do NOT treat these calls as correct.
+  // ISSUE-288: caller-scoped self view — the backend resolves the caller's OWN
+  // employeeId + the active cycleId from the session, so no route param is needed.
   ngOnInit(): void {
-    this.reviewId = this.route.snapshot.paramMap.get('reviewId') ?? '';
     this.load();
   }
 
   load(): void {
     this.loading.set(true);
     this.loadError.set(null);
-    this.service.getSignoff(this.reviewId).subscribe({
+    this.service.getMySignoff().subscribe({
       next: (record) => {
         this.record.set(record);
         this.loading.set(false);
@@ -313,7 +301,7 @@ export class ReviewSignoffEmployeeComponent implements OnInit {
       return;
     }
     this.acknowledging.set(true);
-    this.service.acknowledge(this.reviewId).subscribe({
+    this.service.acknowledgeMy().subscribe({
       next: (saved) => {
         this.acknowledging.set(false);
         this.confirmOpen.set(false);
@@ -348,7 +336,7 @@ export class ReviewSignoffEmployeeComponent implements OnInit {
     }
     this.submittingDispute.set(true);
     this.service
-      .dispute(this.reviewId, { comments: this.disputeControl.value.trim() })
+      .disputeMy(this.disputeControl.value.trim())
       .subscribe({
         next: (saved) => {
           this.submittingDispute.set(false);

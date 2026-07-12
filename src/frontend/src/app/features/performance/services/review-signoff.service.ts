@@ -53,6 +53,45 @@ export class ReviewSignoffService {
     return `${this.reviewsBase}/cycles/${cycleId}/employees/${employeeId}`;
   }
 
+  // ── Employee self-service (ISSUE-288) ──────────────────────────────────────
+  // Caller-scoped endpoints for the EMPLOYEE self view: the backend resolves the
+  // caller's OWN employeeId (from the session) + the active cycleId server-side, so
+  // these take NO cycleId/employeeId params. They return the SAME IReviewSignoff
+  // shape as the manager endpoints and are authorized `Performance.Read.Self`.
+  // The `active/me` segment is literal (no ambiguity with `{cycleId}/employees/…`).
+
+  /** Load the caller's OWN sign-off record in the active cycle (AC-3/AC-4). */
+  getMySignoff(): Observable<IReviewSignoff> {
+    return this.http.get<IReviewSignoff>(
+      `${this.reviewsBase}/cycles/active/me/notes`,
+      { withCredentials: true },
+    );
+  }
+
+  /**
+   * AC-3: the caller acknowledges & signs their own review. The server records the
+   * signature (name+timestamp+IP) and flips status to SignedOff. Empty body.
+   */
+  acknowledgeMy(): Observable<IReviewSignoff> {
+    return this.http.post<IReviewSignoff>(
+      `${this.reviewsBase}/cycles/active/me/acknowledge`,
+      {},
+      { withCredentials: true },
+    );
+  }
+
+  /**
+   * AC-3/FR-4: the caller disputes their own review with mandatory comments. The
+   * server records the dispute, flips status to Disputed, notifies manager + HR.
+   */
+  disputeMy(comments: string): Observable<IReviewSignoff> {
+    return this.http.post<IReviewSignoff>(
+      `${this.reviewsBase}/cycles/active/me/dispute`,
+      { comments },
+      { withCredentials: true },
+    );
+  }
+
   /** Load the full sign-off record for an employee (drives every US-PRF-006 screen). */
   getSignoff(employeeId: string): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(

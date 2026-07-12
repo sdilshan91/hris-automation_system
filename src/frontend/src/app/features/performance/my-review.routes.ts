@@ -23,7 +23,9 @@ export const MY_REVIEW_ROUTES: Routes = [
   {
     // US-PRF-006 AC-3/AC-4/FR-4: employee reviews meeting notes then acknowledges &
     // signs or disputes. Same employee self-service guard as the parent /my-review.
-    path: 'sign-off/:reviewId',
+    // ISSUE-288: caller-scoped — the backend resolves the caller's OWN employeeId +
+    // the active cycleId from the session, so no route param is carried.
+    path: 'sign-off',
     loadComponent: () =>
       import(
         './components/review-signoff-employee/review-signoff-employee.component'

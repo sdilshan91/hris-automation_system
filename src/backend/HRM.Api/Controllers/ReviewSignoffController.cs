@@ -119,6 +119,54 @@ public sealed class ReviewSignoffController : ControllerBase
         return NotesResult(await _mediator.Send(new DisputeReviewCommand(input), cancellationToken));
     }
 
+    // ── Caller-scoped self-service (ISSUE-288) ──────────────────────────
+    // The employee self-view holds only an opaque reviewId; it cannot supply its own employeeId/cycleId. These
+    // routes resolve BOTH server-side (employeeId from ICurrentUser, cycleId from the active cycle) and reuse
+    // the existing sign-off logic. `active/me` is literal — the {cycleId:guid} routes above cannot match it.
+
+    /// <summary>
+    /// GET /api/v1/tenant/performance/reviews/cycles/active/me/notes
+    /// The CALLER's own meeting notes + sign-off state for the active cycle (AC-1/AC-3). 403 when the caller has
+    /// no employee record; 404 when no cycle is active.
+    /// </summary>
+    [HttpGet("reviews/cycles/active/me/notes")]
+    [RequirePermission("Performance.Read.Self")]
+    [ProducesResponseType(typeof(ApiResponse<ReviewMeetingNotesDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMyNotes(CancellationToken cancellationToken)
+        => NotesResult(await _mediator.Send(new GetMyMeetingNotesQuery(), cancellationToken));
+
+    /// <summary>
+    /// POST /api/v1/tenant/performance/reviews/cycles/active/me/acknowledge
+    /// The CALLER acknowledges &amp; signs their own review for the active cycle (AC-3/FR-4): immutable signature,
+    /// status → Signed Off, review LOCKED (BR-5).
+    /// </summary>
+    [HttpPost("reviews/cycles/active/me/acknowledge")]
+    [RequirePermission("Performance.Read.Self")]
+    [ProducesResponseType(typeof(ApiResponse<ReviewMeetingNotesDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AcknowledgeMy(CancellationToken cancellationToken)
+        => NotesResult(await _mediator.Send(new AcknowledgeMyReviewCommand(ClientIp), cancellationToken));
+
+    /// <summary>
+    /// POST /api/v1/tenant/performance/reviews/cycles/active/me/dispute
+    /// The CALLER disputes their own review for the active cycle (AC-3/FR-4/FR-5): mandatory comments; status →
+    /// Disputed; notifies manager + HR. Immutable dispute signature.
+    /// </summary>
+    [HttpPost("reviews/cycles/active/me/dispute")]
+    [RequirePermission("Performance.Read.Self")]
+    [ProducesResponseType(typeof(ApiResponse<ReviewMeetingNotesDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> DisputeMy(
+        [FromBody] DisputeReviewRequest request, CancellationToken cancellationToken)
+        => NotesResult(await _mediator.Send(new DisputeMyReviewCommand(request.Comments, ClientIp), cancellationToken));
+
     /// <summary>
     /// POST /api/v1/tenant/performance/reviews/cycles/{cycleId}/employees/{employeeId}/resolve-dispute
     /// HR resolves a disputed review (BR-4): confirm as-is (→ Signed Off + lock) or amend (→ Notes Added so
