@@ -5,6 +5,7 @@ using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed class SalaryStructureService : ISalaryStructureService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<SalaryStructureService> _logger;
 
     private const int MaxPageSize = 100;
@@ -30,13 +32,24 @@ public sealed class SalaryStructureService : ISalaryStructureService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IPayrollAuditLogger audit,
         ILogger<SalaryStructureService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _audit = audit;
         _logger = logger;
     }
+
+    /// <summary>
+    /// US-PAY-012 (BUG-080): the audited snapshot of a salary structure (the fields whose change matters).
+    /// Used as the before/after JSON payload; carries no salary amounts / PII.
+    /// </summary>
+    private static object Snapshot(SalaryStructure s) => new
+    {
+        s.Name, s.Code, s.Description, s.EffectiveFrom, s.IsDefault, s.IsActive,
+    };
 
     public async Task<Result<SalaryStructureDto>> CreateAsync(SalaryStructureInput input, CancellationToken cancellationToken = default)
     {
@@ -76,6 +89,10 @@ public sealed class SalaryStructureService : ISalaryStructureService
         if (input.IsDefault)
             await ClearExistingDefaultAsync(structureId, cancellationToken);
 
+        // US-PAY-012 (BUG-080): audit the create — before=null (new), after=snapshot. Committed atomically.
+        _audit.Log(PA.SalaryStructureCreated, PA.ResourceType.SalaryStructure,
+            structure.Id.ToString(), before: null, after: Snapshot(structure));
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -111,6 +128,9 @@ public sealed class SalaryStructureService : ISalaryStructureService
         if (mandatoryGuard is not null)
             return Result<SalaryStructureDto>.Failure(mandatoryGuard.Value.error, 409, mandatoryGuard.Value.code);
 
+        // US-PAY-012 (BUG-080): capture the BEFORE snapshot prior to mutating.
+        var before = Snapshot(structure);
+
         structure.Name = input.Name.Trim();
         structure.Code = code;
         structure.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
@@ -130,6 +150,10 @@ public sealed class SalaryStructureService : ISalaryStructureService
 
         if (input.IsDefault)
             await ClearExistingDefaultAsync(structureId, cancellationToken);
+
+        // US-PAY-012 (BUG-080): audit the update with before/after JSON of the changed fields.
+        _audit.Log(PA.SalaryStructureUpdated, PA.ResourceType.SalaryStructure,
+            structure.Id.ToString(), before: before, after: Snapshot(structure));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -366,6 +390,10 @@ public sealed class SalaryStructureService : ISalaryStructureService
             IsMandatory = x.IsMandatory,
             IsDeleted = false,
         }));
+
+        // US-PAY-012 (BUG-080): a clone materializes a NEW structure — audit it as a Created.
+        _audit.Log(PA.SalaryStructureCreated, PA.ResourceType.SalaryStructure,
+            clone.Id.ToString(), before: null, after: Snapshot(clone));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

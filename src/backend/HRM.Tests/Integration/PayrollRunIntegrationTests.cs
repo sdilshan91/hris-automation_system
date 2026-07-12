@@ -23,6 +23,7 @@ using HRM.Application.Features.Payroll.Commands;
 using HRM.Application.Features.Payroll.Queries;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using MediatR;
@@ -238,6 +239,30 @@ public sealed class PayrollRunIntegrationTests
         slipCount.Should().Be(2);
         var detailCount = await db.PayrollSlipDetails.CountAsync();
         detailCount.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    // ── US-PAY-012 / BUG-080: run completion emits a system-actor audit ──────
+
+    [Fact]
+    public async Task Process_ToReviewPending_EmitsPayrollRunCompletedAudit_AsSystemActor()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(runId);
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.PayrollRunCompleted && a.ResourceId == runId.ToString());
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.PayrollRun);
+        entry.TenantId.Should().Be(_tenantA);
+        // BR-7: a Hangfire-job write is attributed to the well-known system actor, never the empty Guid.
+        entry.UserId.Should().Be(PayrollAuditAction.SystemActorUserId);
+        entry.After.Should().NotBeNullOrWhiteSpace();
     }
 
     // ── AC-6: employee without a salary structure is skipped, run continues ──

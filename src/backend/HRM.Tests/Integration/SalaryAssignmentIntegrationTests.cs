@@ -20,6 +20,7 @@ using HRM.Application.Features.Payroll.Commands;
 using HRM.Application.Features.Payroll.Queries;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using MediatR;
@@ -210,6 +211,81 @@ public sealed class SalaryAssignmentIntegrationTests
         // Each employee's CTC was applied individually.
         var e2Comp = await mediator.Send(new GetEmployeeCompensationQuery(e2));
         e2Comp.Value!.AnnualCtc.Should().Be(600_000m);
+    }
+
+    // ── US-PAY-012 / BUG-080: assign vs revise emit the right audit action ────
+
+    [Fact]
+    public async Task Assign_FirstTime_EmitsEmployeeSalaryAssignedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var employee = await SeedEmployee(_tenantA, "EMP-AUD-1");
+        var structureId = await SeedStructure(_tenantA);
+
+        var assign = await mediator.Send(new AssignSalaryStructureCommand(
+            employee, structureId, new DateOnly(2026, 1, 1), 600_000m, "Initial", Array.Empty<SalaryOverrideInput>()));
+        assign.IsSuccess.Should().BeTrue();
+
+        var db = Provider(_tenantA).GetRequiredService<AppDbContext>();
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.ResourceId == employee.ToString()
+            && a.ResourceType == PayrollAuditAction.ResourceType.EmployeeSalary);
+        entry.Action.Should().Be(PayrollAuditAction.EmployeeSalaryAssigned);
+        entry.TenantId.Should().Be(_tenantA);
+        entry.Before.Should().BeNull();   // first-time assign has no prior.
+        entry.After.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Assign_OverExistingActiveAssignment_EmitsEmployeeSalaryRevisedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var employee = await SeedEmployee(_tenantA, "EMP-AUD-2");
+        var structureId = await SeedStructure(_tenantA);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // 1) A first assignment that is ACTIVE now (effective in the past).
+        var first = await mediator.Send(new AssignSalaryStructureCommand(
+            employee, structureId, today.AddMonths(-2), 600_000m, "Initial", Array.Empty<SalaryOverrideInput>()));
+        first.IsSuccess.Should().BeTrue();
+
+        // 2) A second assignment supersedes the active one → this is a REVISION.
+        var revise = await mediator.Send(new AssignSalaryStructureCommand(
+            employee, structureId, today, 720_000m, "Merit raise", Array.Empty<SalaryOverrideInput>()));
+        revise.IsSuccess.Should().BeTrue();
+
+        var db = Provider(_tenantA).GetRequiredService<AppDbContext>();
+        var actions = await db.AuditLogs.AsNoTracking()
+            .Where(a => a.ResourceId == employee.ToString()
+                        && a.ResourceType == PayrollAuditAction.ResourceType.EmployeeSalary)
+            .Select(a => a.Action)
+            .ToListAsync();
+
+        actions.Should().Contain(PayrollAuditAction.EmployeeSalaryAssigned);  // the first-time assign.
+        actions.Should().Contain(PayrollAuditAction.EmployeeSalaryRevised);   // the supersession.
+    }
+
+    [Fact]
+    public async Task BulkAssign_EmitsAnAssignedAuditPerEmployee()
+    {
+        var mediator = Pipeline(_tenantA);
+        var structureId = await SeedStructure(_tenantA);
+        var e1 = await SeedEmployee(_tenantA, "BULK-AUD-1");
+        var e2 = await SeedEmployee(_tenantA, "BULK-AUD-2");
+
+        var result = await mediator.Send(new BulkAssignSalaryStructureCommand(
+            structureId, new DateOnly(2026, 1, 1), "Bulk", new[]
+            {
+                new BulkAssignEntryInput(e1, 500_000m, Array.Empty<SalaryOverrideInput>()),
+                new BulkAssignEntryInput(e2, 600_000m, Array.Empty<SalaryOverrideInput>()),
+            }));
+        result.Value!.SucceededCount.Should().Be(2);
+
+        var db = Provider(_tenantA).GetRequiredService<AppDbContext>();
+        var assigned = await db.AuditLogs.AsNoTracking()
+            .CountAsync(a => a.Action == PayrollAuditAction.EmployeeSalaryAssigned
+                             && (a.ResourceId == e1.ToString() || a.ResourceId == e2.ToString()));
+        assigned.Should().Be(2);   // BR-1 "no exceptions": one audit row per bulk item.
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
+using PA = HRM.Domain.Payroll.PayrollAuditAction;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,7 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
     private readonly ITenantContext _tenantContext;
     private readonly IFileStorage _fileStorage;
     private readonly IPayslipEmailSender _emailSender;
+    private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayslipDistributionRunner> _logger;
 
     public PayslipDistributionRunner(
@@ -48,12 +50,14 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
         ITenantContext tenantContext,
         IFileStorage fileStorage,
         IPayslipEmailSender emailSender,
+        IPayrollAuditLogger audit,
         ILogger<PayslipDistributionRunner> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _fileStorage = fileStorage;
         _emailSender = emailSender;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -269,6 +273,16 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
             existing.FailureReason = outcome.FailureReason;
             existing.RetryCount = outcome.RetryCount;
         }
+
+        // US-PAY-012 (BUG-080): audit a successful payslip email send (only when actually Sent — Skipped/Failed
+        // are not "email sent"). Job-driven → system actor (BR-7); resourceId is the payslip id (there is no
+        // PayslipEmailLog resource type). Staged into THIS per-send SaveChanges so it commits with the log row.
+        if (outcome.Status == EmailDeliveryStatus.Sent)
+            _audit.Log(PA.PayslipEmailSent, PA.ResourceType.PayrollSlip,
+                outcome.PayrollSlipId.ToString(),
+                before: null,
+                after: new { outcome.RunId, outcome.PayrollSlipId, outcome.EmployeeId, outcome.SentAt },
+                systemActor: true);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         _dbContext.ChangeTracker.Clear(); // keep the tracker bounded across per-send commits of a large run.

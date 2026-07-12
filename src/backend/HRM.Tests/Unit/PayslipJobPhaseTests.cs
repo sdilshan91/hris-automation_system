@@ -83,13 +83,23 @@ public sealed class PayslipJobPhaseTests
         new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options,
         new MutableTenantContext { TenantId = _tenant });
 
+    /// <summary>No-op payroll audit logger — these ISSUE-269 phase tests don't assert BUG-080 audit emission.</summary>
+    private sealed class NoOpAudit : IPayrollAuditLogger
+    {
+        public void Log(string action, string resourceType, string resourceId, object? before = null,
+            object? after = null, string? ipAddress = null, string? userAgent = null, bool systemActor = false) { }
+        public Task LogAndSaveAsync(string action, string resourceType, string resourceId, object? before = null,
+            object? after = null, string? ipAddress = null, string? userAgent = null, bool systemActor = false,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     private PayslipDistributionRunner DistributionRunner(IFileStorage storage, IPayslipEmailSender sender)
         => new(NewDb(), new MutableTenantContext { TenantId = _tenant }, storage, sender,
-            NullLogger<PayslipDistributionRunner>.Instance);
+            new NoOpAudit(), NullLogger<PayslipDistributionRunner>.Instance);
 
     private PayslipBatchRenderer BatchRenderer(IFileStorage storage)
         => new(NewDb(), new MutableTenantContext { TenantId = _tenant }, storage,
-            NullLogger<PayslipBatchRenderer>.Instance);
+            new NoOpAudit(), NullLogger<PayslipBatchRenderer>.Instance);
 
     // ── Job C resumability: per-send commit survives a mid-batch crash ──────────────────────────────────────
 

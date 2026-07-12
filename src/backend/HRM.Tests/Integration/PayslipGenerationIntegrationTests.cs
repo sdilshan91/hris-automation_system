@@ -57,6 +57,21 @@ public sealed class PayslipGenerationIntegrationTests
         public void SetSystemContext() { }
     }
 
+    private sealed class FakeCurrentUser : ICurrentUser
+    {
+        public Guid UserId { get; init; } = Guid.NewGuid();
+        public string Email => "hr@t.com";
+        public Guid TenantId { get; init; }
+        public Guid UserTenantId => TenantId;
+        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Permissions => [];
+        public bool IsAuthenticated => true;
+        public bool IsImpersonating => false;
+        public Guid? ImpersonatorId => null;
+        public Guid? ImpersonationSessionId => null;
+        public bool ImpersonationReadOnly => false;
+    }
+
     /// <summary>In-memory IFileStorage: stores bytes keyed by tenant + relative path (no filesystem).</summary>
     private sealed class InMemoryFileStorage : IFileStorage
     {
@@ -88,8 +103,10 @@ public sealed class PayslipGenerationIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ITenantContext>(tenantContext);
+        services.AddSingleton<ICurrentUser>(new FakeCurrentUser { TenantId = tenantId });
         services.AddSingleton<IFileStorage>(_storage);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
         services.AddScoped<IPayslipGenerationService, PayslipGenerationService>();
         services.AddScoped<IPayslipBatchRenderer, PayslipBatchRenderer>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(GeneratePayslipsCommand).Assembly));
@@ -173,6 +190,28 @@ public sealed class PayslipGenerationIntegrationTests
         slip.PdfStoragePath.Should().Be($"payroll/{runId:D}/{empId:D}.pdf");
 
         _storage.Files.Should().ContainKey((_tenantA, $"payroll/{runId:D}/{empId:D}.pdf"));
+    }
+
+    // ── US-PAY-012 / BUG-080: each generated PDF emits a system-actor audit ──
+
+    [Fact]
+    public async Task Render_EmitsPayslipPdfGeneratedAudit_PerSlip_AsSystemActor()
+    {
+        var (runId, empId) = await SeedRunWithSlip(_tenantA, "EMP-AUD");
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        await mediator.Send(new GeneratePayslipsCommand(runId));
+        var render = await provider.GetRequiredService<IPayslipBatchRenderer>().RenderRunAsync(runId);
+        render.Value!.Generated.Should().Be(1);
+
+        using var db = Db(_tenantA);
+        var slipId = (await db.PayrollSlips.AsNoTracking().FirstAsync(s => s.PayrollRunId == runId)).Id;
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.PayslipPdfGenerated && a.ResourceId == slipId.ToString());
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.PayrollSlip);
+        entry.TenantId.Should().Be(_tenantA);
+        entry.UserId.Should().Be(PayrollAuditAction.SystemActorUserId);   // BR-7 job actor.
     }
 
     // ── BR-1: generate rejected for a non-ready run ─────────────────────────
