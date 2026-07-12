@@ -314,6 +314,72 @@ describe('AuthService', () => {
       expect(service.endImpersonation()).toBeFalse();
     });
   });
+
+  // ─── Bootstrap session restore (BUG-097) ─────────────────
+  describe('restoreSession', () => {
+    it('mints a token from the refresh cookie then hydrates the session from /auth/me', async () => {
+      const accessToken = tokenFor({ roles: ['HR Officer'] });
+      const restore = service.restoreSession();
+
+      const refreshReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/auth/refresh`
+      );
+      expect(refreshReq.request.method).toBe('POST');
+      expect(refreshReq.request.withCredentials).toBeTrue();
+      refreshReq.flush({ accessToken });
+
+      const meReq = httpMock.expectOne(`${environment.apiBaseUrl}/auth/me`);
+      expect(meReq.request.method).toBe('GET');
+      expect(meReq.request.withCredentials).toBeTrue();
+      meReq.flush({
+        userId: 'user-9',
+        email: 'restored@acme.com',
+        displayName: 'Restored User',
+        tenant: { tenantId: 'tenant-a', subdomain: 'acme', name: 'Acme HR', status: 'active' },
+        roles: ['HR Officer'],
+        permissions: ['Employee.View.All'],
+        mfaEnabled: false,
+      });
+
+      await restore;
+
+      expect(service.getAccessToken()).toBe(accessToken);
+      expect(service.isAuthenticated()).toBeTrue();
+      expect(service.currentUser()?.email).toBe('restored@acme.com');
+      expect(service.roles()).toEqual(['HR Officer']);
+      expect(service.permissions()).toEqual(['Employee.View.All']);
+      expect(tenantService.setTenantFromAuth).toHaveBeenCalledWith(
+        jasmine.objectContaining({ tenantId: 'tenant-a' })
+      );
+    });
+
+    it('resolves silently on a 401 (no refresh cookie) without navigating or toasting', async () => {
+      const router = TestBed.inject(Router) as jasmine.SpyObj<Router>;
+      const toastr = TestBed.inject(ToastrService) as jasmine.SpyObj<ToastrService>;
+
+      const restore = service.restoreSession();
+
+      const refreshReq = httpMock.expectOne(
+        `${environment.apiBaseUrl}/auth/refresh`
+      );
+      refreshReq.flush(
+        { error: 'unauthorized' },
+        { status: 401, statusText: 'Unauthorized' }
+      );
+
+      // No /auth/me is attempted when the refresh fails.
+      httpMock.expectNone(`${environment.apiBaseUrl}/auth/me`);
+
+      // The promise still resolves — bootstrap must not be blocked.
+      await expectAsync(restore).toBeResolved();
+
+      expect(service.getAccessToken()).toBeNull();
+      expect(service.isAuthenticated()).toBeFalse();
+      expect(service.currentUser()).toBeNull();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(toastr.warning).not.toHaveBeenCalled();
+    });
+  });
 });
 
 function tokenFor(overrides: Partial<ITokenClaims>): string {

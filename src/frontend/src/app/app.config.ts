@@ -23,13 +23,28 @@ import { errorInterceptor } from './core/interceptors/error.interceptor';
 import { tenantInterceptor } from './core/interceptors/tenant.interceptor';
 import { apiEnvelopeInterceptor } from './core/interceptors/api-envelope.interceptor';
 import { TenantService } from './core/tenant/tenant.service';
+import { AuthService } from './core/auth/auth.service';
 
 /**
- * Factory for tenant resolution at app startup.
- * Resolves the tenant from the subdomain before the app renders.
+ * App bootstrap initializer (blocks rendering until resolved).
+ *
+ * Ordering is deliberate and sequential (a single chained factory — NOT two
+ * separate APP_INITIALIZER entries, which Angular runs concurrently):
+ *   1. tenantService.resolve() — resolve the tenant from the subdomain so the
+ *      tenantInterceptor can stamp X-Tenant-Subdomain on every request.
+ *   2. authService.restoreSession() — silently re-mint the in-memory access
+ *      token from the httpOnly refresh cookie and hydrate the session (BUG-097),
+ *      so a full page load / deep link survives instead of bouncing to login.
+ *      It needs the tenant header from step 1, and it resolves even on failure
+ *      (anonymous visitor) so bootstrap never blocks.
+ * Because this completes before the router/guards run, authGuard sees the
+ * restored session (currentUser signal) synchronously — no race.
  */
-function initializeTenant(tenantService: TenantService): () => Promise<void> {
-  return () => tenantService.resolve();
+function initializeApp(
+  tenantService: TenantService,
+  authService: AuthService
+): () => Promise<void> {
+  return () => tenantService.resolve().then(() => authService.restoreSession());
 }
 
 export const appConfig: ApplicationConfig = {
@@ -86,11 +101,12 @@ export const appConfig: ApplicationConfig = {
       autoDismiss: true,
     }),
 
-    // App initialization: resolve tenant from subdomain before rendering
+    // App initialization: resolve tenant from subdomain, THEN restore any
+    // existing session from the refresh cookie (BUG-097) before rendering.
     {
       provide: APP_INITIALIZER,
-      useFactory: initializeTenant,
-      deps: [TenantService],
+      useFactory: initializeApp,
+      deps: [TenantService, AuthService],
       multi: true,
     },
   ],
