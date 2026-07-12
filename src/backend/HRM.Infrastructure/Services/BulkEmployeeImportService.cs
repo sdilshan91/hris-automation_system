@@ -27,6 +27,7 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<BulkEmployeeImportService> _logger;
+    private readonly INotificationDispatcher? _dispatcher;
 
     /// <summary>Max file size: 25 MB (BR-7).</summary>
     private const long MaxFileSizeBytes = 25 * 1024 * 1024;
@@ -88,12 +89,14 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        ILogger<BulkEmployeeImportService> logger)
+        ILogger<BulkEmployeeImportService> logger,
+        INotificationDispatcher? dispatcher = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _logger = logger;
+        _dispatcher = dispatcher;
     }
 
     // ── Template Generation (FR-2, AC-1) ────────────────────────────
@@ -313,8 +316,8 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                 "Bulk import job {JobId} completed. Total={Total}, Success={Success}, Failed={Failed}, TenantId={TenantId}",
                 jobId, rows.Count, totalSuccess, failedRowCount, _tenantContext.TenantId);
 
-            // TODO(notification): Dispatch completion notification to the initiator.
-            // The Notification module is not built yet. Log the summary for now.
+            // US-NTF-006 Phase 8: email the initiator a completion summary (guarded; never breaks the import).
+            await DispatchImportCompletedAsync(job, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -1044,6 +1047,55 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
             Detail = $"Bulk import '{job.FileName}' completed: {job.TotalRows} total, {job.SuccessCount} succeeded, {job.FailedCount} failed.",
             CreatedAt = DateTime.UtcNow,
         });
+    }
+
+    /// <summary>
+    /// US-NTF-006 Phase 8 (US-CHR-010): emails the import initiator a <c>bulk_import_completed</c> summary once the
+    /// async job finishes (email-only — <see cref="BulkImportJob.InitiatedBy"/> is a raw email string, and the job
+    /// runs in a Hangfire background context with no live user session). Skipped when the initiator is unknown /
+    /// empty / <c>"system"</c> (an unauthenticated / system-driven import). <b>Never throws</b> — a delivery failure
+    /// must not fail the committed import. Tenant is the resolved job tenant (set by the ITenantJobRunner).
+    /// </summary>
+    internal async Task DispatchImportCompletedAsync(BulkImportJob job, CancellationToken cancellationToken)
+    {
+        if (_dispatcher is null)
+            return;
+
+        var initiator = job.InitiatedBy;
+        if (string.IsNullOrWhiteSpace(initiator)
+            || string.Equals(initiator, "system", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["import"] = new Dictionary<string, object?>
+                {
+                    ["total"] = job.TotalRows,
+                    ["success"] = job.SuccessCount,
+                    ["failed"] = job.FailedCount,
+                    ["jobId"] = job.Id.ToString(),
+                },
+            });
+
+            var request = new NotificationRequest(
+                TenantId: _tenantContext.TenantId,
+                EventKey: "bulk_import_completed",
+                PayloadJson: payload,
+                RecipientEmail: initiator,
+                NotificationType: "bulk_import_completed");
+
+            await _dispatcher.SendEmailAsync(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "BulkEmployeeImportService: failed to dispatch bulk_import_completed for job {JobId} (tenant {TenantId}).",
+                job.Id, _tenantContext.TenantId);
+        }
     }
 
     /// <summary>

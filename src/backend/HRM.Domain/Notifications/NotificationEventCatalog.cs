@@ -239,6 +239,23 @@ public static class NotificationEventCatalog
         "report.type", "report.frequency", "report.downloadUrl",
     ];
 
+    // ── Placeholders for the US-NTF-006 Phase 8 tail events. MUST be declared before _byKey: the eager
+    // BuildCatalog() at type-init references them, so a later declaration would leave them null → NRE in the type
+    // initializer (Phase 2a lesson). ──
+
+    // bulk_import_completed (US-CHR-010): the initiator gets the import summary counts. Email-only — the recipient
+    // is a raw address (BulkImportJob.InitiatedBy), so branding is via the shared tenant placeholders.
+    private static readonly string[] BulkImportPlaceholders =
+    [
+        "import.total", "import.success", "import.failed", "import.jobId",
+    ];
+
+    // leave_report_ready (US-LV-012 FR-5/AC-5): the requester gets the "your export is ready" download link.
+    private static readonly string[] LeaveReportPlaceholders =
+    [
+        "report.type", "report.downloadUrl",
+    ];
+
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
         BuildCatalog().ToDictionary(e => e.EventKey, StringComparer.OrdinalIgnoreCase);
 
@@ -1971,7 +1988,73 @@ public static class NotificationEventCatalog
                 "download.\n\n{{report.downloadUrl}}\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.SystemAnnouncements,
             IsMandatory: false);
+
+        // ── US-NTF-006 Phase 8 — bulk employee import completed (US-CHR-010). Email-only to the initiator (a raw
+        // address recorded on the job); carries the total/success/failed counts. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "bulk_import_completed",
+            EventName: "Bulk Employee Import Completed",
+            Placeholders: [.. BulkImportPlaceholders, .. TenantPlaceholders],
+            SampleData: BulkImportSample(),
+            DefaultSubject: "Your employee import has completed",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Your employee import has finished processing. Of <strong>{{import.total}}</strong> row(s), " +
+                "<strong>{{import.success}}</strong> succeeded and <strong>{{import.failed}}</strong> failed.</p>" +
+                "<p>Sign in to the HRM portal to review the results and download the error report for any failed " +
+                "rows.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Your employee import has finished processing. Of {{import.total}} row(s), {{import.success}} " +
+                "succeeded and {{import.failed}} failed.\n\n" +
+                "Sign in to the HRM portal to review the results and download the error report for any failed " +
+                "rows.\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
+
+        // ── US-NTF-006 Phase 8 — leave report export ready (US-LV-012 FR-5/AC-5). In-app + email to the requester;
+        // carries the report type + download link. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "leave_report_ready",
+            EventName: "Leave Report Ready",
+            Placeholders: [.. LeaveReportPlaceholders, .. TenantPlaceholders],
+            SampleData: LeaveReportSample(),
+            DefaultSubject: "Your {{report.type}} leave report is ready",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Your <strong>{{report.type}}</strong> leave report has been generated and is ready to " +
+                "download.</p>" +
+                "<p><a href=\"{{report.downloadUrl}}\">Download your report</a></p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Your {{report.type}} leave report has been generated and is ready to download.\n\n" +
+                "{{report.downloadUrl}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.LeaveUpdates,
+            IsMandatory: false);
     }
+
+    // ── Sample-data for the US-NTF-006 Phase 8 tail events. ──
+    private static Dictionary<string, object?> BulkImportSample() => new()
+    {
+        ["import"] = new Dictionary<string, object?>
+        {
+            ["total"] = 50, ["success"] = 47, ["failed"] = 3,
+            ["jobId"] = "019f2607-0000-7000-8000-000000000000",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> LeaveReportSample() => new()
+    {
+        ["report"] = new Dictionary<string, object?>
+        {
+            ["type"] = "BalanceSummary",
+            ["downloadUrl"] = "https://app.example.com/reports/019f2607/download?token=sample",
+        },
+        ["tenant"] = SampleTenant(),
+    };
 
     // ── Sample-data for the Core-HR events (US-NTF-006 Phase 7). ──
     private static Dictionary<string, object?> ProbationEndingSample() => new()
