@@ -307,6 +307,11 @@ public sealed class LeaveReportService : ILeaveReportService
             .GroupBy(x => (x.EmployeeId, x.LeaveTypeId))
             .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalDays));
 
+        // BUG-124: resolve every (employee × leave type) prorated entitlement in ONE batch (two queries)
+        // instead of a per-pair round-trip inside the loop — the N+1 that timed out at 5,000 employees.
+        var entitlements = await _entitlementService.ComputeProratedEntitlementsBatchAsync(
+            employees, leaveTypes, year, ct);
+
         var rows = new List<LeaveReportRow>();
         foreach (var emp in employees)
         {
@@ -314,7 +319,7 @@ public sealed class LeaveReportService : ILeaveReportService
             {
                 var key = (emp.Id, lt.Id);
                 var c = components.TryGetValue(key, out var comp) ? comp : LedgerComponents.Empty;
-                decimal entitlement = await ResolveEntitlementAsync(emp.Id, lt.Id, year, ct);
+                decimal entitlement = entitlements.GetValueOrDefault(key, 0m);
                 decimal balance = entitlement + c.CarryForward - c.Used - c.Expired + c.Adjustments;
                 decimal pend = pending.TryGetValue(key, out var p) ? p : 0m;
 
@@ -817,13 +822,18 @@ public sealed class LeaveReportService : ILeaveReportService
             .ToListAsync(ct);
 
         // Entitlement = sum of per-employee engine entitlements per (department, leaveType).
+        // BUG-124: batch-resolve all (employee × leave type) prorated entitlements in ONE pass (two queries)
+        // rather than a per-pair round-trip inside the loop.
+        var entitlements = await _entitlementService.ComputeProratedEntitlementsBatchAsync(
+            employees, leaveTypes, year, ct);
+
         var entByDeptType = new Dictionary<(Guid Dept, Guid Type), decimal>();
         foreach (var emp in employees)
         {
             var dept = deptByEmp[emp.Id];
             foreach (var lt in leaveTypes)
             {
-                decimal ent = await ResolveEntitlementAsync(emp.Id, lt.Id, year, ct);
+                decimal ent = entitlements.GetValueOrDefault((emp.Id, lt.Id), 0m);
                 if (ent == 0m) continue;
                 var key = (dept, lt.Id);
                 entByDeptType[key] = entByDeptType.GetValueOrDefault(key, 0m) + ent;
@@ -973,13 +983,6 @@ public sealed class LeaveReportService : ILeaveReportService
                 .Select(d => new { d.Id, d.Name })
                 .ToListAsync(ct))
             .ToDictionary(x => x.Id, x => x.Name);
-    }
-
-    private async Task<decimal> ResolveEntitlementAsync(
-        Guid employeeId, Guid leaveTypeId, int year, CancellationToken ct)
-    {
-        var ent = await _entitlementService.ComputeEffectiveEntitlementAsync(employeeId, leaveTypeId, year, ct);
-        return ent.IsSuccess ? ent.Value!.ProratedEntitlementDays : 0m;
     }
 
     /// <summary>

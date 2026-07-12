@@ -91,6 +91,31 @@ public sealed class LeaveReportServiceTests
                 LeaveYear = ci.ArgAt<int>(2), ProratedEntitlementDays = 0m,
             }));
 
+        // BUG-124: the report resolves entitlements via the batch method. By default the stub delegates to
+        // the per-pair ComputeEffectiveEntitlementAsync above, so the existing StubEntitlement(...) value
+        // setups keep driving the report math unchanged. Tests that assert call counts override this.
+        _entitlementService
+            .ComputeProratedEntitlementsBatchAsync(
+                Arg.Any<IReadOnlyList<Employee>>(), Arg.Any<IReadOnlyList<LeaveType>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var emps = ci.ArgAt<IReadOnlyList<Employee>>(0);
+                var lts = ci.ArgAt<IReadOnlyList<LeaveType>>(1);
+                var year = ci.ArgAt<int>(2);
+                var ct = ci.ArgAt<CancellationToken>(3);
+                var dict = new Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>();
+                foreach (var e in emps)
+                    foreach (var lt in lts)
+                    {
+                        var res = _entitlementService
+                            .ComputeEffectiveEntitlementAsync(e.Id, lt.Id, year, ct)
+                            .GetAwaiter().GetResult();
+                        dict[(e.Id, lt.Id)] = res.IsSuccess ? res.Value!.ProratedEntitlementDays : 0m;
+                    }
+                return dict;
+            });
+
         _exportStorage = Substitute.For<IReportExportStorage>();
         _logger = Substitute.For<ILogger<LeaveReportService>>();
 
@@ -296,6 +321,43 @@ public sealed class LeaveReportServiceTests
         var only = report.Rows.Single();
         Cell(only, report, "Employee No").Should().Be("EMP-0001");
         Cell(only, report, "Leave Type").Should().Be("Annual Leave");
+    }
+
+    [Fact]
+    public async Task BalanceSummaryAndUtilization_ResolveEntitlementsInOneBatch_NotPerPair_BUG124()
+    {
+        // BUG-124: the report must resolve entitlements via ONE batch call per report, never a per-pair
+        // ComputeEffectiveEntitlementAsync inside the (employee × leave type) loop (the N+1 that timed out
+        // at 5,000 employees). Override the batch stub to return fixed values WITHOUT delegating to the
+        // per-pair method, so we can prove the per-pair path is never touched.
+        _entitlementService
+            .ComputeProratedEntitlementsBatchAsync(
+                Arg.Any<IReadOnlyList<Employee>>(), Arg.Any<IReadOnlyList<LeaveType>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>
+            {
+                [(_empAlice, _annualLeaveTypeId)] = 14m,
+                [(_empBob, _annualLeaveTypeId)] = 14m,
+            });
+
+        var svc = CreateService();
+        var balance = await svc.GenerateReportAsync(
+            LeaveReportType.BalanceSummary, Params(leaveTypeId: _annualLeaveTypeId));
+        var utilization = await svc.GenerateReportAsync(
+            LeaveReportType.Utilization,
+            Params(leaveTypeId: _annualLeaveTypeId,
+                from: new DateOnly(Year, 1, 1), to: new DateOnly(Year, 12, 31)));
+
+        balance.IsSuccess.Should().BeTrue();
+        utilization.IsSuccess.Should().BeTrue();
+
+        // One batch resolution per report (2 reports → exactly 2 batch calls); the per-pair method is
+        // never called from these paths, no matter how many employees/leave types there are.
+        await _entitlementService.Received(2).ComputeProratedEntitlementsBatchAsync(
+            Arg.Any<IReadOnlyList<Employee>>(), Arg.Any<IReadOnlyList<LeaveType>>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _entitlementService.DidNotReceive().ComputeEffectiveEntitlementAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     // ══════════════════════════════════════════════════════════════

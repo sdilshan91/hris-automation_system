@@ -97,6 +97,21 @@ public sealed class LeaveReportIntegrationTests
                 LeaveYear = ci.ArgAt<int>(2),
                 ProratedEntitlementDays = 14m,
             }));
+        // BUG-124: the report resolves entitlements via the batch method — mirror the same 14m per pair.
+        entitlement
+            .ComputeProratedEntitlementsBatchAsync(
+                Arg.Any<IReadOnlyList<Employee>>(), Arg.Any<IReadOnlyList<LeaveType>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var emps = ci.ArgAt<IReadOnlyList<Employee>>(0);
+                var lts = ci.ArgAt<IReadOnlyList<LeaveType>>(1);
+                var dict = new Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal>();
+                foreach (var e in emps)
+                    foreach (var lt in lts)
+                        dict[(e.Id, lt.Id)] = 14m;
+                return dict;
+            });
 
         var services = new ServiceCollection();
         services.AddLogging();
