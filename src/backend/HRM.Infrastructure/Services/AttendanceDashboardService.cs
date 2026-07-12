@@ -111,7 +111,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         var employees = scopeResult.Value!;
         var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
         var statuses = await ComputeStatusesAsync(employees, date, tenantZone, cancellationToken);
-        var deptNames = await DepartmentNamesAsync(employees, cancellationToken);
+        var deptNames = await DepartmentNamesAsync(employees.Select(e => e.DepartmentId), cancellationToken);
 
         var rows = statuses
             .Select(s =>
@@ -276,7 +276,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         }
 
         var empIds = employees.Select(e => e.Id).ToHashSet();
-        var deptNames = await DepartmentNamesAsync(employees, ct);
+        var deptNames = await DepartmentNamesAsync(employees.Select(e => e.DepartmentId), ct);
 
         // ISSUE-065: the tenant-local range maps to this UTC window (UTC zone → no-op).
         var rangeStart = TenantClock.LocalToUtc(from, TimeOnly.MinValue, tenantZone);
@@ -549,7 +549,16 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     //  Shared status computation (KPIs + live board)
     // ══════════════════════════════════════════════════════════════
 
-    private readonly record struct EmployeeDayStatus(Employee Employee, string Status, DateTime? ClockInAt);
+    /// <summary>
+    /// BUG-123 / ISSUE-284 #2: the KPI + live-board scope loaders project only the columns the dashboard
+    /// actually consumes (Id + LocationId for status precedence; FirstName/LastName/EmployeeNo/DepartmentId
+    /// for the live-board row) instead of materializing whole <see cref="Employee"/> entities — at 50k
+    /// employees the "all" scope was a full-table entity scan on a hot path.
+    /// </summary>
+    private readonly record struct DashboardEmployee(
+        Guid Id, string FirstName, string LastName, string EmployeeNo, Guid DepartmentId, Guid? LocationId);
+
+    private readonly record struct EmployeeDayStatus(DashboardEmployee Employee, string Status, DateTime? ClockInAt);
 
     /// <summary>
     /// Classifies every employee's current status for the date. Precedence: HOLIDAY (at the employee's
@@ -557,7 +566,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     /// NOT_CLOCKED_IN. Loads all source data in 3 bulk queries (NFR-3 — no per-employee round-trips).
     /// </summary>
     private async Task<List<EmployeeDayStatus>> ComputeStatusesAsync(
-        List<Employee> employees, DateOnly date, TimeZoneInfo tenantZone, CancellationToken ct)
+        List<DashboardEmployee> employees, DateOnly date, TimeZoneInfo tenantZone, CancellationToken ct)
     {
         if (employees.Count == 0) return [];
 
@@ -648,34 +657,41 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     /// Attendance.View.All permission (BR-3); scope="team" narrows to the acting manager's direct
     /// reports (BR-4). Default scope is "all". All queries are tenant-scoped by the global filter.
     /// </summary>
-    private async Task<Result<List<Employee>>> ResolveScopeEmployeesAsync(string scope, CancellationToken ct)
+    private async Task<Result<List<DashboardEmployee>>> ResolveScopeEmployeesAsync(string scope, CancellationToken ct)
     {
         var normalized = (scope ?? "all").Trim().ToLowerInvariant();
         if (normalized is not ("all" or "team"))
-            return Result<List<Employee>>.Failure("Scope must be 'all' or 'team'.", 400, "invalid_scope");
+            return Result<List<DashboardEmployee>>.Failure("Scope must be 'all' or 'team'.", 400, "invalid_scope");
 
         if (normalized == "all")
         {
             if (!_currentUser.Permissions.Contains(PermissionCatalog.Attendance.ViewAll))
-                return Result<List<Employee>>.Failure(
+                return Result<List<DashboardEmployee>>.Failure(
                     "You are not authorized to view the all-employees dashboard.", 403, "scope_not_allowed");
 
+            // BUG-123: project only the consumed columns (no full-entity materialization at 50k).
             var all = await _dbContext.Employees.AsNoTracking()
                 .Where(e => e.Status != EmployeeStatus.Terminated)
+                .Select(e => new DashboardEmployee(
+                    e.Id, e.FirstName, e.LastName, e.EmployeeNo, e.DepartmentId, e.LocationId))
                 .ToListAsync(ct);
-            return Result<List<Employee>>.Success(all);
+            return Result<List<DashboardEmployee>>.Success(all);
         }
 
         // team: the acting manager's direct reports.
-        var manager = await _dbContext.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, ct);
-        if (manager is null)
-            return Result<List<Employee>>.Success([]);
+        var managerId = await _dbContext.Employees.AsNoTracking()
+            .Where(e => e.UserId == _currentUser.UserId)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(ct);
+        if (managerId is null)
+            return Result<List<DashboardEmployee>>.Success([]);
 
         var team = await _dbContext.Employees.AsNoTracking()
-            .Where(e => e.ReportsToEmployeeId == manager.Id && e.Status != EmployeeStatus.Terminated)
+            .Where(e => e.ReportsToEmployeeId == managerId && e.Status != EmployeeStatus.Terminated)
+            .Select(e => new DashboardEmployee(
+                e.Id, e.FirstName, e.LastName, e.EmployeeNo, e.DepartmentId, e.LocationId))
             .ToListAsync(ct);
-        return Result<List<Employee>>.Success(team);
+        return Result<List<DashboardEmployee>>.Success(team);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -706,9 +722,9 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     }
 
     private async Task<Dictionary<Guid, string>> DepartmentNamesAsync(
-        IReadOnlyList<Employee> employees, CancellationToken ct)
+        IEnumerable<Guid> departmentIds, CancellationToken ct)
     {
-        var deptIds = employees.Select(e => e.DepartmentId).Distinct().ToList();
+        var deptIds = departmentIds.Distinct().ToList();
         if (deptIds.Count == 0) return new Dictionary<Guid, string>();
         return (await _dbContext.Departments.AsNoTracking()
                 .Where(d => deptIds.Contains(d.Id))
@@ -718,6 +734,8 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     }
 
     private static string FullName(Employee e) => $"{e.FirstName} {e.LastName}".Trim();
+
+    private static string FullName(DashboardEmployee e) => $"{e.FirstName} {e.LastName}".Trim();
 
     private static string? NormalizeFormat(string? format)
     {

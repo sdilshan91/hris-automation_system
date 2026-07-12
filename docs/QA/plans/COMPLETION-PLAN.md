@@ -60,7 +60,8 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P3-5 Audit-all (gated) | P3 | **BUG-281** (write-time PII redaction) → then **BUG-082** (opt-out audit-all) | TODO | — | auto-healed; BUG-082 BLOCKED-BY BUG-281 (else cleartext-PII leak) |
 | P1-4a Attendance N+1 | P1 | **BUG-125** + **BUG-283** (shift-resolution N+1, shared resolver) | PR#257 | #257 | ~15k round-trips→3; no migration; 40/40 green; merging |
 | P1-4b Leave report N+1 | P1 | BUG-124 (batch entitlement resolution) | PR#258 | #258 | ~325k round-trips→2; no migration; 89/89 green; merging |
-| P1-4c Dashboard scale | P1 | BUG-123 | TODO | — | partial code fix (attendance-today projection); birthday-index + parallelism + SLA = perf-rig |
+| P1-4c Dashboard scale | P1 | BUG-123 (hot-path projection) | PR#259 | #259 | attendance-today/live-board projection; folds ISSUE-284#2; 56/56 green; remainder→ISSUE-285; merging |
+| P4-perf Dashboard SLA remainder | P4 | **ISSUE-285** (split from BUG-123) | GATED | — | birthday-index MIGRATION (decision) + widget parallelism (IDbContextFactory) + k6 p95/50k confirmation |
 | P1-5 FE session/contract | P1 | BUG-097/100/113/243 | TODO | — | Angular; 243=Perf routes |
 | P2-1 Notification delivery | P2/P3 | US-NTF-006: 13 LogOnly* → RealNotificationDispatcher (ISSUE-221/228/214) | TODO | — | biggest surface |
 | P2-2 MED clusters | P2 | ISSUE-195/BUG-120 RBAC-scope; audit gaps; payroll semantics; a11y; UTC; Redis | TODO | — | fan-out after P2-1 |
