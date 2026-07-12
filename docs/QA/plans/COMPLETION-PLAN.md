@@ -59,7 +59,7 @@ Ranked by **severity × blast-radius × unblocks-others**, implementable-now fir
 1. ~~**ISSUE-288 (HIGH)** — employee self-service review sign-off.~~ ✅ **DONE (PR #267)** — 3 caller-scoped `reviews/cycles/active/me/*` self endpoints + FE rewire; BE 3596/3596, FE 3763 green; auditors WIRED+AUTHENTIC. Unblocked US-PRF-006 AC-3.
 2. ~~**US-NTF-006 Phase 8 (P2-1c)**~~ ✅ **DONE (PR #268)** — LeaveReportExport (`requestedByUserId` threaded) + BulkImport (`InitiatedBy`) notify; 2 catalog events; BE 3609/3609 + leave-side dispatch test; auditors WIRED+AUTHENTIC. **Auto-healed a 3rd analogous gap → P2-1d** (`AttendanceSummaryExportJob` US-ATT-010 FR-7 export-ready notify, same Site-B pattern).
 3. ~~**BUG-281 (P3-5, security)** — write-time PII redaction in audit.~~ ✅ **DONE (PR #269)** — interceptor masks before/after at write time (+ `salary` key); BE 3615/3615; test-authenticator AUTHENTIC. **BUG-082 now UNBLOCKED** (can broaden auto-audit without a PII-at-rest leak — sequence it into P2-2/P3 next).
-4. **P3-2 JWT denylist** — `NoOpSessionRevoker` → Redis token-revocation (access tokens currently can't be revoked; Redis is available on host).
+4. ~~**P3-2 JWT denylist**~~ ✅ **DONE (PR #270)** — Redis per-(tenant,user) "revoked-before" cutoff + `OnTokenValidated` fail-open check + `iat` on tokens; DI-gated Redis/NoOp; BE 3630/3630 (+ iat round-trip + fail-open arms); auditors WIRED+AUTHENTIC. Investigated the flagged impersonation-end gap → **NOT actioned** (already enforced by `ImpersonationEnforcementMiddleware` session-row check; the per-user cutoff would wrongly revoke the target's OWN sessions). Only caller = `OffboardingService`; admin force-logout plugs the same seam when added.
 5. **P2-2 RBAC-scope** — **ISSUE-195** (manager `Reports.View.Team` unimplemented → sees full tenant) + **BUG-120** (Directory gated `ViewOwn` → Manager/HR/Admin 403). Real authz gaps.
 6. **P3-3 Permission cache → Redis** (NFR-2 scale) · **P3-4 PII-at-rest** pgcrypto (Recommendation/Pip/Budget) · **P3-1 ClamAV** (wire client; the live scan needs a ClamAV daemon → infra-gated).
 7. **P0-2 Missing TC suites** (qa-engineer, report-only) · **P2-2 remaining MED clusters** (audit gaps, payroll semantics, a11y, UTC, Redis) · **P7 LOW tail**.
@@ -93,7 +93,7 @@ Ranked by **severity × blast-radius × unblocks-others**, implementable-now fir
 | P2-2 MED clusters | P2 | ISSUE-195/BUG-120 RBAC-scope; audit gaps; payroll semantics; a11y; UTC; Redis | TODO | — | fan-out after P2-1 |
 | P2-3 Red FE base | P2 | ISSUE-245 (~26 pre-existing Angular spec fails) | VERIFIED | — | RESOLVED 2026-07-12 no-code — cleared by #254–261; full Karma suite 3757/3757 green ×2 runs, deterministic order; FE gate trustworthy |
 | P3-1 ClamAV | P3 | AllowWithLogVirusScanner → ClamAvVirusScanner | TODO | — | security |
-| P3-2 JWT denylist | P3 | NoOpSessionRevoker → Redis denylist | TODO | — | security |
+| P3-2 JWT denylist | P3 | NoOpSessionRevoker → Redis denylist | MERGED | #270 | Redis "revoked-before" cutoff + OnTokenValidated fail-open + iat claim; DI-gated Redis/NoOp; 3630/3630; auditors WIRED+AUTHENTIC. Impersonation-end already covered by ImpersonationEnforcementMiddleware (not the per-user cutoff — would over-revoke) |
 | P3-3 Permission cache→Redis | P3 | InMemoryPermissionCache (NFR-2) | TODO | — | scale |
 | P3-4 PII at rest | P3 | US-PLT-005 pgcrypto (Recommendation/Pip/Budget) | TODO | — | plan-HIGH |
 | P4-1 RLS code finalize | P4 | US-PLT-002 code parts (prod flip = ops) | TODO | — | ISSUE-269 long-tx tail |

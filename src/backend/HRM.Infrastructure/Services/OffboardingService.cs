@@ -389,7 +389,8 @@ public sealed class OffboardingService : IOffboardingService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // FR-7: revoke the employee's active sessions. Refresh tokens are revoked via the existing auth path
-        // (blocks re-auth + refresh); the ISessionRevoker seam covers the Redis JWT denylist that isn't wired.
+        // (blocks re-auth + refresh); the ISessionRevoker seam sets the Redis JWT denylist "revoked-before"
+        // cutoff (P3-2) so already-issued access tokens are rejected too (no-op when Redis is unconfigured).
         Guid? settlementRef = null;
         if (employee.UserId.HasValue)
         {

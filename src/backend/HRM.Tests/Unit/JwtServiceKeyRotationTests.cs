@@ -21,6 +21,7 @@
 // ============================================================================
 
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Cryptography;
 using FluentAssertions;
 using HRM.Domain.Entities;
@@ -148,6 +149,27 @@ public sealed class JwtServiceKeyRotationTests
 
         new JwtSecurityTokenHandler().ReadJwtToken(token).Header.Kid
             .Should().Be(KidA, "the token header kid must be the configured Jwt:SigningKeyId so validators can select the right key");
+    }
+
+    // ── 6. iat invariant — the P3-2 session-revocation denylist depends on it ──
+    // SessionRevocationCheck rejects a token whose `iat` is before the revoke-cutoff. That only works if the
+    // issued token actually carries an `iat` claim parseable as unix SECONDS. Guard the invariant so a future
+    // JwtService change that drops/renames/reformats iat can't SILENTLY disable revocation — the check
+    // fails OPEN, so a missing/unparseable iat means tokens would simply never be rejected.
+    [Fact]
+    public void IssuedToken_CarriesParseableUnixSecondsIat()
+    {
+        var keyA = RSA.Create(2048);
+        var svc = new JwtService(BuildConfig(privateKeyPem: keyA.ExportRSAPrivateKeyPem(), signingKeyId: KidA));
+
+        var token = IssueToken(svc);
+
+        var iat = new JwtSecurityTokenHandler().ReadJwtToken(token).Claims.FirstOrDefault(c => c.Type == "iat");
+        iat.Should().NotBeNull("SessionRevocationCheck reads the `iat` claim off the token to compare against the revoke cutoff");
+        long.TryParse(iat!.Value, out var iatUnix)
+            .Should().BeTrue("`iat` must be unix seconds (a bare integer) — the exact format SessionRevocationCheck long.TryParse-es");
+        var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        iatUnix.Should().BeInRange(nowUnix - 60, nowUnix + 60, "the issued-at must be ~now");
     }
 
     // ── Config builder ────────────────────────────────────────────────────────
