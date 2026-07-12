@@ -133,7 +133,8 @@ public sealed class HrReportService : IHrReportService
     private async Task<Result<HrReportResult>> HeadcountSummaryAsync(
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
-        var employees = await FilteredEmployees(qp).ToListAsync(ct);
+        var scope = await ResolveScopeAsync(ct);
+        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope).ToListAsync(ct);
         var deptNames = await DepartmentNameLookup(ct);
 
         var active = employees.Count(e => IsActive(e.Status));
@@ -156,6 +157,7 @@ public sealed class HrReportService : IHrReportService
             new() { Label = "Total Headcount", Value = employees.Count, Tone = "neutral" },
             new() { Label = "Active", Value = active, Tone = "positive" },
             new() { Label = "Inactive / Separated", Value = inactive, Tone = "negative" },
+            new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
 
         var rows = new List<object?[]>
@@ -181,7 +183,8 @@ public sealed class HrReportService : IHrReportService
     private async Task<Result<HrReportResult>> TurnoverAsync(
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
-        var employees = await FilteredEmployees(qp).ToListAsync(ct);
+        var scope = await ResolveScopeAsync(ct);
+        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope).ToListAsync(ct);
         var employeeIds = employees.Select(e => e.Id).ToList();
         var deptNames = await DepartmentNameLookup(ct);
 
@@ -241,6 +244,7 @@ public sealed class HrReportService : IHrReportService
             new() { Label = "Voluntary", Value = voluntary, Tone = "neutral" },
             new() { Label = "Involuntary", Value = involuntary, Tone = "neutral" },
             new() { Label = "Average Tenure (years)", Value = avgTenureYears, Tone = "neutral" },
+            new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
 
         var rows = new List<object?[]>
@@ -277,7 +281,8 @@ public sealed class HrReportService : IHrReportService
     private async Task<Result<HrReportResult>> DemographicsAsync(
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
-        var employees = await FilteredEmployees(qp).ToListAsync(ct);
+        var scope = await ResolveScopeAsync(ct);
+        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope).ToListAsync(ct);
         var deptNames = await DepartmentNameLookup(ct);
         var locNames = await LocationNameLookup(ct);
 
@@ -319,6 +324,7 @@ public sealed class HrReportService : IHrReportService
             new() { Label = "Total Employees", Value = employees.Count, Tone = "neutral" },
             new() { Label = "Gender Groups", Value = byGender.Count, Tone = "neutral" },
             new() { Label = "Age Bands", Value = ageBuckets.Count, Tone = "neutral" },
+            new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
 
         var rows = new List<object?[]>();
@@ -342,7 +348,8 @@ public sealed class HrReportService : IHrReportService
     private async Task<Result<HrReportResult>> JoinersAndLeaversAsync(
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
-        var employees = await FilteredEmployees(qp).ToListAsync(ct);
+        var scope = await ResolveScopeAsync(ct);
+        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope).ToListAsync(ct);
         var deptNames = await DepartmentNameLookup(ct);
         var employeeIds = employees.Select(e => e.Id).ToList();
 
@@ -374,6 +381,7 @@ public sealed class HrReportService : IHrReportService
             new() { Label = "Joiners", Value = joiners.Count, Tone = "positive" },
             new() { Label = "Leavers", Value = leavers.Count, Tone = "negative" },
             new() { Label = "Net Change", Value = joiners.Count - leavers.Count, Tone = "neutral" },
+            new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
 
         return Ok(HrReportType.JoinersAndLeavers, qp, dateFrom, dateTo, summary,
@@ -398,7 +406,9 @@ public sealed class HrReportService : IHrReportService
     private async Task<Result<HrReportResult>> DepartmentDistributionAsync(
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
-        var employees = await FilteredEmployees(qp).Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation).ToListAsync(ct);
+        var scope = await ResolveScopeAsync(ct);
+        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope)
+            .Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation).ToListAsync(ct);
         var deptNames = await DepartmentNameLookup(ct);
 
         var byDept = employees
@@ -413,6 +423,7 @@ public sealed class HrReportService : IHrReportService
         {
             new() { Label = "Total Active Headcount", Value = employees.Count, Tone = "neutral" },
             new() { Label = "Departments", Value = byDept.Count, Tone = "neutral" },
+            new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
 
         return Ok(HrReportType.DepartmentDistribution, qp, dateFrom, dateTo, summary,
@@ -426,7 +437,9 @@ public sealed class HrReportService : IHrReportService
     private async Task<Result<HrReportResult>> EmploymentTypeBreakdownAsync(
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
-        var employees = await FilteredEmployees(qp).Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation).ToListAsync(ct);
+        var scope = await ResolveScopeAsync(ct);
+        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope)
+            .Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation).ToListAsync(ct);
 
         var byType = Enum.GetValues<EmploymentType>()
             .Select(t => new HrChartPoint { Label = t.ToString(), Value = employees.Count(e => e.EmploymentType == t) })
@@ -437,6 +450,7 @@ public sealed class HrReportService : IHrReportService
         var summary = new List<HrSummaryStat>
         {
             new() { Label = "Total Active Headcount", Value = employees.Count, Tone = "neutral" },
+            new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
 
         return Ok(HrReportType.EmploymentTypeBreakdown, qp, dateFrom, dateTo, summary,
@@ -1219,10 +1233,17 @@ public sealed class HrReportService : IHrReportService
         return $"t:{_tenantContext.TenantId}:report:{HrReportTypeKey.ToKey(type)}:{hash}";
     }
 
-    /// <summary>True for the US-RPT-002 leave/attendance reports, which are role-scoped (AC-4).</summary>
+    /// <summary>
+    /// True for role-scoped reports whose result depends on the caller's scope (AC-4). Covers the US-RPT-002
+    /// leave/attendance reports AND (ISSUE-195) the US-RPT-001 HR-employee reports, which now scope their base
+    /// employee population to a manager's direct reports — so a Manager and an HR Officer with identical filters
+    /// must never share a cache entry (would otherwise leak All-tenant aggregates to a team-scoped manager).
+    /// </summary>
     private static bool IsScopedReport(HrReportType type) => type is
         HrReportType.LeaveUtilization or HrReportType.LeaveBalance or HrReportType.AbsenteeismTrends or
-        HrReportType.AttendanceSummary or HrReportType.OvertimeReport or HrReportType.LateArrivalReport;
+        HrReportType.AttendanceSummary or HrReportType.OvertimeReport or HrReportType.LateArrivalReport or
+        HrReportType.HeadcountSummary or HrReportType.EmployeeTurnover or HrReportType.Demographics or
+        HrReportType.JoinersAndLeavers or HrReportType.DepartmentDistribution or HrReportType.EmploymentTypeBreakdown;
 
     /// <summary>A stable cache-key segment for a resolved scope (kind + acting employee).</summary>
     private static string ScopeKeyOf(ReportScope scope) => $"{scope.Kind}:{scope.EmployeeId}";
