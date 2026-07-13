@@ -4,6 +4,7 @@ using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -443,18 +444,35 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
 
     /// <summary>
     /// BR-3: would this deduction drive the employee's net negative for the target period? Estimated against
-    /// the period's persisted slip (if a run already produced one) net of adjustments already Pending for the
-    /// period. Non-blocking — surfaced as a warning. Returns false when there is no slip to estimate against.
+    /// the period's persisted slip (if a run already produced one); otherwise — for a not-yet-run/future period
+    /// (BUG-074) — against the net PROJECTED from the employee's current salary structure, so the advisory is
+    /// reachable before a run exists. Both estimates are then net of the OTHER adjustments already Pending for
+    /// the period. Non-blocking — surfaced as a warning (BUG-062: negative net can be legitimate). Returns
+    /// false only when there is no slip AND no current salary structure to project from.
     /// </summary>
     private async Task<bool> WouldDriveNetNegativeAsync(
         Guid employeeId, int year, int month, decimal newDeduction, CancellationToken ct)
     {
+        decimal projectedNet;
+
         var slip = await _dbContext.PayrollSlips.AsNoTracking()
             .Where(s => s.EmployeeId == employeeId && s.PayYear == year && s.PayMonth == month)
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync(ct);
-        if (slip is null)
-            return false; // no computed slip yet → cannot estimate; warning only fires once a run exists.
+        if (slip is not null)
+        {
+            projectedNet = slip.NetSalary;
+        }
+        else
+        {
+            // BUG-074: no computed slip yet (normal future-period adjustment). Project the net from the
+            // employee's CURRENT salary components so the warning can still fire. Null = no structure to
+            // estimate against → cannot warn.
+            var baseline = await ProjectCurrentStructureNetAsync(employeeId, year, month, ct);
+            if (baseline is null)
+                return false;
+            projectedNet = baseline.Value;
+        }
 
         // Net effect of OTHER Pending adjustments already queued for this period (earnings add, deductions subtract).
         var pending = await _dbContext.PayrollAdjustments.AsNoTracking()
@@ -463,12 +481,49 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
                 && a.Status == AdjustmentStatus.Pending)
             .ToListAsync(ct);
 
-        var projectedNet = slip.NetSalary;
         foreach (var a in pending)
             projectedNet += a.AdjustmentType == AdjustmentType.Deduction ? -a.Amount : a.Amount;
         projectedNet -= newDeduction;
 
         return projectedNet < 0m;
+    }
+
+    /// <summary>
+    /// BUG-074: projects the net a full-month run would produce for the employee from their CURRENT salary
+    /// structure (the components effective today), reusing the same row→input mapping
+    /// (<see cref="PayrollRunProcessor.BuildComponentInputs"/>) and the pure calculation engine
+    /// (<see cref="PayrollSlipCalculator"/>) the run itself uses — no gross/deduction maths is re-implemented
+    /// here. A plain baseline: full month, no LOP, no pro-ration (the advisory only estimates the structure).
+    /// NOTE (accuracy): this baseline deliberately OMITS the statutory deductions (EPF/ETF/tax) the run applies
+    /// AFTER Compute, so the projected net is an UPPER bound on the run's actual net. The advisory is therefore
+    /// CONSERVATIVE — it never false-warns, but can under-warn when statutory load alone would drive net negative.
+    /// Acceptable for a non-blocking advisory; running statutory in the projection is a documented follow-up.
+    /// Returns null when the employee has no current salary structure.
+    /// </summary>
+    private async Task<decimal?> ProjectCurrentStructureNetAsync(
+        Guid employeeId, int year, int month, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var rows = await _dbContext.EmployeeSalaryComponents.AsNoTracking()
+            .Where(c => c.EmployeeId == employeeId
+                && c.EffectiveFrom <= today
+                && (c.EffectiveTo == null || c.EffectiveTo >= today))
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+            return null;
+
+        var componentIds = rows.Select(r => r.SalaryComponentId).Distinct().ToList();
+        var meta = await _dbContext.SalaryComponents.AsNoTracking()
+            .Where(c => componentIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, ct);
+
+        var inputs = PayrollRunProcessor.BuildComponentInputs(rows, meta);
+
+        // Full-month baseline: no LOP, no pro-ration. lopComponentId is unused when LopDays == 0.
+        var workingDays = DateTime.DaysInMonth(year, month);
+        var input = new PayrollSlipInput(employeeId, inputs, workingDays, 0m, null);
+        var result = PayrollSlipCalculator.Compute(input, Guid.Empty);
+        return result.NetSalary;
     }
 
     private PayrollAdjustment NewAdjustment(

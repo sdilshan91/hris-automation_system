@@ -45,6 +45,14 @@ public sealed class UpdateSalaryComponentValidator : AbstractValidator<UpdateSal
                 .InclusiveBetween(0, 100).WithMessage("A percentage value must be between 0 and 100.");
         });
 
+        // BUG-061: a Fixed monetary amount cannot be negative (negative fixed pay/deduction is always invalid).
+        When(x => x.CalculationMethod == CalculationMethod.Fixed && x.DefaultValue.HasValue, () =>
+        {
+            RuleFor(x => x.DefaultValue!.Value)
+                .GreaterThanOrEqualTo(0).WithMessage("A fixed component value cannot be negative.")
+                .WithErrorCode("negative_fixed_value");
+        });
+
         RuleFor(x => x.ProcessingOrder)
             .GreaterThanOrEqualTo(0).WithMessage("Processing order cannot be negative.");
     }
