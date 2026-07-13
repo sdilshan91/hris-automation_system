@@ -1,3 +1,4 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Application.Features.Payroll.Queries;
@@ -158,5 +159,95 @@ public sealed class PayrollReportsController : ControllerBase
 
         var export = result.Value!;
         return File(export.FileContent, export.ContentType, export.FileName);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ISSUE-178 PR2 — async large-report export (sync fast-path + Hangfire)
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// POST /api/v1/payroll/reports/{reportType}/export
+    /// Initiates an export of the payroll report (ISSUE-178 PR2). ALWAYS returns JSON — never file bytes (the
+    /// file is fetched from <c>/exports/{exportId}/download</c>). Small reports (&lt; 1000 rows) render
+    /// synchronously and return <c>status: "Completed"</c>; large reports queue a Hangfire job and return
+    /// <c>status: "Queued"</c>. Returns 429 when the caller already has 3 exports in progress, 400 for an invalid
+    /// report type or format. The synchronous <c>GET .../export</c> endpoint above is retained for back-compat.
+    /// </summary>
+    [HttpPost("reports/{reportType}/export")]
+    [RequirePermission("Payroll.Export")]
+    [ProducesResponseType(typeof(ApiResponse<PayrollReportExportInitiatedDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> InitiateExport(
+        [FromRoute] string reportType,
+        [FromBody] PayrollReportExportRequest? request,
+        [FromServices] IPayrollReportExportService exportService,
+        CancellationToken cancellationToken)
+    {
+        request ??= new PayrollReportExportRequest();
+
+        var result = await exportService.InitiateAsync(
+            reportType,
+            request.Filters ?? new PayrollReportQueryParams(),
+            request.Format,
+            cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<PayrollReportExportInitiatedDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/payroll/reports/exports
+    /// The current user's recent payroll-report exports (ISSUE-178 PR2 history): id, reportType, format, status,
+    /// requestedAt, completedAt, rowCount, fileSizeBytes, expiresAt, downloadReady.
+    /// </summary>
+    [HttpGet("reports/exports")]
+    [RequirePermission("Payroll.Export")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PayrollReportExportListItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListExports(
+        [FromServices] IPayrollReportExportService exportService,
+        CancellationToken cancellationToken)
+    {
+        var result = await exportService.ListAsync(cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<PayrollReportExportListItemDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/payroll/reports/exports/{exportId}/download
+    /// Downloads the rendered export FILE (ISSUE-178 PR2). This is the ONLY new endpoint that returns bytes (a
+    /// <c>FileContentResult</c> with a Content-Disposition attachment). Tenant + owner scoped: 404 when the export
+    /// is missing / cross-tenant / not the caller's, 410 when it has expired or been purged. Audits the download
+    /// ("PayrollReport.ExportDownloaded").
+    /// </summary>
+    [HttpGet("reports/exports/{exportId:guid}/download")]
+    [RequirePermission("Payroll.Export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status410Gone)]
+    public async Task<IActionResult> DownloadExport(
+        [FromRoute] Guid exportId,
+        [FromServices] IPayrollReportExportService exportService,
+        CancellationToken cancellationToken)
+    {
+        var result = await exportService.GetForDownloadAsync(exportId, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var download = result.Value;
+        if (download is null)
+            return NotFound(ApiResponse.Fail("Export not found.", "export_not_found"));
+
+        if (download.Expired)
+            return StatusCode(StatusCodes.Status410Gone,
+                ApiResponse.Fail("The export has expired and the file has been deleted.", "export_expired"));
+
+        return File(download.Content, download.ContentType, download.FileName);
     }
 }

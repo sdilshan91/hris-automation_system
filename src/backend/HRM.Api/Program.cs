@@ -417,6 +417,15 @@ try
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IHrReportExportJobScheduler, HRM.Api.Jobs.HangfireHrReportExportJobScheduler>();
     builder.Services.AddScoped<HRM.Api.Jobs.HrReportExportCleanupJob>();
 
+    // ISSUE-178 PR2: async large payroll-report export job (renders + stores + notifies for large >= 1000-row
+    // exports), the Hangfire-backed scheduler seam (bound to IPayrollReportExportJobScheduler so the Infrastructure
+    // export service can enqueue by interface), and the daily retention-cleanup job (expires payroll-report
+    // exports past their 7-day window + deletes their files).
+    builder.Services.AddScoped<HRM.Api.Jobs.PayrollReportExportJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayrollReportExportJob, HRM.Api.Jobs.PayrollReportExportJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayrollReportExportJobScheduler, HRM.Api.Jobs.HangfirePayrollReportExportJobScheduler>();
+    builder.Services.AddScoped<HRM.Api.Jobs.PayrollReportExportCleanupJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -640,6 +649,13 @@ try
         // download window and deletes their files (cross-tenant; runs in system context).
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.HrReportExportCleanupJob>(
             "hr-report-export-cleanup",
+            job => job.RunAsync(),
+            Cron.Daily);
+
+        // ISSUE-178 PR2: daily payroll-report-export retention cleanup — expires payroll-report exports past their
+        // 7-day download window and deletes their files (cross-tenant; runs in system context).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.PayrollReportExportCleanupJob>(
+            "payroll-report-export-cleanup",
             job => job.RunAsync(),
             Cron.Daily);
 

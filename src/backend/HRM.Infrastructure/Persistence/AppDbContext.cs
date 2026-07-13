@@ -156,6 +156,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<ExportRequest> ExportRequests => Set<ExportRequest>();
     // US-RPT-004: generic HR/leave/attendance report exports (CSV/Excel/PDF) (tenant-scoped).
     public DbSet<HrReportExport> HrReportExports => Set<HrReportExport>();
+    // ISSUE-178 PR2: payroll report exports (CSV/Excel/PDF), sync fast-path + async Hangfire (tenant-scoped).
+    public DbSet<PayrollReportExport> PayrollReportExports => Set<PayrollReportExport>();
     // US-ONB-001: Onboarding checklist templates + their tasks (tenant-scoped).
     public DbSet<OnboardingChecklistTemplate> OnboardingChecklistTemplates => Set<OnboardingChecklistTemplate>();
     public DbSet<OnboardingTemplateTask> OnboardingTemplateTasks => Set<OnboardingTemplateTask>();

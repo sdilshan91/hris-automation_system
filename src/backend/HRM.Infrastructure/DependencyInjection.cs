@@ -403,6 +403,20 @@ public static class DependencyInjection
         services.AddScoped<IHrReportExportService, HrReportExportService>();
         services.AddScoped<IHrReportExportCleanupService, HrReportExportCleanupService>();
 
+        // ISSUE-178 PR2: Payroll — async large-report export (CSV/Excel/PDF). The parallel of the US-RPT-004
+        // HrReportExport pattern for the US-PAY-009/US-RPT-003 payroll reports. Initiation regenerates the report
+        // (IPayrollReportService) to learn the row count, then routes small reports (< 1000 rows) to an INLINE
+        // render+store+complete and large ones (>= 1000 rows) to a Hangfire job (PayrollReportExportJob) via the
+        // OPTIONAL IPayrollReportExportJobScheduler (bound in HRM.Api; absent in tests → the test/job calls
+        // GenerateAsync directly). Rendering reuses the shipped IPayrollReportService.ExportReportAsync (so
+        // BankAdvice stays FULL-account-number unmasked, BR-2); storage reuses IReportExportStorage; the
+        // async-complete notify uses INotificationService (optional). Each user is limited to 3 in-progress
+        // exports; every export is audited. The 7-day retention purge is PayrollReportExportCleanupService, driven
+        // by the daily PayrollReportExportCleanupJob. The existing synchronous GET .../export endpoint is kept for
+        // back-compat.
+        services.AddScoped<IPayrollReportExportService, PayrollReportExportService>();
+        services.AddScoped<IPayrollReportExportCleanupService, PayrollReportExportCleanupService>();
+
         // US-RPT-005: Reports — role-based KPI dashboard. A THIN COMPOSITION layer over the existing
         // per-module services (IHrReportService, IVacancyService, ILeaveRequestService, ILeaveDashboardService,
         // IAttendanceDashboardService, IOnboardingChecklistService, IHolidayService, IAppraisalCycleService,
