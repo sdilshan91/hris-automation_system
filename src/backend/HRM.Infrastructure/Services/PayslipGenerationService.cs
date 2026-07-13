@@ -162,7 +162,10 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
                     EmployeeId = s.EmployeeId,
                     EmployeeNo = emp?.EmployeeNo ?? s.EmployeeId.ToString(),
                     EmployeeName = emp is null ? "Employee" : $"{emp.FirstName} {emp.LastName}".Trim(),
-                    Department = emp is not null ? departments.GetValueOrDefault(emp.DepartmentId) : null,
+                    // ISSUE-165: prefer the slip's point-in-time department snapshot; fall back to live resolution
+                    // only for legacy slips whose snapshot is null.
+                    Department = s.DepartmentSnapshot
+                        ?? (emp is not null ? departments.GetValueOrDefault(emp.DepartmentId) : null),
                     NetSalary = s.NetSalary,
                     PdfStatus = s.PdfStatus,
                     PdfGeneratedAt = s.PdfGeneratedAt,

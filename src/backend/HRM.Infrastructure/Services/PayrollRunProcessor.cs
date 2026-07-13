@@ -132,6 +132,14 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         var componentsByEmployee = currentComponents.GroupBy(c => c.EmployeeId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // ISSUE-165: resolve the department + job-title NAMES ONCE for the run (cheap, non-N+1 — mirrors
+        // PayslipBatchRenderer.LoadRenderPlanAsync). These are stamped onto each slip as a point-in-time snapshot
+        // so a later rename / department move never rewrites the historical slip. Tenant-scoped by the global filter.
+        var departmentNames = await _dbContext.Departments.AsNoTracking()
+            .ToDictionaryAsync(d => d.Id, d => d.Name, cancellationToken);
+        var jobTitleNames = await _dbContext.JobTitles.AsNoTracking()
+            .ToDictionaryAsync(j => j.Id, j => j.TitleName, cancellationToken);
+
         // BR-3 / preconditions: LOP is applied ONLY when the attendance period is LOCKED/finalized (the
         // US-ATT-009 period lock). When the period is not locked, attendance is not final — absence of
         // clock-ins is not evidence of absence — so we treat everyone as fully present (LOP=0) and fall back to
@@ -258,6 +266,10 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
                 OvertimeAmount = overtime.OvertimeAmount,
                 LeaveEncashmentDays = encashmentDays,
                 LeaveEncashmentAmount = encashmentAmount,
+                // ISSUE-165: stamp the resolved dept/designation NAMES at generation (null when the employee has
+                // no/unknown dept or job title — the read path falls back to live resolution for null).
+                DepartmentSnapshot = departmentNames.GetValueOrDefault(emp.DepartmentId),
+                DesignationSnapshot = jobTitleNames.GetValueOrDefault(emp.JobTitleId),
                 IsDeleted = false,
             };
             slips.Add(slip);

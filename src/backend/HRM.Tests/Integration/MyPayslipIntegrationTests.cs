@@ -122,7 +122,8 @@ public sealed class MyPayslipIntegrationTests
     /// </summary>
     private async Task<(Guid UserId, Guid EmployeeId, Guid PayslipId)> SeedEmployeeWithSlip(
         Guid tenantId, string employeeNo, int month = 5, int year = 2026,
-        PayrollRunStatus status = PayrollRunStatus.Finalized, bool withPdf = false)
+        PayrollRunStatus status = PayrollRunStatus.Finalized, bool withPdf = false,
+        string? departmentSnapshot = null, string? designationSnapshot = null)
     {
         using var db = Db(tenantId);
 
@@ -158,6 +159,8 @@ public sealed class MyPayslipIntegrationTests
             PdfStoragePath = withPdf ? relPath : null,
             PdfGeneratedAt = withPdf ? DateTime.UtcNow : null,
             PdfFileSizeBytes = withPdf ? 1024 : null,
+            DepartmentSnapshot = departmentSnapshot,   // ISSUE-165: null → legacy slip (read falls back to live).
+            DesignationSnapshot = designationSnapshot,
         });
         db.PayrollSlipDetails.AddRange(
             new PayrollSlipDetail { Id = BaseEntity.NewUuidV7(), TenantId = tenantId, PayrollSlipId = slipId, SalaryComponentId = Guid.NewGuid(), ComponentName = "Basic", ComponentType = nameof(SalaryComponentType.Earning), Amount = 50_000m },
@@ -294,6 +297,64 @@ public sealed class MyPayslipIntegrationTests
         dto.GrossEarnings.Should().Be(70_000m);
         dto.NetSalary.Should().Be(60_000m);
         dto.PaidDays.Should().Be(22m);
+    }
+
+    // ── ISSUE-165: point-in-time department/designation snapshot on the DETAIL read ────────────────
+
+    /// <summary>
+    /// The crux of ISSUE-165: a historical payslip must show the dept/designation as they were AT GENERATION,
+    /// not the employee's CURRENT ones. We seed a slip carrying the snapshot, then MOVE the employee to a
+    /// different department + job title, and assert the detail read still shows the OLD values. This would FAIL
+    /// on pre-fix code, which resolved dept/designation from the live Employee row.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-PAY-165")]
+    public async Task Detail_AfterEmployeeMovesDeptAndTitle_ShowsPointInTimeSnapshot_NotLive()
+    {
+        var (userId, empId, slipId) = await SeedEmployeeWithSlip(
+            _tenantA, "EMP-165", departmentSnapshot: "Engineering", designationSnapshot: "Engineer");
+
+        // Move the employee to a DIFFERENT department + designation AFTER the slip was generated.
+        using (var db = Db(_tenantA))
+        {
+            var newDeptId = BaseEntity.NewUuidV7();
+            db.Departments.Add(new Department { Id = newDeptId, TenantId = _tenantA, Name = "Finance", Code = "FIN-165", IsActive = true });
+            var newTitleId = BaseEntity.NewUuidV7();
+            db.JobTitles.Add(new JobTitle { Id = newTitleId, TenantId = _tenantA, TitleName = "Manager", IsActive = true });
+
+            var emp = await db.Employees.FirstAsync(e => e.Id == empId);
+            emp.DepartmentId = newDeptId;
+            emp.JobTitleId = newTitleId;
+            await db.SaveChangesAsync();
+        }
+
+        var mediator = Provider(_tenantA, userId).GetRequiredService<IMediator>();
+        var result = await mediator.Send(new GetMyPayslipDetailQuery(slipId));
+
+        result.IsSuccess.Should().BeTrue();
+        // Still the OLD, generation-time values — NOT the current "Finance"/"Manager".
+        result.Value!.Employee.Department.Should().Be("Engineering");
+        result.Value.Employee.Designation.Should().Be("Engineer");
+    }
+
+    /// <summary>
+    /// Legacy fallback (ISSUE-165): a slip generated before the snapshot existed has null snapshot columns. The
+    /// detail read must fall back to LIVE resolution — never blank/em-dash — so historical slips keep working.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-PAY-165")]
+    public async Task Detail_NullSnapshot_FallsBackToLiveDepartmentAndDesignation()
+    {
+        // No snapshot passed → DepartmentSnapshot/DesignationSnapshot are null (a legacy slip).
+        var (userId, _, slipId) = await SeedEmployeeWithSlip(_tenantA, "EMP-LEG");
+
+        var mediator = Provider(_tenantA, userId).GetRequiredService<IMediator>();
+        var result = await mediator.Send(new GetMyPayslipDetailQuery(slipId));
+
+        result.IsSuccess.Should().BeTrue();
+        // Falls back to the live employee's dept/designation (the seed's "Engineering"/"Senior Engineer").
+        result.Value!.Employee.Department.Should().Be("Engineering");
+        result.Value.Employee.Designation.Should().Be("Senior Engineer");
     }
 
     // ── AC-1/FR-6: list is most-recent-first, paginated, year-filterable ───────────────────────────

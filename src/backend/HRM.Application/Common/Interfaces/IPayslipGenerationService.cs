@@ -108,12 +108,16 @@ public sealed record PayslipRenderItem(
     PayslipEmployeeSnapshot? Employee,
     IReadOnlyList<PayslipDetailSnapshot> Details);
 
-/// <summary>The <see cref="PayslipBatchResult"/>-relevant scalars of a slip, copied off the tracked entity.</summary>
+/// <summary>The <see cref="PayslipBatchResult"/>-relevant scalars of a slip, copied off the tracked entity.
+/// <para>ISSUE-165: <paramref name="DepartmentSnapshot"/>/<paramref name="DesignationSnapshot"/> carry the
+/// point-in-time dept/designation names stamped at generation (null on legacy slips → the renderer falls back
+/// to live resolution).</para></summary>
 public sealed record PayslipSlipSnapshot(
     Guid EmployeeId,
     int PayMonth, int PayYear,
     decimal GrossEarnings, decimal TotalDeductions, decimal NetSalary,
-    decimal WorkingDays, decimal PaidDays, decimal LopDays);
+    decimal WorkingDays, decimal PaidDays, decimal LopDays,
+    string? DepartmentSnapshot = null, string? DesignationSnapshot = null);
 
 /// <summary>The employee scalars the payslip model needs, copied off the tracked entity.</summary>
 public sealed record PayslipEmployeeSnapshot(

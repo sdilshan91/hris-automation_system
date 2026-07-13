@@ -44,6 +44,23 @@ public sealed class PayrollSlip : BaseEntity, IAuditExempt
     /// <summary>The per-component breakdown lines (FR-5f). Owned collection; loaded explicitly where needed.</summary>
     public List<PayrollSlipDetail> Details { get; set; } = [];
 
+    // ── ISSUE-165: point-in-time department/designation snapshot ───────────────
+
+    /// <summary>
+    /// The employee's DEPARTMENT NAME resolved at generation time (ISSUE-165). Stamped as a string (not the FK)
+    /// so a later department rename or the employee moving departments never rewrites this historical slip.
+    /// Null on legacy slips generated before this snapshot existed (no back-fill); the read path falls back to
+    /// live resolution when null. varchar(200)?.
+    /// </summary>
+    public string? DepartmentSnapshot { get; set; }
+
+    /// <summary>
+    /// The employee's DESIGNATION (job-title) NAME resolved at generation time (ISSUE-165). Stamped as a string
+    /// (not the FK) for the same point-in-time reason as <see cref="DepartmentSnapshot"/>. Null on legacy slips
+    /// (read path falls back to live resolution). varchar(200)?.
+    /// </summary>
+    public string? DesignationSnapshot { get; set; }
+
     // ── US-PAY-004: PDF payslip generation (FR-7) ──────────────────────────────
 
     /// <summary>
