@@ -342,11 +342,33 @@ public sealed class PayrollRunIntegrationTests
         var first = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, "key-123"));
         first.IsSuccess.Should().BeTrue();
 
-        // Different period, same key → still rejected (key is unique per tenant).
+        // Different period, same key → still rejected (a key must identify one request).
         var second = await mediator.Send(new InitiatePayrollRunCommand(6, 2026, "key-123"));
         second.IsSuccess.Should().BeFalse();
         second.StatusCode.Should().Be(409);
         second.ErrorCode.Should().Be("duplicate_idempotency_key");
+    }
+
+    // ── ISSUE-153 / FR-9: replaying the same key for the SAME period is idempotent — returns the existing run ──
+    [Fact]
+    public async Task Initiate_SameIdempotencyKey_SamePeriod_ReturnsExistingRun_NoDuplicate()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var mediator = Pipeline(_tenantA);
+
+        var first = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, "key-abc"));
+        first.IsSuccess.Should().BeTrue();
+
+        // Replay: same key + SAME period → idempotent SUCCESS returning the SAME run (was a 409 before ISSUE-153).
+        var replay = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, "key-abc"));
+        replay.IsSuccess.Should().BeTrue(replay.Error);
+        replay.Value!.RunId.Should().Be(first.Value!.RunId);
+
+        // And no duplicate run was created for the key.
+        using var db = Db(_tenantA);
+        (await db.PayrollRuns.IgnoreQueryFilters().CountAsync(r => r.IdempotencyKey == "key-abc"))
+            .Should().Be(1);
     }
 
     // ── AC-7: tenant isolation — Tenant A's run excludes Tenant B's employees ─
