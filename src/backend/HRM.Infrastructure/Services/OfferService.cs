@@ -35,6 +35,7 @@ public sealed class OfferService : IOfferService
     private readonly IOfferExpiryReminderScheduler? _expiryReminderScheduler;
     private readonly ICurrentUser? _currentUser;
     private readonly IWorkflowRuntime? _workflowRuntime;
+    private readonly IHtmlSanitizer _sanitizer;
     private readonly ILogger<OfferService> _logger;
 
     /// <summary>BR-6: default offer-validity window (days) when no expiry date is supplied.</summary>
@@ -53,6 +54,7 @@ public sealed class OfferService : IOfferService
         IFileStorage fileStorage,
         IRecruitmentNotificationService notifications,
         ILogger<OfferService> logger,
+        IHtmlSanitizer sanitizer,
         IOfferExpiryScheduler? expiryScheduler = null,
         IOfferExpiryReminderScheduler? expiryReminderScheduler = null,
         ICurrentUser? currentUser = null,
@@ -63,6 +65,9 @@ public sealed class OfferService : IOfferService
         _fileStorage = fileStorage;
         _notifications = notifications;
         _logger = logger;
+        // ISSUE-226: strip XSS vectors from recruiter free-text offer fields on write (defense-in-depth,
+        // mirrors VacancyService). Required (non-optional) — a null sanitizer would silently disable it.
+        _sanitizer = sanitizer;
         _expiryScheduler = expiryScheduler;
         _expiryReminderScheduler = expiryReminderScheduler;
         // US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5: optional so existing US-REC-007 tests keep compiling; DI
@@ -139,17 +144,17 @@ public sealed class OfferService : IOfferService
             VacancyId = applicant.VacancyId,
             OfferReferenceNumber = reference,
             Status = OfferStatus.Draft,
-            OfferedPosition = input.OfferedPosition.Trim(),
+            OfferedPosition = _sanitizer.Sanitize(input.OfferedPosition.Trim()) ?? string.Empty,
             DepartmentId = input.DepartmentId,
             ReportingManagerEmployeeId = input.ReportingManagerEmployeeId,
             SalaryAmount = input.SalaryAmount,
             Currency = input.Currency.Trim().ToUpperInvariant(),
             SalaryFrequency = input.SalaryFrequency,
-            BenefitsSummary = Trim(input.BenefitsSummary),
+            BenefitsSummary = _sanitizer.Sanitize(Trim(input.BenefitsSummary)),
             StartDate = input.StartDate,
             ExpiryDate = expiryDate,
             ProbationMonths = input.ProbationMonths,
-            CustomClauses = Trim(input.CustomClauses),
+            CustomClauses = _sanitizer.Sanitize(Trim(input.CustomClauses)),
             Version = maxVersion + 1,
             IsDeleted = false,
         };

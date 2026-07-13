@@ -109,6 +109,7 @@ public sealed class ApplicantPortalIntegrationTests
 
         services.AddSingleton<IFileStorage>(new InMemoryFileStorage(_files));
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
+        services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>(); // ISSUE-226 XSS sanitizer (OfferService dep).
         services.AddScoped<IOfferService, OfferService>();
         services.AddScoped<IApplicantPortalTokenService, ApplicantPortalTokenService>();
         services.AddScoped<IApplicantPortalService, ApplicantPortalService>();

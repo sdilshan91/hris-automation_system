@@ -64,6 +64,7 @@ public sealed class OfferServiceTests
         _fileStorage,
         Substitute.For<IRecruitmentNotificationService>(),
         Substitute.For<ILogger<OfferService>>(),
+        new GanssHtmlSanitizer(), // REAL sanitizer (ISSUE-226) — actually strips XSS vectors.
         expiryScheduler: null); // Hangfire seam absent -> no-op scheduling in tests.
 
     private void SeedApplicant(ApplicantStage stage = ApplicantStage.Offer)
@@ -143,6 +144,64 @@ public sealed class OfferServiceTests
         // Persisted with a storage key.
         var stored = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == dto.Id);
         stored.PdfStorageKey.Should().Be(key);
+    }
+
+    // ── ISSUE-226: recruiter free-text fields are HTML-sanitized on write (stored-XSS defense-in-depth) ─
+
+    [Fact]
+    public async Task Generate_StripsXssFromRecruiterFreeTextFields_Issue226()
+    {
+        using var db = CreateDb();
+        var svc = CreateService(db);
+
+        var result = await svc.GenerateAsync(Input() with
+        {
+            ApplicantId = _applicantId,
+            OfferedPosition = "Engineer <script>bad</script>",
+            BenefitsSummary = "<img src=x onerror=alert(1)> Health + 401k.",
+            CustomClauses = "<script>alert(1)</script> Standard terms apply.",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        var dto = result.Value!;
+
+        // XSS vectors stripped: no <script> element, no onerror handler survives.
+        dto.OfferedPosition.Should().NotContain("<script>");
+        dto.OfferedPosition.Should().Contain("Engineer");
+
+        dto.BenefitsSummary.Should().NotContain("onerror");
+        dto.BenefitsSummary.Should().Contain("Health + 401k.");
+
+        dto.CustomClauses.Should().NotContain("<script>");
+        dto.CustomClauses.Should().Contain("Standard terms apply.");
+
+        // The sanitized values are what actually got persisted (sanitize-on-write is the source of truth).
+        var stored = await db.Offers.AsNoTracking().FirstAsync(o => o.Id == dto.Id);
+        stored.CustomClauses.Should().NotContain("<script>");
+        stored.CustomClauses.Should().NotContain("onerror");
+        stored.BenefitsSummary.Should().NotContain("onerror");
+        stored.OfferedPosition.Should().NotContain("<script>");
+    }
+
+    [Fact]
+    public async Task Generate_StripsJavascriptSchemeAndInlineStyle_Issue226()
+    {
+        using var db = CreateDb();
+        var svc = CreateService(db);
+
+        var result = await svc.GenerateAsync(Input() with
+        {
+            ApplicantId = _applicantId,
+            CustomClauses = "<a href=\"javascript:alert(1)\" style=\"color:red\">click</a> ok.",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        var clauses = result.Value!.CustomClauses!;
+
+        // Ganss allow-list restricts URL schemes to http/https/mailto and drops inline style.
+        clauses.Should().NotContain("javascript:");
+        clauses.Should().NotContain("style=");
+        clauses.Should().Contain("ok.");
     }
 
     // ── BR-6: null expiry defaults to +7 days ─────────────────────────
@@ -335,6 +394,7 @@ public sealed class OfferServiceTests
         _fileStorage,
         notifications ?? Substitute.For<IRecruitmentNotificationService>(),
         Substitute.For<ILogger<OfferService>>(),
+        new GanssHtmlSanitizer(), // REAL sanitizer (ISSUE-226).
         expiryScheduler: null,
         expiryReminderScheduler: reminderScheduler);
 
