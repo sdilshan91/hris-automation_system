@@ -2566,7 +2566,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-061 — Negative monetary value accepted for a Fixed component (no lower-bound validation)
 
-- **Type:** BUG · **Severity:** MEDIUM · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** MEDIUM · **Status:** RESOLVED (PR #281, 2026-07-13) — `Create`/`UpdateSalaryComponentValidator` now require a `Fixed`-method value `>= 0` (`negative_fixed_value` code); tests cover negative-fails + zero-boundary + percentage regression. · **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-001 / TC-PAY-001-06 (boundary)
 - **Title:** Creating a `Fixed` salary component with `defaultValue = -100.00` succeeds (201) and persists `-100.00` in `salary_component.default_value`; TC-06 step 3 requires a 422 rejection.
 - **Root cause:** Validator gap (confidence 95%). `CreateSalaryComponentValidator` only bounds the value `InclusiveBetween(0,100)` for `PercentageOfBasic`/`PercentageOfGross`; for `Fixed` it merely requires `NotNull` — there is no `>= 0` guard. Service `ValidateCalculation` likewise only range-checks percentages. Any negative amount for a Fixed/override value is stored verbatim (DB row `BNEG|-100.00` confirmed).
@@ -2578,7 +2578,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### BUG-062 — BR-4 not enforced: a structure with deductions exceeding gross earnings is accepted
 
-- **Type:** BUG · **Severity:** MEDIUM · **Status:** OPEN · **Layer:** BE
+- **Type:** BUG · **Severity:** MEDIUM · **Status:** RESOLVED (PR #281, 2026-07-13; **user decision: WARN not block**) — deduction>gross (negative net) is intentionally NOT rejected (legitimate for loan/advance over-recovery); instead the non-blocking negative-net advisory now fires (via the BUG-074 fix) so HR is warned. Test asserts not-rejected AND warned. · **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-001 / TC-PAY-001-06 (BR-4)
 - **Title:** A salary structure linking an Earning of 50000 and a Deduction whose value is 60000 (deduction > gross) is created with 201 — BR-4 ("deduction components cannot exceed the gross earnings total; validated during structure definition") is unimplemented.
 - **Root cause:** Missing validation (confidence 95%). Neither `SalaryStructureService.ValidateLinks` nor any validator computes gross-earnings-vs-deductions; no code path references such a comparison. The check appears omitted entirely.
@@ -3629,7 +3629,8 @@ Scope: API-layer (curl + JWT, acme tenant) execution of TC-PAY-006-01..12 + TC-P
 ## US-PAY-007 — Payroll Adjustments (test-runner, 2026-06-26, REPORT-ONLY API run)
 Scope: TC-PAY-007-01..12 + ISO TC-PAY-ISO-025..028. API-layer (curl + JWT), acme tenant. FE :4200 down + Docker unavailable → UI/a11y (TC-12) + cross-browser BLOCKED. Persona: story names HR Officer but HR lacks `Payroll.Configure` (BUG-060) → executed with tenantadmin (Payroll.Configure holder). Routes: `api/v1/payroll/adjustments` [GET list, GET {id}, POST create, POST {id}/cancel, POST bulk, POST/GET {id}/document], all `[RequirePermission("Payroll.Configure")]`.
 
-### BUG-074 · ISSUE · MED · OPEN · BE — US-PAY-007 BR-3 negative-net warning at create time is effectively unreachable
+### BUG-074 · ISSUE · MED · RESOLVED (#281) · BE — US-PAY-007 BR-3 negative-net warning at create time is effectively unreachable
+> **RESOLVED (PR #281, 2026-07-13):** `WouldDriveNetNegativeAsync` no longer returns false when no persisted slip exists — it projects net from the employee's current salary structure (reusing `PayrollRunProcessor.BuildComponentInputs` + `PayrollSlipCalculator.Compute`), so the advisory fires for future-period adjustments. **Conservative** (baseline omits statutory → never false-warns, can under-warn; documented). Load-bearing test asserts no-slip path + warning; would fail on old code. Follow-ups filed: exact-statutory projection + `BulkCreateAsync` advisory gap (P7).
 - **Module/US/TC:** Payroll / US-PAY-007 / TC-PAY-007-02, TC-PAY-007-03
 - **Title:** `negativeNetWarning` only fires when a *computed slip already exists* for the effective period; for any normally-created adjustment it always returns false, so the BR-3 "warn HR before a deduction drives net negative" surface never actually warns.
 - **Root cause (90%):** `PayrollAdjustmentService.WouldDriveNetNegativeAsync` (`src/backend/HRM.Infrastructure/Services/PayrollAdjustmentService.cs:449-471`) early-returns `false` when there is no persisted `PayrollSlip` for `(employeeId, year, month)`. Open future periods have no slip yet → warning never computed; targeting a Finalized period defers (BR-7) to the *next* period which also has no slip → still no warning. Net: the only way to get a warning is to re-target a period that already produced a slip, which the BR-7 deferral logic prevents. Verified: 999,999 deduction (Aug, no slip) → `negativeNetWarning=false`; 50,000 deduction targeting finalized June → deferred to July, `negativeNetWarning=false`. The against-slip projection (lines 466-469) is correct but unreachable in normal flow.
