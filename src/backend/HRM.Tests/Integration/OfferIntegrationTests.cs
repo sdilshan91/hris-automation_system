@@ -90,6 +90,7 @@ public sealed class OfferIntegrationTests
 
         services.AddSingleton<IFileStorage, InMemoryFileStorage>();
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
+        services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>(); // ISSUE-226 XSS sanitizer (OfferService dep).
         // IOfferExpiryScheduler deliberately NOT registered (Hangfire no-op in tests).
         services.AddScoped<IOfferService, OfferService>();
 
@@ -182,6 +183,34 @@ public sealed class OfferIntegrationTests
         var doc = await mediator.Send(new DownloadOfferPdfQuery(dto.Id));
         doc.IsSuccess.Should().BeTrue();
         doc.Value!.Content.Length.Should().BeGreaterThan(0);
+    }
+
+    // ── ISSUE-226: XSS free-text sanitized through the full DI + MediatR pipeline ──────
+    // Stronger than the unit test: the sanitizer here is DI-resolved (not hand-injected),
+    // and the payload round-trips handler -> service -> DTO and back through the query
+    // handler (the exact surface the Angular FE consumes).
+    [Fact]
+    public async Task Generate_SanitizesRecruiterFreeText_ThroughPipeline_Issue226()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+
+        var command = new GenerateOfferCommand(
+            _applicantA, "Engineer <script>bad</script>", null, null, 120000m, "USD",
+            SalaryFrequency.Annual, "<img src=x onerror=alert(1)> Health + 401k.",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)), null, 3,
+            "<script>alert(1)</script> Standard terms apply.");
+
+        var result = await mediator.Send(command);
+        result.IsSuccess.Should().BeTrue();
+
+        // Read back through the query handler — the surface the FE renders.
+        var read = await mediator.Send(new GetOfferByIdQuery(result.Value!.Id));
+        read.IsSuccess.Should().BeTrue();
+        var dto = read.Value!;
+
+        dto.OfferedPosition.Should().NotContain("<script>").And.Contain("Engineer");
+        dto.BenefitsSummary.Should().NotContain("onerror").And.Contain("Health + 401k.");
+        dto.CustomClauses.Should().NotContain("<script>").And.Contain("Standard terms apply.");
     }
 
     // ── Send -> Sent (AC-2) ───────────────────────────────────────────

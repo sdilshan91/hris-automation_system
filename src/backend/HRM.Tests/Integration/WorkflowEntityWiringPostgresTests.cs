@@ -340,7 +340,8 @@ public sealed class WorkflowEntityWiringPostgresTests : IAsyncLifetime
 
     private OfferService OfferSvc(AppDbContext db, ITenantContext tc, ICurrentUser cu) =>
         new(db, tc, Substitute.For<IFileStorage>(), Substitute.For<IRecruitmentNotificationService>(),
-            NullLogger<OfferService>.Instance, currentUser: cu, workflowRuntime: Runtime(db, tc, cu));
+            NullLogger<OfferService>.Instance, new GanssHtmlSanitizer(),
+            currentUser: cu, workflowRuntime: Runtime(db, tc, cu));
 
     private static GenerateOfferInput OfferInput(Guid applicantId) => new()
     {
