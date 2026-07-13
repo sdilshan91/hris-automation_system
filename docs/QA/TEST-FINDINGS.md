@@ -3839,7 +3839,8 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 ### BUG-079 — Leave-encashment ignores BR-6 carry-forward-limit and uses RAW current BASIC (not pro-rated); HR can encash arbitrary days with no balance/over-limit check
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #284, 2026-07-13; user decision: gate + ledger draw-down)
+- **Resolution (BR-6 balance/carry-forward + double-pay):** `LeaveEncashmentService` now gates encashment on the **forfeitable** balance = current ledger balance over the type's `CarryForwardLimit` (computed with the SAME authoritative `LeaveCarryForwardCalculator` the year-end job uses), then caps paid days at `MaxEncashDays`; a request exceeding the forfeitable ceiling is rejected 422 `encashment_exceeds_balance`. On acceptance it writes an `Encashed` **ledger draw-down** atomically with the payroll adjustment (shared scoped DbContext, single SaveChanges), so the HR path and the year-end auto-encashment **cannot pay the same days twice** — the year-end `ComputeUnusedBalanceAsync` folds `Encashed` into consumption, so it re-forfeits only the residual (proven: forfeitable 7 → HR 6 → year-end 1 → total 7). 7 tests incl. cap-firing + double-pay reconciliation; integration-enforcer CONNECTED (double-pay closed, atomicity sound), test-authenticator AUTHENTIC. **Residual clauses (LOW, filed → ISSUE-295):** (a) the "RAW current BASIC (not pro-rated)" daily-rate half — the denominator was fixed by ISSUE-180/#282; the numerator uses current BASIC (arguably correct for encashment), verify vs spec; (b) null `CarryForwardLimit` encashable types treated as full-balance encashable; (c) gate-ceiling (latest `BalanceAfter`) vs year-end `unused` parity under the `Σaccruals==entitlement` invariant.
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-010 / TC-PAY-010-09
 - **Title:** The encashment endpoint validates only (a) the leave type is encashable and (b) caps days at the type's MaxEncashDays. It performs NO check that the employee actually HAS that many unused days, nor that the days exceed the carry-forward limit (BR-6). The caller-supplied `eligibleDays` is trusted as-is (capped only by MaxEncashDays).
@@ -6152,3 +6153,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause:** the regular run is scoped to currently-employed staff by design; final settlement for separated employees is a separate F&F flow that was left as a LogOnly stub. Confidence: HIGH (run filter + F&F DI both confirmed). **Pre-existing — NOT introduced by #282** (the pro-ration fix correctly handles the reachable Active-leaver case).
 - **Severity rationale:** MED — real money (a separated employee's final settlement) is not processed end-to-end, but it is a known-deferred integration seam, not a broken active-payroll flow; the reachable mid-month-leaver case IS now correct.
 - **Suggested action (needs-decision):** confirm the intended final-pay route for Terminated employees — (a) implement the F&F settlement (real `IPayrollFnFIntegration`), or (b) include Terminated-within-period employees in the regular run with the ISSUE-157 pro-ration bound, or (c) confirm HR flips Status only after the final run (so the reachable path suffices). Product/BA decision.
+
+---
+
+### ISSUE-295 — BUG-079 residual clauses: encashment daily-rate BASIC basis, null carry-forward-limit, and gate-vs-year-end forfeitable parity
+- **Type / Severity / Status:** ISSUE (residual / needs-decision) · LOW · OPEN
+- **Layer:** BE · (auto-healed from BUG-079, #284)
+- **Module / US / TC:** Payroll / US-PAY-010 (leave encashment)
+- **Title:** Three LOW residuals surfaced while resolving BUG-079 (the BR-6 gate + double-pay were fixed in #284):
+  1. **Daily-rate BASIC basis:** BUG-079's title also cited "uses RAW current BASIC (not pro-rated)". The daily-rate DENOMINATOR was fixed by ISSUE-180/#282 (shift working-days). The NUMERATOR uses the employee's current monthly BASIC, which is arguably correct for an encashment paid at the current rate — but confirm against the spec whether a pro-rated/point-in-time BASIC is required.
+  2. **Null `CarryForwardLimit`:** an Encashable leave type with no configured carry-forward limit is currently treated as fully encashable up to the whole non-negative balance (still balance-gated). The year-end job skips null-limit types, so there is no double-pay, but confirm this is the intended rule vs a hard-block.
+  3. **Gate-vs-year-end parity:** the BR-6 gate ceiling derives from the latest ledger `BalanceAfter` (Σ all amounts incl. accruals), while the year-end forfeiture uses `entitlement(engine) + carry − used − expired + adj` (does NOT re-add Accrual). They agree only under the invariant `Σaccruals == engine ProratedEntitlementDays`; divergence would let HR encash more than year-end would forfeit (erodes CARRIED days — employee detriment, NOT double-pay). Optionally compute the gate ceiling via `ComputeUnusedBalanceAsync` for exact parity.
+- **Severity rationale:** LOW — none is a double-pay or security path; all three are modeling/spec-confirmation refinements on top of the shipped BR-6 fix.
+- **Suggested action (needs-decision):** BA/product confirmation on (1) and (2); optional gate-parity hardening for (3).
