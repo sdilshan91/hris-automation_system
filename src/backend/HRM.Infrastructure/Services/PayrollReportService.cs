@@ -548,7 +548,7 @@ public sealed class PayrollReportService : IPayrollReportService
             return slips;
 
         bool hasEmployeeFilter = qp.DepartmentId is not null || qp.JobTitleId is not null
-            || qp.LocationId is not null
+            || qp.LocationId is not null || qp.SalaryStructureId is not null
             || !string.IsNullOrWhiteSpace(qp.EmploymentType) || !string.IsNullOrWhiteSpace(qp.EmployeeSearch);
         if (!hasEmployeeFilter)
             return slips;
@@ -1016,8 +1016,29 @@ public sealed class PayrollReportService : IPayrollReportService
     private async Task<List<PayrollSlip>> ScopedSlipsForPeriodAsync(
         int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
     {
-        var query = FinalizedSlipsQuery()
-            .Where(s => s.PayMonth == month && s.PayYear == year);
+        var query = FinalizedSlipsQuery();
+
+        // ISSUE-178: DateFrom/DateTo scope the finalized-SLIP set by PAY-PERIOD year-month so a report can span
+        // multiple months. When a range is supplied it REPLACES the single-period pin (the resolved
+        // (month, year) still drives the period-specific columns — MoM / variance-vs-prev / YTD keep their own
+        // single-period builders and are NOT rewired). When absent, the slip set is the single resolved period.
+        if (qp.DateFrom is not null || qp.DateTo is not null)
+        {
+            if (qp.DateFrom is { } from)
+            {
+                int fromYm = from.Year * 12 + from.Month;
+                query = query.Where(s => s.PayYear * 12 + s.PayMonth >= fromYm);
+            }
+            if (qp.DateTo is { } to)
+            {
+                int toYm = to.Year * 12 + to.Month;
+                query = query.Where(s => s.PayYear * 12 + s.PayMonth <= toYm);
+            }
+        }
+        else
+        {
+            query = query.Where(s => s.PayMonth == month && s.PayYear == year);
+        }
 
         // FR-4: a specific finalized run (e.g. a supplementary run); else all finalized runs for the period.
         if (qp.PayrollRunId is { } runId)
@@ -1030,7 +1051,7 @@ public sealed class PayrollReportService : IPayrollReportService
 
         // Apply employee-side filters by restricting to the matching employee set.
         bool hasEmployeeFilter = qp.DepartmentId is not null || qp.JobTitleId is not null
-            || qp.LocationId is not null
+            || qp.LocationId is not null || qp.SalaryStructureId is not null
             || !string.IsNullOrWhiteSpace(qp.EmploymentType) || !string.IsNullOrWhiteSpace(qp.EmployeeSearch);
         if (!hasEmployeeFilter)
             return slips;
@@ -1054,6 +1075,17 @@ public sealed class PayrollReportService : IPayrollReportService
             query = query.Where(e => e.JobTitleId == jobId);
         if (qp.LocationId is { } locId)
             query = query.Where(e => e.LocationId == locId);
+        if (qp.SalaryStructureId is { } structureId)
+        {
+            // ISSUE-178: no Employee.SalaryStructureId — narrow to employees with a CURRENTLY-effective
+            // EmployeeSalaryComponent for this structure (mirrors the CTC report's effective-date filter).
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            query = query.Where(e => _dbContext.EmployeeSalaryComponents
+                .Any(esc => esc.EmployeeId == e.Id
+                            && esc.SalaryStructureId == structureId
+                            && esc.EffectiveFrom <= today
+                            && (esc.EffectiveTo == null || esc.EffectiveTo >= today)));
+        }
         if (TryParseEmploymentType(qp.EmploymentType, out var empType))
             query = query.Where(e => e.EmploymentType == empType);
         if (!string.IsNullOrWhiteSpace(qp.EmployeeSearch))
