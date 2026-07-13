@@ -103,6 +103,103 @@ public sealed class StatutoryRuleIntegrationTests
         new List<TaxSlabInput>(),
         new SocialSecurityInputDto(12m, 12m, 180_000m, StatutoryApplicableOn.Basic, null));
 
+    private AppDbContext Db(Guid tenantId) => new(
+        new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options,
+        new MutableTenantContext { TenantId = tenantId });
+
+    private static UpdateStatutoryRuleCommand IncomeTaxUpdate(Guid ruleId) => new(
+        ruleId, "PAYE (edited)", "LK", "2026-2027",
+        new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31), true,
+        new List<TaxSlabInput>
+        {
+            new(0m, 300_000m, 0m, 0),
+            new(300_000m, null, 15m, 1),
+        },
+        null);
+
+    private async Task SeedFinalizedRun(Guid tenantId, int year, int month)
+    {
+        using var db = Db(tenantId);
+        db.PayrollRuns.Add(new PayrollRun
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId,
+            PayYear = year, PayMonth = month, Status = PayrollRunStatus.Finalized,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    // ── ISSUE-170 / BR-7: a rule overlapping a FINALIZED payroll run cannot be edited retroactively ──
+    [Fact]
+    [Trait("Issue", "ISSUE-170")]
+    public async Task Update_RuleOverlappingFinalizedRun_IsBlocked_BR7()
+    {
+        var mediator = Pipeline(_tenantA);
+        var created = await mediator.Send(IncomeTaxCommand("2026-2027")); // effective 2026-04-01..2027-03-31.
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        await SeedFinalizedRun(_tenantA, 2026, 5); // May 2026 falls inside the rule's effective window.
+
+        var update = await mediator.Send(IncomeTaxUpdate(created.Value!.Id));
+        update.IsFailure.Should().BeTrue();
+        update.StatusCode.Should().Be(409);
+        update.ErrorCode.Should().Be("statutory_rule_finalized_period");
+    }
+
+    [Fact]
+    [Trait("Issue", "ISSUE-170")]
+    public async Task Update_NoFinalizedOverlap_Succeeds()
+    {
+        var mediator = Pipeline(_tenantA);
+        var created = await mediator.Send(IncomeTaxCommand("2026-2027"));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        await SeedFinalizedRun(_tenantA, 2025, 1);   // finalized run OUTSIDE the rule window → no block.
+        // A non-finalized run inside the window also must not block (only FINALIZED periods lock the rule).
+        using (var db = Db(_tenantA))
+        {
+            db.PayrollRuns.Add(new PayrollRun
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                PayYear = 2026, PayMonth = 5, Status = PayrollRunStatus.Queued,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var update = await mediator.Send(IncomeTaxUpdate(created.Value!.Id));
+        update.IsSuccess.Should().BeTrue(update.Error);
+    }
+
+    // ── ISSUE-170 / BR-7: an edit that EXTENDS the rule's window onto a finalized period is also blocked ──
+    [Fact]
+    [Trait("Issue", "ISSUE-170")]
+    public async Task Update_ExtendingWindowOntoFinalizedPeriod_IsBlocked_BR7()
+    {
+        var mediator = Pipeline(_tenantA);
+        var slabs = new List<TaxSlabInput>
+        {
+            new(0m, 250_000m, 0m, 0), new(250_000m, 500_000m, 5m, 1),
+            new(500_000m, 1_000_000m, 20m, 2), new(1_000_000m, null, 30m, 3),
+        };
+        // Rule effective 2026-06-01.. — does NOT cover April 2026.
+        var created = await mediator.Send(new CreateStatutoryRuleCommand(
+            StatutoryRuleType.IncomeTax, "PAYE", "LK", "2026-2027",
+            new DateOnly(2026, 6, 1), new DateOnly(2027, 3, 31), true, slabs, null));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        // A finalized run for April 2026 exists — OUTSIDE the rule's CURRENT window (so it doesn't block as-is)...
+        await SeedFinalizedRun(_tenantA, 2026, 4);
+
+        // ...but the edit tries to EXTEND EffectiveFrom back to 2026-04-01, ONTO that finalized period → 409.
+        // (This exercises the min(rule, input) window branch — a mutation ignoring input.EffectiveFrom survives
+        // the other two arms but fails here.)
+        var update = await mediator.Send(new UpdateStatutoryRuleCommand(
+            created.Value!.Id, "PAYE (extended)", "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31), true, slabs, null));
+        update.IsFailure.Should().BeTrue();
+        update.StatusCode.Should().Be(409);
+        update.ErrorCode.Should().Be("statutory_rule_finalized_period");
+    }
+
     // ── AC-4: tenant isolation ───────────────────────────────────────────────
     [Fact]
     public async Task StatutoryRules_AreInvisibleAcrossTenants()

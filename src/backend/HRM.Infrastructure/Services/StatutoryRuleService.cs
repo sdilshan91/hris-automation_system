@@ -108,12 +108,35 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         if (rule is null)
             return Result<StatutoryRuleDto>.Failure("Statutory rule not found.", 404);
 
-        // BR-7 (soft): block edits to a rule whose effective period overlaps a finalized payroll run. A full
-        // retroactive guard is US-PAY-007; here we warn + allow, see the module note. (Implemented as a log
-        // note rather than a hard stop so config corrections remain possible pre-finalization.)
         var shapeError = ValidateShape(rule.RuleType, input.TaxSlabs, input.SocialSecurity);
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
+
+        // BR-7 (ISSUE-170): HARD-block editing a statutory rule whose effective period overlaps ANY finalized
+        // payroll run. Those periods' payslips already applied this rule and are never recomputed, so a
+        // retroactive edit would silently desync the rule from the numbers already paid. Corrections to a
+        // finalized period must go through a US-PAY-007 payroll adjustment instead. The check uses the rule's
+        // CURRENT effective window (the periods it has actually governed) OR the proposed one (so an edit can't
+        // extend the rule onto a finalized period either).
+        var windowStart = rule.EffectiveFrom < input.EffectiveFrom ? rule.EffectiveFrom : input.EffectiveFrom;
+        var windowEnd = (rule.EffectiveTo ?? DateOnly.MaxValue) > (input.EffectiveTo ?? DateOnly.MaxValue)
+            ? (rule.EffectiveTo ?? DateOnly.MaxValue)
+            : (input.EffectiveTo ?? DateOnly.MaxValue);
+        var finalizedPeriods = await _dbContext.PayrollRuns
+            .Where(r => r.Status == PayrollRunStatus.Finalized)
+            .Select(r => new { r.PayYear, r.PayMonth })
+            .ToListAsync(cancellationToken);
+        var overlapsFinalized = finalizedPeriods.Any(p =>
+        {
+            var monthStart = new DateOnly(p.PayYear, p.PayMonth, 1);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            return monthStart <= windowEnd && monthEnd >= windowStart; // period intersects the rule window.
+        });
+        if (overlapsFinalized)
+            return Result<StatutoryRuleDto>.Failure(
+                "This statutory rule applies to a period with a finalized payroll run and cannot be edited "
+                + "retroactively (BR-7). Correct finalized payslips via a payroll adjustment (US-PAY-007) instead.",
+                409, "statutory_rule_finalized_period");
 
         // US-PAY-012: capture the BEFORE snapshot prior to mutating (TaxSlabs already Included above).
         var before = Snapshot(rule);
