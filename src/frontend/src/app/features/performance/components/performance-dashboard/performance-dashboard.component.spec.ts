@@ -282,4 +282,54 @@ describe('PerformanceDashboardComponent (US-PRF-007)', () => {
     expect(component.error()).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('Unable to load');
   });
+
+  // ── ISSUE-290: the scope gate must check the REAL backend permission strings ──
+  // These arms deliberately delegate hasAnyPermission to the REAL some()/includes()
+  // logic against a controllable permission set (NOT a constant true/false — that is
+  // exactly what hid the bug). Arm 1 FAILS against the old 'Performance.Read.*'
+  // strings (no user holds them) and PASSES once the gate checks 'Performance.View.*'.
+  describe('scope gate permission strings (ISSUE-290)', () => {
+    it('admits a user holding the real Performance.View.All perm (does NOT redirect)', () => {
+      setup();
+      // A user with only the concrete backend perm the controller gates on.
+      const userPerms = ['Performance.View.All'];
+      authSpy.hasAnyPermission.and.callFake((perms: string[]) =>
+        perms.some((p) => userPerms.includes(p)),
+      );
+      const navSpy = spyOn(router, 'navigate');
+
+      fixture.detectChanges();
+
+      expect(navSpy).not.toHaveBeenCalledWith(['/my-review']);
+      expect(serviceSpy.getOverview).toHaveBeenCalledTimes(1);
+    });
+
+    it('admits a manager holding the real Performance.View.Team perm (does NOT redirect)', () => {
+      setup();
+      const userPerms = ['Performance.View.Team'];
+      authSpy.hasAnyPermission.and.callFake((perms: string[]) =>
+        perms.some((p) => userPerms.includes(p)),
+      );
+      const navSpy = spyOn(router, 'navigate');
+
+      fixture.detectChanges();
+
+      expect(navSpy).not.toHaveBeenCalledWith(['/my-review']);
+      expect(serviceSpy.getOverview).toHaveBeenCalledTimes(1);
+    });
+
+    it('redirects an employee with no performance scope to /my-review (defensive net still works)', () => {
+      setup();
+      const userPerms: string[] = [];
+      authSpy.hasAnyPermission.and.callFake((perms: string[]) =>
+        perms.some((p) => userPerms.includes(p)),
+      );
+      const navSpy = spyOn(router, 'navigate');
+
+      fixture.detectChanges();
+
+      expect(navSpy).toHaveBeenCalledWith(['/my-review']);
+      expect(serviceSpy.getOverview).not.toHaveBeenCalled();
+    });
+  });
 });
