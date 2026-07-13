@@ -334,6 +334,60 @@ public sealed class PayrollAdjustmentIntegrationTests
         create.Value!.NegativeNetWarning.Should().BeTrue();
     }
 
+    // ── BUG-074: the warning is now reachable for a normal FUTURE period (no run yet) ──
+    // Load-bearing: this exercises the no-persisted-slip path. Before the fix WouldDriveNetNegativeAsync
+    // returned false whenever no slip existed, so this warning was DEAD for every not-yet-run adjustment.
+
+    [Fact]
+    public async Task Deduction_ExceedingProjectedNet_OnFuturePeriod_RaisesWarning_WithNoRunYet()
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m); // structure net ~50k/month.
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        // A far-future period that has NEVER been run — there is no persisted slip to estimate against, so the
+        // projection is built from the employee's CURRENT salary structure (BUG-074).
+        var create = await mediator.Send(Deduction(emp, 999_000m, 11, 2027));
+
+        create.IsSuccess.Should().BeTrue();
+        create.Value!.NegativeNetWarning.Should().BeTrue();
+
+        // Confirm no run/slip exists — the projection, not a persisted slip, drove the warning.
+        using var db = Db(_tenantA);
+        (await db.PayrollSlips.AnyAsync(s => s.EmployeeId == emp)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Deduction_WithinProjectedNet_OnFuturePeriod_DoesNotWarn()
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        // A modest deduction that leaves projected net comfortably positive → no warning.
+        var create = await mediator.Send(Deduction(emp, 5_000m, 11, 2027));
+
+        create.IsSuccess.Should().BeTrue();
+        create.Value!.NegativeNetWarning.Should().BeFalse();
+    }
+
+    // ── BUG-062: deductions exceeding gross are WARNED, never REJECTED (net can be legitimately negative) ──
+
+    [Fact]
+    public async Task Deduction_ExceedingGross_IsNotRejected_ButIsWarned()
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m); // gross 50k.
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        // 55k deduction > 50k gross (e.g. a loan/advance over-recovery). BUG-062 decision: WARN, do not block.
+        var create = await mediator.Send(Deduction(emp, 55_000m, 11, 2027));
+
+        create.IsSuccess.Should().BeTrue();               // NOT rejected.
+        create.Value!.Adjustment.Status.Should().Be(nameof(AdjustmentStatus.Pending)); // and persisted.
+        create.Value.NegativeNetWarning.Should().BeTrue();  // but the advisory fired.
+    }
+
     // ── AC-4 / BR-7: targeting a Finalized period defers to the next period ──────
 
     [Fact]

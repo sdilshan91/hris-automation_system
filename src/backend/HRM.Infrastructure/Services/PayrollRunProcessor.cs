@@ -621,8 +621,10 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _ => a.Description,
     };
 
-    /// <summary>Maps an employee's resolved salary-component rows to the engine's component inputs (FR-5a).</summary>
-    private static List<PayrollComponentInput> BuildComponentInputs(
+    /// <summary>Maps an employee's resolved salary-component rows to the engine's component inputs (FR-5a).
+    /// Internal so the negative-net advisory (BUG-074) can project a slip from the current structure without
+    /// duplicating the row-to-input mapping.</summary>
+    internal static List<PayrollComponentInput> BuildComponentInputs(
         List<EmployeeSalaryComponent> rows, Dictionary<Guid, SalaryComponent> meta)
     {
         var inputs = new List<PayrollComponentInput>(rows.Count);
