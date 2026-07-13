@@ -129,14 +129,19 @@ public sealed class MyPayslipService : IMyPayslipService
             .Select(e => new { e.EmployeeNo, e.FirstName, e.LastName, e.DepartmentId, e.JobTitleId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        string? department = null;
-        string? designation = null;
+        // ISSUE-165: prefer the slip's point-in-time snapshot so a historical payslip shows the dept/designation
+        // as they were AT GENERATION, not the employee's CURRENT (possibly moved/renamed) ones. Fall back to live
+        // resolution ONLY when the snapshot is null (legacy slips generated before the snapshot existed).
+        string? department = slip.DepartmentSnapshot;
+        string? designation = slip.DesignationSnapshot;
         if (employee is not null)
         {
-            department = await _dbContext.Departments.AsNoTracking()
-                .Where(d => d.Id == employee.DepartmentId).Select(d => d.Name).FirstOrDefaultAsync(cancellationToken);
-            designation = await _dbContext.JobTitles.AsNoTracking()
-                .Where(j => j.Id == employee.JobTitleId).Select(j => j.TitleName).FirstOrDefaultAsync(cancellationToken);
+            if (department is null)
+                department = await _dbContext.Departments.AsNoTracking()
+                    .Where(d => d.Id == employee.DepartmentId).Select(d => d.Name).FirstOrDefaultAsync(cancellationToken);
+            if (designation is null)
+                designation = await _dbContext.JobTitles.AsNoTracking()
+                    .Where(j => j.Id == employee.JobTitleId).Select(j => j.TitleName).FirstOrDefaultAsync(cancellationToken);
         }
 
         MyPayslipComponentDto ToComponent(PayrollSlipDetail d, bool deductionSide)

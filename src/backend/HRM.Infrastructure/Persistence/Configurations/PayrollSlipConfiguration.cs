@@ -39,6 +39,11 @@ public sealed class PayrollSlipConfiguration : IEntityTypeConfiguration<PayrollS
         builder.Property(x => x.PdfStatus).HasMaxLength(20);
         builder.Property(x => x.PdfFileSizeBytes);
 
+        // ISSUE-165 (§7): point-in-time department/designation NAME snapshot. Nullable — legacy slips are null
+        // (no back-fill) and the read path falls back to live resolution when null.
+        builder.Property(x => x.DepartmentSnapshot).HasMaxLength(200);
+        builder.Property(x => x.DesignationSnapshot).HasMaxLength(200);
+
         // US-PAY-010 (§7): attendance + leave integration enrichment. Default 0 — a pre-US-PAY-010 slip has none.
         builder.Property(x => x.OvertimeHours).HasColumnType("numeric(7,2)").HasDefaultValue(0m).IsRequired();
         builder.Property(x => x.OvertimeAmount).HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();

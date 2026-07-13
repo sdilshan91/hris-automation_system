@@ -124,8 +124,10 @@ public sealed class PayrollRunIntegrationTests
         return new AppDbContext(options, ctx);
     }
 
-    /// <summary>Seeds an active employee with a current BASIC salary component (a "salary structure").</summary>
-    private async Task<Guid> SeedEmployeeWithSalary(Guid tenantId, string no, decimal monthlyBasic, bool withSalary = true)
+    /// <summary>Seeds an active employee with a current BASIC salary component (a "salary structure").
+    /// ISSUE-165: optionally links a department + job title so the generation-time snapshot is non-null.</summary>
+    private async Task<Guid> SeedEmployeeWithSalary(Guid tenantId, string no, decimal monthlyBasic,
+        bool withSalary = true, Guid? departmentId = null, Guid? jobTitleId = null)
     {
         using var db = Db(tenantId);
         var empId = BaseEntity.NewUuidV7();
@@ -133,6 +135,7 @@ public sealed class PayrollRunIntegrationTests
         {
             Id = empId, TenantId = tenantId, EmployeeNo = no, FirstName = no, LastName = "X",
             Email = $"{no}@t.com", DateOfJoining = new DateTime(2020, 1, 1),
+            DepartmentId = departmentId ?? Guid.Empty, JobTitleId = jobTitleId ?? Guid.Empty,
             EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
         });
 
@@ -207,6 +210,39 @@ public sealed class PayrollRunIntegrationTests
         result.Value!.Status.Should().Be(nameof(PayrollRunStatus.Queued));
         result.Value.RunId.Should().NotBeEmpty();
         _scheduler.Enqueued.Should().ContainSingle(e => e.RunId == result.Value.RunId && e.TenantId == _tenantA);
+    }
+
+    // ── ISSUE-165: point-in-time department/designation snapshot stamped at generation ──
+
+    /// <summary>
+    /// The processor must stamp the resolved department + designation NAMES onto each slip at generation, so a
+    /// later rename / department move never rewrites the historical slip. Seed an employee in dept "Engineering"
+    /// / title "Engineer", process the run, and assert the persisted slip carries those exact snapshot strings.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-PAY-165")]
+    public async Task Process_StampsDepartmentAndDesignationSnapshot_OnSlip()
+    {
+        var deptId = BaseEntity.NewUuidV7();
+        var titleId = BaseEntity.NewUuidV7();
+        using (var seed = Db(_tenantA))
+        {
+            seed.Departments.Add(new Department { Id = deptId, TenantId = _tenantA, Name = "Engineering", Code = "ENG-165", IsActive = true });
+            seed.JobTitles.Add(new JobTitle { Id = titleId, TenantId = _tenantA, TitleName = "Engineer", IsActive = true });
+            await seed.SaveChangesAsync();
+        }
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m, departmentId: deptId, jobTitleId: titleId);
+        await LockAttendance(_tenantA, 2026, 5);
+
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(init.Value!.RunId);
+
+        using var db = Db(_tenantA);
+        var slip = await db.PayrollSlips.AsNoTracking().SingleAsync(s => s.PayrollRunId == init.Value.RunId);
+        slip.DepartmentSnapshot.Should().Be("Engineering");
+        slip.DesignationSnapshot.Should().Be("Engineer");
     }
 
     // ── AC-2 / AC-3 / BR-6 / FR-8: processor transitions + totals ───────────

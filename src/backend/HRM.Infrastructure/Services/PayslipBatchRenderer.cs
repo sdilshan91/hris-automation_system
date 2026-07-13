@@ -101,6 +101,7 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             {
                 s.Id, s.EmployeeId, s.PayMonth, s.PayYear,
                 s.GrossEarnings, s.TotalDeductions, s.NetSalary, s.WorkingDays, s.PaidDays, s.LopDays,
+                s.DepartmentSnapshot, s.DesignationSnapshot, // ISSUE-165: point-in-time dept/designation names.
             })
             .ToListAsync(cancellationToken);
 
@@ -162,7 +163,7 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             s.Id, s.EmployeeId,
             new PayslipSlipSnapshot(
                 s.EmployeeId, s.PayMonth, s.PayYear, s.GrossEarnings, s.TotalDeductions, s.NetSalary,
-                s.WorkingDays, s.PaidDays, s.LopDays),
+                s.WorkingDays, s.PaidDays, s.LopDays, s.DepartmentSnapshot, s.DesignationSnapshot),
             employees.GetValueOrDefault(s.EmployeeId),
             detailsBySlip.GetValueOrDefault(s.Id, []))).ToList();
 
@@ -341,8 +342,12 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             PayYear = slip.PayYear,
             EmployeeName = employee is null ? "Employee" : $"{employee.FirstName} {employee.LastName}".Trim(),
             EmployeeNo = employee?.EmployeeNo ?? slip.EmployeeId.ToString(),
-            Department = employee is not null ? departments.GetValueOrDefault(employee.DepartmentId) : null,
-            Designation = employee is not null ? jobTitles.GetValueOrDefault(employee.JobTitleId) : null,
+            // ISSUE-165: a regenerated PDF reads the slip's point-in-time snapshot so it matches the on-screen
+            // detail; fall back to live resolution only for legacy slips whose snapshot is null.
+            Department = slip.DepartmentSnapshot
+                ?? (employee is not null ? departments.GetValueOrDefault(employee.DepartmentId) : null),
+            Designation = slip.DesignationSnapshot
+                ?? (employee is not null ? jobTitles.GetValueOrDefault(employee.JobTitleId) : null),
             DateOfJoining = employee?.DateOfJoining,
             Earnings = earnings,
             Deductions = deductions,
