@@ -71,8 +71,24 @@ public sealed class PayrollRunService : IPayrollRunService
             var existingByKey = await _dbContext.PayrollRuns.AsNoTracking()
                 .FirstOrDefaultAsync(r => r.IdempotencyKey == input.IdempotencyKey, cancellationToken);
             if (existingByKey is not null)
+            {
+                // ISSUE-153 / FR-9: replaying the SAME idempotency key for the SAME period is IDEMPOTENT — return
+                // the existing run as a success (not a 409), so a retried/duplicated request gets the same run
+                // back rather than an error, and never spawns a second run.
+                if (existingByKey.PayYear == input.PayYear && existingByKey.PayMonth == input.PayMonth)
+                    return Result<PayrollRunAcceptedDto>.Success(new PayrollRunAcceptedDto
+                    {
+                        RunId = existingByKey.Id,
+                        Status = existingByKey.Status.ToString(),
+                        PayMonth = existingByKey.PayMonth,
+                        PayYear = existingByKey.PayYear,
+                    });
+
+                // The key was already used for a DIFFERENT period — a client error (an idempotency key must
+                // identify one request). Reject rather than silently return the wrong period's run.
                 return Result<PayrollRunAcceptedDto>.Failure(
                     "A payroll run with this idempotency key already exists.", 409, "duplicate_idempotency_key");
+            }
         }
 
         // BR-1 / AC-4: only one non-cancelled run per (tenant, year, month). An already-Finalized run for the
