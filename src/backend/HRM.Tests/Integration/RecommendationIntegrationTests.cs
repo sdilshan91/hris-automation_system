@@ -72,7 +72,8 @@ public sealed class RecommendationIntegrationTests
         user.Email.Returns("user@t.com");
         user.Permissions.Returns(permissions);
 
-        return new RecommendationService(db, ctx, user, integration, NullLogger<RecommendationService>.Instance);
+        var auditLogger = new PayrollAuditLogger(db, ctx, user, NullLogger<PayrollAuditLogger>.Instance);
+        return new RecommendationService(db, ctx, user, integration, auditLogger, NullLogger<RecommendationService>.Instance);
     }
 
     private sealed record Seeded(Guid HrUserId, Guid EmployeeEmpId, Guid ApproverUserId, Guid ApproverEmpId, Guid CycleId);

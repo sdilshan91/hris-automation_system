@@ -2852,7 +2852,8 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Evidence:** GET notes (employee@ token + `X-Tenant-Subdomain: acme`) → `HTTP 403`; acknowledge → `{"signoffStatus":"SignedOff","isLocked":true}` HTTP 200; export DTO has no opened/read field.
 - **Severity rationale:** MED — no crash/leak, but a documented business rule (BR-2) and an AC-3 expectation are wholly absent, and the missing employee read-path is a real UX/compliance gap (the employee signs without an API route to read what they're signing). Not HIGH because the FE may render notes from a different path and the signature itself is sound; should be confirmed with the BA whether BR-2 is in-scope for this increment.
 
-### ISSUE-120 · ISSUE · MED · OPEN · BE — No sign-off action is written to the central tenant `audit_logs`; FR-7 audit lives only in `review_signoff` + Serilog
+### ISSUE-120 · ISSUE · MED · RESOLVED (#280) · BE — No sign-off action is written to the central tenant `audit_logs`; FR-7 audit lives only in `review_signoff` + Serilog
+> **RESOLVED (stale — auto-fixed by #272, confirmed in #280, 2026-07-13):** `ReviewSignoff` is a non-`IAuditExempt` `BaseEntity`, and each acknowledge/dispute is a `ReviewSignoffs.Add(...)` + `SaveChanges`, so #272's opt-OUT interceptor now emits a central `ReviewSignoff.Create` `audit_logs` row per sign-off action. Regression guard `ISSUE120_ReviewSignoff_create_is_audited` added in #280.
 - **Module / US / TC:** Performance / US-PRF-006 / TC-PRF-006-08 (FR-7), TC-PRF-ISO-024 step4 (NFR-2 audit scoping)
 - **Title:** Across ~10 sign-off lifecycle actions exercised this run (request-signoff, acknowledge, dispute, dispute-amend, dispute-confirm, re-acknowledge, auto-close), the central `audit_logs` table received **ZERO** entries; the audit trail exists only in the append-only `review_signoff` table and the Serilog file.
 - **Root cause (confidence 90%):** `ReviewSignoffService` records provenance by appending immutable `ReviewSignoff` rows (name+timestamp+IP, append-only — this IS solid) and logging via Serilog, but never calls the central audit seam (`AuditInterceptor`/audit module) the way other modules do. Confirmed: `SELECT count(*) FROM audit_logs WHERE tenant_id=acme AND (action/resource_type/event_type ~ signoff|review|dispute|meetingnote)` = **0 all-time**, while the recruitment module visibly writes `recruitment.scorecard.*` rows to the same `audit_logs` during the same window — so the central audit infra is wired; performance sign-off just doesn't use it. TC-006-08 expects the central tenant audit log to carry each sign-off action.
@@ -4091,7 +4092,8 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-081
 - **Type:** BUG (spec violation -- FR-9 / AC-3 / AC-4 require template changes logged in the tenant audit log with before/after)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — auto-fixed by #272, confirmed by regression test in #280, 2026-07-13)
+- **Resolution:** #272 (BUG-082) flipped the audit interceptor to opt-OUT, so `NotificationTemplate` (a non-`IAuditExempt` `BaseEntity`) is now auto-audited: PUT→`NotificationTemplate.Update`, reset (soft-delete)→`NotificationTemplate.Delete`. The finding's root cause (the opt-IN `IAuditableEntity` gate) no longer exists. Regression guard `BUG081_NotificationTemplate_write_is_audited` added in #280.
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-002 / TC-NTF-002-04, -10 (FR-9, NFR-6, AC-4)
 - **Title:** Saving a tenant template override (PUT) and resetting to default (DELETE) persist the change but write NO audit_logs row -- the automatic before/after audit capture skips NotificationTemplate because the entity does not implement IAuditableEntity.
@@ -4201,7 +4203,8 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-083
 - **Type:** BUG (AC unmet -- AC-2/FR-4 require sensitive-field reads to be audited; no such audit exists)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #280, 2026-07-13; national-ID portion deferred → ISSUE-293)
+- **Resolution:** added explicit read-audit (`{Entity}.ViewSensitive`, matching the shipped `PayrollReport.ViewSensitive` convention) on the deliberate PII-reveal read paths: `Payslip.ViewSensitive` on `DownloadPayslipQuery`/`DownloadAllPayslipsQuery` and `Recommendation.ViewSensitive` on `RecommendationService.GetAsync` (the AES-decrypted comp fields). Emitted only AFTER successful authorization; `After` names the accessed fields, stores NO values (test asserts `NotContain("4321")`); failed/unauthorized reads emit nothing. Reuses `IPayrollAuditLogger`. **Scope:** bank-account reads already audited (`RevealBankAdviceAsync`); `ListRunPayslipsQuery` deliberately not audited (flooding); **National ID has no `Employee` field to instrument → ISSUE-293 (needs-BA).** integration-enforcer CONNECTED, test-authenticator AUTHENTIC.
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-004 / TC-NTF-004-05 (AC-2, FR-4, FR-7)
 - **Title:** Reading PII (bank account, national ID, salary) produces no "ReadSensitive" audit row -- there is no PII-read audit writer anywhere in the codebase.
@@ -4267,7 +4270,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-085
 - **Type:** BUG (input handling -- a valid-looking date filter 500s)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** OPEN — **RE-CLUSTERED 2026-07-13: this is NOT an audit finding.** It is a date-only `startDate`/`endDate` filter throwing 500 (`DateTime Kind=Unspecified` → `timestamptz`) on the audit-log LIST endpoint. Moved from the P2-2 audit-gaps cluster to the **P2-2 UTC/date-Kind cluster** (with BUG-245/246). Still open; fix belongs with the UTC-boundary batch.
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-005 / TC-NTF-005-02 (AC-2, FR-2)
 - **Title:** GET /api/v1/tenant/audit-logs?startDate=2030-01-01 (date-only, no time/zone) returns 500; the same value as 2030-01-01T00:00:00Z returns 200. A date-only bound parses to a DateTime with Kind=Unspecified, which Npgsql refuses to write to the timestamptz column.
@@ -4445,7 +4448,8 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-200
 - **Type:** ISSUE (missing-audit theme — recurring across modules; see ISSUE-025/ISSUE-071)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (stale — auto-fixed by #272, confirmed in #280, 2026-07-13; semantic-naming enhancement → ISSUE-292)
+- **Resolution:** #272's opt-OUT interceptor now audits every onboarding/offboarding entity write (`OnboardingChecklistInstance`/`OnboardingTaskInstance`/`OffboardingInstance`/`OffboardingTaskInstance`/`Asset`/`ExitInterview*`/templates — all non-`IAuditExempt` `BaseEntity`), so the "ZERO audit rows" gap is closed: checklist assign→`.Create`, task completion→`.Update`, asset issuance→`.Create/.Update`, clearance→`.Update`, exit interview→`.Create`. Regression guard `ISSUE200_Asset_issue_is_audited` in #280. **Caveat (user-decided close):** rows carry GENERIC entity action names, not semantic ones (`Task.Completed`/`Asset.Issued`) — filed as **ISSUE-292 (LOW ENH)** if the audit UI needs human-readable action labels.
 - **Layer:** BE
 - **Module / US / TC:** Onboarding / US-ONB-001..006 / TC-ONB-001-01 (FR-8) + module-wide
 - **Title:** None of the Onboarding domain entities implement `IAuditableEntity`, so the central `AuditCaptureInterceptor` records zero `audit_logs` rows for any onboarding/offboarding/exit-interview create/update/delete/clearance/sign-off
@@ -6117,3 +6121,21 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause:** intended tightening (user-approved: "a manager without the perm drops to self-scope") + reconcile scope limited to built-in roles by design. Confidence: HIGH (mechanism confirmed by integration-enforcer against `ReconcileBuiltInRolePermissionsAsync`).
 - **Severity rationale:** LOW — the tightening is deliberate and correct (self-describing authz); impact is limited to non-default custom roles, is not a data leak (it *reduces* visibility), and is admin-fixable by assigning the new perm. But it is a silent behavior change worth a release note.
 - **Suggested action (needs-decision):** either (a) add a one-time targeted backfill for custom roles that hold `Reports.View` + a team-read signal (`*.View.Team`), or (b) accept the tightening and ship a DEC-1 release note telling admins to grant `Reports.View.Team` to any custom manager-style role that should see team reports. Recommend (b) — a backfill would re-introduce the implicit-grant the taxonomy was designed to remove.
+
+---
+
+### ISSUE-292 — Onboarding/offboarding audit rows use GENERIC entity action names, not semantic ones
+- **Type / Severity / Status:** ISSUE (ENH — audit UX) · LOW · OPEN
+- **Layer:** BE · (auto-healed from ISSUE-200 close, #280)
+- **Module / US / TC:** Onboarding / US-ONB-001..006
+- **Title:** Since #272 every onboarding/offboarding action is centrally audited, but the action strings are generic entity names (`OnboardingTaskInstance.Update`, `Asset.Create`, `OffboardingTaskInstance.Update`) rather than semantic ones (`Task.Completed`, `Asset.Issued`, `Clearance.Approved`). Functionally complete (actor/before/after captured), but the audit log reads mechanically rather than in business terms.
+- **Severity rationale:** LOW — no compliance gap (every action is traceable); purely a readability/UX enhancement for the audit viewer. User decided (2026-07-13) to close ISSUE-200 as resolved and track semantic naming here.
+- **Suggested action (enhancement):** if the audit UI needs human-readable labels, add explicit semantic-action emits (or an action-name mapping layer) across the onboarding/offboarding services. Otherwise WONTFIX.
+
+### ISSUE-293 — National ID is not modeled on the Employee entity, so PII-read audit (BUG-083) cannot cover national-ID reads
+- **Type / Severity / Status:** ISSUE (data-model / BA gap) · LOW · OPEN (needs-BA)
+- **Layer:** BE · (auto-healed from BUG-083, #280)
+- **Module / US / TC:** Core HR / US-NTF-004 (AC-2)
+- **Title:** BUG-083's AC lists "national ID" as a sensitive field whose reads must be audited, but the `Employee` entity has **no `NationalId` property** — the string only appears in tests and the `SensitiveFieldMasker` key list. There is no production read site to instrument, so national-ID PII-read audit cannot be implemented until the field is modeled.
+- **Severity rationale:** LOW — a coverage gap in a MED compliance control, but there is no data to leak/read today (the field doesn't exist). Not blocking; surfaced so BUG-083's national-ID clause is tracked.
+- **Suggested action (needs-BA):** confirm whether National ID is a required PII field. If added later, instrument its reveal read with an `Employee.ViewSensitive` audit (same pattern as BUG-083 payslip/recommendation) and add it to `SensitiveFieldMasker` write-time masking (already present in the key list).

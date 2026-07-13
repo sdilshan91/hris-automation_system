@@ -17,16 +17,19 @@
 //   - NFR-2: an unresolved tenant context is refused.
 // ============================================================================
 
+using System.Text.Json;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Domain.Performance;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -64,8 +67,17 @@ public sealed class RecommendationServiceTests
 
     private AppDbContext Db() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
-    private RecommendationService Service(ICurrentUser user) => new(
-        Db(), _tenantContext, user, _integration, Substitute.For<ILogger<RecommendationService>>());
+    private RecommendationService Service(ICurrentUser user)
+    {
+        var db = Db();
+        return new(db, _tenantContext, user, _integration, Auditor(db, user),
+            Substitute.For<ILogger<RecommendationService>>());
+    }
+
+    // Real audit writer over the SAME (name-shared InMemory) store so BUG-083 read-audit rows actually persist.
+    private IPayrollAuditLogger Auditor(AppDbContext db, ICurrentUser user)
+        => new HRM.Infrastructure.Services.PayrollAuditLogger(
+            db, _tenantContext, user, Substitute.For<ILogger<HRM.Infrastructure.Services.PayrollAuditLogger>>());
 
     private ICurrentUser User(Guid userId, params string[] permissions)
     {
@@ -408,6 +420,62 @@ public sealed class RecommendationServiceTests
         result.StatusCode.Should().Be(403);
     }
 
+    // ── BUG-083: GetAsync (which decrypts + returns compensation) emits a
+    //    Recommendation.ViewSensitive read-audit naming the comp fields, NO values ──
+    [Fact]
+    public async Task BUG083_GetAsync_emits_ViewSensitive_read_audit_without_compensation_values()
+    {
+        await SeedAsync();
+        // HR creates a bonus recommendation carrying a distinctive amount.
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 4321m), null, null))).Value!;
+
+        var result = await Service(HrUser()).GetAsync(rec.Id);
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.BonusAmount.Should().Be(4321m); // the reveal genuinely returns the decrypted value.
+
+        using var read = Db();
+        var row = await read.AuditLogs.IgnoreQueryFilters()
+            .SingleAsync(a => a.Action == PayrollAuditAction.RecommendationViewSensitive);
+
+        row.ResourceType.Should().Be("Recommendation");
+        row.ResourceId.Should().Be(rec.Id.ToString());
+        row.UserId.Should().Be(_hrUserId);
+        row.TenantId.Should().Be(_tenantId);
+        row.Before.Should().BeNull();
+
+        var map = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row.After!)!;
+        map.Keys.Should().BeEquivalentTo(new[] { "fields", "recommendationId", "employeeId" });
+        map["fields"].EnumerateArray().Select(e => e.GetString())
+            .Should().Contain(new[] { "currentCompensation", "bonusAmount", "incrementAmount" });
+
+        // The revealed compensation VALUE must NEVER be persisted in the audit row.
+        row.After!.Should().NotContain("4321");
+    }
+
+    // ── BUG-083: a DENIED (403) read must emit NO ViewSensitive audit row —
+    //    the read-audit fires only AFTER successful authorization (symmetry with the payslip path) ──
+    [Fact]
+    public async Task BUG083_UnauthorizedGetAsync_writes_no_ViewSensitive_read_audit()
+    {
+        await SeedAsync();
+        // HR creates a recommendation for an employee who is NOT the manager's direct report.
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _otherTeamEmpId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 4321m), null, null))).Value!;
+
+        // A manager who does not manage this employee is denied — the read never succeeds.
+        var result = await Service(ManagerUser()).GetAsync(rec.Id);
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+
+        // A denied read must leave no sensitive-read audit trail (would fail if the audit
+        // call were moved ABOVE the authorization check in GetAsync).
+        using var read = Db();
+        (await read.AuditLogs.IgnoreQueryFilters()
+            .AnyAsync(a => a.Action == PayrollAuditAction.RecommendationViewSensitive))
+            .Should().BeFalse();
+    }
+
     // ── NFR-2: tenant scoping ───────────────────────────────────────────
 
     [Fact]
@@ -417,6 +485,7 @@ public sealed class RecommendationServiceTests
         ctx.IsResolved.Returns(false);
         var svc = new RecommendationService(
             TestDbContextFactory.Create(ctx, _dbName), ctx, HrUser(), _integration,
+            Substitute.For<IPayrollAuditLogger>(),
             Substitute.For<ILogger<RecommendationService>>());
 
         var result = await svc.AutoGenerateAsync(_cycleId);
