@@ -582,6 +582,7 @@ public static class DbInitializer
         foreach (var tenantId in tenants)
         {
             await ReconcileBuiltInRolePermissionsAsync(db, tenantId, logger, ct);
+            await BackfillCustomRoleReportScopeAsync(db, tenantId, logger, ct);
             await EnsureDefaultShiftAsync(db, tenantId, logger, ct);
         }
     }
@@ -621,6 +622,80 @@ public static class DbInitializer
             await db.SaveChangesAsync(ct);
             logger.LogInformation(
                 "Reconciled {Count} missing built-in role permission(s) for tenant {TenantId}",
+                added, tenantId);
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-291 — DEC-1 continuity backfill for CUSTOM (tenant-defined) roles.
+    ///
+    /// DEC-1 introduced dedicated report row-scope permissions (<see cref="PermissionCatalog.Reports.ViewAll"/> /
+    /// <see cref="PermissionCatalog.Reports.ViewTeam"/>) and changed the report scope resolvers so they now REQUIRE
+    /// these explicit perms — previously the "All" bucket BORROWED Employee/Leave/Attendance.View.All and the "Team"
+    /// bucket was purely data-derived from having a direct report. The built-in-role reconcile
+    /// (<see cref="ReconcileBuiltInRolePermissionsAsync"/>) backfills built-in roles automatically, but a CUSTOM
+    /// role that relied on the old borrowed-perm behaviour would silently lose its report scope. This method
+    /// restores that scope once, behaviour-preservingly, from the role's ACTUAL held cross-module view perms.
+    ///
+    /// It re-introduces an IMPLICIT grant BY DESIGN — a deliberate, user-accepted tradeoff (upgrade continuity over
+    /// a strict "no implicit grants" stance) — and pairs with the <c>docs/DEV/UPGRADE-NOTES.md</c> release note that
+    /// tells admins to explicitly grant the perm to any custom role the inference could not reach.
+    ///
+    /// Only ADDS, only to CUSTOM roles that already hold the <see cref="PermissionCatalog.Reports.View"/> endpoint
+    /// gate (a role that can't reach report endpoints gets nothing — same reasoning as DEC-1's Recruiter carve-out).
+    /// Idempotent by construction (each grant is guarded by a "does not already contain" check), so it is safe to
+    /// run on every startup with no separate tracking flag. Built-in roles are handled by the reconcile above and
+    /// are deliberately excluded here.
+    /// </summary>
+    /// <remarks>
+    /// <c>internal</c> (not <c>private</c>) so the mapping is unit-testable directly via
+    /// <c>InternalsVisibleTo("HRM.Tests")</c> — same pattern as <c>ConnectionRoutingInterceptor</c>.
+    /// </remarks>
+    internal static async Task BackfillCustomRoleReportScopeAsync(
+        AppDbContext db, Guid tenantId, ILogger logger, CancellationToken ct)
+    {
+        var roles = await db.Roles
+            .IgnoreQueryFilters()
+            .Include(r => r.RolePermissions)
+            .Where(r => r.TenantId == tenantId && !r.IsBuiltIn)
+            .ToListAsync(ct);
+
+        var added = 0;
+        foreach (var role in roles)
+        {
+            var held = role.RolePermissions.Select(rp => rp.Permission).ToHashSet();
+
+            // Gate: only roles that can actually reach report endpoints are considered (avoids inert grants).
+            if (!held.Contains(PermissionCatalog.Reports.View))
+                continue;
+
+            string? grant = null;
+
+            // "All" wins over "Team": a role that qualifies for org-wide scope gets All, never Team.
+            var hasAllSignal = held.Contains(PermissionCatalog.Employee.ViewAll)
+                || held.Contains(PermissionCatalog.Leave.ViewAll)
+                || held.Contains(PermissionCatalog.Attendance.ViewAll);
+            var hasTeamSignal = held.Contains(PermissionCatalog.Employee.ViewTeam)
+                || held.Contains(PermissionCatalog.Leave.ViewTeam)
+                || held.Contains(PermissionCatalog.Attendance.ViewTeam);
+
+            if (hasAllSignal && !held.Contains(PermissionCatalog.Reports.ViewAll))
+                grant = PermissionCatalog.Reports.ViewAll;
+            else if (!hasAllSignal && hasTeamSignal && !held.Contains(PermissionCatalog.Reports.ViewTeam))
+                grant = PermissionCatalog.Reports.ViewTeam;
+
+            if (grant is not null)
+            {
+                role.RolePermissions.Add(new RolePermission { RoleId = role.Id, Permission = grant });
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "ISSUE-291: backfilled {Count} custom-role report-scope permission(s) for tenant {TenantId}",
                 added, tenantId);
         }
     }
