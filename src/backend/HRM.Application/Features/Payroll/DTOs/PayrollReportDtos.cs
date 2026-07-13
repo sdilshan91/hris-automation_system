@@ -97,6 +97,30 @@ public sealed record PayrollReportQueryParams
     /// when no pay-grade field exists it is accepted but has no effect (documented). Optional.
     /// </summary>
     public string? PayGrade { get; init; }
+
+    // ── ISSUE-178 PR1: salary-structure + custom date-range filters ──────────────
+
+    /// <summary>
+    /// ISSUE-178: filter to employees currently assigned to a specific salary structure. There is no
+    /// Employee.SalaryStructureId; the link is EmployeeSalaryComponent.SalaryStructureId, so this narrows to
+    /// employees who have a CURRENTLY-effective <see cref="HRM.Domain.Entities.EmployeeSalaryComponent"/>
+    /// (EffectiveFrom ≤ today, EffectiveTo null or ≥ today) for this structure. Optional.
+    /// </summary>
+    public Guid? SalaryStructureId { get; init; }
+
+    /// <summary>
+    /// ISSUE-178: inclusive lower bound (by pay-period month) for a custom multi-month date range. Narrows the
+    /// finalized-SLIP set to slips whose pay-period (PayYear, PayMonth) is on or after DateFrom's year-month.
+    /// Does NOT alter the resolved single period used for MoM/variance/YTD columns. Optional.
+    /// </summary>
+    public DateOnly? DateFrom { get; init; }
+
+    /// <summary>
+    /// ISSUE-178: inclusive upper bound (by pay-period month) for a custom multi-month date range. Narrows the
+    /// finalized-SLIP set to slips whose pay-period (PayYear, PayMonth) is on or before DateTo's year-month.
+    /// Does NOT alter the resolved single period used for MoM/variance/YTD columns. Optional.
+    /// </summary>
+    public DateOnly? DateTo { get; init; }
 }
 
 /// <summary>

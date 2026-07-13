@@ -502,4 +502,116 @@ public sealed class PayrollReportIntegrationTests
             wb.Worksheets.First().Cell(1, 1).GetString().Should().Be("Department");
         }
     }
+
+    // ── ISSUE-178 PR1: SalaryStructureId filter ─────────────────────────────
+    //
+    // Two employees on DIFFERENT currently-effective salary structures → a report filtered to structure A
+    // returns only A's employee and excludes B's.
+
+    private async Task SeedCurrentSalaryComponent(Guid tenantId, Guid employeeId, Guid salaryStructureId)
+    {
+        using var db = Db(tenantId);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        db.EmployeeSalaryComponents.Add(new EmployeeSalaryComponent
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId, EmployeeId = employeeId,
+            SalaryStructureId = salaryStructureId, SalaryComponentId = BaseEntity.NewUuidV7(),
+            AnnualAmount = 600_000m, MonthlyAmount = 50_000m,
+            EffectiveFrom = today.AddMonths(-6), EffectiveTo = null, // currently effective
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task SalaryStructureFilter_ReturnsOnlyEmployeesOnThatStructure()
+    {
+        var structureA = BaseEntity.NewUuidV7();
+        var structureB = BaseEntity.NewUuidV7();
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        var a = await SeedFinalizedSlip(_tenantA, runId, "STRUCT-A", 50_000m, 5_000m);
+        var b = await SeedFinalizedSlip(_tenantA, runId, "STRUCT-B", 30_000m, 3_000m);
+        await SeedCurrentSalaryComponent(_tenantA, a.EmployeeId, structureA);
+        await SeedCurrentSalaryComponent(_tenantA, b.EmployeeId, structureB);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(
+                PayrollReportType.EmployeeRegister,
+                new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026, SalaryStructureId = structureA });
+
+            result.IsSuccess.Should().BeTrue();
+            var empNos = result.Value!.Rows.Select(r => r.Cells[0]).ToList();
+            empNos.Should().Contain("STRUCT-A");
+            empNos.Should().NotContain("STRUCT-B"); // ISSUE-178: excluded — on a different salary structure
+        }
+    }
+
+    // BUG-003 class: the SalaryStructureId subquery must be tenant-scoped — a different tenant's employee on the
+    // SAME structure id must never leak into this tenant's filtered report (guards a future IgnoreQueryFilters regression).
+    [Fact]
+    public async Task SalaryStructureFilter_DoesNotLeakAcrossTenants()
+    {
+        var sharedStructure = BaseEntity.NewUuidV7(); // the SAME structure id exists in both tenants
+        var runA = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runA, PayrollRunStatus.Finalized);
+        var a = await SeedFinalizedSlip(_tenantA, runA, "A-EMP", 50_000m, 5_000m);
+        await SeedCurrentSalaryComponent(_tenantA, a.EmployeeId, sharedStructure);
+
+        var runB = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantB, runB, PayrollRunStatus.Finalized);
+        var b = await SeedFinalizedSlip(_tenantB, runB, "B-EMP", 40_000m, 4_000m);
+        await SeedCurrentSalaryComponent(_tenantB, b.EmployeeId, sharedStructure);
+
+        var (db, _, svc) = Scope(_tenantA); // report runs in TENANT A's context
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(
+                PayrollReportType.EmployeeRegister,
+                new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026, SalaryStructureId = sharedStructure });
+
+            result.IsSuccess.Should().BeTrue();
+            var empNos = result.Value!.Rows.Select(r => r.Cells[0]).ToList();
+            empNos.Should().Contain("A-EMP");
+            empNos.Should().NotContain("B-EMP"); // cross-tenant isolation: tenant B's employee never leaks
+        }
+    }
+
+    // ── ISSUE-178 PR1: DateFrom/DateTo pay-period range ─────────────────────
+    //
+    // Finalized slips across 3 pay-periods (Jan/Feb/Mar 2026). A report with DateFrom=2026-02-01 /
+    // DateTo=2026-03-31 includes only the Feb + Mar slips and excludes Jan (filter is by pay-period year-month).
+
+    [Fact]
+    public async Task DateRangeFilter_IncludesOnlyPayPeriodsWithinRange()
+    {
+        var janRun = BaseEntity.NewUuidV7();
+        var febRun = BaseEntity.NewUuidV7();
+        var marRun = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, janRun, PayrollRunStatus.Finalized, month: 1, year: 2026);
+        await SeedRun(_tenantA, febRun, PayrollRunStatus.Finalized, month: 2, year: 2026);
+        await SeedRun(_tenantA, marRun, PayrollRunStatus.Finalized, month: 3, year: 2026);
+        await SeedFinalizedSlip(_tenantA, janRun, "JAN", 50_000m, 5_000m, month: 1, year: 2026);
+        await SeedFinalizedSlip(_tenantA, febRun, "FEB", 50_000m, 5_000m, month: 2, year: 2026);
+        await SeedFinalizedSlip(_tenantA, marRun, "MAR", 50_000m, 5_000m, month: 3, year: 2026);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(
+                PayrollReportType.EmployeeRegister,
+                new PayrollReportQueryParams
+                {
+                    DateFrom = new DateOnly(2026, 2, 1),
+                    DateTo = new DateOnly(2026, 3, 31),
+                });
+
+            result.IsSuccess.Should().BeTrue();
+            var empNos = result.Value!.Rows.Select(r => r.Cells[0]).ToList();
+            empNos.Should().Contain("FEB");
+            empNos.Should().Contain("MAR");
+            empNos.Should().NotContain("JAN"); // ISSUE-178: Jan is before DateFrom's month → excluded
+        }
+    }
 }
