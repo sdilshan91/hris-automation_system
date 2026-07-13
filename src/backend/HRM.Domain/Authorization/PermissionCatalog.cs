@@ -265,6 +265,24 @@ public static class PermissionCatalog
     {
         public const string View = "Reports.View";
         public const string Export = "Reports.Export";
+
+        /// <summary>
+        /// DEC-1: dedicated report row-scope permission — a report caller with this (but not
+        /// <see cref="ViewAll"/>) sees ONLY their own direct reports + self on the cross-module report
+        /// surfaces. Replaces the prior arrangement where report scope BORROWED the cross-module
+        /// Employee/Leave/Attendance.View.Team perms (ISSUE-195 residue). The report scope resolvers
+        /// (HrReportService / LeaveReportService) require this to grant Team/Manager scope; without it a
+        /// caller who manages someone falls through to self scope.
+        /// </summary>
+        public const string ViewTeam = "Reports.View.Team";
+
+        /// <summary>
+        /// DEC-1: dedicated report row-scope permission — a report caller with this sees ALL tenant
+        /// employees' report rows (org-wide). Replaces the prior arrangement where report scope BORROWED
+        /// the cross-module Employee/Leave/Attendance.View.All perms (ISSUE-195 residue). The report scope
+        /// resolvers key their "All" bucket on this.
+        /// </summary>
+        public const string ViewAll = "Reports.View.All";
     }
 
     // ── Roles & Permissions (Admin) ──────────────────────────────────
@@ -496,7 +514,7 @@ public static class PermissionCatalog
         Performance.ReviewTeam, Performance.ReviewAll, Performance.PublishAll,
 
         // Reports
-        Reports.View, Reports.Export,
+        Reports.View, Reports.Export, Reports.ViewTeam, Reports.ViewAll,
 
         // Roles
         Roles.View, Roles.Manage, Roles.AssignUsers,
@@ -609,7 +627,8 @@ public static class PermissionCatalog
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
-            Reports.View, Reports.Export,
+            // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.
+            Reports.View, Reports.Export, Reports.ViewAll,
             Roles.View, Roles.Manage, Roles.AssignUsers,
             Tenant.ViewSettings, Tenant.ManageSettings, Tenant.ManageUsers, Tenant.ManageBilling,
             Tenant.ViewWorkflows, Tenant.ManageWorkflows, Tenant.ExportData,
@@ -635,7 +654,8 @@ public static class PermissionCatalog
             Payroll.View, Payroll.Run, Payroll.ViewSensitive,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
-            Reports.View, Reports.Export,
+            // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.
+            Reports.View, Reports.Export, Reports.ViewAll,
             Training.ViewAll, Training.Manage,
             Benefits.ViewAll, Benefits.Manage,
             Onboarding.View, Onboarding.Manage,
@@ -659,7 +679,8 @@ public static class PermissionCatalog
             // Payroll.Approve (separation of duties) nor Payroll.ViewSensitive (unmasked bank PII). Fixes
             // BUG-060 (config 403), BUG-071 (run 403), BUG-077 (reports 403).
             Payroll.View, Payroll.Run, Payroll.Configure, Payroll.Export,
-            Reports.View,
+            // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.
+            Reports.View, Reports.ViewAll,
             Training.ViewAll,
             Onboarding.View, Onboarding.Manage,
         },
@@ -673,7 +694,8 @@ public static class PermissionCatalog
             Holiday.View,
             Attendance.ViewTeam, Attendance.ApproveTeam,
             Performance.ViewTeam, Performance.SetGoalTeam, Performance.ReviewTeam,
-            Reports.View,
+            // DEC-1: holds Employee/Leave/Attendance.View.Team (not .All) → team report scope preserved via Reports.View.Team.
+            Reports.View, Reports.ViewTeam,
             Training.ViewAll,
         },
         BuiltInRoles.Employee => new[]
@@ -692,6 +714,10 @@ public static class PermissionCatalog
         BuiltInRoles.Recruiter => new[]
         {
             Recruitment.View, Recruitment.Manage,
+            // Recruiter holds Employee.View.All for its own module needs, but deliberately NOT Reports.View.All:
+            // DEC-1 does not grant Recruiter cross-module report scope — it has no Reports.View endpoint gate and
+            // org-wide report access is not part of the recruiter persona (a self-describing-taxonomy correctness
+            // choice; the old borrowed-perm resolver would have been inert here anyway).
             Employee.ViewAll,
         },
         BuiltInRoles.Auditor => new[]
@@ -701,7 +727,8 @@ public static class PermissionCatalog
             Leave.ViewAll, Leave.Reports,
             Attendance.ViewAll,
             Payroll.View,
-            Reports.View, Reports.Export,
+            // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.
+            Reports.View, Reports.Export, Reports.ViewAll,
         },
         _ => Array.Empty<string>(),
     };

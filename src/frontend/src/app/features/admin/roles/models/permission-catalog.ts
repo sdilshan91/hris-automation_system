@@ -90,6 +90,8 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     icon: 'chart',
     permissions: [
       { key: 'Reports.View', label: 'View reports', description: 'Access standard reports and dashboards' },
+      { key: 'Reports.View.All', label: 'View all report rows', description: 'View report rows across all departments' },
+      { key: 'Reports.View.Team', label: 'View team report rows', description: 'View report rows within own team' },
       { key: 'Reports.Create', label: 'Create reports', description: 'Create custom reports and queries' },
       { key: 'Reports.Export', label: 'Export reports', description: 'Export reports to file formats' },
     ],

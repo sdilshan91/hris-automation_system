@@ -245,7 +245,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     public async Task LeaveBalance_AppliesBr1Formula_AndColourBand()
     {
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Leave.ViewAll, PermissionCatalog.Reports.View);
+            PermissionCatalog.Reports.ViewAll, PermissionCatalog.Reports.View);
 
         var result = await mediator.Send(new GenerateHrReportQuery(
             "leave-balance", JuneWindow() with { LeaveTypeIds = [_leaveTypeA] }));
@@ -283,7 +283,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     public async Task AttendanceSummary_Calculates90PercentRate_For18Of20Present()
     {
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Attendance.ViewAll, PermissionCatalog.Reports.View);
+            PermissionCatalog.Reports.ViewAll, PermissionCatalog.Reports.View);
 
         var result = await mediator.Send(new GenerateHrReportQuery(
             "attendance-summary", JuneWindow(employeeId: _empAnn)));
@@ -306,7 +306,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     public async Task OvertimeReport_SurfacesPerEmployeeExcessHours()
     {
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Attendance.ViewAll, PermissionCatalog.Reports.View);
+            PermissionCatalog.Reports.ViewAll, PermissionCatalog.Reports.View);
 
         var result = await mediator.Send(new GenerateHrReportQuery("overtime-report", JuneWindow()));
 
@@ -329,7 +329,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     public async Task LateArrivalReport_RanksEmployeesByLateCount()
     {
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Attendance.ViewAll, PermissionCatalog.Reports.View);
+            PermissionCatalog.Reports.ViewAll, PermissionCatalog.Reports.View);
 
         var result = await mediator.Send(new GenerateHrReportQuery("late-arrival-report", JuneWindow()));
 
@@ -352,7 +352,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     public async Task AttendanceSummary_TenantA_ExcludesTenantB()
     {
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Attendance.ViewAll, PermissionCatalog.Reports.View);
+            PermissionCatalog.Reports.ViewAll, PermissionCatalog.Reports.View);
 
         var result = await mediator.Send(new GenerateHrReportQuery("late-arrival-report", JuneWindow()));
 
@@ -369,9 +369,9 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     [Fact]
     public async Task AttendanceSummary_ManagerScope_SeesOnlyDirectReportsAndSelf()
     {
-        // Ann (manager) has Reports.View + Attendance.View.Team (NO .View.All) -> Manager scope.
+        // Ann (manager) has Reports.View + Reports.View.Team (NO Reports.View.All) -> Manager scope (DEC-1).
         var mediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
-            PermissionCatalog.Reports.View, PermissionCatalog.Attendance.ViewTeam);
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewTeam);
 
         var result = await mediator.Send(new GenerateHrReportQuery("late-arrival-report", JuneWindow()));
 
@@ -401,9 +401,9 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     [Fact]
     public async Task Headcount_ManagerScope_CountsOnlyDirectReportsAndSelf()
     {
-        // Ann (manager) holds Reports.View + Employee.View.Team (NO .View.All) -> Manager scope.
+        // Ann (manager) holds Reports.View + Reports.View.Team (NO Reports.View.All) -> Manager scope (DEC-1).
         var mediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
-            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewTeam);
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewTeam);
 
         var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
 
@@ -418,9 +418,9 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     [Fact]
     public async Task Headcount_HrScope_CountsWholeTenant_AsAll()
     {
-        // HR holds Employee.View.All -> All scope (whole tenant).
+        // HR holds Reports.View.All -> All scope (whole tenant) (DEC-1).
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewAll);
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewAll);
 
         var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
 
@@ -436,9 +436,9 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
     public async Task DepartmentDistribution_ManagerScope_ShowsOnlyManagersDepartment()
     {
         var managerMediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
-            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewTeam);
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewTeam);
         var hrMediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewAll);
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewAll);
 
         var managerResult = await managerMediator.Send(new GenerateHrReportQuery("department-distribution", JuneWindow()));
         var hrResult = await hrMediator.Send(new GenerateHrReportQuery("department-distribution", JuneWindow()));
@@ -470,7 +470,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
 
         // HR runs first and CACHES the full-tenant headcount (3, Scope='All').
         var hr = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m, cache,
-            new[] { PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewAll });
+            new[] { PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewAll });
         var hrResult = await hr.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
         hrResult.IsSuccess.Should().BeTrue();
         hrResult.Value!.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(3);
@@ -478,7 +478,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
         // The Manager requests the SAME report+filters on the SAME cache. If the key did not fold scope it would
         // hit HR's cached {3, All}; instead it must compute its OWN scoped {2, Manager}.
         var mgr = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m, cache,
-            new[] { PermissionCatalog.Reports.View, PermissionCatalog.Employee.ViewTeam });
+            new[] { PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewTeam });
         var mgrResult = await mgr.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
 
         mgrResult.IsSuccess.Should().BeTrue();
@@ -488,13 +488,68 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
         mgrReport.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("Manager");
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    //  DEC-1 — report scope now consumes the dedicated Reports.View.All / Reports.View.Team
+    //  taxonomy (was borrowing Employee/Leave/Attendance.View.All, and Team was purely data-derived).
+    //  Ann manages Art; the three tests below cover the HrReportService resolver:
+    //    All  → Reports.View.All                          → whole tenant (Ann + Art + Carol = 3)
+    //    Team → Reports.View.Team + ≥1 direct report      → own reports + self (Ann + Art = 2)
+    //    Own  → Reports.View only (NEITHER) + direct report → self only (Ann = 1) [the DEC-1 tightening]
+    // ════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Dec1_HrReport_ReportsViewAll_ResolvesAllScope()
+    {
+        // Ann manages a report, but Reports.View.All overrides to the org-wide scope.
+        var mediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewAll);
+
+        var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+
+        result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        report.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("All");
+        report.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Dec1_HrReport_ReportsViewTeam_WithDirectReport_ResolvesTeamScope()
+    {
+        var mediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewTeam);
+
+        var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+
+        result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        // Ann (self) + Art (direct report) = 2; Carol excluded.
+        report.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("Manager");
+        report.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Dec1_HrReport_ReportsViewOnly_ManagerFallsThroughToSelfScope()
+    {
+        // DEC-1 tightening: Ann manages Art but holds NEITHER Reports.View.All NOR Reports.View.Team.
+        // Managing someone no longer auto-grants team reports — she is scoped to her own record.
+        var mediator = BuildPipeline(_tenantA, _managerUser, entitlementDays: 20m,
+            PermissionCatalog.Reports.View);
+
+        var result = await mediator.Send(new GenerateHrReportQuery("headcount", JuneWindow()));
+
+        result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        report.Metadata.Summary.Single(s => s.Label == "Scope").Value.Should().Be("Employee");
+        report.Metadata.Summary.Single(s => s.Label == "Total Headcount").Value.Should().Be(1);
+    }
+
     // ── AC-1: leave-utilization reuses the US-LV-012 utilization aggregation ─────────────────────
 
     [Fact]
     public async Task LeaveUtilization_ReturnsTenantScopedUtilization()
     {
         var mediator = BuildPipeline(_tenantA, _hrAUser, entitlementDays: 20m,
-            PermissionCatalog.Leave.ViewAll, PermissionCatalog.Reports.View);
+            PermissionCatalog.Reports.ViewAll, PermissionCatalog.Reports.View);
 
         var result = await mediator.Send(new GenerateHrReportQuery(
             "leave-utilization", JuneWindow() with { LeaveTypeIds = [_leaveTypeA] }));

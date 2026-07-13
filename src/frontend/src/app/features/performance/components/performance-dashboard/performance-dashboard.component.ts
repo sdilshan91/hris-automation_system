@@ -570,10 +570,13 @@ export class PerformanceDashboardComponent implements OnInit {
     // is an employee — redirect to their own review page. The route is already
     // role-gated; this catches a permission-only mismatch.
     if (
+      // DEC-1 removed the aspirational 'Reports.View.All' admit: it did not exist
+      // until DEC-1 seeds it, and admitting report-admins into the Performance
+      // dashboard would be an unintended cross-module coupling. Gate on Performance
+      // scope perms only.
       !this.auth.hasAnyPermission([
         'Performance.Read.All',
         'Performance.Read.Team',
-        'Reports.View.All',
       ])
     ) {
       this.router.navigate(['/my-review']);

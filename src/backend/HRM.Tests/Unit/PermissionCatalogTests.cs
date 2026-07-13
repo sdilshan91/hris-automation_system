@@ -251,6 +251,52 @@ public sealed class PermissionCatalogTests
             $"role '{roleName}' does not run payroll — the fix must add Payroll.* to HR Officer only");
     }
 
+    // ── DEC-1: dedicated report-scope taxonomy. The mapping is behavior-preserving: roles that held an
+    // ── org-wide read (Employee/Leave/Attendance.View.All) get Reports.View.All; the Manager (team read)
+    // ── gets Reports.View.Team; the Employee (self only) gets neither. ────────────────────────────────
+
+    [Theory]
+    [InlineData("Tenant Admin")]
+    [InlineData("HR Manager")]
+    [InlineData("HR Officer")]
+    [InlineData("Auditor")]
+    public void DefaultPermissionsFor_OrgWideReadRoles_HaveReportsViewAll_DEC1(string roleName)
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(roleName);
+        perms.Should().Contain(PermissionCatalog.Reports.ViewAll,
+            $"role '{roleName}' held an org-wide *.View.All read, so DEC-1 preserves its whole-tenant report scope");
+    }
+
+    [Fact]
+    public void DefaultPermissionsFor_Manager_HasReportsViewTeam_NotViewAll_DEC1()
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.Manager);
+        perms.Should().Contain(PermissionCatalog.Reports.ViewTeam,
+            "Manager held team reads (*.View.Team), so DEC-1 preserves its team report scope");
+        perms.Should().NotContain(PermissionCatalog.Reports.ViewAll,
+            "Manager never held an org-wide read, so it must NOT gain org-wide report scope");
+    }
+
+    [Fact]
+    public void DefaultPermissionsFor_Employee_HasNeitherReportsScope_DEC1()
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.Employee);
+        perms.Should().NotContain(PermissionCatalog.Reports.ViewAll);
+        perms.Should().NotContain(PermissionCatalog.Reports.ViewTeam);
+    }
+
+    [Fact]
+    public void DefaultPermissionsFor_Recruiter_HasNoReportsScope_DEC1()
+    {
+        // Recruiter keeps its own Employee.View.All but is deliberately NOT granted cross-module report scope:
+        // it holds no Reports.View endpoint gate and org-wide report access is not part of the recruiter persona.
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.Recruiter);
+        perms.Should().Contain(PermissionCatalog.Employee.ViewAll, "Recruiter's own module perm is unchanged");
+        perms.Should().NotContain(PermissionCatalog.Reports.ViewAll,
+            "Recruiter must not gain org-wide report scope — it is not part of the recruiter persona");
+        perms.Should().NotContain(PermissionCatalog.Reports.ViewTeam);
+    }
+
     [Fact]
     public void DefaultPermissionsFor_AllBuiltInRoles_ShouldContainOnlyValidPermissions()
     {

@@ -875,15 +875,17 @@ public sealed class LeaveReportService : ILeaveReportService
     }
 
     /// <summary>
-    /// BR-2 three-way scope resolution, mirroring US-LV-009:
-    ///   1. HR/Leave.Reports (has Leave.View.All) → All tenant employees.
-    ///   2. Manager (≥1 direct report) → own direct reports (+ self).
+    /// BR-2 three-way scope resolution, mirroring US-LV-009 (DEC-1):
+    ///   1. Reports.View.All → All tenant employees.
+    ///   2. Reports.View.Team AND ≥1 direct report → own direct reports (+ self).
     ///   3. Otherwise (Employee) → only the caller's own record.
-    /// Resolution order is HR → Manager → Employee.
+    /// DEC-1 replaces the borrowed Leave.View.All gate with the dedicated Reports.View.All, and now requires
+    /// the explicit Reports.View.Team permission for team scope (previously any manager auto-got team scope).
+    /// A manager without Reports.View.Team falls through to their own record.
     /// </summary>
     private async Task<ReportScope> ResolveScopeAsync(CancellationToken ct)
     {
-        if (_currentUser.Permissions.Contains(PermissionCatalog.Leave.ViewAll))
+        if (_currentUser.Permissions.Contains(PermissionCatalog.Reports.ViewAll))
             return new ReportScope(ScopeKind.All, null);
 
         var me = await _dbContext.Employees.AsNoTracking()
@@ -893,8 +895,10 @@ public sealed class LeaveReportService : ILeaveReportService
             // No employee record + no All permission → an empty Employee scope (returns nothing).
             return new ReportScope(ScopeKind.Employee, null);
 
-        bool isManager = await _dbContext.Employees.AsNoTracking()
-            .AnyAsync(e => e.ReportsToEmployeeId == me.Id, ct);
+        // DEC-1: Team scope requires BOTH the explicit Reports.View.Team perm AND actually managing someone.
+        bool isManager = _currentUser.Permissions.Contains(PermissionCatalog.Reports.ViewTeam)
+            && await _dbContext.Employees.AsNoTracking()
+                .AnyAsync(e => e.ReportsToEmployeeId == me.Id, ct);
 
         return isManager
             ? new ReportScope(ScopeKind.Manager, me)
