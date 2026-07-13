@@ -149,6 +149,16 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
 
         var (workingDaysInMonth, monthStart, monthEnd) = MonthBounds(run.PayYear, run.PayMonth);
 
+        // ISSUE-156/157: shift-aware join/separation pro-ration. Resolve every employee's working-weekday set
+        // (as-of monthStart — the SAME basis the attendance pull uses for TotalWorkingDays) and any in-period
+        // separation date ONCE (no N+1). ProRataPaidDays then counts SHIFT working-days over the employed
+        // sub-range, so a mid-month joiner/leaver is pro-rated on the run's working-days basis rather than a
+        // calendar-day fraction — and, because the numerator uses the identical shift set as the denominator,
+        // an employee WITH an attendance row is pro-rated exactly ONCE (see ProRataPaidDays).
+        var proRationWorkingSets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
+            _dbContext, employeeIds, monthStart, cancellationToken);
+        var separationDates = await SeparationDatesAsync(employeeIds, cancellationToken);
+
         // US-PAY-007 FR-3: Pending adjustments for the period, grouped by employee, loaded ONCE (no N+1). Empty
         // when none are configured → the per-employee lookup misses and the engine behaves exactly as before,
         // keeping every existing US-PAY-003/006 test green (purely additive wiring).
@@ -175,11 +185,24 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             var inputs = BuildComponentInputs(rows, componentMeta);
 
             var attendance = attendanceByEmployee.GetValueOrDefault(emp.Id);
-            decimal workingDays = attendance?.TotalWorkingDays > 0 ? attendance.TotalWorkingDays : workingDaysInMonth;
+            // Pro-ration DENOMINATOR. Prefer the attendance figure; otherwise fall back to this employee's
+            // FULL-MONTH SHIFT working-days (the SAME resolved set / as-of monthStart the ProRataPaidDays
+            // numerator uses) so the pro-ration factor is ALWAYS single-basis: shift/shift for a shift-
+            // configured employee, calendar/calendar for a no-shift one (CountWorkingDays on an EMPTY set
+            // counts every calendar day). The old calendar `workingDaysInMonth` fallback here mixed a SHIFT
+            // numerator with a CALENDAR denominator (e.g. 9/30 instead of 9/22) and UNDER-PAID mid-month
+            // joiners/leavers that had no attendance row.
+            var shiftWorkingDaysInMonth = ShiftScheduleResolver.CountWorkingDays(
+                proRationWorkingSets[emp.Id], monthStart, monthEnd);
+            decimal workingDays = attendance?.TotalWorkingDays > 0
+                ? attendance.TotalWorkingDays
+                : (shiftWorkingDaysInMonth > 0 ? shiftWorkingDaysInMonth : workingDaysInMonth);
             decimal lopDays = attendance?.LopDays ?? 0m;
 
-            // BR-4/BR-5: pro-rate mid-month joiners/leavers by the working days they were employed.
-            decimal? proRataPaidDays = ProRataPaidDays(emp, monthStart, monthEnd, workingDays);
+            // BR-4/BR-5: pro-rate mid-month joiners/leavers by the SHIFT working days they were employed.
+            DateOnly? separationDate = separationDates.TryGetValue(emp.Id, out var sep) ? sep : null;
+            decimal? proRataPaidDays = ProRataPaidDays(
+                emp, monthStart, monthEnd, proRationWorkingSets[emp.Id], separationDate);
 
             var slipInput = new PayrollSlipInput(emp.Id, inputs, workingDays, lopDays, proRataPaidDays);
             var result = PayrollSlipCalculator.Compute(slipInput, LopComponentId);
@@ -686,26 +709,76 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     }
 
     /// <summary>
-    /// BR-4/BR-5: when the employee joined after the month start, pro-rate by the working days from their
-    /// joining date to the month end; full-month employees return null (no pro-ration). Separation pro-ration
-    /// (BR-5) is driven by the attendance working-days for the terminated employee when present; the joiner
-    /// case is computed here from the date of joining since it is always known on the employee record.
+    /// BR-4/BR-5 (ISSUE-156 joiner / ISSUE-157 leaver): pro-rate a mid-month joiner/leaver by the SHIFT
+    /// working-days they were actually employed within the period. The count is taken over the employed
+    /// sub-range <c>[max(monthStart, DOJ) .. min(monthEnd, separationDate)]</c> using the employee's resolved
+    /// working-weekday set via the SAME <see cref="ShiftScheduleResolver"/> the attendance pull uses to build
+    /// <c>TotalWorkingDays</c>. Because the numerator and the working-days denominator are therefore on the
+    /// identical shift basis, an employee WITH an attendance row is pro-rated exactly ONCE:
+    /// <list type="bullet">
+    ///   <item>Joiner: the attendance side does NOT start-bound joiners (TotalWorkingDays = full-month shift
+    ///     days), so the single DOJ bound is applied here → factor = employed/full &lt; 1.</item>
+    ///   <item>Leaver: the separation date used here is the SAME source as the attendance side's terminated
+    ///     cutoff, so if attendance had already end-bounded the row the two counts are EQUAL → factor = 1 (no
+    ///     second pro-ration). When attendance has no row for the leaver (the run's employees are Active/
+    ///     Probation, which the attendance side does NOT cut off), this branch is the engine-side guard that
+    ///     stops a separated employee being paid a full month.</item>
+    /// </list>
+    /// Returns null for a full-month employee (no pro-ration) and 0m when they were not employed on any day of
+    /// the period.
     /// </summary>
-    private static decimal? ProRataPaidDays(Employee emp, DateOnly monthStart, DateOnly monthEnd, decimal workingDaysInMonth)
+    private static decimal? ProRataPaidDays(
+        Employee emp, DateOnly monthStart, DateOnly monthEnd,
+        HashSet<int> workingDaySet, DateOnly? separationDate)
     {
         var doj = DateOnly.FromDateTime(emp.DateOfJoining);
-        if (doj <= monthStart)
-            return null; // joined before/at the month start — full month.
         if (doj > monthEnd)
-            return 0m;   // joined after the period — no paid days.
+            return 0m; // joined after the period — no paid days.
 
-        // Calendar-day proportion of the month worked from the joining date. Working-days granularity is the
-        // attendance module's domain; for the joiner case we pro-rate the working-days baseline by the
-        // fraction of the month actually employed (BR-4).
-        var totalDays = monthEnd.DayNumber - monthStart.DayNumber + 1;
-        var employedDays = monthEnd.DayNumber - doj.DayNumber + 1;
-        var fraction = (decimal)employedDays / totalDays;
-        return Math.Round(workingDaysInMonth * fraction, 2, MidpointRounding.AwayFromZero);
+        var start = doj > monthStart ? doj : monthStart;   // ISSUE-156: joiner start bound.
+        var end = monthEnd;
+        if (separationDate is { } sepDate)
+        {
+            if (sepDate < monthStart)
+                return 0m;             // separated before the period began — no paid days.
+            if (sepDate < end)
+                end = sepDate;         // ISSUE-157: leaver end bound.
+        }
+
+        // Full-month employee (joined on/before the month start with no in-period separation) — no pro-ration.
+        if (start <= monthStart && end >= monthEnd)
+            return null;
+
+        if (end < start)
+            return 0m; // separated before joining within the period.
+
+        return ShiftScheduleResolver.CountWorkingDays(workingDaySet, start, end);
+    }
+
+    /// <summary>
+    /// ISSUE-157: the in-period separation date per employee = most recent <c>status_change → Terminated</c>
+    /// <see cref="EmploymentHistory.EffectiveDate"/>. Mirrors
+    /// <c>AttendancePayrollService.TerminatedLastWorkingDaysAsync</c> so the leaver's paid-days bound matches
+    /// the attendance side EXACTLY (guaranteeing no double pro-ration). Loaded ONCE for the whole run (no N+1);
+    /// employees without such a record are absent from the result. Tenant-scoped via the global query filter.
+    /// </summary>
+    private async Task<Dictionary<Guid, DateOnly>> SeparationDatesAsync(
+        IReadOnlyList<Guid> employeeIds, CancellationToken ct)
+    {
+        if (employeeIds.Count == 0) return new Dictionary<Guid, DateOnly>();
+
+        var history = await _dbContext.EmploymentHistories.AsNoTracking()
+            .Where(h => employeeIds.Contains(h.EmployeeId)
+                && h.ChangeType == "status_change"
+                && h.NewValue == "Terminated")
+            .Select(h => new { h.EmployeeId, h.EffectiveDate })
+            .ToListAsync(ct);
+
+        return history
+            .GroupBy(h => h.EmployeeId)
+            .ToDictionary(
+                g => g.Key,
+                g => DateOnly.FromDateTime(g.Max(x => x.EffectiveDate)));
     }
 
     private static (decimal WorkingDays, DateOnly Start, DateOnly End) MonthBounds(int year, int month)

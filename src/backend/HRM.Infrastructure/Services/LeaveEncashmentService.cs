@@ -78,7 +78,7 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
             return Result<LeaveEncashmentResultDto>.Failure(
                 "Employee has no current BASIC salary to derive a daily rate.", 422, "no_active_salary");
 
-        var workingDays = WorkingDaysInMonth(input.PayYear, input.PayMonth);
+        var workingDays = await WorkingDaysInMonthAsync(input.EmployeeId, input.PayYear, input.PayMonth, cancellationToken);
         var dailyRate = Math.Round(monthlyBasic / workingDays, 2, MidpointRounding.AwayFromZero);
         var amount = Math.Round(eligibleDays * dailyRate, 2, MidpointRounding.AwayFromZero);
 
@@ -139,11 +139,21 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
         return basic ?? 0m;
     }
 
-    /// <summary>Scheduled working-day baseline for the daily rate — calendar days in the month (BR-8 shift-calendar deferred).</summary>
-    private static decimal WorkingDaysInMonth(int year, int month)
+    /// <summary>
+    /// ISSUE-180: the scheduled working-day denominator for the encashment daily rate — the SHIFT working-days
+    /// in the target month for this employee, resolved via the SAME <see cref="ShiftScheduleResolver"/> the
+    /// payroll run uses for its working-days figure, so <c>daily_rate = monthly_basic / working_days</c> matches
+    /// the run exactly (the run's golden 22000/22 = 1000/day). An employee with no resolvable shift falls back
+    /// to counting every calendar day (the resolver's empty-set rule) — identical to the former behaviour.
+    /// </summary>
+    private async Task<int> WorkingDaysInMonthAsync(Guid employeeId, int year, int month, CancellationToken ct)
     {
         var start = new DateOnly(year, month, 1);
         var end = start.AddMonths(1).AddDays(-1);
-        return end.DayNumber - start.DayNumber + 1;
+        var sets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
+            _dbContext, new[] { employeeId }, start, ct);
+        var count = ShiftScheduleResolver.CountWorkingDays(sets[employeeId], start, end);
+        // Defensive: a shift with no working day in the month would divide by zero — fall back to calendar days.
+        return count > 0 ? count : (end.DayNumber - start.DayNumber + 1);
     }
 }
