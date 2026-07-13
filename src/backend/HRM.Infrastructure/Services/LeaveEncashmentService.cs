@@ -1,6 +1,7 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
+using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,11 +18,21 @@ namespace HRM.Infrastructure.Services;
 /// description carries the <see cref="PayrollRunProcessor.EncashmentDescriptionPrefix"/> + day count so the run
 /// engine recognises it and stamps <c>leave_encashment_days/amount</c> on the slip.
 ///
-/// <para>BR-6 (encashment eligibility): when a leave type is supplied, the type must have
-/// <see cref="Domain.Entities.LeaveType.Encashable"/> = true and the eligible days are capped at the type's
-/// <c>MaxEncashDays</c>. The carry-forward-limit "balance over limit" check is the LEAVE module's surface; the
-/// caller supplies the eligible-days figure (the documented BR-6 gap — see the module note). Tenant-scoped via
-/// ITenantContext + the EF global query filter (AC-5/FR-8).</para>
+/// <para>BR-6 (encashment eligibility, BUG-079): when a leave type is supplied, the type must have
+/// <see cref="Domain.Entities.LeaveType.Encashable"/> = true AND the requested days must not exceed the
+/// employee's <b>forfeitable</b> balance — the portion of the current leave-ledger balance that lies over the
+/// type's <c>CarryForwardLimit</c> (the only part the year-end job would otherwise auto-encash). This ceiling is
+/// computed with the SAME authoritative <see cref="LeaveCarryForwardCalculator"/> the year-end job uses, then the
+/// paid days are still capped at the type's <c>MaxEncashDays</c>. An over-balance request is REJECTED (422
+/// <c>encashment_exceeds_balance</c>) — HR must see it, not have it silently clipped.</para>
+///
+/// <para>BUG-079 double-pay fix: on acceptance the service writes an <see cref="LedgerEntryType.Encashed"/>
+/// ledger draw-down (mirroring the year-end auto-encashment in <see cref="LeaveCarryForwardService"/>) in the SAME
+/// unit of work as the payroll adjustment. Because the year-end job recomputes the forfeitable balance from the
+/// current ledger (folding <c>Encashed</c> entries into consumption), the drawn-down days are excluded next
+/// year-end — the same days can no longer be paid twice. LeaveTypeId == null is the HR manual-override branch:
+/// it skips the type/balance gate AND the ledger draw-down (existing design — no leave type to draw against).
+/// Tenant-scoped via ITenantContext + the EF global query filter (AC-5/FR-8).</para>
 /// </summary>
 public sealed class LeaveEncashmentService : ILeaveEncashmentService
 {
@@ -57,8 +68,11 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
         if (employee is null)
             return Result<LeaveEncashmentResultDto>.Failure("Employee not found.", 404, "employee_not_found");
 
-        // BR-6: validate encashment eligibility + cap when a leave type is supplied.
+        // BR-6 (BUG-079): validate encashment eligibility + cap when a leave type is supplied.
         var eligibleDays = input.EligibleDays;
+        var leaveYear = input.PayYear;              // the leave year the balance/draw-down apply to.
+        LeaveType? encashLeaveType = null;          // non-null => write a ledger draw-down (Part 2).
+        decimal availableBalance = 0m;              // the ledger balance the draw-down chains from.
         if (input.LeaveTypeId is { } leaveTypeId)
         {
             var leaveType = await _dbContext.LeaveTypes.AsNoTracking()
@@ -68,8 +82,26 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
             if (!leaveType.Encashable)
                 return Result<LeaveEncashmentResultDto>.Failure(
                     "This leave type is not eligible for encashment.", 422, "leave_type_not_encashable");
+
+            // BR-6 balance/carry-forward gate: encashment is only for the balance that EXCEEDS the carry-forward
+            // limit (the "forfeitable" portion — the only part the year-end job would auto-encash). Read the
+            // employee's current available balance from the ledger, then compute the forfeitable ceiling with the
+            // SAME authoritative calculator the year-end job uses so the two paths agree on what is encashable.
+            availableBalance = await GetLedgerBalanceAsync(input.EmployeeId, leaveTypeId, leaveYear, cancellationToken);
+            decimal forfeitableCeiling = leaveType.CarryForwardLimit is { } carryForwardLimit
+                ? LeaveCarryForwardCalculator.Compute(availableBalance, carryForwardLimit).ForfeitedDays
+                : Math.Max(availableBalance, 0m); // no carry-forward limit configured => whole non-negative balance is encashable.
+
+            if (input.EligibleDays > forfeitableCeiling)
+                return Result<LeaveEncashmentResultDto>.Failure(
+                    $"Requested {input.EligibleDays:0.##} encashment day(s) exceed the available forfeitable balance of " +
+                    $"{forfeitableCeiling:0.##} day(s) (balance over the carry-forward limit).",
+                    422, "encashment_exceeds_balance");
+
             if (leaveType.MaxEncashDays is { } max && eligibleDays > max)
-                eligibleDays = max; // BR-6: cap at the type's maximum encashable days.
+                eligibleDays = max; // BR-6: cap the PAID days at the type's maximum encashable days.
+
+            encashLeaveType = leaveType;
         }
 
         // daily_rate = monthly_basic / working_days (FR-5). working_days = scheduled days in the target month.
@@ -81,6 +113,30 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
         var workingDays = await WorkingDaysInMonthAsync(input.EmployeeId, input.PayYear, input.PayMonth, cancellationToken);
         var dailyRate = Math.Round(monthlyBasic / workingDays, 2, MidpointRounding.AwayFromZero);
         var amount = Math.Round(eligibleDays * dailyRate, 2, MidpointRounding.AwayFromZero);
+
+        // Part 2 (BUG-079) — ledger draw-down: reduce the leave balance by the encashed days so the year-end
+        // auto-encashment (LeaveCarryForwardService) recomputes forfeitable on the REDUCED balance and cannot pay
+        // the same days again. Mirror the year-end Encashed entry shape. It is ADDED to the shared scoped
+        // DbContext but NOT saved here — the adjustment service's SaveChanges (same scoped context) persists BOTH
+        // the adjustment and this draw-down in ONE unit of work, so the encashment + draw-down are atomic.
+        LeaveLedger? drawDown = null;
+        if (encashLeaveType is not null)
+        {
+            drawDown = new LeaveLedger
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = employee.TenantId,
+                EntryType = LedgerEntryType.Encashed,
+                EmployeeId = input.EmployeeId,
+                LeaveTypeId = encashLeaveType.Id,
+                LeaveYear = leaveYear,
+                Amount = -eligibleDays,
+                BalanceAfter = availableBalance - eligibleDays,
+                Description = $"HR leave encashment: {eligibleDays:0.##} day(s) for {input.PayYear}-{input.PayMonth:00} payroll",
+                OccurredAt = DateTime.UtcNow,
+            };
+            _dbContext.LeaveLedgerEntries.Add(drawDown);
+        }
 
         // AC-3/FR-5: create the EARNING adjustment (Bonus) for the next payroll run, reusing US-PAY-007. The
         // description carries the encashment prefix + "(N days)" so the run engine recognises it and stamps the
@@ -102,8 +158,14 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
             cancellationToken);
 
         if (createResult.IsFailure)
+        {
+            // Adjustment rejected => do NOT persist the draw-down (both-or-neither). The entry was only tracked,
+            // never saved; detach it so an unrelated later SaveChanges in this scope cannot flush an orphan.
+            if (drawDown is not null)
+                _dbContext.Entry(drawDown).State = EntityState.Detached;
             return Result<LeaveEncashmentResultDto>.Failure(
                 createResult.Error!, createResult.StatusCode ?? 400, createResult.ErrorCode);
+        }
 
         var created = createResult.Value!;
         _logger.LogInformation(
@@ -122,6 +184,26 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
             PayYear = created.Adjustment.ApplicablePayYear,
             PeriodDeferred = created.DeferredToPayMonth is not null,
         });
+    }
+
+    /// <summary>
+    /// The employee's current available leave balance for a type/year = the <c>BalanceAfter</c> of the most recent
+    /// ledger entry (replicates <c>LeaveRequestService.GetLedgerBalanceAsync</c> — the US-LV-002 balance source).
+    /// No ledger entries => balance 0. Tenant-scoped via the EF global query filter.
+    /// </summary>
+    private async Task<decimal> GetLedgerBalanceAsync(
+        Guid employeeId, Guid leaveTypeId, int leaveYear, CancellationToken ct)
+    {
+        var lastEntry = await _dbContext.LeaveLedgerEntries
+            .AsNoTracking()
+            .Where(l => l.EmployeeId == employeeId
+                        && l.LeaveTypeId == leaveTypeId
+                        && l.LeaveYear == leaveYear)
+            .OrderByDescending(l => l.OccurredAt)
+            .ThenByDescending(l => l.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        return lastEntry?.BalanceAfter ?? 0m;
     }
 
     /// <summary>The employee's current effective monthly BASIC (the encashment daily-rate base).</summary>
