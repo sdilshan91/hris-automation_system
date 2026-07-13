@@ -997,22 +997,19 @@ public sealed class HrReportService : IHrReportService
     private sealed record ReportScope(string Kind, Guid? EmployeeId);
 
     /// <summary>
-    /// AC-4 / FR-8 scope, identical in shape to LeaveReportService.ResolveScopeAsync:
-    ///   1. Any of Employee/Leave/Attendance .View.All → All tenant employees (HR Officer).
-    ///   2. An employee with ≥1 direct report → Manager scope (own direct reports + self).
+    /// AC-4 / FR-8 scope, identical in shape to LeaveReportService.ResolveScopeAsync (DEC-1):
+    ///   1. Reports.View.All → All tenant employees.
+    ///   2. Reports.View.Team AND ≥1 direct report → Manager scope (own direct reports + self).
     ///   3. Otherwise → Employee scope (own record only).
-    /// We key "All" on the cross-module .View.All permissions because this report spans both leave and
-    /// attendance; "Reports.View" alone gates access but a Manager holding it must still be team-scoped.
+    /// DEC-1 replaces the prior arrangement where scope BORROWED the cross-module Employee/Leave/Attendance
+    /// .View.All perms and Team was purely data-derived (any manager auto-got team reports). Team now
+    /// requires the explicit Reports.View.Team permission; a manager without it falls through to self scope.
     /// </summary>
     private async Task<ReportScope> ResolveScopeAsync(CancellationToken ct)
     {
         var perms = _currentUser?.Permissions ?? [];
-        bool hasViewAll =
-            perms.Contains(PermissionCatalog.Employee.ViewAll) ||
-            perms.Contains(PermissionCatalog.Leave.ViewAll) ||
-            perms.Contains(PermissionCatalog.Attendance.ViewAll);
 
-        if (hasViewAll)
+        if (perms.Contains(PermissionCatalog.Reports.ViewAll))
             return new ReportScope("All", null);
 
         if (_currentUser is null)
@@ -1025,8 +1022,10 @@ public sealed class HrReportService : IHrReportService
         if (me is null)
             return new ReportScope("Employee", null);
 
-        bool isManager = await _db.Employees.AsNoTracking()
-            .AnyAsync(e => e.ReportsToEmployeeId == me.Id, ct);
+        // DEC-1: Team scope requires BOTH the explicit Reports.View.Team perm AND actually managing someone.
+        bool isManager = perms.Contains(PermissionCatalog.Reports.ViewTeam)
+            && await _db.Employees.AsNoTracking()
+                .AnyAsync(e => e.ReportsToEmployeeId == me.Id, ct);
 
         return isManager ? new ReportScope("Manager", me.Id) : new ReportScope("Employee", me.Id);
     }

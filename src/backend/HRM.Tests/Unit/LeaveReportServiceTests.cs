@@ -77,10 +77,10 @@ public sealed class LeaveReportServiceTests
         _tenantContext.IsResolved.Returns(true);
         _tenantContext.IsSystemContext.Returns(false);
 
-        // The default caller is HR (holds Leave.View.All) -> "All" scope.
+        // The default caller is HR (holds Reports.View.All) -> "All" scope (DEC-1).
         _hrUser = Substitute.For<ICurrentUser>();
         _hrUser.UserId.Returns(_hrUserId);
-        _hrUser.Permissions.Returns(new[] { PermissionCatalog.Leave.ViewAll });
+        _hrUser.Permissions.Returns(new[] { PermissionCatalog.Reports.ViewAll });
 
         _entitlementService = Substitute.For<ILeaveEntitlementService>();
         // Default: any (employee, leaveType, year) that a test does not explicitly stub resolves to a
@@ -713,7 +713,8 @@ public sealed class LeaveReportServiceTests
     [Fact]
     public async Task RoleScope_ResolvedFromCurrentUser_ManagerSeesTeam()
     {
-        // Alice is an employee user who manages Bob. Resolved scope (via ICurrentUser) -> Manager.
+        // Alice is an employee user who manages Bob AND holds Reports.View.Team. Resolved scope
+        // (via ICurrentUser) -> Manager (DEC-1: team scope now requires the explicit Reports.View.Team perm).
         var aliceUserId = Guid.NewGuid();
         using (var db = CreateDbContext())
         {
@@ -733,7 +734,7 @@ public sealed class LeaveReportServiceTests
 
         var aliceManager = Substitute.For<ICurrentUser>();
         aliceManager.UserId.Returns(aliceUserId);
-        aliceManager.Permissions.Returns(Array.Empty<string>()); // no Leave.View.All -> not HR
+        aliceManager.Permissions.Returns(new[] { PermissionCatalog.Reports.ViewTeam }); // Reports.View.Team (not .All) -> Manager scope
 
         var result = await CreateService(aliceManager).GenerateReportAsync(
             LeaveReportType.BalanceSummary, Params(leaveTypeId: _annualLeaveTypeId));
@@ -742,6 +743,104 @@ public sealed class LeaveReportServiceTests
         report.Scope.Should().Be("Manager");
         report.Rows.Select(r => Cell(r, report, "Employee No"))
             .Should().BeEquivalentTo(new[] { "EMP-0001", "EMP-0002" });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  DEC-1: report scope now consumes Reports.View.All / Reports.View.Team (was Leave.View.All + any
+    //  manager auto-getting team scope). The resolver (GenerateReportAsync → ResolveScopeAsync) is driven
+    //  entirely by the caller's permissions + whether they manage anyone.
+    // ══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Dec1_ReportsViewAll_ResolvesAllScope()
+    {
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empBob, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empCarol, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empAlice, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empBob, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empCarol, _sickLeaveTypeId, 0m);
+
+        var caller = Substitute.For<ICurrentUser>();
+        caller.UserId.Returns(Guid.NewGuid());
+        caller.Permissions.Returns(new[] { PermissionCatalog.Reports.ViewAll });
+
+        var result = await CreateService(caller).GenerateReportAsync(
+            LeaveReportType.BalanceSummary, Params(leaveTypeId: _annualLeaveTypeId));
+
+        var report = result.Value!;
+        report.Scope.Should().Be("All");
+        report.Rows.Select(r => Cell(r, report, "Employee No"))
+            .Should().BeEquivalentTo(new[] { "EMP-0001", "EMP-0002", "EMP-0003" });
+    }
+
+    [Fact]
+    public async Task Dec1_ReportsViewTeam_WithDirectReport_ResolvesTeamScope()
+    {
+        // Alice manages Bob AND holds Reports.View.Team -> Manager scope (self + direct reports).
+        var aliceUserId = Guid.NewGuid();
+        using (var db = CreateDbContext())
+        {
+            var alice = db.Employees.Single(e => e.Id == _empAlice);
+            alice.UserId = aliceUserId;
+            var bob = db.Employees.Single(e => e.Id == _empBob);
+            bob.ReportsToEmployeeId = _empAlice;
+            db.SaveChanges();
+        }
+
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empBob, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empCarol, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empAlice, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empBob, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empCarol, _sickLeaveTypeId, 0m);
+
+        var caller = Substitute.For<ICurrentUser>();
+        caller.UserId.Returns(aliceUserId);
+        caller.Permissions.Returns(new[] { PermissionCatalog.Reports.View, PermissionCatalog.Reports.ViewTeam });
+
+        var result = await CreateService(caller).GenerateReportAsync(
+            LeaveReportType.BalanceSummary, Params(leaveTypeId: _annualLeaveTypeId));
+
+        var report = result.Value!;
+        report.Scope.Should().Be("Manager");
+        report.Rows.Select(r => Cell(r, report, "Employee No"))
+            .Should().BeEquivalentTo(new[] { "EMP-0001", "EMP-0002" }); // Alice + Bob, not Carol
+    }
+
+    [Fact]
+    public async Task Dec1_ReportsViewOnly_ManagerFallsThroughToSelfScope()
+    {
+        // DEC-1 tightening: Alice manages Bob but holds NEITHER Reports.View.All NOR Reports.View.Team.
+        // Managing someone no longer auto-grants team scope — she is scoped to her own record only.
+        var aliceUserId = Guid.NewGuid();
+        using (var db = CreateDbContext())
+        {
+            var alice = db.Employees.Single(e => e.Id == _empAlice);
+            alice.UserId = aliceUserId;
+            var bob = db.Employees.Single(e => e.Id == _empBob);
+            bob.ReportsToEmployeeId = _empAlice;
+            db.SaveChanges();
+        }
+
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empBob, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empCarol, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empAlice, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empBob, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empCarol, _sickLeaveTypeId, 0m);
+
+        var caller = Substitute.For<ICurrentUser>();
+        caller.UserId.Returns(aliceUserId);
+        caller.Permissions.Returns(new[] { PermissionCatalog.Reports.View });
+
+        var result = await CreateService(caller).GenerateReportAsync(
+            LeaveReportType.BalanceSummary, Params(leaveTypeId: _annualLeaveTypeId));
+
+        var report = result.Value!;
+        report.Scope.Should().Be("Employee");
+        report.Rows.Select(r => Cell(r, report, "Employee No"))
+            .Should().BeEquivalentTo(new[] { "EMP-0001" }); // Alice only
     }
 
     // ══════════════════════════════════════════════════════════════

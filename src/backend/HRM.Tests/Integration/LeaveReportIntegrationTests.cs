@@ -200,7 +200,7 @@ public sealed class LeaveReportIntegrationTests
     [Fact]
     public async Task GetReport_EndToEnd_WithDepartmentFilterAndPagination()
     {
-        var mediator = BuildPipeline(_tenantA, _hrAUser, PermissionCatalog.Leave.ViewAll);
+        var mediator = BuildPipeline(_tenantA, _hrAUser, PermissionCatalog.Reports.ViewAll);
 
         // Page 1, size 1 over the 2 Engineering employees -> 1 row, total count 2.
         var result = await mediator.Send(new GetLeaveReportQuery(
@@ -220,7 +220,7 @@ public sealed class LeaveReportIntegrationTests
     [Fact]
     public async Task ExportReport_EndToEnd_ReturnsCsvFileInline()
     {
-        var mediator = BuildPipeline(_tenantA, _hrAUser, PermissionCatalog.Leave.ViewAll);
+        var mediator = BuildPipeline(_tenantA, _hrAUser, PermissionCatalog.Reports.ViewAll);
 
         var result = await mediator.Send(new ExportLeaveReportQuery(
             LeaveReportType.BalanceSummary, ReportExportFormat.Csv,
@@ -245,7 +245,7 @@ public sealed class LeaveReportIntegrationTests
     [Fact]
     public async Task GetReport_TenantIsolation_HrInTenantA_SeesNoTenantBRows()
     {
-        var mediatorA = BuildPipeline(_tenantA, _hrAUser, PermissionCatalog.Leave.ViewAll);
+        var mediatorA = BuildPipeline(_tenantA, _hrAUser, PermissionCatalog.Reports.ViewAll);
 
         var result = await mediatorA.Send(new GetLeaveReportQuery(
             LeaveReportType.BalanceSummary, Params(leaveTypeId: _leaveTypeA)));
@@ -259,7 +259,7 @@ public sealed class LeaveReportIntegrationTests
         report.Rows.Should().NotContain(r => Cell(r, report, "Employee No") == "B-BEN");
 
         // And Tenant B HR, querying the same report, sees ONLY Ben.
-        var mediatorB = BuildPipeline(_tenantB, _hrBUser, PermissionCatalog.Leave.ViewAll);
+        var mediatorB = BuildPipeline(_tenantB, _hrBUser, PermissionCatalog.Reports.ViewAll);
         var resultB = await mediatorB.Send(new GetLeaveReportQuery(
             LeaveReportType.BalanceSummary, Params(leaveTypeId: _leaveTypeB)));
 
