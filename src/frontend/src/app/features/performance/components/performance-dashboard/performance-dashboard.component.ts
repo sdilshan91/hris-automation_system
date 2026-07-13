@@ -574,9 +574,18 @@ export class PerformanceDashboardComponent implements OnInit {
       // until DEC-1 seeds it, and admitting report-admins into the Performance
       // dashboard would be an unintended cross-module coupling. Gate on Performance
       // scope perms only.
+      //
+      // ISSUE-290: gate on the REAL backend permissions. The story names
+      // Performance.Read.All / Performance.Read.Team are NOT concrete permissions
+      // (PermissionCatalog has no such strings); the backend controller
+      // (PerformanceDashboardController) reuses the existing equivalents
+      // Performance.View.All / Performance.View.Team. Using the story-name strings
+      // here matched no user's permission set and redirected EVERY user (incl. HR/
+      // admin holding Performance.View.All) to /my-review, making this page
+      // unreachable.
       !this.auth.hasAnyPermission([
-        'Performance.Read.All',
-        'Performance.Read.Team',
+        'Performance.View.All',
+        'Performance.View.Team',
       ])
     ) {
       this.router.navigate(['/my-review']);
