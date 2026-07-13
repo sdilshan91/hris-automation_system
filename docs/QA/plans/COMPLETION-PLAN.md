@@ -61,7 +61,7 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 **⚠ DEPLOY-GATES & NEEDS-DECISIONS (surface before the relevant deploy / to the human):**
 - **[OPS, HIGH] Encryption key (P3-4/#273):** prod/staging MUST set `Encryption__Keys__hrm-field-key-1` (base64 32-byte) via env/secret before app start, or it FAIL-FASTS by design. Dev + tests carry a key.
 - **[OPS] RLS prod flip** — the flag is committed OFF; the actual staging/prod flip is the user's ops step (README §3b runbook).
-- **[DECISION ✅ RESOLVED 2026-07-13] Encryption key-rotation SOP** (P3-4) — user chose **write the runbook now** → queued as **DEC-2** (doc-only).
+- **[DECISION ✅ DONE 2026-07-13, #276] Encryption key-rotation SOP** (P3-4) — runbook written at `src/backend/HRM.Infrastructure/Security/README.md` (DEC-2). Follow-up surfaced: no bulk re-encrypt job yet (parked P7).
 - **[DECISION ✅ RESOLVED 2026-07-13] `Reports.View.Team` dedicated permission** (ISSUE-195) — user chose **build the dedicated perm** → queued as **DEC-1** (net-new perm + repoint 6 HR builders).
 - **[DECISION] ISSUE-021** (no SalaryGrade entity) · **BUG-056** (no goal-finalize seam) — feature-gated.
 
@@ -106,7 +106,7 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P2-2 sec ISSUE-226 XSS | P2 | ISSUE-226 (offer free-text stored-XSS defense-in-depth) | MERGED | #275 | sanitize-on-write via existing `IHtmlSanitizer` (Ganss.Xss); ticket PDF-premise corrected (QuestPDF `.Text()` = non-HTML sink); 2 auditor arms added (integration DI+MediatR + `javascript:`/style pin); 3671/3671; auditors CONNECTED+AUTHENTIC |
 | P2-2 MED clusters (rest) | P2 | audit gaps; payroll semantics; a11y; UTC; Redis; recruitment/perf | TODO | — | fan-out one sub-cluster per branch; ISSUE-226 done; BUG-082 broaden-audit now unblocked |
 | DEC-1 Reports.View.Team perm | P2 | ISSUE-195 follow-up — dedicated `Reports.*` scoped permission (user DECIDED: build it) | TODO | — | net-new perm + repoint 6 HR report builders off the borrowed `.View.All` perms |
-| DEC-2 Key-rotation SOP | P3 | P3-4 follow-up — encryption key rotation/retention runbook (user DECIDED: write now) | TODO | — | doc-only; RLS/encryption README |
+| DEC-2 Key-rotation SOP | P3 | P3-4 follow-up — encryption key rotation/retention runbook (user DECIDED: write now) | MERGED | #276 | doc-only; runbook at `src/backend/HRM.Infrastructure/Security/README.md` (overlap rotation + re-encrypt-backlog + verify-SQL). Surfaced a follow-up: no bulk re-encrypt job exists yet (needed to fully rotate OFF a key) → P7 |
 | P2-3 Red FE base | P2 | ISSUE-245 (~26 pre-existing Angular spec fails) | VERIFIED | — | RESOLVED 2026-07-12 no-code — cleared by #254–261; full Karma suite 3757/3757 green ×2 runs, deterministic order; FE gate trustworthy |
 | P3-1 ClamAV | P3 | AllowWithLogVirusScanner → ClamAvVirusScanner | TODO | — | security |
 | P3-2 JWT denylist | P3 | NoOpSessionRevoker → Redis denylist | MERGED | #270 | Redis "revoked-before" cutoff + OnTokenValidated fail-open + iat claim; DI-gated Redis/NoOp; 3630/3630; auditors WIRED+AUTHENTIC. Impersonation-end already covered by ImpersonationEnforcementMiddleware (not the per-user cutoff — would over-revoke) |
@@ -119,7 +119,7 @@ BUG-037), **BUG-002/BUG-005** (MED, graceDays default + localization). These 4 l
 | P5-4 SSO | P5 | US-AUTH-012/016 + 5 [b] SSO TCs | TODO | — | net-new; some ops-gated |
 | P6-1 Workflow viewer FE | P6 | ISSUE-272/267 (US-ADM-011 FR-12 UI) | TODO | — | BE-complete |
 | P6-2 Eligible-plans UI | P6 | ISSUE-271 (US-TRN-003 AC-8) | TODO | — | BE-complete |
-| P7-1 LOW tail | P7 | 82–152 LOW, batch by module | TODO | — | ISSUE-270/274/**280**/**282** (auto-healed: PayrollSlipLine Code; job-path audit Postgres arm), ChangeTracker.Clear tidy, **`OfferLetterTemplate.Substitute` raw `string.Replace`** (auto-healed from #275 — latent XSS foot-gun IF a future HTML/email offer template reuses it; harmless today since the renderer ignores it, values now sanitized on write) |
+| P7-1 LOW tail | P7 | 82–152 LOW, batch by module | TODO | — | ISSUE-270/274/**280**/**282** (auto-healed: PayrollSlipLine Code; job-path audit Postgres arm), ChangeTracker.Clear tidy, **`OfferLetterTemplate.Substitute` raw `string.Replace`** (auto-healed from #275 — latent XSS foot-gun IF a future HTML/email offer template reuses it; harmless today since the renderer ignores it, values now sanitized on write), **bulk field-encryption re-encrypt job** (auto-healed from #276 — none exists; needed to fully rotate OFF an encryption key per the SOP; low-urgency until first real rotation) |
 | — ISSUE-021 / BUG-056 | park | SalaryGrade entity / goal-finalize seam | PARKED | — | decision-gated |
 
 ## ▶ Remaining work — priority order
