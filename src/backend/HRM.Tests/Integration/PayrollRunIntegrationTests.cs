@@ -102,6 +102,7 @@ public sealed class PayrollRunIntegrationTests
         services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
         services.AddScoped<IPayrollAdjustmentResolver, PayrollAdjustmentResolver>();
         services.AddScoped<IPayrollAuditLogger, PayrollAuditLogger>();
+        services.AddScoped<IPayrollSlipCleaner, PayrollSlipCleaner>();
         services.AddScoped<IPayrollRunService, PayrollRunService>();
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(InitiatePayrollRunCommand).Assembly));
@@ -450,5 +451,292 @@ public sealed class PayrollRunIntegrationTests
         using var db = Db(_tenantA);
         var slips = await db.PayrollSlips.CountAsync(s => s.PayrollRunId == init.Value.RunId);
         slips.Should().Be(1);                              // not duplicated.
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ISSUE-154 — payroll run CANCEL + RE-RUN.
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── CANCEL: a processed ReviewPending run → Cancelled, slips gone, adjustments reverted, period freed ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Cancel_ReviewPendingRun_RemovesSlips_RevertsAdjustments_AndFreesPeriodForFreshInitiate()
+    {
+        var empId = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(runId);
+
+        // Seed an adjustment that this run had marked Applied (the cancel must revert it to Pending — the SAME
+        // consistency the re-run cleanup guarantees). Done directly so the test does not depend on the resolver.
+        using (var seed = Db(_tenantA))
+        {
+            seed.PayrollAdjustments.Add(new PayrollAdjustment
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, EmployeeId = empId,
+                AdjustmentType = AdjustmentType.Bonus, Amount = 1_000m, Description = "Spot bonus",
+                ApplicablePayMonth = 5, ApplicablePayYear = 2026,
+                Status = AdjustmentStatus.Applied, AppliedInPayrollRunId = runId,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        // Pre-conditions: run processed (ReviewPending) with slips + details present.
+        using (var pre = Db(_tenantA))
+        {
+            (await pre.PayrollRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status
+                .Should().Be(PayrollRunStatus.ReviewPending);
+            (await pre.PayrollSlips.CountAsync(s => s.PayrollRunId == runId)).Should().BeGreaterThan(0);
+        }
+
+        var cancel = await mediator.Send(new CancelPayrollRunCommand(runId));
+        cancel.IsSuccess.Should().BeTrue(cancel.Error);
+        cancel.Value!.Status.Should().Be(nameof(PayrollRunStatus.Cancelled));
+
+        using (var post = Db(_tenantA))
+        {
+            (await post.PayrollRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status
+                .Should().Be(PayrollRunStatus.Cancelled);
+            // Slips + details hard-removed.
+            (await post.PayrollSlips.CountAsync(s => s.PayrollRunId == runId)).Should().Be(0);
+            var slipIds = await post.PayrollSlips.Where(s => s.PayrollRunId == runId).Select(s => s.Id).ToListAsync();
+            (await post.PayrollSlipDetails.CountAsync(d => slipIds.Contains(d.PayrollSlipId))).Should().Be(0);
+            // Adjustment reverted to Pending, run link cleared.
+            var adj = await post.PayrollAdjustments.AsNoTracking().SingleAsync(a => a.EmployeeId == empId);
+            adj.Status.Should().Be(AdjustmentStatus.Pending);
+            adj.AppliedInPayrollRunId.Should().BeNull();
+        }
+
+        // TC-PAY-003-02 step 3: the freed partial-unique-index slot lets a fresh initiate for the SAME period succeed.
+        var reinit = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        reinit.IsSuccess.Should().BeTrue(reinit.Error);
+        reinit.Value!.RunId.Should().NotBe(runId);
+        reinit.Value.Status.Should().Be(nameof(PayrollRunStatus.Queued));
+    }
+
+    // ── CANCEL: a Finalized run → 409, slips untouched ──────────────────────
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Cancel_FinalizedRun_Returns409_AndLeavesSlipsUntouched()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(runId);
+
+        // Finalize the run directly (BR-7).
+        using (var db = Db(_tenantA))
+        {
+            var run = await db.PayrollRuns.FirstAsync(r => r.Id == runId);
+            run.Status = PayrollRunStatus.Finalized;
+            run.FinalizedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        // Cancel from a FRESH scope so the service reads the just-finalized state (a new HTTP request would get
+        // a fresh DbContext; reusing `provider` here would hand back its identity-cached pre-finalize entity).
+        var cancel = await Pipeline(_tenantA).Send(new CancelPayrollRunCommand(runId));
+        cancel.IsSuccess.Should().BeFalse();
+        cancel.StatusCode.Should().Be(409);
+        cancel.ErrorCode.Should().Be("run_finalized");
+
+        using var post = Db(_tenantA);
+        (await post.PayrollRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status
+            .Should().Be(PayrollRunStatus.Finalized);
+        (await post.PayrollSlips.CountAsync(s => s.PayrollRunId == runId)).Should().Be(1);  // untouched.
+    }
+
+    // ── CANCEL: an already-cancelled run → 409 run_already_cancelled ────────
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Cancel_AlreadyCancelledRun_Returns409()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(runId);
+
+        (await mediator.Send(new CancelPayrollRunCommand(runId))).IsSuccess.Should().BeTrue();
+
+        var second = await mediator.Send(new CancelPayrollRunCommand(runId));
+        second.IsSuccess.Should().BeFalse();
+        second.StatusCode.Should().Be(409);
+        second.ErrorCode.Should().Be("run_already_cancelled");
+    }
+
+    // ── CANCEL: a Processing (in-flight) run → 409 run_in_progress, slips untouched ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Cancel_ProcessingRun_Returns409_InProgress_AndLeavesSlipsUntouched()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        // Process so the run has slips, then force it to Processing to simulate an in-flight job that is already
+        // PAST the ProcessAsync start-guard (it would, on completion, re-flip the run to ReviewPending).
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(runId);
+        using (var db = Db(_tenantA))
+        {
+            var run = await db.PayrollRuns.FirstAsync(r => r.Id == runId);
+            run.Status = PayrollRunStatus.Processing;
+            await db.SaveChangesAsync();
+        }
+
+        // Cancel from a FRESH scope so the service reads the Processing state (not the identity-cached entity).
+        var cancel = await Pipeline(_tenantA).Send(new CancelPayrollRunCommand(runId));
+        cancel.IsSuccess.Should().BeFalse();
+        cancel.StatusCode.Should().Be(409);
+        cancel.ErrorCode.Should().Be("run_in_progress");
+
+        using var post = Db(_tenantA);
+        (await post.PayrollRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status
+            .Should().Be(PayrollRunStatus.Processing);                       // cancel did NOT take effect.
+        (await post.PayrollSlips.CountAsync(s => s.PayrollRunId == runId)).Should().Be(1);  // slips untouched.
+    }
+
+    // ── RE-RUN: a ReviewPending run re-enqueues the job (FR-2 capture) ──────
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Rerun_ReviewPendingRun_ReEnqueuesJob()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await provider.GetRequiredService<IPayrollRunProcessor>().ProcessAsync(runId);
+
+        _scheduler.Enqueued.Clear();   // drop the initiate enqueue; assert only the re-run one.
+
+        var rerun = await mediator.Send(new RerunPayrollRunCommand(runId));
+        rerun.IsSuccess.Should().BeTrue(rerun.Error);
+        _scheduler.Enqueued.Should().ContainSingle(e => e.RunId == runId && e.TenantId == _tenantA);
+    }
+
+    // ── RE-RUN: driving ProcessAsync directly replaces the prior slips with fresh ids ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Rerun_DrivingProcessAsync_ReplacesSlipsWithFreshIds()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var processor = provider.GetRequiredService<IPayrollRunProcessor>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await processor.ProcessAsync(runId);
+
+        Guid slipIdBefore;
+        using (var pre = Db(_tenantA))
+            slipIdBefore = await pre.PayrollSlips.Where(s => s.PayrollRunId == runId).Select(s => s.Id).SingleAsync();
+
+        // Request the re-run (state stays ReviewPending), then the caller drives ProcessAsync (as the job would).
+        (await mediator.Send(new RerunPayrollRunCommand(runId))).IsSuccess.Should().BeTrue();
+        await processor.ProcessAsync(runId);
+
+        using var post = Db(_tenantA);
+        var slipIdAfter = await post.PayrollSlips.Where(s => s.PayrollRunId == runId).Select(s => s.Id).SingleAsync();
+        slipIdAfter.Should().NotBe(slipIdBefore);   // the prior slip was replaced, not duplicated.
+        (await post.PayrollSlips.CountAsync(s => s.PayrollRunId == runId)).Should().Be(1);
+    }
+
+    // ── RE-RUN: a Finalized run → 409 run_finalized ────────────────────────
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Rerun_FinalizedRun_Returns409()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var mediator = Pipeline(_tenantA);
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        using (var db = Db(_tenantA))
+        {
+            var run = await db.PayrollRuns.FirstAsync(r => r.Id == runId);
+            run.Status = PayrollRunStatus.Finalized;
+            run.FinalizedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        // Re-run from a FRESH scope so the service reads the just-finalized state (see the cancel test above).
+        var rerun = await Pipeline(_tenantA).Send(new RerunPayrollRunCommand(runId));
+        rerun.IsSuccess.Should().BeFalse();
+        rerun.StatusCode.Should().Be(409);
+        rerun.ErrorCode.Should().Be("run_finalized");
+    }
+
+    // ── RE-RUN: an in-flight (Queued) run → 409 run_in_progress ─────────────
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Rerun_InFlightRun_Returns409_InProgress()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var mediator = Pipeline(_tenantA);
+
+        // A freshly-initiated run is Queued (in-flight) — re-run must be refused.
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var rerun = await mediator.Send(new RerunPayrollRunCommand(init.Value!.RunId));
+        rerun.IsSuccess.Should().BeFalse();
+        rerun.StatusCode.Should().Be(409);
+        rerun.ErrorCode.Should().Be("run_in_progress");
+    }
+
+    // ── GUARD: ProcessAsync on a Cancelled run is a no-op (does NOT flip to ReviewPending) ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Process_CancelledRun_IsGuarded_DoesNotResurrect()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var processor = provider.GetRequiredService<IPayrollRunProcessor>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await processor.ProcessAsync(runId);
+        (await mediator.Send(new CancelPayrollRunCommand(runId))).IsSuccess.Should().BeTrue();
+
+        // A stale/duplicate enqueued job re-invokes ProcessAsync — it must bail, not resurrect the run.
+        var processed = await processor.ProcessAsync(runId);
+        processed.IsFailure.Should().BeTrue();
+        processed.StatusCode.Should().Be(409);
+        processed.ErrorCode.Should().Be("run_cancelled");
+
+        using var db = Db(_tenantA);
+        (await db.PayrollRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status
+            .Should().Be(PayrollRunStatus.Cancelled);           // still Cancelled.
+        (await db.PayrollSlips.CountAsync(s => s.PayrollRunId == runId)).Should().Be(0);  // no slips re-created.
     }
 }

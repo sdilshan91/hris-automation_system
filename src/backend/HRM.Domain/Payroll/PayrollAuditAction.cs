@@ -31,6 +31,8 @@ public static class PayrollAuditAction
     public const string PayrollRunRejected = "PayrollRun.Rejected";
     public const string PayrollRunFinalized = "PayrollRun.Finalized";
     public const string PayrollRunCancelled = "PayrollRun.Cancelled";
+    // ISSUE-154: HR re-ran a processed-but-not-approved run in place (re-enqueued the processing job).
+    public const string PayrollRunReprocessed = "PayrollRun.Reprocessed";
 
     // Adjustments
     public const string PayrollAdjustmentCreated = "PayrollAdjustment.Created";

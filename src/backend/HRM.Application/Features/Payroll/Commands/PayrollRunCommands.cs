@@ -22,3 +22,27 @@ public sealed class InitiatePayrollRunCommandHandler : IRequestHandler<InitiateP
             new InitiatePayrollRunInput(request.PayMonth, request.PayYear, request.IdempotencyKey),
             cancellationToken);
 }
+
+/// <summary>ISSUE-154: cancels a payroll run before finalization (cleans up slips + reverts adjustments).</summary>
+public sealed record CancelPayrollRunCommand(Guid RunId) : IRequest<Result<PayrollRunAcceptedDto>>;
+
+public sealed class CancelPayrollRunCommandHandler : IRequestHandler<CancelPayrollRunCommand, Result<PayrollRunAcceptedDto>>
+{
+    private readonly IPayrollRunService _service;
+    public CancelPayrollRunCommandHandler(IPayrollRunService service) => _service = service;
+
+    public Task<Result<PayrollRunAcceptedDto>> Handle(CancelPayrollRunCommand request, CancellationToken cancellationToken)
+        => _service.CancelAsync(request.RunId, cancellationToken);
+}
+
+/// <summary>ISSUE-154: re-runs a processed-but-not-approved run in place (re-enqueues the processing job).</summary>
+public sealed record RerunPayrollRunCommand(Guid RunId) : IRequest<Result<PayrollRunAcceptedDto>>;
+
+public sealed class RerunPayrollRunCommandHandler : IRequestHandler<RerunPayrollRunCommand, Result<PayrollRunAcceptedDto>>
+{
+    private readonly IPayrollRunService _service;
+    public RerunPayrollRunCommandHandler(IPayrollRunService service) => _service = service;
+
+    public Task<Result<PayrollRunAcceptedDto>> Handle(RerunPayrollRunCommand request, CancellationToken cancellationToken)
+        => _service.RerunAsync(request.RunId, cancellationToken);
+}

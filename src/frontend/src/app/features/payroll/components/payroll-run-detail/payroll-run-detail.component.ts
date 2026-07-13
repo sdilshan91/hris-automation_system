@@ -8,6 +8,7 @@ import {
   OnDestroy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Observable, Subject } from 'rxjs';
@@ -28,6 +29,7 @@ import {
   RUN_STATUS_BADGE,
   RUN_STATUS_LABELS,
   RUN_STEPPER,
+  runActionErrorMessage,
 } from '../../models/payroll-run.models';
 import {
   APPROVAL_ACTION_BADGE,
@@ -148,13 +150,93 @@ type CommentAction = 'reject' | 'return' | null;
               {{ r.initiatedAt | date: 'medium' }}
             </p>
           </div>
-          <span
-            class="inline-flex h-fit items-center self-start rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset"
-            [class]="statusBadge[r.status]"
-          >
-            {{ statusLabels[r.status] }}
-          </span>
+          <div class="flex flex-wrap items-center gap-2 self-start">
+            <!-- ISSUE-154: Re-run (ReviewPending only) + Cancel (any pre-Finalized,
+                 non-Cancelled). Both gated by Payroll.Run; the server is the final
+                 authority and re-validates. -->
+            @if (canRerun()) {
+              <button
+                type="button"
+                class="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
+                [disabled]="acting()"
+                (click)="startRerun()"
+              >
+                Re-run
+              </button>
+            }
+            @if (canCancel()) {
+              <button
+                type="button"
+                class="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+                [disabled]="acting()"
+                (click)="startCancel()"
+              >
+                Cancel run
+              </button>
+            }
+            <span
+              class="inline-flex h-fit items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset"
+              [class]="statusBadge[r.status]"
+            >
+              {{ statusLabels[r.status] }}
+            </span>
+          </div>
         </div>
+
+        <!-- ISSUE-154: inline confirm for Cancel / Re-run (mirrors the reject/return
+             inline-confirm idiom). Cancel removes slips; Re-run replaces them. -->
+        @if (confirmAction(); as ca) {
+          <div
+            @fadeIn
+            class="mb-6 rounded-xl border px-4 py-3 text-sm"
+            [class.border-rose-200]="ca === 'cancel'"
+            [class.bg-rose-50]="ca === 'cancel'"
+            [class.border-amber-200]="ca === 'rerun'"
+            [class.bg-amber-50]="ca === 'rerun'"
+            role="alert"
+          >
+            <p
+              class="font-medium"
+              [class.text-rose-700]="ca === 'cancel'"
+              [class.text-amber-800]="ca === 'rerun'"
+            >
+              {{
+                ca === 'cancel'
+                  ? 'Cancel this payroll run? All generated payslips will be removed. This cannot be undone.'
+                  : 'Re-run this payroll run? Its payslips will be replaced and payroll reprocessed.'
+              }}
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-white/60 disabled:opacity-50"
+                [disabled]="acting()"
+                (click)="dismissConfirm()"
+              >
+                Keep run
+              </button>
+              @if (ca === 'cancel') {
+                <button
+                  type="button"
+                  class="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50"
+                  [disabled]="acting()"
+                  (click)="confirmCancel()"
+                >
+                  {{ acting() ? 'Cancelling…' : 'Confirm cancel' }}
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-amber-700 disabled:opacity-50"
+                  [disabled]="acting()"
+                  (click)="confirmRerun()"
+                >
+                  {{ acting() ? 'Starting…' : 'Confirm re-run' }}
+                </button>
+              }
+            </div>
+          </div>
+        }
 
         <!-- Cancelled banner (off-path terminal state) -->
         @if (r.status === 'Cancelled') {
@@ -750,6 +832,36 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
     this.auth.hasPermission('Payroll.Approve'),
   );
 
+  // ─── ISSUE-154 cancel / re-run state ───────────────────────
+
+  /** Which run-action the inline confirm panel is gating (null = none). */
+  readonly confirmAction = signal<'cancel' | 'rerun' | null>(null);
+
+  /**
+   * Whether the current user may run Cancel/Re-run (Payroll.Run). The backend
+   * re-enforces the permission + the state guard; this hides the controls from
+   * users who can't act.
+   */
+  private readonly canRunActions = computed(() =>
+    this.auth.hasPermission('Payroll.Run'),
+  );
+
+  /**
+   * Cancel is offered on any pre-Finalized, non-Cancelled run (mirrors the BE
+   * guard: a finalized or already-cancelled run can't be cancelled).
+   */
+  readonly canCancel = computed(() => {
+    const s = this.status();
+    return (
+      this.canRunActions() && !!s && s !== 'Finalized' && s !== 'Cancelled'
+    );
+  });
+
+  /** Re-run is offered only on a ReviewPending run (mirrors the BE guard). */
+  readonly canRerun = computed(
+    () => this.canRunActions() && this.status() === 'ReviewPending',
+  );
+
   /** Whether the sticky action bar should render at all for the current status. */
   readonly hasActions = computed(() => {
     const s = this.status();
@@ -953,6 +1065,69 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
       error: () => {
         this.acting.set(false);
         this.toastr.error('That action could not be completed.');
+      },
+    });
+  }
+
+  // ─── ISSUE-154 cancel / re-run actions ─────────────────────
+
+  /** Reveal the inline confirm for a Cancel (it removes the run's slips). */
+  startCancel(): void {
+    this.confirmAction.set('cancel');
+  }
+
+  /** Reveal the inline confirm for a Re-run (it replaces the run's slips). */
+  startRerun(): void {
+    this.confirmAction.set('rerun');
+  }
+
+  /** Dismiss the inline confirm without acting. */
+  dismissConfirm(): void {
+    this.confirmAction.set(null);
+  }
+
+  /** Confirm the cancel — removes slips and moves the run to Cancelled. */
+  confirmCancel(): void {
+    this.runRunAction(
+      this.runsService.cancelRun(this.runId),
+      'Payroll run cancelled. Generated payslips were removed.',
+    );
+  }
+
+  /** Confirm the re-run — replaces slips and reprocesses payroll (202 Accepted). */
+  confirmRerun(): void {
+    this.runRunAction(
+      this.runsService.rerunRun(this.runId),
+      'Re-run started. Payslips are being reprocessed.',
+    );
+  }
+
+  /**
+   * Run a Cancel/Re-run observable: flips `acting`, on success clears the confirm
+   * panel + refetches the run (so status/stepper/summary reflect the new state) +
+   * toasts. On error, maps the 409 ApiResponse `code` to a friendly message (the
+   * backend owns the real state guard + Payroll.Run enforcement).
+   */
+  private runRunAction(
+    action$: Observable<IPayrollRun>,
+    successMessage: string,
+  ): void {
+    this.acting.set(true);
+    action$.pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.confirmAction.set(null);
+        this.progress.set(null);
+        this.acting.set(false);
+        this.toastr.success(successMessage);
+        this.load();
+      },
+      error: (err: unknown) => {
+        this.acting.set(false);
+        const code =
+          err instanceof HttpErrorResponse
+            ? (err.error?.code as string | undefined)
+            : undefined;
+        this.toastr.error(runActionErrorMessage(code));
       },
     });
   }

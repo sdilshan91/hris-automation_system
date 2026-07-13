@@ -143,6 +143,36 @@ describe('PayrollRunService', () => {
     });
   });
 
+  // ─── cancelRun / rerunRun (ISSUE-154) ─────────────────────
+
+  describe('cancelRun', () => {
+    it('POSTs to /{runId}/cancel and returns the accepted run', () => {
+      let result: IPayrollRun | undefined;
+      service.cancelRun('r-1').subscribe((r) => (result = r));
+
+      const req = httpMock.expectOne(`${runsUrl}/r-1/cancel`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ ...mockRun, status: 'Cancelled' });
+
+      expect(result?.status).toBe('Cancelled');
+    });
+  });
+
+  describe('rerunRun', () => {
+    it('POSTs to /{runId}/rerun', () => {
+      let result: IPayrollRun | undefined;
+      service.rerunRun('r-1').subscribe((r) => (result = r));
+
+      const req = httpMock.expectOne(`${runsUrl}/r-1/rerun`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush({ ...mockRun, status: 'Queued' });
+
+      expect(result?.status).toBe('Queued');
+    });
+  });
+
   // ─── getProgress ──────────────────────────────────────────
 
   describe('getProgress', () => {

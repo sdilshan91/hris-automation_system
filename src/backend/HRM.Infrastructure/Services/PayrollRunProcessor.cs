@@ -24,8 +24,8 @@ namespace HRM.Infrastructure.Services;
 /// <see cref="PayrollSlipCalculator"/> (LOP BR-2, pro-ration BR-4/BR-5, penny reconciliation BR-8); skips
 /// employees without a structure with a run-log warning and continues (AC-6); batch-inserts the slips +
 /// details (NFR-6); stamps the summary totals (FR-8); and moves the run to ReviewPending, notifying HR
-/// (AC-3). Re-running a ReviewPending/Cancelled run replaces its prior slips (FR-7). Finalized is immutable
-/// (BR-7).</para>
+/// (AC-3). Re-running a ReviewPending run replaces its prior slips (FR-7). Finalized and Cancelled runs are
+/// terminal — the processor bails out rather than reprocessing them (BR-7 / ISSUE-154).</para>
 ///
 /// <para>STATUTORY (FR-5c / US-PAY-006): when the tenant has configured statutory rules in effect for the
 /// run's period, the <see cref="IStatutoryDeductionResolver"/> computes the employee-side statutory
@@ -43,6 +43,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     private readonly IPayrollNotificationService _notifications;
     private readonly IStatutoryDeductionResolver _statutoryResolver;
     private readonly IPayrollAdjustmentResolver _adjustmentResolver;
+    private readonly IPayrollSlipCleaner _slipCleaner;
     private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayrollRunProcessor> _logger;
 
@@ -65,6 +66,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         IPayrollNotificationService notifications,
         IStatutoryDeductionResolver statutoryResolver,
         IPayrollAdjustmentResolver adjustmentResolver,
+        IPayrollSlipCleaner slipCleaner,
         IPayrollAuditLogger audit,
         ILogger<PayrollRunProcessor> logger)
     {
@@ -74,6 +76,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _notifications = notifications;
         _statutoryResolver = statutoryResolver;
         _adjustmentResolver = adjustmentResolver;
+        _slipCleaner = slipCleaner;
         _audit = audit;
         _logger = logger;
     }
@@ -91,14 +94,21 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         if (run.Status == PayrollRunStatus.Finalized)
             return Result.Failure("A finalized payroll run cannot be reprocessed.", 409, "run_finalized");
 
+        // ISSUE-154: a Cancelled run is terminal — a stale/duplicate enqueued job must NOT resurrect it back to
+        // ReviewPending. Bail out (the ProcessPayrollRunJob logs the non-completion). Re-running a cancelled
+        // period is a fresh initiate, not a reprocess of this run.
+        if (run.Status == PayrollRunStatus.Cancelled)
+            return Result.Failure("A cancelled payroll run cannot be reprocessed.", 409, "run_cancelled");
+
         // NFR-4: log start with correlation (run id) + tenant context.
         _logger.LogInformation(
             "ProcessPayrollRun START. RunId={RunId}, Period={Year}-{Month}, Tenant={TenantId}",
             run.Id, run.PayYear, run.PayMonth, _tenantContext.TenantId);
 
-        // FR-7: re-running a ReviewPending/Cancelled run replaces its prior slips. Remove the old slips +
-        // details (soft-delete via SaveChanges is fine; we hard-remove to keep the run idempotent).
-        await RemoveExistingSlipsAsync(run.Id, cancellationToken);
+        // FR-7: re-running a ReviewPending run replaces its prior slips. Remove the old slips + details and
+        // revert this run's Applied adjustments to Pending via the SHARED cleanup (the SAME helper the cancel
+        // path uses — ISSUE-154). Hard-remove keeps the run idempotent.
+        await _slipCleaner.RemoveRunSlipsAndRevertAdjustmentsAsync(run.Id, cancellationToken);
 
         run.Status = PayrollRunStatus.Processing;
         run.ProcessedEmployees = 0;
@@ -341,37 +351,6 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
-
-    private async Task RemoveExistingSlipsAsync(Guid runId, CancellationToken ct)
-    {
-        // US-PAY-007 FR-7 consistency: revert adjustments this run had marked Applied back to Pending so the
-        // re-run re-picks them (otherwise a re-run would silently drop the adjustment lines). Double application
-        // across DIFFERENT runs is still prevented — those stay Applied under their own run id.
-        var appliedHere = await _dbContext.PayrollAdjustments
-            .Where(a => a.AppliedInPayrollRunId == runId && a.Status == AdjustmentStatus.Applied)
-            .ToListAsync(ct);
-        foreach (var a in appliedHere)
-        {
-            a.Status = AdjustmentStatus.Pending;
-            a.AppliedInPayrollRunId = null;
-            a.UpdatedAt = DateTime.UtcNow;
-        }
-
-        var existingSlips = await _dbContext.PayrollSlips.Where(s => s.PayrollRunId == runId).ToListAsync(ct);
-        if (existingSlips.Count == 0)
-        {
-            if (appliedHere.Count > 0) await _dbContext.SaveChangesAsync(ct);
-            return;
-        }
-
-        var slipIds = existingSlips.Select(s => s.Id).ToList();
-        var existingDetails = await _dbContext.PayrollSlipDetails
-            .Where(d => slipIds.Contains(d.PayrollSlipId)).ToListAsync(ct);
-
-        _dbContext.PayrollSlipDetails.RemoveRange(existingDetails);
-        _dbContext.PayrollSlips.RemoveRange(existingSlips);
-        await _dbContext.SaveChangesAsync(ct);
-    }
 
     private async Task<Dictionary<Guid, SalaryComponent>> LoadComponentMetaAsync(
         List<EmployeeSalaryComponent> rows, CancellationToken ct)

@@ -116,6 +116,7 @@ public sealed class PayrollAdjustmentIntegrationTests
         services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
         services.AddScoped<IPayrollAdjustmentResolver, PayrollAdjustmentResolver>();
         services.AddScoped<IPayrollAdjustmentService, PayrollAdjustmentService>();
+        services.AddScoped<IPayrollSlipCleaner, PayrollSlipCleaner>();
         services.AddScoped<IPayrollRunService, PayrollRunService>();
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(InitiatePayrollRunCommand).Assembly));

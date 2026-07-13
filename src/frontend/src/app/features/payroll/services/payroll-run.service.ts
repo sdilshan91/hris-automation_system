@@ -84,6 +84,35 @@ export class PayrollRunService {
     });
   }
 
+  /**
+   * ISSUE-154: Cancel a non-finalized run. The backend removes the run's slips and
+   * moves it to Cancelled, returning the accepted run DTO. Server-gated by
+   * Payroll.Run; a 409 carries a machine-readable `code` (run_finalized,
+   * run_in_progress, run_already_cancelled) which the caller maps to a message.
+   */
+  cancelRun(runId: string): Observable<IPayrollRun> {
+    return this.http.post<IPayrollRun>(
+      `${this.runsUrl}/${runId}/cancel`,
+      null,
+      { withCredentials: true },
+    );
+  }
+
+  /**
+   * ISSUE-154: Re-run (reprocess) a ReviewPending run. The backend replaces the
+   * run's slips and re-enqueues processing (202 Accepted). Server-gated by
+   * Payroll.Run; a 409 carries a `code` (run_not_rerunnable, run_finalized,
+   * run_cancelled) which the caller maps to a message. The body (if any) is not
+   * relied upon — the detail view refetches the run to pick up the new state.
+   */
+  rerunRun(runId: string): Observable<IPayrollRun> {
+    return this.http.post<IPayrollRun>(
+      `${this.runsUrl}/${runId}/rerun`,
+      null,
+      { withCredentials: true },
+    );
+  }
+
   /** A single point-in-time progress snapshot (FR-6). */
   getProgress(id: string): Observable<IPayrollRunProgress> {
     return this.http.get<IPayrollRunProgress>(
