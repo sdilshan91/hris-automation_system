@@ -16,6 +16,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.AuditLog;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Performance;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Persistence.Interceptors;
 using HRM.Infrastructure.Services;
@@ -533,5 +534,135 @@ public sealed class AuditCaptureInterceptorTests
 
         row.After!.Should().Contain("Engineering");
         row.After!.Should().NotContain(SensitiveFieldMasker.Redacted);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // P2-2 confirming regressions: findings the #272 opt-OUT interceptor AUTO-FIXED.
+    // These three entities are plain (non-IAuditExempt) tenant BaseEntities, so under
+    // opt-out their writes now produce audit rows. Each test PROVES a real audit_log
+    // row with the right Action + non-null actor/resource — the regression guard that
+    // lets BUG-081 / ISSUE-120 / ISSUE-200 be closed.
+    // ════════════════════════════════════════════════════════════════════════════
+
+    // ── BUG-081: NotificationTemplate write (customize/reset) is audited ────────
+    [Fact]
+    public async Task BUG081_NotificationTemplate_write_is_audited()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+        var id = Guid.NewGuid();
+
+        // CREATE (customize an override).
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            db.NotificationTemplates.Add(new NotificationTemplate
+            {
+                Id = id,
+                TenantId = _tenant,
+                EventKey = "leave_approved",
+                Language = "en",
+                Subject = "Your leave was approved",
+                BodyHtml = "<p>Approved</p>",
+                BodyText = "Approved",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // UPDATE (edit the subject).
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            var t = await db.NotificationTemplates.SingleAsync(x => x.Id == id);
+            t.Subject = "Leave approved ✅";
+            await db.SaveChangesAsync();
+        }
+
+        // RESET to default → soft-delete (IsDeleted false → true) → Delete action.
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            var t = await db.NotificationTemplates.SingleAsync(x => x.Id == id);
+            t.IsDeleted = true;
+            await db.SaveChangesAsync();
+        }
+
+        using var read = Db(dbName, ctx, User(), null);
+        var rows = await read.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.ResourceType == "NotificationTemplate")
+            .ToListAsync();
+
+        rows.Select(r => r.Action).Should().Contain(new[]
+        {
+            "NotificationTemplate.Create", "NotificationTemplate.Update", "NotificationTemplate.Delete",
+        });
+        var create = rows.Single(r => r.Action == "NotificationTemplate.Create");
+        create.ResourceId.Should().Be(id.ToString());
+        create.UserId.Should().Be(_actor);
+        create.TenantId.Should().Be(_tenant);
+    }
+
+    // ── ISSUE-120: a ReviewSignoff (acknowledge/dispute) write is audited ───────
+    [Fact]
+    public async Task ISSUE120_ReviewSignoff_create_is_audited()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+        var id = Guid.NewGuid();
+
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            db.ReviewSignoffs.Add(new ReviewSignoff
+            {
+                Id = id,
+                TenantId = _tenant,
+                ManagerReviewId = Guid.NewGuid(),
+                Party = SignoffParty.Employee,
+                Action = SignoffAction.Acknowledged,
+                SignerName = "Ada Lovelace",
+                SignerUserId = _actor,
+                SignedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var read = Db(dbName, ctx, User(), null);
+        var row = await read.AuditLogs.IgnoreQueryFilters()
+            .SingleAsync(a => a.Action == "ReviewSignoff.Create");
+
+        row.ResourceType.Should().Be("ReviewSignoff");
+        row.ResourceId.Should().Be(id.ToString());
+        row.UserId.Should().Be(_actor);
+        row.TenantId.Should().Be(_tenant);
+    }
+
+    // ── ISSUE-200: issuing an Asset (onboarding) is audited ─────────────────────
+    [Fact]
+    public async Task ISSUE200_Asset_issue_is_audited()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var ctx = TenantCtx();
+        var id = Guid.NewGuid();
+
+        using (var db = Db(dbName, ctx, User(), HttpAccessor()))
+        {
+            db.Assets.Add(new Asset
+            {
+                Id = id,
+                TenantId = _tenant,
+                AssetType = "Laptop",
+                AssetTag = "LT-0001",
+                Status = AssetStatus.Assigned,
+                AssignedEmployeeId = Guid.NewGuid(),
+                IssueDate = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var read = Db(dbName, ctx, User(), null);
+        var row = await read.AuditLogs.IgnoreQueryFilters()
+            .SingleAsync(a => a.Action == "Asset.Create");
+
+        row.ResourceType.Should().Be("Asset");
+        row.ResourceId.Should().Be(id.ToString());
+        row.UserId.Should().Be(_actor);
+        row.TenantId.Should().Be(_tenant);
     }
 }

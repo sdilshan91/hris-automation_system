@@ -43,6 +43,12 @@ public static class PayrollAuditAction
     // Reports (US-RPT-003 NFR-3): sensitive-PII reveal on a payroll report (e.g. unmasked bank account).
     public const string PayrollReportViewSensitive = "PayrollReport.ViewSensitive";
 
+    // BUG-083 (PII-read audit): a deliberate sensitive-reveal READ of full salary / compensation. Follows the
+    // shipped ".ViewSensitive" convention (same suffix as PayrollReportViewSensitive) so every PII-access audit
+    // is queryable together. The After JSON NAMES the accessed fields but stores NO values.
+    public const string PayslipViewSensitive = "Payslip.ViewSensitive";
+    public const string RecommendationViewSensitive = "Recommendation.ViewSensitive";
+
     /// <summary>The set of resource-type strings used by payroll audit entries (§7 resource_type).</summary>
     public static class ResourceType
     {
@@ -54,6 +60,9 @@ public static class PayrollAuditAction
         public const string PayrollAdjustment = "PayrollAdjustment";
         public const string PayrollSlip = "PayrollSlip";
         public const string PayrollReport = "PayrollReport";
+        // BUG-083 sensitive-reveal resource types.
+        public const string Payslip = "Payslip";
+        public const string Recommendation = "Recommendation";
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Domain.Performance;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -29,21 +30,29 @@ public sealed class RecommendationService : IRecommendationService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IRecommendationIntegrationService _integration;
+    private readonly IPayrollAuditLogger _auditLogger;
     private readonly ILogger<RecommendationService> _logger;
 
     private const int MaxPageSize = 200;
+
+    // BUG-083: the compensation fields GetAsync decrypts + returns (P3-4 AES-at-rest columns). NAMES ONLY —
+    // recorded in the sensitive-reveal audit's After payload so no monetary values reach the audit trail.
+    private static readonly string[] CompensationRevealFields =
+        ["currentCompensation", "incrementAmount", "incrementPercent", "bonusAmount", "bonusPercent"];
 
     public RecommendationService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IRecommendationIntegrationService integration,
+        IPayrollAuditLogger auditLogger,
         ILogger<RecommendationService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _integration = integration;
+        _auditLogger = auditLogger;
         _logger = logger;
     }
 
@@ -154,7 +163,20 @@ public sealed class RecommendationService : IRecommendationService
         if (authz.IsFailure)
             return Result<RecommendationDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
 
-        return Result<RecommendationDto>.Success(await BuildDtoWithLookupsAsync(rec, cancellationToken));
+        var dto = await BuildDtoWithLookupsAsync(rec, cancellationToken);
+
+        // BUG-083: this read returns the AES-decrypted compensation fields (P3-4), so it is a deliberate
+        // sensitive reveal. Audit AFTER the authorized read — name the exposed comp fields, store NO values.
+        // (GetWorkspaceAsync is NOT audited: it nulls CurrentCompensation and does not decrypt comp.)
+        await _auditLogger.LogAndSaveAsync(
+            action: PayrollAuditAction.RecommendationViewSensitive,
+            resourceType: PayrollAuditAction.ResourceType.Recommendation,
+            resourceId: rec.Id.ToString(),
+            before: null,
+            after: new { fields = CompensationRevealFields, recommendationId = rec.Id, employeeId = rec.EmployeeId },
+            cancellationToken: cancellationToken);
+
+        return Result<RecommendationDto>.Success(dto);
     }
 
     // ════════════════════════════════════════════════════════════════
