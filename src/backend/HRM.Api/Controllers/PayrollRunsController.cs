@@ -49,6 +49,45 @@ public sealed class PayrollRunsController : ControllerBase
             ApiResponse<PayrollRunAcceptedDto>.Ok(result.Value));
     }
 
+    /// <summary>
+    /// POST — cancels a payroll run before finalization (ISSUE-154). Cleans up (removes the run's payslips +
+    /// reverts its Applied adjustments to Pending), then sets status Cancelled — freeing the period so HR can
+    /// initiate a fresh run. 404 when missing; 409 <c>run_finalized</c> (immutable) or <c>run_already_cancelled</c>.
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/cancel")]
+    [RequirePermission("Payroll.Run")]
+    [ProducesResponseType(typeof(ApiResponse<PayrollRunAcceptedDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Cancel(Guid runId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CancelPayrollRunCommand(runId), cancellationToken);
+        return result.IsFailure
+            ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))
+            : Ok(ApiResponse<PayrollRunAcceptedDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST — re-runs a processed-but-not-approved run IN PLACE (ISSUE-154). Re-enqueues the processing job,
+    /// which replaces the run's prior slips (FR-7). Restricted to ReviewPending. 404 when missing; 409
+    /// <c>run_finalized</c>, <c>run_in_progress</c>, <c>run_cancelled</c>, or <c>run_not_rerunnable</c>.
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/rerun")]
+    [RequirePermission("Payroll.Run")]
+    [ProducesResponseType(typeof(ApiResponse<PayrollRunAcceptedDto>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Rerun(Guid runId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RerunPayrollRunCommand(runId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        // 202 Accepted — reprocessing continues in the background (mirrors Initiate).
+        return AcceptedAtAction(nameof(Get), new { runId = result.Value!.RunId },
+            ApiResponse<PayrollRunAcceptedDto>.Ok(result.Value));
+    }
+
     /// <summary>GET — lists payroll runs for the tenant, newest period first (FR-8).</summary>
     [HttpGet("runs")]
     [RequirePermission("Payroll.Run")]

@@ -72,6 +72,32 @@ export const RUN_STATUS_LABELS: Record<PayrollRunStatus, string> = {
 };
 
 /**
+ * ISSUE-154: friendly messages for the 409 error codes returned by the run
+ * Cancel / Re-run endpoints (ApiResponse.Code). The FE gates the buttons to match
+ * the BE guard matrix, but the server is the authority — a race (e.g. the run
+ * finalized in another tab) surfaces one of these codes, mapped here to a
+ * human-readable toast. `run_not_found` (404) is included for completeness.
+ */
+export const RUN_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  run_finalized:
+    'This run is finalized and can no longer be cancelled or re-run.',
+  run_in_progress:
+    'This run is still processing — wait for it to finish before cancelling.',
+  run_cancelled: 'This run is already cancelled.',
+  run_already_cancelled: 'This run is already cancelled.',
+  run_not_rerunnable: 'Only a run that is pending review can be re-run.',
+  run_not_found: 'This payroll run no longer exists.',
+};
+
+/** Map an ApiResponse error `code` to a friendly message; falls back to a generic line. */
+export function runActionErrorMessage(code: string | null | undefined): string {
+  return (
+    (code ? RUN_ACTION_ERROR_MESSAGES[code] : undefined) ??
+    'That action could not be completed. Please refresh and try again.'
+  );
+}
+
+/**
  * The horizontal status stepper steps (§8): Review > Awaiting approval >
  * Approved > Finalized. Queued/Processing precede these. Cancelled and Rejected
  * are terminal/off-path states shown separately, not as stepper nodes (BR-4).

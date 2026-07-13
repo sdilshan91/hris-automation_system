@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ActivatedRoute } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, HttpErrorResponse } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ToastrService } from 'ngx-toastr';
@@ -146,26 +146,38 @@ describe('PayrollRunDetailComponent', () => {
     approval.getApprovalHistory.and.returnValue(of(history));
   }
 
-  function makeAuth(canApprove: boolean): void {
+  function makeAuth(canApprove: boolean, canRun = true): void {
     auth = jasmine.createSpyObj<AuthService>('AuthService', ['hasPermission']);
-    auth.hasPermission.and.callFake((p: string) =>
-      p === 'Payroll.Approve' ? canApprove : false,
-    );
+    auth.hasPermission.and.callFake((p: string) => {
+      if (p === 'Payroll.Approve') {
+        return canApprove;
+      }
+      if (p === 'Payroll.Run') {
+        return canRun;
+      }
+      return false;
+    });
     toastr = jasmine.createSpyObj<ToastrService>('ToastrService', [
       'success',
       'error',
     ]);
   }
 
-  function setup(run: IPayrollRun, canApprove = true): void {
+  function setup(
+    run: IPayrollRun,
+    canApprove = true,
+    canRun = true,
+  ): void {
     runs = jasmine.createSpyObj<PayrollRunService>('PayrollRunService', [
       'getRun',
       'streamProgress',
+      'cancelRun',
+      'rerunRun',
     ]);
     runs.getRun.and.returnValue(of(run));
     runs.streamProgress.and.returnValue(of());
     makeApproval();
-    makeAuth(canApprove);
+    makeAuth(canApprove, canRun);
     makeChildSpies();
 
     TestBed.configureTestingModule({
@@ -296,6 +308,8 @@ describe('PayrollRunDetailComponent', () => {
       runs = jasmine.createSpyObj<PayrollRunService>('PayrollRunService', [
         'getRun',
         'streamProgress',
+        'cancelRun',
+        'rerunRun',
       ]);
       runs.getRun.and.returnValue(of(run));
       runs.streamProgress.and.returnValue(stream.asObservable());
@@ -484,6 +498,135 @@ describe('PayrollRunDetailComponent', () => {
     it('does not render the action bar on a Finalized run', () => {
       setup({ ...baseRun, status: 'Finalized' }, true);
       expect(component.hasActions()).toBeFalse();
+    });
+  });
+
+  // ─── ISSUE-154 cancel / re-run ─────────────────────────────
+
+  describe('cancel / re-run (ISSUE-154)', () => {
+    it('offers Cancel + Re-run on a ReviewPending run with Payroll.Run', () => {
+      setup(baseRun); // ReviewPending, canRun defaults true
+      expect(component.canCancel()).toBeTrue();
+      expect(component.canRerun()).toBeTrue();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).toContain('Cancel run');
+      expect(text).toContain('Re-run');
+    });
+
+    it('hides both actions without the Payroll.Run permission', () => {
+      setup(baseRun, true, false);
+      expect(component.canCancel()).toBeFalse();
+      expect(component.canRerun()).toBeFalse();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).not.toContain('Cancel run');
+    });
+
+    it('hides Cancel on a Finalized run', () => {
+      setup({ ...baseRun, status: 'Finalized' });
+      expect(component.canCancel()).toBeFalse();
+      expect(component.canRerun()).toBeFalse();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).not.toContain('Cancel run');
+    });
+
+    it('hides Cancel on an already Cancelled run', () => {
+      setup({ ...baseRun, status: 'Cancelled' });
+      expect(component.canCancel()).toBeFalse();
+      expect(component.canRerun()).toBeFalse();
+    });
+
+    it('offers Cancel but not Re-run on a Processing run', () => {
+      setup({ ...baseRun, status: 'Processing' });
+      expect(component.canCancel()).toBeTrue();
+      expect(component.canRerun()).toBeFalse();
+    });
+
+    it('offers Cancel but not Re-run on an AwaitingApproval run', () => {
+      setup({ ...baseRun, status: 'AwaitingApproval' });
+      expect(component.canCancel()).toBeTrue();
+      expect(component.canRerun()).toBeFalse();
+    });
+
+    it('offers Cancel on a Rejected run (still pre-Finalized)', () => {
+      setup({ ...baseRun, status: 'Rejected' });
+      expect(component.canCancel()).toBeTrue();
+      expect(component.canRerun()).toBeFalse();
+    });
+
+    it('confirms before cancelling, then calls cancelRun + refetches + toasts', () => {
+      setup(baseRun);
+      // The action itself is not sent until the inline confirm is shown + confirmed.
+      component.startCancel();
+      expect(component.confirmAction()).toBe('cancel');
+      expect(runs.cancelRun).not.toHaveBeenCalled();
+
+      runs.cancelRun.and.returnValue(of({ ...baseRun, status: 'Cancelled' }));
+      runs.getRun.and.returnValue(of({ ...baseRun, status: 'Cancelled' }));
+      component.confirmCancel();
+
+      expect(runs.cancelRun).toHaveBeenCalledWith('r-1');
+      expect(component.confirmAction()).toBeNull();
+      expect(component.acting()).toBeFalse();
+      expect(component.run()?.status).toBe('Cancelled');
+      expect(toastr.success).toHaveBeenCalled();
+    });
+
+    it('dismisses the cancel confirm without acting', () => {
+      setup(baseRun);
+      component.startCancel();
+      component.dismissConfirm();
+      expect(component.confirmAction()).toBeNull();
+      expect(runs.cancelRun).not.toHaveBeenCalled();
+    });
+
+    it('confirms before re-running, then calls rerunRun + refetches + toasts', () => {
+      setup(baseRun);
+      component.startRerun();
+      expect(component.confirmAction()).toBe('rerun');
+      expect(runs.rerunRun).not.toHaveBeenCalled();
+
+      runs.rerunRun.and.returnValue(of({ ...baseRun, status: 'Queued' }));
+      runs.getRun.and.returnValue(of({ ...baseRun, status: 'Queued' }));
+      component.confirmRerun();
+
+      expect(runs.rerunRun).toHaveBeenCalledWith('r-1');
+      expect(component.confirmAction()).toBeNull();
+      expect(component.acting()).toBeFalse();
+      expect(toastr.success).toHaveBeenCalled();
+    });
+
+    it('maps a 409 error code to a friendly message on cancel failure', () => {
+      setup(baseRun);
+      component.startCancel();
+      runs.cancelRun.and.returnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              error: { code: 'run_finalized', message: 'x' },
+            }),
+        ),
+      );
+      component.confirmCancel();
+
+      expect(component.acting()).toBeFalse();
+      expect(toastr.error).toHaveBeenCalledWith(
+        'This run is finalized and can no longer be cancelled or re-run.',
+      );
+    });
+
+    it('falls back to a generic message for an unknown error code', () => {
+      setup(baseRun);
+      component.startRerun();
+      runs.rerunRun.and.returnValue(
+        throwError(() => new HttpErrorResponse({ status: 500 })),
+      );
+      component.confirmRerun();
+
+      expect(component.acting()).toBeFalse();
+      expect(toastr.error).toHaveBeenCalledWith(
+        'That action could not be completed. Please refresh and try again.',
+      );
     });
   });
 });

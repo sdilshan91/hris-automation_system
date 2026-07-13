@@ -45,6 +45,43 @@ public interface IPayrollRunService
     /// </summary>
     Task<Result<PrePayrollReconciliationDto>> GetPrePayrollReconciliationAsync(
         int payYear, int payMonth, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-154: cancels a payroll run before finalization. Cleans up — removes the run's payslips + reverts
+    /// its Applied adjustments back to Pending (via the shared <see cref="IPayrollSlipCleaner"/>, the SAME
+    /// cleanup the re-run path uses) — then sets status <see cref="HRM.Domain.Enums.PayrollRunStatus.Cancelled"/>.
+    /// The freed partial-unique-index slot lets HR initiate a fresh run for the same period. Does NOT touch the
+    /// US-ATT-009 attendance period lock (payroll never holds it). 404 when missing; 409 <c>run_finalized</c>
+    /// for a finalized run (immutable, BR-7); 409 <c>run_already_cancelled</c> when already cancelled; 409
+    /// <c>run_in_progress</c> for a run actively being computed (Processing) — it cannot be cancelled mid-flight
+    /// (no concurrency token; the in-flight job would flip it back to ReviewPending), so wait until it is ready
+    /// for review. A Queued run stays cancellable — its enqueued job hits the ProcessAsync start-guard.
+    /// </summary>
+    Task<Result<PayrollRunAcceptedDto>> CancelAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-154: re-runs a processed-but-not-approved run IN PLACE by re-enqueuing the processing job (which
+    /// re-invokes <see cref="IPayrollRunProcessor.ProcessAsync"/> — its own cleanup replaces the prior slips,
+    /// FR-7). Restricted to <see cref="HRM.Domain.Enums.PayrollRunStatus.ReviewPending"/> for safety. 404 when
+    /// missing; 409 <c>run_finalized</c> (immutable); 409 <c>run_in_progress</c> for a Queued/Processing run;
+    /// 409 <c>run_cancelled</c> (initiate a new run instead); 409 <c>run_not_rerunnable</c> otherwise.
+    /// </summary>
+    Task<Result<PayrollRunAcceptedDto>> RerunAsync(Guid runId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// ISSUE-154: the single, shared slip-cleanup used by BOTH the re-run path
+/// (<see cref="IPayrollRunProcessor.ProcessAsync"/>) and the cancel path
+/// (<see cref="IPayrollRunService.CancelAsync"/>). Hard-removes a run's PayrollSlip + PayrollSlipDetail rows
+/// and reverts the adjustments this run had marked Applied back to Pending (so a re-run re-picks them, or a
+/// cancel releases them), committing via its own SaveChanges. Tenant-scoped via the EF global query filter.
+/// Extracted from the former private <c>PayrollRunProcessor.RemoveExistingSlipsAsync</c> so there is ONE
+/// implementation of the deletion + adjustment-revert logic.
+/// </summary>
+public interface IPayrollSlipCleaner
+{
+    /// <summary>Removes <paramref name="runId"/>'s slips + details and reverts its Applied adjustments to Pending.</summary>
+    Task RemoveRunSlipsAndRevertAdjustmentsAsync(Guid runId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -59,7 +96,8 @@ public interface IPayrollRunProcessor
     /// Processes a queued run end-to-end (FR-5): sets Processing, computes + persists a slip per active
     /// employee with a salary structure (skipping those without, AC-6), stamps the summary totals + counters,
     /// and moves the run to ReviewPending on completion (AC-3). Idempotent + safely re-runnable (NFR-2):
-    /// re-running a ReviewPending/Cancelled run replaces its prior slips (FR-7).
+    /// re-running a ReviewPending run replaces its prior slips (FR-7). Finalized and Cancelled runs are
+    /// terminal — the processor bails out rather than reprocessing them (BR-7 / ISSUE-154).
     /// </summary>
     Task<Result> ProcessAsync(Guid runId, CancellationToken cancellationToken = default);
 }

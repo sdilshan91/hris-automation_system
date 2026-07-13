@@ -30,6 +30,7 @@ public sealed class PayrollRunService : IPayrollRunService
     private readonly ICurrentUser _currentUser;
     private readonly IAttendancePayrollService _attendancePayroll;
     private readonly IPayrollAuditLogger _audit;
+    private readonly IPayrollSlipCleaner _slipCleaner;
     private readonly IPayrollRunJobScheduler? _jobScheduler;
     private readonly ILogger<PayrollRunService> _logger;
 
@@ -45,6 +46,7 @@ public sealed class PayrollRunService : IPayrollRunService
         ICurrentUser currentUser,
         IAttendancePayrollService attendancePayroll,
         IPayrollAuditLogger audit,
+        IPayrollSlipCleaner slipCleaner,
         ILogger<PayrollRunService> logger,
         IPayrollRunJobScheduler? jobScheduler = null)
     {
@@ -53,6 +55,7 @@ public sealed class PayrollRunService : IPayrollRunService
         _currentUser = currentUser;
         _attendancePayroll = attendancePayroll;
         _audit = audit;
+        _slipCleaner = slipCleaner;
         _logger = logger;
         _jobScheduler = jobScheduler;
     }
@@ -169,6 +172,135 @@ public sealed class PayrollRunService : IPayrollRunService
         _logger.LogInformation(
             "Payroll run initiated. RunId={RunId}, Period={Year}-{Month}, Tenant={TenantId}, By={User}",
             run.Id, input.PayYear, input.PayMonth, _tenantContext.TenantId, _currentUser.Email);
+
+        return Result<PayrollRunAcceptedDto>.Success(new PayrollRunAcceptedDto
+        {
+            RunId = run.Id,
+            Status = run.Status.ToString(),
+            PayMonth = run.PayMonth,
+            PayYear = run.PayYear,
+        });
+    }
+
+    public async Task<Result<PayrollRunAcceptedDto>> CancelAsync(Guid runId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayrollRunAcceptedDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Tracked load (we mutate Status). Tenant-scoped by the global filter — a cross-tenant run is invisible
+        // (returns 404, never leaks cross-tenant existence).
+        var run = await _dbContext.PayrollRuns.FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+        if (run is null)
+            return Result<PayrollRunAcceptedDto>.Failure("Payroll run not found.", 404, "run_not_found");
+
+        // BR-7: a Finalized run is immutable — corrections go through a payroll adjustment, not a cancel.
+        if (run.Status == PayrollRunStatus.Finalized)
+            return Result<PayrollRunAcceptedDto>.Failure(
+                "A finalized payroll run cannot be cancelled.", 409, "run_finalized");
+
+        // Idempotency is NOT assumed a no-op success — a repeat cancel is surfaced as a clear 409 (mirrors the
+        // approval-service invalid-transition 409) so the caller knows nothing changed.
+        if (run.Status == PayrollRunStatus.Cancelled)
+            return Result<PayrollRunAcceptedDto>.Failure(
+                "This payroll run is already cancelled.", 409, "run_already_cancelled");
+
+        // ISSUE-154 (durability): a run actively being computed cannot be cancelled MID-FLIGHT. The
+        // ProcessAsync Cancelled guard only fires at START — a job already PAST that guard (in Processing) would,
+        // on completion, re-insert slips and flip the run back to ReviewPending, silently discarding the cancel
+        // (there is no concurrency token → last-writer-wins). So reject Processing with 409 and let HR cancel
+        // once it reaches ReviewPending. A Queued run stays cancellable: its enqueued job hits the start-guard.
+        if (run.Status == PayrollRunStatus.Processing)
+            return Result<PayrollRunAcceptedDto>.Failure(
+                "This payroll run is still processing and cannot be cancelled until it is ready for review.", 409, "run_in_progress");
+
+        var previousStatus = run.Status;
+
+        // Clean up: remove the run's slips + revert its Applied adjustments to Pending — the SAME shared cleanup
+        // the re-run path uses (ISSUE-154). This frees the partial-unique-index slot so HR can initiate a fresh
+        // run for the same period. Note: this does NOT touch the US-ATT-009 attendance period lock (payroll
+        // never holds it — that stays an attendance-domain concern).
+        await _slipCleaner.RemoveRunSlipsAndRevertAdjustmentsAsync(run.Id, cancellationToken);
+
+        run.Status = PayrollRunStatus.Cancelled;
+
+        // US-PAY-012: audit the cancellation as the acting HR user (an HTTP action, not a system-job write).
+        _audit.Log(PA.PayrollRunCancelled, PA.ResourceType.PayrollRun,
+            run.Id.ToString(),
+            before: new { Status = previousStatus.ToString() },
+            after: new { run.PayYear, run.PayMonth, Status = run.Status.ToString() });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Payroll run cancelled. RunId={RunId}, Period={Year}-{Month}, From={From}, Tenant={TenantId}, By={User}",
+            run.Id, run.PayYear, run.PayMonth, previousStatus, _tenantContext.TenantId, _currentUser.Email);
+
+        return Result<PayrollRunAcceptedDto>.Success(new PayrollRunAcceptedDto
+        {
+            RunId = run.Id,
+            Status = run.Status.ToString(),
+            PayMonth = run.PayMonth,
+            PayYear = run.PayYear,
+        });
+    }
+
+    public async Task<Result<PayrollRunAcceptedDto>> RerunAsync(Guid runId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayrollRunAcceptedDto>.Failure("Tenant context is not resolved.", 400);
+
+        var run = await _dbContext.PayrollRuns.FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+        if (run is null)
+            return Result<PayrollRunAcceptedDto>.Failure("Payroll run not found.", 404, "run_not_found");
+
+        // ISSUE-154 guard matrix — re-run reuses the SAME run in place; only a processed-but-not-approved run
+        // (ReviewPending) is safe to reprocess. Everything else is a distinct 409.
+        switch (run.Status)
+        {
+            case PayrollRunStatus.Finalized:
+                return Result<PayrollRunAcceptedDto>.Failure(
+                    "A finalized payroll run cannot be re-run.", 409, "run_finalized");
+            case PayrollRunStatus.Queued:
+            case PayrollRunStatus.Processing:
+                return Result<PayrollRunAcceptedDto>.Failure(
+                    "This payroll run is still processing and cannot be re-run.", 409, "run_in_progress");
+            case PayrollRunStatus.Cancelled:
+                return Result<PayrollRunAcceptedDto>.Failure(
+                    "A cancelled payroll run cannot be re-run — initiate a new run for the period.", 409, "run_cancelled");
+            case PayrollRunStatus.ReviewPending:
+                break; // the only re-runnable state.
+            default:
+                // AwaitingApproval / Approved / Rejected — return the run to HR (ReviewPending) before re-running.
+                return Result<PayrollRunAcceptedDto>.Failure(
+                    $"A payroll run in status {run.Status} cannot be re-run.", 409, "run_not_rerunnable");
+        }
+
+        // US-PAY-012: audit the re-run request as the acting HR user. Committed FIRST (commit-then-enqueue,
+        // matching InitiateAsync) so we never enqueue a reprocess job whose audit row failed to persist.
+        _audit.Log(PA.PayrollRunReprocessed, PA.ResourceType.PayrollRun,
+            run.Id.ToString(),
+            before: new { Status = run.Status.ToString() },
+            after: new { run.PayYear, run.PayMonth, Status = run.Status.ToString() });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Re-enqueue the tenant-aware processing job AFTER the commit (which re-invokes ProcessAsync — its own
+        // shared cleanup replaces the prior slips, FR-7). We do NOT call ProcessAsync inline on the request
+        // thread. When no scheduler is registered (dev/test), processing is driven directly by the caller.
+        if (_jobScheduler is not null)
+        {
+            _jobScheduler.Enqueue(_tenantContext.TenantId, _tenantContext.Subdomain, run.Id);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Payroll run {RunId} re-run requested but no IPayrollRunJobScheduler is registered — processing must be triggered directly (dev/test).",
+                run.Id);
+        }
+
+        _logger.LogInformation(
+            "Payroll run re-run requested. RunId={RunId}, Period={Year}-{Month}, Tenant={TenantId}, By={User}",
+            run.Id, run.PayYear, run.PayMonth, _tenantContext.TenantId, _currentUser.Email);
 
         return Result<PayrollRunAcceptedDto>.Success(new PayrollRunAcceptedDto
         {

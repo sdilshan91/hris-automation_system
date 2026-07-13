@@ -322,6 +322,9 @@ public static class DependencyInjection
         // Hangfire job, or directly in tests). Notification is a log-only seam until US-NTF.
         services.AddScoped<IPayrollRunService, PayrollRunService>();
         services.AddScoped<IPayrollRunProcessor, PayrollRunProcessor>();
+        // ISSUE-154: the shared slip-cleanup used by BOTH the re-run (ProcessAsync) and cancel (CancelAsync)
+        // paths — ONE implementation of the slip-removal + adjustment-revert logic.
+        services.AddScoped<IPayrollSlipCleaner, PayrollSlipCleaner>();
         services.AddScoped<IPayrollApprovalService, PayrollApprovalService>();  // US-PAY-008
         services.AddScoped<IPayrollNotificationService, RealPayrollNotificationService>();  // US-NTF-006 Phase 4
 
