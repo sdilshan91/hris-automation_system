@@ -8,6 +8,16 @@ namespace HRM.Application.Common.Interfaces;
 /// <summary>Input for one tax slab when creating/updating a statutory rule (US-PAY-006 FR-1).</summary>
 public sealed record TaxSlabInput(decimal SlabFrom, decimal? SlabTo, decimal RatePercentage, int OrderIndex);
 
+/// <summary>Input for one configurable income-tax exemption when creating/updating a statutory rule (TAX-2).</summary>
+public sealed record ExemptionInput(
+    string Name,
+    ExemptionCalculationType CalculationType,
+    decimal Value,
+    Guid? ComponentId,
+    decimal? MaxAmount,
+    bool IsAnnual,
+    int OrderIndex);
+
 /// <summary>Input for the social-security parameters when creating/updating a statutory rule (US-PAY-006 FR-2).</summary>
 public sealed record SocialSecurityInputDto(
     decimal EmployeeRate,
@@ -26,7 +36,8 @@ public sealed record CreateStatutoryRuleInput(
     DateOnly? EffectiveTo,
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
-    SocialSecurityInputDto? SocialSecurity);
+    SocialSecurityInputDto? SocialSecurity,
+    IReadOnlyList<ExemptionInput>? Exemptions = null);
 
 /// <summary>Input for updating a statutory rule (US-PAY-006 FR-1/FR-2). The rule type itself is immutable.</summary>
 public sealed record UpdateStatutoryRuleInput(
@@ -37,7 +48,8 @@ public sealed record UpdateStatutoryRuleInput(
     DateOnly? EffectiveTo,
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
-    SocialSecurityInputDto? SocialSecurity);
+    SocialSecurityInputDto? SocialSecurity,
+    IReadOnlyList<ExemptionInput>? Exemptions = null);
 
 /// <summary>Input for the FR-5 test calculation (no persistence). <c>CountryCode</c> selects which country's
 /// statutory regime the preview computes under (multi-country tax foundation); when null the preview resolves

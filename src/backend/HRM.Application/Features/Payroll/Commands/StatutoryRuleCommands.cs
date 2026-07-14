@@ -16,7 +16,8 @@ public sealed record CreateStatutoryRuleCommand(
     DateOnly? EffectiveTo,
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
-    SocialSecurityInputDto? SocialSecurity
+    SocialSecurityInputDto? SocialSecurity,
+    IReadOnlyList<ExemptionInput>? Exemptions = null
 ) : IRequest<Result<StatutoryRuleDto>>;
 
 public sealed class CreateStatutoryRuleCommandHandler : IRequestHandler<CreateStatutoryRuleCommand, Result<StatutoryRuleDto>>
@@ -27,7 +28,8 @@ public sealed class CreateStatutoryRuleCommandHandler : IRequestHandler<CreateSt
     public Task<Result<StatutoryRuleDto>> Handle(CreateStatutoryRuleCommand request, CancellationToken cancellationToken)
         => _service.CreateAsync(new CreateStatutoryRuleInput(
             request.RuleType, request.RuleName, request.CountryCode, request.FiscalYear,
-            request.EffectiveFrom, request.EffectiveTo, request.IsActive, request.TaxSlabs, request.SocialSecurity),
+            request.EffectiveFrom, request.EffectiveTo, request.IsActive, request.TaxSlabs, request.SocialSecurity,
+            request.Exemptions),
             cancellationToken);
 }
 
@@ -41,7 +43,8 @@ public sealed record UpdateStatutoryRuleCommand(
     DateOnly? EffectiveTo,
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
-    SocialSecurityInputDto? SocialSecurity
+    SocialSecurityInputDto? SocialSecurity,
+    IReadOnlyList<ExemptionInput>? Exemptions = null
 ) : IRequest<Result<StatutoryRuleDto>>;
 
 public sealed class UpdateStatutoryRuleCommandHandler : IRequestHandler<UpdateStatutoryRuleCommand, Result<StatutoryRuleDto>>
@@ -52,7 +55,8 @@ public sealed class UpdateStatutoryRuleCommandHandler : IRequestHandler<UpdateSt
     public Task<Result<StatutoryRuleDto>> Handle(UpdateStatutoryRuleCommand request, CancellationToken cancellationToken)
         => _service.UpdateAsync(request.RuleId, new UpdateStatutoryRuleInput(
             request.RuleName, request.CountryCode, request.FiscalYear, request.EffectiveFrom,
-            request.EffectiveTo, request.IsActive, request.TaxSlabs, request.SocialSecurity),
+            request.EffectiveTo, request.IsActive, request.TaxSlabs, request.SocialSecurity,
+            request.Exemptions),
             cancellationToken);
 }
 

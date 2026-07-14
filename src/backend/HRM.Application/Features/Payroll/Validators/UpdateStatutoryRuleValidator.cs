@@ -40,5 +40,10 @@ public sealed class UpdateStatutoryRuleValidator : AbstractValidator<UpdateStatu
 
         When(x => x.SocialSecurity is not null, () =>
             RuleFor(x => x.SocialSecurity!).SetValidator(new SocialSecurityInputValidator()));
+
+        // TAX-2: configurable exemptions — same per-item checks as create (the service re-checks type-awareness
+        // against the stored rule, so income-tax-only is enforced there for the fixed rule type).
+        When(x => x.Exemptions is not null, () =>
+            RuleForEach(x => x.Exemptions!).SetValidator(new ExemptionInputValidator()));
     }
 }

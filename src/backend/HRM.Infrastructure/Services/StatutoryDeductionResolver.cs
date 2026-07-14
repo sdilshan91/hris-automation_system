@@ -55,6 +55,7 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
         // countries' rules of the same type (e.g. IncomeTax) from colliding (latest EffectiveFrom winning arbitrarily).
         var query = _dbContext.StatutoryRules.AsNoTracking()
             .Include(r => r.TaxSlabs)
+            .Include(r => r.Exemptions)
             .Include(r => r.SocialSecurityRule)
             .Where(r => r.IsActive && r.CountryCode == country);
 
@@ -75,8 +76,29 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
         var lines = new List<StatutoryDeductionLine>();
         decimal incomeTax = 0m, employeeEpf = 0m, employerEpf = 0m, etf = 0m, professionalTax = 0m, other = 0m;
 
-        // BR-2: taxable income = gross − exempt − declared exemptions.
-        var taxableIncome = StatutoryCalculator.ComputeTaxableIncome(wage.MonthlyGross, wage.ExemptEarnings, wage.DeclaredExemptions);
+        // TAX-2: sum the configurable income-tax exemptions on the effective IncomeTax rule (each reduces the
+        // taxable base — never EPF/ETF). Percentages of a component read the amount from ComponentAmountsById.
+        var exemptionsTotal = 0m;
+        if (effectiveRules.TryGetValue(StatutoryRuleType.IncomeTax, out var taxRule))
+        {
+            foreach (var e in taxRule.Exemptions)
+            {
+                decimal? componentAmount = null;
+                if (e.CalculationType == ExemptionCalculationType.PercentOfComponent
+                    && e.ComponentId is { } cid
+                    && wage.ComponentAmountsById is not null
+                    && wage.ComponentAmountsById.TryGetValue(cid, out var amt))
+                    componentAmount = amt;
+
+                exemptionsTotal += StatutoryCalculator.ComputeExemption(
+                    e.CalculationType, e.Value, wage.MonthlyGross, componentAmount, e.MaxAmount, e.IsAnnual);
+            }
+        }
+
+        // BR-2: taxable income = gross − exempt − declared exemptions. TAX-2: the configurable exemptions add to
+        // the wage-level DeclaredExemptions so BOTH subtract from the tax base.
+        var taxableIncome = StatutoryCalculator.ComputeTaxableIncome(
+            wage.MonthlyGross, wage.ExemptEarnings, wage.DeclaredExemptions + exemptionsTotal);
         var fiscalYear = effectiveRules.Values.First().FiscalYear;
 
         foreach (var (type, rule) in effectiveRules)
@@ -149,6 +171,7 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
             Etf = etf,
             ProfessionalTax = professionalTax,
             OtherStatutory = other,
+            ExemptionsApplied = Round(exemptionsTotal),
             TotalEmployeeDeductions = employeeTotal,
             TotalEmployerContributions = employerTotal,
             Lines = lines,

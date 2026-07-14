@@ -14,6 +14,20 @@ public sealed record TaxSlabDto
     public int OrderIndex { get; init; }
 }
 
+/// <summary>A single configurable income-tax exemption on an income-tax rule (TAX-2).</summary>
+public sealed record ExemptionDto
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public ExemptionCalculationType CalculationType { get; init; }
+    public string CalculationTypeName { get; init; } = string.Empty;
+    public decimal Value { get; init; }
+    public Guid? ComponentId { get; init; }
+    public decimal? MaxAmount { get; init; }
+    public bool IsAnnual { get; init; }
+    public int OrderIndex { get; init; }
+}
+
 /// <summary>The social-security parameters on an EPF/ETF/etc. rule (US-PAY-006 FR-2).</summary>
 public sealed record SocialSecurityRuleDto
 {
@@ -39,6 +53,7 @@ public sealed record StatutoryRuleDto
     public DateOnly? EffectiveTo { get; init; }
     public bool IsActive { get; init; }
     public IReadOnlyList<TaxSlabDto> TaxSlabs { get; init; } = [];
+    public IReadOnlyList<ExemptionDto> Exemptions { get; init; } = [];
     public SocialSecurityRuleDto? SocialSecurity { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
@@ -70,6 +85,18 @@ public sealed record TaxSlabRequest
     public int OrderIndex { get; init; }
 }
 
+/// <summary>Request body for one configurable income-tax exemption within a create/update statutory-rule request (TAX-2).</summary>
+public sealed record ExemptionRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public ExemptionCalculationType CalculationType { get; init; }
+    public decimal Value { get; init; }
+    public Guid? ComponentId { get; init; }
+    public decimal? MaxAmount { get; init; }
+    public bool IsAnnual { get; init; }
+    public int OrderIndex { get; init; }
+}
+
 /// <summary>Request body for the social-security parameters of a create/update statutory-rule request (FR-2).</summary>
 public sealed record SocialSecurityRuleRequest
 {
@@ -94,6 +121,7 @@ public sealed record CreateStatutoryRuleRequest
     public DateOnly? EffectiveTo { get; init; }
     public bool IsActive { get; init; } = true;
     public IReadOnlyList<TaxSlabRequest> TaxSlabs { get; init; } = [];
+    public IReadOnlyList<ExemptionRequest> Exemptions { get; init; } = [];
     public SocialSecurityRuleRequest? SocialSecurity { get; init; }
 }
 
@@ -107,6 +135,7 @@ public sealed record UpdateStatutoryRuleRequest
     public DateOnly? EffectiveTo { get; init; }
     public bool IsActive { get; init; } = true;
     public IReadOnlyList<TaxSlabRequest> TaxSlabs { get; init; } = [];
+    public IReadOnlyList<ExemptionRequest> Exemptions { get; init; } = [];
     public SocialSecurityRuleRequest? SocialSecurity { get; init; }
 }
 

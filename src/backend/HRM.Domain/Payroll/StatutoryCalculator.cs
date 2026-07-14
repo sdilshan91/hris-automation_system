@@ -1,3 +1,5 @@
+using HRM.Domain.Enums;
+
 namespace HRM.Domain.Payroll;
 
 /// <summary>
@@ -52,6 +54,40 @@ public static class StatutoryCalculator
     {
         var taxable = grossEarnings - exemptEarnings - declaredExemptions;
         return taxable < 0m ? 0m : Round(taxable);
+    }
+
+    /// <summary>
+    /// TAX-2: computes the MONTHLY exemption amount a configurable income-tax exemption removes from the tax base.
+    /// Never negative; rounded half-up to 2 dp. Semantics:
+    /// <list type="bullet">
+    ///   <item><b>FlatAmount</b>: raw = <paramref name="isAnnual"/> ? <paramref name="value"/> / 12 : value.</item>
+    ///   <item><b>PercentOfGross</b>: raw = <paramref name="monthlyGross"/> * value / 100 (inherently per-period;
+    ///   <paramref name="isAnnual"/> does NOT scale a percentage).</item>
+    ///   <item><b>PercentOfComponent</b>: raw = (<paramref name="componentAmount"/> ?? 0) * value / 100.</item>
+    /// </list>
+    /// Cap: when <paramref name="maxAmount"/> has a value, cap = isAnnual ? maxAmount/12 : maxAmount, and the
+    /// result is min(raw, cap); otherwise the result is the raw amount. The result is floored at 0.
+    /// </summary>
+    public static decimal ComputeExemption(
+        ExemptionCalculationType type, decimal value, decimal monthlyGross,
+        decimal? componentAmount, decimal? maxAmount, bool isAnnual)
+    {
+        var raw = type switch
+        {
+            ExemptionCalculationType.FlatAmount => isAnnual ? value / 12m : value,
+            ExemptionCalculationType.PercentOfGross => monthlyGross * value / 100m,
+            ExemptionCalculationType.PercentOfComponent => (componentAmount ?? 0m) * value / 100m,
+            _ => 0m,
+        };
+
+        if (maxAmount is { } cap)
+        {
+            var monthlyCap = isAnnual ? cap / 12m : cap;
+            if (raw > monthlyCap)
+                raw = monthlyCap;
+        }
+
+        return raw < 0m ? 0m : Round(raw);
     }
 
     /// <summary>

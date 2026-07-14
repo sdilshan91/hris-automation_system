@@ -39,5 +39,8 @@ public sealed class StatutoryRule : BaseEntity, IAuditExempt
 
     // ── Navigation ─────────────────────────────────────────────────
     public List<TaxSlab> TaxSlabs { get; set; } = [];
+
+    /// <summary>Configurable income-tax exemptions that reduce the taxable base (TAX-2). Only meaningful for IncomeTax rules.</summary>
+    public List<StatutoryExemption> Exemptions { get; set; } = new();
     public SocialSecurityRule? SocialSecurityRule { get; set; }
 }

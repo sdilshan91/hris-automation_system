@@ -39,6 +39,12 @@ public sealed class StatutoryRuleConfiguration : IEntityTypeConfiguration<Statut
             .HasForeignKey(s => s.StatutoryRuleId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // TAX-2: configurable income-tax exemptions are owned children (mirrors TaxSlabs).
+        builder.HasMany(r => r.Exemptions)
+            .WithOne(e => e.Rule!)
+            .HasForeignKey(e => e.StatutoryRuleId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasOne(r => r.SocialSecurityRule)
             .WithOne(s => s.Rule!)
             .HasForeignKey<SocialSecurityRule>(s => s.StatutoryRuleId)

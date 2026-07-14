@@ -17,6 +17,10 @@ public sealed record StatutoryDeductions
     public decimal ProfessionalTax { get; init; }
     public decimal OtherStatutory { get; init; }
 
+    /// <summary>TAX-2: the total configurable income-tax exemption applied this period (reduces the taxable base,
+    /// NOT itself a deduction line). Exposed as a scalar so preview/reporting can read it; 0 when none apply.</summary>
+    public decimal ExemptionsApplied { get; init; }
+
     /// <summary>Deductions that reduce the employee's net pay (income tax + employee EPF + professional + other).</summary>
     public decimal TotalEmployeeDeductions { get; init; }
 
