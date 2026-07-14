@@ -25,13 +25,14 @@ public sealed class RedisWiringDiRegistrationTests
     // Build the container via the REAL registrations so we test the actual gate, not a copy of it. The Postgres
     // connection string is registered lazily into the DbContext options and never opened (we only resolve cache
     // services), so a bare placeholder is enough.
-    private static ServiceProvider BuildProvider(string? redisConnectionString)
+    private static ServiceProvider BuildProvider(string? redisConnectionString, int? operationTimeoutMs = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=unused;Username=unused",
                 ["ConnectionStrings:Redis"] = redisConnectionString,
+                ["Redis:OperationTimeoutMs"] = operationTimeoutMs?.ToString(),
             })
             .Build();
 
@@ -72,5 +73,34 @@ public sealed class RedisWiringDiRegistrationTests
         // so assert the Redis-backed family rather than the exact concrete type.
         provider.GetRequiredService<IDistributedCache>().Should().BeAssignableTo<RedisCache>(
             "with Redis configured the distributed cache is the Redis-backed RedisCache");
+    }
+
+    [Fact] // BUG-115: the per-op timeout is bounded (1000ms default), not the 5000ms StackExchange.Redis default
+    public void WhenRedisConfigured_PerOperationTimeoutIsBounded_NotThe5sDefault()
+    {
+        using var provider = BuildProvider(redisConnectionString: "localhost:6399,abortConnect=false");
+
+        var mux = provider.GetService<IConnectionMultiplexer>();
+        mux.Should().NotBeNull();
+
+        // Round-trip the live configuration string the multiplexer was built with.
+        var opts = ConfigurationOptions.Parse(mux!.Configuration);
+        opts.SyncTimeout.Should().Be(1000, "a frozen Redis must fast-fail per op, not stall the 5s default");
+        opts.AsyncTimeout.Should().Be(1000,
+            "the IDistributedCache path is async, so AsyncTimeout is the one that governs the cached-read fast-fail");
+    }
+
+    [Fact] // BUG-115: Redis:OperationTimeoutMs overrides the bounded default
+    public void WhenOperationTimeoutOverridden_ItIsHonoured()
+    {
+        using var provider = BuildProvider(
+            redisConnectionString: "localhost:6399,abortConnect=false", operationTimeoutMs: 250);
+
+        var mux = provider.GetService<IConnectionMultiplexer>();
+        mux.Should().NotBeNull();
+
+        var opts = ConfigurationOptions.Parse(mux!.Configuration);
+        opts.SyncTimeout.Should().Be(250, "Redis:OperationTimeoutMs must override the 1000ms default");
+        opts.AsyncTimeout.Should().Be(250, "Redis:OperationTimeoutMs must override the 1000ms default");
     }
 }

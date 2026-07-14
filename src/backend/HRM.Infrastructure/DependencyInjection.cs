@@ -788,6 +788,12 @@ public static class DependencyInjection
             services.AddSingleton<IPermissionCache, InMemoryPermissionCache>();
         }
 
+        // BUG-116: shared invalidator for the my-tenants cache (user:{userId}:tenants) so a membership/role
+        // change never serves stale authorization data for up to the 5-min TTL. Wraps IDistributedCache, which is
+        // registered in BOTH Redis and in-memory modes above, so it needs no Redis gate. Singleton (stateless
+        // wrapper), matching the IPermissionCache registrations.
+        services.AddSingleton<IMyTenantsCache, MyTenantsCache>();
+
         // Permission-based authorization
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
