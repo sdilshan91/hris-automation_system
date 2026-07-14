@@ -33,9 +33,17 @@ public sealed class Location : BaseEntity, IAuditExempt
     public string? StateProvince { get; set; }
 
     /// <summary>
-    /// Country name (from a standard list).
+    /// Country name (from a standard list). Free-text, used for display only.
     /// </summary>
     public string? Country { get; set; }
+
+    /// <summary>
+    /// ISO country code (alpha-2/alpha-3, max 5), e.g. "LK", "IN". Multi-country tax foundation: this is the
+    /// machine-readable code that JOINS to <c>StatutoryRule.CountryCode</c> so an employee is taxed under their
+    /// branch/location's country. Optional; the free-text <see cref="Country"/> stays for display. When null the
+    /// employee falls back to the tenant default country (Tenant.DefaultCountryCode) at payroll time.
+    /// </summary>
+    public string? CountryCode { get; set; }
 
     /// <summary>
     /// Postal/ZIP code.

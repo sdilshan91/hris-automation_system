@@ -157,7 +157,7 @@ public sealed class StatutoryRulesController : ControllerBase
     {
         var result = await _mediator.Send(new TestStatutoryCalculationQuery(
             request.MonthlyGross, request.MonthlyBasic, request.DeclaredMonthlyExemptions,
-            request.ExemptEarnings, request.FiscalYear), cancellationToken);
+            request.ExemptEarnings, request.FiscalYear, request.CountryCode), cancellationToken);
 
         return result.IsFailure
             ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))

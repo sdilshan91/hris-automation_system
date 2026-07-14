@@ -21,7 +21,7 @@ public sealed class UpdateLocationCommandHandler
         return _locationService.UpdateAsync(
             request.LocationId, request.Name, request.AddressLine1, request.AddressLine2,
             request.City, request.StateProvince, request.Country,
-            request.PostalCode, request.TimeZone, request.Phone,
+            request.PostalCode, request.TimeZone, request.Phone, request.CountryCode,
             cancellationToken);
     }
 }

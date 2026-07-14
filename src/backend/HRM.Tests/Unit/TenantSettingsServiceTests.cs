@@ -57,11 +57,13 @@ public sealed class TenantSettingsServiceTests
             Address: "1 Main St",
             Industry: "Software",
             CompanySize: "11-50",
-            FiscalYearStartMonth: 4));
+            FiscalYearStartMonth: 4,
+            DefaultCountryCode: "lk")); // lower-case in → normalized upper-case out (multi-country tax).
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Name.Should().Be("New Co");
         result.Value.FiscalYearStartMonth.Should().Be(4);
+        result.Value.DefaultCountryCode.Should().Be("LK"); // round-trips + normalized.
 
         using var db = CreateDbContext();
         var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
@@ -295,7 +297,7 @@ public sealed class TenantSettingsServiceTests
         await service.UpdateOrgProfileAsync(new UpdateOrgProfileRequest(
             Name: "Tenant A Renamed",
             LegalName: null, RegistrationNumber: null, Address: null,
-            Industry: null, CompanySize: null, FiscalYearStartMonth: 1));
+            Industry: null, CompanySize: null, FiscalYearStartMonth: 1, DefaultCountryCode: null));
 
         using var db = CreateDbContext();
         var a = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
@@ -319,7 +321,7 @@ public sealed class TenantSettingsServiceTests
         var result = await service.UpdateOrgProfileAsync(new UpdateOrgProfileRequest(
             Name: "Cacheless Co",
             LegalName: null, RegistrationNumber: null, Address: null,
-            Industry: null, CompanySize: null, FiscalYearStartMonth: 1));
+            Industry: null, CompanySize: null, FiscalYearStartMonth: 1, DefaultCountryCode: null));
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Name.Should().Be("Cacheless Co");
@@ -337,7 +339,7 @@ public sealed class TenantSettingsServiceTests
         await service.UpdateOrgProfileAsync(new UpdateOrgProfileRequest(
             Name: "Evicting Co",
             LegalName: null, RegistrationNumber: null, Address: null,
-            Industry: null, CompanySize: null, FiscalYearStartMonth: 1));
+            Industry: null, CompanySize: null, FiscalYearStartMonth: 1, DefaultCountryCode: null));
 
         (await cache.GetStringAsync($"t:{_tenantId}:config")).Should().BeNull();
     }

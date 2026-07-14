@@ -55,7 +55,8 @@ public sealed record TestStatutoryCalculationQuery(
     decimal? MonthlyBasic,
     decimal DeclaredMonthlyExemptions,
     decimal ExemptEarnings,
-    string? FiscalYear
+    string? FiscalYear,
+    string? CountryCode
 ) : IRequest<Result<StatutoryCalculationResultDto>>;
 
 public sealed class TestStatutoryCalculationQueryHandler : IRequestHandler<TestStatutoryCalculationQuery, Result<StatutoryCalculationResultDto>>
@@ -66,5 +67,5 @@ public sealed class TestStatutoryCalculationQueryHandler : IRequestHandler<TestS
     public Task<Result<StatutoryCalculationResultDto>> Handle(TestStatutoryCalculationQuery request, CancellationToken cancellationToken)
         => _service.TestCalculationAsync(new TestCalculationInput(
             request.MonthlyGross, request.MonthlyBasic, request.DeclaredMonthlyExemptions,
-            request.ExemptEarnings, request.FiscalYear), cancellationToken);
+            request.ExemptEarnings, request.FiscalYear, request.CountryCode), cancellationToken);
 }

@@ -38,7 +38,7 @@ public sealed class LocationService : ILocationService
     public async Task<Result<LocationDto>> CreateAsync(
         string name, string? addressLine1, string? addressLine2,
         string? city, string? stateProvince, string? country,
-        string? postalCode, string timeZone, string? phone,
+        string? postalCode, string timeZone, string? phone, string? countryCode = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -65,6 +65,7 @@ public sealed class LocationService : ILocationService
             City = city,
             StateProvince = stateProvince,
             Country = country,
+            CountryCode = NormalizeCountryCode(countryCode),
             PostalCode = postalCode,
             TimeZone = timeZone,
             Phone = phone,
@@ -91,7 +92,7 @@ public sealed class LocationService : ILocationService
     public async Task<Result<LocationDto>> UpdateAsync(
         Guid locationId, string name, string? addressLine1, string? addressLine2,
         string? city, string? stateProvince, string? country,
-        string? postalCode, string timeZone, string? phone,
+        string? postalCode, string timeZone, string? phone, string? countryCode = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -122,6 +123,7 @@ public sealed class LocationService : ILocationService
         location.City = city;
         location.StateProvince = stateProvince;
         location.Country = country;
+        location.CountryCode = NormalizeCountryCode(countryCode);
         location.PostalCode = postalCode;
         location.TimeZone = timeZone;
         location.Phone = phone;
@@ -231,6 +233,13 @@ public sealed class LocationService : ILocationService
 
     // -- Private helpers --
 
+    /// <summary>
+    /// Multi-country tax foundation: normalize an ISO country code to trimmed upper-case (so it matches the
+    /// upper-cased <c>StatutoryRule.CountryCode</c> at payroll time); blank/whitespace becomes null (optional field).
+    /// </summary>
+    private static string? NormalizeCountryCode(string? countryCode)
+        => string.IsNullOrWhiteSpace(countryCode) ? null : countryCode.Trim().ToUpperInvariant();
+
     private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };
 
     /// <summary>
@@ -265,6 +274,7 @@ public sealed class LocationService : ILocationService
         l.City,
         l.StateProvince,
         l.Country,
+        l.CountryCode,
         l.PostalCode,
         l.TimeZone,
         l.Phone,
@@ -280,6 +290,7 @@ public sealed class LocationService : ILocationService
         City = l.City,
         StateProvince = l.StateProvince,
         Country = l.Country,
+        CountryCode = l.CountryCode,
         PostalCode = l.PostalCode,
         TimeZone = l.TimeZone,
         Phone = l.Phone,

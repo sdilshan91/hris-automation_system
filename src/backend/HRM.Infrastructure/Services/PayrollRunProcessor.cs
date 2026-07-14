@@ -183,6 +183,51 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         var adjustmentsByEmployee = await _adjustmentResolver.ResolveForPeriodAsync(run.PayYear, run.PayMonth, cancellationToken);
         var appliedAdjustmentIds = new List<Guid>();
 
+        // ── Multi-country tax foundation ────────────────────────────────────────────────────────────────────
+        // An employee is taxed under their BRANCH/Location's country; the tenant DEFAULT country is the fallback.
+        // Resolve both ONCE for the run (no N+1 — mirrors the currentComponents/departmentNames batch loads):
+        //   * locationCountry: LocationId → ISO CountryCode (only locations that have one).
+        //   * tenantDefaultCountry: the fallback ISO code when an employee's location has no country.
+        //   * statutoryConfigured: does the tenant have ANY active statutory rule in effect for THIS period?
+        //     Only when true does a null tax country matter — so a tenant with no statutory rules (every
+        //     pre-multi-country run) sees ZERO behaviour change (no warnings, no skips): purely additive.
+        var locationCountry = await _dbContext.Locations.AsNoTracking()
+            .Where(l => l.CountryCode != null)
+            .Select(l => new { l.Id, l.CountryCode })
+            .ToDictionaryAsync(x => x.Id, x => x.CountryCode!, cancellationToken);
+
+        var tenantDefaultCountryRaw = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.DefaultCountryCode)
+            .FirstOrDefaultAsync(cancellationToken);
+        var tenantDefaultCountry = string.IsNullOrWhiteSpace(tenantDefaultCountryRaw)
+            ? null
+            : tenantDefaultCountryRaw.Trim().ToUpperInvariant();
+
+        var statutoryConfigured = await _dbContext.StatutoryRules.AsNoTracking()
+            .AnyAsync(r => r.IsActive
+                && r.EffectiveFrom <= monthEnd
+                && (r.EffectiveTo == null || r.EffectiveTo >= monthStart), cancellationToken);
+
+        // BACKWARD-COMPAT single-country fallback (money-critical). The distinct NON-NULL countries across the
+        // tenant's applicable active rules for THIS period. When they span EXACTLY ONE country, employees with no
+        // resolvable country fall back to it — so existing single-country tenants (no Location.CountryCode, no
+        // Tenant.DefaultCountryCode) keep deducting statutory with ZERO setup, instead of silently under-taxing.
+        // Only when rules span MULTIPLE countries is a country-less employee genuinely ambiguous → skip + flag.
+        var ruleCountriesRaw = await _dbContext.StatutoryRules.AsNoTracking()
+            .Where(r => r.IsActive
+                && r.EffectiveFrom <= monthEnd
+                && (r.EffectiveTo == null || r.EffectiveTo >= monthStart))
+            .Select(r => r.CountryCode)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var ruleCountries = ruleCountriesRaw
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
+        var soleRuleCountry = ruleCountries.Count == 1 ? ruleCountries[0] : null;
+
         var slips = new List<PayrollSlip>();
         var details = new List<PayrollSlipDetail>();
         int processed = 0, skipped = 0;
@@ -246,9 +291,22 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             // tax base (BR-2/BR-4).
             result = ApplyTaxableAdjustments(result, employeeAdjustments);
 
+            // Multi-country tax foundation: the employee is taxed under their BRANCH/Location's country. Resolution
+            // precedence: Location.CountryCode → Tenant.DefaultCountryCode → sole rule country (single-country
+            // backward-compat fallback) → null. Null (only reachable for a MULTI-country tenant with no
+            // location/tenant country) means the tax country is unresolved → statutory is SKIPPED + the employee
+            // is flagged (never taxed under the wrong country).
+            string? empCountry = null;
+            if (emp.LocationId is { } locId && locationCountry.TryGetValue(locId, out var locCc))
+                empCountry = locCc;
+            empCountry ??= tenantDefaultCountry;
+            empCountry = string.IsNullOrWhiteSpace(empCountry) ? null : empCountry.Trim().ToUpperInvariant();
+            empCountry ??= soleRuleCountry;   // single-country backward-compat fallback (last resort).
+
             // US-PAY-006: when statutory rules are configured for the period, replace the structure's as-is
             // statutory lines with rule-computed deductions. No-op (returns `result`) when no rules exist.
-            result = await ApplyStatutoryRulesAsync(result, inputs, run.PayYear, run.PayMonth, runLog, cancellationToken);
+            result = await ApplyStatutoryRulesAsync(
+                result, inputs, emp, empCountry, statutoryConfigured, run.PayYear, run.PayMonth, runLog, cancellationToken);
 
             // US-PAY-007: remaining (non-tax-base) adjustment lines, then track applied ids for FR-4.
             result = ApplyNonTaxableAdjustments(result, employeeAdjustments);
@@ -375,8 +433,24 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// keeping every existing US-PAY-003 test green.</para>
     /// </summary>
     private async Task<PayrollSlipResult> ApplyStatutoryRulesAsync(
-        PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, int payYear, int payMonth, StringBuilder runLog, CancellationToken ct)
+        PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, Employee emp,
+        string? countryCode, bool statutoryConfigured, int payYear, int payMonth, StringBuilder runLog, CancellationToken ct)
     {
+        // Multi-country tax foundation (money-critical): when the employee's tax country cannot be resolved
+        // (no branch/location country AND no tenant default), we must NEVER guess a country. Skip statutory for
+        // this employee and FLAG them on the run — but only when statutory rules actually exist for the period
+        // (statutoryConfigured), so a tenant with no statutory config sees no change. The rest of the slip
+        // (earnings/other deductions) still computed; only the statutory pass is skipped.
+        if (countryCode is null)
+        {
+            if (!statutoryConfigured)
+                return result; // no statutory rules for the period → dormant feature, pure no-op (legacy behaviour).
+
+            // Multi-country tenant with no location/tenant country for this employee → we cannot pick a country.
+            return StripStatutoryAndFlag(result, emp, runLog, payYear, payMonth,
+                "tax country could not be resolved (no branch/location country and no tenant default country)");
+        }
+
         // OL-1 (BUG-078 sibling): identify BASIC by component Code, not display Name — otherwise Basic-based
         // EPF/ETF fell through to gross and over-deducted. Shared with the OT rate base via ResolvedBasic.
         var basic = ResolvedBasic(result, inputs);
@@ -391,7 +465,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         Result<StatutoryDeductions> resolved;
         try
         {
-            resolved = await _statutoryResolver.ResolveAsync(payYear, payMonth, wage, fiscalYearOverride: null, ct);
+            resolved = await _statutoryResolver.ResolveAsync(payYear, payMonth, wage, fiscalYearOverride: null, countryCode, ct);
         }
         catch (Exception ex)
         {
@@ -399,9 +473,16 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             return result;
         }
 
-        // No rules in effect (the pre-US-PAY-006 path): keep the structure's as-is statutory lines.
         if (resolved.IsFailure || resolved.Value is null || string.IsNullOrEmpty(resolved.Value.FiscalYear) || resolved.Value.Lines.Count == 0)
-            return result;
+        {
+            if (!statutoryConfigured)
+                return result; // truly no rules in effect for the period → legacy no-op (pre-US-PAY-006 behaviour).
+
+            // Money-critical: rules ARE configured, but NONE for THIS employee's resolved country. Never apply
+            // another country's structure statutory lines to them — strip + flag (mirrors the null-country path).
+            return StripStatutoryAndFlag(result, emp, runLog, payYear, payMonth,
+                $"no statutory rules configured for tax country '{countryCode}'");
+        }
 
         var deductions = resolved.Value;
 
@@ -447,6 +528,45 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             NetSalary = net,
             StatutoryTotal = Round(statutoryTotal),
             Lines = lines,
+        };
+    }
+
+    /// <summary>
+    /// Multi-country tax foundation (money-critical). The employee's tax country is either unresolvable
+    /// (multi-country tenant, no location/tenant country) or resolved to a country the tenant has NO rules for.
+    /// Either way we must NEVER apply a (possibly wrong) statutory line. DROP any structure-level as-is statutory
+    /// lines, add NONE, and FLAG the employee on the run + Serilog with <paramref name="reason"/>. The rest of the
+    /// slip (earnings / other deductions) is untouched. Returns <paramref name="result"/> unchanged when there was
+    /// no statutory line to strip.
+    /// </summary>
+    private PayrollSlipResult StripStatutoryAndFlag(
+        PayrollSlipResult result, Employee emp, StringBuilder runLog, int payYear, int payMonth, string reason)
+    {
+        runLog.AppendLine(
+            $"WARNING {emp.EmployeeNo} ({emp.Id}): {reason}; statutory deductions SKIPPED.");
+        _logger.LogWarning(
+            "Payroll run {Year}-{Month}: employee {Employee} statutory skipped — {Reason}.",
+            payYear, payMonth, emp.Id, reason);
+
+        var kept = result.Lines.Where(l => l.Type != SalaryComponentType.Statutory).ToList();
+        if (kept.Count == result.Lines.Count)
+            return result; // nothing to strip.
+
+        decimal g = 0m, d = 0m;
+        foreach (var l in kept)
+        {
+            if (l.Type is SalaryComponentType.Earning or SalaryComponentType.Reimbursement) g += l.Amount;
+            else if (l.Type == SalaryComponentType.Deduction) d += l.Amount;
+        }
+        g = Round(g);
+        d = Round(d);
+        return result with
+        {
+            GrossEarnings = g,
+            TotalDeductions = d,
+            NetSalary = Round(g - d),
+            StatutoryTotal = 0m,
+            Lines = kept,
         };
     }
 

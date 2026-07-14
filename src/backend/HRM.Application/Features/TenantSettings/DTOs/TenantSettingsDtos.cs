@@ -17,7 +17,9 @@ public sealed record OrgProfileDto(
     string? Address,
     string? Industry,
     string? CompanySize,
-    int FiscalYearStartMonth);
+    int FiscalYearStartMonth,
+    // Multi-country tax foundation (settings key org.default_country_code): fallback tax country.
+    string? DefaultCountryCode);
 
 public sealed record BrandingDto(
     string? LogoUrl,
@@ -56,7 +58,9 @@ public sealed record UpdateOrgProfileRequest(
     string? Address,
     string? Industry,
     string? CompanySize,
-    int FiscalYearStartMonth);
+    int FiscalYearStartMonth,
+    // Multi-country tax foundation (settings key org.default_country_code): fallback tax country.
+    string? DefaultCountryCode);
 
 public sealed record UpdateLocalizationRequest(
     string DefaultLanguage,
