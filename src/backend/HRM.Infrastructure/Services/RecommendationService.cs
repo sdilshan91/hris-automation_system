@@ -421,6 +421,14 @@ public sealed class RecommendationService : IRecommendationService
             return Result<RecommendationDto>.Failure(
                 "A promotion recommendation requires a target grade and an effective date.", 422, "promotion_details_required");
 
+        // BR-4 (ISSUE-145): the budget is a SOFT cap, not a hard one — but proceeding OVER budget REQUIRES a
+        // justification (the justification IS the gate). Checked BEFORE charging, so a rejected submit never
+        // consumes the budget. Over budget WITH a justification proceeds (soft warning); within budget is unchanged.
+        if (string.IsNullOrWhiteSpace(rec.Justification) && await WouldExceedBudgetAsync(rec, cancellationToken))
+            return Result<RecommendationDto>.Failure(
+                "This recommendation exceeds the remaining budget; a justification is required to proceed over budget.",
+                400, "over_budget_requires_justification");
+
         // AC-3: link to the employee's performance record.
         if (rec.ManagerReviewId is null)
         {
@@ -886,6 +894,19 @@ public sealed class RecommendationService : IRecommendationService
     // ════════════════════════════════════════════════════════════════
     //  Budget charge / reverse (FR-8/BR-4)
     // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// BR-4 (ISSUE-145): true when charging this recommendation's amount WOULD push its budget's consumed over the
+    /// allocation. Read-only (does NOT mutate the budget) — used to gate an over-budget submit that lacks a
+    /// justification, mirroring <see cref="RecommendationBudget.IsExceeded"/> (consumed &gt; allocated).
+    /// </summary>
+    private async Task<bool> WouldExceedBudgetAsync(Recommendation rec, CancellationToken ct)
+    {
+        if (rec.BudgetId is not { } budgetId || rec.BudgetCharge <= 0m) return false;
+        var budget = await _dbContext.RecommendationBudgets.AsNoTracking().FirstOrDefaultAsync(b => b.Id == budgetId, ct);
+        if (budget is null) return false;
+        return budget.ConsumedAmount + rec.BudgetCharge > budget.AllocatedAmount;
+    }
 
     /// <summary>Charges the recommendation's monetary amount to its budget. Returns true when the budget is now exceeded (BR-4 soft warning).</summary>
     private async Task<bool> ChargeBudgetAsync(Recommendation rec, CancellationToken ct)

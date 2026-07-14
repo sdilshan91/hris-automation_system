@@ -115,12 +115,14 @@ public sealed class GoalProgressController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/v1/tenant/performance/goals/{goalId}/comments — add a manager/HR comment to a goal's thread,
-    /// optionally anchored to a specific update (FR-8). Author must be the goal owner's manager or HR. Returns the
-    /// goal's updated timeline.
+    /// POST /api/v1/tenant/performance/goals/{goalId}/comments — add a comment to a goal's thread, optionally
+    /// anchored to a specific update (FR-8). The thread is TWO-WAY (ISSUE-141): the goal OWNER may reply on their
+    /// own goal (<c>Performance.Read.Self</c>), and the owner's manager (<c>Performance.Review.Team</c>) or HR
+    /// (<c>Performance.Review.All</c>) may comment on it. The service scopes a Read.Self caller to goals they own —
+    /// they cannot comment on anyone else's goal. Returns the goal's updated timeline.
     /// </summary>
     [HttpPost("goals/{goalId:guid}/comments")]
-    [RequirePermission("Performance.Review.Team", "Performance.Review.All")]
+    [RequirePermission("Performance.Read.Self", "Performance.Review.Team", "Performance.Review.All")]
     [ProducesResponseType(typeof(ApiResponse<GoalTimelineDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
