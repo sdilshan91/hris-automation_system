@@ -5168,11 +5168,21 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — the reconciliation table is a primary US-ATT-009 surface and horizontal columns that overflow are unreachable by keyboard; contained to one scroll region on an HR-only page, single-attribute fix, not data-affecting. (The Lock confirm-modal — if hand-rolled — would additionally fall under the **BUG-109** class; not separately verified here since the lock action is a state-changing write avoided under report-only.)
 
 ### ISSUE-297 — Goal-comment thread notification routing: an owner's reply notifies the OWNER, not the manager (one-sided after ISSUE-141 enabled two-way replies)
-- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-009 / (follow-up of ISSUE-141, PR #298)
+- **Type:** ISSUE · **Severity:** LOW · **Status:** RESOLVED (PR #300, 2026-07-14) · **Layer:** BE · **US/TC:** US-PRF-009 / (follow-up of ISSUE-141, PR #298)
+- **Resolution:** `AddCommentAsync` now routes `goal-comment-added` to the COUNTERPARTY — owner reply → manager (`ResolveManagerIdAsync`, the seam the FR-5 progress path already uses); manager/HR comment → owner (unchanged); owner with no manager on file → dispatch skipped (never notify the author about their own comment, never emit a null-recipient HR broadcast). Subject arg stays the owner for payload rendering; single dispatch-site change, no interface/catalog change. 3 unit arms (manager→owner + never-author, owner-reply→manager + never-owner regression-catcher, no-manager→skip). Full BE suite 3850 green; integration-enforcer CONNECTED + test-authenticator AUTHENTIC (null-branch arm added on its recommendation). Auto-healed OUT-OF-LANE → **ISSUE-298** (template copy).
 - **Title:** ISSUE-141 (#298) made the goal-comment thread two-way (the goal owner can now reply). But `GoalProgressService.AddCommentAsync` still routes the "goal-comment-added" notification to the goal OWNER unconditionally — so an owner's own reply notifies the owner about their own comment and NEVER notifies the manager. A true conversation thread should notify the OTHER party (manager ← owner reply; owner ← manager comment).
 - **Root cause (confidence 90%):** the notification target in `AddCommentAsync` (~GoalProgressService.cs:354) is hardcoded to the goal owner, written before owner-authored comments were possible. Auto-healed OUT-OF-LANE from the ISSUE-141 fix (backend-dev flagged it; the finding scoped only the authz/reply enablement, not notification routing).
 - **Suggested direction (NOT applied):** route the notification to the counterparty — if the author is the owner, notify the manager (ResolveManagerId); if the author is the manager/HR, notify the owner (current behaviour). Report-only until scheduled.
 - **Severity rationale:** LOW — the reply itself works + is visible in the thread; only the push-notification recipient is wrong for owner-authored comments. Non-blocking, delivery is the log-only seam today.
+
+---
+
+### ISSUE-298 — `goal_comment_added` notification template copy is author-agnostic: it hardcodes "Your manager added a comment", now wrong for the manager recipient
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-009 / (auto-healed OUT-OF-LANE from ISSUE-297, PR #300)
+- **Title:** After ISSUE-297 (#300), a goal owner's reply now notifies the MANAGER for the first time. The `goal_comment_added` catalog template (`NotificationEventCatalog.cs` ~1528-1541 / `RealPerformanceNotificationService.cs:386`) still reads "Your manager added a comment to your goal" — so the manager receives a message falsely stating *their* manager commented, on "your goal" that isn't theirs. The routing (ISSUE-297) is correct; only the copy is author-agnostic.
+- **Root cause (confidence 90%):** the template predates owner-authored comments; it assumes the recipient is always the owner and the author is always the manager. The notify signature carries no author identity/role to render.
+- **Suggested direction (NOT applied):** make the copy author/recipient-aware — thread the author's name+role into `NotifyGoalProgressAsync` (new optional arg + placeholder) and render "{{author.name}} added a comment", or split into distinct owner-reply vs manager-comment templates. Needs an interface + catalog change (why it was not folded into #300).
+- **Severity rationale:** LOW — cosmetic content only; delivery is the log-only seam today so no user actually receives the wrong copy yet. Non-blocking.
 
 ---
 
