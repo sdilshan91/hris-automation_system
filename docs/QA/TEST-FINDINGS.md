@@ -5217,7 +5217,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-115
 - **Type:** BUG (resilience — slow-fail on cache-store outage)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #297, 2026-07-14)
+- **Resolution (BE, PR #297):** `SharedRedisRegistration` bounds `SyncTimeout`+`AsyncTimeout` to a config-overridable value (`Redis:OperationTimeoutMs`, default 1000ms) after `AbortOnConnectFail=false`, so a frozen/unresponsive Redis fast-fails to the DB fallback instead of the 5s×2 stall. 2 DI timeout tests.
 - **Layer:** BE
 - **Module / US / TC:** Authentication / tenant-resolution + distributed cache / TC-AUTH-057 (Redis outage fallback)
 - **Title:** When Redis is configured but unreachable (`docker pause hrm-redis`), every cached-path request stalls ~11s before falling back to Postgres. `DependencyInjection.cs:604` registers `AddStackExchangeRedisCache` with only `Configuration`+`InstanceName` — **no `ConnectTimeout`/`SyncTimeout`/`AbortOnConnectFail=false` tuning** — so each request pays two serial ~5s StackExchange.Redis timeouts (the HMGET read, then the HMSET write-back) before the DB fallback fires. The result is correct (HTTP 200 via DB fallback — fail-SAFE), but ~11s latency per request during an outage.
@@ -5230,7 +5231,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-116
 - **Type:** BUG (cache invalidation gap → stale authorization data)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #297, 2026-07-14)
+- **Resolution (BE, PR #297):** new fail-soft `IMyTenantsCache` (one key source `MyTenantsCacheKey.For`); AuthService read/write + ALL SIX membership/role mutation sites now invalidate the affected `UserTenant.UserId` after save (SSO-JIT, role-assign, role-replace, disable, new-owner, tenant-deletion per-user loop); ISSUE-056 sites consolidated (no double-evict). 8 lock-in tests; enforcer CONNECTED + authenticator AUTHENTIC.
 - **Layer:** BE
 - **Module / US / TC:** Authentication / user tenant memberships / TC-AUTH-064
 - **Title:** The `hrm:user:{userId}:tenants` distributed-cache entry (a user's tenant memberships/roles) has exactly two references — a read (`AuthService.cs:616`) and a write (`AuthService.cs:661`) — and **zero `RemoveAsync`/invalidation anywhere**. So when a user's membership or role changes (added/removed to a tenant, role reassigned), the cached list stays stale until the 5-minute TTL expires. Perf + tenant-scoping of the cache are correct; only invalidation is missing.
