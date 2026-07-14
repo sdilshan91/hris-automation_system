@@ -8,6 +8,7 @@ import {
   OnDestroy,
 } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
+import { A11yModule } from '@angular/cdk/a11y';
 import {
   ReactiveFormsModule,
   FormBuilder,
@@ -93,7 +94,7 @@ function regularizationValidator(group: AbstractControl): ValidationErrors | nul
 @Component({
   selector: 'app-regularization',
   standalone: true,
-  imports: [CommonModule, DatePipe, ReactiveFormsModule],
+  imports: [CommonModule, DatePipe, ReactiveFormsModule, A11yModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -197,7 +198,8 @@ function regularizationValidator(group: AbstractControl): ValidationErrors | nul
     <!-- ─── Regularization drawer (slides in from the right, §8) ─────────── -->
     @if (formOpen()) {
       <div class="drawer-backdrop" @backdrop (click)="closeForm()" aria-hidden="true"></div>
-      <div class="drawer-wrap" role="dialog" aria-modal="true" aria-labelledby="reg-drawer-title">
+      <div class="drawer-wrap" role="dialog" aria-modal="true" aria-labelledby="reg-drawer-title"
+        cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="closeForm()">
         <div class="drawer-panel" @drawer>
           <!-- Drawer header -->
           <div class="flex items-start justify-between gap-3 px-5 py-4 border-b border-neutral-100">
@@ -276,7 +278,8 @@ function regularizationValidator(group: AbstractControl): ValidationErrors | nul
             <div>
               <div class="flex items-center justify-between">
                 <label class="label-sm" for="reg-reason">Reason</label>
-                <span class="text-xs" [class.text-red-500]="reasonBelowMin()"
+                <span class="text-xs" role="status" aria-live="polite" data-test="reason-counter"
+                  [class.text-red-500]="reasonBelowMin()"
                   [class.text-neutral-400]="!reasonBelowMin()">
                   {{ reasonLength() }}/{{ minReason }}
                 </span>

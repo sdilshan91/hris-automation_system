@@ -239,4 +239,24 @@ describe('PayrollIntegrationComponent', () => {
     expect(attendanceSpy.getPeriodLock).toHaveBeenCalled();
     expect(attendanceSpy.getReconciliation).toHaveBeenCalled();
   });
+
+  // ─── a11y: scrollable regions keyboard-focusable (BUG-112) ──
+  it('marks both horizontal scroll containers as focusable named regions (BUG-112)', () => {
+    setup(null);
+    attendanceSpy.getPayrollData.and.returnValue(of(payrollResult));
+
+    // Open the preview so its scroll wrapper renders too.
+    component.togglePreview();
+    fixture.detectChanges();
+
+    const wrappers = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.overflow-x-auto'),
+    );
+    expect(wrappers.length).toBe(2);
+    wrappers.forEach((w) => {
+      expect(w.getAttribute('tabindex')).toBe('0');
+      expect(w.getAttribute('role')).toBe('region');
+      expect(w.getAttribute('aria-label')).toBeTruthy();
+    });
+  });
 });

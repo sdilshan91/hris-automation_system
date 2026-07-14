@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { A11yModule } from '@angular/cdk/a11y';
 import { HttpErrorResponse } from '@angular/common/http';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ToastrService } from 'ngx-toastr';
@@ -35,7 +36,7 @@ import {
 @Component({
   selector: 'app-new-payroll-run',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, A11yModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [
@@ -75,6 +76,9 @@ import {
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-run-title"
+        cdkTrapFocus
+        [cdkTrapFocusAutoCapture]="true"
+        (keydown.escape)="close.emit()"
       >
         <!-- Header -->
         <div

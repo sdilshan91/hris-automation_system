@@ -159,4 +159,20 @@ describe('PhotoUploadComponent', () => {
       expect(component.photoRemoved.emit).toHaveBeenCalled();
     });
   });
+
+  // ─── a11y: file input placement (BUG-108) ─────────────────
+  describe('a11y — hidden file input placement (BUG-108)', () => {
+    it('renders the file input as a sibling of the drop-zone and out of the tab order', () => {
+      const host = fixture.nativeElement as HTMLElement;
+      const dropZone = host.querySelector('.drop-zone');
+      const input = host.querySelector('input[type=file]') as HTMLInputElement;
+
+      expect(dropZone).toBeTruthy();
+      expect(input).toBeTruthy();
+      // Not nested inside the interactive drop-zone (nested-interactive / aria-hidden-focus).
+      expect(dropZone!.querySelector('input[type=file]')).toBeNull();
+      // Removed from the tab order so an aria-hidden control is not focusable.
+      expect(input.getAttribute('tabindex')).toBe('-1');
+    });
+  });
 });

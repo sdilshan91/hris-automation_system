@@ -71,14 +71,6 @@ import {
         [attr.aria-label]="previewUrl() ? 'Change profile photo' : 'Upload profile photo'"
         [attr.aria-describedby]="validationError() ? 'photo-error' : null"
       >
-        <input
-          #fileInput
-          type="file"
-          class="sr-only"
-          [accept]="acceptTypes"
-          (change)="onFileSelected($event)"
-          aria-hidden="true"
-        />
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
           class="w-6 h-6 text-neutral-400 mb-1" aria-hidden="true">
           <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z"/>
@@ -95,6 +87,18 @@ import {
           JPEG, PNG, or WebP. Max {{ maxSizeLabel }}.
         </span>
       </div>
+
+      <!-- Hidden file input — sibling of the drop-zone (not nested) and not in
+           the tab order, to satisfy aria-hidden-focus + nested-interactive. -->
+      <input
+        #fileInput
+        type="file"
+        class="sr-only"
+        tabindex="-1"
+        [accept]="acceptTypes"
+        (change)="onFileSelected($event)"
+        aria-hidden="true"
+      />
 
       <!-- Validation error -->
       @if (validationError()) {

@@ -270,4 +270,31 @@ describe('RegularizationComponent', () => {
     component.closeForm();
     expect(component.formOpen()).toBeTrue();
   });
+
+  // ─── a11y: live counter + drawer focus trap (BUG-111) ────────
+  it('announces the reason char-counter and traps focus in the drawer (BUG-111)', () => {
+    component.openForm();
+    fixture.detectChanges();
+
+    // Reason char-counter is a polite live status region (pinned by a stable hook).
+    const counter = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-test="reason-counter"]',
+    ) as HTMLElement;
+    expect(counter).toBeTruthy();
+    expect(counter.getAttribute('aria-live')).toBe('polite');
+    expect(counter.getAttribute('role')).toBe('status');
+    expect(counter.textContent).toContain('/');
+
+    // Drawer dialog panel applies the focus trap (BUG-109-class).
+    const dialog = (fixture.nativeElement as HTMLElement).querySelector(
+      '[role="dialog"]',
+    ) as HTMLElement;
+    expect(dialog).toBeTruthy();
+    expect(dialog.hasAttribute('cdktrapfocus')).toBeTrue();
+
+    // Escape closes the drawer (behavioural arm — the (keydown.escape)="closeForm()" binding).
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(component.formOpen()).toBeFalse();
+  });
 });

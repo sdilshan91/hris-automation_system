@@ -173,4 +173,33 @@ describe('NewPayrollRunComponent', () => {
       expect(component.submitting()).toBeFalse();
     });
   });
+
+  // ─── a11y: dialog focus-trap + Escape (BUG-109) ──────────────
+  describe('a11y — dialog focus trap and Escape (BUG-109)', () => {
+    it('applies cdkTrapFocus to the dialog panel', () => {
+      const panel = (fixture.nativeElement as HTMLElement).querySelector(
+        '[role="dialog"]',
+      ) as HTMLElement;
+      expect(panel).toBeTruthy();
+      // Focus-trap directive applied (traps focus + moves initial focus in via autoCapture).
+      expect(panel.hasAttribute('cdktrapfocus')).toBeTrue();
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[cdkTrapFocus]'),
+      ).toBe(panel);
+    });
+
+    it('emits close when Escape is pressed on the dialog', () => {
+      const closeSpy = jasmine.createSpy('close');
+      component.close.subscribe(closeSpy);
+      const panel = (fixture.nativeElement as HTMLElement).querySelector(
+        '[role="dialog"]',
+      ) as HTMLElement;
+
+      panel.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+
+      expect(closeSpy).toHaveBeenCalled();
+    });
+  });
 });
