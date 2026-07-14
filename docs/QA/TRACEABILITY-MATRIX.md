@@ -2733,8 +2733,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-011) | Multi-tenant isolation (payslip_email_log + distribution job send/re-send + SMTP rate-limiter/sender/cache/SignalR) | Critical | TC-PAY-ISO-041, TC-PAY-ISO-042, TC-PAY-ISO-043, TC-PAY-ISO-044 | 4 | -- |
 | US-PAY-012 | Payroll History and Audit Trail | Must Have | TC-PAY-012-01, TC-PAY-012-02, TC-PAY-012-03, TC-PAY-012-04, TC-PAY-012-05, TC-PAY-012-06, TC-PAY-012-07, TC-PAY-012-08, TC-PAY-012-09, TC-PAY-012-10, TC-PAY-012-11, TC-PAY-012-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-012) | Multi-tenant isolation (payroll history + audit_log read/context-IDOR/write-stamp + history/audit cache + audit-export store) | Critical | TC-PAY-ISO-045, TC-PAY-ISO-046, TC-PAY-ISO-047, TC-PAY-ISO-048 | 4 | -- |
-| US-PAY-013 | Full & Final (F&F) Settlement (Phase 1, shipped PR #303) | Must Have | TC-PAY-013-01, TC-PAY-013-02, TC-PAY-013-03, TC-PAY-013-04, TC-PAY-013-05, TC-PAY-013-06, TC-PAY-013-07 | 7 | 7/7 AC covered (automated; AC-7 isolation via dormant RLS-policy-existence + module-wide EF query filter) |
-| **TOTAL** | | | **199 test cases** | **199** | **70/70 AC** |
+| US-PAY-013 | Full & Final (F&F) Settlement (Phase 1, shipped PR #303) | Must Have | TC-PAY-013-01, TC-PAY-013-02, TC-PAY-013-03, TC-PAY-013-04, TC-PAY-013-05, TC-PAY-013-06, TC-PAY-013-07, TC-PAY-013-08 | 8 | 7/7 AC covered (automated; AC-7 isolation via dormant RLS-policy-existence + module-wide EF query filter) |
+| **TOTAL** | | | **200 test cases** | **200** | **70/70 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -2939,24 +2939,25 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-013-05 | Money-safety -- statutory skip+flag (unresolvable/no-rules country); net floored at 0; structure statutory/deduction lines dropped; encashment figure on Postgres | Integration | Critical | US-PAY-013 | AC-5, FR-5, BR-3, BR-4, BR-6, NFR-1 |
 | TC-PAY-013-06 | No double-pay -- run EXCLUDES settlement-owned final period; STILL PAYS not-owned; guard fires on FinalPeriodOwnedBySettlement (both directions) | Integration | Critical | US-PAY-013 | AC-6, FR-7, BR-8 |
 | TC-PAY-013-07 | Multi-tenant isolation -- dormant tenant_isolation RLS policy exists on all three settlement tables; runtime via EF global query filter + TenantInterceptor | Security | Critical | US-PAY-013 | AC-7, NFR-3 |
+| TC-PAY-013-08 | F&F policy-config VALIDATION -- effective-date required; same-effective-date re-config replaces prior version (one version per date); effective resolution (latest EffectiveFrom <= asOf) + safe all-on default when none | Integration | High | US-PAY-013 | AC-1, AC-2, FR-1, FR-6 |
 
 ### US-PAY-013 Detailed Requirements Traceability
 
 | Requirement | Type | Covered By | Coverage |
 |-------------|------|------------|----------|
-| AC-1: Tenant Admin configures effective-dated F&F policy (component toggles + final-period ownership) via FnFPolicyController | AC | TC-PAY-013-01 | Automated (toggle-governs-computation); policy-CRUD API persistence = manual/API |
-| AC-2: Policy effective-dated + no retroactive change to a computed settlement; safe default when none configured | AC | TC-PAY-013-02 | Direct (resolution semantics automated; API edit-creates-new-row = manual/API) |
+| AC-1: Tenant Admin configures effective-dated F&F policy (component toggles + final-period ownership) via FnFPolicyController | AC | TC-PAY-013-01, TC-PAY-013-08 | Automated (toggle-governs-computation + validator/service config integrity via TC-PAY-013-08); pure HTTP-layer policy-CRUD = manual/API |
+| AC-2: Policy effective-dated + no retroactive change to a computed settlement; safe default when none configured | AC | TC-PAY-013-02, TC-PAY-013-08 | Direct (resolution semantics + same-date-replacement/effective-resolution/safe-default automated via TC-PAY-013-08; pure HTTP edit-creates-new-row = manual/API) |
 | AC-3: Offboarding completion auto-computes + persists FinalSettlement off the LWD | AC | TC-PAY-013-03 | Direct (real offboarding-complete -> settlement trigger chain) |
 | AC-4: Idempotency -- exactly one settlement per offboarding instance, never double-created | AC | TC-PAY-013-04 | Direct (service dedupe + DB unique-index 23505 backstop) |
 | AC-5: Money-safety -- statutory skip+flag, net floored at 0, no double-count of structure lines | AC | TC-PAY-013-05 | Direct (5 automated arms incl. Postgres) |
 | AC-6: No double-pay -- run excludes a settlement-owned final period | AC | TC-PAY-013-06 | Direct (both directions) |
 | AC-7: Tenant isolation -- EF query filters + dormant RLS tenant_isolation policy on all settlement tables | AC | TC-PAY-013-07 | Partial (dormant RLS-policy-existence automated; no settlement-specific 2-tenant cross-read arm -- relies on module-wide EF query filter; RLS extension point) |
-| FR-1: Effective-dated TenantFnFPolicy + read/write API (FnFPolicyController) | FR | TC-PAY-013-01 | Automated (entity/toggles); API surface = manual/API |
+| FR-1: Effective-dated TenantFnFPolicy + read/write API (FnFPolicyController) | FR | TC-PAY-013-01, TC-PAY-013-08 | Automated (entity/toggles + validator/same-date-replacement via TC-PAY-013-08); pure HTTP API surface = manual/API |
 | FR-2: Persist FinalSettlement header + FinalSettlementLine detail | FR | TC-PAY-013-03, TC-PAY-013-05 | Direct |
 | FR-3: Idempotent on offboarding instance (unique index) | FR | TC-PAY-013-04 | Direct |
 | FR-4: Real IPayrollFnFIntegration triggered by OffboardingService.CompleteAsync | FR | TC-PAY-013-03 | Direct |
 | FR-5: Reuse pro-ration / StatutoryDeductionResolver / leave-encashment engines | FR | TC-PAY-013-03, TC-PAY-013-05 | Direct |
-| FR-6: Resolve effective policy (EffectiveFrom <= LWD, latest wins) + safe default | FR | TC-PAY-013-02 | Direct |
+| FR-6: Resolve effective policy (EffectiveFrom <= LWD, latest wins) + safe default | FR | TC-PAY-013-02, TC-PAY-013-08 | Direct (resolution + safe-default automated via TC-PAY-013-08) |
 | FR-7: Double-pay boundary guard in PayrollRunProcessor | FR | TC-PAY-013-06 | Direct |
 | NFR-1: Money-critical fail-closed (skip+flag, idempotent, floor at 0, no double-count) | NFR | TC-PAY-013-04, TC-PAY-013-05 | Direct |
 | NFR-3: Tenant isolation via EF global filters + dormant RLS policy per table | NFR | TC-PAY-013-07 | Partial (RLS-policy-existence; RLS extension point) |
@@ -2970,8 +2971,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Acceptance Criteria Coverage | 7/7 (100%) -- AC-7 partial (dormant RLS-policy-existence + module-wide EF query filter; no settlement-specific 2-tenant cross-read arm) | >= 85% | PASS |
 | Functional Requirements Coverage | 7/7 (100%) -- FR-1 API persistence = manual/API layer | >= 85% | PASS |
 | Non-Functional Requirements Coverage | 3/3 relevant (NFR-1/3/5) -- NFR-3 RLS as extension point | >= 85% | PASS |
-| Automated Test Cases | 7/7 past `draft` (all 16 backing xUnit tests green) | -- | PASS |
-| Deferred / Conditional Test Cases | Phase 2 (gratuity/notice/severance/loan/PDF/FE UI) DEFERRED per US-PAY-013 -- no coverage by design; AC-7 dedicated 2-tenant cross-read on final_settlement is a CONDITIONAL extension point (module-wide EF filter proven elsewhere; RLS dormant/flag-OFF) | -- | NOTE |
+| Automated Test Cases | 8/8 past `draft` (all 19 backing xUnit tests green -- incl. FnFPolicyServiceTests validator/same-date/resolution behind TC-PAY-013-08) | -- | PASS |
+| Deferred / Conditional Test Cases | Phase 2 (gratuity/notice/severance/loan/PDF/FE UI) DEFERRED per US-PAY-013 -- no coverage by design; residual manual is now only the pure HTTP-layer FnFPolicyController request/response test (validator/service config integrity automated by TC-PAY-013-08) + the AC-7 settlement-specific 2-tenant cross-read arm (module-wide EF filter proven elsewhere; RLS dormant/flag-OFF) -- see ISSUE-303 | -- | NOTE |
 
 ### US-PAY-001 Detailed Requirements Traceability
 
