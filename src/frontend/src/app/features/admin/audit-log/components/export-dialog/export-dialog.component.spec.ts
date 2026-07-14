@@ -1,7 +1,9 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideTranslateService } from '@ngx-translate/core';
+import { By } from '@angular/platform-browser';
 import { ExportDialogComponent } from './export-dialog.component';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 describe('ExportDialogComponent', () => {
   let fixture: ComponentFixture<ExportDialogComponent>;
@@ -19,6 +21,12 @@ describe('ExportDialogComponent', () => {
       imports: [ExportDialogComponent],
       providers: [provideAnimationsAsync(), provideTranslateService()],
     });
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    create(42);
+    const dialog = fixture.debugElement.query(By.directive(TrappedDialogDirective));
+    expect(dialog).toBeTruthy();
   });
 
   it('exposes the record count for the confirmation copy', () => {

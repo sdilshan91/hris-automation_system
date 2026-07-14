@@ -22,6 +22,7 @@ import {
   GRACE_DAYS_MAX,
   GRACE_DAYS_DEFAULT,
 } from '../../models/lifecycle.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /**
  * US-ADM-004 AC-3 / FR-4 / NFR-5: multi-step termination confirmation modal.
@@ -38,7 +39,7 @@ import {
 @Component({
   selector: 'app-terminate-tenant-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, TranslateModule],
+  imports: [CommonModule, FormsModule, TranslateModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [

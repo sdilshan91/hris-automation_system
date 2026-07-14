@@ -23,6 +23,7 @@ import {
   PDF_STATUS_BADGE,
   PDF_STATUS_LABELS,
 } from '../../models/payslip.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-PAY-004 (§8): Payslip list within a payroll run-detail view.
@@ -50,7 +51,7 @@ import {
 @Component({
   selector: 'app-payslip-list',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -335,6 +336,8 @@ import {
           role="dialog"
           aria-modal="true"
           aria-label="Payslip preview"
+          appTrappedDialog
+          (dismiss)="closePreview()"
         >
           <div
             @backdrop

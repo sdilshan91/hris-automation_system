@@ -27,6 +27,7 @@ import {
   ILeaveEncashmentResult,
   RECON_PAY_MONTHS,
 } from '../../models/reconciliation.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-PAY-010 (AC-3/FR-5): "Trigger leave encashment" right slide-over drawer — same
@@ -43,7 +44,7 @@ import {
 @Component({
   selector: 'app-leave-encashment-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('drawer', [
@@ -80,6 +81,8 @@ import {
         role="dialog"
         aria-modal="true"
         aria-label="Trigger leave encashment"
+        appTrappedDialog
+        (dismiss)="close.emit()"
       >
         <!-- Header -->
         <header

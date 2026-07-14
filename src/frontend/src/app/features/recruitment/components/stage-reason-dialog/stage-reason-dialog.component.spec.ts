@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { By } from '@angular/platform-browser';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 import {
   StageReasonDialogComponent,
@@ -89,6 +91,12 @@ describe('StageReasonDialogComponent', () => {
       component.confirm();
       expect(emitted).toEqual({ reason: 'Needs re-screen' });
     });
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    setup('Rejected');
+    const dialog = fixture.debugElement.query(By.directive(TrappedDialogDirective));
+    expect(dialog).toBeTruthy();
   });
 
   it('emits cancelled on cancel()', () => {

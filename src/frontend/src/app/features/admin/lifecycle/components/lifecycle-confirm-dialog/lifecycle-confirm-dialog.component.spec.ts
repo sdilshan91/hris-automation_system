@@ -5,12 +5,14 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { By } from '@angular/platform-browser';
 import { provideTranslateService } from '@ngx-translate/core';
 import { ToastrService } from 'ngx-toastr';
 import {
   LifecycleConfirmDialogComponent,
   LifecycleConfirmAction,
 } from './lifecycle-confirm-dialog.component';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 import { environment } from '../../../../../../environments/environment';
 import { ITenantLifecycleResult } from '../../models/lifecycle.models';
 
@@ -59,6 +61,12 @@ describe('LifecycleConfirmDialogComponent', () => {
   afterEach(() => {
     httpMock.verify();
     TestBed.resetTestingModule();
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    build('reactivate');
+    const dialog = fixture.debugElement.query(By.directive(TrappedDialogDirective));
+    expect(dialog).toBeTruthy();
   });
 
   it('POSTs reactivate and emits confirmed (AC-5)', () => {

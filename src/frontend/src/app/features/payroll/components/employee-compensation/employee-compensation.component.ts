@@ -32,6 +32,7 @@ import {
   IComponentOverride,
   ISalaryComponentLine,
 } from '../../models/employee-salary.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-PAY-002: Employee "Compensation" tab (§8). Embedded by EmployeeProfile
@@ -47,7 +48,7 @@ import {
 @Component({
   selector: 'app-employee-compensation',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -271,6 +272,8 @@ import {
             role="dialog"
             aria-modal="true"
             aria-label="Assign salary structure"
+            appTrappedDialog
+            (dismiss)="closeDrawer()"
           >
             <form [formGroup]="assignForm" (ngSubmit)="confirmAssign()" class="flex flex-col min-h-full">
               <div class="flex items-center justify-between px-6 py-4 border-b border-neutral-100 sticky top-0 bg-white z-10">

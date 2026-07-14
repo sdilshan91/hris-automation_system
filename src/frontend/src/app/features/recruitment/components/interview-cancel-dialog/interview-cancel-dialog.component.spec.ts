@@ -1,7 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { By } from '@angular/platform-browser';
 
 import { InterviewCancelDialogComponent } from './interview-cancel-dialog.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 describe('InterviewCancelDialogComponent', () => {
   let component: InterviewCancelDialogComponent;
@@ -20,6 +22,20 @@ describe('InterviewCancelDialogComponent', () => {
 
   it('creates', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('traps focus and closes on Escape (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(By.directive(TrappedDialogDirective));
+    expect(dialog).toBeTruthy();
+
+    // ISSUE-296 behaviour: Escape → directive `dismiss` → the bound `cancel()` → the `cancelled` output.
+    // Catches a broken/removed `(dismiss)="cancel()"` binding.
+    let cancelled = false;
+    component.cancelled.subscribe(() => (cancelled = true));
+    (dialog.nativeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(cancelled).toBeTrue();
   });
 
   it('confirms with the trimmed reason when provided', () => {

@@ -5,9 +5,11 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { By } from '@angular/platform-browser';
 import { ToastrService } from 'ngx-toastr';
 import { ImpersonateDialogComponent } from './impersonate-dialog.component';
 import { AuthService } from '../../../../../core/auth/auth.service';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 import { environment } from '../../../../../../environments/environment';
 import {
   IImpersonationTarget,
@@ -72,6 +74,15 @@ describe('ImpersonateDialogComponent', () => {
 
     expect(component.targets().length).toBe(2);
     expect(component.targetsLoading()).toBeFalse();
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    fixture.detectChanges();
+    flushTargets();
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
   });
 
   it('keeps submit disabled until a reason of >= 10 chars is provided (AC-1/BR-4)', () => {

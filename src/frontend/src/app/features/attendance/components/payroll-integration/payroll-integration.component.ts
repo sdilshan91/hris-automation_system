@@ -25,6 +25,7 @@ import {
   periodDateRange,
   formatWorkMinutes,
 } from '../../models/attendance.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-ATT-009: Attendance integration with Payroll (HR view).
@@ -46,7 +47,7 @@ import {
 @Component({
   selector: 'app-payroll-integration',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -311,6 +312,7 @@ import {
       <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div class="confirm-panel pointer-events-auto" @modal role="dialog" aria-modal="true"
           [attr.aria-label]="mode === 'lock' ? 'Confirm lock attendance' : 'Confirm unlock attendance'"
+          appTrappedDialog (dismiss)="closeConfirm()"
           data-test="confirm-modal">
           @if (mode === 'lock') {
             <h3 class="text-lg font-semibold text-neutral-900 mb-1">Lock attendance?</h3>

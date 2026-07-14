@@ -25,6 +25,7 @@ import {
   distributionPercent,
   recipientsByStatus,
 } from '../../models/payslip-email.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-PAY-011 (§8): Bulk payslip email distribution, embedded in the payroll
@@ -52,7 +53,7 @@ import {
 @Component({
   selector: 'app-payslip-distribution',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -288,6 +289,8 @@ import {
           role="dialog"
           aria-modal="true"
           aria-labelledby="send-confirm-title"
+          appTrappedDialog
+          (dismiss)="closeConfirm()"
         >
           <div
             @backdrop

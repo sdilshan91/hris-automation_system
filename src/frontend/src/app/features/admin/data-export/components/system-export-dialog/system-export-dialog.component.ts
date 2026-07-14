@@ -8,6 +8,7 @@ import { CommonModule } from '@angular/common';
 import { TranslateModule } from '@ngx-translate/core';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ExportPanelComponent } from '../export-panel/export-panel.component';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /**
  * US-ADM-010 AC-6: System-Admin "Export Data" dialog, opened from the
@@ -21,7 +22,7 @@ import { ExportPanelComponent } from '../export-panel/export-panel.component';
 @Component({
   selector: 'app-system-export-dialog',
   standalone: true,
-  imports: [CommonModule, TranslateModule, ExportPanelComponent],
+  imports: [CommonModule, TranslateModule, ExportPanelComponent, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [
@@ -53,6 +54,8 @@ import { ExportPanelComponent } from '../export-panel/export-panel.component';
         aria-modal="true"
         aria-labelledby="system-export-title"
         (click)="$event.stopPropagation()"
+        appTrappedDialog
+        (dismiss)="cancelled.emit()"
         data-testid="system-export-dialog"
       >
         <header

@@ -5,9 +5,11 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { By } from '@angular/platform-browser';
 import { provideTranslateService } from '@ngx-translate/core';
 import { ToastrService } from 'ngx-toastr';
 import { SuspendTenantDialogComponent } from './suspend-tenant-dialog.component';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 import { environment } from '../../../../../../environments/environment';
 import { ITenantLifecycleResult } from '../../models/lifecycle.models';
 
@@ -53,6 +55,11 @@ describe('SuspendTenantDialogComponent', () => {
   });
 
   afterEach(() => httpMock.verify());
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(By.directive(TrappedDialogDirective));
+    expect(dialog).toBeTruthy();
+  });
 
   it('keeps submit disabled until reason >= 10 chars (AC-1)', () => {
     component.acknowledged = true;
