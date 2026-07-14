@@ -43,6 +43,10 @@ public sealed class AuthService : IAuthService
     // null) so isolated unit construction that omits it still compiles; DI injects the registered dispatcher in
     // production. A null dispatcher (or any delivery failure) never fails the reset request.
     private readonly INotificationDispatcher? _notificationDispatcher;
+    // BUG-116: invalidates the user's cached my-tenants entry when a new membership is created (SSO JIT), so the
+    // authorization data isn't served stale for up to the 5-min TTL. Optional (nullable, default null) so isolated
+    // unit construction that omits it still compiles (mirrors the optional deps above); DI injects it in production.
+    private readonly IMyTenantsCache? _myTenantsCache;
 
     public AuthService(
         AppDbContext dbContext,
@@ -55,7 +59,8 @@ public sealed class AuthService : IAuthService
         IBackgroundJobClient backgroundJobClient,
         ICurrentUser? currentUser = null,
         IFieldProtector? mfaSecretProtector = null,
-        INotificationDispatcher? notificationDispatcher = null)
+        INotificationDispatcher? notificationDispatcher = null,
+        IMyTenantsCache? myTenantsCache = null)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
@@ -68,6 +73,7 @@ public sealed class AuthService : IAuthService
         _currentUser = currentUser;
         _mfaSecretProtector = mfaSecretProtector ?? PlaintextFieldProtector.Instance;
         _notificationDispatcher = notificationDispatcher;
+        _myTenantsCache = myTenantsCache;
     }
 
     public async Task<Result<LoginResponse>> LoginAsync(
@@ -903,7 +909,7 @@ public sealed class AuthService : IAuthService
         Guid currentTenantId,
         CancellationToken cancellationToken = default)
     {
-        var cacheKey = $"user:{userId}:tenants";
+        var cacheKey = MyTenantsCacheKey.For(userId); // BUG-116: one shared key source for read/write/invalidate
 
         // BUG-121: the cache is best-effort. A Redis outage must NOT 500 the FE-hydration path
         // (/auth/me, /auth/my-tenants) — treat a cache failure as a miss and fall back to the DB
@@ -1865,6 +1871,10 @@ public sealed class AuthService : IAuthService
                 needsOidLink = false;
             }
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            // BUG-116: a new membership was created — drop the user's cached my-tenants list so it isn't stale.
+            if (_myTenantsCache is not null)
+                await _myTenantsCache.InvalidateAsync(user.Id, cancellationToken);
 
             // Reload with the role graph populated (Role + RolePermissions) for token issuance.
             userTenant = await _dbContext.UserTenants

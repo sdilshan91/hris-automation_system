@@ -41,6 +41,13 @@ public static class SharedRedisRegistration
         var opts = ConfigurationOptions.Parse(redisConn);
         opts.AbortOnConnectFail = false; // never block/throw at startup if Redis is down (Redis-optional stance)
 
+        // BUG-115: bound the per-operation timeout so a FROZEN/unresponsive Redis (e.g. docker pause: TCP stays open
+        // but unanswered, so ConnectTimeout never trips) fast-fails to the DB fallback instead of stalling the full
+        // 5s SyncTimeout default per op (read + write-back = ~11s). ConnectTimeout stays from the connection string.
+        var opTimeoutMs = configuration.GetValue<int?>("Redis:OperationTimeoutMs") ?? 1000;
+        opts.SyncTimeout = opTimeoutMs;
+        opts.AsyncTimeout = opTimeoutMs;
+
         // Sync Connect keeps Program.cs's main shape unchanged; with AbortOnConnectFail=false it returns immediately
         // (a disconnected multiplexer that reconnects in the background) even when Redis is unreachable.
         var multiplexer = ConnectionMultiplexer.Connect(opts);

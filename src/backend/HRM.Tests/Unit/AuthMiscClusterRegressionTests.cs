@@ -42,6 +42,7 @@ using HRM.Application.Features.Auth.Commands;
 using HRM.Application.Features.Auth.DTOs;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Identity;
+using HRM.Infrastructure.Caching;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
@@ -257,6 +258,9 @@ public sealed class AuthMiscClusterRegressionTests
         currentUser.TenantId.Returns(_tenantId);
         currentUser.IsAuthenticated.Returns(true);
 
+        // BUG-116: the service now depends on the shared IMyTenantsCache (which wraps IDistributedCache). Wrap the
+        // spy cache in the REAL MyTenantsCache so the ISSUE-056 assertion below still verifies the same underlying
+        // IDistributedCache.RemoveAsync(exact key) call.
         return new UserManagementService(
             CreateDbContext(_tenantContext),
             _tenantContext,
@@ -264,7 +268,7 @@ public sealed class AuthMiscClusterRegressionTests
             Substitute.For<IPermissionCache>(),
             Substitute.For<IUserManagementNotificationService>(),
             Substitute.For<ILogger<UserManagementService>>(),
-            cache);
+            new MyTenantsCache(cache, Substitute.For<ILogger<MyTenantsCache>>()));
     }
 
     private async Task SeedUserAndTenantAsync(

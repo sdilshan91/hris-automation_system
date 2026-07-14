@@ -49,19 +49,25 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
     private readonly ITenantWelcomeEmailService _welcomeEmail;
     private readonly IConfiguration _configuration;
     private readonly ILogger<TenantProvisioningService> _logger;
+    // BUG-116: invalidates the owner's cached my-tenants entry when a new tenant membership is created (an
+    // EXISTING global user linked as owner would otherwise see a stale list for up to the 5-min TTL). Optional
+    // (nullable, default null) so isolated unit construction that omits it still compiles; DI injects it in production.
+    private readonly IMyTenantsCache? _myTenantsCache;
 
     public TenantProvisioningService(
         AppDbContext db,
         ICurrentUser currentUser,
         ITenantWelcomeEmailService welcomeEmail,
         IConfiguration configuration,
-        ILogger<TenantProvisioningService> logger)
+        ILogger<TenantProvisioningService> logger,
+        IMyTenantsCache? myTenantsCache = null)
     {
         _db = db;
         _currentUser = currentUser;
         _welcomeEmail = welcomeEmail;
         _configuration = configuration;
         _logger = logger;
+        _myTenantsCache = myTenantsCache;
     }
 
     private HashSet<string> ReservedSubdomains => _configuration
@@ -219,6 +225,11 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
 
         // Persist everything atomically (FR-3). EF Core batches one SaveChanges into a single transaction.
         await _db.SaveChangesAsync(cancellationToken);
+
+        // BUG-116: a new membership was created for the owner — drop their cached my-tenants list so it isn't
+        // stale (matters when an EXISTING global user was linked as owner). Fail-soft: never breaks provisioning.
+        if (_myTenantsCache is not null)
+            await _myTenantsCache.InvalidateAsync(user.Id, cancellationToken);
 
         // ── Welcome email (AC-1/FR-4). Non-fatal: the tenant is already committed (§11 partial-failure). ──
         try

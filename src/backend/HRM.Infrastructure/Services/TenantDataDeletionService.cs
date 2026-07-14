@@ -30,11 +30,19 @@ public sealed class TenantDataDeletionService : ITenantDataDeletionService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<TenantDataDeletionService> _logger;
+    // BUG-116: invalidates the my-tenants cache entry of every user whose membership is removed here, so a user
+    // who belongs to OTHER tenants doesn't keep serving a stale list for up to the 5-min TTL. Optional (nullable,
+    // default null) so isolated construction that omits it still compiles; DI injects it in production.
+    private readonly IMyTenantsCache? _myTenantsCache;
 
-    public TenantDataDeletionService(AppDbContext db, ILogger<TenantDataDeletionService> logger)
+    public TenantDataDeletionService(
+        AppDbContext db,
+        ILogger<TenantDataDeletionService> logger,
+        IMyTenantsCache? myTenantsCache = null)
     {
         _db = db;
         _logger = logger;
+        _myTenantsCache = myTenantsCache;
     }
 
     public async Task<Result<TenantDeletionSummary>> DeleteTenantDataAsync(
@@ -59,6 +67,16 @@ public sealed class TenantDataDeletionService : ITenantDataDeletionService
 
         var orderedTypes = GetTenantScopedTypesChildFirst();
         var isRelational = _db.Database.IsRelational();
+
+        // BUG-116: capture the DISTINCT user ids whose memberships are about to be removed, BEFORE the delete —
+        // we invalidate each user's my-tenants cache AFTER the transaction commits (so we never evict then fail
+        // the write). A user who belongs to other tenants would otherwise serve a stale list until the TTL.
+        var affectedUserIds = await _db.UserTenants
+            .IgnoreQueryFilters()
+            .Where(ut => ut.TenantId == tenantId)
+            .Select(ut => ut.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
 
         // BUG-252 (BUG-068 class): a user-initiated BeginTransactionAsync throws under Npgsql's retrying
         // execution strategy ("does not support user-initiated transactions") — the whole atomic delete/redact
@@ -152,6 +170,14 @@ public sealed class TenantDataDeletionService : ITenantDataDeletionService
                 throw;
             }
         });
+
+        // BUG-116: memberships are committed-deleted — drop each affected user's cached my-tenants list. Fail-soft
+        // per user (the invalidator swallows cache errors), so a Redis blip never fails the completed deletion.
+        if (_myTenantsCache is not null)
+        {
+            foreach (var userId in affectedUserIds)
+                await _myTenantsCache.InvalidateAsync(userId, cancellationToken);
+        }
 
         _logger.LogInformation(
             "TenantDataDeletionService: hard-deleted {Rows} row(s) across {Types} type(s) for tenant {TenantId}; " +
