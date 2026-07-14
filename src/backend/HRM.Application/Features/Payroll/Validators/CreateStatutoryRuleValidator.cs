@@ -45,6 +45,11 @@ public sealed class CreateStatutoryRuleValidator : AbstractValidator<CreateStatu
 
             RuleFor(x => x.SocialSecurity)
                 .Null().WithMessage("An income-tax rule cannot carry social-security parameters.");
+
+            // TAX-2: configurable exemptions (income-tax only). Per-item structural checks mirror the
+            // service-layer ValidateExemptions so invalid input is caught in the MediatR pipeline too.
+            When(x => x.Exemptions is not null, () =>
+                RuleForEach(x => x.Exemptions!).SetValidator(new ExemptionInputValidator()));
         });
 
         When(x => x.RuleType != StatutoryRuleType.IncomeTax, () =>
@@ -54,6 +59,10 @@ public sealed class CreateStatutoryRuleValidator : AbstractValidator<CreateStatu
 
             RuleFor(x => x.TaxSlabs)
                 .Empty().WithMessage("Only an income-tax rule may carry tax slabs.");
+
+            RuleFor(x => x.Exemptions)
+                .Must(e => e is null || e.Count == 0)
+                .WithMessage("Only an income-tax rule may carry tax exemptions.");
 
             When(x => x.SocialSecurity is not null, () =>
                 RuleFor(x => x.SocialSecurity!).SetValidator(new SocialSecurityInputValidator()));
@@ -106,5 +115,35 @@ public sealed class SocialSecurityInputValidator : AbstractValidator<SocialSecur
         RuleFor(s => s.ApplicableComponentIds)
             .NotEmpty().When(s => s.ApplicableOn == StatutoryApplicableOn.Custom)
             .WithMessage("At least one component id is required when the contribution applies on Custom components.");
+    }
+}
+
+/// <summary>TAX-2: per-exemption field validation (shared by the create + update validators).</summary>
+public sealed class ExemptionInputValidator : AbstractValidator<ExemptionInput>
+{
+    public ExemptionInputValidator()
+    {
+        RuleFor(e => e.Name)
+            .NotEmpty().WithMessage("Each tax exemption requires a name.")
+            .MaximumLength(100).WithMessage("Exemption name cannot exceed 100 characters.");
+        RuleFor(e => e.CalculationType).IsInEnum().WithMessage("Exemption calculation type is invalid.");
+        RuleFor(e => e.OrderIndex).GreaterThanOrEqualTo(0).WithMessage("Exemption order index cannot be negative.");
+        RuleFor(e => e.Value)
+            .GreaterThanOrEqualTo(0).WithMessage("Exemption value cannot be negative.")
+            .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).WithMessage(StatutoryLimits.MaxMonetaryMessage);
+        // Percentage types: value is a percent → 0..100.
+        RuleFor(e => e.Value)
+            .LessThanOrEqualTo(100)
+            .When(e => e.CalculationType is ExemptionCalculationType.PercentOfGross or ExemptionCalculationType.PercentOfComponent)
+            .WithMessage("A percentage exemption value cannot exceed 100.");
+        // PercentOfComponent requires a target component.
+        RuleFor(e => e.ComponentId)
+            .NotNull()
+            .When(e => e.CalculationType == ExemptionCalculationType.PercentOfComponent)
+            .WithMessage("A component id is required for a percent-of-component exemption.");
+        RuleFor(e => e.MaxAmount!.Value)
+            .GreaterThanOrEqualTo(0).WithMessage("Exemption maximum amount cannot be negative.")
+            .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).WithMessage(StatutoryLimits.MaxMonetaryMessage)
+            .When(e => e.MaxAmount.HasValue);
     }
 }

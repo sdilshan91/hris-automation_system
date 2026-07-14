@@ -60,7 +60,8 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         if (!_tenantContext.IsResolved)
             return Result<StatutoryRuleDto>.Failure("Tenant context is not resolved.", 400);
 
-        var shapeError = ValidateShape(input.RuleType, input.TaxSlabs, input.SocialSecurity);
+        var exemptions = input.Exemptions ?? [];
+        var shapeError = ValidateShape(input.RuleType, input.TaxSlabs, input.SocialSecurity, exemptions);
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
 
@@ -99,6 +100,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             IsActive = input.IsActive,
             IsDeleted = false,
             TaxSlabs = BuildSlabs(ruleId, input.TaxSlabs),
+            Exemptions = BuildExemptions(ruleId, exemptions),
             SocialSecurityRule = BuildSocialSecurity(ruleId, input.SocialSecurity),
         };
 
@@ -139,12 +141,14 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
 
         var rule = await _dbContext.StatutoryRules
             .Include(r => r.TaxSlabs)
+            .Include(r => r.Exemptions)
             .Include(r => r.SocialSecurityRule)
             .FirstOrDefaultAsync(r => r.Id == ruleId, cancellationToken);
         if (rule is null)
             return Result<StatutoryRuleDto>.Failure("Statutory rule not found.", 404);
 
-        var shapeError = ValidateShape(rule.RuleType, input.TaxSlabs, input.SocialSecurity);
+        var exemptions = input.Exemptions ?? [];
+        var shapeError = ValidateShape(rule.RuleType, input.TaxSlabs, input.SocialSecurity, exemptions);
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
 
@@ -194,6 +198,12 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         var newSlabs = BuildSlabs(ruleId, input.TaxSlabs);
         _dbContext.TaxSlabs.AddRange(newSlabs);
         rule.TaxSlabs = newSlabs;
+
+        // TAX-2: replace the configurable exemptions wholesale (same BUG-073 explicit-Add pattern as slabs).
+        _dbContext.StatutoryExemptions.RemoveRange(rule.Exemptions);
+        var newExemptions = BuildExemptions(ruleId, exemptions);
+        _dbContext.StatutoryExemptions.AddRange(newExemptions);
+        rule.Exemptions = newExemptions;
 
         if (rule.SocialSecurityRule is not null)
             _dbContext.SocialSecurityRules.Remove(rule.SocialSecurityRule);
@@ -324,6 +334,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
 
         var sourceRules = await _dbContext.StatutoryRules.AsNoTracking()
             .Include(r => r.TaxSlabs)
+            .Include(r => r.Exemptions)
             .Include(r => r.SocialSecurityRule)
             .Where(r => r.FiscalYear == source)
             .ToListAsync(cancellationToken);
@@ -369,6 +380,21 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
                     OrderIndex = s.OrderIndex,
                     IsDeleted = false,
                 }).ToList(),
+                // TAX-2: carry the configurable exemptions across the clone (children, mirrors TaxSlabs).
+                Exemptions = src.Exemptions.Select(e => new StatutoryExemption
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    StatutoryRuleId = cloneId,
+                    Name = e.Name,
+                    CalculationType = e.CalculationType,
+                    Value = e.Value,
+                    ComponentId = e.ComponentId,
+                    MaxAmount = e.MaxAmount,
+                    IsAnnual = e.IsAnnual,
+                    OrderIndex = e.OrderIndex,
+                    IsDeleted = false,
+                }).ToList(),
                 SocialSecurityRule = src.SocialSecurityRule is null ? null : new SocialSecurityRule
                 {
                     Id = BaseEntity.NewUuidV7(),
@@ -411,6 +437,11 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             return Result<StatutoryCalculationResultDto>.Failure("Tenant context is not resolved.", 400);
 
         var basic = input.MonthlyBasic ?? input.MonthlyGross;
+        // TAX-2 preview limitation: the what-if takes only gross + basic, so it cannot map a ComponentId to an
+        // amount → a PercentOfComponent EXEMPTION resolves to 0 here (while the real run applies it from the
+        // slip's component lines). FlatAmount + PercentOfGross exemptions preview exactly. A full component-aware
+        // preview would need the query to accept per-component amounts (tracked follow-up). ComponentAmountsById
+        // stays null.
         var wage = new StatutoryWageInput(
             MonthlyGross: input.MonthlyGross,
             MonthlyBasic: basic,
@@ -458,7 +489,8 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
     /// contiguity (FR-6) is re-checked so a non-validated caller (e.g. the resolver) can't store gaps.
     /// </summary>
     private static (string error, string code)? ValidateShape(
-        StatutoryRuleType ruleType, IReadOnlyList<TaxSlabInput> slabs, SocialSecurityInputDto? social)
+        StatutoryRuleType ruleType, IReadOnlyList<TaxSlabInput> slabs, SocialSecurityInputDto? social,
+        IReadOnlyList<ExemptionInput> exemptions)
     {
         if (ruleType == StatutoryRuleType.IncomeTax)
         {
@@ -477,8 +509,41 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
                 return ($"A {ruleType} rule requires social-security parameters.", "missing_social_security");
             if (slabs.Count > 0)
                 return ($"A {ruleType} rule cannot carry tax slabs.", "unexpected_tax_slabs");
+
+            // TAX-2: exemptions reduce the INCOME-TAX taxable base only — never a social-security rule.
+            if (exemptions.Count > 0)
+                return ("Only an income-tax rule may carry tax exemptions.", "unexpected_exemptions");
         }
 
+        // TAX-2: per-exemption structural checks (mirrors the FluentValidation gate, re-checked defensively).
+        var exemptionError = ValidateExemptions(exemptions);
+        if (exemptionError is not null)
+            return exemptionError.Value;
+
+        return null;
+    }
+
+    /// <summary>
+    /// TAX-2: validates each configurable exemption. A PercentOfComponent exemption requires a ComponentId;
+    /// Value must be non-negative (and 0..100 for percentage types); MaxAmount must be non-negative when present.
+    /// </summary>
+    private static (string error, string code)? ValidateExemptions(IReadOnlyList<ExemptionInput> exemptions)
+    {
+        foreach (var e in exemptions)
+        {
+            if (string.IsNullOrWhiteSpace(e.Name))
+                return ("Each tax exemption requires a name.", "exemption_name_required");
+            if (e.Value < 0m)
+                return ($"Tax exemption '{e.Name}': value cannot be negative.", "exemption_value_negative");
+            if (e.CalculationType is ExemptionCalculationType.PercentOfGross or ExemptionCalculationType.PercentOfComponent
+                && e.Value > 100m)
+                return ($"Tax exemption '{e.Name}': a percentage value cannot exceed 100.", "exemption_percent_out_of_range");
+            if (e.CalculationType == ExemptionCalculationType.PercentOfComponent && e.ComponentId is null)
+                return ($"Tax exemption '{e.Name}': a component id is required for a percent-of-component exemption.",
+                    "exemption_component_required");
+            if (e.MaxAmount is < 0m)
+                return ($"Tax exemption '{e.Name}': maximum amount cannot be negative.", "exemption_max_negative");
+        }
         return null;
     }
 
@@ -520,6 +585,23 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             IsDeleted = false,
         }).ToList();
 
+    /// <summary>TAX-2: builds the exemption children, stamped with tenant + rule id, re-indexed by OrderIndex.</summary>
+    private List<StatutoryExemption> BuildExemptions(Guid ruleId, IReadOnlyList<ExemptionInput> exemptions)
+        => exemptions.OrderBy(e => e.OrderIndex).Select((e, i) => new StatutoryExemption
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            StatutoryRuleId = ruleId,
+            Name = e.Name.Trim(),
+            CalculationType = e.CalculationType,
+            Value = e.Value,
+            ComponentId = e.ComponentId,
+            MaxAmount = e.MaxAmount,
+            IsAnnual = e.IsAnnual,
+            OrderIndex = i,
+            IsDeleted = false,
+        }).ToList();
+
     private SocialSecurityRule? BuildSocialSecurity(Guid ruleId, SocialSecurityInputDto? social)
         => social is null ? null : new SocialSecurityRule
         {
@@ -540,6 +622,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
     {
         var rule = await _dbContext.StatutoryRules.AsNoTracking()
             .Include(r => r.TaxSlabs)
+            .Include(r => r.Exemptions)
             .Include(r => r.SocialSecurityRule)
             .FirstAsync(r => r.Id == ruleId, cancellationToken);
 
@@ -564,6 +647,18 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             SlabTo = s.SlabTo,
             RatePercentage = s.RatePercentage,
             OrderIndex = s.OrderIndex,
+        }).ToList(),
+        Exemptions = r.Exemptions.OrderBy(e => e.OrderIndex).Select(e => new ExemptionDto
+        {
+            Id = e.Id,
+            Name = e.Name,
+            CalculationType = e.CalculationType,
+            CalculationTypeName = e.CalculationType.ToString(),
+            Value = e.Value,
+            ComponentId = e.ComponentId,
+            MaxAmount = e.MaxAmount,
+            IsAnnual = e.IsAnnual,
+            OrderIndex = e.OrderIndex,
         }).ToList(),
         SocialSecurity = r.SocialSecurityRule is null ? null : new SocialSecurityRuleDto
         {

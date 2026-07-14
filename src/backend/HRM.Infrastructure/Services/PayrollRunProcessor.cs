@@ -455,12 +455,24 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         // EPF/ETF fell through to gross and over-deducted. Shared with the OT rate base via ResolvedBasic.
         var basic = ResolvedBasic(result, inputs);
 
+        // TAX-2: map each earning/reimbursement line's ComponentId → its (pro-rated) amount so a
+        // PercentOfComponent exemption can resolve the component it is a percentage of. Last write wins on a
+        // duplicate component id (defensive; a structure has one line per component).
+        var componentAmounts = new Dictionary<Guid, decimal>();
+        foreach (var line in result.Lines)
+        {
+            if (line.ComponentId == Guid.Empty)
+                continue;
+            if (line.Type is SalaryComponentType.Earning or SalaryComponentType.Reimbursement)
+                componentAmounts[line.ComponentId] = line.Amount;
+        }
+
         var wage = new StatutoryWageInput(
             MonthlyGross: result.GrossEarnings,
             MonthlyBasic: basic,
             ExemptEarnings: 0m,
             DeclaredExemptions: 0m,
-            ComponentAmountsById: null);
+            ComponentAmountsById: componentAmounts);
 
         Result<StatutoryDeductions> resolved;
         try

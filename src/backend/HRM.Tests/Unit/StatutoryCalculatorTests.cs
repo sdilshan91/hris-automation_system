@@ -10,6 +10,7 @@
 // ============================================================================
 
 using FluentAssertions;
+using HRM.Domain.Enums;
 using HRM.Domain.Payroll;
 
 namespace HRM.Tests.Unit;
@@ -124,4 +125,46 @@ public sealed class StatutoryCalculatorTests
         result.EmployeeContribution.Should().Be(0m);
         result.EmployerContribution.Should().Be(0m);
     }
+
+    // ── TAX-2: ComputeExemption (per-period monthly amount) ──────────────────────
+
+    [Fact]
+    public void ComputeExemption_FlatAmount_PerPeriod_ReturnsValueAsIs()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.FlatAmount, 250_000m, 750_000m, null, null, isAnnual: false)
+            .Should().Be(250_000m);
+
+    [Fact]
+    public void ComputeExemption_FlatAmount_Annual_IsDividedByTwelve()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.FlatAmount, 3_000_000m, 750_000m, null, null, isAnnual: true)
+            .Should().Be(250_000m);
+
+    [Fact]
+    public void ComputeExemption_PercentOfGross_TakesPercentOfMonthlyGross()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.PercentOfGross, 20m, 750_000m, null, null, isAnnual: false)
+            .Should().Be(150_000m);
+
+    [Fact]
+    public void ComputeExemption_PercentOfComponent_TakesPercentOfComponentAmount()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.PercentOfComponent, 10m, 750_000m, componentAmount: 400_000m, null, isAnnual: false)
+            .Should().Be(40_000m);
+
+    [Fact]
+    public void ComputeExemption_PercentOfComponent_NullComponentAmount_IsZero()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.PercentOfComponent, 10m, 750_000m, componentAmount: null, null, isAnnual: false)
+            .Should().Be(0m);
+
+    [Fact]
+    public void ComputeExemption_MaxAmount_CapsTheComputedExemption()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.PercentOfGross, 50m, 750_000m, null, maxAmount: 250_000m, isAnnual: false)
+            .Should().Be(250_000m); // raw 375,000 capped at 250,000.
+
+    [Fact]
+    public void ComputeExemption_AnnualCap_IsAlsoDividedByTwelve()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.FlatAmount, 6_000_000m, 750_000m, null, maxAmount: 3_000_000m, isAnnual: true)
+            .Should().Be(250_000m); // raw 6M/12=500k, cap 3M/12=250k → 250k.
+
+    [Fact]
+    public void ComputeExemption_UnderCap_ReturnsRaw()
+        => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.PercentOfGross, 10m, 750_000m, null, maxAmount: 250_000m, isAnnual: false)
+            .Should().Be(75_000m); // raw 75,000 < cap → uncapped.
 }

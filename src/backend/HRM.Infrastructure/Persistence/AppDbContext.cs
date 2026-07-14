@@ -116,6 +116,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<StatutoryRule> StatutoryRules => Set<StatutoryRule>();
     public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
+    public DbSet<StatutoryExemption> StatutoryExemptions => Set<StatutoryExemption>();
     public DbSet<SocialSecurityRule> SocialSecurityRules => Set<SocialSecurityRule>();
     public DbSet<AppraisalCycle> AppraisalCycles => Set<AppraisalCycle>();
     public DbSet<CyclePhase> CyclePhases => Set<CyclePhase>();
@@ -457,6 +458,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-PAY-006: TaxSlab tenant isolation + soft-delete filter (AC-4).
         modelBuilder.Entity<TaxSlab>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // TAX-2: StatutoryExemption tenant isolation + soft-delete filter (mirrors TaxSlab).
+        modelBuilder.Entity<StatutoryExemption>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PAY-006: SocialSecurityRule tenant isolation + soft-delete filter (AC-4).
