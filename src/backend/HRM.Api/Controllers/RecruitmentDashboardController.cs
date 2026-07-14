@@ -10,10 +10,11 @@ namespace HRM.Api.Controllers;
 
 /// <summary>
 /// Recruiter/HR-facing recruitment dashboard + analytics endpoints (US-REC-009). Read-only aggregation
-/// over the existing recruitment data, tenant-scoped via the EF global query filter (AC-5). Both endpoints
-/// require <c>Recruitment.View</c> — the story references <c>Reports.View.*</c> which is not a concrete
-/// permission in <c>PermissionCatalog</c>; <c>Recruitment.View</c> is the existing recruiter read
-/// permission and is reused (same posture as the rest of the module).
+/// over the existing recruitment data, tenant-scoped via the EF global query filter (AC-5). Entry is gated
+/// (OR semantics) by <c>Recruitment.View</c> / <c>Reports.View.All</c> (both = full-tenant access) or
+/// <c>Reports.View.Department</c> (BR-5 / ISSUE-137 = auto-restricted to the caller's OWN department, with no
+/// ability to widen via the <c>departmentId</c> param). The controller only grants ENTRY; the SERVICE
+/// (<c>RecruitmentDashboardService.ResolveVacancyScopeAsync</c>) decides the actual data scope.
 ///
 /// DEFERRALS (documented in the service): PDF export (FR-8 — CSV + XLSX only here), async Hangfire export
 /// for large datasets (NFR-5), Redis pre-aggregation + the materialized view (NFR-3), and Postgres RLS
@@ -39,7 +40,7 @@ public sealed class RecruitmentDashboardController : ControllerBase
     /// last 30 days (UTC). Requires Recruitment.View.
     /// </summary>
     [HttpGet("dashboard")]
-    [RequirePermission("Recruitment.View")]
+    [RequirePermission("Recruitment.View", "Reports.View.All", "Reports.View.Department")]
     [ProducesResponseType(typeof(ApiResponse<RecruitmentDashboardDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetDashboard(
@@ -71,7 +72,7 @@ public sealed class RecruitmentDashboardController : ControllerBase
     /// download (FR-8). PDF + async large-dataset export are deferred. Requires Recruitment.View.
     /// </summary>
     [HttpGet("dashboard/export")]
-    [RequirePermission("Recruitment.View")]
+    [RequirePermission("Recruitment.View", "Reports.View.All", "Reports.View.Department")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportDashboard(

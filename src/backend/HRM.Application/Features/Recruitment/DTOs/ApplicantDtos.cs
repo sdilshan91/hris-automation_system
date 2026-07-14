@@ -26,6 +26,19 @@ public sealed record ApplicantDto
     public string SourceName { get; init; } = string.Empty;
     public bool IsInternal { get; init; }
     public Guid? LinkedEmployeeId { get; init; }
+
+    /// <summary>
+    /// ISSUE-232: the employee record this applicant was converted into (US-REC-010 convert-to-hire), or
+    /// null if not yet converted. Lets the recruiter UI render a "Converted" badge/link on the read path.
+    /// </summary>
+    public Guid? ConvertedToEmployeeId { get; init; }
+
+    /// <summary>ISSUE-232: convenience flag — true when <see cref="ConvertedToEmployeeId"/> is set.</summary>
+    public bool IsConverted { get; init; }
+
+    /// <summary>ISSUE-232: timestamp of the convert-to-employee action, or null if not converted.</summary>
+    public DateTime? ConvertedAt { get; init; }
+
     public DateTime AppliedAt { get; init; }
     public DateTime CreatedAt { get; init; }
 
@@ -56,6 +69,16 @@ public sealed record ApplicantListItemDto
     public ApplicationSource Source { get; init; }
     public string SourceName { get; init; } = string.Empty;
     public bool IsInternal { get; init; }
+
+    /// <summary>ISSUE-232: the employee this applicant was converted into (US-REC-010), or null.</summary>
+    public Guid? ConvertedToEmployeeId { get; init; }
+
+    /// <summary>ISSUE-232: convenience flag — true when <see cref="ConvertedToEmployeeId"/> is set.</summary>
+    public bool IsConverted { get; init; }
+
+    /// <summary>ISSUE-232: timestamp of the convert-to-employee action, or null if not converted.</summary>
+    public DateTime? ConvertedAt { get; init; }
+
     public DateTime AppliedAt { get; init; }
 }
 

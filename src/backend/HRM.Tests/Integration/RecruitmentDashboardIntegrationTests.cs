@@ -46,6 +46,17 @@ public sealed class RecruitmentDashboardIntegrationTests
     private readonly Guid _vacancyA = Guid.NewGuid();
     private readonly Guid _vacancyB = Guid.NewGuid();
 
+    // ── ISSUE-137 (BR-5) department-scope fixture: a dedicated tenant with two departments so the existing
+    //    _tenantA / _tenantB seeds (and every assertion against them) stay untouched. _deptEng gets 3
+    //    applicants, _deptOther gets 5; the dept-scoped caller is an employee in _deptEng. ──
+    private readonly Guid _tenantScoped = Guid.NewGuid();
+    private readonly Guid _deptOther = Guid.NewGuid();
+    private readonly Guid _scopedEngVacancy = Guid.NewGuid();
+    private readonly Guid _scopedOtherVacancy = Guid.NewGuid();
+    private readonly Guid _scopedManagerUserId = Guid.NewGuid();
+    private const int ScopedEngApplicants = 3;
+    private const int ScopedOtherApplicants = 5;
+
     // The reporting period: April 2026 (a fully-completed month in the past).
     private static readonly DateOnly From = new(2026, 4, 1);
     private static readonly DateOnly To = new(2026, 4, 30);
@@ -54,6 +65,7 @@ public sealed class RecruitmentDashboardIntegrationTests
     public RecruitmentDashboardIntegrationTests()
     {
         Seed();
+        SeedScopedTenant();
     }
 
     private sealed class MutableTenantContext : ITenantContext
@@ -88,7 +100,8 @@ public sealed class RecruitmentDashboardIntegrationTests
         public bool ImpersonationReadOnly => false;
     }
 
-    private IMediator BuildPipeline(Guid tenantId)
+    private IMediator BuildPipeline(
+        Guid tenantId, IReadOnlyList<string>? permissions = null, Guid? userId = null)
     {
         var tenantContext = new MutableTenantContext { TenantId = tenantId };
 
@@ -97,9 +110,9 @@ public sealed class RecruitmentDashboardIntegrationTests
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton<ICurrentUser>(new FakeCurrentUser
         {
-            UserId = Guid.NewGuid(),
+            UserId = userId ?? Guid.NewGuid(),
             TenantId = tenantId,
-            Permissions = new[] { PermissionCatalog.Recruitment.View },
+            Permissions = permissions ?? new[] { PermissionCatalog.Recruitment.View },
         });
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IRecruitmentDashboardService, RecruitmentDashboardService>();
@@ -251,6 +264,65 @@ public sealed class RecruitmentDashboardIntegrationTests
     private async Task<RecruitmentDashboardDto> GetDashboard(Guid tenant, RecruitmentDashboardFilter filter)
     {
         var mediator = BuildPipeline(tenant);
+        var result = await mediator.Send(new RecruitmentDashboardQuery(filter));
+        result.IsSuccess.Should().BeTrue(result.Error);
+        return result.Value!;
+    }
+
+    // ── ISSUE-137 (BR-5) department-scope fixture + helpers ─────────────────────────────────────────
+
+    /// <summary>
+    /// Seeds <see cref="_tenantScoped"/> with two departments: <see cref="_deptEng"/> (3 applicants on an
+    /// Open vacancy) and <see cref="_deptOther"/> (5 applicants on an Open vacancy), plus an employee in
+    /// _deptEng whose UserId is <see cref="_scopedManagerUserId"/> (the dept-scoped caller). All applicants
+    /// applied in-period so a period query counts them. Kept entirely separate from _tenantA/_tenantB.
+    /// </summary>
+    private void SeedScopedTenant()
+    {
+        using var db = Db(_tenantScoped);
+
+        db.Vacancies.Add(new Vacancy
+        {
+            Id = _scopedEngVacancy, TenantId = _tenantScoped, ReferenceNumber = "VAC-2026-9001",
+            Title = "Eng Role", Status = VacancyStatus.Open, DepartmentId = _deptEng,
+            Headcount = 1, Description = "<p>eng</p>",
+        });
+        db.Vacancies.Add(new Vacancy
+        {
+            Id = _scopedOtherVacancy, TenantId = _tenantScoped, ReferenceNumber = "VAC-2026-9002",
+            Title = "Other Role", Status = VacancyStatus.Open, DepartmentId = _deptOther,
+            Headcount = 1, Description = "<p>other</p>",
+        });
+
+        // The dept-scoped caller: an employee in _deptEng linked to _scopedManagerUserId.
+        db.Employees.Add(new Employee
+        {
+            Id = Guid.NewGuid(), TenantId = _tenantScoped, UserId = _scopedManagerUserId,
+            EmployeeNo = "EMP-9001", FirstName = "Dept", LastName = "Manager",
+            Email = "deptmgr@t.com", DepartmentId = _deptEng,
+        });
+
+        for (int i = 0; i < ScopedEngApplicants; i++)
+            db.Applicants.Add(ScopedApplicant(_scopedEngVacancy, $"ENG-{i:D4}", i));
+        for (int i = 0; i < ScopedOtherApplicants; i++)
+            db.Applicants.Add(ScopedApplicant(_scopedOtherVacancy, $"OTH-{i:D4}", i));
+
+        db.SaveChanges();
+    }
+
+    private Applicant ScopedApplicant(Guid vacancyId, string suffix, int i) => new()
+    {
+        Id = Guid.NewGuid(), TenantId = _tenantScoped, VacancyId = vacancyId,
+        ApplicationReferenceNumber = $"APP-2026-{suffix}",
+        FirstName = $"S{i}", LastName = "Scoped", Email = $"s{suffix}@t.com",
+        ResumeStorageKey = "k", ResumeFileName = "cv.pdf",
+        Stage = ApplicantStage.Applied, Source = ApplicationSource.Public, AppliedAt = AppliedAtBase,
+    };
+
+    private async Task<RecruitmentDashboardDto> GetDashboardAs(
+        Guid tenant, RecruitmentDashboardFilter filter, IReadOnlyList<string> permissions, Guid? userId)
+    {
+        var mediator = BuildPipeline(tenant, permissions, userId);
         var result = await mediator.Send(new RecruitmentDashboardQuery(filter));
         result.IsSuccess.Should().BeTrue(result.Error);
         return result.Value!;
@@ -414,5 +486,101 @@ public sealed class RecruitmentDashboardIntegrationTests
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("invalid_format");
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  ISSUE-137 (BR-5): department-scoped recruitment dashboard
+    // ══════════════════════════════════════════════════════════════
+
+    private static string[] DeptScopeOnly => new[] { PermissionCatalog.Reports.ViewDepartment };
+
+    [Fact]
+    public async Task DeptScoped_caller_sees_only_own_department_metrics_ISSUE137()
+    {
+        // Caller holds ONLY Reports.View.Department and is an employee in _deptEng. The dashboard must
+        // auto-restrict to _deptEng's 3 applicants and exclude _deptOther's 5.
+        var d = await GetDashboardAs(_tenantScoped, PeriodFilter(), DeptScopeOnly, _scopedManagerUserId);
+
+        d.Kpis.TotalApplicants.Should().Be(ScopedEngApplicants);
+        d.Funnel.Single(f => f.Stage == "Applied").Count.Should().Be(ScopedEngApplicants);
+        d.Kpis.OpenVacancies.Should().Be(1); // only _deptEng's Open vacancy is in scope, not _deptOther's
+    }
+
+    [Fact]
+    public async Task DeptScoped_caller_cannot_widen_via_departmentId_param_ISSUE137()
+    {
+        // Same dept-scoped caller, but supplies the OTHER department's id — the param must NOT widen scope.
+        var filter = PeriodFilter(departmentId: _deptOther);
+        var d = await GetDashboardAs(_tenantScoped, filter, DeptScopeOnly, _scopedManagerUserId);
+
+        // Still clamped to their OWN department (_deptEng = 3), NOT _deptOther (5).
+        d.Kpis.TotalApplicants.Should().Be(ScopedEngApplicants);
+        d.Kpis.TotalApplicants.Should().NotBe(ScopedOtherApplicants);
+        d.Kpis.OpenVacancies.Should().Be(1); // and the vacancy count doesn't leak _deptOther's Open vacancy either.
+    }
+
+    [Fact]
+    public async Task DeptScoped_caller_cannot_widen_via_vacancyId_param_ISSUE137()
+    {
+        // Second anti-widening vector: the dept-scoped caller (in _deptEng) supplies a VacancyId that belongs to
+        // _deptOther. The own-department clamp INTERSECTS the supplied vacancy with the caller's own-dept set, so
+        // an out-of-department vacancy resolves to NOTHING — the caller cannot reach _deptOther's data via VacancyId.
+        var filter = PeriodFilter(vacancyId: _scopedOtherVacancy);
+        var d = await GetDashboardAs(_tenantScoped, filter, DeptScopeOnly, _scopedManagerUserId);
+
+        d.Kpis.TotalApplicants.Should().Be(0);   // _scopedOtherVacancy is outside _deptEng → empty scope, not _deptOther's 5.
+        d.Kpis.OpenVacancies.Should().Be(0);
+        d.Funnel.Single(f => f.Stage == "Applied").Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DeptScoped_caller_with_no_employee_record_gets_empty_dashboard_failclosed_ISSUE137()
+    {
+        // Fail-closed: a Reports.View.Department caller whose user has NO employee row sees NOTHING —
+        // never the whole tenant.
+        var d = await GetDashboardAs(_tenantScoped, PeriodFilter(), DeptScopeOnly, Guid.NewGuid());
+
+        d.Kpis.TotalApplicants.Should().Be(0);
+        d.Kpis.OpenVacancies.Should().Be(0);
+        d.Funnel.Single(f => f.Stage == "Applied").Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task FullAccess_caller_sees_whole_tenant_unchanged_ISSUE137()
+    {
+        // Recruitment.View (full access) sees BOTH departments (3 + 5 = 8).
+        var full = await GetDashboardAs(
+            _tenantScoped, PeriodFilter(), new[] { PermissionCatalog.Recruitment.View }, _scopedManagerUserId);
+        full.Kpis.TotalApplicants.Should().Be(ScopedEngApplicants + ScopedOtherApplicants);
+
+        // Reports.View.All is also full access.
+        var viewAll = await GetDashboardAs(
+            _tenantScoped, PeriodFilter(), new[] { PermissionCatalog.Reports.ViewAll }, _scopedManagerUserId);
+        viewAll.Kpis.TotalApplicants.Should().Be(ScopedEngApplicants + ScopedOtherApplicants);
+    }
+
+    [Fact]
+    public async Task FullAccess_caller_departmentId_param_filters_normally_ISSUE137()
+    {
+        // A full-access caller CAN drill into a specific department via the param (unchanged FR-7 behaviour).
+        var d = await GetDashboardAs(
+            _tenantScoped, PeriodFilter(departmentId: _deptOther),
+            new[] { PermissionCatalog.Recruitment.View }, _scopedManagerUserId);
+
+        d.Kpis.TotalApplicants.Should().Be(ScopedOtherApplicants);
+    }
+
+    [Fact]
+    public async Task DeptScoped_caller_export_is_scoped_to_own_department_ISSUE137()
+    {
+        // The export must route through the same scope resolution — the dept-scoped caller's file reflects
+        // only their _deptEng data (3 applicants), never the whole tenant (8).
+        var mediator = BuildPipeline(_tenantScoped, DeptScopeOnly, _scopedManagerUserId);
+        var result = await mediator.Send(new ExportRecruitmentDashboardQuery(PeriodFilter(), "csv"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var csv = System.Text.Encoding.UTF8.GetString(result.Value!.FileContent);
+        csv.Should().Contain($"Total Applicants,{ScopedEngApplicants}");
+        csv.Should().NotContain($"Total Applicants,{ScopedEngApplicants + ScopedOtherApplicants}");
     }
 }

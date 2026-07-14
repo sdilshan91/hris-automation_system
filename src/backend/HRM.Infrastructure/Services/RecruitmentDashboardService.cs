@@ -4,6 +4,7 @@ using ClosedXML.Excel;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Recruitment.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -23,6 +24,7 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
 {
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<RecruitmentDashboardService> _logger;
 
     /// <summary>The pipeline funnel order (FR-2/AC-3). Rejected is NOT a funnel stage.</summary>
@@ -40,10 +42,12 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
     public RecruitmentDashboardService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         ILogger<RecruitmentDashboardService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -572,11 +576,61 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
     }
 
     /// <summary>
-    /// Resolves the set of in-scope vacancy ids for the optional dept/vacancy filters (FR-7). Returns null
-    /// when there is no restriction (use all the tenant's vacancies). A specific vacancy filter takes
-    /// precedence over the department filter.
+    /// Resolves the set of in-scope vacancy ids for the dashboard (FR-7 + BR-5 / ISSUE-137), honouring the
+    /// caller's authorization scope. Two scopes, mirroring <c>HrReportService.ResolveScopeAsync</c>:
+    ///
+    ///   • FULL access (holds <c>Recruitment.View</c> OR <c>Reports.View.All</c>): behaviour UNCHANGED — the
+    ///     optional caller-supplied VacancyId/DepartmentId filters apply, and null (no filter) = whole tenant.
+    ///
+    ///   • DEPARTMENT-scoped only (holds <c>Reports.View.Department</c> but NEITHER full perm): metrics are
+    ///     auto-restricted to the caller's OWN department and can NEVER be widened via the departmentId param
+    ///     (clamp, not trust). FAIL-CLOSED: a caller with no resolvable employee/department gets an EMPTY set
+    ///     (zero vacancies), never null (never the whole tenant). A supplied VacancyId is INTERSECTED with the
+    ///     own-department set, so an out-of-department vacancy resolves to nothing.
+    ///
+    /// Return contract: <c>null</c> = no restriction (whole tenant) — used ONLY by the full-access path;
+    /// an empty set = "scoped to nothing". The empty-vs-null distinction is load-bearing.
     /// </summary>
     private async Task<HashSet<Guid>?> ResolveVacancyScopeAsync(
+        RecruitmentDashboardFilter filter, CancellationToken ct)
+    {
+        var perms = _currentUser?.Permissions ?? [];
+        bool hasFullAccess = perms.Contains(PermissionCatalog.Recruitment.View)
+            || perms.Contains(PermissionCatalog.Reports.ViewAll);
+
+        if (hasFullAccess)
+            return await ResolveFullAccessScopeAsync(filter, ct);
+
+        // ── Department-scoped only (BR-5 / ISSUE-137) ──
+        // FAIL-CLOSED: no employee / no resolvable department → empty scope (zero vacancies), never whole-tenant.
+        var me = await GetCurrentEmployeeAsync(ct);
+        if (me is null)
+        {
+            _logger.LogWarning(
+                "Department-scoped recruitment dashboard: no employee record for user {UserId} — returning empty scope (fail-closed).",
+                _currentUser?.UserId);
+            return new HashSet<Guid>();
+        }
+
+        // ALWAYS scope to the caller's OWN department, IGNORING any supplied departmentId (anti-widening).
+        var deptVacancyIds = (await _dbContext.Vacancies.AsNoTracking()
+                .Where(v => v.DepartmentId == me.DepartmentId)
+                .Select(v => v.Id)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        // A supplied VacancyId can only NARROW within the own-department set, never widen out of it.
+        if (filter.VacancyId is { } scopedVacancyId)
+            deptVacancyIds.IntersectWith(new[] { scopedVacancyId });
+
+        return deptVacancyIds;
+    }
+
+    /// <summary>
+    /// Full-access scope resolution (unchanged pre-ISSUE-137 behaviour): a specific vacancy filter takes
+    /// precedence over the department filter; null = no restriction (all the tenant's vacancies).
+    /// </summary>
+    private async Task<HashSet<Guid>?> ResolveFullAccessScopeAsync(
         RecruitmentDashboardFilter filter, CancellationToken ct)
     {
         if (filter.VacancyId is { } vacancyId)
@@ -592,6 +646,19 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves the acting caller's own employee record (for the BR-5 department scope). Mirrors
+    /// <c>HrReportService</c>/<c>GoalProgressService</c>. Returns null when no employee row matches the user.
+    /// </summary>
+    private async Task<Employee?> GetCurrentEmployeeAsync(CancellationToken ct)
+    {
+        if (_currentUser is null)
+            return null;
+
+        return await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, ct);
     }
 
     private async Task<Dictionary<Guid, DateTime>> AppliedAtLookupAsync(
