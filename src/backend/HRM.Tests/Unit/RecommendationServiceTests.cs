@@ -338,14 +338,16 @@ public sealed class RecommendationServiceTests
     // ── FR-8/BR-4: budget soft warning ──────────────────────────────────
 
     [Fact]
-    public async Task Budget_overrun_is_a_soft_warning_not_a_hard_block()
+    public async Task Budget_overrun_with_a_justification_is_a_soft_warning_not_a_hard_block()
     {
         await SeedAsync();
         var budget = (await Service(HrUser()).SaveBudgetAsync(
             new SaveBudgetInput(_cycleId, "Bonus pool", 1000m, "USD"))).Value!;
 
+        // ISSUE-145: a justification is present, so proceeding OVER budget is allowed (soft warning, not a cap).
         var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
-            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 1500m, budgetId: budget.Id), null, null))).Value!;
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 1500m, budgetId: budget.Id),
+            "Exceptional impact — over-budget approved by CFO", null))).Value!;
 
         // Submitting a 1500 bonus against a 1000 budget SUCCEEDS (BR-4 soft warning, not a block).
         var submit = await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(rec.Id, [], null));
@@ -355,6 +357,52 @@ public sealed class RecommendationServiceTests
         after.ConsumedAmount.Should().Be(1500m);
         after.IsExceeded.Should().BeTrue();
         after.RemainingAmount.Should().Be(-500m);
+    }
+
+    [Fact]
+    public async Task ISSUE145_over_budget_submit_without_a_justification_is_rejected_and_does_not_charge()
+    {
+        await SeedAsync();
+        var budget = (await Service(HrUser()).SaveBudgetAsync(
+            new SaveBudgetInput(_cycleId, "Bonus pool", 100000m, "USD"))).Value!;
+
+        // A 90k bonus (within the 100k budget) submits fine and charges the budget.
+        var within = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 90000m, budgetId: budget.Id), null, null))).Value!;
+        (await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(within.Id, [], null))).IsSuccess.Should().BeTrue();
+
+        // A further 20k bonus (no justification) would push consumed to 110k > 100k ⇒ BR-4 gate: 400, not charged.
+        var over = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _midPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 20000m, budgetId: budget.Id), null, null))).Value!;
+        var rejected = await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(over.Id, [], null));
+        rejected.IsFailure.Should().BeTrue();
+        rejected.StatusCode.Should().Be(400);
+        rejected.ErrorCode.Should().Be("over_budget_requires_justification");
+
+        // The rejected submit must NOT have consumed the budget — consumed stays at the 90k first charge.
+        (await Service(HrUser()).GetBudgetAsync(_cycleId)).Value!.ConsumedAmount.Should().Be(90000m);
+    }
+
+    [Fact]
+    public async Task ISSUE145_over_budget_submit_with_a_justification_succeeds_and_charges()
+    {
+        await SeedAsync();
+        var budget = (await Service(HrUser()).SaveBudgetAsync(
+            new SaveBudgetInput(_cycleId, "Bonus pool", 100000m, "USD"))).Value!;
+
+        var within = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 90000m, budgetId: budget.Id), null, null))).Value!;
+        (await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(within.Id, [], null))).IsSuccess.Should().BeTrue();
+
+        // Same 20k over-budget bonus, but WITH a justification ⇒ soft warning, proceeds and charges to 110k.
+        var over = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _midPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 20000m, budgetId: budget.Id),
+            "Retention-critical hire", null))).Value!;
+        (await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(over.Id, [], null))).IsSuccess.Should().BeTrue();
+
+        var after = (await Service(HrUser()).GetBudgetAsync(_cycleId)).Value!;
+        after.ConsumedAmount.Should().Be(110000m);
+        after.IsExceeded.Should().BeTrue();
     }
 
     // ── AC-4: summary stats ─────────────────────────────────────────────

@@ -113,10 +113,12 @@ public sealed class GoalProgressService : IGoalProgressService
         if (attachments.Any(a => a.SizeBytes > MaxAttachmentBytes))
             return Result<GoalTimelineDto>.Failure("Each attachment must be 10MB or smaller.", 422, "attachment_too_large");
 
-        // BR-2: 100% auto-sets Completed UNLESS the employee explicitly chose another terminal-ish status
-        // (AtRisk/Blocked) — i.e. only override the default forward-progress statuses, honouring an override.
+        // BR-2 (ISSUE-140): 100% auto-sets Completed ONLY from the "no explicit status" default. The request's
+        // Status is a required non-nullable enum, so an omitted status deserializes to NotStarted (the 0 default) —
+        // that is the only value auto-completed at 100%. An EXPLICIT status (InProgress "done, pending sign-off",
+        // or AtRisk/Blocked) is the employee's overridable choice (BR-2) and is honoured verbatim, never forced.
         var status = input.Status;
-        if (input.ProgressPct == 100 && status is GoalProgressStatus.NotStarted or GoalProgressStatus.InProgress)
+        if (input.ProgressPct == 100 && status is GoalProgressStatus.NotStarted)
             status = GoalProgressStatus.Completed;
 
         var now = DateTime.UtcNow;
@@ -313,14 +315,20 @@ public sealed class GoalProgressService : IGoalProgressService
         if (goal is null)
             return Result<GoalTimelineDto>.Failure("Goal not found.", 404, "goal_not_found");
 
-        // FR-8: only the goal owner's manager or HR may comment (not the employee, not peers).
-        var authz = await AuthorizeManagerScopeAsync(goal.EmployeeId, cancellationToken);
-        if (authz.IsFailure)
-            return Result<GoalTimelineDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
-
         var author = await GetCurrentEmployeeAsync(cancellationToken);
         if (author is null)
             return Result<GoalTimelineDto>.Failure("The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        // FR-8 (ISSUE-141): the thread is two-way but SCOPED. The goal OWNER may reply on their own goal; anyone
+        // else must be the owner's manager or HR. A Read.Self caller who is not the owner falls through to the
+        // manager/HR scope check and (lacking Review.Team/Review.All) is refused — they cannot comment on a goal
+        // they do not own.
+        if (goal.EmployeeId != author.Id)
+        {
+            var authz = await AuthorizeManagerScopeAsync(goal.EmployeeId, cancellationToken);
+            if (authz.IsFailure)
+                return Result<GoalTimelineDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+        }
 
         // Validate the anchored update belongs to this goal, when supplied.
         if (input.ProgressUpdateId is { } updateId)

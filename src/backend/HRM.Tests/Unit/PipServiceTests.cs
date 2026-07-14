@@ -345,6 +345,23 @@ public sealed class PipServiceTests
         hrView.Value!.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task List_by_read_self_employee_returns_only_their_own_pip_ISSUE133()
+    {
+        // ISSUE-133: a Performance.Read.Self caller (the PIP's employee) must reach the list and see ONLY their own
+        // PIP — the self-visibility filter in ListAsync scopes them to employee/manager/mentor rows.
+        await SeedEmployeesAsync();
+        var pip = (await Service(HrUser()).CreateAsync(CreateInput())).Value!;
+
+        var employeeView = await Service(EmployeeUser()).ListAsync();
+        employeeView.IsSuccess.Should().BeTrue();
+        employeeView.Value!.Should().ContainSingle()
+            .Which.Should().Match<PipSummaryDto>(p => p.Id == pip.Id && p.EmployeeId == _employeeEmpId);
+
+        // A Read.Self peer who is NOT on the PIP still sees nothing (no leak).
+        (await Service(OtherUser()).ListAsync()).Value!.Should().BeEmpty();
+    }
+
     // ── Tenant scoping ──────────────────────────────────────────────────
 
     [Fact]

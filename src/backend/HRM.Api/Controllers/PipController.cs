@@ -39,9 +39,14 @@ public sealed class PipController : ControllerBase
         return Ok(ApiResponse<PipDto>.Ok(result.Value!));
     }
 
-    /// <summary>GET /api/v1/tenant/performance/pips — the PIP list, scoped to the caller's visibility (AC-1/FR-8/BR-5).</summary>
+    /// <summary>
+    /// GET /api/v1/tenant/performance/pips — the PIP list, scoped to the caller's visibility (AC-1/FR-8/BR-5).
+    /// Admits <c>Performance.Read.Self</c> (the employee/mentor sees only their own PIPs), <c>Performance.Review.Team</c>
+    /// (the manager sees their direct reports') and <c>Performance.Review.All</c> (HR sees all) — matching the Get-by-id
+    /// gate; <see cref="ListPipsQuery"/> ⇒ <c>PipService.ListAsync</c> applies the FR-8 per-row visibility filter.
+    /// </summary>
     [HttpGet]
-    [RequirePermission("Performance.Review.Team", "Performance.Review.All")]
+    [RequirePermission("Performance.Read.Self", "Performance.Review.Team", "Performance.Review.All")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PipSummaryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {

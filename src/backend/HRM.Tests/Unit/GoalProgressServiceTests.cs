@@ -206,11 +206,23 @@ public sealed class GoalProgressServiceTests
     // ── BR-2: 100% auto-Completed ───────────────────────────────────────
 
     [Fact]
-    public async Task AddProgress_at_100_auto_sets_Completed()
+    public async Task AddProgress_at_100_with_no_explicit_status_auto_sets_Completed()
     {
+        // ISSUE-140: the request Status is a required non-nullable enum ⇒ an omitted status deserializes to the
+        // NotStarted default. That "no explicit choice at 100%" is the ONLY case BR-2 auto-completes.
+        await SeedAsync();
+        var result = await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 100, GoalProgressStatus.NotStarted));
+        result.Value!.CurrentStatus.Should().Be(GoalProgressStatus.Completed);
+    }
+
+    [Fact]
+    public async Task AddProgress_at_100_with_explicit_InProgress_is_honoured_ISSUE140()
+    {
+        // ISSUE-140: an EXPLICIT InProgress at 100% ("done, pending sign-off") is the employee's overridable
+        // choice (BR-2) — it must be persisted as InProgress, NOT force-converted to Completed.
         await SeedAsync();
         var result = await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 100, GoalProgressStatus.InProgress));
-        result.Value!.CurrentStatus.Should().Be(GoalProgressStatus.Completed);
+        result.Value!.CurrentStatus.Should().Be(GoalProgressStatus.InProgress);
     }
 
     [Fact]
@@ -220,6 +232,14 @@ public sealed class GoalProgressServiceTests
         var result = await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 100, GoalProgressStatus.AtRisk));
         // Employee can override (BR-2) — an explicit AtRisk/Blocked is NOT forced to Completed.
         result.Value!.CurrentStatus.Should().Be(GoalProgressStatus.AtRisk);
+    }
+
+    [Fact]
+    public async Task AddProgress_at_100_Blocked_is_honoured()
+    {
+        await SeedAsync();
+        var result = await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 100, GoalProgressStatus.Blocked));
+        result.Value!.CurrentStatus.Should().Be(GoalProgressStatus.Blocked);
     }
 
     // ── BR-3/FR-5: notifications ────────────────────────────────────────
@@ -323,20 +343,37 @@ public sealed class GoalProgressServiceTests
     // ── FR-8: comment thread ────────────────────────────────────────────
 
     [Fact]
-    public async Task Manager_can_comment_employee_cannot()
+    public async Task Comment_thread_is_two_way_owner_manager_and_HR_can_but_a_peer_cannot_ISSUE141()
     {
         await SeedAsync();
         await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 30));
 
+        // Manager may comment on their report's goal (FR-8).
         var mgrComment = await Service(ManagerUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "Good progress, keep it up."));
         mgrComment.IsSuccess.Should().BeTrue();
         mgrComment.Value!.Comments.Should().ContainSingle();
         mgrComment.Value!.Comments[0].Body.Should().Be("Good progress, keep it up.");
 
-        // The employee has no review permission ⇒ cannot comment (FR-8 manager/HR only).
-        var empComment = await Service(EmployeeUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "thanks!"));
-        empComment.IsFailure.Should().BeTrue();
-        empComment.StatusCode.Should().Be(403);
+        // HR may comment.
+        (await Service(HrUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "Noted."))).IsSuccess.Should().BeTrue();
+
+        // ISSUE-141: the goal OWNER may now REPLY on their OWN goal's thread (two-way).
+        var ownerReply = await Service(EmployeeUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "Thanks, will do!"));
+        ownerReply.IsSuccess.Should().BeTrue();
+        ownerReply.Value!.Comments.Should().Contain(c => c.Body == "Thanks, will do!" && c.AuthorEmployeeId == _employeeEmpId);
+    }
+
+    [Fact]
+    public async Task A_read_self_peer_cannot_comment_on_someone_elses_goal_ISSUE141()
+    {
+        // ISSUE-141 security scope: a Read.Self caller who is NOT the goal owner (and not the owner's manager/HR)
+        // is refused — the two-way thread is scoped to the goal they own.
+        await SeedAsync();
+        await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 30));
+
+        var peerComment = await Service(OtherUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "not my goal"));
+        peerComment.IsFailure.Should().BeTrue();
+        peerComment.StatusCode.Should().Be(403);
     }
 
     [Fact]
