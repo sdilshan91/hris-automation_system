@@ -358,9 +358,18 @@ public sealed class GoalProgressService : IGoalProgressService
             "Goal comment posted. GoalId={GoalId}, AuthorEmployeeId={AuthorId}, TenantId={TenantId}",
             goal.Id, author.Id, _tenantContext.TenantId);
 
-        // Notify the employee a manager commented on their goal.
-        await _notifications.NotifyGoalProgressAsync(
-            "goal-comment-added", goal.Id, goal.EmployeeId, goal.EmployeeId, cancellationToken: cancellationToken);
+        // ISSUE-297: the comment thread is two-way (ISSUE-141), so route the notification to the COUNTERPARTY,
+        // never back to the author about their own comment. When the goal owner replies, notify their manager
+        // (if one is on file); when a manager/HR comments, notify the owner (the original behaviour). Subject of
+        // the message (`employeeId`, 3rd arg) stays the goal owner so the payload renders the owner's name.
+        var recipientId = author.Id == goal.EmployeeId
+            ? await ResolveManagerIdAsync(goal.EmployeeId, cancellationToken)
+            : goal.EmployeeId;
+        if (recipientId is { } recipient)
+        {
+            await _notifications.NotifyGoalProgressAsync(
+                "goal-comment-added", goal.Id, goal.EmployeeId, recipient, cancellationToken: cancellationToken);
+        }
 
         return await BuildTimelineResultAsync(goal.Id, cancellationToken);
     }

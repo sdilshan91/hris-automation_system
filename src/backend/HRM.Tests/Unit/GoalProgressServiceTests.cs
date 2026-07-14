@@ -364,6 +364,70 @@ public sealed class GoalProgressServiceTests
     }
 
     [Fact]
+    public async Task Comment_by_manager_notifies_the_owner_ISSUE297()
+    {
+        await SeedAsync();
+        _notifications.ClearReceivedCalls();
+
+        // A manager comment on the report's goal notifies the OWNER (the counterparty).
+        await Service(ManagerUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "Good progress."));
+
+        // Owner (counterparty) IS notified …
+        await _notifications.Received().NotifyGoalProgressAsync(
+            "goal-comment-added", _goalAId, _employeeEmpId, _employeeEmpId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // … and the manager is NEVER notified about their own comment (symmetric with the owner-reply case).
+        await _notifications.DidNotReceive().NotifyGoalProgressAsync(
+            "goal-comment-added", _goalAId, _employeeEmpId, _managerEmpId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Owner_reply_with_no_manager_on_file_skips_the_notification_ISSUE297()
+    {
+        // ISSUE-297 null-branch: when the goal owner replies but has NO manager on file, there is no
+        // counterparty to notify — the dispatch must be skipped (never fall back to notifying the author,
+        // and never dispatch a null-recipient HR broadcast). `_managerEmpId` has no ReportsToEmployeeId.
+        await SeedAsync();
+        var mgrGoalId = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Goals.Add(new Goal
+            {
+                Id = mgrGoalId, TenantId = _tenantId, CycleId = _cycleId, EmployeeId = _managerEmpId,
+                Title = "Manager's own goal", Weight = 100, Status = GoalStatus.Acknowledged,
+                TargetValue = "100%", MeasurementUnit = "%", DueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            });
+            await db.SaveChangesAsync();
+        }
+        _notifications.ClearReceivedCalls();
+
+        // The manager (goal owner, no manager of their own) replies on their own goal.
+        var reply = await Service(ManagerUser()).AddCommentAsync(new AddGoalCommentInput(mgrGoalId, null, "Note to self."));
+        reply.IsSuccess.Should().BeTrue();
+
+        // No goal-comment-added notification is dispatched at all.
+        await _notifications.DidNotReceive().NotifyGoalProgressAsync(
+            "goal-comment-added", Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Owner_reply_notifies_the_manager_not_the_owner_ISSUE297()
+    {
+        await SeedAsync();
+        _notifications.ClearReceivedCalls();
+
+        // ISSUE-297: when the OWNER replies, the notification must go to the MANAGER (the counterparty),
+        // never back to the owner about their own comment.
+        await Service(EmployeeUser()).AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "Thanks!"));
+
+        // Manager (counterparty) IS notified …
+        await _notifications.Received().NotifyGoalProgressAsync(
+            "goal-comment-added", _goalAId, _employeeEmpId, _managerEmpId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // … and the owner is NEVER notified about their own reply.
+        await _notifications.DidNotReceive().NotifyGoalProgressAsync(
+            "goal-comment-added", _goalAId, _employeeEmpId, _employeeEmpId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task A_read_self_peer_cannot_comment_on_someone_elses_goal_ISSUE141()
     {
         // ISSUE-141 security scope: a Read.Self caller who is NOT the goal owner (and not the owner's manager/HR)
