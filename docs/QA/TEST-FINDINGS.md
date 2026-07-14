@@ -3589,7 +3589,8 @@ Scope: API-layer (curl + JWT, acme tenant) execution of TC-PAY-006-01..12 + TC-P
 - **Severity rationale:** HIGH — a core CRUD verb (edit a tax slab / EPF rate) is completely broken for the whole config surface; the only way to change a rule is delete-and-recreate. Not CRIT because reads/creates/clone/test-calc work and no data is corrupted, but the primary "configure/adjust statutory rules" flow is non-functional.
 
 ### ISSUE-166 — FR-7 standard-deduction / Section-80C-equivalent exemption has no stored configuration entity
-- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** MED · **Status:** RESOLVED (superseded by the multi-country tax framework, 2026-07-14) · **Layer:** BE
+- **Resolution:** superseded by TAX-2 configurable exemptions (#291) — `StatutoryExemption` per-country config entity (FlatAmount/PercentOfGross/PercentOfComponent + cap + IsAnnual) feeds `ComputeTaxableIncome`.
 - **Module/US/TC:** Payroll / US-PAY-006 / TC-PAY-006-06
 - **Title:** FR-7 ("support tax exemptions/rebates configuration, e.g. standard deduction, Section 80C equivalent") is not modelled as configurable data; exemptions are only ad-hoc per-call inputs (`declaredMonthlyExemptions`, `exemptEarnings`) on test-calc / the payroll run.
 - **Root cause:** No exemption/rebate entity, table, or config endpoint exists (grep across Domain/Application/Infrastructure: zero `rebate`/`standardDeduction`/`Section80`/`ExemptionRule`). Taxable income = gross − exempt − declared is computed correctly, but the *configured* exemption framework FR-7 describes is absent. Confidence: 90% (code grep + DTO review).
@@ -3597,7 +3598,8 @@ Scope: API-layer (curl + JWT, acme tenant) execution of TC-PAY-006-01..12 + TC-P
 - **Severity rationale:** MED — a named FR is unbuilt; exemptions still work as caller-supplied values so the calc is correct, but tenants cannot persist a standard-deduction/rebate policy as config (it must be recomputed and passed each run).
 
 ### ISSUE-167 — BR-5 year-to-date cumulative progressive tax is not implemented (monthly-isolation only)
-- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** MED · **Status:** RESOLVED (superseded by the multi-country tax framework, 2026-07-14) · **Layer:** BE
+- **Resolution:** superseded by TAX-3 YTD-cumulative (#292) — per-country `StatutoryRule.IsCumulative` flag; annual bands + tax(cumulative-FY)−withheld-YTD; TaxableIncome/IncomeTaxWithheld persisted per slip.
 - **Module/US/TC:** Payroll / US-PAY-006 / TC-PAY-006-07
 - **Title:** Progressive income tax is computed per period in isolation; there is no YTD-cumulative-income input, so a period crossing a slab boundary mid-year is not split across marginal bands by YTD position (BR-5).
 - **Root cause:** `IStatutoryDeductionResolver.ResolveAsync(payYear, payMonth, wage, fiscalYearOverride)` carries no prior-YTD parameter; `StatutoryCalculator.ComputeProgressiveTax` slabs the single-period taxable income only. Confidence: 90% (interface signature + resolver code; no YTD/cumulative refs in the statutory path).
@@ -3784,7 +3786,8 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 - **Severity rationale:** LOW — known/documented follow-up; no current data exposes a wrong number, but a multi-month fiscal year would mis-bound YTD.
 
 ### ISSUE-177 — Year-End Tax Statement (AC-3/FR-1f/FR-7/BR-3) is a non-functional deferred stub
-- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** MED · **Status:** RESOLVED (superseded by the multi-country tax framework, 2026-07-14) · **Layer:** BE
+- **Resolution:** superseded by TAX-4 (#293) — real per-employee/country-FY Year-End Tax Statement via the PayrollReportExport async pipeline (replaces the deferred stub).
 - **Module / US / TC:** Payroll / US-PAY-009 / TC-PAY-009-07
 - **Title:** `YearEndTaxStatement` report type returns an empty result with a "deferred" note and `deferred:true` in the report-type list; no per-employee PDF, no bulk ZIP, no cumulative-by-fiscal-year totals (BR-3). AC-3 is unimplemented.
 - **Root cause:** Intentional deferral (note: "Year-End Tax Statements … are deferred. TODO(US-PAY-009 year-end)"). Confidence: 99% (explicit stub).
