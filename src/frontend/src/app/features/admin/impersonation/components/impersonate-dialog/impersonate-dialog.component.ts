@@ -20,6 +20,7 @@ import {
   IMPERSONATION_REASON_MIN,
   IMPERSONATION_REASON_MAX,
 } from '../../models/impersonation.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /**
  * US-ADM-003: confirmation modal to start an impersonation session.
@@ -36,7 +37,7 @@ import {
 @Component({
   selector: 'app-impersonate-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [

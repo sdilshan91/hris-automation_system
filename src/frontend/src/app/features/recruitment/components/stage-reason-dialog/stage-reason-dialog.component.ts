@@ -15,6 +15,7 @@ import {
   RejectionReason,
   rejectionReasonLabel,
 } from '../../models/pipeline.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /** Result emitted when the user confirms a stage move that needs a reason. */
 export interface IStageReasonResult {
@@ -37,7 +38,7 @@ export interface IStageReasonResult {
 @Component({
   selector: 'app-stage-reason-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [
@@ -69,6 +70,8 @@ export interface IStageReasonResult {
         aria-modal="true"
         aria-labelledby="stage-reason-title"
         (click)="$event.stopPropagation()"
+        appTrappedDialog
+        (dismiss)="cancel()"
       >
         <h2 id="stage-reason-title" class="text-base font-semibold text-neutral-900">
           {{ title() }}

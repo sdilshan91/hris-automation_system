@@ -10,6 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { TranslateModule } from '@ngx-translate/core';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { AuditExportFormat } from '../../models/audit-log.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /**
  * US-ADM-008 AC-4: export confirmation dialog. Shows the record count that will
@@ -20,7 +21,7 @@ import { AuditExportFormat } from '../../models/audit-log.models';
 @Component({
   selector: 'app-audit-export-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, TranslateModule],
+  imports: [CommonModule, FormsModule, TranslateModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('dialogPop', [

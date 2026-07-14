@@ -7,9 +7,11 @@ import {
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideTranslateService } from '@ngx-translate/core';
 import { ToastrService } from 'ngx-toastr';
+import { By } from '@angular/platform-browser';
 import { TerminateTenantDialogComponent } from './terminate-tenant-dialog.component';
 import { environment } from '../../../../../../environments/environment';
 import { ITenantLifecycleResult } from '../../models/lifecycle.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 describe('TerminateTenantDialogComponent', () => {
   let fixture: ComponentFixture<TerminateTenantDialogComponent>;
@@ -54,6 +56,13 @@ describe('TerminateTenantDialogComponent', () => {
   });
 
   afterEach(() => httpMock.verify());
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
+  });
 
   it('validates the grace period is within 7–90 (BR-4)', () => {
     component.reason = 'a clearly valid termination reason';

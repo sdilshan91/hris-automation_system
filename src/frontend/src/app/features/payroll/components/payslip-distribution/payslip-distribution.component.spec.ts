@@ -1,9 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError, Subject } from 'rxjs';
 
 import { PayslipDistributionComponent } from './payslip-distribution.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { PayslipEmailService } from '../../services/payslip-email.service';
 import { PayslipService } from '../../services/payslip.service';
 import { PayrollRunStatus } from '../../models/payroll-run.models';
@@ -218,6 +220,16 @@ describe('PayslipDistributionComponent', () => {
   });
 
   describe('confirmation dialog (§8 / FR-7 / BR-5)', () => {
+    it('traps focus in the dialog (ISSUE-296)', () => {
+      setup('Finalized');
+      component.openConfirm();
+      fixture.detectChanges();
+      const dialog = fixture.debugElement.query(
+        By.directive(TrappedDialogDirective),
+      );
+      expect(dialog).toBeTruthy();
+    });
+
     it('opens the dialog with the recipient count', () => {
       setup('Finalized', { employeeCount: 42 });
       component.openConfirm();

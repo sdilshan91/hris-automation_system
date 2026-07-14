@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { HttpHeaders, HttpResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError, Subject } from 'rxjs';
 
 import { PayslipListComponent } from './payslip-list.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { PayslipService } from '../../services/payslip.service';
 import {
   IPayslip,
@@ -98,6 +100,23 @@ describe('PayslipListComponent', () => {
     expect(payslip.listPayslips).toHaveBeenCalledWith('r-1');
     expect(component.payslips()).toEqual(rows);
     expect(component.loading()).toBeFalse();
+  });
+
+  it('traps focus in the payslip preview dialog (ISSUE-296)', () => {
+    setup();
+    component.previewSlip.set(rows[0]);
+    fixture.detectChanges();
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
+
+    // ISSUE-296 behaviour: Escape routes through the directive's `dismiss` → the bound `closePreview()`,
+    // so the preview actually closes. Catches a broken/removed `(dismiss)="closePreview()"` binding.
+    (dialog.nativeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(component.previewSlip()).toBeNull();
   });
 
   it('sets an error when the list fails to load', () => {

@@ -14,6 +14,7 @@ import { ToastrService } from 'ngx-toastr';
 import { TenantLifecycleService } from '../../services/tenant-lifecycle.service';
 import { mapLifecycleError } from '../suspend-tenant-dialog/suspend-tenant-dialog.component';
 import { ITenantLifecycleResult } from '../../models/lifecycle.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /** Which (no-body) lifecycle transition this confirm dialog performs. */
 export type LifecycleConfirmAction = 'reactivate' | 'restore';
@@ -29,7 +30,7 @@ export type LifecycleConfirmAction = 'reactivate' | 'restore';
 @Component({
   selector: 'app-lifecycle-confirm-dialog',
   standalone: true,
-  imports: [CommonModule, TranslateModule],
+  imports: [CommonModule, TranslateModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [

@@ -10,6 +10,8 @@
     aria-modal="true"
     aria-labelledby="terminate-title"
     (click)="$event.stopPropagation()"
+    appTrappedDialog
+    (dismiss)="cancel()"
     data-testid="terminate-dialog"
   >
     <div class="flex items-start gap-3">

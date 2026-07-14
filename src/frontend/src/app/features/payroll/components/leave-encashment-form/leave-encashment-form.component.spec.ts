@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 
 import { LeaveEncashmentFormComponent } from './leave-encashment-form.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { EmployeeService } from '../../../core-hr/employees/services/employee.service';
 import { IEmployee } from '../../../core-hr/employees/models/employee.models';
@@ -96,6 +98,13 @@ describe('LeaveEncashmentFormComponent', () => {
 
   it('should be created', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
   });
 
   // ─── Employee typeahead ───────────────────────────────────

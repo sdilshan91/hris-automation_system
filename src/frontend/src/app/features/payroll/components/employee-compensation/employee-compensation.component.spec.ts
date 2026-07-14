@@ -2,10 +2,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 
 import { EmployeeCompensationComponent } from './employee-compensation.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { EmployeeSalaryService } from '../../services/employee-salary.service';
 import { PayrollService } from '../../services/payroll.service';
 import { AuthService } from '@core/auth/auth.service';
@@ -174,6 +176,16 @@ describe('EmployeeCompensationComponent', () => {
     expect(component.expandedRevision()).toBe('r-1');
     component.toggleRevision('r-1');
     expect(component.expandedRevision()).toBeNull();
+  });
+
+  it('traps focus in the assign drawer (ISSUE-296)', async () => {
+    await setup();
+    component.openAssignDrawer();
+    fixture.detectChanges();
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
   });
 
   it('openAssignDrawer resets the form and loads active structures (FR-7)', async () => {

@@ -1,9 +1,11 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
 import { ToastrService } from 'ngx-toastr';
 
 import { AdjustmentFormComponent } from './adjustment-form.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { AdjustmentService } from '../../services/adjustment.service';
 import { EmployeeService } from '../../../core-hr/employees/services/employee.service';
 import { IAdjustment } from '../../models/adjustment.models';
@@ -95,6 +97,13 @@ describe('AdjustmentFormComponent', () => {
 
   it('creates', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
   });
 
   describe('employee typeahead', () => {

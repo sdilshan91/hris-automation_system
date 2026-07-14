@@ -2,11 +2,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { ComponentFormComponent } from './component-form.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { PayrollService } from '../../services/payroll.service';
 import { ISalaryComponent } from '../../models/payroll.models';
 
@@ -61,6 +63,13 @@ describe('ComponentFormComponent', () => {
     expect(component.isEdit()).toBeFalse();
     expect(component.isFormula()).toBeFalse();
     expect(component.form.controls.defaultValue.hasError('required')).toBeTrue();
+  });
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
   });
 
   it('blocks save when required fields are missing', () => {

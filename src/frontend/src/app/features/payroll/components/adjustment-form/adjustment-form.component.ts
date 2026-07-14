@@ -36,6 +36,7 @@ import {
   periodLabel,
   recurringPeriods,
 } from '../../models/adjustment.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /** Allowed supporting-document MIME types (NFR-5). */
 const ALLOWED_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -57,7 +58,7 @@ const MAX_DOC_BYTES = 5 * 1024 * 1024;
 @Component({
   selector: 'app-adjustment-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('drawer', [
@@ -94,6 +95,8 @@ const MAX_DOC_BYTES = 5 * 1024 * 1024;
         role="dialog"
         aria-modal="true"
         aria-label="New payroll adjustment"
+        appTrappedDialog
+        (dismiss)="close.emit()"
       >
         <!-- Header -->
         <header

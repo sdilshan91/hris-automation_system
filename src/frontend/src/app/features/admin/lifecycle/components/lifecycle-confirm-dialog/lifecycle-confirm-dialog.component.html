@@ -10,6 +10,8 @@
     aria-modal="true"
     aria-labelledby="lifecycle-confirm-title"
     (click)="$event.stopPropagation()"
+    appTrappedDialog
+    (dismiss)="cancel()"
     data-testid="lifecycle-confirm-dialog"
   >
     <div class="flex items-start gap-3">

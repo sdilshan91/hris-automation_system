@@ -8,6 +8,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { trigger, transition, style, animate } from '@angular/animations';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-REC-005: Confirmation prompt for cancelling an interview (AC-3).
@@ -19,7 +20,7 @@ import { trigger, transition, style, animate } from '@angular/animations';
 @Component({
   selector: 'app-interview-cancel-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [
@@ -49,6 +50,8 @@ import { trigger, transition, style, animate } from '@angular/animations';
         role="dialog"
         aria-modal="true"
         aria-labelledby="cancel-iv-title"
+        appTrappedDialog
+        (dismiss)="cancel()"
       >
         <h2 id="cancel-iv-title" class="text-base font-semibold text-neutral-900">
           Cancel interview?

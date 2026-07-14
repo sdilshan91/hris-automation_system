@@ -8,8 +8,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideToastr } from 'ngx-toastr';
 import { provideTranslateService } from '@ngx-translate/core';
+import { By } from '@angular/platform-browser';
 import { SystemExportDialogComponent } from './system-export-dialog.component';
 import { environment } from '../../../../../../environments/environment';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /** Host that drives the dialog with bound inputs and captures (cancelled). */
 @Component({
@@ -56,6 +58,13 @@ describe('SystemExportDialogComponent', () => {
   });
 
   afterEach(() => httpMock.verify());
+
+  it('traps focus in the dialog (ISSUE-296)', () => {
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
+  });
 
   it('renders the dialog targeting the tenant via the system path (AC-6)', () => {
     const el: HTMLElement = fixture.nativeElement;

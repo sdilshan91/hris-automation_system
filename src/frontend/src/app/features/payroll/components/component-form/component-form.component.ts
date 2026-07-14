@@ -28,6 +28,7 @@ import {
   CALCULATION_METHOD_LABELS,
   IFormulaTestResult,
 } from '../../models/payroll.models';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
  * US-PAY-001: Create / edit a salary component, rendered as a Notion-style right
@@ -41,7 +42,7 @@ import {
 @Component({
   selector: 'app-component-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('drawer', [
@@ -78,6 +79,8 @@ import {
         role="dialog"
         aria-modal="true"
         [attr.aria-label]="isEdit() ? 'Edit salary component' : 'Create salary component'"
+        appTrappedDialog
+        (dismiss)="close.emit()"
       >
         <!-- Header -->
         <header

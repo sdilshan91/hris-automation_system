@@ -1,8 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
 import { ToastrService } from 'ngx-toastr';
 import { PayrollIntegrationComponent } from './payroll-integration.component';
+import { TrappedDialogDirective } from '../../../../shared/directives';
 import { AttendanceService } from '../../services/attendance.service';
 import {
   IPeriodLock,
@@ -128,6 +130,23 @@ describe('PayrollIntegrationComponent', () => {
     setup(null);
     expect(fixture.nativeElement.querySelector('[data-test="locked-banner"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-test="lock-btn"]')).toBeTruthy();
+  });
+
+  it('traps focus in the confirm modal (ISSUE-296)', () => {
+    setup(null);
+    component.openLockConfirm();
+    fixture.detectChanges();
+    const dialog = fixture.debugElement.query(
+      By.directive(TrappedDialogDirective),
+    );
+    expect(dialog).toBeTruthy();
+
+    // ISSUE-296 behaviour: Escape → directive `dismiss` → the bound `closeConfirm()`, closing the modal.
+    // Catches a broken/removed `(dismiss)="closeConfirm()"` binding.
+    (dialog.nativeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(component.confirmMode()).toBeNull();
   });
 
   it('opening the lock action shows the confirm modal then POSTs on confirm (AC-4)', () => {

@@ -18,6 +18,7 @@ import {
   LIFECYCLE_REASON_MIN,
   LIFECYCLE_REASON_MAX,
 } from '../../models/lifecycle.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /**
  * US-ADM-004 AC-1: confirmation modal to suspend a tenant.
@@ -33,7 +34,7 @@ import {
 @Component({
   selector: 'app-suspend-tenant-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, TranslateModule],
+  imports: [CommonModule, FormsModule, TranslateModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('backdrop', [

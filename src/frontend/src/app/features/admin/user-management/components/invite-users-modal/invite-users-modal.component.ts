@@ -17,6 +17,7 @@ import {
   IInviteResult,
   ICsvInviteRow,
 } from '../../models/user-management.models';
+import { TrappedDialogDirective } from '../../../../../shared/directives';
 
 /**
  * US-ADM-005 AC-2: Invite modal.
@@ -28,7 +29,7 @@ import {
 @Component({
   selector: 'app-invite-users-modal',
   standalone: true,
-  imports: [CommonModule, TranslateModule],
+  imports: [CommonModule, TranslateModule, TrappedDialogDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fade', [
@@ -52,7 +53,8 @@ import {
       class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm sm:p-4"
       @fade
       (click)="onBackdrop()"
-      (keydown.escape)="close.emit()"
+      appTrappedDialog
+      (dismiss)="close.emit()"
       role="dialog"
       aria-modal="true"
       aria-labelledby="invite-title"
