@@ -5086,7 +5086,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-108 — Employee create wizard photo-upload control fails WCAG 2.1 AA: a focusable `aria-hidden` file input nested inside a `role="button"` drop-zone (aria-hidden-focus + nested-interactive)
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #295, 2026-07-14)
+- **Resolution (FE, PR #295, 2026-07-14):** moved the hidden file `<input>` out of the `role=button` drop-zone (sibling) + `tabindex="-1"` — clears aria-hidden-focus + nested-interactive.
 - **Layer:** FE
 - **Module / US / TC:** Core HR / US-CHR-001 (employee create) / TC-CHR-097 (already `fail`; this augments it — the create-wizard a11y arm)
 - **Title:** On the **Add New Employee** wizard (`/employees/new`), Step 1 "Profile Photo" upload control structures the drop-zone as `<div role="button" tabindex="0" aria-label="Upload profile photo">` that **contains** a real `<input type="file" aria-hidden="true" class="sr-only">` which is itself in the tab order (`tabIndex=0`). This produces two serious axe-core violations: **`aria-hidden-focus`** (a focusable element is marked `aria-hidden="true"`, so AT is told to ignore an element a keyboard user can still land on) and **`nested-interactive`** (an interactive control — the file input — nested inside another interactive control — the role=button div). A keyboard/screen-reader user gets a "dead" focus stop the AT does not announce.
@@ -5100,7 +5101,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-109 — Payroll "New payroll run" modal asserts `aria-modal="true"` but the background is NOT inert: no focus trap, no Escape-to-close, no initial focus into the dialog
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #295, 2026-07-14)
+- **Resolution (FE, PR #295, 2026-07-14):** `A11yModule` + `cdkTrapFocus [cdkTrapFocusAutoCapture]` + `(keydown.escape)=close` on the new-payroll-run dialog (mirrors employee-profile). ~16 sibling hand-rolled dialogs share the defect → **ISSUE-296** systematic sweep.
 - **Layer:** FE
 - **Module / US / TC:** Payroll / US-PAY-003 (payroll runs) / TC-PAY-003-12 (Payroll Runs table + New-Run modal a11y — this is the modal arm of that TC)
 - **Title:** On **Payroll runs** (`/payroll/runs`), the "+ New payroll run" dialog (`app-new-payroll-run`) is a hand-rolled animated overlay marked `role="dialog" aria-modal="true" aria-labelledby="new-run-title"`. The accessible structure of the dialog itself is correct (0 axe violations inside it), but the **modal contract is broken three ways**: (1) **no focus trap** — while the modal is open the 39 background focusables (sidebar nav links, header buttons, the runs table) remain focusable and the page is neither `inert` nor `aria-hidden`, so a keyboard/SR user can Tab straight out of the modal into the page behind it; (2) **`aria-modal="true"` is a false assertion** — it tells assistive tech the rest of the page is inert when it is not, so a screen reader will let the user wander the background while believing they are trapped in the dialog; (3) **no Escape-to-close** and **initial focus is not moved into the dialog** (after opening, `document.activeElement` is still the "+ New payroll run" trigger button, outside the dialog).
@@ -5114,7 +5116,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-110 — Statutory-config fiscal-year selector is a `role="tablist"` containing a non-`tab` child (the "+ Add year" `<button>`) — axe `aria-required-children` (critical)
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #295, 2026-07-14)
+- **Resolution (FE, PR #295, 2026-07-14):** moved the `+ Add year` button OUT of the `role="tablist"` (now a sibling) — clears aria-required-children.
 - **Layer:** FE
 - **Module / US / TC:** Payroll / US-PAY-006 (statutory configuration) / TC-PAY-006-12 (statutory config a11y)
 - **Title:** On **Statutory configuration** (`/payroll/statutory`), the fiscal-year switcher is `<div role="tablist" aria-label="Fiscal year">` whose children are two `role="tab"` elements ("2026-2027", "2025-2026") **plus a bare `<button>` "+ Add year"** that has no `role="tab"`. WAI-ARIA requires a `tablist` to contain only `tab` (or allowed grouping) children, so axe-core reports a **critical `aria-required-children`** violation ("Element has children which are not allowed: button[tabindex]"). A screen reader reading the tablist will mis-count/mis-announce the tab set, and the "Add year" action is exposed inconsistently inside a tab group.
@@ -5128,7 +5131,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-111 — Regularization "Reason" field live char-count "0/10" is not announced to screen readers (no `aria-live`), and the drawer below-minimum validation is conveyed silently
 - **Type:** BUG
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #295, 2026-07-14)
+- **Resolution (FE, PR #295, 2026-07-14):** `role=status`/`aria-live=polite` on the reason char-counter + the BUG-109-class focus-trap fix on the regularization drawer.
 - **Layer:** FE
 - **Module / US / TC:** Attendance / US-ATT-003 (regularization) / TC-ATT-035 (regularization drawer a11y)
 - **Title:** On **Attendance Regularization** (`/attendance/regularization`), the "+ Request Regularization" drawer shows a live character counter next to the Reason label ("0/10" → counts up as you type, with a below-minimum highlight). The counter is rendered as a plain `<span>` with **no `aria-live`** region and **no `role="status"`** (no ancestor `[aria-live]` either). A screen-reader user therefore gets no announcement of the live count or of crossing the 10-character minimum — the TC explicitly requires "the count/validation announced to screen readers." (The Reason textarea itself is correctly labelled `aria-label="Reason"`.)
@@ -5144,7 +5148,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-112 — Attendance payroll-integration reconciliation table: its horizontally-scrollable wrapper (`overflow-x-auto`) is not keyboard-focusable, so a keyboard-only user cannot scroll it (axe `scrollable-region-focusable`, serious — WCAG 2.1.1)
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #295, 2026-07-14)
+- **Resolution (FE, PR #295, 2026-07-14):** `tabindex=0` + `role=region` + aria-label on both `overflow-x-auto` reconciliation/preview scroll wrappers — clears scrollable-region-focusable.
 - **Layer:** FE
 - **Module / US / TC:** Attendance / US-ATT-009 (payroll integration) / TC-ATT-128 (payroll-integration a11y)
 - **Title:** On **Payroll Integration** (`/attendance/payroll-integration`), the desktop side-by-side reconciliation table is wrapped in `<div class="card-notion !p-0 overflow-x-auto hidden md:block">`. The wrapper is a horizontal scroll container (`overflow-x-auto`) but has **no `tabindex="0"`** and contains no inherently-focusable content, so axe-core reports a **serious `scrollable-region-focusable`** violation ("Element should be focusable"). A keyboard-only user cannot place focus on the region to scroll it horizontally — any reconciliation columns that overflow the viewport become unreachable without a pointer (WCAG 2.1.1 Keyboard).
@@ -5152,6 +5157,19 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** `http://acme.myhrm.org:4200` → log in `tenantadmin@acme.test` / `Admin@123!` → in-app soft-nav to `/attendance/payroll-integration` (per BUG-097 a hard nav/reload logs out) → run axe-core (`wcag2a/2aa/21a/21aa`) scoped to `main`.
 - **Evidence:** axe-core 4.12.1 on `main`: `scrollable-region-focusable` (serious, 1 node) target `.\!p-0`; node html `<div class="card-notion !p-0 overflow-x-auto hidden md:block …">`; failureSummary "Element should have focusable content | Element should be focusable". Page otherwise renders the Lock-Attendance button, payroll stepper (1 Lock → 2 Generate → 3 Review → 4 Finalize), reconciliation table; reflow clean (0 min-width-over-360 elements).
 - **Severity rationale:** MED — the reconciliation table is a primary US-ATT-009 surface and horizontal columns that overflow are unreachable by keyboard; contained to one scroll region on an HR-only page, single-attribute fix, not data-affecting. (The Lock confirm-modal — if hand-rolled — would additionally fall under the **BUG-109** class; not separately verified here since the lock action is a state-changing write avoided under report-only.)
+
+### ISSUE-296 — Systematic a11y sweep: ~16 hand-rolled `role="dialog"` overlays lack a focus trap / Escape-to-close (shared BUG-109 defect; no shared overlay component exists)
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** FE
+- **Module / US / TC:** Cross-cutting (Payroll / Attendance / Admin / Recruitment) / — / —
+- **Title:** BUG-109 (fixed in PR #295 for the new-payroll-run dialog + the regularization drawer) is one instance of a repo-wide pattern: every dialog/drawer is **hand-rolled per feature** — there is NO shared `app-modal`/`app-dialog`/`app-drawer` component. ~16 other `role="dialog" aria-modal="true"` overlays therefore share the same WCAG 2.1 AA defect: no `cdkTrapFocus`/`[cdkTrapFocusAutoCapture]`, no `(keydown.escape)`, background not inert. Known instances (from the BUG-109 scoping Explore): payroll `adjustment-form`, `payslip-distribution`, `component-form`, `employee-compensation`, `leave-encashment-form`, `payslip-list`; attendance `payroll-integration` confirm-modal; admin/recruitment `impersonate-dialog`, `system-export-dialog`, `invite-users-modal`, `terminate-tenant-dialog`, `suspend-tenant-dialog`, audit `export-dialog`, `lifecycle-confirm-dialog`, `stage-reason-dialog`, `interview-cancel-dialog`.
+- **Root cause:** no shared trapped-dialog abstraction; each feature copies a manual overlay (`@drawer`/`@backdrop` animation + backdrop `(click)=close`). The only correct example is `employee-profile.component.ts` (uses `cdkTrapFocus`). Confidence: **90%** (inventory read directly during the BUG-109 fix).
+- **Suggested fix:** introduce a shared **trapped-dialog directive or wrapper component** (CDK `A11yModule` `cdkTrapFocus [cdkTrapFocusAutoCapture]` + Escape + `inert` on the app root while open) and migrate the ~16 copies to it — a dedicated a11y-dialog sweep story. Lower-risk incremental option: apply the same 3-line `cdkTrapFocus`+Escape fix per dialog (as done for the two in PR #295).
+- **Severity rationale:** MED — real WCAG 2.1 AA barrier (focus escapes modals for keyboard/SR users) but each dialog is still operable; broad blast radius, not data-affecting. Best done as one sweep to also DRY the overlay pattern.
+
+---
 
 ### BUG-113 — Employee↔Location structured FK (`LocationId`) is unreachable from the standard employee Create/Edit forms — so per-location employee count is permanently 0 and the "cannot deactivate a location with active employees" guard can never fire (US-CHR-007 assignment/deactivation flow inert)
 - **Type:** BUG
