@@ -5186,6 +5186,24 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-299 — `StatutoryRuleService` create-time overlap check compares the STORED CountryCode raw, so a dirty-cased/whitespace row escapes the duplicate guard
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PAY-006 / (auto-healed OUT-OF-LANE from the TAX-3 normalization guard, PR #301)
+- **Title:** `StatutoryRuleService` create-time overlap/duplicate pre-check compares `r.CountryCode == countryCode` (normalized incoming vs RAW stored). A whitespace/case-dirty existing row (e.g. `"lk"`/`"LK "` from a raw/seed/import write) escapes the overlap check, so a second overlapping same-country rule can be created. The resolver's new `upper(btrim(country_code))` match (PR #301) would then see BOTH → `SelectEffectiveByType` picks latest-`EffectiveFrom` arbitrarily — the resolve-time collision the guard was meant to prevent.
+- **Root cause (confidence 85%):** pre-existing raw-compare in the create overlap query; the tenant-scoped 5-col unique index is the hard backstop for EXACT-cased dupes, but not for dirty-cased near-dupes. The PR #301 `upper()` match makes a previously-invisible dirty row newly matchable, so it can surface this latent collision.
+- **Suggested direction (NOT applied):** normalize the stored side in the overlap query too (`upper(btrim(...))`), and/or a one-off data-cleanup/normalize-on-read for `CountryCode`. Or accept as LOW given the unique index backstop.
+- **Severity rationale:** LOW — requires a dirty-cased row (only via a service-bypassing write) AND an overlapping create; no cross-tenant/cross-country mis-tax (still country + tenant scoped).
+
+---
+
+### ISSUE-300 — Cumulative-PAYE run + YTD-persistence path has no real-Postgres (Testcontainers) coverage — InMemory-only
+- **Type:** ISSUE (test-health) · **Severity:** MED · **Status:** OPEN · **Layer:** BE-test · **US/TC:** US-PAY-006 / (auto-healed OUT-OF-LANE from PR #301 test-authenticator)
+- **Title:** The cumulative income-tax RUN path (`PayrollRunProcessor` YTD accumulation + `PayrollSlip.TaxableIncome`/`IncomeTaxWithheld` column persistence, the ordinal prior-slip window) is asserted ONLY against the EF InMemory provider (`YtdCumulativeTaxIntegrationTests`). The `YtdCumulativeTaxPostgresTests` covers column round-trip + ordinal-window translation, but not the multi-month true-up + YTD accumulation on real Postgres. This is the repo's known InMemory-masks-Postgres class on a money path.
+- **Root cause:** pre-existing coverage gap (not introduced by PR #301, which only adds the cumulative PREVIEW arm). The preview cross-check (PR #301) now reads real persisted slips, partially exercising the run, but there is no dedicated Testcontainers cumulative-run true-up arm.
+- **Suggested direction (NOT applied):** add a Testcontainers cumulative-run arm mirroring the InMemory multi-month true-up (Apr→Aug), asserting the YTD delta + column persistence on real Postgres.
+- **Severity rationale:** MED — money path; the arithmetic is pure (low SQL-translation risk) and the columns already have a Postgres round-trip arm, but the multi-month accumulation is unproven on the real provider.
+
+---
+
 ### ISSUE-296 — Systematic a11y sweep: ~16 hand-rolled `role="dialog"` overlays lack a focus trap / Escape-to-close (shared BUG-109 defect; no shared overlay component exists)
 - **Type:** ISSUE
 - **Severity:** MED
