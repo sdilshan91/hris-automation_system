@@ -45,7 +45,15 @@ public sealed class StatutoryRuleConfiguration : IEntityTypeConfiguration<Statut
             .OnDelete(DeleteBehavior.Cascade);
 
         // Resolve-for-period lookups filter by tenant + type + fiscal year + effective range (FR-4).
-        builder.HasIndex(r => new { r.TenantId, r.RuleType, r.FiscalYear });
+        // Multi-country tax foundation: the (tenant, type, fiscal_year) index now includes country_code AND
+        // effective_from and is UNIQUE — integrity: forbids a TRUE duplicate (identical type/country/FY AND the
+        // same effective-from) so two countries' rules of the same type never collide, WHILE still allowing
+        // multiple effective-dated VERSIONS within one fiscal year (e.g. a mid-year rate change → two rules,
+        // same type/country/FY, different effective-from), which the resolver's SelectEffective picks between.
+        // Filtered on is_deleted = false so a soft-deleted rule does not block re-creating the same version.
+        builder.HasIndex(r => new { r.TenantId, r.RuleType, r.CountryCode, r.FiscalYear, r.EffectiveFrom })
+            .IsUnique()
+            .HasFilter("is_deleted = false");
         builder.HasIndex(r => new { r.TenantId, r.RuleType, r.EffectiveFrom });
     }
 }

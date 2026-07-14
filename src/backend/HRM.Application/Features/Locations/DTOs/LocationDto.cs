@@ -12,6 +12,8 @@ public sealed record LocationDto
     public string? City { get; init; }
     public string? StateProvince { get; init; }
     public string? Country { get; init; }
+    /// <summary>ISO country code (max 5) that joins to statutory rules for multi-country tax. Optional.</summary>
+    public string? CountryCode { get; init; }
     public string? PostalCode { get; init; }
     public string TimeZone { get; init; } = string.Empty;
     public string? Phone { get; init; }
@@ -35,6 +37,7 @@ public sealed record CreateLocationRequest
     public string? City { get; init; }
     public string? StateProvince { get; init; }
     public string? Country { get; init; }
+    public string? CountryCode { get; init; }
     public string? PostalCode { get; init; }
     public string TimeZone { get; init; } = string.Empty;
     public string? Phone { get; init; }
@@ -51,6 +54,7 @@ public sealed record UpdateLocationRequest
     public string? City { get; init; }
     public string? StateProvince { get; init; }
     public string? Country { get; init; }
+    public string? CountryCode { get; init; }
     public string? PostalCode { get; init; }
     public string TimeZone { get; init; } = string.Empty;
     public string? Phone { get; init; }

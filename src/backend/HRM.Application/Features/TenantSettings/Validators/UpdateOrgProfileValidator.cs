@@ -29,5 +29,11 @@ public sealed class UpdateOrgProfileValidator : AbstractValidator<UpdateOrgProfi
 
         RuleFor(x => x.Request.FiscalYearStartMonth)
             .InclusiveBetween(1, 12).WithMessage("Fiscal year start month must be between 1 and 12.");
+
+        // Multi-country tax foundation: optional default ISO country code (alpha-2/alpha-3) — the fallback tax country.
+        RuleFor(x => x.Request.DefaultCountryCode)
+            .MaximumLength(5).WithMessage("Default country code cannot exceed 5 characters.")
+            .Matches("^[A-Za-z]{2,5}$").WithMessage("Default country code must be a 2-5 letter ISO code (e.g. 'LK', 'IN').")
+            .When(x => !string.IsNullOrWhiteSpace(x.Request.DefaultCountryCode));
     }
 }

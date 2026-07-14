@@ -39,13 +39,16 @@ public sealed record UpdateStatutoryRuleInput(
     IReadOnlyList<TaxSlabInput> TaxSlabs,
     SocialSecurityInputDto? SocialSecurity);
 
-/// <summary>Input for the FR-5 test calculation (no persistence).</summary>
+/// <summary>Input for the FR-5 test calculation (no persistence). <c>CountryCode</c> selects which country's
+/// statutory regime the preview computes under (multi-country tax foundation); when null the preview resolves
+/// nothing (mirrors the run's fail-closed null-country behaviour).</summary>
 public sealed record TestCalculationInput(
     decimal MonthlyGross,
     decimal? MonthlyBasic,
     decimal DeclaredMonthlyExemptions,
     decimal ExemptEarnings,
-    string? FiscalYear);
+    string? FiscalYear,
+    string? CountryCode);
 
 /// <summary>
 /// Statutory-rule configuration + calculation service (US-PAY-006). All operations are tenant-scoped via

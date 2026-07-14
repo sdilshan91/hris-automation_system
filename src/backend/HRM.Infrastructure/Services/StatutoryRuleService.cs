@@ -64,6 +64,27 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
 
+        var countryCode = input.CountryCode.Trim().ToUpperInvariant();
+        var fiscalYear = input.FiscalYear.Trim();
+
+        // Multi-country tax foundation (integrity, mirrors the ISSUE-170 guard style): reject a duplicate
+        // (tenant, type, country, fiscal-year) rule whose effective window OVERLAPS an existing one — otherwise
+        // two same-type rules for the same country/FY would collide at resolve time (arbitrary winner). A
+        // DIFFERENT country's rule for the same type/FY is allowed (that is the whole point of multi-country).
+        // The tenant-scoped UNIQUE index (tenant, type, country, fiscal_year) is the hard DB backstop.
+        var newFrom = input.EffectiveFrom;
+        var newTo = input.EffectiveTo ?? DateOnly.MaxValue;
+        var sameKey = await _dbContext.StatutoryRules.AsNoTracking()
+            .Where(r => r.RuleType == input.RuleType && r.CountryCode == countryCode && r.FiscalYear == fiscalYear)
+            .Select(r => new { r.EffectiveFrom, r.EffectiveTo })
+            .ToListAsync(cancellationToken);
+        if (sameKey.Any(r => r.EffectiveFrom <= newTo && (r.EffectiveTo ?? DateOnly.MaxValue) >= newFrom))
+            return Result<StatutoryRuleDto>.Failure(
+                $"A {input.RuleType} statutory rule already exists for country '{countryCode}' in fiscal year "
+                + $"'{fiscalYear}' with an overlapping effective period. Edit the existing rule or use a "
+                + "non-overlapping period.",
+                409, "duplicate_statutory_rule");
+
         var ruleId = BaseEntity.NewUuidV7();
         var rule = new StatutoryRule
         {
@@ -71,8 +92,8 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             TenantId = _tenantContext.TenantId,
             RuleType = input.RuleType,
             RuleName = input.RuleName.Trim(),
-            CountryCode = input.CountryCode.Trim().ToUpperInvariant(),
-            FiscalYear = input.FiscalYear.Trim(),
+            CountryCode = countryCode,
+            FiscalYear = fiscalYear,
             EffectiveFrom = input.EffectiveFrom,
             EffectiveTo = input.EffectiveTo,
             IsActive = input.IsActive,
@@ -87,7 +108,22 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         _audit.Log(PA.StatutoryRuleCreated, PA.ResourceType.StatutoryRule,
             rule.Id.ToString(), before: null, after: Snapshot(rule));
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.GetBaseException() is Npgsql.PostgresException { SqlState: "23505" })
+        {
+            // Concurrency backstop: two creates passed the app-level overlap pre-check at the same time and
+            // collided on the (tenant, type, country, fiscal_year, effective_from) unique index. Surface the
+            // SAME 409 the pre-check returns instead of a raw 500.
+            _dbContext.ChangeTracker.Clear();
+            return Result<StatutoryRuleDto>.Failure(
+                $"A {input.RuleType} statutory rule already exists for country '{countryCode}' in fiscal year "
+                + $"'{fiscalYear}' with an overlapping effective period. Edit the existing rule or use a "
+                + "non-overlapping period.",
+                409, "duplicate_statutory_rule");
+        }
 
         _logger.LogInformation(
             "Statutory rule created. Id={Id}, Type={Type}, FY={FiscalYear}, TenantId={TenantId}, By={User}",
@@ -286,10 +322,6 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             return Result<IReadOnlyList<StatutoryRuleDto>>.Failure(
                 "The source and target fiscal years must differ.", 400, "same_fiscal_year");
 
-        if (await _dbContext.StatutoryRules.AnyAsync(r => r.FiscalYear == target, cancellationToken))
-            return Result<IReadOnlyList<StatutoryRuleDto>>.Failure(
-                $"Statutory rules already exist for fiscal year '{target}'. Delete them before cloning.", 409, "target_fiscal_year_exists");
-
         var sourceRules = await _dbContext.StatutoryRules.AsNoTracking()
             .Include(r => r.TaxSlabs)
             .Include(r => r.SocialSecurityRule)
@@ -299,6 +331,16 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         if (sourceRules.Count == 0)
             return Result<IReadOnlyList<StatutoryRuleDto>>.Failure(
                 $"No statutory rules found for fiscal year '{source}'.", 404, "source_fiscal_year_empty");
+
+        // Multi-country tax foundation: the target-FY guard is PER COUNTRY. Cloning country A's rules into a new
+        // fiscal year must succeed even when country B already has rules in that target FY — only a collision on
+        // one of the SOURCE's own countries (which would breach the unique (tenant,type,country,FY) index) blocks.
+        var sourceCountries = sourceRules.Select(r => r.CountryCode).Distinct().ToList();
+        if (await _dbContext.StatutoryRules
+                .AnyAsync(r => r.FiscalYear == target && sourceCountries.Contains(r.CountryCode), cancellationToken))
+            return Result<IReadOnlyList<StatutoryRuleDto>>.Failure(
+                $"Statutory rules already exist for fiscal year '{target}' in one of the source countries "
+                + $"({string.Join(", ", sourceCountries)}). Delete them before cloning.", 409, "target_fiscal_year_exists");
 
         var clonedIds = new List<Guid>();
         foreach (var src in sourceRules)
@@ -377,8 +419,10 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             ComponentAmountsById: null);
 
         // Use today's date to pick the effective version; FR-5 is a what-if so a current-period date is fine.
+        // Multi-country tax foundation: the preview computes under the selected country's regime (null → nothing).
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var resolved = await _resolver.ResolveAsync(today.Year, today.Month, wage, input.FiscalYear, cancellationToken);
+        var resolved = await _resolver.ResolveAsync(
+            today.Year, today.Month, wage, input.FiscalYear, input.CountryCode, cancellationToken);
         if (resolved.IsFailure)
             return Result<StatutoryCalculationResultDto>.Failure(resolved.Error!, resolved.StatusCode ?? 400, resolved.ErrorCode);
 

@@ -18,5 +18,6 @@ public sealed record UpdateLocationCommand(
     string? Country,
     string? PostalCode,
     string TimeZone,
-    string? Phone
+    string? Phone,
+    string? CountryCode = null
 ) : IRequest<Result<LocationDto>>;

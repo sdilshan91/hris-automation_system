@@ -38,6 +38,10 @@ public sealed class LocationConfiguration : IEntityTypeConfiguration<Location>
         builder.Property(l => l.Country)
             .HasMaxLength(100);
 
+        // Multi-country tax foundation: ISO code that joins to StatutoryRule.CountryCode (max 5 to match).
+        builder.Property(l => l.CountryCode)
+            .HasMaxLength(5);
+
         builder.Property(l => l.PostalCode)
             .HasMaxLength(20);
 

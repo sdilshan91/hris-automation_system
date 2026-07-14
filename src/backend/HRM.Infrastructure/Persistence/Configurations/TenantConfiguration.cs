@@ -66,6 +66,10 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.ContactEmail)
             .HasMaxLength(150);
 
+        // Multi-country tax foundation: default/fallback ISO tax country (max 5 to match StatutoryRule.CountryCode).
+        builder.Property(t => t.DefaultCountryCode)
+            .HasMaxLength(5);
+
         // US-ADM-001: trial expiry + billing contact (BR-3 / BR-4).
         builder.Property(t => t.TrialEndsAt);
 

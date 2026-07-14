@@ -58,8 +58,14 @@ public interface IStatutoryDeductionResolver
     /// effective version), then computes the employee's per-period deductions via the pure
     /// <c>StatutoryCalculator</c>. When no rules are configured the result has zero deductions and an empty
     /// fiscal year, so callers degrade gracefully (the payroll run falls back to as-is statutory components).
+    ///
+    /// <para>Multi-country tax foundation: <paramref name="countryCode"/> is the employee's tax country (their
+    /// branch/location country, or the tenant default). When provided, ONLY that country's rules are
+    /// candidates, so two countries' rules of the same type never collide. When null/blank the resolver
+    /// resolves NOTHING (returns an empty result) — the payroll run skips + flags employees whose tax country
+    /// cannot be resolved rather than applying the wrong country's tax.</para>
     /// </summary>
     Task<Result<StatutoryDeductions>> ResolveAsync(
         int payYear, int payMonth, StatutoryWageInput wage, string? fiscalYearOverride = null,
-        CancellationToken cancellationToken = default);
+        string? countryCode = null, CancellationToken cancellationToken = default);
 }

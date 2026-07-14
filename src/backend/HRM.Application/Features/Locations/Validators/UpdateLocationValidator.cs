@@ -35,6 +35,12 @@ public sealed class UpdateLocationValidator : AbstractValidator<UpdateLocationCo
         RuleFor(x => x.Country)
             .MaximumLength(100).WithMessage("Country cannot exceed 100 characters.");
 
+        // Multi-country tax foundation: optional ISO country code (alpha-2/alpha-3) that joins to statutory rules.
+        RuleFor(x => x.CountryCode)
+            .MaximumLength(5).WithMessage("Country code cannot exceed 5 characters.")
+            .Matches("^[A-Za-z]{2,5}$").WithMessage("Country code must be a 2-5 letter ISO code (e.g. 'LK', 'IN').")
+            .When(x => !string.IsNullOrWhiteSpace(x.CountryCode));
+
         RuleFor(x => x.PostalCode)
             .MaximumLength(20).WithMessage("Postal code cannot exceed 20 characters.");
 

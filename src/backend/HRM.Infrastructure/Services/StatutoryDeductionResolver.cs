@@ -34,18 +34,29 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
     }
 
     public async Task<Result<StatutoryDeductions>> ResolveAsync(
-        int payYear, int payMonth, StatutoryWageInput wage, string? fiscalYearOverride = null, CancellationToken cancellationToken = default)
+        int payYear, int payMonth, StatutoryWageInput wage, string? fiscalYearOverride = null,
+        string? countryCode = null, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
             return Result<StatutoryDeductions>.Failure("Tenant context is not resolved.", 400);
 
+        // Multi-country tax foundation (money-critical): with no resolved tax country we must resolve NOTHING —
+        // NEVER apply an arbitrary country's rules. The payroll run skips + flags null-country employees; the
+        // FR-5 preview passes the selected country. Return an empty (no-deduction) result cleanly, do not throw.
+        if (string.IsNullOrWhiteSpace(countryCode))
+            return Result<StatutoryDeductions>.Success(Empty(fiscalYearOverride));
+
+        var country = countryCode.Trim().ToUpperInvariant();
+
         var periodDate = FiscalYearResolver.PeriodDate(payYear, payMonth);
 
-        // Candidate rules: active, in effect for the period (and matching the FY override when given).
+        // Candidate rules: active, in this employee's tax COUNTRY, in effect for the period (and matching the FY
+        // override when given). Filtering by country BEFORE the per-type effective selection is what stops two
+        // countries' rules of the same type (e.g. IncomeTax) from colliding (latest EffectiveFrom winning arbitrarily).
         var query = _dbContext.StatutoryRules.AsNoTracking()
             .Include(r => r.TaxSlabs)
             .Include(r => r.SocialSecurityRule)
-            .Where(r => r.IsActive);
+            .Where(r => r.IsActive && r.CountryCode == country);
 
         if (!string.IsNullOrWhiteSpace(fiscalYearOverride))
         {

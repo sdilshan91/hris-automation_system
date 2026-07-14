@@ -83,6 +83,10 @@ public sealed class TenantSettingsService : ITenantSettingsService
         tenant.Industry = Normalize(request.Industry);
         tenant.CompanySize = Normalize(request.CompanySize);
         tenant.FiscalYearStartMonth = request.FiscalYearStartMonth;
+        // Multi-country tax foundation: normalize the default tax country to upper-case (matches StatutoryRule.CountryCode).
+        tenant.DefaultCountryCode = string.IsNullOrWhiteSpace(request.DefaultCountryCode)
+            ? null
+            : request.DefaultCountryCode.Trim().ToUpperInvariant();
         tenant.UpdatedAt = DateTime.UtcNow;
 
         var after = ToOrgProfileDto(tenant);
@@ -331,7 +335,8 @@ public sealed class TenantSettingsService : ITenantSettingsService
         ToOrgProfileDto(t), ToBrandingDto(t), ToLocalizationDto(t), ToPasswordPolicyDto(t), ToSessionPolicyDto(t));
 
     private static OrgProfileDto ToOrgProfileDto(Tenant t) => new(
-        t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize, t.FiscalYearStartMonth);
+        t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize,
+        t.FiscalYearStartMonth, t.DefaultCountryCode);
 
     private static BrandingDto ToBrandingDto(Tenant t) => new(
         t.LogoUrl, t.EmailLogoUrl, t.FaviconUrl, t.PrimaryColor);

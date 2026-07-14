@@ -39,6 +39,15 @@ public sealed class Tenant
     /// </summary>
     public int FiscalYearStartMonth { get; set; } = 1;
 
+    /// <summary>
+    /// Default ISO country code (alpha-2/alpha-3, max 5), e.g. "LK" (settings key org.default_country_code).
+    /// Multi-country tax foundation: the FALLBACK tax country used when an employee's branch/location has no
+    /// <c>CountryCode</c>. When this is also null and no location country resolves, the employee's statutory
+    /// deductions are SKIPPED and the employee is flagged on the payroll run (never taxed under the wrong/no
+    /// country). Optional; null preserves the single-country behaviour.
+    /// </summary>
+    public string? DefaultCountryCode { get; set; }
+
     // ── Localization defaults (US-ADM-006 AC-3/FR-4, BR-5) ────────────────────
 
     /// <summary>Default UI language code (settings key locale.default_language). BR-5: applies to users with no personal preference.</summary>

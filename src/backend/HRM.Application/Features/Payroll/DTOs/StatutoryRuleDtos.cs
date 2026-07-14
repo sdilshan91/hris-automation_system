@@ -130,6 +130,8 @@ public sealed record TestCalculationRequest
     public decimal DeclaredMonthlyExemptions { get; init; }
     public decimal ExemptEarnings { get; init; }
     public string? FiscalYear { get; init; }
+    /// <summary>Multi-country tax foundation: which country's regime to preview under (e.g. "LK").</summary>
+    public string? CountryCode { get; init; }
 }
 
 /// <summary>The computed statutory deductions for a test calculation (FR-5). All amounts are per-period (monthly).</summary>

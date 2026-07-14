@@ -12,13 +12,13 @@ public interface ILocationService
     Task<Result<LocationDto>> CreateAsync(
         string name, string? addressLine1, string? addressLine2,
         string? city, string? stateProvince, string? country,
-        string? postalCode, string timeZone, string? phone,
+        string? postalCode, string timeZone, string? phone, string? countryCode = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<LocationDto>> UpdateAsync(
         Guid locationId, string name, string? addressLine1, string? addressLine2,
         string? city, string? stateProvince, string? country,
-        string? postalCode, string timeZone, string? phone,
+        string? postalCode, string timeZone, string? phone, string? countryCode = null,
         CancellationToken cancellationToken = default);
 
     Task<Result> DeactivateAsync(

@@ -226,8 +226,12 @@ public sealed class StatutoryRuleIntegrationTests
         (await mediator.Send(IncomeTaxCommand("2026-2027"))).IsSuccess.Should().BeTrue();
         (await mediator.Send(EpfCommand("2026-2027"))).IsSuccess.Should().BeTrue();
 
+        // Multi-country tax foundation: the preview now computes under a selected country. The rules above are
+        // seeded for "LK" (see IncomeTaxCommand/EpfCommand), so previewing under "LK" resolves them unchanged —
+        // same numbers as before the country dimension existed.
         var calc = await mediator.Send(new TestStatutoryCalculationQuery(
-            MonthlyGross: 750_000m, MonthlyBasic: 20_000m, DeclaredMonthlyExemptions: 0m, ExemptEarnings: 0m, FiscalYear: "2026-2027"));
+            MonthlyGross: 750_000m, MonthlyBasic: 20_000m, DeclaredMonthlyExemptions: 0m, ExemptEarnings: 0m,
+            FiscalYear: "2026-2027", CountryCode: "LK"));
 
         calc.IsSuccess.Should().BeTrue();
         calc.Value!.IncomeTax.Should().Be(62_500m);
