@@ -365,5 +365,16 @@ public sealed class StatutoryExemptionIntegrationTests
             ComponentAmounts: new Dictionary<Guid, decimal> { [basicId] = 750_000m }));
         with.Value!.IncomeTax.Should().Be(32_500m);
         with.Value.TaxableIncome.Should().Be(600_000m);
+
+        // An EMPTY map is treated as none (guards the `is { Count: > 0 }` coalesce against an `is not null` mutation).
+        var emptyMap = await mediator.Send(new TestStatutoryCalculationQuery(
+            750_000m, null, 0m, 0m, "2026-2027", "LK", ComponentAmounts: new Dictionary<Guid, decimal>()));
+        emptyMap.Value!.IncomeTax.Should().Be(62_500m);
+
+        // A map keyed by a DIFFERENT component (TryGetValue miss) → exemption 0 (guards the key match).
+        var wrongKey = await mediator.Send(new TestStatutoryCalculationQuery(
+            750_000m, null, 0m, 0m, "2026-2027", "LK",
+            ComponentAmounts: new Dictionary<Guid, decimal> { [BaseEntity.NewUuidV7()] = 750_000m }));
+        wrongKey.Value!.IncomeTax.Should().Be(62_500m);
     }
 }

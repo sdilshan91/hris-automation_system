@@ -177,18 +177,22 @@ public sealed class StatutoryRuleMultiCountryPostgresTests : IAsyncLifetime
     }
 
     // (e) TAX-3 normalization guard on REAL Postgres: a raw/seed/import write can store an un-normalized
-    //     country_code ("lk"), bypassing the service's normalize-on-save. The resolver matches on
-    //     upper(country_code), so a normalized "LK" lookup must STILL resolve the dirty-cased row. The InMemory
-    //     arm only client-evaluates ToUpper; only this proves the SQL upper() match translates + resolves a
-    //     dirty row (without it the cumulative pre-scan would thread prior-YTD while the resolver matched nothing).
-    [Fact]
-    public async Task Resolver_UpperMatchesAnUnNormalizedStoredCountryCode_OnPostgres()
+    //     country_code — either case-dirty ("lk") OR whitespace-dirty ("LK ") — bypassing the service's
+    //     normalize-on-save. The resolver matches on upper(btrim(country_code)) to EXACTLY mirror the cumulative
+    //     pre-scan / report normalization (Trim()+ToUpper()), so a normalized "LK" lookup must STILL resolve the
+    //     dirty row. The InMemory arm only client-evaluates Trim()/ToUpper(); only this proves the SQL
+    //     upper(btrim(...)) match translates + resolves. The whitespace case guards the gap the case-only upper()
+    //     left open (pre-scan threads prior-YTD while the resolver would otherwise match nothing → money divergence).
+    [Theory]
+    [InlineData("lk")]   // case-dirty
+    [InlineData("LK ")]  // whitespace-dirty (trailing space)
+    public async Task Resolver_NormalizedMatchesAnUnNormalizedStoredCountryCode_OnPostgres(string storedCode)
     {
         var (tc, cu) = Actors();
         await using var seed = CreateContext(tc, cu);
         await seed.Database.MigrateAsync();
 
-        var raw = RawIncomeTax("lk", new DateOnly(2026, 4, 1), isDeleted: false); // lower-case, bypasses the service
+        var raw = RawIncomeTax(storedCode, new DateOnly(2026, 4, 1), isDeleted: false); // bypasses the service
         raw.TaxSlabs =
         [
             new TaxSlab { Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, SlabFrom = 0m, SlabTo = 100_000m, RatePercentage = 0m, OrderIndex = 0 },
