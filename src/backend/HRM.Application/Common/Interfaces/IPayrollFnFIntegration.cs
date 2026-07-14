@@ -1,12 +1,11 @@
 namespace HRM.Application.Common.Interfaces;
 
 /// <summary>
-/// US-ONB-005 FR-6 / BR-4 seam: triggers the Full &amp; Final (F&amp;F) settlement workflow in Payroll when an
-/// offboarding completes. Offboarding only TRIGGERS the settlement; the F&amp;F calculation itself is owned by
-/// the Payroll module (BR-4). The default implementation emits a structured log event (mirrors the
-/// performance/payroll LogOnly notification seam) in lieu of a real cross-module call/queue, which does not
-/// exist yet. TODO(payroll integration): replace with a real F&amp;F initiation call/event once Payroll exposes
-/// an inbound F&amp;F endpoint.
+/// US-ONB-005 FR-6 / BR-4 seam: triggers the Full &amp; Final (F&amp;F) settlement in Payroll when an offboarding
+/// completes. Offboarding only TRIGGERS the settlement; the F&amp;F calculation itself is owned by the Payroll
+/// module (BR-4). Implemented by <c>RealPayrollFnFIntegration</c> (ISSUE-294 Phase 1): a tenant-configurable,
+/// effective-dated engine that computes + persists a <c>FinalSettlement</c> (idempotent on the offboarding
+/// instance) reusing the run's pro-ration, the statutory resolver, and the forfeitable-leave encashment calc.
 /// </summary>
 public interface IPayrollFnFIntegration
 {

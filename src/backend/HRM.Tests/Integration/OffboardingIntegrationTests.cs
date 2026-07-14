@@ -76,7 +76,7 @@ public sealed class OffboardingIntegrationTests
         public void SetSystemContext() { }
     }
 
-    private IMediator BuildPipeline(Guid tenantId, Guid userId)
+    private IMediator BuildPipeline(Guid tenantId, Guid userId, bool realFnF = false)
     {
         var tenantContext = new MutableTenantContext { TenantId = tenantId };
 
@@ -98,14 +98,24 @@ public sealed class OffboardingIntegrationTests
         _authService.RevokeAllSessionsAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
         _sessionRevoker = Substitute.For<ISessionRevoker>();
-        _payrollFnF = Substitute.For<IPayrollFnFIntegration>();
-        _payrollFnF.TriggerFinalSettlementAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns(_settlementRef);
-
         services.AddSingleton(_authService);
         services.AddSingleton(_sessionRevoker);
-        services.AddSingleton(_payrollFnF);
+
+        if (realFnF)
+        {
+            // ISSUE-294 DI-swap seam: register the REAL F&F integration so the CompleteAsync → RealPayrollFnFIntegration
+            // → persisted FinalSettlement chain is exercised end-to-end (a revert to LogOnly or a dropped call is caught).
+            services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
+            services.AddScoped<IPayrollFnFIntegration, RealPayrollFnFIntegration>();
+        }
+        else
+        {
+            _payrollFnF = Substitute.For<IPayrollFnFIntegration>();
+            _payrollFnF.TriggerFinalSettlementAsync(
+                    Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+                .Returns(_settlementRef);
+            services.AddSingleton(_payrollFnF);
+        }
 
         services.AddScoped<IOffboardingService, OffboardingService>();
 
@@ -205,6 +215,31 @@ public sealed class OffboardingIntegrationTests
         await _authService.Received(1).RevokeAllSessionsAsync(_employeeUserA, _tenantA, Arg.Any<CancellationToken>());
         await _payrollFnF.Received(1).TriggerFinalSettlementAsync(
             _tenantA, _employeeA, initiated.Value.Id, Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── ISSUE-294 DI-swap seam: CompleteAsync drives the REAL RealPayrollFnFIntegration → a FinalSettlement row ──
+    [Fact]
+    public async Task Complete_withRealIntegration_persistsAFinalSettlementRow()
+    {
+        var mediator = BuildPipeline(_tenantA, _hrUserA, realFnF: true);
+
+        var initiated = (await mediator.Send(InitiateCmd(_employeeA))).Value!;
+        await ClearAllMandatory(mediator, initiated);
+        var complete = await mediator.Send(new CompleteOffboardingCommand(initiated.Id));
+
+        complete.IsSuccess.Should().BeTrue(complete.Error);
+        complete.Value!.Completed.Should().BeTrue();
+        complete.Value.FinalSettlementRef.Should().NotBeNull("the real integration returns the persisted settlement ref");
+
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        await using var db = new AppDbContext(options, ctx);
+        // The REAL integration persisted a FinalSettlement for this offboarding — proves the DI swap + the
+        // CompleteAsync → RealPayrollFnFIntegration seam are wired (a revert to LogOnly leaves no row → this fails).
+        var settlement = await db.FinalSettlements.FirstOrDefaultAsync(s => s.OffboardingInstanceId == initiated.Id);
+        settlement.Should().NotBeNull();
+        settlement!.Id.Should().Be(complete.Value.FinalSettlementRef!.Value);
+        settlement.EmployeeId.Should().Be(_employeeA);
     }
 
     // ── AC-5 / BR-2 blocked completion ──────────────────────────────────

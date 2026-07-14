@@ -171,6 +171,12 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // US-ONB-005: offboarding / exit-clearance instances + their task instances (tenant-scoped).
     public DbSet<OffboardingInstance> OffboardingInstances => Set<OffboardingInstance>();
     public DbSet<OffboardingTaskInstance> OffboardingTaskInstances => Set<OffboardingTaskInstance>();
+    // ISSUE-294 (F&F Phase 1): per-tenant effective-dated final-settlement policy + computed settlements
+    // (tenant-scoped). The policy governs which components a settlement includes; the settlement is the
+    // one-time financial event created at offboarding completion (idempotent on offboarding_instance_id).
+    public DbSet<TenantFnFPolicy> TenantFnFPolicies => Set<TenantFnFPolicy>();
+    public DbSet<FinalSettlement> FinalSettlements => Set<FinalSettlement>();
+    public DbSet<FinalSettlementLine> FinalSettlementLines => Set<FinalSettlementLine>();
     // US-ONB-006: exit-interview questionnaire templates + recorded interviews/responses (tenant-scoped).
     public DbSet<ExitInterviewTemplate> ExitInterviewTemplates => Set<ExitInterviewTemplate>();
     public DbSet<ExitInterviewQuestion> ExitInterviewQuestions => Set<ExitInterviewQuestion>();
@@ -695,6 +701,16 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         modelBuilder.Entity<BenefitEnrollment>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // ISSUE-294 (F&F Phase 1): tenant isolation for the F&F policy + computed settlements + their lines.
+        modelBuilder.Entity<TenantFnFPolicy>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        modelBuilder.Entity<FinalSettlement>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        modelBuilder.Entity<FinalSettlementLine>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
