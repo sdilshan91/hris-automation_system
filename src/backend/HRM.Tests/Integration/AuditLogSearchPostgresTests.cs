@@ -220,4 +220,41 @@ public sealed class AuditLogSearchPostgresTests : IAsyncLifetime
         result.Value!.Items.Should().BeEmpty();
         result.Value.TotalCount.Should().Be(0);
     }
+
+    // ========================================================================
+    // BUG-085 (MED, US-NTF-005 FR-2): a date-only startDate/endDate binds to a DateTime with
+    // Kind=Unspecified, which Npgsql REFUSES to write to the timestamptz created_at column → 500.
+    // This ONLY reproduces on real Postgres (InMemory ignores the timestamptz Kind rule). Pre-fix the
+    // filter predicate uses the raw bound → the query THROWS. Post-fix BuildFilteredQuery normalizes any
+    // Kind to UTC → the bare-date range is honoured (UTC-midnight) and the query returns rows cleanly.
+    // ========================================================================
+    [Fact]
+    public async Task DateOnlyBound_KindUnspecified_NormalizedToUtc_DoesNotThrow_Postgres_BUG085()
+    {
+        var (tenantContext, currentUser) = BuildActors();
+        await using var db = CreateContext(tenantContext, currentUser);
+        await db.Database.MigrateAsync();
+        var service = await SeedBug241RowsAsync(db, tenantContext, currentUser); // 3 rows, CreatedAt stamped ~now (UTC)
+
+        // A bare `?startDate=2000-01-01` / `?endDate=2100-01-01` binds to a Kind=Unspecified DateTime.
+        var startUnspecified = new DateTime(2000, 1, 1);
+        var endUnspecified = new DateTime(2100, 1, 1);
+        startUnspecified.Kind.Should().Be(DateTimeKind.Unspecified); // guard: this is the exact BUG-085 input.
+        endUnspecified.Kind.Should().Be(DateTimeKind.Unspecified);
+
+        // Pre-fix: Npgsql throws "Cannot write DateTime with Kind=Unspecified to timestamptz" (the call 500s).
+        // Post-fix: normalized to UTC → the [2000, 2100] window includes all three seeded rows.
+        var result = await service.ListAsync(
+            new AuditLogFilter(startUnspecified, endUnspecified, null, null, null, null), page: 1, pageSize: 20);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Items.Should().HaveCount(3);
+
+        // And a UTC-Z bound (Kind=Utc) still works unchanged — normalization is a no-op for it.
+        var utcResult = await service.ListAsync(
+            new AuditLogFilter(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc), null, null, null, null, null),
+            page: 1, pageSize: 20);
+        utcResult.IsSuccess.Should().BeTrue(utcResult.Error);
+        utcResult.Value!.Items.Should().HaveCount(3);
+    }
 }
