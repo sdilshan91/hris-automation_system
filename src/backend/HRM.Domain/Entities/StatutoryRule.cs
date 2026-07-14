@@ -37,6 +37,15 @@ public sealed class StatutoryRule : BaseEntity, IAuditExempt
     /// <summary>Whether the rule is currently active (FR-1, default true).</summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// TAX-3: cumulative (YTD) income-tax basis (default FALSE = monthly non-cumulative, today's behaviour).
+    /// Meaningful ONLY for <see cref="StatutoryRuleType.IncomeTax"/> rules. When TRUE the rule's tax slabs are
+    /// interpreted as ANNUAL thresholds and each month withholds <c>tax(cumulative-FY-taxable) −
+    /// tax-already-withheld-YTD</c> (cumulative PAYE true-up). Existing rules default to FALSE so behaviour is
+    /// unchanged.
+    /// </summary>
+    public bool IsCumulative { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
     public List<TaxSlab> TaxSlabs { get; set; } = [];
 

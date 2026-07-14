@@ -107,15 +107,32 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
             {
                 case StatutoryRuleType.IncomeTax:
                 {
+                    // Bands come from the SAME resolved rule whose IsCumulative flag drives the branch below.
                     var bands = rule.TaxSlabs
                         .OrderBy(s => s.OrderIndex)
                         .Select(s => new TaxBand(s.SlabFrom, s.SlabTo, s.RatePercentage))
                         .ToList();
-                    incomeTax = StatutoryCalculator.ComputeIncomeTax(taxableIncome, bands);
-                    if (incomeTax > 0m)
-                        lines.Add(new StatutoryDeductionLine(
-                            rule.Id, rule.RuleName, incomeTax, IsEmployerContribution: false,
-                            $"progressive tax on {taxableIncome:0.##}"));
+                    if (rule.IsCumulative)
+                    {
+                        // TAX-3: cumulative PAYE. The bands are ANNUAL thresholds; withhold the YTD true-up delta
+                        // tax(prior-YTD-taxable + this-month-taxable) − tax-already-withheld-YTD. StatutoryDeductions
+                        // still reports THIS month's taxable + this month's WITHHELD (the delta) for slip persistence.
+                        var cumulativeTaxable = wage.PriorTaxableIncomeYtd + taxableIncome;
+                        incomeTax = StatutoryCalculator.ComputeIncomeTaxYtd(
+                            cumulativeTaxable, bands, wage.PriorTaxWithheldYtd);
+                        if (incomeTax > 0m)
+                            lines.Add(new StatutoryDeductionLine(
+                                rule.Id, rule.RuleName, incomeTax, IsEmployerContribution: false,
+                                $"cumulative PAYE on {cumulativeTaxable:0.##} YTD less {wage.PriorTaxWithheldYtd:0.##} withheld"));
+                    }
+                    else
+                    {
+                        incomeTax = StatutoryCalculator.ComputeIncomeTax(taxableIncome, bands);
+                        if (incomeTax > 0m)
+                            lines.Add(new StatutoryDeductionLine(
+                                rule.Id, rule.RuleName, incomeTax, IsEmployerContribution: false,
+                                $"progressive tax on {taxableIncome:0.##}"));
+                    }
                     break;
                 }
                 case StatutoryRuleType.EPF when rule.SocialSecurityRule is { } ss:

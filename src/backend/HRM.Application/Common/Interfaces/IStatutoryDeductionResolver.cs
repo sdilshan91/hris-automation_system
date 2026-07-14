@@ -43,12 +43,20 @@ public sealed record StatutoryDeductionLine(
     string Basis);
 
 /// <summary>The per-employee wage inputs needed to compute statutory deductions (US-PAY-006 BR-2/BR-8).</summary>
+/// <remarks>
+/// TAX-3: <paramref name="PriorTaxableIncomeYtd"/> / <paramref name="PriorTaxWithheldYtd"/> carry the
+/// fiscal-year-to-date taxable income and tax already withheld (prior periods, same country FY). They are used
+/// ONLY when the resolved IncomeTax rule is cumulative; a monthly (default) rule ignores them, so both default
+/// to 0 and existing callers are unaffected.
+/// </remarks>
 public sealed record StatutoryWageInput(
     decimal MonthlyGross,
     decimal MonthlyBasic,
     decimal ExemptEarnings,
     decimal DeclaredExemptions,
-    IReadOnlyDictionary<Guid, decimal>? ComponentAmountsById);
+    IReadOnlyDictionary<Guid, decimal>? ComponentAmountsById,
+    decimal PriorTaxableIncomeYtd = 0m,
+    decimal PriorTaxWithheldYtd = 0m);
 
 /// <summary>
 /// Resolves the statutory rule versions in effect for a payroll period and computes the per-employee

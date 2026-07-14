@@ -228,6 +228,61 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             .ToList();
         var soleRuleCountry = ruleCountries.Count == 1 ? ruleCountries[0] : null;
 
+        // ── TAX-3: YTD-cumulative income tax (per-country) ──────────────────────────────────────────────────
+        // Cumulative-vs-monthly is a per-country property on the IncomeTax rule. Resolve, ONCE per DISTINCT tax
+        // country (no N+1), the effective IncomeTax rule's (EffectiveFrom, EffectiveTo, IsCumulative) for THIS
+        // period — mirroring the resolver's country-filtered, per-type SelectEffective. Only a cumulative country
+        // needs a prior-YTD lookup; a monthly (default) country threads 0/0 and behaves exactly as before.
+        //
+        // KNOWN LIMITATION (v1, acceptable): re-running an EARLIER month does NOT auto-recompute LATER months'
+        // YTD — those later months would each need re-running to true-up. Finalized months are immutable, so this
+        // only affects not-yet-finalized months.
+        var periodDate = monthStart; // == FiscalYearResolver.PeriodDate(PayYear, PayMonth).
+        var incomeTaxRuleRows = await _dbContext.StatutoryRules.AsNoTracking()
+            .Where(r => r.IsActive
+                && r.RuleType == StatutoryRuleType.IncomeTax
+                && r.EffectiveFrom <= monthEnd
+                && (r.EffectiveTo == null || r.EffectiveTo >= monthStart))
+            .Select(r => new { r.CountryCode, r.EffectiveFrom, r.EffectiveTo, r.IsCumulative })
+            .ToListAsync(cancellationToken);
+
+        var incomeTaxByCountry = new Dictionary<string, (DateOnly From, DateOnly? To, bool IsCumulative)>();
+        foreach (var grp in incomeTaxRuleRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.CountryCode))
+            .GroupBy(r => r.CountryCode!.Trim().ToUpperInvariant()))
+        {
+            var candidates = grp.ToList();
+            var ranges = candidates.Select(r => (r.EffectiveFrom, r.EffectiveTo)).ToList();
+            var idx = FiscalYearResolver.SelectEffective(periodDate, ranges);
+            if (idx >= 0)
+                incomeTaxByCountry[grp.Key] = (candidates[idx].EffectiveFrom, candidates[idx].EffectiveTo, candidates[idx].IsCumulative);
+        }
+        var anyCumulative = incomeTaxByCountry.Values.Any(v => v.IsCumulative);
+
+        // Prior slips for YTD accumulation — batch-loaded ONCE (no N+1), ONLY when a cumulative country is in play.
+        // Window: periods strictly BEFORE the current period and within ~13 months back (covers an FY that spans the
+        // calendar-year boundary, e.g. LK Apr–Mar). One active slip per employee+period is guaranteed by the cleaner
+        // (cancelled/re-run slips are physically removed), so no status filter and no dedup are needed. Compared via
+        // an ordinal (year*12+month) so the boundary works across December.
+        var priorSlipsByEmployee = new Dictionary<Guid, List<(DateOnly Period, decimal Taxable, decimal Withheld)>>();
+        if (anyCumulative)
+        {
+            var currentOrdinal = run.PayYear * 12 + run.PayMonth;
+            var lookback = monthStart.AddMonths(-13);
+            var lowerOrdinal = lookback.Year * 12 + lookback.Month;
+            var priorRows = await _dbContext.PayrollSlips.AsNoTracking()
+                .Where(s => employeeIds.Contains(s.EmployeeId)
+                    && (s.PayYear * 12 + s.PayMonth) < currentOrdinal
+                    && (s.PayYear * 12 + s.PayMonth) >= lowerOrdinal)
+                .Select(s => new { s.EmployeeId, s.PayYear, s.PayMonth, s.TaxableIncome, s.IncomeTaxWithheld })
+                .ToListAsync(cancellationToken);
+            priorSlipsByEmployee = priorRows
+                .GroupBy(s => s.EmployeeId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(s => (new DateOnly(s.PayYear, s.PayMonth, 1), s.TaxableIncome, s.IncomeTaxWithheld)).ToList());
+        }
+
         var slips = new List<PayrollSlip>();
         var details = new List<PayrollSlipDetail>();
         int processed = 0, skipped = 0;
@@ -303,10 +358,31 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             empCountry = string.IsNullOrWhiteSpace(empCountry) ? null : empCountry.Trim().ToUpperInvariant();
             empCountry ??= soleRuleCountry;   // single-country backward-compat fallback (last resort).
 
+            // TAX-3: when this employee's tax country runs a CUMULATIVE income-tax rule, sum their prior-period
+            // TaxableIncome + IncomeTaxWithheld within the SAME fiscal year (period >= the rule's EffectiveFrom and
+            // < the current period). Pure dict + in-memory sums over the pre-loaded prior slips (no per-employee
+            // query). A monthly (default) country threads 0/0 — no lookup, no behaviour change.
+            decimal priorTaxableYtd = 0m, priorTaxWithheldYtd = 0m;
+            if (empCountry is not null
+                && incomeTaxByCountry.TryGetValue(empCountry, out var itRule)
+                && itRule.IsCumulative
+                && priorSlipsByEmployee.TryGetValue(emp.Id, out var priorList))
+            {
+                foreach (var p in priorList)
+                {
+                    if (p.Period >= itRule.From && p.Period < monthStart)
+                    {
+                        priorTaxableYtd += p.Taxable;
+                        priorTaxWithheldYtd += p.Withheld;
+                    }
+                }
+            }
+
             // US-PAY-006: when statutory rules are configured for the period, replace the structure's as-is
             // statutory lines with rule-computed deductions. No-op (returns `result`) when no rules exist.
             result = await ApplyStatutoryRulesAsync(
-                result, inputs, emp, empCountry, statutoryConfigured, run.PayYear, run.PayMonth, runLog, cancellationToken);
+                result, inputs, emp, empCountry, statutoryConfigured, run.PayYear, run.PayMonth,
+                priorTaxableYtd, priorTaxWithheldYtd, runLog, cancellationToken);
 
             // US-PAY-007: remaining (non-tax-base) adjustment lines, then track applied ids for FR-4.
             result = ApplyNonTaxableAdjustments(result, employeeAdjustments);
@@ -334,6 +410,9 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
                 OvertimeAmount = overtime.OvertimeAmount,
                 LeaveEncashmentDays = encashmentDays,
                 LeaveEncashmentAmount = encashmentAmount,
+                // TAX-3: income-tax basis persisted on every slip (0 when no income-tax rule / skipped / stripped).
+                TaxableIncome = result.TaxableIncome,
+                IncomeTaxWithheld = result.IncomeTaxWithheld,
                 // ISSUE-165: stamp the resolved dept/designation NAMES at generation (null when the employee has
                 // no/unknown dept or job title — the read path falls back to live resolution for null).
                 DepartmentSnapshot = departmentNames.GetValueOrDefault(emp.DepartmentId),
@@ -434,7 +513,8 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// </summary>
     private async Task<PayrollSlipResult> ApplyStatutoryRulesAsync(
         PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, Employee emp,
-        string? countryCode, bool statutoryConfigured, int payYear, int payMonth, StringBuilder runLog, CancellationToken ct)
+        string? countryCode, bool statutoryConfigured, int payYear, int payMonth,
+        decimal priorTaxableIncomeYtd, decimal priorTaxWithheldYtd, StringBuilder runLog, CancellationToken ct)
     {
         // Multi-country tax foundation (money-critical): when the employee's tax country cannot be resolved
         // (no branch/location country AND no tenant default), we must NEVER guess a country. Skip statutory for
@@ -472,7 +552,9 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             MonthlyBasic: basic,
             ExemptEarnings: 0m,
             DeclaredExemptions: 0m,
-            ComponentAmountsById: componentAmounts);
+            ComponentAmountsById: componentAmounts,
+            PriorTaxableIncomeYtd: priorTaxableIncomeYtd,   // TAX-3: 0 for a monthly (non-cumulative) rule.
+            PriorTaxWithheldYtd: priorTaxWithheldYtd);
 
         Result<StatutoryDeductions> resolved;
         try
@@ -485,7 +567,13 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             return result;
         }
 
-        if (resolved.IsFailure || resolved.Value is null || string.IsNullOrEmpty(resolved.Value.FiscalYear) || resolved.Value.Lines.Count == 0)
+        // FiscalYear (not line count) is the discriminator for "were rules resolved for this country?". A
+        // resolved country whose income tax computes to 0 this period (below-threshold, zero income, or — TAX-3 —
+        // a cumulative month still under the annual threshold) has a NON-EMPTY FiscalYear but ZERO lines: that is
+        // an APPLIED result (0 deductions), NOT an unresolved country. We must still flow it through so the slip
+        // persists TaxableIncome (needed for the TAX-3 YTD accumulation + the year-end statement). Only an EMPTY
+        // FiscalYear means no rules were resolved for the country → strip + flag (or legacy no-op).
+        if (resolved.IsFailure || resolved.Value is null || string.IsNullOrEmpty(resolved.Value.FiscalYear))
         {
             if (!statutoryConfigured)
                 return result; // truly no rules in effect for the period → legacy no-op (pre-US-PAY-006 behaviour).
@@ -540,6 +628,9 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             NetSalary = net,
             StatutoryTotal = Round(statutoryTotal),
             Lines = lines,
+            // TAX-3: persist THIS month's taxable + the tax withheld this period (the YTD delta when cumulative).
+            TaxableIncome = deductions.TaxableIncome,
+            IncomeTaxWithheld = deductions.IncomeTax,
         };
     }
 

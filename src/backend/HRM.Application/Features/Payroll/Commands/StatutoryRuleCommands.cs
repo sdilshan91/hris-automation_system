@@ -17,7 +17,8 @@ public sealed record CreateStatutoryRuleCommand(
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
     SocialSecurityInputDto? SocialSecurity,
-    IReadOnlyList<ExemptionInput>? Exemptions = null
+    IReadOnlyList<ExemptionInput>? Exemptions = null,
+    bool IsCumulative = false
 ) : IRequest<Result<StatutoryRuleDto>>;
 
 public sealed class CreateStatutoryRuleCommandHandler : IRequestHandler<CreateStatutoryRuleCommand, Result<StatutoryRuleDto>>
@@ -29,7 +30,7 @@ public sealed class CreateStatutoryRuleCommandHandler : IRequestHandler<CreateSt
         => _service.CreateAsync(new CreateStatutoryRuleInput(
             request.RuleType, request.RuleName, request.CountryCode, request.FiscalYear,
             request.EffectiveFrom, request.EffectiveTo, request.IsActive, request.TaxSlabs, request.SocialSecurity,
-            request.Exemptions),
+            request.Exemptions, request.IsCumulative),
             cancellationToken);
 }
 
@@ -44,7 +45,8 @@ public sealed record UpdateStatutoryRuleCommand(
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
     SocialSecurityInputDto? SocialSecurity,
-    IReadOnlyList<ExemptionInput>? Exemptions = null
+    IReadOnlyList<ExemptionInput>? Exemptions = null,
+    bool IsCumulative = false
 ) : IRequest<Result<StatutoryRuleDto>>;
 
 public sealed class UpdateStatutoryRuleCommandHandler : IRequestHandler<UpdateStatutoryRuleCommand, Result<StatutoryRuleDto>>
@@ -56,7 +58,7 @@ public sealed class UpdateStatutoryRuleCommandHandler : IRequestHandler<UpdateSt
         => _service.UpdateAsync(request.RuleId, new UpdateStatutoryRuleInput(
             request.RuleName, request.CountryCode, request.FiscalYear, request.EffectiveFrom,
             request.EffectiveTo, request.IsActive, request.TaxSlabs, request.SocialSecurity,
-            request.Exemptions),
+            request.Exemptions, request.IsCumulative),
             cancellationToken);
 }
 

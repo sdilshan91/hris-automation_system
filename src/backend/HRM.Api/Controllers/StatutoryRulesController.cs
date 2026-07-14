@@ -89,7 +89,8 @@ public sealed class StatutoryRulesController : ControllerBase
                 request.SocialSecurity.WageCeilingAnnual, request.SocialSecurity.ApplicableOn,
                 request.SocialSecurity.ApplicableComponentIds),
             request.Exemptions.Select(e => new ExemptionInput(
-                e.Name, e.CalculationType, e.Value, e.ComponentId, e.MaxAmount, e.IsAnnual, e.OrderIndex)).ToList()),
+                e.Name, e.CalculationType, e.Value, e.ComponentId, e.MaxAmount, e.IsAnnual, e.OrderIndex)).ToList(),
+            request.IsCumulative),
             cancellationToken);
 
         if (result.IsFailure)
@@ -115,7 +116,8 @@ public sealed class StatutoryRulesController : ControllerBase
                 request.SocialSecurity.WageCeilingAnnual, request.SocialSecurity.ApplicableOn,
                 request.SocialSecurity.ApplicableComponentIds),
             request.Exemptions.Select(e => new ExemptionInput(
-                e.Name, e.CalculationType, e.Value, e.ComponentId, e.MaxAmount, e.IsAnnual, e.OrderIndex)).ToList()),
+                e.Name, e.CalculationType, e.Value, e.ComponentId, e.MaxAmount, e.IsAnnual, e.OrderIndex)).ToList(),
+            request.IsCumulative),
             cancellationToken);
 
         return result.IsFailure

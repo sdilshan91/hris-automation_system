@@ -52,6 +52,8 @@ public sealed record StatutoryRuleDto
     public DateOnly EffectiveFrom { get; init; }
     public DateOnly? EffectiveTo { get; init; }
     public bool IsActive { get; init; }
+    /// <summary>TAX-3: cumulative (YTD) income-tax basis. Meaningful only for IncomeTax rules; default false.</summary>
+    public bool IsCumulative { get; init; }
     public IReadOnlyList<TaxSlabDto> TaxSlabs { get; init; } = [];
     public IReadOnlyList<ExemptionDto> Exemptions { get; init; } = [];
     public SocialSecurityRuleDto? SocialSecurity { get; init; }
@@ -120,6 +122,8 @@ public sealed record CreateStatutoryRuleRequest
     public DateOnly EffectiveFrom { get; init; }
     public DateOnly? EffectiveTo { get; init; }
     public bool IsActive { get; init; } = true;
+    /// <summary>TAX-3: cumulative (YTD) income-tax basis. Meaningful only for IncomeTax rules; default false.</summary>
+    public bool IsCumulative { get; init; }
     public IReadOnlyList<TaxSlabRequest> TaxSlabs { get; init; } = [];
     public IReadOnlyList<ExemptionRequest> Exemptions { get; init; } = [];
     public SocialSecurityRuleRequest? SocialSecurity { get; init; }
@@ -134,6 +138,8 @@ public sealed record UpdateStatutoryRuleRequest
     public DateOnly EffectiveFrom { get; init; }
     public DateOnly? EffectiveTo { get; init; }
     public bool IsActive { get; init; } = true;
+    /// <summary>TAX-3: cumulative (YTD) income-tax basis. Meaningful only for IncomeTax rules; default false.</summary>
+    public bool IsCumulative { get; init; }
     public IReadOnlyList<TaxSlabRequest> TaxSlabs { get; init; } = [];
     public IReadOnlyList<ExemptionRequest> Exemptions { get; init; } = [];
     public SocialSecurityRuleRequest? SocialSecurity { get; init; }

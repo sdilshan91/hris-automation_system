@@ -44,6 +44,22 @@ public sealed class PayrollSlip : BaseEntity, IAuditExempt
     /// <summary>The per-component breakdown lines (FR-5f). Owned collection; loaded explicitly where needed.</summary>
     public List<PayrollSlipDetail> Details { get; set; } = [];
 
+    // ── TAX-3: income-tax basis persisted on EVERY slip (for the TAX-4 year-end statement + reporting) ────────
+
+    /// <summary>
+    /// This period's TAXABLE income (gross − exempt − declared − configurable exemptions), floored at 0
+    /// (TAX-3). Persisted regardless of the cumulative flag so the year-end statement + reports can sum it.
+    /// numeric(18,2), default 0. 0 when no income-tax rule applied / statutory was skipped.
+    /// </summary>
+    public decimal TaxableIncome { get; set; }
+
+    /// <summary>
+    /// The income tax WITHHELD this period (TAX-3). For a monthly (non-cumulative) rule this is the month's tax;
+    /// for a cumulative rule it is the YTD true-up delta (tax(cumulative-taxable) − tax-already-withheld-YTD).
+    /// numeric(18,2), default 0. 0 when no income-tax rule applied / statutory was skipped.
+    /// </summary>
+    public decimal IncomeTaxWithheld { get; set; }
+
     // ── ISSUE-165: point-in-time department/designation snapshot ───────────────
 
     /// <summary>

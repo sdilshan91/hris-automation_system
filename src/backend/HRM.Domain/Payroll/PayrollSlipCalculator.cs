@@ -51,6 +51,11 @@ public readonly record struct PayrollSlipLine(
     string CalculationBasis);
 
 /// <summary>The fully-computed result for one employee's payslip (US-PAY-003 FR-5).</summary>
+/// <remarks>
+/// TAX-3: <see cref="TaxableIncome"/> / <see cref="IncomeTaxWithheld"/> surface the income-tax basis out of the
+/// statutory pass so the processor can persist them on every slip. They default to 0 (no income-tax rule /
+/// skipped / stripped), so the pure calculator and every existing construction are unaffected.
+/// </remarks>
 public sealed record PayrollSlipResult(
     Guid EmployeeId,
     decimal GrossEarnings,
@@ -60,7 +65,9 @@ public sealed record PayrollSlipResult(
     decimal WorkingDays,
     decimal PaidDays,
     decimal LopDays,
-    IReadOnlyList<PayrollSlipLine> Lines);
+    IReadOnlyList<PayrollSlipLine> Lines,
+    decimal TaxableIncome = 0m,
+    decimal IncomeTaxWithheld = 0m);
 
 /// <summary>
 /// Pure, deterministic payroll-slip compute engine (US-PAY-003 FR-5). No DB / tenant / clock access, so it
