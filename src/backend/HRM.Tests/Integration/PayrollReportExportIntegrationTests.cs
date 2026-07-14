@@ -25,6 +25,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
+using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -532,6 +533,81 @@ public sealed class PayrollReportExportIntegrationTests
             result.StatusCode.Should().Be(400);
             result.ErrorCode.Should().Be("unsupported_format");
         }
+    }
+
+    // ── TAX-4: the new YearEndTaxStatement type routes through the REAL report service + the async export
+    //    pipeline. A small tenant renders inline + Completes; the export row count == the employee count. ──
+
+    [Fact]
+    public async Task Initiate_YearEndTaxStatement_GeneratesInline_WithRowCountMatchingEmployees()
+    {
+        // Seed a small LK tenant: an income-tax FY rule + a branch + two employees with finalized tax slips.
+        using (var seed = Db(_tenantA))
+        {
+            var lkLocId = BaseEntity.NewUuidV7();
+            seed.Locations.Add(new Location
+            {
+                Id = lkLocId, TenantId = _tenantA, Name = "Colombo", TimeZone = "Asia/Colombo",
+                CountryCode = "LK", IsActive = true, IsDeleted = false,
+            });
+            seed.StatutoryRules.Add(new StatutoryRule
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, RuleType = StatutoryRuleType.IncomeTax,
+                RuleName = "PAYE", CountryCode = "LK", FiscalYear = "2026-2027",
+                EffectiveFrom = new DateOnly(2026, 4, 1), EffectiveTo = new DateOnly(2027, 3, 31), IsActive = true,
+            });
+
+            var runId = BaseEntity.NewUuidV7();
+            seed.PayrollRuns.Add(new PayrollRun
+            {
+                Id = runId, TenantId = _tenantA, PayMonth = 12, PayYear = 2026,
+                Status = PayrollRunStatus.Finalized, InitiatedBy = Guid.NewGuid(), InitiatedAt = DateTime.UtcNow,
+            });
+
+            foreach (var no in new[] { "LK1", "LK2" })
+            {
+                var empId = BaseEntity.NewUuidV7();
+                seed.Employees.Add(new Employee
+                {
+                    Id = empId, TenantId = _tenantA, EmployeeNo = no, FirstName = no, LastName = "X",
+                    Email = $"{no}@t.com", DateOfJoining = new DateTime(2020, 1, 1),
+                    EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+                    DepartmentId = BaseEntity.NewUuidV7(), JobTitleId = BaseEntity.NewUuidV7(), LocationId = lkLocId,
+                });
+                seed.PayrollSlips.Add(new PayrollSlip
+                {
+                    Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, PayrollRunId = runId, EmployeeId = empId,
+                    GrossEarnings = 100_000m, TotalDeductions = 5_000m, NetSalary = 95_000m,
+                    TaxableIncome = 100_000m, IncomeTaxWithheld = 5_000m,
+                    WorkingDays = 22, PaidDays = 22, LopDays = 0, PayMonth = 6, PayYear = 2026,
+                });
+            }
+            await seed.SaveChangesAsync();
+        }
+
+        // Real report service (not the fake) behind a real export service, so the async pipeline actually
+        // generates the year-end statement.
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+        var currentUser = new FakeCurrentUser { UserId = _userA, TenantId = _tenantA };
+        var audit = new PayrollAuditLogger(db, ctx, currentUser, NullLogger<PayrollAuditLogger>.Instance);
+        var report = new PayrollReportService(db, ctx, audit, NullLogger<PayrollReportService>.Instance);
+        var storage = new LocalReportExportStorage(NullLogger<LocalReportExportStorage>.Instance);
+        var svc = new PayrollReportExportService(
+            db, ctx, currentUser, report, storage, NullLogger<PayrollReportExportService>.Instance);
+
+        var init = await svc.InitiateAsync(
+            "YearEndTaxStatement", new PayrollReportQueryParams { PayMonth = 12, PayYear = 2026 }, "csv");
+
+        init.IsSuccess.Should().BeTrue(init.Error);
+        init.Value!.Status.Should().Be("Completed"); // small (2 rows) → inline, no Hangfire job.
+        init.Value.RowCount.Should().Be(2);           // one row per employee.
+
+        var row = await db.PayrollReportExports.SingleAsync(e => e.Id == init.Value.ExportId);
+        row.Status.Should().Be(PayrollReportExportStatus.Completed);
+        row.RowCount.Should().Be(2);
+        row.FilePath.Should().NotBeNullOrEmpty();
     }
 
     // ── FiltersJson round-trips the PR1 salary-structure/date-range filters ───
