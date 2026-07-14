@@ -322,4 +322,27 @@ describe('StatutoryConfigurationComponent', () => {
     );
     expect(history).toBeTruthy();
   });
+
+  // ─── a11y: fiscal-year tablist children (BUG-110) ────────────
+
+  it('keeps only role=tab buttons inside the Fiscal year tablist (BUG-110)', () => {
+    setup();
+    const tablist = fixture.nativeElement.querySelector(
+      '[role="tablist"][aria-label="Fiscal year"]',
+    ) as HTMLElement;
+    expect(tablist).toBeTruthy();
+
+    // No interactive non-tab child remains inside the tablist (aria-required-children).
+    expect(tablist.querySelector('button:not([role="tab"])')).toBeNull();
+    const tabButtons = Array.from(tablist.querySelectorAll('button'));
+    expect(tabButtons.length).toBeGreaterThan(0);
+    tabButtons.forEach((b) => expect(b.getAttribute('role')).toBe('tab'));
+
+    // The "+ Add year" action still exists, but as a sibling outside the tablist.
+    const addYear = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).find((b) => b.textContent?.includes('+ Add year'));
+    expect(addYear).toBeTruthy();
+    expect(addYear!.closest('[role="tablist"]')).toBeNull();
+  });
 });

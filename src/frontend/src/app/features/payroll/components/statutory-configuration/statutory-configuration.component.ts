@@ -98,23 +98,27 @@ interface ISocialSecurityForm {
         <span class="text-xs font-medium uppercase tracking-wide text-neutral-500"
           >Fiscal year</span
         >
-        <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Fiscal year">
-          @for (fy of fiscalYears(); track fy) {
-            <button
-              type="button"
-              role="tab"
-              [attr.aria-selected]="fy === fiscalYear()"
-              class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-              [class]="
-                fy === fiscalYear()
-                  ? 'bg-neutral-900 text-white'
-                  : 'bg-white text-neutral-600 ring-1 ring-neutral-200 hover:bg-neutral-50'
-              "
-              (click)="selectFiscalYear(fy)"
-            >
-              {{ fy }}
-            </button>
-          }
+        <!-- Wrap the tablist and the Add-year action together so the tablist
+             holds ONLY role="tab" children (aria-required-children). -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Fiscal year">
+            @for (fy of fiscalYears(); track fy) {
+              <button
+                type="button"
+                role="tab"
+                [attr.aria-selected]="fy === fiscalYear()"
+                class="rounded-lg px-3 py-1.5 text-sm font-medium transition"
+                [class]="
+                  fy === fiscalYear()
+                    ? 'bg-neutral-900 text-white'
+                    : 'bg-white text-neutral-600 ring-1 ring-neutral-200 hover:bg-neutral-50'
+                "
+                (click)="selectFiscalYear(fy)"
+              >
+                {{ fy }}
+              </button>
+            }
+          </div>
           <button
             type="button"
             class="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 ring-1 ring-dashed ring-neutral-300 hover:bg-neutral-50"

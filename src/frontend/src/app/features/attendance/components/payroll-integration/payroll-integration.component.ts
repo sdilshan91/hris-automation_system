@@ -183,7 +183,8 @@ import {
         </div>
       } @else {
         <!-- Desktop side-by-side table -->
-        <div class="card-notion !p-0 overflow-x-auto hidden md:block" @fadeIn>
+        <div class="card-notion !p-0 overflow-x-auto hidden md:block" @fadeIn
+          tabindex="0" role="region" aria-label="Attendance vs payroll reconciliation">
           <table class="w-full text-sm" aria-label="Attendance vs payroll reconciliation">
             <thead>
               <tr class="border-b border-neutral-100">
@@ -266,7 +267,8 @@ import {
                 No payroll-data rows for {{ monthLabel() }}.
               </div>
             } @else {
-              <div class="card-notion !p-0 overflow-x-auto" data-test="preview-table">
+              <div class="card-notion !p-0 overflow-x-auto" data-test="preview-table"
+                tabindex="0" role="region" aria-label="Payroll preview">
                 <table class="w-full text-sm" aria-label="Attendance payroll-data feed">
                   <thead>
                     <tr class="border-b border-neutral-100">
