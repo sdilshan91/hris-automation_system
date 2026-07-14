@@ -188,11 +188,22 @@ public sealed class AuditLogService : IAuditLogService
         // EXPLICIT tenant scope — audit_logs has no global query filter (AC-1/FR-1).
         var query = _db.AuditLogs.AsNoTracking().Where(a => a.TenantId == tenantId);
 
+        // BUG-085: created_at is timestamptz — Npgsql rejects a DateTime with Kind=Unspecified (which a
+        // date-only ?startDate=2026-07-01 binds to) with a 500. Normalize any Kind to UTC so a bare-date bound
+        // is treated as UTC-midnight instead of throwing (shared by the list + export paths).
         if (filter.StartDate is { } start)
-            query = query.Where(a => a.CreatedAt >= start);
+        {
+            var startUtc = start.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(start, DateTimeKind.Utc) : start.ToUniversalTime();
+            query = query.Where(a => a.CreatedAt >= startUtc);
+        }
 
         if (filter.EndDate is { } end)
-            query = query.Where(a => a.CreatedAt <= end);
+        {
+            var endUtc = end.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(end, DateTimeKind.Utc) : end.ToUniversalTime();
+            query = query.Where(a => a.CreatedAt <= endUtc);
+        }
 
         if (filter.ActorUserId is { } actorId)
             query = query.Where(a => a.UserId == actorId);
