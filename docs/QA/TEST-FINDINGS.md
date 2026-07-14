@@ -5164,6 +5164,15 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Evidence:** axe-core 4.12.1 on `main`: `scrollable-region-focusable` (serious, 1 node) target `.\!p-0`; node html `<div class="card-notion !p-0 overflow-x-auto hidden md:block …">`; failureSummary "Element should have focusable content | Element should be focusable". Page otherwise renders the Lock-Attendance button, payroll stepper (1 Lock → 2 Generate → 3 Review → 4 Finalize), reconciliation table; reflow clean (0 min-width-over-360 elements).
 - **Severity rationale:** MED — the reconciliation table is a primary US-ATT-009 surface and horizontal columns that overflow are unreachable by keyboard; contained to one scroll region on an HR-only page, single-attribute fix, not data-affecting. (The Lock confirm-modal — if hand-rolled — would additionally fall under the **BUG-109** class; not separately verified here since the lock action is a state-changing write avoided under report-only.)
 
+### ISSUE-297 — Goal-comment thread notification routing: an owner's reply notifies the OWNER, not the manager (one-sided after ISSUE-141 enabled two-way replies)
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-009 / (follow-up of ISSUE-141, PR #298)
+- **Title:** ISSUE-141 (#298) made the goal-comment thread two-way (the goal owner can now reply). But `GoalProgressService.AddCommentAsync` still routes the "goal-comment-added" notification to the goal OWNER unconditionally — so an owner's own reply notifies the owner about their own comment and NEVER notifies the manager. A true conversation thread should notify the OTHER party (manager ← owner reply; owner ← manager comment).
+- **Root cause (confidence 90%):** the notification target in `AddCommentAsync` (~GoalProgressService.cs:354) is hardcoded to the goal owner, written before owner-authored comments were possible. Auto-healed OUT-OF-LANE from the ISSUE-141 fix (backend-dev flagged it; the finding scoped only the authz/reply enablement, not notification routing).
+- **Suggested direction (NOT applied):** route the notification to the counterparty — if the author is the owner, notify the manager (ResolveManagerId); if the author is the manager/HR, notify the owner (current behaviour). Report-only until scheduled.
+- **Severity rationale:** LOW — the reply itself works + is visible in the thread; only the push-notification recipient is wrong for owner-authored comments. Non-blocking, delivery is the log-only seam today.
+
+---
+
 ### ISSUE-296 — Systematic a11y sweep: ~16 hand-rolled `role="dialog"` overlays lack a focus trap / Escape-to-close (shared BUG-109 defect; no shared overlay component exists)
 - **Type:** ISSUE
 - **Severity:** MED
