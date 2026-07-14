@@ -131,6 +131,7 @@
 | [US-PAY-010](payroll/US-PAY-010.md) | Attendance/leave integration into payroll | Must Have | HR Officer |
 | [US-PAY-011](payroll/US-PAY-011.md) | Bulk payslip email distribution | Should Have | HR Officer |
 | [US-PAY-012](payroll/US-PAY-012.md) | Payroll history and audit trail | Must Have | HR Officer |
+| [US-PAY-013](payroll/US-PAY-013.md) | Full & Final (F&F) settlement | Must Have | HR Officer / Tenant Admin |
 
 ## 7. Performance Management
 
