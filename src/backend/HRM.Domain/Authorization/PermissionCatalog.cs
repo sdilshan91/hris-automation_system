@@ -277,6 +277,14 @@ public static class PermissionCatalog
         public const string ViewTeam = "Reports.View.Team";
 
         /// <summary>
+        /// BR-5 (ISSUE-137): department-scoped read permission for the recruitment dashboard — a caller with
+        /// this (but not <see cref="ViewAll"/> or Recruitment.View) sees ONLY their OWN department's vacancy
+        /// metrics, and a caller-supplied departmentId can never widen that scope (clamped to own department).
+        /// Mirrors <see cref="ViewTeam"/>/<see cref="ViewAll"/>. Granted to the built-in Manager role.
+        /// </summary>
+        public const string ViewDepartment = "Reports.View.Department";
+
+        /// <summary>
         /// DEC-1: dedicated report row-scope permission — a report caller with this sees ALL tenant
         /// employees' report rows (org-wide). Replaces the prior arrangement where report scope BORROWED
         /// the cross-module Employee/Leave/Attendance.View.All perms (ISSUE-195 residue). The report scope
@@ -514,7 +522,7 @@ public static class PermissionCatalog
         Performance.ReviewTeam, Performance.ReviewAll, Performance.PublishAll,
 
         // Reports
-        Reports.View, Reports.Export, Reports.ViewTeam, Reports.ViewAll,
+        Reports.View, Reports.Export, Reports.ViewTeam, Reports.ViewDepartment, Reports.ViewAll,
 
         // Roles
         Roles.View, Roles.Manage, Roles.AssignUsers,
@@ -695,7 +703,8 @@ public static class PermissionCatalog
             Attendance.ViewTeam, Attendance.ApproveTeam,
             Performance.ViewTeam, Performance.SetGoalTeam, Performance.ReviewTeam,
             // DEC-1: holds Employee/Leave/Attendance.View.Team (not .All) → team report scope preserved via Reports.View.Team.
-            Reports.View, Reports.ViewTeam,
+            // BR-5 (ISSUE-137): department-scoped recruitment dashboard — auto-restricted to the manager's own department.
+            Reports.View, Reports.ViewTeam, Reports.ViewDepartment,
             Training.ViewAll,
         },
         BuiltInRoles.Employee => new[]

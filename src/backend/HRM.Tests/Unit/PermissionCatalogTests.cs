@@ -277,6 +277,32 @@ public sealed class PermissionCatalogTests
             "Manager never held an org-wide read, so it must NOT gain org-wide report scope");
     }
 
+    // ── ISSUE-137 (BR-5): department-scoped recruitment dashboard permission. ──────────────────────────
+
+    [Fact]
+    public void Reports_ViewDepartment_IsInCatalog_ISSUE137()
+    {
+        PermissionCatalog.IsValid(PermissionCatalog.Reports.ViewDepartment).Should().BeTrue(
+            "Reports.View.Department must be registered in AllPermissions (BR-5 department-scoped dashboard)");
+        PermissionCatalog.Reports.ViewDepartment.Should().Be("Reports.View.Department");
+    }
+
+    [Fact]
+    public void DefaultPermissionsFor_Manager_HasReportsViewDepartment_ISSUE137()
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.Manager);
+        perms.Should().Contain(PermissionCatalog.Reports.ViewDepartment,
+            "the Manager persona owns the department-scoped recruitment dashboard (BR-5)");
+    }
+
+    [Fact]
+    public void DefaultPermissionsFor_Recruiter_HasNoReportsViewDepartment_ISSUE137()
+    {
+        var perms = PermissionCatalog.DefaultPermissionsFor(PermissionCatalog.BuiltInRoles.Recruiter);
+        perms.Should().NotContain(PermissionCatalog.Reports.ViewDepartment,
+            "Recruiter keeps full recruitment access via Recruitment.View — it must NOT gain the dept-scoped perm");
+    }
+
     [Fact]
     public void DefaultPermissionsFor_Employee_HasNeitherReportsScope_DEC1()
     {

@@ -282,6 +282,9 @@ public sealed class ApplicantService : IApplicantService
             Source = a.Source,
             SourceName = a.Source.ToString(),
             IsInternal = a.IsInternal,
+            ConvertedToEmployeeId = a.ConvertedToEmployeeId,
+            IsConverted = a.ConvertedToEmployeeId != null,
+            ConvertedAt = a.ConvertedAt,
             AppliedAt = a.AppliedAt,
         }).ToList();
 
@@ -849,6 +852,9 @@ public sealed class ApplicantService : IApplicantService
         Source = a.Source,
         SourceName = a.Source.ToString(),
         IsInternal = a.IsInternal,
+        ConvertedToEmployeeId = a.ConvertedToEmployeeId,
+        IsConverted = a.ConvertedToEmployeeId != null,
+        ConvertedAt = a.ConvertedAt,
         AppliedAt = a.AppliedAt,
     };
 
@@ -962,6 +968,9 @@ public sealed class ApplicantService : IApplicantService
         SourceName = a.Source.ToString(),
         IsInternal = a.IsInternal,
         LinkedEmployeeId = a.LinkedEmployeeId,
+        ConvertedToEmployeeId = a.ConvertedToEmployeeId,
+        IsConverted = a.ConvertedToEmployeeId != null,
+        ConvertedAt = a.ConvertedAt,
         AppliedAt = a.AppliedAt,
         CreatedAt = a.CreatedAt,
         RowVersion = a.RowVersion,

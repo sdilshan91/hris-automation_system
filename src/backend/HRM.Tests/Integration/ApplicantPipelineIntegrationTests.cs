@@ -380,6 +380,50 @@ public sealed class ApplicantPipelineIntegrationTests
         move.ErrorCode.Should().Be("reason_required");
     }
 
+    // ── ISSUE-232: converted-applicant link surfaced on the read path ────────────────────────────────
+
+    [Fact]
+    public async Task ApplicantDetail_ExposesConvertedLink_WhenConverted_ISSUE232()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "ada@a.com");
+        var employeeId = Guid.NewGuid();
+        var convertedAt = new DateTime(2026, 4, 20, 9, 0, 0, DateTimeKind.Utc);
+        MarkConverted(_tenantA, "ada@a.com", employeeId, convertedAt);
+
+        var detail = await mediator.Send(new GetApplicantDetailQuery(id));
+
+        detail.IsSuccess.Should().BeTrue();
+        detail.Value!.Profile.IsConverted.Should().BeTrue();
+        detail.Value.Profile.ConvertedToEmployeeId.Should().Be(employeeId);
+        detail.Value.Profile.ConvertedAt.Should().Be(convertedAt);
+    }
+
+    [Fact]
+    public async Task ApplicantDetail_HasNoConvertedLink_WhenNotConverted_ISSUE232()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var id = ApplicantId(mediator, "bob@a.com"); // untouched, never converted
+
+        var detail = await mediator.Send(new GetApplicantDetailQuery(id));
+
+        detail.IsSuccess.Should().BeTrue();
+        detail.Value!.Profile.IsConverted.Should().BeFalse();
+        detail.Value.Profile.ConvertedToEmployeeId.Should().BeNull();
+        detail.Value.Profile.ConvertedAt.Should().BeNull();
+    }
+
+    private void MarkConverted(Guid tenantId, string email, Guid employeeId, DateTime convertedAt)
+    {
+        var ctx = new MutableTenantContext { TenantId = tenantId };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+        var a = db.Applicants.First(x => x.Email == email);
+        a.ConvertedToEmployeeId = employeeId;
+        a.ConvertedAt = convertedAt;
+        db.SaveChanges();
+    }
+
     private Guid ApplicantId(IMediator mediator, string email)
         => mediator.Send(new GetApplicantPipelineQuery(_vacancyA, new PipelineFilter()))
             .GetAwaiter().GetResult()

@@ -52,6 +52,16 @@ public sealed record PipelineApplicantCardDto
     public ApplicationSource Source { get; init; }
     public string SourceName { get; init; } = string.Empty;
     public bool IsInternal { get; init; }
+
+    /// <summary>ISSUE-232: the employee this applicant was converted into (US-REC-010), or null.</summary>
+    public Guid? ConvertedToEmployeeId { get; init; }
+
+    /// <summary>ISSUE-232: convenience flag — true when <see cref="ConvertedToEmployeeId"/> is set.</summary>
+    public bool IsConverted { get; init; }
+
+    /// <summary>ISSUE-232: timestamp of the convert-to-employee action, or null if not converted.</summary>
+    public DateTime? ConvertedAt { get; init; }
+
     public DateTime AppliedAt { get; init; }
 }
 
