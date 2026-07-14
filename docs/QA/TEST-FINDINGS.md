@@ -5195,6 +5195,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-302 — P2-1d attendance export: no enqueue-site test asserts `_currentUser.UserId` is threaded into the correct positional slot
+- **Type:** ISSUE (test-health) · **Severity:** LOW · **Status:** OPEN · **Layer:** BE-test · **US/TC:** US-ATT-007 / (auto-healed OUT-OF-LANE from PR #304 integration-enforcer)
+- **Title:** P2-1d inserted `requestedByUserId` as **arg 3** of `IAttendanceSummaryExportJob.RunAsync` (shifting year/month/format/filter down). The 3 new `AttendanceSummaryExportJobNotificationTests` exercise `DispatchReportReadyAsync` in isolation (strong) but nothing drives the >1,000-employee async path in `AttendanceSummaryService.ExportAsync` to assert the enqueued Hangfire `Job.Args[2] == _currentUser.UserId`. A wrong-slot or `_currentUser`-not-wired regression would pass every current test. (Wiring is confirmed by the enforcer's line-by-line inspection — this is defense-in-depth against a future signature edit.)
+- **Suggested direction (NOT applied):** mirror `LeaveReportServiceTests.Export_LargeDataset_EnqueuesJob_ThreadingRequesterUserId` (:950) — seed >1,000 employees, inject an `ICurrentUser` with a known id, capture the `Job` via a substituted `IBackgroundJobClient.Create`, assert `Args[0]==tenantId` + `Args[2]==userId`.
+- **Severity rationale:** LOW — wiring confirmed; a positional-slot guard for a future refactor; needs a >1k-employee harness (deferred at session end).
+
+---
+
 ### ISSUE-301 — F&F `TenantFnFPolicy` accepts the semantically-dangerous flag combo `IncludeProRatedFinalPay=true` + `FinalPeriodOwnedBySettlement=false` (latent double-pay, not live)
 - **Type:** ISSUE (policy-modeling / needs-decision) · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PAY-* (F&F) / (auto-healed OUT-OF-LANE from PR #303 integration-enforcer)
 - **Title:** `CreateFnFPolicyValidator` has no cross-field rule: a tenant can save a policy where F&F pays the pro-rated final month (`IncludeProRatedFinalPay=true`) while NOT owning the final period (`FinalPeriodOwnedBySettlement=false` → the run-guard won't exclude the employee). Today this is **latent, not live**: `OffboardingService.CompleteAsync` sets `Status=Terminated`+`IsActive=false` in the same transaction before the settlement exists, so the run's `IsActive && (Active||Probation)` filter excludes the employee regardless of the flag.
