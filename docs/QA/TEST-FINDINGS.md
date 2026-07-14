@@ -4275,7 +4275,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-085
 - **Type:** BUG (input handling -- a valid-looking date filter 500s)
 - **Severity:** MED
-- **Status:** OPEN — **RE-CLUSTERED 2026-07-13: this is NOT an audit finding.** It is a date-only `startDate`/`endDate` filter throwing 500 (`DateTime Kind=Unspecified` → `timestamptz`) on the audit-log LIST endpoint. Moved from the P2-2 audit-gaps cluster to the **P2-2 UTC/date-Kind cluster** (with BUG-245/246). Still open; fix belongs with the UTC-boundary batch.
+- **Status:** RESOLVED (PR #296, 2026-07-14) — **P2-2 UTC/date-Kind cluster.** `AuditLogService.BuildFilteredQuery` now normalizes each date bound to UTC (`Kind=Unspecified`→`SpecifyKind(Utc)`, else `ToUniversalTime`) before the `created_at` range predicate, so a bare-date `startDate`/`endDate` is honoured as UTC-midnight instead of 500ing; fixes list + export. Regression: a Testcontainers arm in `AuditLogSearchPostgresTests` (the throw only reproduces vs a real `timestamptz`).
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-005 / TC-NTF-005-02 (AC-2, FR-2)
 - **Title:** GET /api/v1/tenant/audit-logs?startDate=2030-01-01 (date-only, no time/zone) returns 500; the same value as 2030-01-01T00:00:00Z returns 200. A date-only bound parses to a DateTime with Kind=Unspecified, which Npgsql refuses to write to the timestamptz column.
@@ -5751,14 +5751,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** either drop WebP from the photo allow-list or add a WebP metadata-strip path. Report only.
 
 ### BUG-245 — Attendance HR dashboard / live-board / custom-report derive day-boundaries in UTC (same non-UTC-tenant defect as ISSUE-065)
-- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 2b, 2026-07-08)
+- **Type / Severity / Status:** BUG · MED · **RESOLVED (stale-fixed by commit `7343c9b5`, verified 2026-07-14)** — `AttendanceDashboardService` was converted to `TenantClock` in the same commit that named BUG-245/246/247 (today/day-windows/present-days now tenant-local; UTC tenant = no-op). Confirmed `7343c9b5` is in `test/local-subdomains` history + `TenantClock` used in the service. Ledger was stale-OPEN; covered by `AttendanceTimezoneSiblingsTests`.
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-010 · (sibling of the Phase 2b tenant-timezone fix)
 - **Title:** `AttendanceDashboardService` (:263 "today", :276-277 & :551-552 day windows, :306 present-days `DISTINCT(date)`) still computes "today", day windows, and present-day counts in **UTC**, so for a non-UTC tenant the dashboard/live-board/custom-report show the wrong day's data — the same day-boundary defect the Phase 2b fix corrected in `AttendanceService`/`AttendanceSummaryService`.
 - **Suggested direction (NOT applied):** reuse the new `TenantClock` helper; thread `TimeZoneInfo` through like `AttendanceSummaryService`. Report only.
 
 ### BUG-246 — Attendance→payroll monthly aggregation windows/day-grouping are UTC (non-UTC tenant boundary punches roll into the wrong pay-period day)
-- **Type / Severity / Status:** BUG · MED · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 2b, 2026-07-08)
+- **Type / Severity / Status:** BUG · MED · **RESOLVED (stale-fixed by commit `7343c9b5`, verified 2026-07-14)** — `AttendancePayrollService`'s attendance-month window (`EmployeesWithAttendanceRecordsAsync`) was converted to tenant-local `TenantClock.LocalToUtc` bounds against `AttendanceLogs.ClockIn` in the same commit; the `:449 DateOnly.FromDateTime(EffectiveDate)` was deliberately kept (it's an HR `EmploymentHistory.EffectiveDate`, not a punch instant). Confirmed `7343c9b5` in history + `TenantClock` used. Ledger was stale-OPEN; covered by `AttendancePayrollTimezoneTests` (Testcontainers).
 - **Layer:** BE
 - **Module / US / TC:** Attendance/Payroll · US-ATT-009 · (sibling of Phase 2b)
 - **Title:** `AttendancePayrollService` (:346-347 month window, :424 `DateOnly.FromDateTime(EffectiveDate)`) aggregates attendance for payroll in **UTC**, so a non-UTC tenant's near-midnight punches fall into the wrong pay-period day — feeding wrong attendance inputs to payroll.
