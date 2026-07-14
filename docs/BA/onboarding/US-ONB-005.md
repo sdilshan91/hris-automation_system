@@ -38,7 +38,7 @@ acceptance_criteria_count: 6
 - FR-3: The system SHALL include built-in clearance categories: IT (access revocation, asset return), Finance (advances, loans, F&F), Admin (ID card, parking, keys), Manager (knowledge transfer, handover).
 - FR-4: The system SHALL provide a clearance dashboard showing department-wise approval status with visual indicators (green = cleared, red = pending, yellow = issues).
 - FR-5: The system SHALL deactivate the employee's user account upon offboarding completion (prevent future logins).
-- FR-6: The system SHALL trigger an F&F settlement notification to Payroll upon offboarding completion.
+- FR-6: The system SHALL trigger an F&F settlement notification to Payroll upon offboarding completion. *(The Payroll-side settlement calculation this defers to is now specified in **US-PAY-013** — Full & Final (F&F) Settlement; this story only triggers it.)*
 - FR-7: The system SHALL revoke all active sessions (SignalR disconnect + JWT blacklist via Redis) for the departing employee upon offboarding completion.
 - FR-8: The system SHALL set `tenant_id` from the session context on all offboarding records.
 - FR-9: The system SHALL record all offboarding actions in the tenant audit log.
@@ -54,7 +54,7 @@ acceptance_criteria_count: 6
 - BR-1: Offboarding can only be initiated for employees with status "resignation_accepted", "terminated", or "contract_ended".
 - BR-2: All mandatory clearance tasks must be approved before offboarding can be completed.
 - BR-3: Asset return tasks automatically update the asset register status.
-- BR-4: F&F settlement calculation is handled by the Payroll module; offboarding only triggers the notification.
+- BR-4: F&F settlement calculation is handled by the Payroll module; offboarding only triggers the notification. *(Specified in **US-PAY-013** — Full & Final (F&F) Settlement.)*
 - BR-5: The employee's data is retained per the tenant's data retention policy; only the user account is deactivated.
 - BR-6: Offboarding completion is irreversible; the employee record cannot be reactivated (a new record must be created for rehires).
 

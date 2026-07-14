@@ -5195,6 +5195,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-303 — F&F Phase 1 test-depth gaps: no `FnFPolicyController` policy-CRUD API test + no settlement-specific 2-tenant cross-read arm
+- **Type:** ISSUE (test-health) · **Severity:** LOW · **Status:** OPEN · **Layer:** BE-test · **US/TC:** US-PAY-013 AC-1/AC-2/AC-7 / (surfaced by the qa-engineer during the US-PAY-013 traceability authoring)
+- **Title:** Two subset-coverage gaps on the shipped F&F Phase 1 (behaviour itself is verified — no defect):
+  1. **AC-1/FR-1 policy-CRUD API:** the automated tests seed `TenantFnFPolicy` directly via EF and prove *toggle-governs-computation*; the `FnFPolicyController` contract (edit **creates a new effective-dated row** rather than overwriting history) is only a manual/API check — no dedicated controller/integration test.
+  2. **AC-7 tenant isolation:** automated coverage on `final_settlement` is the **dormant RLS-policy-existence** check only; there is no settlement-specific 2-tenant cross-read arm (runtime isolation rests on the module-wide EF global query filter + `TenantInterceptor`, proven elsewhere e.g. `RlsIsolationPostgresTests`).
+- **Suggested direction (NOT applied):** add a `FnFPolicyController` integration test (create/edit → new effective-dated row + latest-wins resolution) + a Tenant-A/Tenant-B cross-read arm on the settlement tables (edits `src/HRM.Tests`).
+- **Severity rationale:** LOW — the computation semantics (AC-1/AC-2) + module-wide isolation are already automated + green; these are full-fidelity API-surface + settlement-specific-isolation depth arms.
+
+---
+
 ### ISSUE-302 — P2-1d attendance export: no enqueue-site test asserts `_currentUser.UserId` is threaded into the correct positional slot
 - **Type:** ISSUE (test-health) · **Severity:** LOW · **Status:** OPEN · **Layer:** BE-test · **US/TC:** US-ATT-007 / (auto-healed OUT-OF-LANE from PR #304 integration-enforcer)
 - **Title:** P2-1d inserted `requestedByUserId` as **arg 3** of `IAttendanceSummaryExportJob.RunAsync` (shifting year/month/format/filter down). The 3 new `AttendanceSummaryExportJobNotificationTests` exercise `DispatchReportReadyAsync` in isolation (strong) but nothing drives the >1,000-employee async path in `AttendanceSummaryService.ExportAsync` to assert the enqueued Hangfire `Job.Args[2] == _currentUser.UserId`. A wrong-slot or `_currentUser`-not-wired regression would pass every current test. (Wiring is confirmed by the enforcer's line-by-line inspection — this is defense-in-depth against a future signature edit.)

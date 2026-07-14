@@ -127,7 +127,7 @@
 - [ ] **BUILD/FIX Core HR functional gaps (P3c-functional, 2026-07-01)** — **BUG-113 HIGH** (employee Create/Edit API has no `LocationId` → employee↔location linking impossible, per-location count always 0, deactivation-guard is dead code — wire `LocationId` into `CreateEmployeeCommand`/`UpdateEmployeeProfileRequest`), **BUG-114 MED** (tenant storage quota `MaxStorageGb` never enforced — no usage sum/gate), **ISSUE-218 MED** (reporting-manager/chain not exposed on `GET /employees/{id}`).
 - [ ] **(tracked above) US-PLT-002 RLS** — unblocks the 19 `[DEFERRED]` RLS/at-rest-encryption isolation TCs; env precondition now met.
 
-## 6. Payroll (12 stories) — COMPLETE ✅
+## 6. Payroll (13 stories) — COMPLETE ✅
 - [x] US-PAY-001 — Configure salary structure and components *(PR #63)*
 - [x] US-PAY-002 — Assign salary structure to employee *(PR #64)*
 - [x] US-PAY-003 — Run monthly payroll *(PR #65)*
@@ -140,6 +140,7 @@
 - [x] US-PAY-010 — Attendance/leave integration into payroll *(PR #72)*
 - [x] US-PAY-011 — Bulk payslip email distribution *(PR #73)*
 - [x] US-PAY-012 — Payroll history and audit trail *(PR #74)*
+- [x] US-PAY-013 — Full & Final (F&F) settlement — **Phase 1 shipped** *(PR #303)*; Phase 2 (gratuity/notice/severance/loan recovery, settlement PDF, FE policy UI) deferred
 
 ## 7. Performance Management (10 stories) — COMPLETE ✅
 - [x] US-PRF-001 — Manager sets goals/KPIs for team *(PR #75)*
