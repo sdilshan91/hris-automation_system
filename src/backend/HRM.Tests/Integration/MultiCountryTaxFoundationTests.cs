@@ -23,6 +23,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Locations.Commands;
 using HRM.Application.Features.Locations.Queries;
 using HRM.Application.Features.Payroll.Commands;
+using HRM.Application.Features.Payroll.Queries;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -458,5 +459,35 @@ public sealed class MultiCountryTaxFoundationTests
             created.Value.Id, "HQ", null, null, null, null, "India", null, "Asia/Colombo", null, CountryCode: "in"));
         updated.IsSuccess.Should().BeTrue(updated.Error);
         updated.Value!.CountryCode.Should().Be("IN");
+    }
+
+    // ── TAX-3 normalization guard: the write path always upper-cases, but a raw/seed/import write could bypass
+    //    the service and store an un-normalized CountryCode. The resolver normalizes the STORED side too, so such
+    //    a dirty-cased rule still resolves (else the cumulative pre-scan would thread prior-YTD while the resolver
+    //    silently matched nothing — a money-path divergence). Baseline-vs-corrupted so it doesn't couple to bands. ──
+    [Fact]
+    public async Task Resolver_MatchesAnUnNormalizedStoredCountryCode()
+    {
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        (await mediator.Send(LkIncomeTax("2026-2027"))).IsSuccess.Should().BeTrue();
+
+        // Baseline: the correctly-cased "LK" rule resolves and produces real tax.
+        var baseline = await mediator.Send(new TestStatutoryCalculationQuery(750_000m, null, 0m, 0m, "2026-2027", "LK"));
+        baseline.IsSuccess.Should().BeTrue(baseline.Error);
+        baseline.Value!.IncomeTax.Should().BeGreaterThan(0m);
+
+        // Simulate a raw/import write that bypassed the service's normalize-on-save → the stored code is lower-case.
+        using (var db = Db(_tenantA))
+        {
+            var rule = await db.StatutoryRules.SingleAsync(r => r.CountryCode == "LK");
+            rule.CountryCode = "lk";
+            await db.SaveChangesAsync();
+        }
+
+        // The normalized "LK" preview must STILL resolve the dirty-cased rule to the identical tax (not empty).
+        var afterCorruption = await mediator.Send(new TestStatutoryCalculationQuery(750_000m, null, 0m, 0m, "2026-2027", "LK"));
+        afterCorruption.IsSuccess.Should().BeTrue(afterCorruption.Error);
+        afterCorruption.Value!.IncomeTax.Should().Be(baseline.Value!.IncomeTax);
     }
 }

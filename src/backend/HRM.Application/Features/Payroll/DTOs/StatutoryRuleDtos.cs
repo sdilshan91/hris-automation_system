@@ -167,6 +167,20 @@ public sealed record TestCalculationRequest
     public string? FiscalYear { get; init; }
     /// <summary>Multi-country tax foundation: which country's regime to preview under (e.g. "LK").</summary>
     public string? CountryCode { get; init; }
+
+    /// <summary>TAX-2 component-aware preview: sample per-component amounts (componentId → monthly amount) so a
+    /// <c>PercentOfComponent</c> exemption previews the same figure the run applies. Optional — when null/empty a
+    /// percent-of-component exemption previews as 0 (as before). FlatAmount + PercentOfGross never need this.</summary>
+    public IReadOnlyDictionary<Guid, decimal>? ComponentAmounts { get; init; }
+
+    /// <summary>TAX-3 cumulative preview: fiscal-year-to-date taxable income already earned in prior periods.
+    /// Used ONLY when the resolved IncomeTax rule is cumulative, to preview the YTD true-up delta rather than the
+    /// first-month figure. Default 0 → first-month/monthly behaviour (unchanged for non-cumulative rules).</summary>
+    public decimal PriorTaxableIncomeYtd { get; init; }
+
+    /// <summary>TAX-3 cumulative preview: income tax already withheld fiscal-year-to-date (prior periods). Paired
+    /// with <see cref="PriorTaxableIncomeYtd"/> to compute the cumulative withholding delta. Default 0.</summary>
+    public decimal PriorTaxWithheldYtd { get; init; }
 }
 
 /// <summary>The computed statutory deductions for a test calculation (FR-5). All amounts are per-period (monthly).</summary>

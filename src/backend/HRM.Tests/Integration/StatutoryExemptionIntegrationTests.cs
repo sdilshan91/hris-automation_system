@@ -342,4 +342,28 @@ public sealed class StatutoryExemptionIntegrationTests
         preview.Value!.IncomeTax.Should().Be(12_500m);      // exemption applied in the preview.
         preview.Value.TaxableIncome.Should().Be(500_000m);  // 750k − 250k.
     }
+
+    // ── TAX-2 preview follow-up: a PercentOfComponent exemption previews as 0 UNLESS the caller supplies the
+    //    component amount; when supplied it matches the run (32,500 == PercentOfComponent_UsesRunPathComponentAmounts). ──
+    [Fact]
+    public async Task Preview_PercentOfComponent_UsesSuppliedComponentAmounts()
+    {
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var basicId = BaseEntity.NewUuidV7();
+        (await mediator.Send(LkIncomeTax(new[] { Ex(ExemptionCalculationType.PercentOfComponent, 20m, componentId: basicId) }))).IsSuccess.Should().BeTrue();
+
+        // Without the component amount the percent-of-component exemption resolves to 0 → full 750k taxed (62,500).
+        var without = await mediator.Send(new TestStatutoryCalculationQuery(
+            750_000m, null, 0m, 0m, "2026-2027", "LK"));
+        without.Value!.IncomeTax.Should().Be(62_500m);
+        without.Value.TaxableIncome.Should().Be(750_000m);
+
+        // With the supplied component amount: 20% of 750k = 150k exemption → taxable 600k → 32,500 (== the run path).
+        var with = await mediator.Send(new TestStatutoryCalculationQuery(
+            750_000m, null, 0m, 0m, "2026-2027", "LK",
+            ComponentAmounts: new Dictionary<Guid, decimal> { [basicId] = 750_000m }));
+        with.Value!.IncomeTax.Should().Be(32_500m);
+        with.Value.TaxableIncome.Should().Be(600_000m);
+    }
 }

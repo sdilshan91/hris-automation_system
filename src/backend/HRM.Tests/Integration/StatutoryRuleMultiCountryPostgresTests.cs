@@ -175,4 +175,36 @@ public sealed class StatutoryRuleMultiCountryPostgresTests : IAsyncLifetime
         var act = async () => await db2.SaveChangesAsync();
         await act.Should().NotThrowAsync();
     }
+
+    // (e) TAX-3 normalization guard on REAL Postgres: a raw/seed/import write can store an un-normalized
+    //     country_code ("lk"), bypassing the service's normalize-on-save. The resolver matches on
+    //     upper(country_code), so a normalized "LK" lookup must STILL resolve the dirty-cased row. The InMemory
+    //     arm only client-evaluates ToUpper; only this proves the SQL upper() match translates + resolves a
+    //     dirty row (without it the cumulative pre-scan would thread prior-YTD while the resolver matched nothing).
+    [Fact]
+    public async Task Resolver_UpperMatchesAnUnNormalizedStoredCountryCode_OnPostgres()
+    {
+        var (tc, cu) = Actors();
+        await using var seed = CreateContext(tc, cu);
+        await seed.Database.MigrateAsync();
+
+        var raw = RawIncomeTax("lk", new DateOnly(2026, 4, 1), isDeleted: false); // lower-case, bypasses the service
+        raw.TaxSlabs =
+        [
+            new TaxSlab { Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, SlabFrom = 0m, SlabTo = 100_000m, RatePercentage = 0m, OrderIndex = 0 },
+            new TaxSlab { Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, SlabFrom = 100_000m, SlabTo = null, RatePercentage = 10m, OrderIndex = 1 },
+        ];
+        seed.StatutoryRules.Add(raw);
+        await seed.SaveChangesAsync();
+
+        await using var db = CreateContext(tc, cu);
+        var resolver = new StatutoryDeductionResolver(db, tc, NullLogger<StatutoryDeductionResolver>.Instance);
+        var wage = new StatutoryWageInput(600_000m, 600_000m, 0m, 0m, null);
+        var resolved = await resolver.ResolveAsync(2026, 4, wage, "2026-2027", "LK");
+
+        resolved.IsSuccess.Should().BeTrue(resolved.Error);
+        // 10% of (600k − 100k) = 50,000 → the dirty-cased "lk" row was resolved via the upper() match.
+        // On the pre-fix `r.CountryCode == country` this would find nothing → Empty → IncomeTax 0.
+        resolved.Value!.IncomeTax.Should().Be(50_000m);
+    }
 }
