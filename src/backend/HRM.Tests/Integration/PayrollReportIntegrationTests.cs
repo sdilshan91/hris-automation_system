@@ -614,4 +614,241 @@ public sealed class PayrollReportIntegrationTests
             empNos.Should().NotContain("JAN"); // ISSUE-178: Jan is before DateFrom's month → excluded
         }
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  TAX-4 / FR-1f: Year-End Tax Statement — per-employee, per-country fiscal-year summary of the persisted
+    //  TaxableIncome + IncomeTaxWithheld slip columns. Columns:
+    //    Employee No, Employee, Country, Fiscal Year, Taxable Income, Income Tax Withheld.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Adds an active IncomeTax StatutoryRule (only the country / FY / effective window are read by the
+    /// year-end report — no tax slabs needed).</summary>
+    private async Task SeedIncomeTaxRule(
+        Guid tenantId, string countryCode, string fiscalYear, DateOnly from, DateOnly to)
+    {
+        using var db = Db(tenantId);
+        db.StatutoryRules.Add(new StatutoryRule
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId,
+            RuleType = StatutoryRuleType.IncomeTax, RuleName = $"PAYE-{countryCode}",
+            CountryCode = countryCode, FiscalYear = fiscalYear,
+            EffectiveFrom = from, EffectiveTo = to, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<Guid> SeedLocationWithCountry(Guid tenantId, string countryCode)
+    {
+        using var db = Db(tenantId);
+        var id = BaseEntity.NewUuidV7();
+        db.Locations.Add(new Location
+        {
+            Id = id, TenantId = tenantId, Name = $"Branch-{countryCode}-{id:N}",
+            TimeZone = "Asia/Colombo", CountryCode = countryCode, IsActive = true, IsDeleted = false,
+        });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
+    private async Task SeedTenantDefaultCountry(Guid tenantId, string? defaultCountryCode)
+    {
+        using var db = Db(tenantId);
+        db.Tenants.Add(new Tenant
+        {
+            Id = tenantId, Subdomain = $"t{tenantId:N}"[..20], Name = "Test Co",
+            DefaultCountryCode = defaultCountryCode,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<Guid> SeedTaxEmployee(Guid tenantId, string no, Guid? locationId)
+    {
+        using var db = Db(tenantId);
+        var empId = BaseEntity.NewUuidV7();
+        db.Employees.Add(new Employee
+        {
+            Id = empId, TenantId = tenantId, EmployeeNo = no, FirstName = no, LastName = "X",
+            Email = $"{no}@t.com", DateOfJoining = new DateTime(2020, 1, 1),
+            EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+            DepartmentId = BaseEntity.NewUuidV7(), JobTitleId = BaseEntity.NewUuidV7(), LocationId = locationId,
+        });
+        await db.SaveChangesAsync();
+        return empId;
+    }
+
+    /// <summary>Adds a FINALIZED-run slip carrying the TAX-3 TaxableIncome + IncomeTaxWithheld columns.
+    /// GrossEarnings/TotalDeductions are set DIFFERENT from Taxable/Withheld (gross &gt; taxable, deductions &gt;
+    /// withheld) so a builder that wrongly summed GrossEarnings/TotalDeductions instead of the tax columns would
+    /// produce different figures and fail the money assertions.</summary>
+    private async Task SeedTaxSlip(
+        Guid tenantId, Guid runId, Guid empId, int month, int year, decimal taxable, decimal withheld)
+    {
+        using var db = Db(tenantId);
+        var gross = taxable + 500_000m;      // deliberately ≠ taxable (exemptions/reliefs reduce gross → taxable).
+        var totalDeductions = withheld + 40_000m; // deliberately ≠ withheld (EPF/other deductions ≠ income tax).
+        db.PayrollSlips.Add(new PayrollSlip
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId, PayrollRunId = runId, EmployeeId = empId,
+            GrossEarnings = gross, TotalDeductions = totalDeductions, NetSalary = gross - totalDeductions,
+            TaxableIncome = taxable, IncomeTaxWithheld = withheld,
+            WorkingDays = 22, PaidDays = 22, LopDays = 0, PayMonth = month, PayYear = year,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static PayrollReportQueryParams YearEndParams(int year) =>
+        new() { PayMonth = 12, PayYear = year };
+
+    // ── Sums the persisted slip columns across the FY; Country + Fiscal Year correct; TotalRow sums ──
+
+    [Fact]
+    public async Task YearEndTaxStatement_SumsTaxableAndWithheld_AcrossFiscalYear()
+    {
+        // LK fiscal year Apr 2026 – Mar 2027.
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var emp = await SeedTaxEmployee(_tenantA, "LK1", lkLoc);
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        // Three months inside the FY window: taxable 100k/120k/140k, withheld 5k/6k/7k.
+        await SeedTaxSlip(_tenantA, runId, emp, 4, 2026, taxable: 100_000m, withheld: 5_000m);
+        await SeedTaxSlip(_tenantA, runId, emp, 5, 2026, taxable: 120_000m, withheld: 6_000m);
+        await SeedTaxSlip(_tenantA, runId, emp, 6, 2026, taxable: 140_000m, withheld: 7_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(PayrollReportType.YearEndTaxStatement, YearEndParams(2026));
+
+            result.IsSuccess.Should().BeTrue();
+            var report = result.Value!;
+            report.Rows.Should().ContainSingle(); // one row per employee.
+
+            var row = report.Rows.Single();
+            // Columns: Employee No, Employee, Country, Fiscal Year, Taxable Income, Income Tax Withheld.
+            row.Cells[0].Should().Be("LK1");
+            row.Cells[2].Should().Be("LK");
+            row.Cells[3].Should().Be("2026-2027");
+            row.Cells[4].Should().Be("360000.00"); // 100k + 120k + 140k
+            row.Cells[5].Should().Be("18000.00");   // 5k + 6k + 7k
+
+            report.TotalRow!.Cells[4].Should().Be("360000.00");
+            report.TotalRow.Cells[5].Should().Be("18000.00");
+        }
+    }
+
+    // ── Multi-country: two employees in different countries → each row shows their own country + FY + only their
+    //    own slips' sums ──
+
+    [Fact]
+    public async Task YearEndTaxStatement_MultiCountry_EachEmployeeUnderTheirOwnCountryAndFy()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        await SeedIncomeTaxRule(_tenantA, "IN", "FY26-27",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var inLoc = await SeedLocationWithCountry(_tenantA, "IN");
+        var lkEmp = await SeedTaxEmployee(_tenantA, "LK1", lkLoc);
+        var inEmp = await SeedTaxEmployee(_tenantA, "IN1", inLoc);
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        await SeedTaxSlip(_tenantA, runId, lkEmp, 4, 2026, taxable: 200_000m, withheld: 10_000m);
+        await SeedTaxSlip(_tenantA, runId, lkEmp, 5, 2026, taxable: 200_000m, withheld: 10_000m);
+        await SeedTaxSlip(_tenantA, runId, inEmp, 4, 2026, taxable: 300_000m, withheld: 30_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(PayrollReportType.YearEndTaxStatement, YearEndParams(2026));
+
+            result.IsSuccess.Should().BeTrue();
+            var rows = result.Value!.Rows;
+            rows.Should().HaveCount(2);
+
+            var lk = rows.Single(r => r.Cells[0] == "LK1");
+            lk.Cells[2].Should().Be("LK");
+            lk.Cells[3].Should().Be("2026-2027");
+            lk.Cells[4].Should().Be("400000.00"); // only LK1's own slips (200k + 200k)
+            lk.Cells[5].Should().Be("20000.00");
+
+            var ind = rows.Single(r => r.Cells[0] == "IN1");
+            ind.Cells[2].Should().Be("IN");
+            ind.Cells[3].Should().Be("FY26-27");
+            ind.Cells[4].Should().Be("300000.00");
+            ind.Cells[5].Should().Be("30000.00");
+
+            // TotalRow sums ACROSS the two employees (a copy-first-row / mis-sum bug is caught only with >1 row).
+            result.Value!.TotalRow!.Cells[4].Should().Be("700000.00"); // 400k + 300k.
+            result.Value.TotalRow.Cells[5].Should().Be("50000.00");    // 20k + 30k.
+        }
+    }
+
+    // ── FY-window: a slip OUTSIDE the FY (a prior-FY month) is NOT included in the sum ──
+
+    [Fact]
+    public async Task YearEndTaxStatement_ExcludesSlipsOutsideFiscalYearWindow()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var emp = await SeedTaxEmployee(_tenantA, "LK1", lkLoc);
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        // Prior FY (March 2026) — must be EXCLUDED (before EffectiveFrom) even though within the 3-year load window.
+        await SeedTaxSlip(_tenantA, runId, emp, 3, 2026, taxable: 999_000m, withheld: 99_000m);
+        // Next FY (April 2027) — must be EXCLUDED (after EffectiveTo); exercises the UPPER window boundary.
+        await SeedTaxSlip(_tenantA, runId, emp, 4, 2027, taxable: 888_000m, withheld: 88_000m);
+        // Inside the FY.
+        await SeedTaxSlip(_tenantA, runId, emp, 4, 2026, taxable: 100_000m, withheld: 5_000m);
+        await SeedTaxSlip(_tenantA, runId, emp, 5, 2026, taxable: 120_000m, withheld: 6_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(PayrollReportType.YearEndTaxStatement, YearEndParams(2026));
+
+            result.IsSuccess.Should().BeTrue();
+            var row = result.Value!.Rows.Single();
+            row.Cells[4].Should().Be("220000.00"); // 100k + 120k only — the Mar-2026 (prior FY) + Apr-2027 (next FY) excluded.
+            row.Cells[5].Should().Be("11000.00");   // 5k + 6k only.
+        }
+    }
+
+    // ── No-country employee in a MULTI-country tenant (no location, no tenant default) → EXCLUDED (not a 0-row) ──
+
+    [Fact]
+    public async Task YearEndTaxStatement_NoCountryEmployee_IsExcluded()
+    {
+        // Two countries' rules → no single-country fallback → a country-less employee is genuinely ambiguous.
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        await SeedIncomeTaxRule(_tenantA, "IN", "FY26-27",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        // No tenant default country row seeded → tenant default is null.
+
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var lkEmp = await SeedTaxEmployee(_tenantA, "LK1", lkLoc);
+        var noCountryEmp = await SeedTaxEmployee(_tenantA, "NC1", locationId: null); // no location.
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        await SeedTaxSlip(_tenantA, runId, lkEmp, 4, 2026, taxable: 100_000m, withheld: 5_000m);
+        await SeedTaxSlip(_tenantA, runId, noCountryEmp, 4, 2026, taxable: 500_000m, withheld: 50_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(PayrollReportType.YearEndTaxStatement, YearEndParams(2026));
+
+            result.IsSuccess.Should().BeTrue();
+            var empNos = result.Value!.Rows.Select(r => r.Cells[0]).ToList();
+            empNos.Should().ContainSingle().Which.Should().Be("LK1");
+            empNos.Should().NotContain("NC1"); // country-less → skipped, never fabricated as a 0-row.
+        }
+    }
 }
