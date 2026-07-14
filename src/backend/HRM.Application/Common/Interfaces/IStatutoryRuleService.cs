@@ -26,7 +26,8 @@ public sealed record SocialSecurityInputDto(
     StatutoryApplicableOn ApplicableOn,
     IReadOnlyList<Guid>? ApplicableComponentIds);
 
-/// <summary>Input for creating a statutory rule (US-PAY-006 FR-1/FR-2/FR-3).</summary>
+/// <summary>Input for creating a statutory rule (US-PAY-006 FR-1/FR-2/FR-3). <c>IsCumulative</c> (TAX-3) is
+/// meaningful only for IncomeTax rules; default false = monthly non-cumulative.</summary>
 public sealed record CreateStatutoryRuleInput(
     StatutoryRuleType RuleType,
     string RuleName,
@@ -37,9 +38,11 @@ public sealed record CreateStatutoryRuleInput(
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
     SocialSecurityInputDto? SocialSecurity,
-    IReadOnlyList<ExemptionInput>? Exemptions = null);
+    IReadOnlyList<ExemptionInput>? Exemptions = null,
+    bool IsCumulative = false);
 
-/// <summary>Input for updating a statutory rule (US-PAY-006 FR-1/FR-2). The rule type itself is immutable.</summary>
+/// <summary>Input for updating a statutory rule (US-PAY-006 FR-1/FR-2). The rule type itself is immutable.
+/// <c>IsCumulative</c> (TAX-3) is meaningful only for IncomeTax rules; default false = monthly non-cumulative.</summary>
 public sealed record UpdateStatutoryRuleInput(
     string RuleName,
     string CountryCode,
@@ -49,7 +52,8 @@ public sealed record UpdateStatutoryRuleInput(
     bool IsActive,
     IReadOnlyList<TaxSlabInput> TaxSlabs,
     SocialSecurityInputDto? SocialSecurity,
-    IReadOnlyList<ExemptionInput>? Exemptions = null);
+    IReadOnlyList<ExemptionInput>? Exemptions = null,
+    bool IsCumulative = false);
 
 /// <summary>Input for the FR-5 test calculation (no persistence). <c>CountryCode</c> selects which country's
 /// statutory regime the preview computes under (multi-country tax foundation); when null the preview resolves

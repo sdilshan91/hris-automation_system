@@ -52,7 +52,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         RuleType = r.RuleType.ToString(), r.RuleName, r.CountryCode, r.FiscalYear,
         EffectiveFrom = r.EffectiveFrom.ToString("yyyy-MM-dd"),
         EffectiveTo = r.EffectiveTo?.ToString("yyyy-MM-dd"),
-        r.IsActive, SlabCount = r.TaxSlabs?.Count ?? 0,
+        r.IsActive, r.IsCumulative, SlabCount = r.TaxSlabs?.Count ?? 0,
     };
 
     public async Task<Result<StatutoryRuleDto>> CreateAsync(CreateStatutoryRuleInput input, CancellationToken cancellationToken = default)
@@ -61,7 +61,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             return Result<StatutoryRuleDto>.Failure("Tenant context is not resolved.", 400);
 
         var exemptions = input.Exemptions ?? [];
-        var shapeError = ValidateShape(input.RuleType, input.TaxSlabs, input.SocialSecurity, exemptions);
+        var shapeError = ValidateShape(input.RuleType, input.TaxSlabs, input.SocialSecurity, exemptions, input.IsCumulative);
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
 
@@ -98,6 +98,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             EffectiveFrom = input.EffectiveFrom,
             EffectiveTo = input.EffectiveTo,
             IsActive = input.IsActive,
+            IsCumulative = input.IsCumulative,
             IsDeleted = false,
             TaxSlabs = BuildSlabs(ruleId, input.TaxSlabs),
             Exemptions = BuildExemptions(ruleId, exemptions),
@@ -148,7 +149,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             return Result<StatutoryRuleDto>.Failure("Statutory rule not found.", 404);
 
         var exemptions = input.Exemptions ?? [];
-        var shapeError = ValidateShape(rule.RuleType, input.TaxSlabs, input.SocialSecurity, exemptions);
+        var shapeError = ValidateShape(rule.RuleType, input.TaxSlabs, input.SocialSecurity, exemptions, input.IsCumulative);
         if (shapeError is not null)
             return Result<StatutoryRuleDto>.Failure(shapeError.Value.error, 400, shapeError.Value.code);
 
@@ -187,6 +188,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         rule.EffectiveFrom = input.EffectiveFrom;
         rule.EffectiveTo = input.EffectiveTo;
         rule.IsActive = input.IsActive;
+        rule.IsCumulative = input.IsCumulative;
 
         // Replace slabs + social-security wholesale (these are owned children; historical payslips are never
         // recomputed so prior versions can be replaced for the SAME rule version).
@@ -368,6 +370,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
                 EffectiveFrom = effectiveFrom,
                 EffectiveTo = effectiveTo,
                 IsActive = src.IsActive,
+                IsCumulative = src.IsCumulative,
                 IsDeleted = false,
                 TaxSlabs = src.TaxSlabs.Select(s => new TaxSlab
                 {
@@ -490,8 +493,13 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
     /// </summary>
     private static (string error, string code)? ValidateShape(
         StatutoryRuleType ruleType, IReadOnlyList<TaxSlabInput> slabs, SocialSecurityInputDto? social,
-        IReadOnlyList<ExemptionInput> exemptions)
+        IReadOnlyList<ExemptionInput> exemptions, bool isCumulative)
     {
+        // TAX-3: the cumulative (YTD) basis is meaningful only for income tax — reject it on any other type
+        // (mirrors the exemptions guard) so a caller can't silently mark an EPF/ETF rule cumulative.
+        if (ruleType != StatutoryRuleType.IncomeTax && isCumulative)
+            return ("Only an income-tax rule may be cumulative (YTD).", "unexpected_cumulative");
+
         if (ruleType == StatutoryRuleType.IncomeTax)
         {
             if (slabs.Count == 0)
@@ -640,6 +648,7 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         EffectiveFrom = r.EffectiveFrom,
         EffectiveTo = r.EffectiveTo,
         IsActive = r.IsActive,
+        IsCumulative = r.IsCumulative,
         TaxSlabs = r.TaxSlabs.OrderBy(s => s.OrderIndex).Select(s => new TaxSlabDto
         {
             Id = s.Id,

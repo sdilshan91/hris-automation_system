@@ -135,6 +135,24 @@ public static class StatutoryCalculator
     }
 
     /// <summary>
+    /// TAX-3: cumulative-PAYE true-up. The tax slabs are ANNUAL thresholds and
+    /// <paramref name="cumulativeTaxableIncome"/> is the fiscal-year-to-date taxable income (prior YTD + this
+    /// period). The full progressive tax on that cumulative base is computed via the SAME
+    /// <see cref="ComputeIncomeTax"/> path (honouring <paramref name="taxExemptThreshold"/>), then
+    /// <paramref name="taxAlreadyWithheldYtd"/> is subtracted — the remainder is what is withheld THIS period.
+    /// Floored at 0 (a negative delta, e.g. after a mid-year drop in income, never refunds via withholding) and
+    /// rounded half-up to 2 dp.
+    /// </summary>
+    public static decimal ComputeIncomeTaxYtd(
+        decimal cumulativeTaxableIncome, IReadOnlyList<TaxBand> annualBands,
+        decimal taxAlreadyWithheldYtd, decimal taxExemptThreshold = 0m)
+    {
+        var fullYtdTax = ComputeIncomeTax(cumulativeTaxableIncome, annualBands, taxExemptThreshold);
+        var delta = fullYtdTax - taxAlreadyWithheldYtd;
+        return delta < 0m ? 0m : Round(delta);
+    }
+
+    /// <summary>
     /// Social-security contribution with a wage ceiling (AC-2/BR-8):
     /// <c>employee = min(base, ceiling) * employee_rate</c>, <c>employer = min(base, ceiling) * employer_rate</c>.
     /// A null/zero ceiling means no cap. Negative base yields zero contributions.

@@ -34,6 +34,9 @@ public sealed class StatutoryRuleConfiguration : IEntityTypeConfiguration<Statut
         builder.Property(r => r.IsActive).HasDefaultValue(true).IsRequired();
         builder.Property(r => r.IsDeleted).HasDefaultValue(false).IsRequired();
 
+        // TAX-3: cumulative (YTD) income-tax flag. Defaults false so existing rules keep monthly behaviour.
+        builder.Property(r => r.IsCumulative).HasDefaultValue(false).IsRequired();
+
         builder.HasMany(r => r.TaxSlabs)
             .WithOne(s => s.Rule!)
             .HasForeignKey(s => s.StatutoryRuleId)

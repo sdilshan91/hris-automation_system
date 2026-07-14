@@ -167,4 +167,61 @@ public sealed class StatutoryCalculatorTests
     public void ComputeExemption_UnderCap_ReturnsRaw()
         => StatutoryCalculator.ComputeExemption(ExemptionCalculationType.PercentOfGross, 10m, 750_000m, null, maxAmount: 250_000m, isAnnual: false)
             .Should().Be(75_000m); // raw 75,000 < cap → uncapped.
+
+    // ── TAX-3: ComputeIncomeTaxYtd (cumulative PAYE true-up) ─────────────────────
+    // ANNUAL bands: 0–3M @0%, 3M–6M @6%, 6M+ @12%.
+    private static readonly TaxBand[] AnnualBands =
+    [
+        new(0m, 3_000_000m, 0m),
+        new(3_000_000m, 6_000_000m, 6m),
+        new(6_000_000m, null, 12m),
+    ];
+
+    [Fact]
+    public void ComputeIncomeTaxYtd_FirstMonth_NoWithheld_TaxesCumulativeBase()
+    {
+        // Cumulative 4M → tax = 1M @6% = 60,000; nothing withheld yet → withhold the full 60,000.
+        StatutoryCalculator.ComputeIncomeTaxYtd(4_000_000m, AnnualBands, taxAlreadyWithheldYtd: 0m)
+            .Should().Be(60_000m);
+    }
+
+    [Fact]
+    public void ComputeIncomeTaxYtd_BelowFirstAnnualThreshold_IsZero()
+    {
+        // Cumulative 3M sits at the 0% boundary → full YTD tax 0 → withhold 0 (first-month behaviour).
+        StatutoryCalculator.ComputeIncomeTaxYtd(3_000_000m, AnnualBands, taxAlreadyWithheldYtd: 0m)
+            .Should().Be(0m);
+    }
+
+    [Fact]
+    public void ComputeIncomeTaxYtd_SubtractsAlreadyWithheld_ReturnsDelta()
+    {
+        // Cumulative 5M → full YTD tax = 2M @6% = 120,000; already withheld 60,000 → delta 60,000.
+        StatutoryCalculator.ComputeIncomeTaxYtd(5_000_000m, AnnualBands, taxAlreadyWithheldYtd: 60_000m)
+            .Should().Be(60_000m);
+    }
+
+    [Fact]
+    public void ComputeIncomeTaxYtd_WithheldExceedsCumulativeTax_FloorsAtZero()
+    {
+        // Cumulative 4M → full YTD tax 60,000; already withheld 100,000 (e.g. income dropped) → delta floored at 0.
+        StatutoryCalculator.ComputeIncomeTaxYtd(4_000_000m, AnnualBands, taxAlreadyWithheldYtd: 100_000m)
+            .Should().Be(0m);
+    }
+
+    [Fact]
+    public void ComputeIncomeTaxYtd_HonoursTaxExemptThreshold()
+    {
+        // Cumulative 4M is at/below a 4M threshold → tax 0 regardless of the bands → withhold 0.
+        StatutoryCalculator.ComputeIncomeTaxYtd(4_000_000m, AnnualBands, taxAlreadyWithheldYtd: 0m, taxExemptThreshold: 4_000_000m)
+            .Should().Be(0m);
+    }
+
+    [Fact]
+    public void ComputeIncomeTaxYtd_TopAnnualBand_TaxesExcessAtTopRate()
+    {
+        // Cumulative 7M → 3M @6% (180,000) + 1M @12% (120,000) = 300,000; withheld 180,000 → delta 120,000.
+        StatutoryCalculator.ComputeIncomeTaxYtd(7_000_000m, AnnualBands, taxAlreadyWithheldYtd: 180_000m)
+            .Should().Be(120_000m);
+    }
 }

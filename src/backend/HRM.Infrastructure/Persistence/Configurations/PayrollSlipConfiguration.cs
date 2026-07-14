@@ -50,6 +50,11 @@ public sealed class PayrollSlipConfiguration : IEntityTypeConfiguration<PayrollS
         builder.Property(x => x.LeaveEncashmentDays).HasColumnType("numeric(5,2)").HasDefaultValue(0m).IsRequired();
         builder.Property(x => x.LeaveEncashmentAmount).HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
 
+        // TAX-3 (§7): income-tax basis persisted on every slip (for the TAX-4 year-end statement + reporting).
+        // Default 0 — a pre-TAX-3 slip has none.
+        builder.Property(x => x.TaxableIncome).HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+        builder.Property(x => x.IncomeTaxWithheld).HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+
         builder.Property(x => x.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // Owned details are managed via the dedicated DbSet, not as a mapped nav.
