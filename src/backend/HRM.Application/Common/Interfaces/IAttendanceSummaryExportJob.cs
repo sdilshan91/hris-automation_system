@@ -8,16 +8,16 @@ namespace HRM.Application.Common.Interfaces;
 /// Declared in the Application layer so the Infrastructure <c>AttendanceSummaryService</c> can enqueue
 /// it by interface (Hangfire resolves the concrete job in HRM.Api from DI). The job restores the tenant
 /// context into its own scope (so the EF global query filter applies), regenerates the summary under the
-/// same month/filter, renders the file, and stores it via <see cref="IReportExportStorage"/>.
-///
-/// DEFERRED: the "download link sent via notification" half of FR-7 — no notification infra exists
-/// (US-NTF). The file is stored and the location logged; TODO(US-NTF) marks the dispatch point.
+/// same month/filter, renders the file, stores it via <see cref="IReportExportStorage"/>, and notifies the
+/// requester (in-app + email) that the export is ready to download (US-NTF-006, via
+/// <see cref="INotificationDispatcher"/>) — completing the FR-7 "download link sent via notification" half.
 /// </summary>
 public interface IAttendanceSummaryExportJob
 {
     Task RunAsync(
         Guid tenantId,
         Guid reportId,
+        Guid requestedByUserId,
         int year,
         int month,
         string format,
