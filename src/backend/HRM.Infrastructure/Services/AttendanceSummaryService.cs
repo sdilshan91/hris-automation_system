@@ -43,6 +43,7 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
     private readonly ITenantContext _tenantContext;
     private readonly IReportExportStorage _exportStorage;
     private readonly IBackgroundJobClient? _backgroundJobs;
+    private readonly ICurrentUser? _currentUser;
     private readonly ILogger<AttendanceSummaryService> _logger;
 
     /// <summary>FR-7: exports at or below this employee count render synchronously; larger go to Hangfire.</summary>
@@ -53,13 +54,15 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         ITenantContext tenantContext,
         IReportExportStorage exportStorage,
         ILogger<AttendanceSummaryService> logger,
-        IBackgroundJobClient? backgroundJobs = null)
+        IBackgroundJobClient? backgroundJobs = null,
+        ICurrentUser? currentUser = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _exportStorage = exportStorage;
         _logger = logger;
         _backgroundJobs = backgroundJobs;
+        _currentUser = currentUser;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -285,14 +288,16 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
 
             var reportId = BaseEntity.NewUuidV7();
             var tenantId = _tenantContext.TenantId;
+            // FR-7: thread the requester's user id so the job can notify them when the export is ready.
+            var requestedByUserId = _currentUser?.UserId ?? Guid.Empty;
 
             var jobId = _backgroundJobs.Enqueue<IAttendanceSummaryExportJob>(j => j.RunAsync(
-                tenantId, reportId, year, month, normalizedFormat, filter, CancellationToken.None));
+                tenantId, reportId, requestedByUserId, year, month, normalizedFormat, filter, CancellationToken.None));
 
             _logger.LogInformation(
                 "Attendance summary export {ReportId} ({Rows} employees > {Threshold}) queued as Hangfire " +
-                "job {JobId} for tenant {TenantId}. Notification deferred (US-NTF).",
-                reportId, rowCount, SyncExportEmployeeThreshold, jobId, tenantId);
+                "job {JobId} for tenant {TenantId}. Requester {UserId} will be notified when ready.",
+                reportId, rowCount, SyncExportEmployeeThreshold, jobId, tenantId, requestedByUserId);
 
             return Result<MonthlySummaryExportResult>.Success(new MonthlySummaryExportResult
             {

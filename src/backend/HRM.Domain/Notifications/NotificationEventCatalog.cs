@@ -2033,7 +2033,38 @@ public static class NotificationEventCatalog
                 "{{report.downloadUrl}}\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.LeaveUpdates,
             IsMandatory: false);
+
+        // ── US-NTF-006 (P2-1d) — attendance summary export ready (US-ATT-007 FR-7). In-app + email to the
+        // requester; carries the report period (YYYY-MM) + download link. Mirrors leave_report_ready. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_summary_export_ready",
+            EventName: "Attendance Summary Export Ready",
+            Placeholders: [.. LeaveReportPlaceholders, .. TenantPlaceholders],
+            SampleData: AttendanceExportSample(),
+            DefaultSubject: "Your {{report.type}} attendance summary is ready",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>Your <strong>{{report.type}}</strong> attendance summary has been generated and is ready to " +
+                "download.</p>" +
+                "<p><a href=\"{{report.downloadUrl}}\">Download your report</a></p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "Your {{report.type}} attendance summary has been generated and is ready to download.\n\n" +
+                "{{report.downloadUrl}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.SystemAnnouncements,
+            IsMandatory: false);
     }
+
+    private static Dictionary<string, object?> AttendanceExportSample() => new()
+    {
+        ["report"] = new Dictionary<string, object?>
+        {
+            ["type"] = "2026-06",
+            ["downloadUrl"] = "https://app.example.com/reports/019f2607/download?token=sample",
+        },
+        ["tenant"] = SampleTenant(),
+    };
 
     // ── Sample-data for the US-NTF-006 Phase 8 tail events. ──
     private static Dictionary<string, object?> BulkImportSample() => new()
