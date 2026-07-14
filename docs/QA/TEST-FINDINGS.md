@@ -5195,6 +5195,15 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-301 — F&F `TenantFnFPolicy` accepts the semantically-dangerous flag combo `IncludeProRatedFinalPay=true` + `FinalPeriodOwnedBySettlement=false` (latent double-pay, not live)
+- **Type:** ISSUE (policy-modeling / needs-decision) · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PAY-* (F&F) / (auto-healed OUT-OF-LANE from PR #303 integration-enforcer)
+- **Title:** `CreateFnFPolicyValidator` has no cross-field rule: a tenant can save a policy where F&F pays the pro-rated final month (`IncludeProRatedFinalPay=true`) while NOT owning the final period (`FinalPeriodOwnedBySettlement=false` → the run-guard won't exclude the employee). Today this is **latent, not live**: `OffboardingService.CompleteAsync` sets `Status=Terminated`+`IsActive=false` in the same transaction before the settlement exists, so the run's `IsActive && (Active||Probation)` filter excludes the employee regardless of the flag.
+- **Root cause:** the two policy booleans are independent with no coupling validation. Confidence: HIGH (enforcer traced the flag path).
+- **Suggested direction (NOT applied):** add a cross-field rule (`IncludeProRatedFinalPay ⟹ FinalPeriodOwnedBySettlement`) OR document the decoupling intentionally. **⚠ Would become a LIVE double-pay** if offboarding termination timing ever changes (e.g. deferring the status flip to the LWD).
+- **Severity rationale:** LOW — not exploitable today (the in-tx termination masks it); a guard against a future refactor + a product decision on the flag semantics.
+
+---
+
 ### ISSUE-300 — Cumulative-PAYE run + YTD-persistence path has no real-Postgres (Testcontainers) coverage — InMemory-only
 - **Type:** ISSUE (test-health) · **Severity:** MED · **Status:** OPEN · **Layer:** BE-test · **US/TC:** US-PAY-006 / (auto-healed OUT-OF-LANE from PR #301 test-authenticator)
 - **Title:** The cumulative income-tax RUN path (`PayrollRunProcessor` YTD accumulation + `PayrollSlip.TaxableIncome`/`IncomeTaxWithheld` column persistence, the ordinal prior-slip window) is asserted ONLY against the EF InMemory provider (`YtdCumulativeTaxIntegrationTests`). The `YtdCumulativeTaxPostgresTests` covers column round-trip + ordinal-window translation, but not the multi-month true-up + YTD accumulation on real Postgres. This is the repo's known InMemory-masks-Postgres class on a money path.
@@ -6215,7 +6224,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ---
 
 ### ISSUE-294 — Fully Terminated-status employees are excluded from the regular payroll run; final pro-rated pay depends on the F&F path, which is a LogOnly stub
-- **Type / Severity / Status:** ISSUE (feature gap / needs-decision) · MED · OPEN (needs-BA/product)
+- **Type / Severity / Status:** ISSUE (feature gap / needs-decision) · MED · RESOLVED — Phase 1 (PR #303, 2026-07-14)
+- **Resolution (Phase 1):** `LogOnlyPayrollFnFIntegration` replaced by a real **tenant-configurable, effective-dated** `RealPayrollFnFIntegration` (user direction: F&F behaviour is a per-tenant `TenantFnFPolicy`; changes apply next-cycle, never retroactively — a settlement reads the policy whose `EffectiveFrom ≤ LWD`). New `FinalSettlement`(+`Line`) entities, idempotent on `OffboardingInstanceId` (unique index; a 23505 race recovers to the winning ref). Computes pro-rated final pay + statutory (Location→Tenant→sole-rule→null precedence; null/no-rules → skip+flag) + forfeitable-leave encashment by REUSING the run's engines (numbers agree; no double-count; net floored at 0). `PayrollRunProcessor` boundary guard (belt-and-suspenders; `CompleteAsync` already terminates in-tx). 3 tenant tables + dormant RLS. Full BE 3868 green; 16 F&F tests (incl. effective-dated no-retroactive, real-Postgres money figure) + a DI-swap seam test; enforcer CONNECTED + authenticator AUTHENTIC. Race backstop bug fixed in-PR. **Phase 2 (deferred, needs-BA formula model):** gratuity / notice pay / severance / loan recovery + settlement PDF + FE policy UI (see `docs/DEV/FNF-SETTLEMENT-PLAN.md`). Auto-healed → **ISSUE-301** (policy-flag coupling, LOW).
 - **Layer:** BE · (auto-healed from the ISSUE-157 pro-ration fix, #282; surfaced by test-authenticator)
 - **Module / US / TC:** Payroll / US-PAY-* (separation pay) + Offboarding F&F
 - **Title:** `PayrollRunProcessor` selects only `Status == Active || Probation` employees (`PayrollRunProcessor.cs:114-115`). A mid-month leaver whose Status has already flipped to `Terminated` is therefore excluded from the regular monthly run entirely. The ISSUE-157 engine-side leaver pro-ration (fixed in #282) only fires for a leaver still Active-status at run time (termination recorded in `EmploymentHistory` but Status not yet flipped). A genuinely Terminated employee's final pro-rated pay must come from the full-and-final settlement path — `IPayrollFnFIntegration` — which is currently `LogOnlyPayrollFnFIntegration` (a stub, `TODO(payroll integration)`), so their final pay is not actually processed.

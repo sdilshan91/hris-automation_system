@@ -284,7 +284,12 @@ public static class DependencyInjection
         // US-ONB-005: offboarding / exit clearance. Reuses IAuthService (refresh-token revocation) + the
         // ISessionRevoker (FR-7 access-token revocation) + IPayrollFnFIntegration (FR-6 F&F trigger seam).
         services.AddScoped<IOffboardingService, OffboardingService>();
-        services.AddScoped<IPayrollFnFIntegration, LogOnlyPayrollFnFIntegration>();
+        // ISSUE-294 (F&F Phase 1): the real, tenant-configurable + effective-dated final-settlement engine
+        // replaces the LogOnly stub. It reuses the run's pro-ration, the statutory resolver, and the
+        // forfeitable-leave encashment calc; persists a FinalSettlement (idempotent on the offboarding instance).
+        services.AddScoped<IPayrollFnFIntegration, RealPayrollFnFIntegration>();
+        // ISSUE-294 (F&F Phase 1): API-configurable per-tenant final-settlement policy (effective-dated).
+        services.AddScoped<IFnFPolicyService, FnFPolicyService>();
 
         // P3-2: real JWT access-token denylist / session revocation. When Redis is configured, revoking a user's
         // sessions writes a per-(tenant,user) "revoked-before" cutoff to Redis and the OnTokenValidated hook rejects

@@ -126,6 +126,28 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             .OrderBy(e => e.EmployeeNo)
             .ToListAsync(cancellationToken);
 
+        // ISSUE-294 (F&F Phase 1) double-pay boundary guard (money-critical). When a departing employee's final
+        // period is owned by an F&F settlement (its policy had FinalPeriodOwnedBySettlement = true), the regular
+        // run must NOT also pay that period — otherwise the final month is paid twice. Terminated employees are
+        // already excluded by the Active/Probation filter above; this is the additive belt-and-suspenders for the
+        // boundary month, where an employee could still read as Active while a settlement covering (LWD ≤ period
+        // end) already exists. Exclude those employees. Empty when no settlements exist → pure no-op.
+        var runMonthEnd = new DateOnly(run.PayYear, run.PayMonth, 1).AddMonths(1).AddDays(-1);
+        var settlementOwnedEmployeeIds = await _dbContext.FinalSettlements.AsNoTracking()
+            .Where(s => s.FinalPeriodOwnedBySettlement && s.LastWorkingDay <= runMonthEnd)
+            .Select(s => s.EmployeeId)
+            .ToListAsync(cancellationToken);
+        if (settlementOwnedEmployeeIds.Count > 0)
+        {
+            var ownedSet = settlementOwnedEmployeeIds.ToHashSet();
+            var beforeGuard = employees.Count;
+            employees = employees.Where(e => !ownedSet.Contains(e.Id)).ToList();
+            var excludedByGuard = beforeGuard - employees.Count;
+            if (excludedByGuard > 0)
+                runLog.AppendLine(
+                    $"NOTE: {excludedByGuard} employee(s) excluded — final period owned by an F&F settlement (no double pay).");
+        }
+
         run.TotalEmployees = employees.Count;
 
         // Current salary components for all employees in one pass (FR-5a).
@@ -941,7 +963,12 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// Returns null for a full-month employee (no pro-ration) and 0m when they were not employed on any day of
     /// the period.
     /// </summary>
-    private static decimal? ProRataPaidDays(
+    /// <remarks>
+    /// ISSUE-294 (F&amp;F Phase 1): exposed <c>internal</c> so <c>RealPayrollFnFIntegration</c> reuses the EXACT
+    /// leaver pro-ration (bounding paid days to the separation date) rather than duplicating the formula on a
+    /// money path. The settlement passes the employee's last working day as <paramref name="separationDate"/>.
+    /// </remarks>
+    internal static decimal? ProRataPaidDays(
         Employee emp, DateOnly monthStart, DateOnly monthEnd,
         HashSet<int> workingDaySet, DateOnly? separationDate)
     {
