@@ -64,7 +64,10 @@ public sealed record TestCalculationInput(
     decimal DeclaredMonthlyExemptions,
     decimal ExemptEarnings,
     string? FiscalYear,
-    string? CountryCode);
+    string? CountryCode,
+    IReadOnlyDictionary<Guid, decimal>? ComponentAmounts = null,
+    decimal PriorTaxableIncomeYtd = 0m,
+    decimal PriorTaxWithheldYtd = 0m);
 
 /// <summary>
 /// Statutory-rule configuration + calculation service (US-PAY-006). All operations are tenant-scoped via

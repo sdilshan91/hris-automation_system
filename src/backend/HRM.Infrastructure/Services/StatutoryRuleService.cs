@@ -440,17 +440,23 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
             return Result<StatutoryCalculationResultDto>.Failure("Tenant context is not resolved.", 400);
 
         var basic = input.MonthlyBasic ?? input.MonthlyGross;
-        // TAX-2 preview limitation: the what-if takes only gross + basic, so it cannot map a ComponentId to an
-        // amount → a PercentOfComponent EXEMPTION resolves to 0 here (while the real run applies it from the
-        // slip's component lines). FlatAmount + PercentOfGross exemptions preview exactly. A full component-aware
-        // preview would need the query to accept per-component amounts (tracked follow-up). ComponentAmountsById
-        // stays null.
+        // TAX-2 component-aware preview: the caller may now supply sample per-component amounts so a
+        // PercentOfComponent EXEMPTION previews the same figure the run applies (the run derives these from the
+        // slip's earning/reimbursement lines; the what-if has no salary structure, so they are supplied). When
+        // none are given a percent-of-component exemption still resolves to 0 here (as before); FlatAmount +
+        // PercentOfGross preview exactly regardless. An empty map is treated as none.
+        var componentAmounts = input.ComponentAmounts is { Count: > 0 } ? input.ComponentAmounts : null;
+        // TAX-3 cumulative preview: the caller supplies the FY-to-date prior taxable + withheld so a cumulative
+        // rule previews the YTD true-up delta (tax(priorTaxable+thisMonth) − priorWithheld) instead of the
+        // first-month figure. Both default to 0 → monthly/first-month behaviour (unchanged for non-cumulative rules).
         var wage = new StatutoryWageInput(
             MonthlyGross: input.MonthlyGross,
             MonthlyBasic: basic,
             ExemptEarnings: input.ExemptEarnings,
             DeclaredExemptions: input.DeclaredMonthlyExemptions,
-            ComponentAmountsById: null);
+            ComponentAmountsById: componentAmounts,
+            PriorTaxableIncomeYtd: input.PriorTaxableIncomeYtd,
+            PriorTaxWithheldYtd: input.PriorTaxWithheldYtd);
 
         // Use today's date to pick the effective version; FR-5 is a what-if so a current-period date is fine.
         // Multi-country tax foundation: the preview computes under the selected country's regime (null → nothing).

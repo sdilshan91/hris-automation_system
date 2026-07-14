@@ -53,11 +53,18 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
         // Candidate rules: active, in this employee's tax COUNTRY, in effect for the period (and matching the FY
         // override when given). Filtering by country BEFORE the per-type effective selection is what stops two
         // countries' rules of the same type (e.g. IncomeTax) from colliding (latest EffectiveFrom winning arbitrarily).
+        // TAX-3 guard: normalize the STORED CountryCode in the comparison (not just the incoming side). The write
+        // path always trims+uppers on save, but a raw/seed/import write could bypass the service and store e.g.
+        // "lk" or "LK "; without this the cumulative pre-scan (which groups the stored code with Trim()+ToUpper())
+        // would thread prior-YTD while this resolver silently matched nothing → divergence on a money path. Must
+        // mirror the pre-scan/report normalization EXACTLY — case AND whitespace — so btrim+upper (not upper alone).
+        // `upper(btrim(country_code))` is non-sargable, but the per-tenant statutory rule set is tiny and this
+        // defends already-stored dirty rows a DB CHECK could not. Mirrors PayrollRunProcessor/PayrollReportService.
         var query = _dbContext.StatutoryRules.AsNoTracking()
             .Include(r => r.TaxSlabs)
             .Include(r => r.Exemptions)
             .Include(r => r.SocialSecurityRule)
-            .Where(r => r.IsActive && r.CountryCode == country);
+            .Where(r => r.IsActive && r.CountryCode!.Trim().ToUpper() == country);
 
         if (!string.IsNullOrWhiteSpace(fiscalYearOverride))
         {

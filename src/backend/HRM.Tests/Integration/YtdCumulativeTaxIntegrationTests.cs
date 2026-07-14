@@ -17,6 +17,7 @@
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Payroll.Commands;
+using HRM.Application.Features.Payroll.Queries;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -242,6 +243,88 @@ public sealed class YtdCumulativeTaxIntegrationTests
         var jul = await Slip(emp, 7);
         jul.TotalDeductions.Should().Be(60_000m);
         jul.NetSalary.Should().Be(940_000m);
+    }
+
+    // ── TAX-3 preview follow-up: a cumulative rule previews the FIRST-month figure with no prior-YTD, and the
+    //    true-up delta when prior-YTD is supplied — matching the run's July withholding (cum 4M → 60,000). ──
+    [Fact]
+    public async Task Preview_Cumulative_UsesPriorYtd_MatchesTheRunTrueUp()
+    {
+        await SeedTenantDefaultCountry(_tenantA, "LK");
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        (await mediator.Send(LkIncomeTax(isCumulative: true))).IsSuccess.Should().BeTrue();
+
+        // No prior-YTD → the cumulative preview shows the first-month figure (cum 1M ≤ 3M → 0).
+        var firstMonth = await mediator.Send(new TestStatutoryCalculationQuery(
+            1_000_000m, null, 0m, 0m, "2026-2027", "LK"));
+        firstMonth.IsSuccess.Should().BeTrue(firstMonth.Error);
+        firstMonth.Value!.IncomeTax.Should().Be(0m);
+
+        // With 3,000,000 prior taxable + 0 withheld (mirrors month 7: Apr+May+Jun) → tax(4M) − 0 = 60,000,
+        // exactly the run's July withholding — proving the preview now shows the YTD true-up, not month 1.
+        var trueUp = await mediator.Send(new TestStatutoryCalculationQuery(
+            1_000_000m, null, 0m, 0m, "2026-2027", "LK",
+            PriorTaxableIncomeYtd: 3_000_000m, PriorTaxWithheldYtd: 0m));
+        trueUp.Value!.IncomeTax.Should().Be(60_000m);
+
+        // And once 60,000 has already been withheld YTD (mirrors month 8), the delta is 0 (120,000 − 60,000 − prior).
+        var month8 = await mediator.Send(new TestStatutoryCalculationQuery(
+            1_000_000m, null, 0m, 0m, "2026-2027", "LK",
+            PriorTaxableIncomeYtd: 4_000_000m, PriorTaxWithheldYtd: 60_000m));
+        month8.Value!.IncomeTax.Should().Be(60_000m); // tax(5M)=120,000 − 60,000 withheld = 60,000.
+    }
+
+    // ── TAX-3 preview follow-up: the preview EQUALS the run for the same YTD, reconstructed from the ACTUAL
+    //    persisted slips (decoupled from the band table — the strongest preview==run proof of the feature). ──
+    [Fact]
+    public async Task Preview_Cumulative_EqualsTheRun_ForThePersistedYtd()
+    {
+        await SeedTenantDefaultCountry(_tenantA, "LK");
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        (await mediator.Send(LkIncomeTax(isCumulative: true))).IsSuccess.Should().BeTrue();
+        var emp = await SeedEmployeeWithSalary(_tenantA, "X1", 1_000_000m);
+
+        await RunMonth(provider, mediator, 2026, 4);
+        await RunMonth(provider, mediator, 2026, 5);
+        await RunMonth(provider, mediator, 2026, 6);
+        await RunMonth(provider, mediator, 2026, 7);
+
+        // Reconstruct the prior-YTD from the real Apr–Jun slips, then preview July with exactly those inputs.
+        decimal priorTaxable = 0m, priorWithheld = 0m;
+        foreach (var m in new[] { 4, 5, 6 })
+        {
+            var s = await Slip(emp, m);
+            priorTaxable += s.TaxableIncome;
+            priorWithheld += s.IncomeTaxWithheld;
+        }
+        var julyWithheld = (await Slip(emp, 7)).IncomeTaxWithheld;
+        julyWithheld.Should().BeGreaterThan(0m); // guard: July must actually withhold, else the equality is vacuous.
+
+        var preview = await mediator.Send(new TestStatutoryCalculationQuery(
+            1_000_000m, null, 0m, 0m, "2026-2027", "LK",
+            PriorTaxableIncomeYtd: priorTaxable, PriorTaxWithheldYtd: priorWithheld));
+        preview.IsSuccess.Should().BeTrue(preview.Error);
+        preview.Value!.IncomeTax.Should().Be(julyWithheld); // preview == what the run actually withheld in July.
+    }
+
+    // ── TAX-3: prior-YTD inputs are a NO-OP for a non-cumulative (monthly) rule — kills an if(IsCumulative)→if(true). ──
+    [Fact]
+    public async Task Preview_NonCumulative_IgnoresPriorYtd()
+    {
+        await SeedTenantDefaultCountry(_tenantA, "LK");
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        (await mediator.Send(LkIncomeTax(isCumulative: false))).IsSuccess.Should().BeTrue();
+
+        var withoutPrior = await mediator.Send(new TestStatutoryCalculationQuery(
+            1_000_000m, null, 0m, 0m, "2026-2027", "LK"));
+        var withPrior = await mediator.Send(new TestStatutoryCalculationQuery(
+            1_000_000m, null, 0m, 0m, "2026-2027", "LK",
+            PriorTaxableIncomeYtd: 3_000_000m, PriorTaxWithheldYtd: 0m));
+
+        withPrior.Value!.IncomeTax.Should().Be(withoutPrior.Value!.IncomeTax); // a monthly rule ignores prior-YTD.
     }
 
     // ── Non-cumulative (default) unchanged: same annual bands, monthly basis → 0 tax every month ──
