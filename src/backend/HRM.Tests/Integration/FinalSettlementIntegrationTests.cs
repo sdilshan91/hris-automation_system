@@ -30,11 +30,46 @@ public sealed class FinalSettlementIntegrationTests
     private readonly string _dbName = Guid.NewGuid().ToString();
     private readonly Guid _tenant = Guid.NewGuid();
 
-    // LWD in a 30-day month with no configured shift ⇒ working_days = 30 calendar days; a mid-month leaver on
-    // the 15th ⇒ pro-ration factor = 15/30 = 0.5. BASIC 30000 ⇒ pro-rated gross 15000, daily rate 1000.
+    // WORKING-WEEK BASIS (corrected 2026-07-15, US-ATT-011/CAL-1). This fixture previously seeded NO shift and
+    // relied on ShiftScheduleResolver returning an EMPTY set, which callers read as "every calendar day is a
+    // working day" ⇒ 30 working days in June, daily rate 30000/30 = 1000. **Production never behaves that
+    // way**: DbInitializer.EnsureDefaultShiftAsync seeds a Mon–Fri IsDefault "General Shift" for EVERY tenant
+    // on startup, and TenantProvisioningService.SeedDefaultShift does the same for every new tenant — so the
+    // resolver always found Mon–Fri and the real daily rate was always 30000/22. The old 10000 encashment
+    // oracle asserted a figure production could not produce. These tests now seed the Mon–Fri default
+    // EXPLICITLY (mirroring DbInitializer) so the money figures match production and do not silently depend on
+    // the resolver's tier-4 code default.
+    //
+    // June 2026: 30 calendar days, 22 Mon–Fri working days. A mid-month leaver with LWD on the 15th works 11
+    // of those 22 ⇒ pro-ration factor 11/22 = 0.5 (unchanged from the old 15/30 = 0.5 — which is why
+    // ExpectedProRatedGross is untouched). BASIC 30000 ⇒ pro-rated gross 15000; daily rate 30000/22 = 1363.64
+    // ⇒ 10 encashable days × 1363.64 = 13636.40.
     private static readonly DateTime Lwd = new(2026, 6, 15);
     private const decimal MonthlyBasic = 30_000m;
     private const decimal ExpectedProRatedGross = 15_000m;
+
+    /// <summary>10 encashable days × the Mon–Fri daily rate (30000/22 = 1363.64) — the production figure.</summary>
+    private const decimal ExpectedEncashmentTotal = 13_636.40m;
+
+    /// <summary>
+    /// Seeds the tenant's Mon–Fri default shift, mirroring <c>DbInitializer.EnsureDefaultShiftAsync</c> /
+    /// <c>TenantProvisioningService.SeedDefaultShift</c>. These InMemory tests bypass DbInitializer, so without
+    /// this the fixture sits in a shift-less state production never reaches and the working-day denominator
+    /// silently falls to the resolver's tier-4 code default.
+    /// </summary>
+    private void SeedTenantDefaultShift(AppDbContext db) =>
+        db.Shifts.Add(new Shift
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenant,
+            Name = "General Shift",
+            Type = ShiftType.Single,
+            StartTime = new TimeOnly(9, 0),
+            EndTime = new TimeOnly(17, 0),
+            WorkingDays = [1, 2, 3, 4, 5],
+            IsDefault = true,
+            IsActive = true,
+        });
 
     private sealed class MutableTenantContext : ITenantContext
     {
@@ -173,6 +208,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedIncomeTax(db, "LK", 10m);      // present, but the policy disables statutory.
@@ -196,6 +232,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedIncomeTax(db, "LK", 10m);
@@ -219,6 +256,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedEncashableLeave(db, empId);
@@ -229,9 +267,10 @@ public sealed class FinalSettlementIntegrationTests
         var s = await ActAsync(empId, Guid.NewGuid());
 
         // Forfeitable = balance(20) − carryForwardLimit(5) = 15, capped at maxEncash(10) = 10 days × 1000/day = 10000.
-        s.LeaveEncashmentTotal.Should().Be(10_000m);
-        s.NetPayable.Should().Be(ExpectedProRatedGross + 10_000m);
-        s.Lines.Should().Contain(l => l.Type == FinalSettlementLineType.Encashment && l.Amount == 10_000m);
+        s.LeaveEncashmentTotal.Should().Be(ExpectedEncashmentTotal);
+        s.NetPayable.Should().Be(ExpectedProRatedGross + ExpectedEncashmentTotal);
+        s.Lines.Should().Contain(
+            l => l.Type == FinalSettlementLineType.Encashment && l.Amount == ExpectedEncashmentTotal);
     }
 
     // ── (b) idempotency ──────────────────────────────────────────────────────────
@@ -242,6 +281,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedPolicy(db, proRated: true, statutory: false, encashment: false);
@@ -268,6 +308,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);           // no location ⇒ falls back to tenant default "LK".
             SeedIncomeTax(db, "LK", 10m);
@@ -317,6 +358,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedIncomeTax(db, "LK", 100m);               // 100% of income over 10000 → (15000−10000) = 5000 …
@@ -384,6 +426,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedEncashableLeave(db, empId);
@@ -413,6 +456,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeWithBasic(db);
             SeedIncomeTax(db, "LK", 10m);
@@ -425,8 +469,8 @@ public sealed class FinalSettlementIntegrationTests
 
         s.ProRatedGross.Should().Be(ExpectedProRatedGross);
         s.StatutoryTotal.Should().Be(500m);
-        s.LeaveEncashmentTotal.Should().Be(10_000m);
-        s.NetPayable.Should().Be(ExpectedProRatedGross + 10_000m - 500m);
+        s.LeaveEncashmentTotal.Should().Be(ExpectedEncashmentTotal);
+        s.NetPayable.Should().Be(ExpectedProRatedGross + ExpectedEncashmentTotal - 500m);
     }
 
     // ── (h) multi-component gross: sum ALL earnings/reimbursements; drop structure deductions ──
@@ -437,6 +481,7 @@ public sealed class FinalSettlementIntegrationTests
         Guid empId;
         using (var db = Db())
         {
+            SeedTenantDefaultShift(db);
             SeedTenantDefaultCountry(db, "LK");
             empId = SeedEmployeeMultiComponent(db); // BASIC 30000 + HRA 10000 (Earning) + LOAN 2000 (Deduction) + PF 1500 (Statutory)
             SeedPolicy(db, proRated: true, statutory: false, encashment: false);

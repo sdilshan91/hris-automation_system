@@ -39,6 +39,7 @@ public sealed class LocationService : ILocationService
         string name, string? addressLine1, string? addressLine2,
         string? city, string? stateProvince, string? country,
         string? postalCode, string timeZone, string? phone, string? countryCode = null,
+        Guid? defaultShiftId = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -55,6 +56,9 @@ public sealed class LocationService : ILocationService
         if (nameExists)
             return Result<LocationDto>.Failure("A location with this name already exists.", 400);
 
+        if (!await IsAssignableShiftAsync(defaultShiftId, cancellationToken))
+            return InvalidDefaultShift();
+
         var location = new Location
         {
             Id = BaseEntity.NewUuidV7(),
@@ -69,6 +73,7 @@ public sealed class LocationService : ILocationService
             PostalCode = postalCode,
             TimeZone = timeZone,
             Phone = phone,
+            DefaultShiftId = defaultShiftId,
             IsActive = true,
             IsDeleted = false,
         };
@@ -93,6 +98,7 @@ public sealed class LocationService : ILocationService
         Guid locationId, string name, string? addressLine1, string? addressLine2,
         string? city, string? stateProvince, string? country,
         string? postalCode, string timeZone, string? phone, string? countryCode = null,
+        Guid? defaultShiftId = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -114,6 +120,9 @@ public sealed class LocationService : ILocationService
         if (nameExists)
             return Result<LocationDto>.Failure("A location with this name already exists.", 400);
 
+        if (!await IsAssignableShiftAsync(defaultShiftId, cancellationToken))
+            return InvalidDefaultShift();
+
         // BUG-018 (FR-7): snapshot the pre-mutation state so the audit row can capture before/after.
         var beforeSnapshot = Snapshot(location);
 
@@ -127,6 +136,7 @@ public sealed class LocationService : ILocationService
         location.PostalCode = postalCode;
         location.TimeZone = timeZone;
         location.Phone = phone;
+        location.DefaultShiftId = defaultShiftId;
 
         AddLocationAudit("OfficeLocation.Updated", location.Id, before: beforeSnapshot, after: Snapshot(location),
             $"Location '{location.Name}' updated.");
@@ -234,6 +244,22 @@ public sealed class LocationService : ILocationService
     // -- Private helpers --
 
     /// <summary>
+    /// US-ATT-011 AC-1 (spec §7.1): a Location's <c>DefaultShiftId</c> may only reference an ACTIVE,
+    /// non-soft-deleted shift in the CURRENT tenant. This cannot live in FluentValidation (no DB access
+    /// there), so it is a pre-check here, mirroring the name-uniqueness pre-check above. The query runs under
+    /// the EF global tenant query filter (and the soft-delete filter), so a cross-tenant or soft-deleted id
+    /// simply isn't found and takes the same rejection path as a non-existent one — no cross-tenant probe
+    /// signal (TC-ATT-ISO-014). Null is always valid: clearing the Location tier is allowed.
+    /// </summary>
+    private async Task<bool> IsAssignableShiftAsync(Guid? shiftId, CancellationToken cancellationToken)
+        => shiftId is null
+            || await _dbContext.Shifts.AnyAsync(s => s.Id == shiftId.Value && s.IsActive, cancellationToken);
+
+    private static Result<LocationDto> InvalidDefaultShift()
+        => Result<LocationDto>.Failure(
+            "DefaultShiftId must reference an active shift in this tenant.", 400, "invalid_default_shift");
+
+    /// <summary>
     /// Multi-country tax foundation: normalize an ISO country code to trimmed upper-case (so it matches the
     /// upper-cased <c>StatutoryRule.CountryCode</c> at payroll time); blank/whitespace becomes null (optional field).
     /// </summary>
@@ -278,6 +304,8 @@ public sealed class LocationService : ILocationService
         l.PostalCode,
         l.TimeZone,
         l.Phone,
+        // US-ATT-011: part of the audit surface — a change of working calendar must show in before/after.
+        l.DefaultShiftId,
         l.IsActive,
     }, AuditJsonOptions);
 
@@ -294,6 +322,7 @@ public sealed class LocationService : ILocationService
         PostalCode = l.PostalCode,
         TimeZone = l.TimeZone,
         Phone = l.Phone,
+        DefaultShiftId = l.DefaultShiftId,
         EmployeeCount = employeeCount ?? 0,
         IsActive = l.IsActive,
         CreatedAt = l.CreatedAt,

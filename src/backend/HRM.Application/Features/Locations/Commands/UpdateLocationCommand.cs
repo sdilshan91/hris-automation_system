@@ -19,5 +19,8 @@ public sealed record UpdateLocationCommand(
     string? PostalCode,
     string TimeZone,
     string? Phone,
-    string? CountryCode = null
+    string? CountryCode = null,
+    // US-ATT-011 AC-1: appended LAST on purpose — these are positional params, so inserting mid-list would
+    // silently re-bind every call site.
+    Guid? DefaultShiftId = null
 ) : IRequest<Result<LocationDto>>;

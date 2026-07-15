@@ -18,6 +18,11 @@ public sealed record LocationDto
     public string TimeZone { get; init; } = string.Empty;
     public string? Phone { get; init; }
     /// <summary>
+    /// Optional default shift for this location — the Location tier of the working-calendar chain
+    /// (Employee → Location → Tenant → code default). Null = fall through to the tenant default (US-ATT-011 AC-1).
+    /// </summary>
+    public Guid? DefaultShiftId { get; init; }
+    /// <summary>
     /// Count of active employees assigned to this location (FR-7).
     /// </summary>
     public int EmployeeCount { get; init; }
@@ -41,6 +46,11 @@ public sealed record CreateLocationRequest
     public string? PostalCode { get; init; }
     public string TimeZone { get; init; } = string.Empty;
     public string? Phone { get; init; }
+    /// <summary>
+    /// Optional default shift (US-ATT-011 AC-1). Must be an active, non-deleted shift in the current tenant;
+    /// null clears the Location tier and falls through to the tenant default.
+    /// </summary>
+    public Guid? DefaultShiftId { get; init; }
 }
 
 /// <summary>
@@ -58,4 +68,9 @@ public sealed record UpdateLocationRequest
     public string? PostalCode { get; init; }
     public string TimeZone { get; init; } = string.Empty;
     public string? Phone { get; init; }
+    /// <summary>
+    /// Optional default shift (US-ATT-011 AC-1). Must be an active, non-deleted shift in the current tenant;
+    /// null clears the Location tier and falls through to the tenant default.
+    /// </summary>
+    public Guid? DefaultShiftId { get; init; }
 }

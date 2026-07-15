@@ -22,6 +22,6 @@ public sealed class CreateLocationCommandHandler
             request.Name, request.AddressLine1, request.AddressLine2,
             request.City, request.StateProvince, request.Country,
             request.PostalCode, request.TimeZone, request.Phone, request.CountryCode,
-            cancellationToken);
+            request.DefaultShiftId, cancellationToken);
     }
 }

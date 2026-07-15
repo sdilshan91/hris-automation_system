@@ -115,6 +115,17 @@ public sealed class FinalSettlementPostgresTests : IAsyncLifetime
         await using (var seed = CreateContext(tc, cu))
         {
             seed.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme", DefaultCountryCode = "LK" });
+
+            // The tenant's Mon–Fri default shift, mirroring DbInitializer.EnsureDefaultShiftAsync (which this
+            // fixture bypasses). Without it the working-day denominator would fall to ShiftScheduleResolver's
+            // tier-4 code default — a shift-less state production never reaches, since every tenant is seeded
+            // one on startup (and every new tenant at provisioning). See US-ATT-011 / CAL-1.
+            seed.Shifts.Add(new Shift
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, Name = "General Shift",
+                Type = ShiftType.Single, StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+                WorkingDays = [1, 2, 3, 4, 5], IsDefault = true, IsActive = true,
+            });
             // Real Department + JobTitle rows — the employees FKs are enforced on Postgres (unlike InMemory).
             var deptId = BaseEntity.NewUuidV7();
             var jobId = BaseEntity.NewUuidV7();
@@ -171,10 +182,11 @@ public sealed class FinalSettlementPostgresTests : IAsyncLifetime
 
         await using var read = CreateContext(tc, cu);
         var s = await read.FinalSettlements.AsNoTracking().Include(x => x.Lines).FirstAsync(x => x.Id == settlementId);
-        s.ProRatedGross.Should().Be(15_000m);                 // 30000 × 15/30.
-        s.LeaveEncashmentTotal.Should().Be(10_000m);          // min(20−5, 10) = 10 days × (30000/30) = 10000.
-        s.NetPayable.Should().Be(25_000m);
-        s.Lines.Should().Contain(l => l.Type == FinalSettlementLineType.Encashment && l.Amount == 10_000m);
+        // June 2026 = 22 Mon–Fri working days (the tenant default shift, as production always seeds).
+        s.ProRatedGross.Should().Be(15_000m);                    // 30000 × 11/22 — the leaver works 11 of 22.
+        s.LeaveEncashmentTotal.Should().Be(13_636.40m);          // min(20−5, 10) = 10 days × (30000/22 = 1363.64).
+        s.NetPayable.Should().Be(15_000m + 13_636.40m);
+        s.Lines.Should().Contain(l => l.Type == FinalSettlementLineType.Encashment && l.Amount == 13_636.40m);
     }
 
     [Fact]
