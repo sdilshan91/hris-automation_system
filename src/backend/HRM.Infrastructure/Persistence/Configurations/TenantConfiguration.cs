@@ -33,6 +33,12 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasDatabaseName("ix_tenants_subdomain_status")
             .HasFilter("is_deleted = false");
 
+        // ISSUE-304 (US-CHR-009 BR-6): the tenant probation period. Default 90 = the value
+        // EmployeeStatusService used to hardcode, so an unconfigured tenant is unchanged.
+        builder.Property(t => t.ProbationPeriodDays)
+            .HasDefaultValue(90)
+            .IsRequired();
+
         builder.Property(t => t.Name)
             .HasMaxLength(200)
             .IsRequired();

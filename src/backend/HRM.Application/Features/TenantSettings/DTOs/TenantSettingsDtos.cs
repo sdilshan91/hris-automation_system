@@ -19,7 +19,10 @@ public sealed record OrgProfileDto(
     string? CompanySize,
     int FiscalYearStartMonth,
     // Multi-country tax foundation (settings key org.default_country_code): fallback tax country.
-    string? DefaultCountryCode);
+    string? DefaultCountryCode,
+    // ISSUE-304 (US-CHR-009 BR-6): tenant probation period in days from date of joining. APPENDED — these are
+    // positional records. A Location may override it (Location.ProbationPeriodDays).
+    int ProbationPeriodDays = 90);
 
 public sealed record BrandingDto(
     string? LogoUrl,
@@ -60,7 +63,10 @@ public sealed record UpdateOrgProfileRequest(
     string? CompanySize,
     int FiscalYearStartMonth,
     // Multi-country tax foundation (settings key org.default_country_code): fallback tax country.
-    string? DefaultCountryCode);
+    string? DefaultCountryCode,
+    // ISSUE-304 (US-CHR-009 BR-6): tenant probation period in days from date of joining. APPENDED — these are
+    // positional records. A Location may override it (Location.ProbationPeriodDays).
+    int ProbationPeriodDays = 90);
 
 public sealed record UpdateLocalizationRequest(
     string DefaultLanguage,

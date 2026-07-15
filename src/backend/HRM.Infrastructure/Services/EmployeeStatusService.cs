@@ -17,6 +17,13 @@ namespace HRM.Infrastructure.Services;
 /// </summary>
 public sealed class EmployeeStatusService : IEmployeeStatusService
 {
+    /// <summary>
+    /// US-CHR-009 BR-6: the probation period used when a candidate's tenant row cannot be resolved — the
+    /// value this service hardcoded before ISSUE-304. Every tenant row carries its own default (also 90),
+    /// so this is a defensive backstop for a tenant deleted mid-sweep, not a supported path.
+    /// </summary>
+    private const int DefaultProbationPeriodDays = 90;
+
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
@@ -339,18 +346,23 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
 
     public async Task CheckProbationEndDatesAsync(CancellationToken cancellationToken = default)
     {
-        // BR-6: Default probation period is 90 days from date_of_joining
-        // Check if probation end is within 7 days
+        // BR-6 (ISSUE-304): the probation period is CONFIGURABLE — Location override → Tenant default → the
+        // 90-day code default. It was previously the literal `AddDays(90)`, inlined into the SQL predicate
+        // below, so US-CHR-009 BR-6's "configured per tenant" was never actually honoured.
+        //
+        // Because the period is now per-employee, it cannot stay a SQL predicate: the window would have to be
+        // computed per row from that row's location/tenant. This is a CROSS-TENANT background sweep, so the
+        // shape must stay batched — resolving per employee would be an N+1 across every tenant. Instead:
+        //   1. one query for the candidate rows (Status == Probation — naturally a small slice),
+        //   2. one query for every tenant's default, one for every location's override,
+        //   3. resolve + window-filter IN MEMORY.
+        // Query cost is 3, flat in employee count.
         var today = DateTime.UtcNow.Date;
         var reminderThreshold = today.AddDays(7);
 
-        // Query across all tenants (background job context)
-        var probationEmployees = await _dbContext.Employees
+        var candidates = await _dbContext.Employees
             .IgnoreQueryFilters()
-            .Where(e => !e.IsDeleted &&
-                        e.Status == EmployeeStatus.Probation &&
-                        e.DateOfJoining.AddDays(90) >= today &&
-                        e.DateOfJoining.AddDays(90) <= reminderThreshold)
+            .Where(e => !e.IsDeleted && e.Status == EmployeeStatus.Probation)
             .Select(e => new
             {
                 e.Id,
@@ -359,10 +371,56 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
                 e.LastName,
                 e.Email,
                 e.DateOfJoining,
-                ProbationEndDate = e.DateOfJoining.AddDays(90),
                 e.TenantId,
+                e.LocationId,
             })
             .ToListAsync(cancellationToken);
+
+        if (candidates.Count == 0)
+            return;
+
+        var tenantIds = candidates.Select(c => c.TenantId).Distinct().ToList();
+        var probationDaysByTenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.ProbationPeriodDays })
+            .ToDictionaryAsync(t => t.Id, t => t.ProbationPeriodDays, cancellationToken);
+
+        var locationIds = candidates.Where(c => c.LocationId is not null)
+            .Select(c => c.LocationId!.Value).Distinct().ToList();
+        var overrideByLocation = locationIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await _dbContext.Locations
+                .IgnoreQueryFilters()
+                .Where(l => locationIds.Contains(l.Id) && l.ProbationPeriodDays != null)
+                .Select(l => new { l.Id, Days = l.ProbationPeriodDays!.Value })
+                .ToDictionaryAsync(l => l.Id, l => l.Days, cancellationToken);
+
+        var probationEmployees = candidates
+            .Select(e =>
+            {
+                // Location override → tenant default → the 90-day code default (a tenant row is always present;
+                // the fallback only guards a candidate whose tenant vanished mid-sweep).
+                var days = e.LocationId is { } locId && overrideByLocation.TryGetValue(locId, out var loc)
+                    ? loc
+                    : probationDaysByTenant.TryGetValue(e.TenantId, out var tenantDays)
+                        ? tenantDays
+                        : DefaultProbationPeriodDays;
+
+                return new
+                {
+                    e.Id,
+                    e.EmployeeNo,
+                    e.FirstName,
+                    e.LastName,
+                    e.Email,
+                    e.DateOfJoining,
+                    ProbationEndDate = e.DateOfJoining.AddDays(days),
+                    e.TenantId,
+                };
+            })
+            .Where(e => e.ProbationEndDate >= today && e.ProbationEndDate <= reminderThreshold)
+            .ToList();
 
         foreach (var emp in probationEmployees)
         {

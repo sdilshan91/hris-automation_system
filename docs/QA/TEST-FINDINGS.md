@@ -6380,7 +6380,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-304 — Probation period hardcoded to 90 days, ignoring the per-tenant config promised by US-CHR-009 BR-6
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-07-15, CAL-7, PR #317)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-009 (BR-6) / (new TC needed)
 - **Title:** `EmployeeStatusService.CheckProbationEndDatesAsync` hardcodes
@@ -6390,6 +6390,17 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   transitively, probation-gated leave eligibility timing.
 - **Root cause (~95%, code):** the 90-day value is a literal, never read from config; no
   `Tenant.ProbationPeriodDays` field exists yet.
+- **Resolution (CAL-7, PR #317):** added `Tenant.ProbationPeriodDays` (NOT NULL, **default 90** — the value
+  the service hardcoded, so every existing tenant is unchanged) + `Location.ProbationPeriodDays` (**nullable**
+  — null means *inherit*, so a Location stays silent rather than every Location becoming an override).
+  `CheckProbationEndDatesAsync` resolves `Location ?? Tenant ?? 90`. ⚠ The period was inlined into the **SQL
+  predicate** (`e.DateOfJoining.AddDays(90)`); being per-employee it can no longer be one, and this is a
+  **cross-tenant** sweep — so it now runs 3 batched queries (candidates + tenant defaults + location
+  overrides) and resolves in memory, flat in employee count rather than an N+1 across every tenant. Exposed
+  on the org-profile settings API (bounded 1..1825) so it is actually settable.
+- **Verification:** 6 Postgres arms (`ProbationPeriodConfigTests`) incl. the 90-day control, the
+  not-in-window mirror, a cross-tenant arm, and the column defaults. Mutation-tested: reverting to the
+  hardcoded 90 reddens 4 arms. TC **TC-CHR-330** → `automated`.
 - **Severity rationale:** MED — contract drift vs the US; wrong probation windows for any tenant
   whose real probation isn't 90 days (common: 3/6 months, jurisdiction-dependent).
 - **Suggested action:** add `Tenant.ProbationPeriodDays` (+ optional `Location` override) and read

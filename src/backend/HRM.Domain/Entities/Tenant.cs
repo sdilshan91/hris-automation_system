@@ -40,6 +40,17 @@ public sealed class Tenant
     public int FiscalYearStartMonth { get; set; } = 1;
 
     /// <summary>
+    /// US-CHR-009 BR-6 (ISSUE-304): the tenant's probation period in days from an employee's date of joining.
+    /// Default 90 — the value that was previously HARDCODED in <c>EmployeeStatusService</c>, so an existing
+    /// tenant that has never configured this behaves exactly as before.
+    ///
+    /// <para>A Location may override it (<see cref="Location.ProbationPeriodDays"/>); the effective period is
+    /// <c>Location.ProbationPeriodDays ?? Tenant.ProbationPeriodDays</c>. Drives the probation-end reminder and,
+    /// transitively, probation-gated leave eligibility timing.</para>
+    /// </summary>
+    public int ProbationPeriodDays { get; set; } = 90;
+
+    /// <summary>
     /// Default ISO country code (alpha-2/alpha-3, max 5), e.g. "LK" (settings key org.default_country_code).
     /// Multi-country tax foundation: the FALLBACK tax country used when an employee's branch/location has no
     /// <c>CountryCode</c>. When this is also null and no location country resolves, the employee's statutory
