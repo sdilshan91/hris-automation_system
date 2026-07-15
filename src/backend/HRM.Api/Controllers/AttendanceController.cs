@@ -823,6 +823,156 @@ public sealed class AttendanceController : ControllerBase
         return Ok(ApiResponse<LatePolicyDto>.Ok(result.Value!, "Late policy saved."));
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  CAL-4b / US-ATT-011 AC-3: attendance policy configuration
+    //
+    //  AttendanceSettings is one row per (tenant, location): the /settings routes address the TENANT
+    //  DEFAULT (LocationId null); the /settings/overrides/{locationId} routes address that Location's
+    //  OVERRIDE. Resolution is ROW-LEVEL — an override IS that location's complete policy — and PUT is a
+    //  FULL REPLACE of the addressed scope (BUG-117 class; the client contract is GET-then-PUT). See
+    //  AttendanceSettingsDto. All gated by Attendance.ConfigurePolicy (Tenant Admin / HR).
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/attendance/settings
+    /// Returns the TENANT-DEFAULT attendance policy (US-ATT-011 AC-3), defaulting when none is configured.
+    /// Never returns a Location override. Gated by Attendance.ConfigurePolicy.
+    /// </summary>
+    [HttpGet("settings")]
+    [RequirePermission("Attendance.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceSettingsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetAttendanceSettings(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetAttendanceSettingsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AttendanceSettingsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// PUT /api/v1/attendance/settings
+    /// Upserts the TENANT-DEFAULT attendance policy (US-ATT-011 AC-3). FULL REPLACE: every field is applied
+    /// as sent, so an omitted field takes its default and RESETS that setting — send the whole policy back
+    /// after a GET. Gated by Attendance.ConfigurePolicy.
+    /// </summary>
+    [HttpPut("settings")]
+    [RequirePermission("Attendance.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceSettingsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpsertAttendanceSettings(
+        [FromBody] AttendanceSettingsDto request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpsertAttendanceSettingsCommand(request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AttendanceSettingsDto>.Ok(result.Value!, "Attendance settings saved."));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/settings/overrides
+    /// Lists every Location attendance-policy override configured for the tenant, each with its locationId
+    /// and locationName (US-ATT-011 AC-3). The tenant-default policy is not included.
+    /// Gated by Attendance.ConfigurePolicy.
+    /// </summary>
+    [HttpGet("settings/overrides")]
+    [RequirePermission("Attendance.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<AttendanceSettingsDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetAttendanceSettingsOverrides(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetAttendanceSettingsOverridesQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<AttendanceSettingsDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/settings/overrides/{locationId}
+    /// Returns that Location's attendance-policy override (US-ATT-011 AC-3). 404 when the location has no
+    /// override — its employees fall back to the tenant default. 400 "invalid_location" when the location
+    /// does not exist in this tenant. Gated by Attendance.ConfigurePolicy.
+    /// </summary>
+    [HttpGet("settings/overrides/{locationId:guid}")]
+    [RequirePermission("Attendance.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceSettingsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetLocationAttendanceSettings(
+        Guid locationId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GetLocationAttendanceSettingsQuery(locationId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AttendanceSettingsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// PUT /api/v1/attendance/settings/overrides/{locationId}
+    /// Upserts that Location's attendance-policy override (US-ATT-011 AC-3). The override is that
+    /// location's COMPLETE policy — it is not merged field-by-field with the tenant default and creating it
+    /// does not copy the tenant row. FULL REPLACE: an omitted field takes its default and RESETS that
+    /// setting. 400 "invalid_location" when the location does not exist in this tenant or is inactive.
+    /// Gated by Attendance.ConfigurePolicy.
+    /// </summary>
+    [HttpPut("settings/overrides/{locationId:guid}")]
+    [RequirePermission("Attendance.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceSettingsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpsertLocationAttendanceSettings(
+        Guid locationId, [FromBody] AttendanceSettingsDto request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpsertLocationAttendanceSettingsCommand(locationId, request), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AttendanceSettingsDto>.Ok(
+            result.Value!, "Location attendance settings saved."));
+    }
+
+    /// <summary>
+    /// DELETE /api/v1/attendance/settings/overrides/{locationId}
+    /// Removes that Location's attendance-policy override (US-ATT-011 AC-3); its employees then fall back
+    /// to the tenant-default policy. 404 when the location has no override. 400 "invalid_location" when the
+    /// location does not exist in this tenant. Gated by Attendance.ConfigurePolicy.
+    /// </summary>
+    [HttpDelete("settings/overrides/{locationId:guid}")]
+    [RequirePermission("Attendance.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteLocationAttendanceSettings(
+        Guid locationId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new DeleteLocationAttendanceSettingsCommand(locationId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse.Ok(
+            "Location attendance settings override removed; the tenant default now applies."));
+    }
+
     /// <summary>
     /// GET /api/v1/attendance/late-early/report?from=yyyy-MM-dd&amp;to=yyyy-MM-dd&amp;departmentId=&amp;employeeId=&amp;scope=team|all
     /// Late/early-departure report for a date range (US-ATT-008 AC-5/FR-6). scope=team → the acting

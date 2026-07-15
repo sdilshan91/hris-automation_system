@@ -5298,8 +5298,11 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 | TC-ATT-152 | FteScaledOvertimeBase -- OT base unscaled by default, scaled by FTE when on | Integration | High | US-ATT-011 | AC-5, FR-6 |
 | TC-PAY-014 | ExcludeHolidaysFromWorkingDays ON reduces payroll denominator by holiday count | Integration | High | US-ATT-011 | AC-4, FR-5 |
 | TC-PAY-015 | ExcludeHolidaysFromWorkingDays OFF -- holidays count in denominator | Integration | Medium | US-ATT-011 | AC-4, FR-5 |
+| TC-ATT-155 | Tenant attendance-policy CRUD -- Tenant Admin reads/upserts the tenant-default policy | Integration | High | US-ATT-011 | AC-3, FR-4 |
+| TC-ATT-156 | Location attendance-policy override CRUD -- create/update/delete + fall back to tenant default | Integration | High | US-ATT-011 | AC-3, FR-4 |
 | TC-ATT-ISO-014 | Cross-tenant Location.DefaultShiftId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-1, BR-1, NFR-2 |
 | TC-ATT-ISO-015 | Cross-tenant AttendanceSettings override LocationId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |
+| TC-ATT-ISO-016 | Cross-tenant locationId rejected by the settings CRUD; nothing persisted (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |
 
 **Coverage:** 5/5 AC covered (AC-1 TC-145/146/ISO-014; AC-2 TC-147/148/149; AC-3 TC-150/151/ISO-015; AC-4 TC-PAY-014/015; AC-5 TC-152).
 

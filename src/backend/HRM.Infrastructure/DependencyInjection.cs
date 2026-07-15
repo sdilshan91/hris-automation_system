@@ -239,6 +239,11 @@ public static class DependencyInjection
         // AttendanceService (clock-in/out) and RegularizationApprovalService (approval recompute).
         services.AddScoped<ILateEarlyService, LateEarlyService>();
 
+        // Attendance policy CONFIGURATION — the tenant default + per-Location overrides (CAL-4b /
+        // US-ATT-011 AC-3). The admin WRITE path only; reading the EFFECTIVE policy for an employee stays
+        // with AttendancePolicyResolver (static, no DI), which every runtime call site uses.
+        services.AddScoped<IAttendanceSettingsService, AttendanceSettingsService>();
+
         // HR attendance dashboard + reports (US-ATT-010): KPIs, live board (polled — SignalR deferred),
         // department comparison, custom report + export, 12-month trends (from the monthly summary), and
         // scheduled-report config CRUD. Reuses IAttendanceSummaryService for the monthly rollup.

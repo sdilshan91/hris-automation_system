@@ -6562,3 +6562,26 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   `ShiftScheduleResolver`'s batched shape) and key each employee off their location, rather than
   per-employee resolution. Decide per path whether per-location semantics are even wanted (an
   absenteeism report spanning locations may legitimately want one tenant threshold).
+
+### ISSUE-310 — `PUT /attendance/settings` is a 24-field full replace: an omitted field silently RESETS a pay rule (BUG-117 class, on a payroll path)
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE (API contract)
+- **Module / US / TC:** Attendance / US-ATT-011 AC-3 / TC-ATT-155
+- **Title:** CAL-4b's `PUT /api/v1/attendance/settings` and `PUT /api/v1/attendance/settings/overrides/{locationId}`
+  are **full replaces** of that scope's policy, matching the sibling `PUT late-policy` and the row-level
+  semantics AC-3 specifies. An omitted JSON field therefore takes the DTO default and **resets that
+  setting** — e.g. omitting `weekendOvertimeMultiplier` silently rewrites it to 2.0.
+- **Why this instance is worse than the usual BUG-117:** the payload is **24 fields wide** and several of
+  them are **pay rules** (`WeekdayOvertimeMultiplier`, `WeekendOvertimeMultiplier`,
+  `HolidayOvertimeMultiplier`, `MaxDaily/MaxWeeklyOvertimeMinutes`, `StandardWorkMinutes`). A partial PUT
+  from a hand-rolled client — or a future PATCH-minded FE — silently rewrites what overtime pays. BUG-117
+  (`PUT leave-types/{id}` wipes omitted fields) is the same class on a non-money path.
+- **Root cause (~95%, deliberate):** full-replace PUT with a non-nullable DTO; documented at the seam
+  rather than fixed, per the CAL-4b contract. The FE contract is GET-then-PUT.
+- **Discovered:** CAL-4b backend-dev, 2026-07-15 (flagged out-of-lane, correctly not fixed).
+- **Suggested action:** needs-decision — either fold into a BUG-117 fix campaign (nullable DTO +
+  partial-merge semantics, which would contradict AC-3's row-level model), or keep full-replace and add a
+  contract test asserting the FE honours GET-then-PUT. Note the FE admin screen does not exist yet
+  (deferred to P6), so nothing consumes this contract today — deciding now is cheap.
