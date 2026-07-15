@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -50,3 +50,12 @@ Verify US-ATT-011 AC-3 / FR-4: a location-scoped `AttendanceSettings` override f
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `AttendancePolicyResolverTests.LocationOverride_AppliesToThatLocationsEmployees_OthersGetTheTenantDefault` (Dubai override 3.0× for a Dubai employee; Colombo and no-location employees get the tenant 2.0× — three outcomes one shared row could not produce)
+  - `AttendancePolicyResolverTests.TenantDefaultAccessor_NeverReturnsALocationOverride` (**the invariant-break regression** — overrides seeded FIRST so a naive read is more likely to pick the wrong row)
+  - `AttendancePolicyResolverTests.LazyCreate_CreatesTheTenantDefaultRow_NeverALocationOverride`
+  - `LeaveReportServiceTests.Absenteeism_UsesTheTenantDefaultThreshold_NotALocationOverride` (the BR-4 report stays on the tenant default; seed order is load-bearing)
+- **Mutation-tested:** reintroducing the pre-CAL-4 unpredicated `FirstOrDefaultAsync()` reddens 3 resolver arms + the absenteeism arm.
+- Backing suite trait: `[Trait("TC", "TC-ATT-150")]` on `AttendancePolicyResolverTests`.

@@ -6,7 +6,12 @@ namespace HRM.Infrastructure.Persistence.Configurations;
 
 /// <summary>
 /// EF Core configuration for the AttendanceSettings entity (US-ATT-001 BR-2/BR-3/BR-6).
-/// Maps to the "attendance_settings" table; exactly one row per tenant.
+/// Maps to the "attendance_settings" table.
+///
+/// <para>⚠ <b>NOT "exactly one row per tenant" any more (CAL-4 / US-ATT-011 AC-3).</b> One row per
+/// (tenant, location): the row with a NULL LocationId is the tenant default, each Location override is its
+/// own row. Reads must go through <c>AttendancePolicyResolver</c> or filter <c>LocationId</c> explicitly —
+/// an unpredicated read returns an arbitrary row.</para>
 /// </summary>
 public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<AttendanceSettings>
 {
@@ -120,10 +125,30 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .HasDefaultValue(false)
             .IsRequired();
 
-        // One settings row per tenant.
-        builder.HasIndex(s => s.TenantId)
+        // US-ATT-011 AC-3: at most ONE row per (tenant, location) — the tenant default is the row whose
+        // LocationId is null, each Location override is its own row. This REPLACES the old
+        // ix_attendance_settings_tenant_unique (unique on TenantId alone), which structurally allowed only
+        // one row per tenant.
+        //
+        // ⚠ Postgres treats NULLs as distinct in a unique index, so (TenantId, NULL) would NOT be
+        // de-duplicated by this index alone — two tenant-default rows could be inserted and the
+        // "tenant default" would become ambiguous. The second, partial index below closes that hole by
+        // enforcing uniqueness of the tenant-default row explicitly.
+        builder.HasIndex(s => new { s.TenantId, s.LocationId })
             .IsUnique()
             .HasFilter("is_deleted = false")
-            .HasDatabaseName("ix_attendance_settings_tenant_unique");
+            .HasDatabaseName("ix_attendance_settings_tenant_location_unique");
+
+        builder.HasIndex(s => s.TenantId)
+            .IsUnique()
+            .HasFilter("is_deleted = false AND location_id IS NULL")
+            .HasDatabaseName("ix_attendance_settings_tenant_default_unique");
+
+        // Restrict: a Location with a policy override must not be deletable out from under it. (Note the
+        // BUG-287 lesson — Restrict only stops a HARD delete; a soft delete is an UPDATE no FK can block.)
+        builder.HasOne(s => s.Location)
+            .WithMany()
+            .HasForeignKey(s => s.LocationId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

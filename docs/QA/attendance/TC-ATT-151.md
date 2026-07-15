@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: functional
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -50,3 +50,9 @@ Verify US-ATT-011 AC-3 / BR-5 and spec §7.1: creating a **second** `AttendanceS
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `AttendancePolicyResolverTests.SecondOverrideForTheSameLocation_IsRejectedByTheUniqueIndex` (Postgres 23505 on `ix_attendance_settings_tenant_location_unique`)
+  - `AttendancePolicyResolverTests.SecondTenantDefaultRow_IsRejected_DespitePostgresNullDistinctness` (⚠ Postgres treats NULLs as DISTINCT, so `(tenant_id, location_id)` alone would permit TWO tenant-default rows — `ix_attendance_settings_tenant_default_unique` (partial, `location_id IS NULL`) is what keeps the tenant default singular. Only a real provider proves this.)
+- Backing suite trait: `[Trait("TC", "TC-ATT-151")]` on `AttendancePolicyResolverTests`.

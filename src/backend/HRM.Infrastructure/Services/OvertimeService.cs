@@ -207,7 +207,7 @@ public sealed class OvertimeService : IOvertimeService
 
         var expectedMinutes = (int)Math.Round(request.ExpectedHours * 60m, MidpointRounding.AwayFromZero);
 
-        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var settings = await GetOrCreateSettingsAsync(employee, cancellationToken);
         // BUG-286 location-scoped holiday + BUG-285 resolved work-week, same as the auto-detect path above —
         // a pre-approval must quote the SAME multiplier the detected overtime will later be paid at.
         var isHoliday = await IsPublicHolidayAsync(request.Date, employee.LocationId, cancellationToken);
@@ -875,21 +875,19 @@ public sealed class OvertimeService : IOvertimeService
         return existing.Sum() + newMinutes > maxWeeklyMinutes;
     }
 
-    private async Task<AttendanceSettings> GetOrCreateSettingsAsync(CancellationToken cancellationToken)
-    {
-        var settings = await _dbContext.AttendanceSettings.FirstOrDefaultAsync(cancellationToken);
-        if (settings is not null)
-            return settings;
-
-        settings = new AttendanceSettings
-        {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = _tenantContext.TenantId,
-        };
-        _dbContext.AttendanceSettings.Add(settings);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return settings;
-    }
+    /// <summary>
+    /// US-ATT-011 AC-3 (CAL-4): the EFFECTIVE policy for this employee — their Location's override, else the
+    /// tenant default, else a lazily-created tenant-default row.
+    ///
+    /// <para>⚠ Was an unpredicated <c>FirstOrDefaultAsync()</c>, safe only while a unique index on TenantId
+    /// alone guaranteed one settings row per tenant. Location overrides break that invariant: an
+    /// unpredicated read would return an ARBITRARY row, so one branch's OT multipliers/caps could be applied
+    /// to every employee in the tenant. This is a money path — resolve per employee.</para>
+    /// </summary>
+    private Task<AttendanceSettings> GetOrCreateSettingsAsync(
+        Employee employee, CancellationToken cancellationToken)
+        => AttendancePolicyResolver.ResolveForLocationAsync(
+            _dbContext, employee.LocationId, cancellationToken);
 
     private OvertimeApprovalHistory NewHistory(
         Guid overtimeRecordId, Guid? approverEmployeeId, string action,

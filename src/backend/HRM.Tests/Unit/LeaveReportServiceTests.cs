@@ -445,6 +445,65 @@ public sealed class LeaveReportServiceTests
         Cell(aliceRow, report, "Flagged").Should().Be("Yes");
     }
 
+    /// <summary>
+    /// CAL-4 / US-ATT-011 AC-3 regression: the BR-4 threshold must come from the TENANT-DEFAULT settings row
+    /// (LocationId null), never from a Location override.
+    ///
+    /// <para>Before CAL-4 there was exactly one AttendanceSettings row per tenant, and
+    /// <c>ResolveAbsenteeismThresholdAsync</c> relied on that by reading with an unpredicated
+    /// <c>FirstOrDefaultAsync()</c>. Once Location override rows exist that read returns an ARBITRARY row —
+    /// so a Dubai override with a lenient threshold could silently set the bar for this tenant-wide report
+    /// and under-flag every employee. <c>SeedAbsenteeismThreshold</c> seeds only ONE row, so it encodes the
+    /// dead invariant and cannot catch this; the override seeded here is what makes the arm falsifiable.</para>
+    ///
+    /// <para>The override's threshold (99) is deliberately far from the tenant default (3) so Alice's 4
+    /// unplanned days flag under the tenant default and would NOT flag under the override — the two
+    /// outcomes are opposite, not merely different numbers.</para>
+    /// </summary>
+    [Fact]
+    public async Task Absenteeism_UsesTheTenantDefaultThreshold_NotALocationOverride()
+    {
+        // ⚠ SEED ORDER IS LOAD-BEARING: the override goes in FIRST. An unpredicated read returns an
+        // ARBITRARY row — on this InMemory fixture that is effectively insertion order, so seeding the
+        // tenant default first would let the buggy read pick it by luck and the arm would pass against the
+        // very bug it exists to catch (verified: it did).
+        using (var db = CreateDbContext())
+        {
+            var dubai = new Location
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, Name = "Dubai", TimeZone = "Asia/Dubai",
+                IsActive = true,
+            };
+            db.Locations.Add(dubai);
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _tenantId,
+                LocationId = dubai.Id,          // a LOCATION OVERRIDE — must not drive this report
+                AbsenteeismThresholdDays = 99m, // so lenient nobody would ever be flagged
+            });
+            db.SaveChanges();
+        }
+
+        SeedAbsenteeismThreshold(3m);   // the tenant default (LocationId null) — seeded SECOND, on purpose
+
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        for (int d = 1; d <= 4; d++)
+            AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.HrAssigned,
+                new DateOnly(Year, 3, d), new DateOnly(Year, 3, d), totalDays: 1m, isLop: true);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.Absenteeism,
+            Params(from: new DateOnly(Year, 3, 1), to: new DateOnly(Year, 3, 31)));
+
+        var report = result.Value!;
+        var aliceRow = report.Rows.Single(r => Cell(r, report, "Employee No") == "EMP-0001");
+        Cell(aliceRow, report, "Threshold").Should().Be(
+            "3", "the TENANT-DEFAULT threshold — 99 would mean the Dubai override leaked into a tenant-wide report");
+        Cell(aliceRow, report, "Flagged").Should().Be(
+            "Yes", "4 unplanned > 3; under the override's 99 nobody would ever be flagged");
+    }
+
     [Fact]
     public async Task Absenteeism_DoesNotFlagEmployeeBelowThreshold()
     {

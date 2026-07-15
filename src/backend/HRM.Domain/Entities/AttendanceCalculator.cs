@@ -14,7 +14,9 @@ public readonly record struct AttendanceCalculation(
 /// job (BR-5) apply identical, minute-accurate (NFR-2) rules against the tenant policy
 /// (<see cref="AttendanceSettings"/>).
 ///
-/// Policy thresholds come from <see cref="AttendanceSettings"/> as a tenant-level fallback.
+/// Policy thresholds come from <see cref="AttendanceSettings"/> as a fallback — resolved by the CALLER via
+/// <c>AttendancePolicyResolver</c> (the employee's Location override, else the tenant default; US-ATT-011
+/// AC-3), not necessarily the tenant-level row.
 /// TODO(US-ATT-005 follow-up): the <see cref="Shift"/> entity now exists (US-ATT-005). Wiring the
 /// resolved shift's break/grace/minimum-hours into this calculation is deferred — the shift model
 /// carries BreakDurationMinutes / MinimumHours / GracePeriodMinutes but NOT the calculator's

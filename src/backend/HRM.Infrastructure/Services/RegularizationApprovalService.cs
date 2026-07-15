@@ -322,7 +322,7 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
 
         // FR-2 / AC-1: create or update the attendance_log for the employee + regularized day, then
         // recalculate work hours via the SAME AttendanceCalculator clock-out uses.
-        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var settings = await GetOrCreateSettingsAsync(regularization.EmployeeId, cancellationToken);
 
         var logResult = await ApplyToAttendanceLogAsync(regularization, settings, cancellationToken);
         if (logResult.IsFailure)
@@ -501,7 +501,7 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
             return Result<AttendanceLog>.Failure(
                 "This date falls within a locked payroll period. Please contact HR.", 409, "payroll_period_locked");
 
-        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var settings = await GetOrCreateSettingsAsync(regularization.EmployeeId, cancellationToken);
         var logResult = await ApplyToAttendanceLogAsync(regularization, settings, cancellationToken);
         if (logResult.IsFailure)
             return Result<AttendanceLog>.Failure(
@@ -700,21 +700,22 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
     /// creation in AttendanceService. The new row is committed immediately (it is not part of the
     /// approval's atomic unit and is harmless to persist on its own).
     /// </summary>
-    private async Task<AttendanceSettings> GetOrCreateSettingsAsync(CancellationToken cancellationToken)
-    {
-        var settings = await _dbContext.AttendanceSettings.FirstOrDefaultAsync(cancellationToken);
-        if (settings is not null)
-            return settings;
-
-        settings = new AttendanceSettings
-        {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = _tenantContext.TenantId,
-        };
-        _dbContext.AttendanceSettings.Add(settings);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return settings;
-    }
+    /// <summary>
+    /// US-ATT-011 AC-3 (CAL-4): the EFFECTIVE policy for the SUBJECT employee (the one being regularized) —
+    /// their Location's override, else the tenant default, else a lazily-created tenant-default row.
+    ///
+    /// <para>⚠ Was an unpredicated <c>FirstOrDefaultAsync()</c>, safe only while a unique index on TenantId
+    /// alone guaranteed one settings row per tenant. Location overrides break that invariant and an
+    /// unpredicated read would return an ARBITRARY row.</para>
+    ///
+    /// <para>Note it resolves for the <b>subject</b>, not the approving manager: these settings drive
+    /// <c>ApplyToAttendanceLogAsync</c>'s work-hours recalculation, so a Colombo manager approving a Dubai
+    /// employee's regularization must apply DUBAI's policy to Dubai's hours.</para>
+    /// </summary>
+    private Task<AttendanceSettings> GetOrCreateSettingsAsync(
+        Guid subjectEmployeeId, CancellationToken cancellationToken)
+        => AttendancePolicyResolver.ResolveForEmployeeAsync(
+            _dbContext, subjectEmployeeId, cancellationToken);
 
     /// <summary>
     /// US-ATT-008 BR-7: recomputes and stamps the late/early fields on a (possibly newly created) log

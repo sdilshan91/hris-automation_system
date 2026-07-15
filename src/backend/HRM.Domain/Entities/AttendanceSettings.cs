@@ -1,13 +1,34 @@
 namespace HRM.Domain.Entities;
 
 /// <summary>
-/// Per-tenant attendance policy that drives clock-in enforcement (US-ATT-001 BR-2/BR-3/BR-6).
-/// Exactly one row per tenant; created lazily with safe defaults (all enforcement off) the first
-/// time a tenant clocks in if no row exists yet. Tenant-scoped via <see cref="BaseEntity.TenantId"/>.
-/// Maps to the "attendance_settings" table.
+/// Attendance policy that drives clock-in enforcement (US-ATT-001 BR-2/BR-3/BR-6) and the overtime
+/// multipliers/caps (US-ATT-006). Tenant-scoped via <see cref="BaseEntity.TenantId"/>. Maps to the
+/// "attendance_settings" table.
+///
+/// <para><b>US-ATT-011 AC-3 — one row per (tenant, location):</b> a row with a null
+/// <see cref="LocationId"/> is the TENANT DEFAULT; a row with a set <see cref="LocationId"/> is that
+/// Location's OVERRIDE. Resolution is ROW-LEVEL and lives in <c>AttendancePolicyResolver</c>: an
+/// employee's Location override wins wholesale, else the tenant default, else a lazily-created default
+/// row. Enforced by a unique index on <c>(TenantId, LocationId)</c> where not deleted.</para>
+///
+/// <para>⚠ <b>The "exactly one row per tenant" invariant is GONE (CAL-4).</b> It used to be structural —
+/// a unique index on TenantId alone — and several call sites silently relied on it by reading with an
+/// unpredicated <c>FirstOrDefaultAsync()</c>. Any such read now returns an ARBITRARY row and would apply
+/// one branch's policy to the whole tenant. **Every read must either go through
+/// <c>AttendancePolicyResolver</c> (when an employee is in scope) or filter <c>LocationId == null</c>
+/// explicitly (tenant-wide sweeps).** Never reintroduce an unpredicated read.</para>
 /// </summary>
 public sealed class AttendanceSettings : BaseEntity
 {
+    /// <summary>
+    /// US-ATT-011 AC-3: null = the tenant default policy; set = this Location's override, applying to
+    /// employees assigned to that Location. At most one row per (tenant, location).
+    /// </summary>
+    public Guid? LocationId { get; set; }
+
+    /// <summary>The Location this row overrides policy for; null on the tenant-default row.</summary>
+    public Location? Location { get; set; }
+
     /// <summary>
     /// BR-2 / AC-3: when true, latitude+longitude are mandatory on clock-in and a clock-in
     /// without coordinates is rejected. When false, geolocation is optional (AC-4).
