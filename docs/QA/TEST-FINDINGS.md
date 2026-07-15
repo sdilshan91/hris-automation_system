@@ -5195,13 +5195,13 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
-### ISSUE-303 — F&F Phase 1 test-depth gaps: no `FnFPolicyController` policy-CRUD API test + no settlement-specific 2-tenant cross-read arm
-- **Type:** ISSUE (test-health) · **Severity:** LOW · **Status:** OPEN · **Layer:** BE-test · **US/TC:** US-PAY-013 AC-1/AC-2/AC-7 / (surfaced by the qa-engineer during the US-PAY-013 traceability authoring)
-- **Title:** Two subset-coverage gaps on the shipped F&F Phase 1 (behaviour itself is verified — no defect):
-  1. **AC-1/FR-1 policy-CRUD API:** the automated tests seed `TenantFnFPolicy` directly via EF and prove *toggle-governs-computation*; the `FnFPolicyController` contract (edit **creates a new effective-dated row** rather than overwriting history) is only a manual/API check — no dedicated controller/integration test.
-  2. **AC-7 tenant isolation:** automated coverage on `final_settlement` is the **dormant RLS-policy-existence** check only; there is no settlement-specific 2-tenant cross-read arm (runtime isolation rests on the module-wide EF global query filter + `TenantInterceptor`, proven elsewhere e.g. `RlsIsolationPostgresTests`).
-- **Suggested direction (NOT applied):** add a `FnFPolicyController` integration test (create/edit → new effective-dated row + latest-wins resolution) + a Tenant-A/Tenant-B cross-read arm on the settlement tables (edits `src/HRM.Tests`).
-- **Severity rationale:** LOW — the computation semantics (AC-1/AC-2) + module-wide isolation are already automated + green; these are full-fidelity API-surface + settlement-specific-isolation depth arms.
+### ISSUE-303 — F&F Phase 1 test-depth gaps: pure-HTTP `FnFPolicyController` request/response test + settlement-specific 2-tenant cross-read arm
+- **Type:** ISSUE (test-health) · **Severity:** LOW · **Status:** PARTIALLY RESOLVED (the policy VALIDATION half closed — see resolution) · **Layer:** BE-test · **US/TC:** US-PAY-013 AC-1/AC-2/AC-7
+- **Resolution (validation half, 2026-07-14):** the user asked whether the F&F **validations** were in the TCs — they were not. Added `FnFPolicyServiceTests` (3 arms: `CreateFnFPolicyValidator` effective-date-required; the **same-effective-date-replacement** money-adjacent rule — one active version per date, so the resolver never tie-breaks; latest-`EffectiveFrom`≤asOf resolution + safe code-default) + **TC-PAY-013-08** (status automated). This closes the AC-1/AC-2 **validator + service** layer.
+- **Residual (still OPEN, LOW):**
+  1. **Pure HTTP-layer `FnFPolicyController`** request/response test (the service + validator are now covered; the thin controller/MediatR dispatch is not exercised by a dedicated HTTP test — same pattern as other thin controllers).
+  2. **AC-7 tenant isolation:** automated coverage on `final_settlement` is the **dormant RLS-policy-existence** check only; no settlement-specific Tenant-A/Tenant-B cross-read arm (runtime isolation rests on the module-wide EF global query filter + `TenantInterceptor`, proven elsewhere e.g. `RlsIsolationPostgresTests`).
+- **Severity rationale:** LOW — the validation semantics + computation + module-wide isolation are automated + green; the residual is a thin-controller HTTP test + settlement-specific-isolation depth.
 
 ---
 
@@ -6263,3 +6263,114 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   3. **Gate-vs-year-end parity:** the BR-6 gate ceiling derives from the latest ledger `BalanceAfter` (Σ all amounts incl. accruals), while the year-end forfeiture uses `entitlement(engine) + carry − used − expired + adj` (does NOT re-add Accrual). They agree only under the invariant `Σaccruals == engine ProratedEntitlementDays`; divergence would let HR encash more than year-end would forfeit (erodes CARRIED days — employee detriment, NOT double-pay). Optionally compute the gate ceiling via `ComputeUnusedBalanceAsync` for exact parity.
 - **Severity rationale:** LOW — none is a double-pay or security path; all three are modeling/spec-confirmation refinements on top of the shipped BR-6 fix.
 - **Suggested action (needs-decision):** BA/product confirmation on (1) and (2); optional gate-parity hardening for (3).
+
+---
+
+> **Config-design study batch (2026-07-14).** The five findings below were surfaced by a
+> code-review study of hardcoded working-calendar/policy values (not a `/test-all` run), filed per
+> the auto-heal contract (Engineering-Discipline rule #6). They are the implementation-gap inputs
+> to the epic design at
+> [`docs/superpowers/specs/2026-07-14-tenant-location-configurable-calendar-design.md`](../superpowers/specs/2026-07-14-tenant-location-configurable-calendar-design.md).
+> Each is a *fixed value that should be tenant + location configurable*, and several are producing
+> wrong money/entitlement TODAY for any tenant that is not a Mon–Fri / Sat–Sun-weekend shop
+> (Gulf Sun–Thu, EU 4-day, etc.). BUG-113 (Employee↔Location link) is already RESOLVED (#261) and
+> is NOT re-filed.
+
+### BUG-284 — Leave day-counting hardcodes Mon–Fri, ignoring the shift work-week → wrong leave balances / half-day gate for any non-Mon–Fri population
+- **Type:** BUG
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave / US-LV-003 (also US-LV-006 preview) / (new TC needed)
+- **Title:** `LeaveRequestService` counts leave days and gates half-days against
+  `WorkingDaysCalculator.DefaultWorkWeek` (Mon–Fri, `WorkingDaysCalculator.cs:14`) at three sites
+  (`LeaveRequestService.cs:132` half-day gate, `:142` balance deduction, `:353` balance preview).
+  Every production caller omits the optional `workWeek` argument, so leave **completely ignores the
+  shift system** (`Shift.WorkingDays` / `ShiftScheduleResolver`) that attendance and payroll use.
+  A Gulf tenant on a Sun–Thu shift has Friday (their weekend) counted as a leave day and Sunday (a
+  workday) skipped → wrong balance deduction; a half-day on Sunday is rejected while a half-day on
+  Friday is wrongly accepted.
+- **Root cause (~95%, code):** the two working-week sources never meet — leave is hardwired to
+  `DefaultWorkWeek`; attendance/payroll use `Shift.WorkingDays`. Fix routes leave day-counting
+  through the (to-be location-aware) `ShiftScheduleResolver`.
+- **Severity rationale:** HIGH — materially wrong leave balances (real entitlement/money) for an
+  entire population, not an edge case, for any tenant whose work-week isn't Mon–Fri.
+- **Suggested action:** consume the resolver (spec Phase 2). Add TCs for Sun–Thu and 4-day tenants.
+
+### BUG-285 — Overtime weekend multiplier hardcodes Sat/Sun, ignoring the shift work-week → wrong OT pay
+- **Type:** BUG
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance-Payroll / US-ATT-006 / (new TC needed)
+- **Title:** `OvertimeMultiplierResolver.Resolve` decides weekend-vs-weekday via
+  `date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday` (`OvertimeMultiplierResolver.cs:36`),
+  hardcoded, ignoring `Shift.WorkingDays`. Called from `OvertimeService` auto-detect + pre-approval
+  paths; the wrong multiplier flows straight into payroll earnings. A Gulf tenant's Friday OT
+  (their weekend) is paid at the **weekday** multiplier and Sunday OT (a workday) at the
+  **weekend** multiplier.
+- **Root cause (~95%, code):** weekend basis is a literal day-of-week check, not derived from the
+  resolved working-day set. The multiplier *rates* are already tenant-configurable
+  (`AttendanceSettings`); only the weekend *basis* is hardcoded.
+- **Severity rationale:** HIGH — money-critical; over/under-pays overtime for every OT event on a
+  non-Sat/Sun-weekend calendar.
+- **Suggested action:** pass the resolved working-day set into the resolver (spec Phase 2).
+
+### BUG-286 — Overtime holiday check ignores LocationId → a location-specific holiday grants the wrong employees the holiday OT multiplier
+- **Type:** BUG
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance-Payroll / US-ATT-006 (US-LV-007 holiday scope) / (new TC needed)
+- **Title:** `OvertimeService.IsPublicHolidayAsync` (`OvertimeService.cs:798-801`) matches a holiday
+  by `Date == date && IsActive && Type == Public` with **no `LocationId` filter**, bypassing the
+  location-aware `IHolidayProvider` that leave uses. A New-York-only holiday therefore grants a
+  London employee the holiday OT multiplier (and vice-versa). Holiday lookups are duplicated in
+  three places (leave = location-aware/correct; attendance dashboard = its own location-aware copy;
+  overtime = unfiltered/wrong).
+- **Root cause (~90%, code):** overtime does not go through `IHolidayProvider`; it runs an inline
+  unfiltered query.
+- **Severity rationale:** MED — money impact but bounded to multi-location tenants that define
+  location-specific holidays.
+- **Suggested action:** route OT (and payroll) holiday lookups through `IHolidayProvider(locationId)`
+  (spec Phase 2, "unify holiday lookups").
+
+### ISSUE-304 — Probation period hardcoded to 90 days, ignoring the per-tenant config promised by US-CHR-009 BR-6
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-009 (BR-6) / (new TC needed)
+- **Title:** `EmployeeStatusService.CheckProbationEndDatesAsync` hardcodes
+  `DateOfJoining.AddDays(90)` (`EmployeeStatusService.cs:342,352-353,362`, comment "BR-6: Default
+  probation period is 90 days"), with no tenant (or location) override — despite US-CHR-009 BR-6
+  specifying the probation period is **configured per tenant**. Affects probation-end reminders and,
+  transitively, probation-gated leave eligibility timing.
+- **Root cause (~95%, code):** the 90-day value is a literal, never read from config; no
+  `Tenant.ProbationPeriodDays` field exists yet.
+- **Severity rationale:** MED — contract drift vs the US; wrong probation windows for any tenant
+  whose real probation isn't 90 days (common: 3/6 months, jurisdiction-dependent).
+- **Suggested action:** add `Tenant.ProbationPeriodDays` (+ optional `Location` override) and read
+  it (spec Phase 4).
+
+### ISSUE-305 — Leave-year boundary / accrual ignore `Tenant.FiscalYearStartMonth` (calendar-year hardcoded), contradicting US-LV-002/006/008
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave / US-LV-002, US-LV-006, US-LV-008 / (new TC needed)
+- **Title:** The leave subsystem universally hardcodes the leave year to calendar Jan 1–Dec 31 —
+  `LeaveAccrualJob` (`leaveYear = DateTime.UtcNow.Year`), `ProcessLeaveYearEndJob` (explicit
+  `TODO(tenant-settings)`), `LeaveCarryForwardCalculator.ComputeExpiryDate`, and
+  `LeaveEntitlementEngine.CalculateProRata` (`new DateTime(leaveYear,1,1)…12,31`) — even though
+  `Tenant.FiscalYearStartMonth` exists (default 1) and US-LV-002/006/008 specify the leave year as
+  calendar-**or**-fiscal per tenant. A tenant on an Apr–Mar fiscal year gets a wrong leave-year
+  boundary, accrual window, and carry-forward expiry. Extends the reports-only ISSUE-176 to the
+  leave engine.
+- **Root cause (~90%, code):** `FiscalYearStartMonth` is read by nothing in payroll/leave; leave
+  jobs assume January.
+- **Severity rationale:** MED — wrong leave-year for fiscal-year tenants; no current data proves a
+  wrong number only because no fiscal-year tenant is seeded, but the logic is definitively
+  calendar-only. Related: ISSUE-176 (statutory reports, LOW).
+- **Suggested action:** wire `FiscalYearStartMonth` into the accrual/year-end/expiry/pro-rata paths
+  (spec Phase 4). Supersede ISSUE-176 or resolve it in the same change.
