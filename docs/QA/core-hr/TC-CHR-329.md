@@ -4,7 +4,7 @@ user_story: US-CHR-013
 module: Core HR
 priority: medium
 type: functional
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -51,3 +51,9 @@ Verify US-CHR-013 AC-2 / FR-4 / BR-3 and spec §7.1: `Employee.WorkArrangement` 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `EmployeeFteValidationTests.Create_RejectsUndefinedWorkArrangement` (99 / -1 / 3 — a cast int must not reach the column)
+  - `EmployeeFteValidationTests.Create_AcceptsDefinedWorkArrangements` (OnSite/Hybrid/Remote) + `Create_OmittedWorkArrangement_IsValid`
+- Backing suite trait: `[Trait("TC", "TC-CHR-329")]`.

@@ -6,8 +6,11 @@ namespace HRM.Application.Features.Attendance.Validators;
 
 /// <summary>
 /// CAL-4b / US-ATT-011 AC-3: shape validation for an attendance-policy payload, shared by the
-/// tenant-default and per-Location upserts (both carry the same 24-field policy — the only difference is
+/// tenant-default and per-Location upserts (both carry the same policy payload — the only difference is
 /// the SCOPE, which comes from the route).
+///
+/// <para>Note: <c>FteScaledOvertimeBase</c> (US-ATT-011 AC-5) has no rule here — a bool has no invalid
+/// value. It is nonetheless part of the FULL-REPLACE payload and IS mapped in AttendanceSettingsService.</para>
 ///
 /// <para>Shape only. DB-dependent checks (does the location exist / is it same-tenant / is it active) are
 /// NOT here — FluentValidation has no DB access — and live in <c>AttendanceSettingsService</c>, mirroring

@@ -4,7 +4,7 @@ user_story: US-CHR-013
 module: Core HR
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -51,3 +51,13 @@ Verify US-CHR-013 AC-1 / FR-1 / FR-3 / BR-2: an HR Officer can set `Employee.Fte
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `FteProrationTests.HalfFteEmployee_GetsExactlyHalfTheEntitlement_ComputeEffectivePath` (0.5 FTE → 20 days becomes exactly 10)
+  - `FteProrationTests.BatchPath_HonoursFte_PerEmployee` + `FteProrationTests.AccrualPath_HonoursFte_WhenCreditingTheLedger` — **all THREE `CalculateProRata` call sites** are driven independently; a fix at one with two left hardcoded fails here
+  - `FteProrationTests.FullTimeEmployee_EntitlementIsUnchanged` + `..._EmployeeWrittenWithoutAnFte_DefaultsTo1_00_AndIsUnchanged` (the no-regression controls)
+  - `FteProrationTests.Fte_RoundTripsAtNumeric3_2_AndProratesExactly` (real Postgres — the numeric(3,2) column scale)
+- **Mutation-verified:** reverting ONE of the three sites to `fte: 1.0m` reddens only that site's arm.
+- **Closes US-LV-002 AC-K1** — the engine always accepted `fte`; all three callers hardcoded 1.0.
+- Backing suite trait: `[Trait("TC", "TC-CHR-326")]`.

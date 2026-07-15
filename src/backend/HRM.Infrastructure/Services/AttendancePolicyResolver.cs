@@ -100,4 +100,36 @@ internal static class AttendancePolicyResolver
         AppDbContext db, CancellationToken ct)
         => db.AttendanceSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.LocationId == null, ct);
+
+    // ── Batch resolution (for loops over every employee in the tenant) ──────────────────────────────────
+
+    /// <summary>
+    /// Loads the tenant's WHOLE policy set — the default row and every Location override — in ONE query, for
+    /// callers that must resolve a policy per employee inside a loop (the payroll run walks every employee in
+    /// the tenant, so <see cref="ResolveForEmployeeAsync"/> there would be an N+1). Pair with
+    /// <see cref="For"/>, which applies the SAME row-level precedence in memory.
+    ///
+    /// <para>Read-only: unlike <see cref="ResolveForEmployeeAsync"/> this never lazily creates the default
+    /// row — a payroll run must not write policy as a side effect. A tenant with no rows yields an empty map
+    /// and <see cref="For"/> returns null, which the caller reads as "code defaults".</para>
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<Guid?, AttendanceSettings>> LoadAllAsync(
+        AppDbContext db, CancellationToken ct)
+    {
+        var rows = await db.AttendanceSettings.AsNoTracking().ToListAsync(ct);
+        return rows.ToDictionary(s => s.LocationId, s => s);
+    }
+
+    /// <summary>
+    /// The effective policy for <paramref name="locationId"/> out of a <see cref="LoadAllAsync"/> map —
+    /// the Location's override → the tenant default → null (no rows at all). Mirrors
+    /// <see cref="ResolveForLocationAsync"/>'s precedence exactly, minus the lazy create.
+    /// </summary>
+    public static AttendanceSettings? For(
+        IReadOnlyDictionary<Guid?, AttendanceSettings> byLocation, Guid? locationId)
+    {
+        if (locationId is not null && byLocation.TryGetValue(locationId, out var over))
+            return over;
+        return byLocation.TryGetValue(null, out var tenantDefault) ? tenantDefault : null;
+    }
 }

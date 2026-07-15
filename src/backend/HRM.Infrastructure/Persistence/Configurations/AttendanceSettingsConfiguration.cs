@@ -115,6 +115,12 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .HasDefaultValue(false)
             .IsRequired();
 
+        // US-ATT-011 AC-5 / US-CHR-013: FTE-scaled overtime hourly base. Default FALSE — off means the OT
+        // base is byte-identical to its pre-US-CHR-013 value for every existing tenant.
+        builder.Property(s => s.FteScaledOvertimeBase)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         // US-LV-011 absenteeism report threshold (BR-4) — unplanned LOP days per month.
         builder.Property(s => s.AbsenteeismThresholdDays)
             .HasColumnType("numeric(5,2)")

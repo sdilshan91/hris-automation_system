@@ -55,6 +55,16 @@ public sealed class UpdateEmployeeProfileValidator : AbstractValidator<UpdateEmp
             RuleFor(x => x.Request.EmploymentInfo!.Status)
                 .IsInEnum().WithMessage("Invalid employee status.")
                 .When(x => x.Request.EmploymentInfo!.Status.HasValue);
+
+            // US-CHR-013: same bounds as create — an FTE of 0 / negative / > 1.00 is rejected here too,
+            // otherwise the update path would be a back door around the create rule.
+            RuleFor(x => x.Request.EmploymentInfo!.Fte)
+                .ValidFte()
+                .When(x => x.Request.EmploymentInfo!.Fte.HasValue);
+
+            RuleFor(x => x.Request.EmploymentInfo!.WorkArrangement)
+                .IsInEnum().WithMessage("Invalid work arrangement. Valid values: OnSite, Hybrid, Remote.")
+                .When(x => x.Request.EmploymentInfo!.WorkArrangement.HasValue);
         });
 
         When(x => x.Request?.EmergencyContacts is not null, () =>

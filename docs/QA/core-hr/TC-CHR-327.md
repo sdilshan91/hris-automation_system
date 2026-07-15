@@ -4,7 +4,7 @@ user_story: US-CHR-013
 module: Core HR
 priority: high
 type: functional
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -54,3 +54,11 @@ Verify US-CHR-013 AC-1 / FR-2 / BR-1 and spec §7.1: `Employee.Fte` is validated
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `EmployeeFteValidationTests.Create_RejectsFteOutsideTheValidRange` (0, negatives, 1.01, 2.0)
+  - `EmployeeFteValidationTests.Create_RejectsFteWithMoreThanTwoDecimalPlaces` (0.333/0.125 — numeric(3,2) would silently ROUND rather than reject)
+  - `EmployeeFteValidationTests.Create_AcceptsValidFte` (1.00 / 0.50 / 0.25 / 0.01) + `Create_OmittedFte_IsValid` (null → service defaults 1.00)
+  - `EmployeeFteValidationTests.Update_RejectsFteOutsideTheValidRange` + `Update_AcceptsValidFte` — the profile-update path shares `EmployeeFteRules.ValidFte`; a rule wired to create only would leave it open
+- Backing suite trait: `[Trait("TC", "TC-CHR-327")]`.

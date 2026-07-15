@@ -409,10 +409,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
 
         var resolution = await ResolveEntitlementAsync(employee, leaveType, leaveYear, cancellationToken);
 
-        // Pro-rata for mid-year joiners (FR-3, AC-4).
-        // TODO(part-time): When FTE field exists, use employee.Fte instead of 1.0m.
+        // Pro-rata for mid-year joiners (FR-3, AC-4) and part-timers (US-LV-002 AC-K1 — closed by
+        // US-CHR-013's Employee.Fte; full-timers are 1.00 so this is unchanged for them).
         decimal prorated = LeaveEntitlementEngine.CalculateProRata(
-            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: 1.0m);
+            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte);
 
         // Get current balance from ledger.
         decimal currentBalance = await GetLedgerBalanceAsync(
@@ -517,9 +517,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
                         leaveType.AnnualEntitlement).BaseEntitlementDays;
                 }
 
-                // Pro-rata for mid-year joiners (FR-3, AC-4), identical inputs to the per-pair path.
+                // Pro-rata for mid-year joiners (FR-3, AC-4) + part-timers (US-LV-002 AC-K1 / US-CHR-013),
+                // identical inputs to the per-pair path.
                 result[key] = LeaveEntitlementEngine.CalculateProRata(
-                    baseEntitlement, employee.DateOfJoining, year, fte: 1.0m);
+                    baseEntitlement, employee.DateOfJoining, year, fte: employee.Fte);
             }
         }
 
@@ -599,8 +600,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     {
         var resolution = await ResolveEntitlementAsync(employee, leaveType, leaveYear, cancellationToken);
 
+        // Pro-rata for mid-year joiners (FR-3, AC-4) + part-timers (US-LV-002 AC-K1 / US-CHR-013). The
+        // accrual job CREDITS the ledger, so an FTE miss here is a real over-credit, not just a display bug.
         decimal prorated = LeaveEntitlementEngine.CalculateProRata(
-            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: 1.0m);
+            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte);
 
         // Check if an accrual entry already exists for this employee/leave type/year.
         var existingAccrual = await _dbContext.LeaveLedgerEntries

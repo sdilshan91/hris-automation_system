@@ -83,6 +83,30 @@ public sealed class Employee : BaseEntity, IAuditExempt
     public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
 
     /// <summary>
+    /// Full-time equivalent — the fraction of a full-time schedule this employee works (US-CHR-013).
+    /// <c>1.00</c> = full-time (the default); <c>0.50</c> = half-time. Range (0, 1.00], 2 dp.
+    ///
+    /// <para>Closes US-LV-002 AC-K1: leave entitlement is pro-rated by FTE, so a 0.50-FTE employee accrues
+    /// half the days a full-time employee on the same rule accrues. <c>LeaveEntitlementEngine.CalculateProRata</c>
+    /// multiplies by this on top of the mid-year-joiner ratio.</para>
+    ///
+    /// <para>Also the base for FTE-scaled overtime when a tenant opts in via
+    /// <c>AttendanceSettings.FteScaledOvertimeBase</c> (default off, US-ATT-011 AC-5).</para>
+    ///
+    /// <para>Every existing employee defaults to 1.00, so every FTE-aware calculation multiplies by 1.0
+    /// and is byte-identical to its pre-US-CHR-013 result.</para>
+    /// </summary>
+    public decimal Fte { get; set; } = 1.00m;
+
+    /// <summary>
+    /// Where the employee is expected to work (US-CHR-013 / US-ATT-011 AC-5). Default
+    /// <see cref="Enums.WorkArrangement.OnSite"/>, so existing employees keep today's geo-fence behaviour.
+    /// Only <see cref="Enums.WorkArrangement.Remote"/> changes anything: it exempts clock-in from the
+    /// geo-fence radius check (and nothing else).
+    /// </summary>
+    public WorkArrangement WorkArrangement { get; set; } = WorkArrangement.OnSite;
+
+    /// <summary>
     /// URL to stored profile photo (FR-6, AC-4).
     /// </summary>
     public string? ProfilePhotoUrl { get; set; }

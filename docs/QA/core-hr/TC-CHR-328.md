@@ -4,7 +4,7 @@ user_story: US-CHR-013
 module: Core HR
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -53,3 +53,12 @@ Verify US-CHR-013 AC-2 / FR-4 / FR-5 / BR-4: a `Remote` employee can clock in fr
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `RemoteClockInTests.RemoteEmployee_OutsideTheGeoFence_CanClockIn` (the exemption)
+  - `RemoteClockInTests.OnSiteEmployee_OutsideTheGeoFence_IsStillBlocked` (**the control** — OnSite is the default and every existing employee)
+  - `RemoteClockInTests.HybridEmployee_OutsideTheGeoFence_IsStillBlocked` (Hybrid is NOT exempt; mutation-verified — widening the bypass to `!= OnSite` reddens this arm and only this arm)
+  - `RemoteClockInTests.RemoteEmployee_IsStillSubjectToTheIpAllowlist` + `..._IsStillSubjectToRequireGeolocation` (**the exemption is the geo-fence RADIUS only** — it must not widen into "Remote skips attendance policy")
+  - `RemoteClockInTests.EmployeeWrittenWithoutAnArrangement_DefaultsToOnSite_AndIsStillFenced` (migration safety on live rows)
+- Backing suite trait: `[Trait("TC", "TC-CHR-328")]`.

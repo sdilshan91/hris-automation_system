@@ -22,6 +22,10 @@ public sealed record EmployeeDto
     public string? JobTitleName { get; init; }
     public string EmploymentType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+    /// <summary>US-CHR-013: full-time equivalent. 1.00 = full-time, 0.50 = half-time.</summary>
+    public decimal Fte { get; init; } = 1.00m;
+    /// <summary>US-CHR-013: work arrangement — OnSite (default), Hybrid or Remote.</summary>
+    public string WorkArrangement { get; init; } = nameof(Domain.Enums.WorkArrangement.OnSite);
     public string? ProfilePhotoUrl { get; init; }
     public string? Location { get; init; }
     /// <summary>
@@ -66,6 +70,15 @@ public sealed record CreateEmployeeRequest
     public Guid JobTitleId { get; init; }
     public EmploymentType EmploymentType { get; init; }
     public EmployeeStatus? Status { get; init; }
+    /// <summary>
+    /// US-CHR-013: full-time equivalent, (0, 1.00] at 2 dp. Omitted → 1.00 (full-time), which keeps every
+    /// existing client's create behaviour identical.
+    /// </summary>
+    public decimal? Fte { get; init; }
+    /// <summary>
+    /// US-CHR-013: work arrangement. Omitted → OnSite, i.e. today's fully-enforced geo-fence behaviour.
+    /// </summary>
+    public WorkArrangement? WorkArrangement { get; init; }
     public string? Location { get; init; }
     /// <summary>
     /// Optional FK to a structured Location entity (US-CHR-007 / BUG-113). Null when unassigned (BR-6).
