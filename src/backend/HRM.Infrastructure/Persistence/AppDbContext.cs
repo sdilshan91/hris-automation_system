@@ -175,6 +175,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // (tenant-scoped). The policy governs which components a settlement includes; the settlement is the
     // one-time financial event created at offboarding completion (idempotent on offboarding_instance_id).
     public DbSet<TenantFnFPolicy> TenantFnFPolicies => Set<TenantFnFPolicy>();
+    public DbSet<TenantPayrollCalendarPolicy> TenantPayrollCalendarPolicies => Set<TenantPayrollCalendarPolicy>();
     public DbSet<FinalSettlement> FinalSettlements => Set<FinalSettlement>();
     public DbSet<FinalSettlementLine> FinalSettlementLines => Set<FinalSettlementLine>();
     // US-ONB-006: exit-interview questionnaire templates + recorded interviews/responses (tenant-scoped).
@@ -711,6 +712,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         modelBuilder.Entity<FinalSettlementLine>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // CAL-5 (US-ATT-011 AC-4): tenant isolation for the effective-dated payroll calendar policy.
+        modelBuilder.Entity<TenantPayrollCalendarPolicy>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }

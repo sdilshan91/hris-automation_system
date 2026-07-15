@@ -35,6 +35,7 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IAttendanceSummaryService _summaryService;
+    private readonly IHolidayProvider? _holidayProvider;
     private readonly ILogger<AttendancePayrollService> _logger;
 
     public AttendancePayrollService(
@@ -42,13 +43,20 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IAttendanceSummaryService summaryService,
-        ILogger<AttendancePayrollService> logger)
+        ILogger<AttendancePayrollService> logger,
+        IHolidayProvider? holidayProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _summaryService = summaryService;
         _logger = logger;
+        // CAL-5: TRAILING-OPTIONAL so the existing fixtures that compose their own DI container keep resolving
+        // (same pattern as OvertimeService's IHolidayProvider, IWorkflowRuntime and IAttendanceNotificationService).
+        // DI always supplies the real HolidayProvider. When absent, no holiday set can be built, so the
+        // holiday-exclusion policy cannot take effect — which coincides with the code-default (off) and is why
+        // this is safe rather than a silent money hole. A fixture that means to exercise the ON path MUST pass one.
+        _holidayProvider = holidayProvider;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -106,6 +114,22 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
         var workingDaySets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
             _dbContext, employees.Select(e => e.Id).ToList(), monthStart, cancellationToken);
 
+        // CAL-5 (US-ATT-011 AC-4/FR-5): when the tenant's EFFECTIVE calendar policy at monthStart excludes public
+        // holidays, a holiday is not a working day — so TotalWorkingDays (the payroll pro-ration DENOMINATOR, and
+        // the divisor behind the LOP daily rate + the OT hourly rate) drops those dates. Holidays are
+        // LOCATION-scoped, so the sets are resolved ONCE per DISTINCT Employee.LocationId (NOT per employee — this
+        // loop covers every employee in the tenant). Flag off (the default, and every existing tenant) → the map
+        // stays null, no holiday query runs, and every figure is byte-identical to the pre-CAL-5 engine.
+        // `_holidayProvider is not null` short-circuits BEFORE the policy query: with no provider (a fixture that
+        // composes its own container) no holiday set can be built, so the exclusion cannot apply — which
+        // coincides with the code-default (off). DI always supplies the provider in production.
+        var excludeHolidays = _holidayProvider is not null
+            && await PayrollCalendarResolver.ExcludeHolidaysAsync(_dbContext, monthStart, cancellationToken);
+        var holidaysByLocation = excludeHolidays
+            ? await PayrollCalendarResolver.HolidaysByLocationAsync(
+                _holidayProvider!, employees.Select(e => e.LocationId), monthStart, monthEnd, cancellationToken)
+            : null;
+
         var rows = new List<AttendancePayrollRowDto>();
         foreach (var emp in employees)
         {
@@ -130,8 +154,10 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
             if (emp.Status != EmployeeStatus.Terminated && !employeesWithRecords.Contains(emp.Id))
                 continue;
 
+            // CAL-5: the employee's LOCATION-scoped holiday set (null when the flag is off → unchanged count).
             int workingDays = ShiftScheduleResolver.CountWorkingDays(
-                workingDaySets[emp.Id], monthStart, effectiveEnd);
+                workingDaySets[emp.Id], monthStart, effectiveEnd,
+                PayrollCalendarResolver.For(holidaysByLocation, emp.LocationId));
 
             // Core rollup from the summary (non-terminated). Terminated employees have no summary row
             // (they were excluded) — compute their minimal rollup from the overtime + a zeroed base;

@@ -183,13 +183,29 @@ internal static class ShiftScheduleResolver
     /// resolved working-weekday set. An empty set counts every calendar day (the callers' "no shift = all
     /// days" rule). Returns 0 when the range is empty.
     /// </summary>
-    public static int CountWorkingDays(HashSet<int> workingDays, DateOnly start, DateOnly end)
+    /// <param name="holidays">
+    /// US-ATT-011 AC-4 / FR-5 (CAL-5): optional set of public-holiday dates to EXCLUDE — a holiday is simply not
+    /// a working day. Supplied ONLY when the tenant's effective <c>TenantPayrollCalendarPolicy</c> has
+    /// <c>ExcludeHolidaysFromWorkingDays</c> (default false), so the flag-off path passes null and counts exactly
+    /// as it did pre-CAL-5. The set is LOCATION-scoped to the employee (see <c>PayrollCalendarResolver</c>).
+    /// <para><b>Money-critical:</b> when a payroll caller supplies this for the working-days DENOMINATOR it MUST
+    /// also supply it for the pro-ration NUMERATOR (<c>PayrollRunProcessor.ProRataPaidDays</c>) — a
+    /// holiday-excluded denominator against a holiday-inclusive numerator inflates a mid-month joiner's
+    /// pro-ration factor and over-pays them.</para>
+    /// </param>
+    public static int CountWorkingDays(
+        HashSet<int> workingDays, DateOnly start, DateOnly end, IReadOnlySet<DateOnly>? holidays = null)
     {
         if (end < start) return 0;
 
         int count = 0;
         for (var d = start; d <= end; d = d.AddDays(1))
         {
+            // A public holiday is not a working day. Applied BEFORE the weekday test so a holiday falling on a
+            // non-working weekday is not double-counted (it was never counted to begin with).
+            if (holidays is not null && holidays.Contains(d))
+                continue;
+
             if (workingDays.Count == 0 || workingDays.Contains(IsoDay(d)))
                 count++;
         }

@@ -295,6 +295,9 @@ public static class DependencyInjection
         services.AddScoped<IPayrollFnFIntegration, RealPayrollFnFIntegration>();
         // ISSUE-294 (F&F Phase 1): API-configurable per-tenant final-settlement policy (effective-dated).
         services.AddScoped<IFnFPolicyService, FnFPolicyService>();
+        // CAL-5 (US-ATT-011 AC-4): API-configurable per-tenant payroll calendar policy (effective-dated) —
+        // whether public holidays are excluded from the payroll working-days count. Defaults OFF.
+        services.AddScoped<IPayrollCalendarPolicyService, PayrollCalendarPolicyService>();
 
         // P3-2: real JWT access-token denylist / session revocation. When Redis is configured, revoking a user's
         // sessions writes a per-(tenant,user) "revoked-before" cutoff to Redis and the OnTokenValidated hook rejects

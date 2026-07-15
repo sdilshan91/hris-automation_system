@@ -29,7 +29,7 @@ acceptance_criteria_count: 5
 | AC-1 | A Tenant Admin is editing a Location and active shifts exist in the tenant | They set the Location's `DefaultShiftId` to an active shift and save | The Location persists `DefaultShiftId`; setting it to a shift belonging to another tenant or a soft-deleted/inactive shift is rejected (cross-tenant reference never resolves) |
 | AC-2 | An employee has no personal (effective-dated) shift assignment | The system resolves the employee's working days | The working-day set resolves by precedence **Employee shift → Location default shift → Tenant default shift → code default (Mon–Fri, `{1,2,3,4,5}`)** — a multi-branch tenant gets its Location's shift, and a single-branch tenant (empty Location tier) falls through to the tenant default |
 | AC-3 | A Tenant Admin defines a location-scoped attendance-policy override for a Location (OT multipliers, thresholds/caps, grace period, geofence) | An employee assigned to that Location is evaluated | The location override applies to that Location's employees; where no override exists, the tenant-level attendance policy applies. At most one override may exist per (tenant, location) |
-| AC-4 | The `ExcludeHolidaysFromWorkingDays` policy flag is on (default) | Payroll computes the working-days denominator for a month containing public holidays | Public holidays are subtracted from the payroll working-days denominator; with the flag off, holidays count as working days |
+| AC-4 | A tenant has turned the effective-dated `ExcludeHolidaysFromWorkingDays` policy **on** (it is **off by default** — see BR-9) | Payroll computes the working-days count for a month containing public holidays | A public holiday is **not a working day**: it is excluded from BOTH the pro-ration denominator AND the paid-days numerator (single-basis), so the OT hourly base and the LOP daily rate both rise. With the flag off — the default, and every existing tenant — holidays count as working days and every figure is unchanged |
 | AC-5 | The `FteScaledOvertimeBase` policy flag is off (default) | A part-time employee's overtime hourly base is computed | The OT hourly base is NOT scaled by FTE; when the flag is on, the part-timer's OT hourly base scales by their FTE (`standardHours * Fte`) |
 
 ## 4. Functional Requirements (IEEE 830 §3.2)
@@ -37,7 +37,7 @@ acceptance_criteria_count: 5
 - FR-2: The system SHALL resolve an employee's working-day set through a four-tier chain — Employee effective-dated shift → Location default shift → Tenant default shift (`Shift.IsDefault`) → code default (Mon–Fri) — implemented in a single resolver (`ShiftScheduleResolver`) that is the sole source of truth for "is date D a working day for employee E."
 - FR-3: The resolver SHALL be batched (dictionary lookups keyed by employee/location) with no per-employee round-trips.
 - FR-4: The system SHALL support a nullable-`LocationId` override layer over the tenant `AttendanceSettings`, resolved by the same four-tier precedence (employee's Location override → tenant default), carrying OT multipliers, thresholds/caps, grace period, geofence coordinates/radius, and the two policy flags below.
-- FR-5: The system SHALL add an `ExcludeHolidaysFromWorkingDays` flag (default **true**) governing whether public holidays reduce the payroll working-days denominator.
+- FR-5: The system SHALL add an `ExcludeHolidaysFromWorkingDays` flag (default **false**) governing whether public holidays reduce the payroll working-days count. It SHALL live on a **per-tenant, effective-dated** `TenantPayrollCalendarPolicy` (mirroring `TenantFnFPolicy`): payroll reads the version whose `EffectiveFrom` is on or before the pay period, so a change applies from the tenant's chosen date forward and NEVER rewrites a completed run. When no policy row exists the code-default is **false**.
 - FR-6: The system SHALL add a `FteScaledOvertimeBase` flag (default **false**) governing whether a part-timer's OT hourly base scales by FTE.
 - FR-7: Leave, attendance, overtime, and payroll SHALL all consume this resolved calendar/policy (and the unified location-scoped `IHolidayProvider`) rather than hardcoding a weekday, weekend, or fixed constant.
 
@@ -53,7 +53,17 @@ acceptance_criteria_count: 5
 - BR-3: Precedence is strict and total: Employee override wins over Location, Location over Tenant, Tenant over the code default (Mon–Fri).
 - BR-4: A single-branch tenant leaves the Location tier empty and behaves exactly as before (tenant defaults untouched) — location awareness is additive, never required.
 - BR-5: At most one `AttendanceSettings` override row may exist per (tenant, location); the tenant default is the row with a null `LocationId`.
-- BR-6: `ExcludeHolidaysFromWorkingDays` defaults on (holidays excluded), aligning the payroll working-days denominator with leave day-counting; `FteScaledOvertimeBase` defaults off (backward-compatible).
+- BR-6: `ExcludeHolidaysFromWorkingDays` defaults **off**; `FteScaledOvertimeBase` defaults off. Both are backward-compatible by default.
+- BR-9: **`ExcludeHolidaysFromWorkingDays` is off by default and effective-dated — a deliberate money decision, not an oversight.**
+  Defaulting it ON would have raised the OT hourly base (and the LOP daily rate) for **every existing tenant on their next payroll
+  run**, which contradicts the F&F precedent that a policy change applies next-cycle and is NEVER retroactive (see
+  `TenantFnFPolicy`). A tenant opts in by creating a policy version with a chosen `EffectiveFrom`; runs before that date keep the
+  behaviour they were computed under.
+- BR-10: When the flag is on, a public holiday is **not a working day** — it is excluded from the pro-ration **denominator** AND
+  the paid-days **numerator** alike. Excluding it from the denominator only would break the single-basis pro-ration invariant
+  (`PayrollRunProcessor`: "shift/shift … calendar/calendar") and over-pay mid-month joiners/leavers.
+- BR-11: Holidays are **location-scoped** (`IHolidayProvider(employee.LocationId)`, the same source overtime uses per BUG-286):
+  a holiday at one Location must not shrink another Location's working days.
 
 ## 7. Data Requirements
 **Location (added column):**
