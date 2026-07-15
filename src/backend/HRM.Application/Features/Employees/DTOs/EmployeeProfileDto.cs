@@ -26,6 +26,10 @@ public sealed record EmployeeProfileDto
     public string? LocationName { get; init; }
     public string EmploymentType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+    /// <summary>US-CHR-013: full-time equivalent. 1.00 = full-time, 0.50 = half-time.</summary>
+    public decimal Fte { get; init; } = 1.00m;
+    /// <summary>US-CHR-013: work arrangement — OnSite (default), Hybrid or Remote.</summary>
+    public string WorkArrangement { get; init; } = nameof(Domain.Enums.WorkArrangement.OnSite);
     public string? ProfilePhotoUrl { get; init; }
     public string? CustomFields { get; init; }
     public Guid? UserId { get; init; }

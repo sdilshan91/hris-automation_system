@@ -11,8 +11,8 @@ namespace HRM.Infrastructure.Services;
 
 /// <summary>
 /// CAL-4b / US-ATT-011 AC-3: the ADMIN CRUD surface for the attendance policy — the tenant default and
-/// its per-Location overrides. Until CAL-4b <c>AttendanceSettings</c> had NO write path at all: all 24
-/// policy fields were lazily created at C# defaults and were never editable.
+/// its per-Location overrides. Until CAL-4b <c>AttendanceSettings</c> had NO write path at all: all policy
+/// fields were lazily created at C# defaults and were never editable.
 ///
 /// <para>⚠ <b>THE INVARIANT.</b> <c>AttendanceSettings</c> is NOT "one row per tenant" — it is one row per
 /// (tenant, location): LocationId null = the tenant default, LocationId set = that Location's override.
@@ -279,7 +279,7 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
     }
 
     /// <summary>
-    /// FULL REPLACE of the scope's policy (BUG-117 class): every one of the 24 fields is applied as sent, so
+    /// FULL REPLACE of the scope's policy (BUG-117 class): every one of the 25 fields is applied as sent, so
     /// a field omitted from the JSON body takes the DTO default and RESETS that setting. LocationId is NOT
     /// assigned here — the scope comes from the route and is fixed at row creation.
     /// </summary>
@@ -307,6 +307,7 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
         entity.MaxDailyOvertimeMinutes = dto.MaxDailyOvertimeMinutes;
         entity.MaxWeeklyOvertimeMinutes = dto.MaxWeeklyOvertimeMinutes;
         entity.RequireOvertimePreApproval = dto.RequireOvertimePreApproval;
+        entity.FteScaledOvertimeBase = dto.FteScaledOvertimeBase;
         entity.HalfDayEnabled = dto.HalfDayEnabled;
         entity.AbsenteeismThresholdDays = dto.AbsenteeismThresholdDays;
     }
@@ -337,6 +338,7 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
         MaxDailyOvertimeMinutes = e.MaxDailyOvertimeMinutes,
         MaxWeeklyOvertimeMinutes = e.MaxWeeklyOvertimeMinutes,
         RequireOvertimePreApproval = e.RequireOvertimePreApproval,
+        FteScaledOvertimeBase = e.FteScaledOvertimeBase,
         HalfDayEnabled = e.HalfDayEnabled,
         AbsenteeismThresholdDays = e.AbsenteeismThresholdDays,
     };

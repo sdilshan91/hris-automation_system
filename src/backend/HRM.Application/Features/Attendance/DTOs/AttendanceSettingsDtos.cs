@@ -120,6 +120,13 @@ public sealed record AttendanceSettingsDto
     /// <summary>FR-4/AC-2/BR-6: overtime requires a pre-approval request. Default false.</summary>
     public bool RequireOvertimePreApproval { get; init; }
 
+    /// <summary>
+    /// US-ATT-011 AC-5 / US-CHR-013: scale the overtime hourly BASE by the employee's FTE, so a 0.5-FTE
+    /// employee on the same monthly basic earns a 2x hourly rate. Default false (the OT base ignores FTE).
+    /// ⚠ Money-affecting and part of the FULL-REPLACE payload — omit it from a PUT and it resets to false.
+    /// </summary>
+    public bool FteScaledOvertimeBase { get; init; }
+
     // ── Monthly summary (US-ATT-007) ───────────────────────────────────
 
     /// <summary>BR-5: count a qualifying short day as 0.5 of a present day. Default false.</summary>

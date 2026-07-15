@@ -129,8 +129,15 @@ public sealed class AttendanceService : IAttendanceService
             return Result<AttendanceLogDto>.Failure(
                 "Location is required to clock in. Please enable location access and try again.", 400);
 
+        // US-ATT-001 AC-6 / BR-8 (US-CHR-013): a REMOTE employee is exempt from the geo-fence — they have no
+        // branch to be near. OnSite and Hybrid stay fully enforced (a hybrid employee is still expected at the
+        // office on their office days, and the module has no which-days-are-office-days concept to tell them
+        // apart). The exemption is the geo-fence radius ONLY: RequireGeolocation above, and the IP allowlist +
+        // photo rules below, are separate business rules and still apply to a Remote employee.
+        var geoFenceExempt = employee.WorkArrangement == WorkArrangement.Remote;
+
         // FR-3: geo-fence radius check when enabled and coordinates were supplied.
-        if (settings.GeoFenceEnabled && hasCoordinates
+        if (!geoFenceExempt && settings.GeoFenceEnabled && hasCoordinates
             && settings.GeoFenceLatitude.HasValue && settings.GeoFenceLongitude.HasValue)
         {
             var distance = HaversineMeters(

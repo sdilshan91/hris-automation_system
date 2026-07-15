@@ -160,6 +160,19 @@ public sealed class AttendanceSettings : BaseEntity
     /// </summary>
     public bool RequireOvertimePreApproval { get; set; }
 
+    /// <summary>
+    /// US-ATT-011 AC-5: when true, a part-time employee's overtime HOURLY BASE is scaled by their
+    /// <c>Employee.Fte</c> — <c>monthly_basic / (working_days * standard_hours * fte)</c> — so a 0.5-FTE
+    /// employee on the same monthly basic earns a 2x hourly rate, because that basic buys half the hours.
+    /// When false the base ignores FTE entirely.
+    ///
+    /// <para><b>Default false</b>, deliberately: this is a money-affecting policy choice, and the two
+    /// readings ("the basic is for a half schedule, so the hourly rate doubles" vs "the hourly rate is the
+    /// same, part-timers just work fewer of them") are both legitimate. Off = every existing tenant's
+    /// overtime is byte-identical to its pre-US-CHR-013 value; a tenant opts in explicitly.</para>
+    /// </summary>
+    public bool FteScaledOvertimeBase { get; set; }
+
     // ── Monthly-summary policy (US-ATT-007) ────────────────────────────
 
     /// <summary>

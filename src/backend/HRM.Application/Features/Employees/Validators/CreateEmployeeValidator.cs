@@ -54,5 +54,14 @@ public sealed class CreateEmployeeValidator : AbstractValidator<CreateEmployeeCo
             .Must(s => s == null || s == EmployeeStatus.Active || s == EmployeeStatus.Probation)
             .WithMessage("Status on creation must be Active or Probation.")
             .When(x => x.Status.HasValue);
+
+        // US-CHR-013: omitted (null) → the service defaults to 1.00; a SENT value must be a valid FTE.
+        RuleFor(x => x.Fte)
+            .ValidFte()
+            .When(x => x.Fte.HasValue);
+
+        RuleFor(x => x.WorkArrangement)
+            .IsInEnum().WithMessage("Invalid work arrangement. Valid values: OnSite, Hybrid, Remote.")
+            .When(x => x.WorkArrangement.HasValue);
     }
 }

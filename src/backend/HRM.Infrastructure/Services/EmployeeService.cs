@@ -139,6 +139,10 @@ public sealed class EmployeeService : IEmployeeService
             LocationId = request.LocationId,
             CustomFields = request.CustomFields,
             UserId = request.UserId,
+            // US-CHR-013: omitted → the entity defaults (1.00 / OnSite), so an existing client that does not
+            // send these creates exactly the employee it created before.
+            Fte = request.Fte ?? 1.00m,
+            WorkArrangement = request.WorkArrangement ?? WorkArrangement.OnSite,
             IsActive = true,
             IsDeleted = false,
         };
@@ -659,6 +663,25 @@ public sealed class EmployeeService : IEmployeeService
                 after["EmploymentType"] = employee.EmploymentType.ToString();
             }
 
+            // US-CHR-013: FTE change. Null leaves the current value unchanged (Department/JobTitle
+            // semantics). No EmploymentHistory entry: FTE is not one of the AC-6 tracked change types.
+            if (request.EmploymentInfo.Fte.HasValue &&
+                request.EmploymentInfo.Fte.Value != employee.Fte)
+            {
+                before["Fte"] = employee.Fte;
+                employee.Fte = request.EmploymentInfo.Fte.Value;
+                after["Fte"] = employee.Fte;
+            }
+
+            // US-CHR-013: work-arrangement change. Null leaves the current value unchanged.
+            if (request.EmploymentInfo.WorkArrangement.HasValue &&
+                request.EmploymentInfo.WorkArrangement.Value != employee.WorkArrangement)
+            {
+                before["WorkArrangement"] = employee.WorkArrangement.ToString();
+                employee.WorkArrangement = request.EmploymentInfo.WorkArrangement.Value;
+                after["WorkArrangement"] = employee.WorkArrangement.ToString();
+            }
+
             if (before.Count > 0)
             {
                 beforeSnapshots["EmploymentInfo"] = before;
@@ -813,6 +836,8 @@ public sealed class EmployeeService : IEmployeeService
         LocationName = e.LocationEntity?.Name,
         EmploymentType = e.EmploymentType.ToString(),
         Status = e.Status.ToString(),
+        Fte = e.Fte,
+        WorkArrangement = e.WorkArrangement.ToString(),
         ProfilePhotoUrl = e.ProfilePhotoUrl,
         CustomFields = e.CustomFields,
         UserId = e.UserId,
@@ -955,6 +980,8 @@ public sealed class EmployeeService : IEmployeeService
         JobTitleName = e.JobTitle?.TitleName,
         EmploymentType = e.EmploymentType.ToString(),
         Status = e.Status.ToString(),
+        Fte = e.Fte,
+        WorkArrangement = e.WorkArrangement.ToString(),
         ProfilePhotoUrl = e.ProfilePhotoUrl,
         Location = e.Location,
         LocationId = e.LocationId,

@@ -86,6 +86,16 @@ public sealed record EmploymentInfoUpdate
     public EmploymentType? EmploymentType { get; init; }
     public EmployeeStatus? Status { get; init; }
     /// <summary>
+    /// US-CHR-013: full-time equivalent, (0, 1.00] at 2 dp. Null leaves the current value unchanged
+    /// (mirrors DepartmentId/JobTitleId). Changing it changes future leave accrual.
+    /// </summary>
+    public decimal? Fte { get; init; }
+    /// <summary>
+    /// US-CHR-013: work arrangement. Null leaves the current value unchanged. Setting Remote exempts the
+    /// employee's clock-in from the geo-fence radius check (and nothing else).
+    /// </summary>
+    public WorkArrangement? WorkArrangement { get; init; }
+    /// <summary>
     /// Effective date for the employment change. Defaults to today.
     /// </summary>
     public DateTime? EffectiveDate { get; init; }

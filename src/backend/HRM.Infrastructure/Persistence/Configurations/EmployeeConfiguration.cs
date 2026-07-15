@@ -70,6 +70,19 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasDefaultValue(EmployeeStatus.Active)
             .IsRequired();
 
+        // US-CHR-013: full-time equivalent. numeric(3,2) holds (0, 1.00] at 2 dp. The DB default of 1.00
+        // backfills every existing row, so leave proration (x 1.0) is unchanged.
+        builder.Property(e => e.Fte)
+            .HasColumnType("numeric(3,2)")
+            .HasDefaultValue(1.00m)
+            .IsRequired();
+
+        // US-CHR-013 / US-ATT-011 AC-5: work arrangement, stored as its integer value (OnSite = 0) so the
+        // DB default backfills existing rows to today's fully-enforced geo-fence behaviour.
+        builder.Property(e => e.WorkArrangement)
+            .HasDefaultValue(WorkArrangement.OnSite)
+            .IsRequired();
+
         builder.Property(e => e.ProfilePhotoUrl)
             .HasMaxLength(500);
 

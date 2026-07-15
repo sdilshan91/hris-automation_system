@@ -232,6 +232,33 @@ public sealed class AttendancePolicyResolverTests : IAsyncLifetime
         rows[0].LocationId.Should().BeNull();
     }
 
+    /// <summary>
+    /// CAL-6 / US-ATT-011 AC-5: a LAZILY-CREATED tenant-default row must have `FteScaledOvertimeBase = false`.
+    ///
+    /// <para>This arm exists because mutation-testing found the gap: every OT-base arm passes the flag
+    /// EXPLICITLY, so flipping the entity's initializer to `true` survived the entire suite — yet EF sends the
+    /// property value on INSERT, so a lazily-created row would carry it and silently scale every part-timer's
+    /// OT hourly base for a tenant that never opted in. The migration's column default is only a backstop for
+    /// rows inserted outside EF.</para>
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-152")]
+    public async Task LazyCreatedTenantDefault_HasFteScaledOvertimeBaseOff()
+    {
+        var tenantId = Guid.NewGuid();
+
+        await using var db = Db(tenantId);
+        var created = await AttendancePolicyResolver.GetOrCreateTenantDefaultAsync(db, default);
+
+        created.FteScaledOvertimeBase.Should().BeFalse(
+            "the OT base must NOT scale by FTE unless the tenant opts in — a lazily-created row must not "
+            + "silently enable it");
+
+        await using var read = Db(tenantId);
+        var reloaded = await read.AttendanceSettings.AsNoTracking().SingleAsync();
+        reloaded.FteScaledOvertimeBase.Should().BeFalse("and it must persist as false, not just default in memory");
+    }
+
     // ══ TC-ATT-151 — at most one override per (tenant, location) ══
 
     /// <summary>

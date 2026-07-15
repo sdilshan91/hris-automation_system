@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -52,3 +52,13 @@ Verify US-ATT-011 AC-5 / FR-6: with `FteScaledOvertimeBase` **off (default)**, a
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `OvertimeFteBaseTests.FlagOff_FteIsIgnored_HourlyRateIsUnchanged` (**the control** — flag OFF is the default; FTE must not touch the base)
+  - `OvertimeFteBaseTests.DefaultCallShape_WithoutFteArguments_IsUnchanged` (pins the trailing-optional defaults themselves)
+  - `OvertimeFteBaseTests.FlagOn_HalfFte_HourlyRateIsExactlyDouble` (0.5 FTE → exactly 2x, not merely greater)
+  - `OvertimeFteBaseTests.FlagOn_FullTimeEmployee_IsIdenticalToFlagOff` (turning it on must not disturb full-timers)
+  - `OvertimeFteBaseTests.FlagOn_NonPositiveFte_FallsBackToTheUnscaledBase_NeverThrowsOrGoesNegative` (a corrupt FTE must not divide-by-zero or invert pay)
+  - `AttendancePolicyResolverTests.LazyCreatedTenantDefault_HasFteScaledOvertimeBaseOff` — **added after mutation-testing found the gap**: every other arm passes the flag EXPLICITLY, so flipping the entity initializer to `true` survived the whole suite, yet EF sends it on INSERT for a lazily-created row.
+- Backing suite trait: `[Trait("TC", "TC-ATT-152")]`.

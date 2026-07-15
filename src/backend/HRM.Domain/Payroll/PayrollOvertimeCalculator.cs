@@ -45,18 +45,36 @@ public static class PayrollOvertimeCalculator
     /// per-multiplier breakdown is empty but <paramref name="totalApprovedMinutes"/> is positive (older
     /// attendance data without a breakdown), the whole block is treated at the
     /// <paramref name="defaultMultiplier"/>. Returns <see cref="OvertimeResult.Zero"/> for no OT.
+    ///
+    /// <para><b>US-ATT-011 AC-5 / US-CHR-013 — FTE-scaled base.</b> When <paramref name="fteScaledBase"/> is
+    /// true the hourly base divides by <c>workingDays * standard_hours * fte</c>, so a 0.5-FTE employee on the
+    /// same monthly basic gets a 2x hourly rate (that basic buys half the hours). When it is false — <b>the
+    /// default</b> — <paramref name="fte"/> is ignored entirely and the rate is byte-identical to its
+    /// pre-US-CHR-013 value. The caller resolves the flag + the employee's FTE and passes them in; this stays
+    /// pure, exactly as the work-week and holiday multipliers are already handled.</para>
     /// </summary>
+    /// <param name="fte">The employee's full-time equivalent. Ignored unless <paramref name="fteScaledBase"/>.</param>
+    /// <param name="fteScaledBase">Tenant policy <c>AttendanceSettings.FteScaledOvertimeBase</c>. Default false.</param>
     public static OvertimeResult Compute(
         decimal monthlyBasic,
         decimal workingDays,
         IReadOnlyDictionary<string, int> multiplierBuckets,
         int totalApprovedMinutes,
-        decimal defaultMultiplier = 1.5m)
+        decimal defaultMultiplier = 1.5m,
+        decimal fte = 1.0m,
+        bool fteScaledBase = false)
     {
         if (monthlyBasic <= 0m || workingDays <= 0m)
             return OvertimeResult.Zero;
 
-        var hourlyRate = monthlyBasic / (workingDays * StandardHoursPerDay);
+        // Off (default) → the divisor is untouched. On → scale by FTE. A non-positive FTE is not scaled: it
+        // would divide by zero / invert the rate, and 0 is not a valid FTE (the create/update validators
+        // reject it), so an unscaled rate is the safe reading of a corrupt row.
+        var effectiveHoursPerDay = fteScaledBase && fte > 0m
+            ? StandardHoursPerDay * fte
+            : StandardHoursPerDay;
+
+        var hourlyRate = monthlyBasic / (workingDays * effectiveHoursPerDay);
 
         decimal totalAmount = 0m;
         int totalMinutes = 0;

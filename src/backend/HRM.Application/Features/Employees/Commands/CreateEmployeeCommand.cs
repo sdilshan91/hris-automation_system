@@ -23,5 +23,12 @@ public sealed record CreateEmployeeCommand(
     string? Location,
     Guid? LocationId,
     string? CustomFields,
-    Guid? UserId
+    Guid? UserId,
+    // ⚠ APPEND-ONLY below this line. Every parameter above is positional and mostly nullable: inserting a
+    // new one in the middle still COMPILES at every call site and silently shifts arguments onto the wrong
+    // properties. New fields go at the END, with a default.
+    /// <summary>US-CHR-013: full-time equivalent, (0, 1.00]. Null → 1.00 (full-time).</summary>
+    decimal? Fte = null,
+    /// <summary>US-CHR-013: work arrangement. Null → OnSite.</summary>
+    WorkArrangement? WorkArrangement = null
 ) : IRequest<Result<EmployeeDto>>;
