@@ -124,12 +124,16 @@ public sealed class LeaveRequestService : ILeaveRequestService
             return Result<LeaveRequestDto>.Failure(
                 "Half-day leave is not allowed for this leave type.", 400);
 
-        // FR-3 / AC-6: Compute working days, excluding weekends and (when available) holidays.
+        // FR-3 / AC-6: Compute working days, excluding non-working week days and (when available) holidays.
+        // BUG-284: the work-week is the employee's RESOLVED shift working-day set (US-ATT-011 four-tier chain),
+        // never a hardcoded Mon-Fri — a Sun-Thu employee must have Sunday counted and Friday excluded.
+        var workWeek = await ResolveWorkWeekAsync(employee.Id, request.StartDate, cancellationToken);
+
         decimal totalDays;
         if (request.IsHalfDay)
         {
-            // AC-4: half-day = 0.5 day on a single working day.
-            if (!WorkingDaysCalculator.DefaultWorkWeek.Contains(request.StartDate.DayOfWeek))
+            // AC-4: half-day = 0.5 day on a single working day (of THEIR week, not Mon-Fri).
+            if (!workWeek.Contains(request.StartDate.DayOfWeek))
                 return Result<LeaveRequestDto>.Failure(
                     "A half-day leave cannot fall on a non-working day.", 400);
             totalDays = 0.5m;
@@ -140,7 +144,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
             var holidays = await _holidayProvider.GetHolidaysAsync(
                 request.StartDate, request.EndDate, employee.LocationId, cancellationToken);
             totalDays = WorkingDaysCalculator.CountWorkingDays(
-                request.StartDate, request.EndDate, holidays: holidays);
+                request.StartDate, request.EndDate, workWeek: workWeek, holidays: holidays);
         }
 
         if (totalDays <= 0m)
@@ -350,8 +354,12 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 // US-LV-007 AC-2/BR-2: exclude public holidays, scoped to the employee's location.
                 var holidays = await _holidayProvider.GetHolidaysAsync(
                     startDate.Value, endDate.Value, employee.LocationId, cancellationToken);
+                // BUG-284: same resolved work-week as the deduction path above, so the preview a user sees
+                // and the days actually deducted can never disagree.
+                var previewWorkWeek = await ResolveWorkWeekAsync(
+                    employee.Id, startDate.Value, cancellationToken);
                 requestedDays = WorkingDaysCalculator.CountWorkingDays(
-                    startDate.Value, endDate.Value, holidays: holidays);
+                    startDate.Value, endDate.Value, workWeek: previewWorkWeek, holidays: holidays);
             }
         }
 
@@ -1359,6 +1367,41 @@ public sealed class LeaveRequestService : ILeaveRequestService
 
         return lastEntry?.BalanceAfter ?? 0m;
     }
+
+    /// <summary>
+    /// BUG-284 / US-ATT-011 AC-2: resolves the employee's working week as of <paramref name="asOf"/> via the
+    /// shared four-tier chain (Employee shift → Location default → tenant default → Mon–Fri code default), so
+    /// leave day-counting uses the SAME working-week source as attendance and payroll instead of a hardcoded
+    /// Mon–Fri. A Gulf (Sun–Thu) employee therefore has Sunday counted as a leave day and Friday excluded.
+    ///
+    /// <para><b>As-of semantics:</b> the work-week is resolved once, at the leave's START date — the resolver
+    /// is as-of a single date, and this matches the payroll convention. A shift change taking effect part-way
+    /// through a leave range is therefore not split across the range; that is a deliberate simplification, not
+    /// an oversight.</para>
+    /// </summary>
+    private async Task<IReadOnlySet<DayOfWeek>> ResolveWorkWeekAsync(
+        Guid employeeId, DateOnly asOf, CancellationToken cancellationToken)
+    {
+        var sets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
+            _dbContext, [employeeId], asOf, cancellationToken);
+
+        // The resolver never returns an empty set (its tier-4 code default + ToCalendar guarantee that), but
+        // fall back explicitly rather than trusting it: an empty set here would silently mean "no day is a
+        // working day" to WorkingDaysCalculator's Contains checks — the opposite of the resolver's own
+        // empty-set sentinel. Never let the two conventions meet.
+        return sets.TryGetValue(employeeId, out var isoDays) && isoDays.Count > 0
+            ? ToDayOfWeekSet(isoDays)
+            : WorkingDaysCalculator.DefaultWorkWeek;
+    }
+
+    /// <summary>
+    /// Converts the resolver's ISO working-day set (1=Mon..7=Sun) to the <see cref="DayOfWeek"/> set
+    /// <see cref="WorkingDaysCalculator"/> expects (Sun=0..Sat=6). The two halves of the leave path use
+    /// different day conventions, and <c>(DayOfWeek)(iso % 7)</c> is the whole bridge: ISO 7 (Sunday) → 0
+    /// (<see cref="DayOfWeek.Sunday"/>), ISO 1..6 → 1..6 (Mon..Sat) unchanged.
+    /// </summary>
+    private static IReadOnlySet<DayOfWeek> ToDayOfWeekSet(HashSet<int> isoDays) =>
+        isoDays.Select(iso => (DayOfWeek)(iso % 7)).ToHashSet();
 
     private static bool EmployeeMatchesLeaveTypeGender(Gender? employeeGender, LeaveTypeGender required)
         => required switch

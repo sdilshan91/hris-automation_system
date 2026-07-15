@@ -4,7 +4,7 @@ user_story: US-LV-003
 module: Leave Management
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 defect:
   - BUG-284
@@ -55,3 +55,13 @@ Verify the BUG-284 fix on US-LV-003: `LeaveRequestService` counts leave days, ga
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `LeaveWorkingDaysLocationTests.Gulf_SunThu_Employee_LeaveDeducts5WorkingDays_SundayCounted` (step 1 — Sun–Thu deducts 5; pre-fix Mon–Fri gave 4)
+  - `LeaveWorkingDaysLocationTests.Gulf_SunThu_Employee_ThursdayToFriday_CountsOnlyThursday` (step 1 — the Gulf weekend is SKIPPED in the count path; the tight oracle: 1 is unreachable from either Mon–Fri or an "every calendar day" week)
+  - `LeaveWorkingDaysLocationTests.Gulf_SunThu_Employee_BalancePreview_AgreesWithTheDeduction` (step 2 — preview == deduction; the two were independently hardcoded)
+  - `LeaveWorkingDaysLocationTests.Gulf_SunThu_Employee_HalfDay_SundayAccepted_FridayRejected` (steps 3–4 — pre-fix this was exactly inverted)
+  - `LeaveWorkingDaysLocationTests.MonSat_Employee_SaturdayIsAWorkingDay_FridayToSaturdayDeducts2` + `..._HalfDay_SaturdayAccepted_SundayRejected` (six-day week; pin the ISO 6 → DayOfWeek.Saturday bridge — both kill a mismap mutation)
+  - `LeaveWorkingDaysLocationTests.PersonalShiftAssignment_BeatsLocationDefault_InLeaveCounting` (BR-3 tier-1 precedence through leave: 3 vs location 4 vs tenant 5)
+- Backing suite trait: `[Trait("TC", "TC-LV-262")]` on `LeaveWorkingDaysLocationTests`.

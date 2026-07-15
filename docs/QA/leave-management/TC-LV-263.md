@@ -4,7 +4,7 @@ user_story: US-LV-003
 module: Leave Management
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 defect:
   - BUG-284
@@ -52,3 +52,11 @@ Verify the BUG-284 fix does not regress the common case: a single-branch tenant 
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `LeaveWorkingDaysLocationTests.SingleBranch_MonFri_Unchanged_FridayToMonday_Deducts2` (steps 1, 4 — no regression for single-branch tenants)
+  - `LeaveWorkingDaysLocationTests.SingleBranch_MonFri_HalfDay_SaturdayRejected_WednesdayAccepted` (steps 2–3)
+  - `LeaveWorkingDaysLocationTests.NoShiftConfiguredAtAll_LeaveStillCountsMonFri_NotEveryCalendarDay` (tier-4 smoke arm — see its docstring for what it does NOT prove)
+  - `LeaveWorkingDaysLocationTests.LocationFlexibleShiftWithNoWorkingDays_FallsThroughToTenantDefault_NotMonFri` (the empty-set seam, reached the only way production can — a Flexible shift with no declared WorkingDays, ISSUE-307 — with a Sun–Thu tenant default so it also proves tier 3 is consulted)
+- Backing suite trait: `[Trait("TC", "TC-LV-263")]` on `LeaveWorkingDaysLocationTests`.
