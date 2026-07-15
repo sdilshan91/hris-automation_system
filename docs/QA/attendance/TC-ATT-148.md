@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -49,3 +49,8 @@ Verify US-ATT-011 AC-2 / FR-2: an employee at an EU Location whose `DefaultShift
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `ShiftScheduleResolverLocationTierTests.Resolver_LocationTier_EuFourDayWeek_CountsExactlyFourWorkingDays`
+- Backing suite trait: `[Trait("TC", "TC-ATT-148")]`.

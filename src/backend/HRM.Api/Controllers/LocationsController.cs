@@ -76,7 +76,8 @@ public sealed class LocationsController : ControllerBase
         var command = new CreateLocationCommand(
             request.Name, request.AddressLine1, request.AddressLine2,
             request.City, request.StateProvince, request.Country,
-            request.PostalCode, request.TimeZone, request.Phone, request.CountryCode);
+            request.PostalCode, request.TimeZone, request.Phone, request.CountryCode,
+            request.DefaultShiftId);
 
         var result = await _mediator.Send(command, cancellationToken);
 
@@ -104,7 +105,8 @@ public sealed class LocationsController : ControllerBase
         var command = new UpdateLocationCommand(
             id, request.Name, request.AddressLine1, request.AddressLine2,
             request.City, request.StateProvince, request.Country,
-            request.PostalCode, request.TimeZone, request.Phone, request.CountryCode);
+            request.PostalCode, request.TimeZone, request.Phone, request.CountryCode,
+            request.DefaultShiftId);
 
         var result = await _mediator.Send(command, cancellationToken);
 

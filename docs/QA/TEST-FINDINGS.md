@@ -6374,3 +6374,107 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   calendar-only. Related: ISSUE-176 (statutory reports, LOW).
 - **Suggested action:** wire `FiscalYearStartMonth` into the accrual/year-end/expiry/pro-rata paths
   (spec Phase 4). Supersede ISSUE-176 or resolve it in the same change.
+
+### BUG-287 — Deleting the tenant default shift is permitted and silently flips every unassigned employee to a 7-day work week (wrong pro-rata pay)
+- **Type:** BUG
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance / US-ATT-005 (BR-1/FR-5 tenant default shift), US-ATT-011 (AC-2 code-default tier) / (new TC needed)
+- **Title:** `ShiftService.DeleteAsync` (`ShiftService.cs:197-238`) blocks deletion only when **active
+  `EmployeeShift` assignments** exist (`assignedCount > 0` → 409 `shift_in_use`). It has **no `IsDefault`
+  guard**. Employees who rely on the *tenant default* shift have **no `EmployeeShift` row at all**, so
+  `assignedCount == 0` and the default shift deletes cleanly — even though the entire unassigned
+  population depends on it. `ShiftScheduleResolver.ResolveWorkingDaySetsAsync` then resolves its
+  tenant-default query (`db.Shifts.FirstOrDefaultAsync(s => s.IsDefault)`, `:36-38`, under the
+  soft-delete query filter) to `null` → `defaultDays` = **empty set** → and `CountWorkingDays` (`:94`)
+  treats an empty set as **"every calendar day is a working day"**. Net effect: deleting one shift
+  silently changes payroll — every unassigned employee's working-day denominator jumps from ~22 to
+  ~30/31 across `PayrollRunProcessor` (`ProRataPaidDays`, `:198/:335/:996`),
+  `RealPayrollFnFIntegration` (`:115`), `LeaveEncashmentService` (`:235`), `AttendancePayrollService`
+  (`:106/:133`) and `AttendanceDashboardService` (`:323`).
+- **Root cause (~90%, code):** the delete guard tests *explicit assignment* as a proxy for *in use*,
+  but the tenant default's entire user base is implicit (no assignment row). Compounded by the
+  resolver's empty-set sentinel meaning "all 7 days" instead of a safe explicit default.
+- **Mitigating factors:** `DbInitializer.EnsureDefaultShiftAsync` (`:586`) re-seeds a Mon–Fri
+  `IsDefault` "General Shift" on the next app start, so the window is bounded by a restart; and the
+  partial unique index `ix_shift_tenant_default_unique` still permits creating a replacement. This
+  bounds the blast radius but does not close it — a payroll run inside that window uses the wrong
+  denominator.
+- **Discovered:** while pinning the CAL-1 contract (2026-07-15). It **falsifies the earlier
+  "resolver Mon–Fri code-default is a proven no-op (~90%)" adjudication** recorded in the 07-15(b)
+  COMPLETION-PLAN entry — the empty-set path IS reachable via a supported operation.
+- **Partially healed by CAL-1:** the four-tier resolver's explicit Mon–Fri code default replaces the
+  empty-set sentinel, so post-CAL-1 the failure mode degrades from "7-day week" to "Mon–Fri" — a
+  correction, not a fix of the missing guard.
+- **EXTENDED 2026-07-15 (both CAL-1 auditors, independently):** the same guard is **also blind to
+  `Location.DefaultShiftId`**. Post-CAL-1 a shift can be wired as a Location's calendar, and
+  `DeleteAsync`'s in-use check still counts only `EmployeeShift` rows → a Gulf Sun–Thu shift backing a
+  whole branch soft-deletes with a **200**, and every employee at that Location silently reverts to the
+  tenant Mon–Fri default (wrong pro-rata, F&F settlement and leave encashment, no error, no audit of the
+  effect). ⚠ **The FK cannot save this:** CAL-1 configures `OnDelete(DeleteBehavior.Restrict)`, but
+  `DeleteAsync` is a **SOFT** delete (`shift.IsDeleted = true` — an UPDATE), which no FK constraint can
+  block. `Restrict` only stops a hard `DELETE`. So the guard is the ONLY defence, and it has two holes:
+  the tenant default (original finding) and now Location references.
+- **Suggested action:** extend `ShiftService.DeleteAsync`'s existing 409 `shift_in_use` guard to cover
+  BOTH: (a) `IsDefault` (refuse to delete the tenant default unless another shift is promoted first, e.g.
+  `default_shift_in_use`), and (b) `await _dbContext.Locations.AnyAsync(l => l.DefaultShiftId == shiftId)`
+  (e.g. `shift_in_use_by_location`, naming the locations). Consider the same for any future deactivate
+  path. Not fixed in CAL-1 (out of lane: CAL-1 is the resolver/Location tier; this is the Shift delete
+  guard, owned by US-ATT-005 — and choosing 409-vs-silent-fallthrough is a behaviour decision).
+
+### ISSUE-306 — Working-calendar resolution has no `IsActive` filter: a shift deactivated AFTER being wired keeps driving calendars, contradicting write-time validation
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance / US-ATT-011 (AC-1 vs AC-2) / (new TC needed once the behaviour is decided)
+- **Title:** Write-time and read-time disagree on what an assignable calendar is. `LocationService`'s
+  `IsAssignableShiftAsync` **refuses to assign** an inactive shift to `Location.DefaultShiftId` (400
+  `invalid_default_shift`, CAL-1 / US-ATT-011 AC-1), but `ShiftScheduleResolver`'s shift-loading query
+  filters **only on `Id`** — no `s.IsActive` predicate. So a shift that is deactivated *after* being
+  wired keeps resolving that Location's (or employee's) working calendar forever. The same asymmetry
+  applies to tier 1 (`EmployeeShift` assignments), which is pre-existing, not new in CAL-1.
+- **Root cause (~90%, code):** the `IsActive` invariant is enforced only at the write boundary; the read
+  path never re-checks it.
+- **Needs a decision (product):** on deactivation, should the tier (a) **fall through** to the next tier
+  — consistent with the validation that would refuse to assign it today — or (b) **keep resolving** —
+  stable payroll, no silent calendar change under a running month? These have opposite money
+  consequences, which is why CAL-1 did not pick one.
+- **Note:** currently latent — no service path ever sets `Shift.IsActive = false` (`ShiftService` only
+  ever writes `true`), so this cannot be reached until a deactivate endpoint lands. That makes it cheap
+  to decide NOW, before such an endpoint exists. CAL-1's `LocationDefaultShiftPostgresTests`
+  inactive-shift arm therefore seeds a state the app cannot yet produce (defensive, not wrong).
+- **Discovered:** CAL-1 auditors (integration-enforcer + test-authenticator), 2026-07-15.
+- **Suggested action:** decide (a) vs (b); if (a), add `&& s.IsActive` to the resolver's shift query and
+  an arm proving fall-through; if (b), document the read-time exemption at both sites so the asymmetry
+  is intentional rather than accidental.
+
+### ISSUE-307 — `Flexible` shifts bypass the `WorkingDays` NotEmpty rule, so a shift can persist with no declared calendar
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance / US-ATT-005 (shift creation) / (new TC needed)
+- **Title:** `ShiftRequestValidator` gates the `WorkingDays.NotEmpty()` rule inside
+  `When(x => x.Type is ShiftType.Single or ShiftType.Rotating)` — **`Flexible` shifts have no
+  `WorkingDays` rule at all**. The DTO defaults to `Array.Empty<int>()` and `ShiftService` persists it
+  verbatim, so a Flexible shift legitimately exists with an empty working-day list. Pre-existing, but
+  **CAL-1 newly exposed it to the working-calendar chain**: such a shift can be wired to
+  `Location.DefaultShiftId` (`IsAssignableShiftAsync` checks only `IsActive`, not `Type`/`WorkingDays`).
+- **Root cause (~90%, code):** the validator treats a declared work-week as meaningful only for
+  Single/Rotating, but every consumer of `WorkingDays` treats an empty list as a sentinel, not as "n/a".
+- **Contained (not fixed) by CAL-1:** `ShiftScheduleResolver.ToCalendar` now treats an empty
+  `WorkingDays` as **unresolved** at every tier, so such a shift falls through instead of shadowing the
+  chain with an empty set (which `CountWorkingDays` reads as "every calendar day" → a 7-day working
+  week and ~30-day pro-rata denominators). Arms:
+  `Resolver_LocationDefaultShiftWithNoWorkingDays_FallsThroughToTenantDefault_NotEmptySet` and
+  `Resolver_TenantDefaultShiftWithNoWorkingDays_FallsThroughToCodeDefault_NotEmptySet`.
+- **Residual:** the underlying data state is still creatable, and a Flexible shift wired as a Location
+  calendar now silently does nothing (falls through) rather than being refused at the boundary — a
+  confusing no-op for the admin who set it.
+- **Discovered:** CAL-1 integration-enforcer, 2026-07-15.
+- **Suggested action:** decide whether a Flexible shift must declare `WorkingDays` (then extend the
+  validator's `When`), and/or have `IsAssignableShiftAsync` reject a shift with no declared calendar so
+  the admin gets a 400 instead of a silent fall-through. Out of lane for CAL-1 (US-ATT-005 owns shift
+  creation, and changing it alters the shift-creation contract + its tests).

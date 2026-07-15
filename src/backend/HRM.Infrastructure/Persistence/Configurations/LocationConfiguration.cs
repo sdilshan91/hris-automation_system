@@ -60,6 +60,17 @@ public sealed class LocationConfiguration : IEntityTypeConfiguration<Location>
             .HasDefaultValue(false)
             .IsRequired();
 
+        // US-ATT-011 AC-1: the Location tier of the working-calendar chain. Restrict (not Cascade/SetNull) so a
+        // HARD delete of a referenced shift raises an FK violation instead of nulling a location's calendar.
+        // ⚠ Restrict does NOT protect against the path the app actually uses: ShiftService.DeleteAsync is a
+        // SOFT delete (an UPDATE of is_deleted), which no FK can block, and its in-use guard counts only
+        // EmployeeShift rows — not Location.DefaultShiftId. A referenced shift can therefore still be
+        // soft-deleted, silently reverting that location's employees to the tenant default. Tracked as BUG-287.
+        builder.HasOne(l => l.DefaultShift)
+            .WithMany()
+            .HasForeignKey(l => l.DefaultShiftId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Unique constraint: location name per tenant (FR-2, BR-1)
         // Partial index excludes soft-deleted records so deactivated locations
         // don't block reuse of the same name.

@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: functional
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -50,3 +50,9 @@ Verify US-ATT-011 AC-1 / FR-1: a Tenant Admin can set a Location's `DefaultShift
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `LocationDefaultShiftPostgresTests.SetDefaultShiftId_ActiveSameTenantShift_PersistsAndDrivesResolution` (persists an active same-tenant `DefaultShiftId` and proves it drives resolution)
+  - `LocationDefaultShiftPostgresTests.SetDefaultShiftId_ToNull_ClearsTheLocationTier` (null clears the tier → falls through)
+- Backing suite trait: `[Trait("TC", "TC-ATT-145")]`.

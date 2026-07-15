@@ -66,7 +66,22 @@ public sealed class Location : BaseEntity, IAuditExempt
     /// </summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Optional per-location default <see cref="Shift"/> — the <b>Location tier</b> of the working-calendar
+    /// resolution chain <b>Employee → Location → Tenant → code default</b> (US-ATT-011 AC-1/AC-2, BR-3).
+    /// It is what lets a Gulf branch run Sun–Thu while the tenant default stays Mon–Fri, with no per-employee
+    /// shift assignment. Null (the default, and the single-branch case) = fall through to the tenant default
+    /// shift, then to the Mon–Fri code default. Must reference an active, non-deleted shift in the SAME tenant;
+    /// a cross-tenant id is invisible under the EF global query filter and is rejected at write time (BR-1).
+    /// </summary>
+    public Guid? DefaultShiftId { get; set; }
+
     // -- Navigation --
+
+    /// <summary>
+    /// The shift referenced by <see cref="DefaultShiftId"/>, if any.
+    /// </summary>
+    public Shift? DefaultShift { get; set; }
 
     /// <summary>
     /// Employees assigned to this location.

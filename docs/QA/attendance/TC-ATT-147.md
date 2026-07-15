@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: critical
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -52,3 +52,10 @@ Verify US-ATT-011 AC-2 / FR-2: for an employee with **no personal shift** assign
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `ShiftScheduleResolverLocationTierTests.Resolver_LocationTier_GulfSunThu_SundayIsWorkday_FridayIsNot` (steps 1–3: Sunday IS a workday, Friday is NOT)
+  - `ShiftScheduleResolverLocationTierTests.Resolver_PersonalAssignment_BeatsLocationDefault` (BR-3 tier-1 precedence)
+  - `ShiftScheduleResolverLocationTierTests.Resolver_ResolvesManyEmployeesAcrossLocations_WithoutNPlusOne` (FR-3 batching)
+- Backing suite trait: `[Trait("TC", "TC-ATT-147")]`.

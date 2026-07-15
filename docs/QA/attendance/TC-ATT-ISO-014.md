@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: critical
 type: security
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -49,3 +49,8 @@ Verify US-ATT-011 AC-1 / BR-1 / NFR-2 and spec §7.1: setting `Location.DefaultS
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `LocationDefaultShiftPostgresTests.SetDefaultShiftId_CrossTenantShift_Rejected_NotPersisted_AndNeverResolves` (two real tenants; the EF global tenant query filter makes a cross-tenant `DefaultShiftId` fail to resolve rather than leak)
+- Backing suite trait: `[Trait("TC", "TC-ATT-ISO-014")]`.

@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: critical
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -47,3 +47,9 @@ Verify US-ATT-011 AC-2 / BR-4: a single-branch tenant with **no Location `Defaul
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `ShiftScheduleResolverLocationTierTests.Resolver_EmptyLocationTier_FallsThroughToTenantDefault` — note the tenant default is seeded **Mon–Sat** on purpose: the code default (tier 4) is Mon–Fri, so a Mon–Fri tenant default would make tiers 3 and 4 indistinguishable. **Saturday is the discriminator.**
+  - `ShiftScheduleResolverLocationTierTests.Resolver_NoShiftConfiguredAtAll_ResolvesCodeDefaultMonFri_NotEmptySet` — tier 4. Pins the US-ATT-011 behaviour change: the resolver previously returned an EMPTY set, which callers read as "every calendar day is a working day" (see BUG-287); it now returns Mon–Fri and never an empty set.
+- Backing suite trait: `[Trait("TC", "TC-ATT-149")]`.

@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: functional
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -49,3 +49,11 @@ Verify US-ATT-011 AC-1 / FR-1 validation: setting `Location.DefaultShiftId` to a
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `LocationDefaultShiftPostgresTests.SetDefaultShiftId_InactiveShift_Rejected400_AndNotPersisted`
+  - `LocationDefaultShiftPostgresTests.SetDefaultShiftId_SoftDeletedShift_Rejected400_AndNotPersisted`
+  - `LocationDefaultShiftPostgresTests.CreateLocation_WithInactiveDefaultShift_Rejected400_AndNoLocationRowWritten`
+  (all assert HTTP 400 + error code `invalid_default_shift` AND that nothing was persisted)
+- Backing suite trait: `[Trait("TC", "TC-ATT-146")]`.
