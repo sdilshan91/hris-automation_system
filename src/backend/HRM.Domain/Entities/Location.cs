@@ -67,6 +67,15 @@ public sealed class Location : BaseEntity, IAuditExempt
     public bool IsActive { get; set; } = true;
 
     /// <summary>
+    /// US-CHR-009 BR-6 (ISSUE-304): this Location's probation-period override, in days from date of joining.
+    /// <b>Null = inherit <see cref="Tenant.ProbationPeriodDays"/></b> — the effective period is
+    /// <c>Location.ProbationPeriodDays ?? Tenant.ProbationPeriodDays</c>. Nullable precisely so a Location can
+    /// stay SILENT: a non-nullable column with a default would make every Location an override of its tenant
+    /// and the tenant setting would never apply anywhere.
+    /// </summary>
+    public int? ProbationPeriodDays { get; set; }
+
+    /// <summary>
     /// Optional per-location default <see cref="Shift"/> — the <b>Location tier</b> of the working-calendar
     /// resolution chain <b>Employee → Location → Tenant → code default</b> (US-ATT-011 AC-1/AC-2, BR-3).
     /// It is what lets a Gulf branch run Sun–Thu while the tenant default stays Mon–Fri, with no per-employee

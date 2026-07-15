@@ -83,6 +83,8 @@ public sealed class TenantSettingsService : ITenantSettingsService
         tenant.Industry = Normalize(request.Industry);
         tenant.CompanySize = Normalize(request.CompanySize);
         tenant.FiscalYearStartMonth = request.FiscalYearStartMonth;
+        // ISSUE-304: the probation period the reminder sweep resolves (a Location may override it).
+        tenant.ProbationPeriodDays = request.ProbationPeriodDays;
         // Multi-country tax foundation: normalize the default tax country to upper-case (matches StatutoryRule.CountryCode).
         tenant.DefaultCountryCode = string.IsNullOrWhiteSpace(request.DefaultCountryCode)
             ? null
@@ -336,7 +338,7 @@ public sealed class TenantSettingsService : ITenantSettingsService
 
     private static OrgProfileDto ToOrgProfileDto(Tenant t) => new(
         t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize,
-        t.FiscalYearStartMonth, t.DefaultCountryCode);
+        t.FiscalYearStartMonth, t.DefaultCountryCode, t.ProbationPeriodDays);
 
     private static BrandingDto ToBrandingDto(Tenant t) => new(
         t.LogoUrl, t.EmailLogoUrl, t.FaviconUrl, t.PrimaryColor);

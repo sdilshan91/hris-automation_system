@@ -30,6 +30,13 @@ public sealed class UpdateOrgProfileValidator : AbstractValidator<UpdateOrgProfi
         RuleFor(x => x.Request.FiscalYearStartMonth)
             .InclusiveBetween(1, 12).WithMessage("Fiscal year start month must be between 1 and 12.");
 
+        // ISSUE-304 (US-CHR-009 BR-6): the probation period drives the probation-end reminder and, transitively,
+        // probation-gated leave eligibility. 0 or a negative would end probation on/before the joining date;
+        // the upper bound is a sanity rail (~5 years) rather than a legal limit.
+        RuleFor(x => x.Request.ProbationPeriodDays)
+            .InclusiveBetween(1, 1825)
+            .WithMessage("Probation period must be between 1 and 1825 days.");
+
         // Multi-country tax foundation: optional default ISO country code (alpha-2/alpha-3) — the fallback tax country.
         RuleFor(x => x.Request.DefaultCountryCode)
             .MaximumLength(5).WithMessage("Default country code cannot exceed 5 characters.")

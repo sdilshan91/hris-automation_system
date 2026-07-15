@@ -113,11 +113,11 @@ internal static class AttendancePolicyResolver
     /// row — a payroll run must not write policy as a side effect. A tenant with no rows yields an empty map
     /// and <see cref="For"/> returns null, which the caller reads as "code defaults".</para>
     /// </summary>
-    public static async Task<IReadOnlyDictionary<Guid?, AttendanceSettings>> LoadAllAsync(
+    public static async Task<IReadOnlyDictionary<Guid, AttendanceSettings>> LoadAllAsync(
         AppDbContext db, CancellationToken ct)
     {
         var rows = await db.AttendanceSettings.AsNoTracking().ToListAsync(ct);
-        return rows.ToDictionary(s => s.LocationId, s => s);
+        return rows.ToDictionary(s => Key(s.LocationId), s => s);
     }
 
     /// <summary>
@@ -126,10 +126,20 @@ internal static class AttendancePolicyResolver
     /// <see cref="ResolveForLocationAsync"/>'s precedence exactly, minus the lazy create.
     /// </summary>
     public static AttendanceSettings? For(
-        IReadOnlyDictionary<Guid?, AttendanceSettings> byLocation, Guid? locationId)
+        IReadOnlyDictionary<Guid, AttendanceSettings> byLocation, Guid? locationId)
     {
-        if (locationId is not null && byLocation.TryGetValue(locationId, out var over))
+        if (locationId is not null && byLocation.TryGetValue(locationId.Value, out var over))
             return over;
-        return byLocation.TryGetValue(null, out var tenantDefault) ? tenantDefault : null;
+        return byLocation.TryGetValue(NoLocation, out var tenantDefault) ? tenantDefault : null;
     }
+
+    /// <summary>
+    /// The tenant-default row's key in a <see cref="LoadAllAsync"/> map. A nullable key cannot satisfy
+    /// Dictionary's <c>notnull</c> constraint (CS8714), so the tenant default — whose LocationId IS null — is
+    /// keyed by <see cref="Guid.Empty"/>. Real location ids are UUIDv7 and are never Guid.Empty. Mirrors
+    /// <c>PayrollCalendarResolver.NoLocation</c> so both batched policy maps key the same way.
+    /// </summary>
+    private static readonly Guid NoLocation = Guid.Empty;
+
+    private static Guid Key(Guid? locationId) => locationId ?? NoLocation;
 }

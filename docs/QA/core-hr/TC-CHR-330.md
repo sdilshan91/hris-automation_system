@@ -4,7 +4,7 @@ user_story: US-CHR-009
 module: Core HR
 priority: medium
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 defect:
   - ISSUE-304
@@ -56,3 +56,16 @@ Verify the ISSUE-304 fix on US-CHR-009 BR-6: `EmployeeStatusService.CheckProbati
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `ProbationPeriodConfigTests.TenantConfigured180_AnchorsTheReminderAtDoj180_NotDoj90` (step 1)
+  - `ProbationPeriodConfigTests.LocationOverrideWins_AndANullOverrideFallsBackToTheTenantDefault` (steps 2–3 — both employees asserted in ONE sweep, so resolving everyone at a single period cannot pass)
+  - `ProbationPeriodConfigTests.TenantDefault90_IsUnchanged_AndNotifiesAtDoj90` (**the control** — 90 is the column default and the value the service hardcoded, so every existing tenant is unchanged)
+  - `ProbationPeriodConfigTests.EmployeeOutsideTheReminderWindow_IsNotNotified` (the mirror — stops "notify every probation employee" passing)
+  - `ProbationPeriodConfigTests.CrossTenantSweep_ResolvesEachTenantsOwnPeriod` (the sweep is cross-tenant via `IgnoreQueryFilters`; each tenant must resolve its OWN period)
+  - `ProbationPeriodConfigTests.ColumnDefaults_TenantIs90_AndLocationStaysNull` (migration safety on live rows)
+- Step 4 (reject 0 / negative) → `UpdateOrgProfileValidator` bounds it to 1..1825.
+- **Mutation-verified:** reverting the resolution to the hardcoded 90 reddens 4 arms; the two 90-day controls correctly stay green.
+- **Note:** the period is no longer a SQL predicate (it is per-employee now), so the sweep resolves in memory off 3 batched queries — flat in employee count, which matters because this is a cross-tenant background job.
+- Backing suite trait: `[Trait("TC", "TC-CHR-330")]`.

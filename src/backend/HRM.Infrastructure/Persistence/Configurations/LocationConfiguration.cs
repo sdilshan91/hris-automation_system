@@ -60,6 +60,9 @@ public sealed class LocationConfiguration : IEntityTypeConfiguration<Location>
             .HasDefaultValue(false)
             .IsRequired();
 
+        // ISSUE-304: nullable — null means "inherit the tenant default", so a Location can stay silent.
+        builder.Property(l => l.ProbationPeriodDays);
+
         // US-ATT-011 AC-1: the Location tier of the working-calendar chain. Restrict (not Cascade/SetNull) so a
         // HARD delete of a referenced shift raises an FK violation instead of nulling a location's calendar.
         // ⚠ Restrict does NOT protect against the path the app actually uses: ShiftService.DeleteAsync is a
