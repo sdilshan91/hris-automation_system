@@ -199,10 +199,14 @@ public sealed class OvertimeWorkWeekAndHolidayScopeTests : IAsyncLifetime
     /// </summary>
     [Theory]
     [Trait("TC", "TC-ATT-153")]
-    [InlineData(DayOfWeek.Friday, 2.0, OvertimeMultiplierBasis.Weekend)]
-    [InlineData(DayOfWeek.Sunday, 1.5, OvertimeMultiplierBasis.Weekday)]
+    // Only the multiplier is asserted here: OvertimeDto exposes Multiplier but NOT the basis string, and
+    // the multiplier is the observable that actually reaches payroll. The WEEKEND/WEEKDAY *basis* is
+    // asserted at the unit layer (OvertimeCalculatorTests). Carrying an expectedBasis parameter here and
+    // never asserting it would be a claim the arm does not honour (xUnit1026).
+    [InlineData(DayOfWeek.Friday, 2.0)]
+    [InlineData(DayOfWeek.Sunday, 1.5)]
     public async Task Gulf_PreApproval_UsesResolvedWorkWeekForTheWeekendBasis(
-        DayOfWeek dow, double expectedMultiplier, string expectedBasis)
+        DayOfWeek dow, double expectedMultiplier)
     {
         Guid userId;
         await using (var seed = Db(Guid.NewGuid()))
@@ -235,10 +239,10 @@ public sealed class OvertimeWorkWeekAndHolidayScopeTests : IAsyncLifetime
     /// </summary>
     [Theory]
     [Trait("TC", "TC-ATT-153")]
-    [InlineData(DayOfWeek.Saturday, 2.0, OvertimeMultiplierBasis.Weekend)]
-    [InlineData(DayOfWeek.Monday, 1.5, OvertimeMultiplierBasis.Weekday)]
+    [InlineData(DayOfWeek.Saturday, 2.0)]
+    [InlineData(DayOfWeek.Monday, 1.5)]
     public async Task SingleBranch_MonFri_WeekendBasisUnchanged(
-        DayOfWeek dow, double expectedMultiplier, string expectedBasis)
+        DayOfWeek dow, double expectedMultiplier)
     {
         Guid userId;
         await using (var seed = Db(Guid.NewGuid()))
