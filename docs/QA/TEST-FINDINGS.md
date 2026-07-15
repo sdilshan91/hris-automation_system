@@ -6279,7 +6279,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-284 — Leave day-counting hardcodes Mon–Fri, ignoring the shift work-week → wrong leave balances / half-day gate for any non-Mon–Fri population
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-07-15, CAL-2, PR #311)
 - **Layer:** BE
 - **Module / US / TC:** Leave / US-LV-003 (also US-LV-006 preview) / (new TC needed)
 - **Title:** `LeaveRequestService` counts leave days and gates half-days against
@@ -6293,6 +6293,22 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause (~95%, code):** the two working-week sources never meet — leave is hardwired to
   `DefaultWorkWeek`; attendance/payroll use `Shift.WorkingDays`. Fix routes leave day-counting
   through the (to-be location-aware) `ShiftScheduleResolver`.
+- **Resolution (CAL-2, PR #311):** all three sites now resolve the employee's working week through the
+  CAL-1 four-tier `ShiftScheduleResolver` (Employee → Location → Tenant → Mon–Fri code default) and pass
+  it as `WorkingDaysCalculator`'s `workWeek` argument — the same working-week source attendance and
+  payroll use. A Gulf Sun–Thu employee now has Sunday counted and Friday excluded, and the half-day gate
+  follows the same set (it was exactly inverted before). The preview (`:353`) resolves the SAME week as
+  the deduction (`:142`), so a user can no longer be shown a figure that differs from what is taken.
+  ⚠ The two calculators use OPPOSITE day conventions — the resolver speaks ISO (1=Mon..7=Sun),
+  `WorkingDaysCalculator` speaks `DayOfWeek` (Sun=0..Sat=6) — bridged by `ToDayOfWeekSet`
+  (`(DayOfWeek)(iso % 7)`), and they also use opposite EMPTY-set conventions (resolver: empty = every
+  calendar day; calculator: empty = Mon–Fri), so `ResolveWorkWeekAsync` guards on `Count > 0` and never
+  lets an empty set cross. **As-of semantics:** the week resolves once at the leave START date (a shift
+  change mid-range does not split the range) — a deliberate simplification matching the payroll convention.
+- **Verification:** `LeaveWorkingDaysLocationTests` — 11 arms on real Postgres. Reverting the fix at all
+  three sites reddens exactly the 4 fix-sensitive arms and leaves the 3 Mon–Fri controls green (no
+  regression for single-branch tenants). Mutation-tested: deleting resolver tier 3 → red; mismapping
+  ISO 6 (Saturday) → red (2 arms). TCs **TC-LV-262** + **TC-LV-263** → `automated`.
 - **Severity rationale:** HIGH — materially wrong leave balances (real entitlement/money) for an
   entire population, not an edge case, for any tenant whose work-week isn't Mon–Fri.
 - **Suggested action:** consume the resolver (spec Phase 2). Add TCs for Sun–Thu and 4-day tenants.
