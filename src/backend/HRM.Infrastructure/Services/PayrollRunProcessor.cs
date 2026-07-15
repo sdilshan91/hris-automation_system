@@ -45,6 +45,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     private readonly IPayrollAdjustmentResolver _adjustmentResolver;
     private readonly IPayrollSlipCleaner _slipCleaner;
     private readonly IPayrollAuditLogger _audit;
+    private readonly IHolidayProvider? _holidayProvider;
     private readonly ILogger<PayrollRunProcessor> _logger;
 
     /// <summary>Synthetic component id for the LOP deduction line (BR-2). Stable so the slip detail FK is consistent.</summary>
@@ -68,7 +69,8 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         IPayrollAdjustmentResolver adjustmentResolver,
         IPayrollSlipCleaner slipCleaner,
         IPayrollAuditLogger audit,
-        ILogger<PayrollRunProcessor> logger)
+        ILogger<PayrollRunProcessor> logger,
+        IHolidayProvider? holidayProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -79,6 +81,11 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _slipCleaner = slipCleaner;
         _audit = audit;
         _logger = logger;
+        // CAL-5: TRAILING-OPTIONAL so the many fixtures that compose their own DI container keep resolving
+        // (mirrors OvertimeService's IHolidayProvider). DI always supplies the real HolidayProvider. With no
+        // provider no holiday set can be built, so the exclusion policy cannot apply — which coincides with the
+        // code-default (off). A fixture exercising the ON path MUST pass one.
+        _holidayProvider = holidayProvider;
     }
 
     public async Task<Result> ProcessAsync(Guid runId, CancellationToken cancellationToken = default)
@@ -198,6 +205,31 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         var proRationWorkingSets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
             _dbContext, employeeIds, monthStart, cancellationToken);
         var separationDates = await SeparationDatesAsync(employeeIds, cancellationToken);
+
+        // ── CAL-5 (US-ATT-011 AC-4/FR-5): holiday exclusion ─────────────────────────────────────────────────
+        // When the tenant's EFFECTIVE calendar policy at monthStart says so, a public holiday is simply NOT a
+        // working day. MONEY-CRITICAL: the SAME holiday set is threaded into BOTH sides of the pro-ration —
+        // the DENOMINATOR (shiftWorkingDaysInMonth, below) and the NUMERATOR (ProRataPaidDays) — so the factor
+        // stays single-basis. Excluding holidays from the denominator ALONE would raise a mid-month joiner's
+        // factor and OVER-PAY them (silently clamped at 1.0 by PayrollSlipCalculator).
+        //
+        // Holidays are LOCATION-scoped (a Dubai holiday must not shrink a Colombo employee's working days), so
+        // the sets are resolved ONCE per DISTINCT Employee.LocationId — this loop runs over every employee in
+        // the tenant, so a per-employee provider call would be an N+1. Query cost: 1 policy + at most
+        // (distinct locations + 1) holiday queries, flat in employee count.
+        //
+        // Flag OFF (the code-default, and every existing tenant): the map stays null, no holiday query runs, a
+        // null set is threaded everywhere, and every figure is byte-identical to the pre-CAL-5 engine.
+        // `_holidayProvider is not null` short-circuits BEFORE the policy query: with no provider no holiday set
+        // can be built, so the exclusion cannot apply — coinciding with the code-default (off).
+        var excludeHolidays = _holidayProvider is not null
+            && await PayrollCalendarResolver.ExcludeHolidaysAsync(_dbContext, monthStart, cancellationToken);
+        var holidaysByLocation = excludeHolidays
+            ? await PayrollCalendarResolver.HolidaysByLocationAsync(
+                _holidayProvider!, employees.Select(e => e.LocationId), monthStart, monthEnd, cancellationToken)
+            : null;
+        if (excludeHolidays)
+            runLog.AppendLine("NOTE: public holidays are excluded from working days for this period (payroll calendar policy).");
 
         // US-PAY-007 FR-3: Pending adjustments for the period, grouped by employee, loaded ONCE (no N+1). Empty
         // when none are configured → the per-employee lookup misses and the engine behaves exactly as before,
@@ -332,17 +364,24 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             // counts every calendar day). The old calendar `workingDaysInMonth` fallback here mixed a SHIFT
             // numerator with a CALENDAR denominator (e.g. 9/30 instead of 9/22) and UNDER-PAID mid-month
             // joiners/leavers that had no attendance row.
+            // CAL-5: this employee's LOCATION-scoped holiday set — null when the flag is off. The SAME instance
+            // feeds the denominator and the numerator below; that is the single-basis guarantee.
+            var empHolidays = PayrollCalendarResolver.For(holidaysByLocation, emp.LocationId);
+
             var shiftWorkingDaysInMonth = ShiftScheduleResolver.CountWorkingDays(
-                proRationWorkingSets[emp.Id], monthStart, monthEnd);
+                proRationWorkingSets[emp.Id], monthStart, monthEnd, empHolidays);
             decimal workingDays = attendance?.TotalWorkingDays > 0
                 ? attendance.TotalWorkingDays
                 : (shiftWorkingDaysInMonth > 0 ? shiftWorkingDaysInMonth : workingDaysInMonth);
             decimal lopDays = attendance?.LopDays ?? 0m;
 
             // BR-4/BR-5: pro-rate mid-month joiners/leavers by the SHIFT working days they were employed.
+            // CAL-5 (money-critical): `empHolidays` — the SAME set as the denominator above — is threaded here
+            // too. Omitting it here while excluding holidays from the denominator inflates the factor and
+            // over-pays joiners/leavers.
             DateOnly? separationDate = separationDates.TryGetValue(emp.Id, out var sep) ? sep : null;
             decimal? proRataPaidDays = ProRataPaidDays(
-                emp, monthStart, monthEnd, proRationWorkingSets[emp.Id], separationDate);
+                emp, monthStart, monthEnd, proRationWorkingSets[emp.Id], separationDate, empHolidays);
 
             var slipInput = new PayrollSlipInput(emp.Id, inputs, workingDays, lopDays, proRataPaidDays);
             var result = PayrollSlipCalculator.Compute(slipInput, LopComponentId);
@@ -968,9 +1007,21 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// leaver pro-ration (bounding paid days to the separation date) rather than duplicating the formula on a
     /// money path. The settlement passes the employee's last working day as <paramref name="separationDate"/>.
     /// </remarks>
+    /// <param name="holidays">
+    /// CAL-5 (US-ATT-011 AC-4/FR-5): the employee's LOCATION-scoped public-holiday set, or null to count
+    /// holidays as working days (the pre-CAL-5 behaviour, and the default when the tenant's calendar policy
+    /// leaves the flag off).
+    /// <para><b>Money-critical — this is the NUMERATOR.</b> Whatever the caller passes here MUST match what it
+    /// passed for the working-days DENOMINATOR. A holiday-excluded denominator with a holiday-inclusive
+    /// numerator raises the pro-ration factor and OVER-PAYS mid-month joiners/leavers — and the overshoot is
+    /// invisible, because <c>PayrollSlipCalculator</c> silently clamps <c>paidDaysBeforeLop</c> to
+    /// <c>workingDays</c>. Trailing-optional so non-payroll callers keep the old semantics explicitly rather
+    /// than by accident.</para>
+    /// </param>
     internal static decimal? ProRataPaidDays(
         Employee emp, DateOnly monthStart, DateOnly monthEnd,
-        HashSet<int> workingDaySet, DateOnly? separationDate)
+        HashSet<int> workingDaySet, DateOnly? separationDate,
+        IReadOnlySet<DateOnly>? holidays = null)
     {
         var doj = DateOnly.FromDateTime(emp.DateOfJoining);
         if (doj > monthEnd)
@@ -993,7 +1044,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         if (end < start)
             return 0m; // separated before joining within the period.
 
-        return ShiftScheduleResolver.CountWorkingDays(workingDaySet, start, end);
+        return ShiftScheduleResolver.CountWorkingDays(workingDaySet, start, end, holidays);
     }
 
     /// <summary>
