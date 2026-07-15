@@ -4,7 +4,7 @@ user_story: US-ATT-011
 module: Attendance
 priority: critical
 type: security
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -50,3 +50,8 @@ Verify US-ATT-011 AC-3 / BR-1 / NFR-2 and spec §7.1: an `AttendanceSettings` ov
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite, real Postgres/Testcontainers):**
+  - `AttendancePolicyResolverTests.CrossTenantOverride_NeverResolves` (both tenants seed a same-named "Dubai" Location AND an override, so a leak is visibly wrong rather than coincidentally right; the EF global tenant filter is the mechanism)
+- Backing suite trait: `[Trait("TC", "TC-ATT-ISO-015")]` on `AttendancePolicyResolverTests`.

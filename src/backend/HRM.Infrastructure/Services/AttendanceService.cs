@@ -111,7 +111,7 @@ public sealed class AttendanceService : IAttendanceService
                 "This date falls within a locked payroll period. Please contact HR.",
                 409, "payroll_period_locked");
 
-        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var settings = await GetOrCreateSettingsAsync(employee, cancellationToken);
 
         // AC-5 / FR-4: IP allowlist enforcement. Each entry is an exact IP or a CIDR range (ISSUE-066).
         if (settings.IpAllowlistEnabled)
@@ -272,7 +272,7 @@ public sealed class AttendanceService : IAttendanceService
                 "This date falls within a locked payroll period. Please contact HR.",
                 409, "payroll_period_locked");
 
-        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var settings = await GetOrCreateSettingsAsync(employee, cancellationToken);
 
         var hasCoordinates = data.Latitude.HasValue && data.Longitude.HasValue;
 
@@ -369,11 +369,16 @@ public sealed class AttendanceService : IAttendanceService
             .FirstOrDefaultAsync(cancellationToken);
 
         // BR-2: read-only — default RequireGeolocation to false when no settings row exists.
-        // Unlike clock-in, status must not create a settings row as a side effect.
-        var requireGeolocation = await _dbContext.AttendanceSettings
-            .AsNoTracking()
-            .Select(x => x.RequireGeolocation)
-            .FirstOrDefaultAsync(cancellationToken);
+        // Unlike clock-in, status must not create a settings row as a side effect — so this resolves
+        // read-only and treats "no policy configured yet" as not-required (unchanged).
+        // CAL-4: scoped to the employee's Location override, else the tenant default. An unpredicated read
+        // would now pick an arbitrary row and could report another branch's geofence requirement.
+        var effective = employee.LocationId is not null
+            ? await _dbContext.AttendanceSettings.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.LocationId == employee.LocationId, cancellationToken)
+            : null;
+        effective ??= await AttendancePolicyResolver.GetTenantDefaultOrNullAsync(_dbContext, cancellationToken);
+        var requireGeolocation = effective?.RequireGeolocation ?? false;
 
         // US-ATT-002: the most-recently-closed session, so the dashboard can re-render the summary
         // card after a reload. Independent of the open record above.
@@ -424,7 +429,7 @@ public sealed class AttendanceService : IAttendanceService
             return Result<RegularizationDto>.Failure(
                 "Regularization requests cannot be submitted for future dates.", 400, "future_date");
 
-        var settings = await GetOrCreateSettingsAsync(cancellationToken);
+        var settings = await GetOrCreateSettingsAsync(employee, cancellationToken);
 
         // AC-3 / FR-6 / BR-2: lookback window. The earliest allowed date is (today - (N-1)) so that
         // exactly N calendar days (including today) are eligible.
@@ -636,22 +641,19 @@ public sealed class AttendanceService : IAttendanceService
     /// Returns the tenant's attendance settings, creating a default (all enforcement off) row if none
     /// exists. The TenantInterceptor stamps TenantId on the new row; we set it explicitly for clarity.
     /// </summary>
-    private async Task<AttendanceSettings> GetOrCreateSettingsAsync(CancellationToken cancellationToken)
-    {
-        var settings = await _dbContext.AttendanceSettings
-            .FirstOrDefaultAsync(cancellationToken);
-        if (settings is not null)
-            return settings;
-
-        settings = new AttendanceSettings
-        {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = _tenantContext.TenantId,
-        };
-        _dbContext.AttendanceSettings.Add(settings);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return settings;
-    }
+    /// <summary>
+    /// US-ATT-011 AC-3 (CAL-4): the EFFECTIVE policy for this employee — their Location's override, else the
+    /// tenant default, else a lazily-created tenant-default row.
+    ///
+    /// <para>⚠ This used to be an unpredicated <c>FirstOrDefaultAsync()</c>, safe only because a unique index
+    /// on TenantId alone guaranteed exactly one settings row per tenant. Location override rows break that
+    /// invariant, so an unpredicated read would now return an ARBITRARY row and could apply one branch's
+    /// geofence/OT policy to the whole tenant. Resolve per employee; never read unpredicated.</para>
+    /// </summary>
+    private Task<AttendanceSettings> GetOrCreateSettingsAsync(
+        Employee employee, CancellationToken cancellationToken)
+        => AttendancePolicyResolver.ResolveForLocationAsync(
+            _dbContext, employee.LocationId, cancellationToken);
 
     /// <summary>
     /// US-ATT-008 BR-3/BR-6: resolves the shift signals used for inline late/early detection for an

@@ -79,9 +79,15 @@ public sealed class AutoClockOutJob
         int closed = 0;
         await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
         {
-        // One settings row per tenant; fall back to defaults when none exists (read-only — don't
-        // create a row as a side effect).
-        var settings = await dbContext.AttendanceSettings.FirstOrDefaultAsync()
+        // CAL-4 (US-ATT-011 AC-3): read the TENANT-DEFAULT row explicitly (location_id IS NULL); fall back
+        // to code defaults when none exists (read-only — don't create a row as a side effect).
+        //
+        // ⚠ The "one settings row per tenant" assumption this comment used to state is GONE: a Location may
+        // now carry its own override row. An unpredicated FirstOrDefaultAsync() would pick an ARBITRARY row,
+        // so this tenant-wide sweep could auto-clock-out every employee against one branch's policy.
+        // Behaviour is deliberately unchanged (tenant default for the whole sweep); a per-location
+        // auto-clock-out is filed as a follow-up.
+        var settings = await dbContext.AttendanceSettings.FirstOrDefaultAsync(s => s.LocationId == null)
                        ?? new AttendanceSettings { TenantId = tenantId };
 
         while (true)

@@ -419,7 +419,13 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         var (workingDays, standardMinutes, minimumMinutes, grace, shiftStart, shiftEnd) =
             await ResolveShiftSignalsAsync(employee.Id, monthStart, ct);
 
-        var settings = await _dbContext.AttendanceSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+        // CAL-4: read the TENANT-DEFAULT row explicitly. This was an unpredicated FirstOrDefaultAsync(),
+        // safe only while there was exactly one settings row per tenant; with Location override rows it
+        // would return an arbitrary row and silently compute this summary on another branch's policy.
+        // Behaviour is deliberately UNCHANGED (still the tenant default, not the employee's location) —
+        // resolving per employee here would add ~5 queries per employee to a monthly sweep. Per-location
+        // summary signals are filed as a follow-up.
+        var settings = await AttendancePolicyResolver.GetTenantDefaultOrNullAsync(_dbContext, ct);
         bool halfDayEnabled = settings?.HalfDayEnabled ?? false;
         // Minimum threshold falls back to tenant setting when the shift carries none.
         if (minimumMinutes <= 0)

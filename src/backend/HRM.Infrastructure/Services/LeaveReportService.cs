@@ -993,12 +993,19 @@ public sealed class LeaveReportService : ILeaveReportService
 
     /// <summary>
     /// BR-4: tenant-configurable absenteeism threshold (unplanned LOP days per month). Read from the
-    /// tenant's <see cref="AttendanceSettings.AbsenteeismThresholdDays"/> (tenant-scoped via the global
+    /// TENANT-DEFAULT <see cref="AttendanceSettings.AbsenteeismThresholdDays"/> (tenant-scoped via the global
     /// query filter); falls back to the story default (3) when the tenant has no settings row yet.
+    ///
+    /// <para>CAL-4 (US-ATT-011 AC-3): filters <c>LocationId == null</c> explicitly. This was an unpredicated
+    /// read, safe only while there was exactly one settings row per tenant; a Location override row would
+    /// otherwise be picked arbitrarily and set the threshold for a whole multi-location report. Behaviour is
+    /// deliberately unchanged (this report spans employees across locations, so it stays on the tenant
+    /// default); a per-location absenteeism threshold is filed as a follow-up.</para>
     /// </summary>
     private async Task<decimal> ResolveAbsenteeismThresholdAsync(CancellationToken ct)
     {
         var configured = await _dbContext.AttendanceSettings.AsNoTracking()
+            .Where(s => s.LocationId == null)
             .Select(s => (decimal?)s.AbsenteeismThresholdDays)
             .FirstOrDefaultAsync(ct);
         return configured ?? 3m;

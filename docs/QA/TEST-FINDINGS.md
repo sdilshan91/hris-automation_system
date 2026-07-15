@@ -6520,3 +6520,45 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   validator's `When`), and/or have `IsAssignableShiftAsync` reject a shift with no declared calendar so
   the admin gets a 400 instead of a silent fall-through. Out of lane for CAL-1 (US-ATT-005 owns shift
   creation, and changing it alters the shift-creation contract + its tests).
+
+### ISSUE-308 — `AttendanceSettings` lazy-create is not 23505-tolerant: two concurrent first-clock-ins race and the loser throws
+- **Type:** ISSUE
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance / US-ATT-001, US-ATT-011 / (new TC needed)
+- **Title:** `AttendancePolicyResolver.GetOrCreateTenantDefaultAsync` (and the three call sites it
+  replaced) lazily create the tenant-default settings row with a plain read-then-insert. Two concurrent
+  first-clock-ins for a tenant with no settings row both read null, both insert, and the loser violates
+  `ix_attendance_settings_tenant_default_unique` → `DbUpdateException` / Postgres 23505 → 500 instead of
+  simply resolving to the winner's row.
+- **Root cause (~90%, code):** read-then-insert with no unique-violation recovery.
+- **Pre-existing, NOT a CAL-4 regression:** the old `ix_attendance_settings_tenant_unique` (unique on
+  TenantId alone) had the identical race; CAL-4 only moved the code. Narrow window — it needs two
+  concurrent requests on a tenant that has *never* had a settings row.
+- **Discovered:** CAL-4 integration-enforcer, 2026-07-15.
+- **Suggested action:** catch 23505 and re-read to the winning row, the pattern
+  `RealPayrollFnFIntegration` already uses for its `OffboardingInstanceId` unique index. Out of lane for
+  CAL-4 (pre-existing concurrency behaviour, not the location-override layer).
+
+### ISSUE-309 — Tenant-wide attendance sweeps use the tenant-default policy, ignoring per-location overrides
+- **Type:** ISSUE
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance / Leave / US-ATT-011 AC-3 / (new TC needed)
+- **Title:** CAL-4 made every `AttendanceSettings` read explicit, and three tenant-wide sweeps
+  deliberately kept **today's** behaviour by reading the tenant-default row (`LocationId == null`) rather
+  than resolving per employee: `AutoClockOutJob` (auto-clock-out standard minutes),
+  `AttendanceSummaryService` (`HalfDayEnabled`, min/standard minutes for the monthly summary), and
+  `LeaveReportService.ResolveAbsenteeismThresholdAsync` (BR-4 absenteeism threshold). A Location whose
+  override sets different standard minutes / half-day / threshold is therefore not honoured on those
+  three paths.
+- **Root cause (~95%, deliberate scope):** each sweep spans employees across locations, so resolving per
+  employee would add ~5 queries per employee to a tenant-wide loop. Correctness-preserving and honest,
+  but incomplete against AC-3's spirit.
+- **Not a regression:** all three behave exactly as they did before CAL-4.
+- **Suggested action:** batch-resolve policies per distinct location once per sweep (mirroring
+  `ShiftScheduleResolver`'s batched shape) and key each employee off their location, rather than
+  per-employee resolution. Decide per path whether per-location semantics are even wanted (an
+  absenteeism report spanning locations may legitimately want one tenant threshold).
