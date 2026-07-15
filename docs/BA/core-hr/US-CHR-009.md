@@ -59,7 +59,7 @@ acceptance_criteria_count: 5
 - BR-3: "Terminated" is a terminal state. If a terminated employee is rehired, a new employee record is created.
 - BR-4: Status changes with a future effective date are stored but not applied until that date (via a background job or on-access check).
 - BR-5: Suspended employees are excluded from active headcount but their records are fully retained.
-- BR-6: Probation periods are configured per tenant (default 90 days from date_of_joining).
+- BR-6: The probation period resolves by precedence **Location override (`Location.ProbationPeriodDays`) → Tenant config (`Tenant.ProbationPeriodDays`, default 90) → 90-day code default**, measured from `date_of_joining`. It is NOT a hardcoded 90 days: a tenant (or a specific location) may configure 3/6-month or jurisdiction-specific windows, and the probation-end reminder (AC-4 / FR-6) uses the resolved value *(fixes ISSUE-304)*.
 
 ## 7. Data Requirements
 **Status change log / Employment history entry:**

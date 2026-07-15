@@ -6,7 +6,7 @@ persona: Tenant Admin / HR Officer
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 4
+acceptance_criteria_count: 5
 ---
 
 # US-CHR-007: Manage Office Locations
@@ -27,6 +27,7 @@ acceptance_criteria_count: 4
 | AC-2 | The admin enters a valid, unique location name and submits | The form is saved | A new location record is created with `tenant_id` from session context, and the location appears in the list and becomes available in employee assignment dropdowns and holiday calendar configuration. |
 | AC-3 | The admin attempts to deactivate a location that has active employees assigned | They click "Deactivate" | The system warns: "This location has X active employees. Reassign them before deactivating." and blocks deactivation. |
 | AC-4 | An HR Officer edits a location's time zone | They save the change | The updated time zone is used for attendance calculations, shift scheduling, and holiday calendar display for employees at that location. The change is recorded in the audit log. |
+| AC-5 | A Tenant Admin edits a location | They set the location's `DefaultShiftId` (to an active, same-tenant shift) and/or its optional `ProbationPeriodDays` override | Both are persisted on the location: `DefaultShiftId` is the location tier of the working-calendar chain (US-ATT-011 / US-ATT-005 AC-6); `ProbationPeriodDays` (nullable) overrides the tenant probation period for that location's employees (US-CHR-009 BR-6). A cross-tenant/inactive shift is rejected; a null `ProbationPeriodDays` falls back to the tenant default |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: The system SHALL support CRUD operations on locations scoped to the current tenant.
@@ -51,6 +52,8 @@ acceptance_criteria_count: 4
 - BR-4: Holiday calendars can be scoped to specific locations.
 - BR-5: Deactivated locations cannot be assigned to new employees but remain visible on existing records.
 - BR-6: A tenant can operate with zero locations defined (location assignment on employees is optional).
+- BR-7: A location may carry an optional `DefaultShiftId` (nullable FK → Shift, same-tenant + active) that acts as the location tier of the working-calendar resolution chain (US-ATT-011). Null = employees fall through to the tenant default shift.
+- BR-8: A location may carry an optional `ProbationPeriodDays` override (nullable integer). When set, it overrides the tenant-level probation period for that location's employees; when null, the tenant default applies (US-CHR-009 BR-6).
 
 ## 7. Data Requirements
 **Location table schema:**

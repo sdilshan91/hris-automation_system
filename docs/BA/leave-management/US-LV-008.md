@@ -6,7 +6,7 @@ persona: HR Officer / Tenant Admin
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 6
 ---
 
 # US-LV-008: Leave Carry-Forward and Expiry Rules

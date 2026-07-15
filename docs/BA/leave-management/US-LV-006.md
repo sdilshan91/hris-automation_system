@@ -6,7 +6,7 @@ persona: Employee
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 6
 ---
 
 # US-LV-006: Leave Balance Dashboard for Employee
@@ -29,6 +29,7 @@ acceptance_criteria_count: 5
 | AC-3 | Employee views the dashboard | They check the "Upcoming Leaves" section | All approved and pending future leave requests are listed with dates, type, status, and days |
 | AC-4 | Employee views the dashboard on a mobile device (360px) | The page renders | All balance cards stack vertically, remain readable, and the progress bars scale correctly |
 | AC-5 | Employee has no leave balance data (new joiner, no accrual yet) | They open the dashboard | A friendly empty state is shown: "Your leave balances are being set up. Please check back soon." with an illustration |
+| AC-6 | The tenant runs an Apr–Mar fiscal leave year (`Tenant.FiscalYearStartMonth = 4`) | The employee views the dashboard and the year selector | Balances, ledger, and the year selector are bounded by the **fiscal** leave year (1 Apr – 31 Mar), not calendar Jan–Dec — the leave-year boundary honours `Tenant.FiscalYearStartMonth` (calendar when 1, fiscal otherwise) *(fixes ISSUE-305)* |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: API endpoint: `GET /api/v1/leaves/my-balance` — returns all leave type balances for the authenticated employee within their tenant.
@@ -48,7 +49,7 @@ acceptance_criteria_count: 5
 - BR-1: Balance = Entitlement + Carry Forward - Used - Expired + Adjustments.
 - BR-2: "Pending" days are shown separately and not deducted from "balance" until approved.
 - BR-3: Only active leave types are shown; deactivated types with a remaining balance are shown in a collapsed "Archived" section.
-- BR-4: Leave year boundaries are tenant-configurable (calendar year or fiscal year).
+- BR-4: Leave year boundaries are driven by `Tenant.FiscalYearStartMonth` — calendar year when it is 1 (Jan–Dec), otherwise a fiscal year anchored to that month (e.g. 4 ⇒ 1 Apr – 31 Mar). This is wired into the balance/ledger/year-selector bounds, not hardcoded to January *(fixes ISSUE-305)*.
 - BR-5: Employee can view balances for previous leave years (read-only, via year selector).
 
 ## 7. Data Requirements

@@ -6,7 +6,7 @@ persona: Employee
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 7
 ---
 
 # US-ATT-001: Employee Clock-In from Browser with Optional Geolocation
@@ -31,6 +31,8 @@ acceptance_criteria_count: 5
 | AC-3 | Tenant policy requires geolocation for clock-in | Employee clicks "Clock In" | The browser requests location permission; if granted, latitude and longitude are captured and stored in the `attendance_log` record; if denied, the clock-in is blocked with a message explaining the requirement |
 | AC-4 | Tenant policy has geolocation as optional | Employee clicks "Clock In" without granting location permission | The clock-in proceeds successfully without location data |
 | AC-5 | Tenant policy enforces an IP allowlist for clock-in | Employee attempts to clock in from a non-allowed IP address | The system rejects the clock-in and displays: "Clock-in is only allowed from authorized network locations." |
+| AC-6 | An employee's `WorkArrangement` is `Remote` (US-CHR-013) and the tenant/location geofence is enabled | The remote employee clocks in from outside the geofence | The clock-in succeeds — a Remote employee is exempt from geofence enforcement; an OnSite/Hybrid employee in the same conditions is still blocked |
+| AC-7 | A Location has a location-scoped attendance-policy override defining its own geofence coordinates/radius and grace period | An employee assigned to that Location clocks in | The Location override's geofence and grace period apply to that Location's employees; absent an override, the tenant-level geofence and grace period apply (per US-ATT-011 AC-3) |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: The system shall create an `attendance_log` record with `attendance_log_id` (UUID), `tenant_id`, `employee_id`, `clock_in` (timestamptz), and nullable geolocation fields (`clock_in_latitude`, `clock_in_longitude`).
@@ -55,6 +57,8 @@ acceptance_criteria_count: 5
 - BR-4: If the tenant has a grace period configured (e.g., 15 minutes), clock-ins within the grace period after shift start are not marked as late.
 - BR-5: Clock-in is only permitted for active employees (not terminated, not on long leave).
 - BR-6: If the tenant requires a selfie photo on clock-in (`attendance_settings.require_photo`), the photo must be captured and stored before the clock-in is accepted.
+- BR-7: Geofence coordinates/radius and the grace period are location-overridable via the location-scoped attendance policy (US-ATT-011); the employee's Location override wins over the tenant default.
+- BR-8: An employee whose `WorkArrangement` is `Remote` (US-CHR-013) is exempt from geofence enforcement at clock-in; OnSite and Hybrid employees remain subject to it.
 
 ## 7. Data Requirements
 **Input:**

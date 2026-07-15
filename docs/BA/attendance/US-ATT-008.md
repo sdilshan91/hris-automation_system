@@ -6,7 +6,7 @@ persona: HR Officer
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 7
 ---
 
 # US-ATT-008: Late Arrival and Early Departure Tracking
@@ -30,6 +30,8 @@ acceptance_criteria_count: 5
 | AC-3 | Employee's shift ends at 17:00 | Employee clocks out at 16:30 | The system marks the attendance record as "Early Departure" with `early_departure_minutes = 30` |
 | AC-4 | Tenant policy has a late deduction rule (e.g., 3 late arrivals = 0.5 day deduction) | Employee accumulates 3 late arrivals in a month | The system flags the employee for the applicable deduction in the monthly summary and notifies the employee |
 | AC-5 | Manager views the team late arrival report | Manager navigates to the team attendance report | The system displays a list of team members with their late arrival and early departure counts for the selected period |
+| AC-6 | A Location has a location-scoped attendance-policy override with its own grace period | An employee assigned to that Location clocks in late | Lateness is evaluated against the Location override's grace period; absent an override, the tenant/shift grace period applies (per US-ATT-011 AC-3) — the grace period is location-overridable, not tenant-wide only |
+| AC-7 | An employee's `WorkArrangement` is `Remote` (US-CHR-013) and the location geofence is enabled | The remote employee clocks in from outside the geofence | The clock-in is accepted (geofence-exempt per US-ATT-001 AC-6) and late/early evaluation proceeds normally against the resolved grace period — geofence exemption does not exempt the employee from late tracking |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: The system shall compare each clock-in time against the employee's assigned shift start_time + grace_period to determine lateness.
@@ -55,6 +57,7 @@ acceptance_criteria_count: 5
 - BR-6: Flexible shifts (no fixed start/end) do not trigger late/early tracking; only minimum hours are enforced.
 - BR-7: Regularized attendance records inherit the late/early status based on the regularized times, not the submission time.
 - BR-8: Employees on approved half-day leave are evaluated against a half-day shift schedule for late/early tracking.
+- BR-9: The grace period is location-overridable via the location-scoped attendance policy (US-ATT-011); resolution precedence is Location override → shift/tenant default → 0. A `Remote` employee (US-CHR-013) is exempt from geofence enforcement at clock-in but remains subject to late/early tracking.
 
 ## 7. Data Requirements
 **Fields added to attendance_log:**

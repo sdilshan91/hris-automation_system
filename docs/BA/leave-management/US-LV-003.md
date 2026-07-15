@@ -6,7 +6,7 @@ persona: Employee
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 6
+acceptance_criteria_count: 7
 ---
 
 # US-LV-003: Employee Applies for Leave
@@ -31,11 +31,12 @@ acceptance_criteria_count: 6
 | AC-4 | Employee selects a half-day leave | They toggle the half-day option and select AM/PM session | The request is created for 0.5 days and the balance is decremented accordingly |
 | AC-5 | Employee's selected dates overlap with an existing approved/pending leave request | They submit the form | Validation error: "You already have a leave request for the selected dates" |
 | AC-6 | Employee applies for leave during a public holiday | The system validates the request | Public holidays are excluded from the leave day count automatically; the employee is informed of the adjusted day count |
+| AC-7 | A Gulf-branch employee on a Sun–Thu shift applies for one week of leave (Sun–Thu) | The system counts leave days and gates half-day requests | Exactly 5 workdays are deducted — the day-count and half-day gate use the employee's **resolved shift working-day set** (US-ATT-011 four-tier chain), NOT a hardcoded Mon–Fri: a Friday (their weekend) is not counted and a Friday half-day is rejected, while a Sunday (a workday) is counted and a Sunday half-day is accepted *(fixes BUG-284)* |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: Leave application form with fields: leave type (dropdown), start date (date picker), end date (date picker), half-day toggle (AM/PM), reason (text area), attachment (file upload, optional/required per leave type config).
 - FR-2: Real-time balance display: When employee selects a leave type, show current balance, requested days, and projected remaining balance.
-- FR-3: Working days calculation: Exclude weekends (configurable per tenant: 5-day or 6-day work week) and public holidays from the leave day count.
+- FR-3: Working days calculation: derive working days from the employee's **resolved shift working-day set** via the single `ShiftScheduleResolver` four-tier chain (Employee → Location → Tenant → code default; US-ATT-011), NOT a hardcoded Mon–Fri work-week, and exclude public holidays (location-scoped via `IHolidayProvider`) from the leave day count. The half-day gate uses the same resolved working-day set.
 - FR-4: Overlap detection: Check against existing Pending/Approved leave requests for the same employee.
 - FR-5: API endpoint: `POST /api/v1/leaves` with request body containing `leaveTypeId`, `startDate`, `endDate`, `isHalfDay`, `halfDaySession`, `reason`, `attachments[]`.
 - FR-6: On successful submission, insert into `leave_request` table with `status = 'Pending'` and queue notification via the notification service.
