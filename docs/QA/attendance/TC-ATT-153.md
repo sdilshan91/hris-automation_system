@@ -4,7 +4,7 @@ user_story: US-ATT-006
 module: Attendance
 priority: high
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 defect:
   - BUG-285
@@ -54,3 +54,16 @@ Verify the BUG-285 fix on US-ATT-006: `OvertimeMultiplierResolver` decides weeke
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `OvertimeCalculatorTests.Resolve_GulfSunThu_FridayIsWeekend_UsesWeekendMultiplier` (step 1 — Friday = weekend rate 2.0×)
+  - `OvertimeCalculatorTests.Resolve_GulfSunThu_SundayIsWorkday_UsesWeekdayMultiplier` (step 2 — Sunday = weekday rate 1.5×)
+  - `OvertimeCalculatorTests.Resolve_MonSatSixDayWeek_SaturdayIsWorkday_SundayIsWeekend` ([Theory] — pins the ISO 6/7 ends of the day bridge)
+  - `OvertimeCalculatorTests.Resolve_HolidayStillOutranksTheResolvedWorkWeek` (BR-3 precedence unchanged)
+  - `OvertimeCalculatorTests.Resolve_EmptyWorkingDaySet_FallsBackToLegacySatSun_NotAllWeekend` (empty ≠ "every day is a weekend")
+  - `OvertimeWorkWeekAndHolidayScopeTests.Gulf_PreApproval_UsesResolvedWorkWeekForTheWeekendBasis` (step 3, real Postgres — proves the WIRING, not just the pure function)
+  - `OvertimeWorkWeekAndHolidayScopeTests.SingleBranch_MonFri_WeekendBasisUnchanged` (no regression for existing Mon–Fri tenants)
+  - The 3 pre-existing `Resolve_Saturday/PublicHoliday/PlainWeekday` arms omit the work-week and so pin the LEGACY Sat/Sun fallback as a backward-compat control.
+- **Mutation-tested:** re-hardcoding Sat/Sun → 3 arms red; dropping the work-week at both call sites → 2 arms red.
+- Backing suite trait: `[Trait("TC", "TC-ATT-153")]`.

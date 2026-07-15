@@ -6316,7 +6316,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-285 — Overtime weekend multiplier hardcodes Sat/Sun, ignoring the shift work-week → wrong OT pay
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-07-15, CAL-3, PR #312)
 - **Layer:** BE
 - **Module / US / TC:** Attendance-Payroll / US-ATT-006 / (new TC needed)
 - **Title:** `OvertimeMultiplierResolver.Resolve` decides weekend-vs-weekday via
@@ -6328,6 +6328,18 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause (~95%, code):** weekend basis is a literal day-of-week check, not derived from the
   resolved working-day set. The multiplier *rates* are already tenant-configurable
   (`AttendanceSettings`); only the weekend *basis* is hardcoded.
+- **Resolution (CAL-3, PR #312):** `OvertimeMultiplierResolver.Resolve` takes the employee's RESOLVED
+  working-day set (ISO 1=Mon..7=Sun) and derives `isWeekend` as **"not a working day for THIS employee"**.
+  The Domain function stays pure — the caller resolves and passes the set, exactly as it already did for
+  `isPublicHoliday`. Both `OvertimeService` call sites (auto-detect + pre-approval) resolve via the CAL-1
+  four-tier `ShiftScheduleResolver`, so a pre-approval quotes the SAME multiplier the detected overtime is
+  later paid at. A Gulf Sun–Thu employee now has **Friday paid at the weekend rate and Sunday at the
+  weekday rate** (both were inverted). Null/empty falls back to the legacy Sat/Sun basis — a defensive
+  backstop only; the resolver never returns an empty set.
+- **Verification:** 8 unit arms (`OvertimeCalculatorTests`) + 7 wiring arms on real Postgres
+  (`OvertimeWorkWeekAndHolidayScopeTests`). The 3 pre-existing `Resolve` arms omit the set and so pin the
+  legacy fallback as a backward-compat control. Mutation-tested: re-hardcoding Sat/Sun → 3 red; dropping
+  the set at both call sites → 2 red (Mon–Fri controls stay green). TC **TC-ATT-153** → `automated`.
 - **Severity rationale:** HIGH — money-critical; over/under-pays overtime for every OT event on a
   non-Sat/Sun-weekend calendar.
 - **Suggested action:** pass the resolved working-day set into the resolver (spec Phase 2).
@@ -6335,7 +6347,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-286 — Overtime holiday check ignores LocationId → a location-specific holiday grants the wrong employees the holiday OT multiplier
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-07-15, CAL-3, PR #312)
 - **Layer:** BE
 - **Module / US / TC:** Attendance-Payroll / US-ATT-006 (US-LV-007 holiday scope) / (new TC needed)
 - **Title:** `OvertimeService.IsPublicHolidayAsync` (`OvertimeService.cs:798-801`) matches a holiday
@@ -6350,6 +6362,20 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   location-specific holidays.
 - **Suggested action:** route OT (and payroll) holiday lookups through `IHolidayProvider(locationId)`
   (spec Phase 2, "unify holiday lookups").
+
+- **Resolution (CAL-3, PR #312):** `OvertimeService` now injects `IHolidayProvider` (trailing-optional,
+  mirroring `IWorkflowRuntime`/`IAttendanceNotificationService`; DI always supplies it) and
+  `IsPublicHolidayAsync(date, locationId, ct)` routes through it — the SAME location-aware provider leave
+  uses, collapsing two of the three duplicated holiday lookups onto one source of truth. A New-York-only
+  holiday no longer reaches a London employee, and vice-versa; a tenant-wide holiday (null `LocationId`)
+  still reaches everyone. Both OT call sites pass `employee.LocationId`.
+- **Verification:** 3 cross-location arms on real Postgres (NY-only → NY yes / London no; London-only →
+  symmetry; tenant-wide → still reaches every location, proving the scope narrowed without breaking the
+  ordinary company-wide case). Mutation-tested: dropping `locationId` from the lookup → 2 red, tenant-wide
+  control stays green. TC **TC-ATT-154** → `automated`.
+- ⚠ **Residual:** when no `IHolidayProvider` is supplied (unit fixtures constructing the service directly),
+  the legacy tenant-wide query is used. DI always supplies the provider, so production never takes that
+  branch — but a test on that path cannot prove location scoping.
 
 ### ISSUE-304 — Probation period hardcoded to 90 days, ignoring the per-tenant config promised by US-CHR-009 BR-6
 - **Type:** ISSUE

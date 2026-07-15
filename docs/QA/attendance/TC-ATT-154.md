@@ -4,7 +4,7 @@ user_story: US-ATT-006
 module: Attendance
 priority: medium
 type: integration
-status: draft
+status: automated
 created: 2026-07-15
 defect:
   - BUG-286
@@ -52,3 +52,11 @@ Verify the BUG-286 fix on US-ATT-006 (holiday scope, US-LV-007): `OvertimeServic
 - [ ] Performance test
 - [ ] Accessibility test
 - [ ] Cross-browser test
+
+## Automation & Traceability
+- **Automated-by (green in the xUnit suite):**
+  - `OvertimeWorkWeekAndHolidayScopeTests.NewYorkOnlyHoliday_GrantsHolidayRateToNyEmployee_ButNotToLondonEmployee` (steps 1–2 — both employees on the tenant Mon–Fri default and the date is a weekday, so ONLY holiday scope can move the multiplier)
+  - `OvertimeWorkWeekAndHolidayScopeTests.LondonOnlyHoliday_DoesNotGrantHolidayRateToNewYorkEmployee` (step 3 — symmetry)
+  - `OvertimeWorkWeekAndHolidayScopeTests.TenantWideHoliday_StillReachesEveryLocation` (proves the fix narrowed scope WITHOUT breaking the ordinary company-wide holiday)
+- **Mutation-tested:** dropping `locationId` from the holiday lookup → 2 arms red, tenant-wide control green.
+- Backing suite trait: `[Trait("TC", "TC-ATT-154")]`.
