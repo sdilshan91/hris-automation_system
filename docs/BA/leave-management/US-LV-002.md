@@ -6,7 +6,7 @@ persona: HR Officer
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 7
 ---
 
 # US-LV-002: Set Yearly Leave Entitlements by Job Level/Department
@@ -29,6 +29,8 @@ acceptance_criteria_count: 5
 | AC-3 | HR Officer sets a per-employee override for a specific leave type | They enter a custom entitlement for employee X | The override takes precedence over all rule-based entitlements for that employee and leave type |
 | AC-4 | A new employee is onboarded mid-year | Their leave balance is initialized | Entitlement is pro-rated based on joining date and the configured accrual frequency |
 | AC-5 | HR Officer modifies an entitlement rule | They save the updated rule | A Hangfire background job recalculates affected employees' balances; changes are audit-logged |
+| AC-6 | An employee has an `Fte` of 0.5 (US-CHR-013) and a full-year entitlement of 20 days | Their entitlement is calculated | They receive exactly 10 days — FTE proration is wired into `CalculateProRata` (no longer hardcoded `1.0`), fulfilling the previously-deferred BR-2 / AC-K1 |
+| AC-7 | A tenant-wide Annual Leave rule grants 20 days and a Location-scoped rule for "Dubai" grants 25 days | The system resolves entitlement for a Dubai employee vs a Colombo employee | The Dubai employee gets 25 days (the Location-scoped rule wins) and the Colombo employee gets 20; the `LeaveEntitlementRule` `LocationId` tier ranks **below the per-employee override and above the other dimensions** in specificity resolution |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: Entitlement rules support dimensions: leave type, department, job level, job title, employment type (full-time/part-time/contract), and tenure brackets.
@@ -49,6 +51,8 @@ acceptance_criteria_count: 5
 - BR-3: Probation-period employees receive entitlement only for leave types marked `probation_eligible = true`.
 - BR-4: Entitlement cannot be negative; minimum is zero.
 - BR-5: When an employee transfers departments mid-year, entitlement is recalculated pro-rata for both periods.
+- BR-6: `LeaveEntitlementRule` carries a nullable `LocationId` dimension. In specificity resolution a Location match ranks directly below the per-employee override and above the other rule dimensions (department/job-level/employment-type); a null `LocationId` = tenant-wide rule.
+- BR-7: Entitlement pro-rata uses `Employee.Fte` (US-CHR-013); a full-time employee is `1.0`. Proration is proportional and rounds to two decimal places (per existing rounding rule).
 
 ## 7. Data Requirements
 - **Table:** `leave_entitlement_rule`
@@ -87,5 +91,5 @@ acceptance_criteria_count: 5
 ---
 ## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
 > Attached here rather than as net-new epics. Track in STATUS.md.
-- **AC-K1 — Part-time FTE proration (BR-2).** Entitlements are not prorated by FTE — there is no `Employee.Fte`. Add an FTE attribute and prorate entitlement accordingly. **Status: not built.**
+- **AC-K1 — Part-time FTE proration (BR-2).** Entitlements are not prorated by FTE — there is no `Employee.Fte`. Add an FTE attribute and prorate entitlement accordingly. **Status: specified for build — `Employee.Fte` is now owned by US-CHR-013 and wired into `CalculateProRata`; captured as AC-6 above. Pending implementation under the Tenant + Location Configurable Calendar epic.**
 - **AC-K2 — Accrual-frequency scheduling (FR-5).** Entitlement is always granted upfront; the configured accrual frequency (monthly/quarterly) is not scheduled. Add periodic accrual scheduling. **Status: not built.**

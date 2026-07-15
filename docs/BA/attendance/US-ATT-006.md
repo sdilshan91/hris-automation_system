@@ -6,7 +6,7 @@ persona: Employee
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 9
 ---
 
 # US-ATT-006: Overtime Tracking and Approval
@@ -31,6 +31,10 @@ acceptance_criteria_count: 5
 | AC-3 | Manager views the overtime approval queue | Manager navigates to overtime approvals | All pending overtime records for the manager's team are displayed with employee name, date, overtime hours, and reason |
 | AC-4 | Manager approves an overtime record | Manager clicks "Approve" | The overtime status is updated to "Approved" and the record is flagged for payroll integration |
 | AC-5 | HR Officer views the monthly overtime report | HR navigates to the overtime report | The system displays a summary of all approved, pending, and rejected overtime by employee for the selected month |
+| AC-6 | An employee on a Sun–Thu shift works overtime on a Friday (their weekend) and on a Sunday (a workday) | The system resolves the overtime multiplier | The weekend-vs-weekday basis is derived from the employee's **resolved shift working-day set** (US-ATT-011), NOT a hardcoded Sat/Sun check — Friday gets the weekend multiplier and Sunday gets the weekday multiplier *(fixes BUG-285)* |
+| AC-7 | A public holiday is defined for a specific location, and an employee at a different location works overtime that day | The system resolves the holiday overtime multiplier | The holiday multiplier applies only when the date is a holiday **for the employee's own location**, resolved via the location-scoped holiday calendar (`IHolidayProvider(locationId)`); a location-specific holiday does not grant the holiday multiplier to employees at other locations *(fixes BUG-286)* |
+| AC-8 | A Location has a location-scoped attendance-policy override with different OT multipliers/thresholds | An employee at that Location accrues overtime | The location override's multipliers and thresholds apply to that Location's employees; absent an override, the tenant-level OT rates apply (per US-ATT-011 AC-3) |
+| AC-9 | The `FteScaledOvertimeBase` policy flag is off (default) | A part-time employee's overtime is priced | The OT hourly base is NOT scaled by FTE; when the flag is on, the part-timer's OT hourly base scales by their FTE (`standardHours * Fte`), per US-ATT-011 AC-5 |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: The system shall automatically detect overtime when `total_work_minutes` exceeds the shift's `standard_hours + overtime_threshold` (tenant-configurable, default 30 minutes).
@@ -57,6 +61,9 @@ acceptance_criteria_count: 5
 - BR-6: If the tenant policy requires pre-approval, overtime without pre-approval is recorded but marked as "Unapproved" and excluded from payroll until HR reviews it.
 - BR-7: Overtime on rest days or public holidays may have different multiplier rates.
 - BR-8: Managers cannot approve their own overtime; it must route to their supervisor or HR.
+- BR-9: The weekend-vs-weekday basis for the overtime multiplier is derived from the employee's resolved shift working-day set (US-ATT-011 four-tier chain), not a hardcoded Saturday/Sunday check — a day is "weekend" when its ISO day is not in the resolved working-day set.
+- BR-10: The public-holiday overtime multiplier is evaluated against the employee's own location's holiday calendar via the unified `IHolidayProvider(locationId)`; a holiday defined for one location never grants the holiday multiplier to employees at another location.
+- BR-11: OT multiplier rates and thresholds are tenant-configurable and location-overridable (US-ATT-011 AC-3); the location override wins for that location's employees. When `FteScaledOvertimeBase` is on, the OT hourly base scales by employee FTE (default off).
 
 ## 7. Data Requirements
 **overtime_record table:**

@@ -103,6 +103,7 @@ acceptance_criteria_count: 6
 - Object storage (Azure Blob / S3 / MinIO) is available and configured for the environment.
 - Only free/open-source libraries are used (per project constraints).
 - The system uses PostgreSQL with RLS as a defense-in-depth layer for tenant isolation.
+- **Note (US-CHR-013):** the employee `Fte` and `WorkArrangement` fields are owned by US-CHR-013 and are settable on this create form (Employment Details section); their validation and downstream effects (leave pro-rata, geofence exemption) are specified there.
 
 ## 11. Test Hints
 - **Happy path:** Create employee with all mandatory fields; verify record in DB with correct `tenant_id` and auto-generated `employee_no`.

@@ -67,6 +67,7 @@
 | [US-CHR-010](core-hr/US-CHR-010.md) | Bulk employee import via CSV/Excel | Should Have | HR Officer |
 | [US-CHR-011](core-hr/US-CHR-011.md) | Employee reporting structure | Must Have | HR Officer |
 | [US-CHR-012](core-hr/US-CHR-012.md) | Custom fields per tenant | Could Have | Tenant Admin |
+| [US-CHR-013](core-hr/US-CHR-013.md) | Employee FTE & work arrangement | Should Have | HR Officer |
 
 ## 3. Leave Management
 
@@ -99,6 +100,7 @@
 | [US-ATT-008](attendance/US-ATT-008.md) | Late arrival and early departure tracking | Should Have | HR Officer |
 | [US-ATT-009](attendance/US-ATT-009.md) | Attendance integration with payroll | Must Have | HR Officer |
 | [US-ATT-010](attendance/US-ATT-010.md) | Attendance dashboard and reports | Should Have | HR Officer |
+| [US-ATT-011](attendance/US-ATT-011.md) | Location-aware working calendar & location-scoped attendance policy | Should Have | Tenant Admin |
 
 ## 5. Recruitment
 

@@ -6,7 +6,7 @@ persona: HR Officer
 status: draft
 created: 2026-05-11
 sprint: backlog
-acceptance_criteria_count: 5
+acceptance_criteria_count: 6
 ---
 
 # US-ATT-005: Shift Management and Assignment per Employee
@@ -30,6 +30,7 @@ acceptance_criteria_count: 5
 | AC-3 | An employee already has an active shift assignment | HR Officer assigns a new shift to the employee with a future effective date | The current shift remains active until the new shift's effective date; the system does not create overlapping active assignments |
 | AC-4 | HR Officer attempts to delete a shift that is currently assigned to employees | HR Officer clicks "Delete" | The system prevents deletion and displays: "This shift is assigned to {N} employees. Please reassign them before deleting." |
 | AC-5 | HR Officer creates a rotating shift schedule | HR Officer defines a rotation pattern (e.g., Week A: Morning, Week B: Evening) and assigns it to employees | The system creates the rotation pattern and automatically determines the applicable shift for each day based on the rotation cycle |
+| AC-6 | An employee has no personal shift assignment and belongs to a Location that carries a `DefaultShiftId` | The system resolves the employee's working calendar | The Location's default shift is used — it is the **location tier** of shift resolution, sitting **above** the tenant default shift (`Shift.IsDefault`) and below any personal (effective-dated) employee shift, per the four-tier chain in US-ATT-011 (Employee → Location → Tenant → code default) |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: The system shall support three shift types: Single (fixed), Rotating (cyclic pattern), and Flexible (no fixed start/end, only total hours required).

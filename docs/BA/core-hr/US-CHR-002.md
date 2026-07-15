@@ -93,6 +93,7 @@ acceptance_criteria_count: 6
 - Employment history is an append-only log; historical entries cannot be edited.
 - The system uses Angular standalone components with signals for reactive state management.
 - Tailwind CSS + Angular Material are the only styling frameworks (no Bootstrap).
+- **Note (US-CHR-013):** the employee `Fte` and `WorkArrangement` fields are owned by US-CHR-013 and are viewable/editable on this profile (Employment Details), subject to role-based field permissions; their validation and downstream effects are specified there.
 
 ## 11. Test Hints
 - **View profile:** Load an employee profile; verify all sections render with correct data from the database.

@@ -5277,3 +5277,52 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 ---
 
 *Note (Reports -- US-RPT-002): Continues the Reports module scaffold from US-RPT-001 (per-story-suffix functional scheme TC-RPT-{NNN}-XX + running ISO counter, now TC-RPT-ISO-008). Like US-RPT-001 these are forward-looking acceptance criteria -- the unified leave/attendance reporting service is not yet built (module-specific Leave/Payroll/Attendance reports exist). PLATFORM ACCURACY / DEFERRED (consistent with prior modules): (1) AC-5/NFR-2 name PostgreSQL RLS; this platform isolates via EF Core global query filters (read) + TenantInterceptor (write stamping) + TenantResolutionMiddleware -> scoped ITenantContext, NOT RLS -- deferred defense-in-depth. ISO tests (TC-RPT-ISO-005..008) assert the EF mechanism today; the raw-SQL/RLS expectation is CONDITIONAL/deferred (TC-RPT-ISO-007 step 5); cross-tenant resource-ID injection asserts 404 not 403 (TC-RPT-002-07, TC-RPT-ISO-006). (2) FR-7 Redis report cache (key t:{tenantId}:report:{type}:{filterHash}, TTL 5min) + Refresh-bypass: Redis is deferred dev-box infra -- TC-RPT-002-11 and TC-RPT-ISO-008 are CONDITIONAL (assert tenant-prefixed key shape + filter-hash sensitivity + Refresh bypass), else assert identical-on-repeat + Refresh-re-queries + tenant-prefixed key derivation; the NFR-1 3s threshold is never relaxed. (3) NFR-1 (<3s P95 @ 5,000 emp), NFR-3 (charts <1s), NFR-6 (PostgreSQL views for attendance optimization) need a perf-representative environment (TC-RPT-002-11); on a dev box record indicative numbers, never relax thresholds. STORY MISMATCH / SCOPE NOTES worth flagging to the caller: (a) AC-4/FR-8 require a Reports.View.Team vs Reports.View.All SCOPE split (manager direct reports via ReportsToEmployeeId vs full tenant), but the catalog today exposes only a single Reports.View (+ Reports.Export). Closing AC-4 (TC-RPT-002-09) needs scoped permission variants OR a manager direct-reports data filter to be ADDED -- permission-granularity gap (same gap as US-RPT-001's BR-2). (b) BR-2 working days come from the tenant working calendar (public holidays + per-shift weekly offs); BR-5 leave-year start is configurable (calendar or custom fiscal). TC-RPT-002-10 exercises a custom fiscal start; if the working-calendar / fiscal-year config is not yet wired, those steps are CONDITIONAL. (c) BR-3 overtime = attendance hours exceeding shift standard hours -- depends on shift configurations being correctly set up by the Tenant Admin. (d) US-RPT-004 export is a separate story; export is referenced as a dependency, not tested here.*
+
+---
+
+## Configurable Working Calendar & Policy Epic (2026-07-15)
+
+Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configurable-calendar-design.md`. Two new stories (US-ATT-011, US-CHR-013) plus regression coverage for the money/entitlement bugs the missing configuration caused. All TCs `status: draft` (authored, not yet executed). Every new cross-entity FK (`Location.DefaultShiftId`, `AttendanceSettings` override `LocationId`, `LeaveEntitlementRule.LocationId`) has a mandatory tenant-isolation negative TC targeting real Postgres (spec §7.1 / Critical Rule #1).
+
+### US-ATT-011 -- Location-Aware Working Calendar & Location-Scoped Attendance Policy (5 AC)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | AC / Requirement |
+|-------------|----------------|------|----------|------------|------------------|
+| TC-ATT-145 | Location.DefaultShiftId accepts an active same-tenant shift and persists | Functional | High | US-ATT-011 | AC-1, FR-1 |
+| TC-ATT-146 | Location.DefaultShiftId rejects a soft-deleted / inactive shift | Functional | High | US-ATT-011 | AC-1, FR-1 (§7.1) |
+| TC-ATT-147 | Four-tier resolution -- Gulf Sun-Thu employee resolves Sun workday / Fri weekend | Integration | Critical | US-ATT-011 | AC-2, FR-2 |
+| TC-ATT-148 | Four-tier resolution -- EU 4-day `{1,2,3,4}` working-day count | Integration | High | US-ATT-011 | AC-2, FR-2 |
+| TC-ATT-149 | Four-tier resolution -- single-branch fall-through to tenant Mon-Fri default | Integration | Critical | US-ATT-011 | AC-2, BR-4 |
+| TC-ATT-150 | Location attendance-policy override applies to that location's employees only | Integration | High | US-ATT-011 | AC-3, FR-4 |
+| TC-ATT-151 | At most one AttendanceSettings override per (tenant, location); multiplier >= 1.0 | Functional | High | US-ATT-011 | AC-3, BR-5 (§7.1) |
+| TC-ATT-152 | FteScaledOvertimeBase -- OT base unscaled by default, scaled by FTE when on | Integration | High | US-ATT-011 | AC-5, FR-6 |
+| TC-PAY-014 | ExcludeHolidaysFromWorkingDays ON reduces payroll denominator by holiday count | Integration | High | US-ATT-011 | AC-4, FR-5 |
+| TC-PAY-015 | ExcludeHolidaysFromWorkingDays OFF -- holidays count in denominator | Integration | Medium | US-ATT-011 | AC-4, FR-5 |
+| TC-ATT-ISO-014 | Cross-tenant Location.DefaultShiftId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-1, BR-1, NFR-2 |
+| TC-ATT-ISO-015 | Cross-tenant AttendanceSettings override LocationId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |
+
+**Coverage:** 5/5 AC covered (AC-1 TC-145/146/ISO-014; AC-2 TC-147/148/149; AC-3 TC-150/151/ISO-015; AC-4 TC-PAY-014/015; AC-5 TC-152).
+
+### US-CHR-013 -- Employee FTE & Work Arrangement (2 AC)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | AC / Requirement |
+|-------------|----------------|------|----------|------------|------------------|
+| TC-CHR-326 | Employee.Fte accepts 0.5 and prorates leave entitlement to half | Integration | High | US-CHR-013 | AC-1, FR-1/FR-3, BR-2 |
+| TC-CHR-327 | Fte validation -- reject 0 / negative / > 1.0 / > 2dp; accept 1.00 & 0.50 | Functional | High | US-CHR-013 | AC-1, FR-2 (§7.1) |
+| TC-CHR-328 | WorkArrangement=Remote geofence-exempt; OnSite/Hybrid blocked outside geofence | Integration | High | US-CHR-013 | AC-2, FR-4/FR-5, BR-4 |
+| TC-CHR-329 | WorkArrangement validation -- undefined enum value rejected | Functional | Medium | US-CHR-013 | AC-2, FR-4, BR-3 (§7.1) |
+| TC-CHR-ISO-049 | FTE / WorkArrangement edits in Tenant A never touch Tenant B (Postgres) | Security | High | US-CHR-013 | NFR-1 |
+
+**Coverage:** 2/2 AC covered (AC-1 TC-326/327; AC-2 TC-328/329) + isolation.
+
+### Patched-story regression coverage (bind to finding IDs)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | AC / Requirement | Finding |
+|-------------|----------------|------|----------|------------|------------------|---------|
+| TC-ATT-153 | Gulf OT weekend basis follows resolved work-week (Fri weekend mult, Sun weekday mult) | Integration | High | US-ATT-006 | OT multiplier basis | BUG-285 |
+| TC-ATT-154 | Location-scoped holiday OT -- NY-only holiday not granted to London employee | Integration | Medium | US-ATT-006 | holiday OT scope (US-LV-007) | BUG-286 |
+| TC-CHR-330 | Probation period tenant-configurable + Dubai location override wins | Integration | Medium | US-CHR-009 | BR-6 | ISSUE-304 |
+| TC-LV-262 | Gulf Sun-Thu leave deducts 5 workdays; half-day Sun accepted / Fri rejected | Integration | High | US-LV-003 | day-count / half-day gate | BUG-284 |
+| TC-LV-263 | Single-branch Mon-Fri leave day-count unchanged (control) | Integration | High | US-LV-003 | day-count | BUG-284 |
+| TC-LV-264 | Apr-Mar fiscal leave-year boundary / accrual / carry-forward expiry anchor to April | Integration | High | US-LV-006 | leave-year (US-LV-002/008) | ISSUE-305 |
+| TC-LV-ISO-049 | Cross-tenant LeaveEntitlementRule.LocationId never resolves (Postgres) | Security | Critical | US-LV-002 | entitlement location tier (US-ATT-011 AC-3, §7.1) | -- |

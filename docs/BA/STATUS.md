@@ -58,6 +58,7 @@
 - [x] US-CHR-010 — Bulk employee import via CSV/Excel *(PR #20)*
 - [x] US-CHR-011 — Employee reporting structure *(PR #21)*
 - [x] US-CHR-012 — Custom fields per tenant *(PR #22)*
+- [ ] US-CHR-013 — Employee FTE & work arrangement *(location-calendar epic; spec 2026-07-14)*
 
 ## 3. Leave Management (12 stories)
 - [x] US-LV-001 — Configure leave types per tenant *(PR #23)*
@@ -84,6 +85,7 @@
 - [x] US-ATT-008 — Late arrival and early departure tracking *(PR #46)*
 - [x] US-ATT-009 — Attendance integration with payroll *(PR #47)*
 - [x] US-ATT-010 — Attendance dashboard and reports *(PR #48)*
+- [ ] US-ATT-011 — Location-aware working calendar & location-scoped attendance policy *(location-calendar epic; spec 2026-07-14)*
 
 ## 5. Recruitment (10 stories) — COMPLETE ✅
 - [x] US-REC-001 — Create and publish job vacancy *(PR #49)*
