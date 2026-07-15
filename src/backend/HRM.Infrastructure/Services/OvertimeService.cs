@@ -32,6 +32,7 @@ public sealed class OvertimeService : IOvertimeService
     private readonly ICurrentUser _currentUser;
     private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly IAttendanceNotificationService? _notifications;
+    private readonly IHolidayProvider? _holidayProvider;
     private readonly ILogger<OvertimeService> _logger;
 
     public OvertimeService(
@@ -40,7 +41,8 @@ public sealed class OvertimeService : IOvertimeService
         ICurrentUser currentUser,
         ILogger<OvertimeService> logger,
         IWorkflowRuntime? workflowRuntime = null,
-        IAttendanceNotificationService? notifications = null)
+        IAttendanceNotificationService? notifications = null,
+        IHolidayProvider? holidayProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -50,6 +52,9 @@ public sealed class OvertimeService : IOvertimeService
         _workflowRuntime = workflowRuntime;
         // US-NTF-006 Phase 6: optional so existing US-ATT-006 unit tests keep compiling; DI always supplies the Real impl.
         _notifications = notifications;
+        // BUG-286: optional for the same reason; DI always supplies HolidayProvider. Without it, holiday
+        // lookup falls back to the legacy tenant-wide query, which is NOT location-scoped.
+        _holidayProvider = holidayProvider;
         _logger = logger;
     }
 
@@ -82,13 +87,16 @@ public sealed class OvertimeService : IOvertimeService
         var date = DateOnly.FromDateTime(log.ClockIn);
         var standardMinutes = await ResolveStandardMinutesAsync(employee.Id, date, settings, cancellationToken);
 
-        // BR-3/BR-7: multiplier basis — public holiday > weekend > weekday.
-        var isHoliday = await IsPublicHolidayAsync(date, cancellationToken);
+        // BR-3/BR-7: multiplier basis — public holiday > weekend > weekday. BUG-286: the holiday lookup is
+        // scoped to the employee's location. BUG-285: "weekend" is derived from their RESOLVED work-week.
+        var isHoliday = await IsPublicHolidayAsync(date, employee.LocationId, cancellationToken);
+        var workingDays = await ResolveWorkingDaysAsync(employee.Id, date, cancellationToken);
         var (multiplier, multiplierBasis) = OvertimeMultiplierResolver.Resolve(
             date, isHoliday,
             settings.WeekdayOvertimeMultiplier,
             settings.WeekendOvertimeMultiplier,
-            settings.HolidayOvertimeMultiplier);
+            settings.HolidayOvertimeMultiplier,
+            workingDays);
 
         // FR-1/BR-2/BR-4: detect + cap.
         var computation = AttendanceCalculator.CalculateOvertime(
@@ -200,12 +208,16 @@ public sealed class OvertimeService : IOvertimeService
         var expectedMinutes = (int)Math.Round(request.ExpectedHours * 60m, MidpointRounding.AwayFromZero);
 
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
-        var isHoliday = await IsPublicHolidayAsync(request.Date, cancellationToken);
+        // BUG-286 location-scoped holiday + BUG-285 resolved work-week, same as the auto-detect path above —
+        // a pre-approval must quote the SAME multiplier the detected overtime will later be paid at.
+        var isHoliday = await IsPublicHolidayAsync(request.Date, employee.LocationId, cancellationToken);
+        var workingDays = await ResolveWorkingDaysAsync(employee.Id, request.Date, cancellationToken);
         var (multiplier, multiplierBasis) = OvertimeMultiplierResolver.Resolve(
             request.Date, isHoliday,
             settings.WeekdayOvertimeMultiplier,
             settings.WeekendOvertimeMultiplier,
-            settings.HolidayOvertimeMultiplier);
+            settings.HolidayOvertimeMultiplier,
+            workingDays);
 
         var record = new OvertimeRecord
         {
@@ -794,11 +806,47 @@ public sealed class OvertimeService : IOvertimeService
         return net > 0 ? net : (int?)null;
     }
 
-    /// <summary>BR-3/BR-7: whether the date is an active public holiday in the tenant calendar.</summary>
-    private Task<bool> IsPublicHolidayAsync(DateOnly date, CancellationToken cancellationToken)
-        => _dbContext.Holidays
+    /// <summary>
+    /// BR-3/BR-7: whether the date is an active public holiday for THIS employee (US-LV-007 BR-2 scoping).
+    ///
+    /// <para>BUG-286: this used to run its own inline query matching only
+    /// <c>Date == date &amp;&amp; IsActive &amp;&amp; Type == Public</c> with **no LocationId filter**, bypassing the
+    /// location-aware <see cref="IHolidayProvider"/> that leave already used. A New-York-only holiday
+    /// therefore granted a London employee the holiday OT multiplier (and vice-versa) — the wrong rate
+    /// flowing straight into payroll earnings. Holiday lookups were duplicated in three places; this routes
+    /// overtime onto the same provider as leave so there is one location-aware source of truth.</para>
+    /// </summary>
+    private async Task<bool> IsPublicHolidayAsync(
+        DateOnly date, Guid? locationId, CancellationToken cancellationToken)
+    {
+        if (_holidayProvider is not null)
+        {
+            var holidays = await _holidayProvider.GetHolidaysAsync(date, date, locationId, cancellationToken);
+            return holidays.Contains(date);
+        }
+
+        // Legacy fallback for unit fixtures that construct this service without the provider. DI always
+        // supplies it, so production never takes this branch — but note it is NOT location-scoped, so any
+        // test relying on it cannot prove BUG-286.
+        return await _dbContext.Holidays
             .AsNoTracking()
             .AnyAsync(h => h.Date == date && h.IsActive && h.Type == HolidayType.Public, cancellationToken);
+    }
+
+    /// <summary>
+    /// BUG-285 / US-ATT-011 AC-2: the employee's resolved working-weekday set (ISO 1=Mon..7=Sun) as of
+    /// <paramref name="date"/>, via the shared four-tier chain — the SAME working-week source attendance,
+    /// leave and payroll use. Passed to <see cref="OvertimeMultiplierResolver"/> so "weekend" means "not a
+    /// working day for THIS employee" rather than a hardcoded Sat/Sun.
+    /// </summary>
+    private async Task<IReadOnlySet<int>> ResolveWorkingDaysAsync(
+        Guid employeeId, DateOnly date, CancellationToken cancellationToken)
+    {
+        var sets = await ShiftScheduleResolver.ResolveWorkingDaySetsAsync(
+            _dbContext, [employeeId], date, cancellationToken);
+
+        return sets.TryGetValue(employeeId, out var days) ? days : new HashSet<int>();
+    }
 
     /// <summary>
     /// BR-5/FR-8: returns true if adding <paramref name="newMinutes"/> pushes the employee's
