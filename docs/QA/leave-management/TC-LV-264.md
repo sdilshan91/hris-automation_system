@@ -9,6 +9,8 @@ created: 2026-07-15
 automated: 2026-07-16
 automation:
   - HRM.Tests/Unit/LeaveYearTests.cs (34 arms — boundary arithmetic, fiscal pro-rata, calendar controls)
+  - HRM.Tests/Unit/LeaveAccrualJobLeaveYearTests.cs (6 arms — the CREDIT-side label; had ZERO tests)
+  - HRM.Tests/Unit/LeaveYearResolverDiRegistrationTests.cs (7 arms — the real AddInfrastructure container)
   - HRM.Tests/Unit/ProcessLeaveYearEndJobWindowTests.cs (23 arms — the per-tenant year-end window)
   - HRM.Tests/Integration/FiscalLeaveYearIntegrationTests.cs (10 arms — the column is actually READ, and
     the ledger's credit and debit sides agree)
@@ -78,6 +80,26 @@ Green tests prove nothing until they fail on a broken build. Each site was mutat
 had **zero** mutation resistance (the campaign only covered sites I thought to mutate), and one of my
 mutations was a **silent no-op** whose anchor never matched, so it "survived" while proving nothing. Every
 mutation below now asserts the edit LANDED before trusting the verdict.
+
+### Round 3 — the three zero-resistance sites closed (2026-07-16, post-audit)
+A `@test-authenticator` audit found **7 of 13 sites had ZERO mutation resistance**: my campaign had only
+mutated the sites I already believed were covered, so "7/7 killed" was true and meaningless. Three closed:
+
+| Mutation | Before | Now |
+|---|---|---|
+| `LeaveAccrualJob` label → `UtcNow.Year` (the CREDIT side; **no test existed at all**) | SURVIVED | **KILLED** (5 arms) |
+| `LeaveEntitlementService` drops the basis → engine | SURVIVED | **KILLED** (1 arm) — *and now a **compile error*** |
+| `AddScoped<ITenantLeaveYearResolver,…>` deleted | untested | **KILLED** (5 arms) |
+
+**The best fix was not a test.** `CalculateProRata`'s `fiscalYearStartMonth` had a `= CalendarStartMonth`
+**default**, which is what made a missing argument invisible — a wrong money number credited to the ledger with
+the suite green. The default is **removed**, so the mutant no longer compiles. (Same reasoning as removing the
+`?? .Year` fallbacks: prefer "won't build" to "won't pass".)
+
+**⚠ Still zero-resistance, correct by inspection only** (wiring-auditor swept, no site disagrees — but no
+regression guard): `LopService` debit · `LeaveDashboardService` Pending bounds + `ResolveLeaveYear` ·
+**`LeaveEncashmentService`** (money) · **`RealPayrollFnFIntegration`** (money — silent under-payment on
+termination). Tracked as follow-up.
 
 ### Round 2 — the sites the audit proved were unprotected
 | Mutation | Round 1 | Now |

@@ -6708,3 +6708,36 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction:** `cd src/backend && dotnet test HRM.Tests/HRM.Tests.csproj --no-build` → aborts. **Reproduced on BASE (`test/local-subdomains` @ e2f957e0) in a clean isolated worktree — aborted at 231/4058.** So this is **pre-existing, NOT introduced by CAL-8** (which aborted at 371 on the same machine).
 - **Discovered:** CAL-8 verification, 2026-07-16. Found only because the CAL-8 count (964) was compared against the expected ~4,000 and the tail was actually read.
 - **Suggested action:** (1) ✅ done — `--blame-crash` named it (above); (2) **split the gate in two**: run the ~3,900 non-Testcontainers tests in one pass (completes cleanly) and the ~74 Postgres/Testcontainers classes in a second, serialized pass (`maxParallelThreads: 1` or a dedicated CI job with container limits); (3) **regardless of root cause, make an aborted run FAIL** — an aborted run must never exit 0 with a `Passed!` line, or the next regression hides the same way. Until then, treat "full suite green" as unproven and verify with targeted filters.
+
+### ISSUE-313 — 5 fiscal-leave-year sites are correct by inspection but have NO regression guard (2 are money paths)
+- **Type:** ISSUE
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave + Payroll / US-LV-002/006/008, US-PAY-010 / TC-LV-264 (extend)
+- **Title:** CAL-8 (#318) routed 13 sites through `ITenantLeaveYearResolver`. A `@test-authenticator` mutation
+  audit found **7 had zero resistance**; 3 were closed in that PR (`LeaveAccrualJob` label, the
+  service→engine basis, the DI registration). **Five remain — each can be reverted to a raw `.Year` /
+  calendar basis with the FULL 4,086-test suite still green:**
+  1. `LopService.LeaveYearForAsync` (`:37`) — ledger DEBIT → forced LOP for employees who *have* leave.
+  2. `LeaveDashboardService` Pending bounds (`:142-149`) — wrong pending days shown.
+  3. `LeaveDashboardService.ResolveLeaveYearAsync` (`:309-311`) — wrong balance year for the employee.
+  4. **`LeaveEncashmentService` (`:84-87`) — MONEY**: keyed off the pay period; a regression rejects
+     encashment outright for a fiscal tenant.
+  5. **`RealPayrollFnFIntegration` (`:239-241`) — MONEY**: a regression makes leave-encashment lines
+     **silently vanish from the final settlement** (under-payment on termination — no error, no zero line).
+- **Root cause:** not a defect — a **coverage** gap. All five were verified by inspection and the
+  `@integration-enforcer` swept all 13 sites and found none deriving the label another way (verdict:
+  CONNECTED). What is missing is a guard against the *return* of the defect.
+- **Severity rationale:** MED, deliberately not LOW. The code is believed correct today, so there is no live
+  bug — but CAL-8's whole history is that **inspection-without-a-guard is exactly how the credit/debit ledger
+  split survived a green suite**, and 2 of the 5 are money paths whose failure mode is *silent*. The
+  no-regression risk is real even though the current behaviour is not.
+- **Reproduction (of the gap, not a bug):** revert any of the five to `date.Year` / `input.PayYear` /
+  `lwd.Year` → `dotnet test` stays green.
+- **Discovered:** CAL-8 test-authenticity re-audit, 2026-07-16.
+- **Suggested action:** one arm per site, on the pattern already proven in
+  `FiscalLeaveYearIntegrationTests.DebitSide_SeesTheBalanceCreditedUnderTheFiscalLeaveYear_InTheJanToMarWindow`
+  (seed a month-4 tenant, credit the ledger under the fiscal label, drive the REAL service for a Jan–Mar date,
+  assert it sees the balance). Do the two **money** sites first, with a proper F&F oracle — they deserve a
+  focused review rather than an append to an already-large PR.
