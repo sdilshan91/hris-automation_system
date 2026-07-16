@@ -108,6 +108,14 @@ public sealed class OfferService : IOfferService
             .Where(o => o.ApplicantId == applicant.Id && o.VacancyId == applicant.VacancyId)
             .ToListAsync(cancellationToken);
 
+        // BUG-066 (BR-2/AC-3 single-outcome): once an offer has been ACCEPTED the position outcome is settled
+        // (the applicant is Hired). Only Draft/Sent offers are supersedable — generating a fresh live offer for
+        // an already-accepted applicant would create contradictory offers, so reject it.
+        if (existingOffers.Any(o => o.Status == OfferStatus.Accepted))
+            return Result<OfferDto>.Failure(
+                "This applicant has already accepted an offer; a new offer cannot be generated.",
+                409, "offer_already_accepted");
+
         var maxVersion = existingOffers.Count == 0 ? 0 : existingOffers.Max(o => o.Version);
 
         foreach (var prior in existingOffers.Where(o => o.IsActive))

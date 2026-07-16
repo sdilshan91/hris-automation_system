@@ -14,7 +14,7 @@ namespace HRM.Application.Features.Recruitment.Commands;
 /// </summary>
 public sealed record SubmitScorecardCommand(
     Guid InterviewId,
-    OverallRecommendation OverallRecommendation,
+    OverallRecommendation? OverallRecommendation, // BUG-064: nullable — an omitted recommendation is rejected, not defaulted.
     string? GeneralNotes,
     IReadOnlyList<CriterionRatingInput> Ratings
 ) : IRequest<Result<ScorecardDto>>;
@@ -30,7 +30,8 @@ public sealed class SubmitScorecardCommandHandler
         => _service.SubmitAsync(new SubmitScorecardInput
         {
             InterviewId = request.InterviewId,
-            OverallRecommendation = request.OverallRecommendation,
+            // Safe: the validator's NotNull rule (BUG-064) has already rejected a null recommendation with a 400.
+            OverallRecommendation = request.OverallRecommendation!.Value,
             GeneralNotes = request.GeneralNotes,
             Ratings = request.Ratings,
         }, cancellationToken);

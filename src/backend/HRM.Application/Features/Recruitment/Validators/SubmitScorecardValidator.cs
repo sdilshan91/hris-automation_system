@@ -25,13 +25,24 @@ public sealed class SubmitScorecardValidator : AbstractValidator<SubmitScorecard
         RuleFor(x => x.InterviewId)
             .NotEmpty().WithMessage("Interview is required.");
 
+        // BUG-064: the recommendation is mandatory (BR-3). NotNull rejects an OMITTED field (which would
+        // otherwise bind to the enum's zero value StrongNoHire); IsInEnum rejects an out-of-range value.
         RuleFor(x => x.OverallRecommendation)
+            .NotNull().WithMessage("An overall recommendation is required.")
             .IsInEnum().WithMessage("A valid overall recommendation is required.");
 
         RuleFor(x => x.Ratings)
             .NotEmpty().WithMessage("At least one criterion rating is required.")
             .Must(r => r is null || r.Select(x => x.CriterionKey).Distinct().Count() == r.Count)
             .WithMessage("The same criterion cannot be rated more than once.");
+
+        // ISSUE-119: a scorecard must rate EVERY configured criterion (FR-1/FR-3 completeness) — a partial card
+        // (e.g. omitting cultural_fit) skews the average and is not comparable across interviewers. When the
+        // criteria become per-tenant configurable (deferred), swap ScorecardCriteria.Default for the tenant set.
+        RuleFor(x => x.Ratings)
+            .Must(r => r is not null && ScorecardCriteria.Default.All(c => r.Any(rating => rating.CriterionKey == c.Key)))
+            .When(x => x.Ratings is { Count: > 0 })
+            .WithMessage("All evaluation criteria must be rated.");
 
         RuleForEach(x => x.Ratings).ChildRules(rating =>
         {
