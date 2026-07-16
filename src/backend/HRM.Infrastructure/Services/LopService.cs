@@ -51,8 +51,8 @@ public sealed class LopService : ILopService
         _leaveTypeService = leaveTypeService;
         _attendanceProvider = attendanceProvider;
         _notificationService = notificationService;
-        // ISSUE-305: trailing-optional so existing fixtures constructing this service directly keep
-        // compiling; DI always supplies it. Absent => calendar year, the pre-ISSUE-305 behaviour.
+        // ISSUE-305: REQUIRED (no null fallback) — so a missed wiring is a compile error, not a silent
+        // re-key off the calendar year. (The ctor param above is non-nullable and non-defaulted.)
         _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }

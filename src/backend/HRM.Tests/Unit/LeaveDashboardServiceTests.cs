@@ -81,6 +81,36 @@ public sealed class LeaveDashboardServiceTests
             new TenantLeaveYearResolver(db, _tenantContext));
     }
 
+    /// <summary>ISSUE-313: same as CreateService but with an injected clock so the default-leave-year path is testable.</summary>
+    private LeaveDashboardService CreateService(TimeProvider timeProvider)
+    {
+        var db = CreateDbContext();
+        return new(db, _tenantContext, _currentUser, _entitlementService, _logger,
+            new TenantLeaveYearResolver(db, _tenantContext), timeProvider);
+    }
+
+    /// <summary>ISSUE-313: seeds the tenant ROW carrying the FiscalYearStartMonth the resolver must READ.</summary>
+    private void SeedTenantFiscalMonth(int month)
+    {
+        using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenantId, Subdomain = $"t{month}", Name = "T",
+            Status = TenantStatus.Active, FiscalYearStartMonth = month,
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>ISSUE-313: entitlement is informational (not in the balance); stub any (type, year) so the
+    /// default-year arms — which resolve years off the fixture's 2026 stub — don't NRE on an unconfigured call.</summary>
+    private void StubEntitlementAnyYear()
+        => _entitlementService
+            .ComputeEffectiveEntitlementAsync(_employeeId, Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Result<EffectiveEntitlementDto>.Success(new EffectiveEntitlementDto
+            {
+                EmployeeId = _employeeId, ProratedEntitlementDays = 0m,
+            }));
+
     private void StubEntitlement(Guid leaveTypeId, decimal days)
     {
         _entitlementService
@@ -385,5 +415,87 @@ public sealed class LeaveDashboardServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Should().OnlyContain(b => b.LeaveYear == DateTime.UtcNow.Year);
+    }
+
+    // ── ISSUE-313: fiscal read-layer guards (Pending bounds + default leave year) ──
+
+    /// <summary>
+    /// KILLER for the Pending-bounds site (`LeaveDashboardService.cs:142-154`). Month-4 tenant, a Pending
+    /// request on 2027-02-10 (calendar 2027, LEAVE year 2026). Correct code bounds Pending by the leave-year
+    /// window 2026-04-01..2027-03-31 → the request is counted. Reverting to a raw `StartDate.Year == leaveYear`
+    /// compares 2027 against the label 2026 → the request is dropped → Pending 0.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-LV-264")]
+    [Trait("Issue", "ISSUE-313")]
+    public async Task GetMyBalances_FiscalTenant_PendingBoundsUseTheLeaveYearWindow_NotTheCalendarYear()
+    {
+        SeedTenantFiscalMonth(4);
+        AddAwaitingRequest(_annualLeaveTypeId, 3m, new DateOnly(2027, 2, 10));
+
+        var result = await CreateService().GetMyBalancesAsync(Year); // Year = 2026
+
+        var annual = result.Value!.Single(b => b.LeaveTypeId == _annualLeaveTypeId);
+        annual.Pending.Should().Be(3m,
+            "leave year 2026 for an Apr-Mar tenant spans 2026-04-01..2027-03-31 and includes 2027-02-10; a raw "
+            + "StartDate.Year == 2026 drops it and shows 0 pending");
+    }
+
+    /// <summary>CONTROL: on a CALENDAR (month-1) tenant the Pending bounds are the calendar year — unchanged.</summary>
+    [Fact]
+    [Trait("TC", "TC-LV-264")]
+    [Trait("Issue", "ISSUE-313")]
+    public async Task GetMyBalances_CalendarTenant_PendingBoundsUnchanged()
+    {
+        SeedTenantFiscalMonth(1);
+        AddAwaitingRequest(_annualLeaveTypeId, 3m, new DateOnly(Year, 7, 1)); // inside calendar 2026
+
+        var result = await CreateService().GetMyBalancesAsync(Year);
+
+        result.Value!.Single(b => b.LeaveTypeId == _annualLeaveTypeId).Pending.Should().Be(3m);
+    }
+
+    /// <summary>
+    /// KILLER for the default-leave-year site (`ResolveLeaveYearAsync`, `:309-311`, year == null). A clock seam
+    /// (ISSUE-313) makes this deterministic: month-4 tenant + a fixed Feb-2028 "now" resolves the CURRENT leave
+    /// year to `LabelFor(2028-02-10, 4) = 2027`. Balance is credited under 2027, so the card reads it. Reverting
+    /// to `year ?? now.Year` reads 2028 (empty) → wrong LeaveYear + an empty balance. (The future year 2028 also
+    /// makes a revert to the raw wall-clock `DateTime.UtcNow.Year` — today 2026 — read an empty bucket.)
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-LV-264")]
+    [Trait("Issue", "ISSUE-313")]
+    public async Task GetMyBalances_FiscalTenant_DefaultLeaveYearComesFromTheClock_NotRawUtcNowYear()
+    {
+        SeedTenantFiscalMonth(4);
+        StubEntitlementAnyYear(); // the resolved year (2027) is off the fixture's 2026 stub; balance is ledger-driven.
+        var now = new DateTimeOffset(2028, 2, 10, 0, 0, 0, TimeSpan.Zero); // Feb: the month-4 tenant's Jan-Mar window.
+        AddLedger(_annualLeaveTypeId, LedgerEntryType.Accrual, 9m, 9m, year: 2027); // fiscal leave year for that clock.
+
+        var result = await CreateService(new FakeTimeProvider(now)).GetMyBalancesAsync(null);
+
+        var annual = result.Value!.Single(b => b.LeaveTypeId == _annualLeaveTypeId);
+        annual.LeaveYear.Should().Be(2027,
+            "with a month-4 tenant and a Feb clock the default leave year is 2027 (LabelFor), not the raw "
+            + "calendar 2028 — a `year ?? now.Year` mutant would read 2028 and show an empty balance");
+        annual.Balance.Should().Be(9m);
+    }
+
+    /// <summary>CONTROL: on a CALENDAR (month-1) tenant the default leave year is the clock's calendar year — unchanged.</summary>
+    [Fact]
+    [Trait("TC", "TC-LV-264")]
+    [Trait("Issue", "ISSUE-313")]
+    public async Task GetMyBalances_CalendarTenant_DefaultLeaveYearIsTheClockCalendarYear()
+    {
+        SeedTenantFiscalMonth(1);
+        StubEntitlementAnyYear();
+        var now = new DateTimeOffset(2028, 2, 10, 0, 0, 0, TimeSpan.Zero);
+        AddLedger(_annualLeaveTypeId, LedgerEntryType.Accrual, 9m, 9m, year: 2028); // calendar tenant: leave year = 2028.
+
+        var result = await CreateService(new FakeTimeProvider(now)).GetMyBalancesAsync(null);
+
+        var annual = result.Value!.Single(b => b.LeaveTypeId == _annualLeaveTypeId);
+        annual.LeaveYear.Should().Be(2028, "a January tenant's default leave year is the calendar year of 'now'");
+        annual.Balance.Should().Be(9m);
     }
 }

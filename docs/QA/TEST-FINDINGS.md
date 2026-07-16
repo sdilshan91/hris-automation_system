@@ -6712,7 +6712,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-313 — 5 fiscal-leave-year sites are correct by inspection but have NO regression guard (2 are money paths)
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED — **all 5 sites now have mutation-verified fiscal guards + calendar controls** (2026-07-16, PR #320).
+  - **2 MONEY sites** (`LeaveEncashmentService` #4, `RealPayrollFnFIntegration` #5) → `HRM.Tests/Integration/FiscalLeaveYearMoneyIntegrationTests.cs`.
+  - **3 NON-money sites** → `LopService.LeaveYearForAsync` (#1) guarded in `HRM.Tests/Unit/LopServiceTests.cs`; the two
+    `LeaveDashboardService` sites (Pending bounds #2 + `ResolveLeaveYearAsync` #3) in `HRM.Tests/Unit/LeaveDashboardServiceTests.cs`.
+  - **Mutation-verified 5/5, proven applied by hand:** each site reverted to its raw `.Year`
+    (`input.PayYear` · `lwd.Year` · `date.Year` · `StartDate.Year == leaveYear` · `year ?? now.Year`) fails
+    its fiscal arm; every calendar control survives.
+  - **One src change** (beyond guard-only): `ResolveLeaveYearAsync` (#3) reads `DateTime.UtcNow` directly and
+    can't be deterministically killed, so a **`TimeProvider` clock seam** was added to `LeaveDashboardService`
+    (trailing-optional `?? TimeProvider.System`; both `UtcNow` reads routed through it) — per [[date-dependent-jobs-need-a-clock-seam]].
 - **Layer:** BE
 - **Module / US / TC:** Leave + Payroll / US-LV-002/006/008, US-PAY-010 / TC-LV-264 (extend)
 - **Title:** CAL-8 (#318) routed 13 sites through `ITenantLeaveYearResolver`. A `@test-authenticator` mutation

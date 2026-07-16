@@ -14,6 +14,11 @@ automation:
   - HRM.Tests/Unit/ProcessLeaveYearEndJobWindowTests.cs (23 arms — the per-tenant year-end window)
   - HRM.Tests/Integration/FiscalLeaveYearIntegrationTests.cs (10 arms — the column is actually READ, and
     the ledger's credit and debit sides agree)
+  - HRM.Tests/Integration/FiscalLeaveYearMoneyIntegrationTests.cs (ISSUE-313 — 4 arms: the two MONEY debit
+    sites, LeaveEncashmentService + RealPayrollFnFIntegration, now have mutation-verified fiscal guards)
+  - HRM.Tests/Unit/LopServiceTests.cs (ISSUE-313 — 2 arms: LopService.LeaveYearForAsync fiscal guard + control)
+  - HRM.Tests/Unit/LeaveDashboardServiceTests.cs (ISSUE-313 — 4 arms: dashboard Pending-bounds + default-leave-year
+    (clock-seam) fiscal guards + controls)
   - HRM.Tests/Unit/LeaveYearEndJobRetryTests.cs (ISSUE-041 — clock pinned so the due-window job is drivable)
 defect:
   - ISSUE-305
@@ -96,10 +101,22 @@ mutated the sites I already believed were covered, so "7/7 killed" was true and 
 the suite green. The default is **removed**, so the mutant no longer compiles. (Same reasoning as removing the
 `?? .Year` fallbacks: prefer "won't build" to "won't pass".)
 
-**⚠ Still zero-resistance, correct by inspection only** (wiring-auditor swept, no site disagrees — but no
-regression guard): `LopService` debit · `LeaveDashboardService` Pending bounds + `ResolveLeaveYear` ·
-**`LeaveEncashmentService`** (money) · **`RealPayrollFnFIntegration`** (money — silent under-payment on
-termination). Tracked as follow-up.
+**All 5 previously-unguarded sites are now mutation-verified (ISSUE-313, 2026-07-16, PR #320) — RESOLVED:**
+
+| Site | Mutation | Before | Now |
+|---|---|---|---|
+| `LeaveEncashmentService` (money) | `LabelForAsync(payPeriod)` → `input.PayYear` (fiscal Jan–Mar encashment rejected 422) | SURVIVED | **KILLED** |
+| `RealPayrollFnFIntegration` (money) | `LabelForAsync(lwd)` → `lwd.Year` (F&F encashment line silently vanishes) | SURVIVED | **KILLED** |
+| `LopService.LeaveYearForAsync` | `LabelForAsync(date)` → `date.Year` (forces LOP on an employee who HAS leave) | SURVIVED | **KILLED** |
+| `LeaveDashboardService` Pending bounds | `StartDate >= start && <= end` → `StartDate.Year == leaveYear` (drops Jan–Mar pending) | SURVIVED | **KILLED** |
+| `LeaveDashboardService.ResolveLeaveYearAsync` | `LabelForAsync(now)` → `year ?? now.Year` (wrong default leave year) | SURVIVED | **KILLED** |
+
+Money sites → `FiscalLeaveYearMoneyIntegrationTests`; the 3 non-money sites → `LopServiceTests` +
+`LeaveDashboardServiceTests`. Each fiscal arm injects a REAL `TenantLeaveYearResolver`, seeds a month-4 tenant
+ROW, credits the balance under the fiscal leave-year label, and drives the REAL service in the Jan–Mar window; a
+calendar (month-1) control proves no regression. The `ResolveLeaveYearAsync` site required a **`TimeProvider`
+clock seam** on `LeaveDashboardService` (it reads `DateTime.UtcNow` directly) to be deterministically killable —
+a fixed Jan–Mar "now" via `FakeTimeProvider` then discriminates `LabelFor(now)` from a raw `now.Year`.
 
 ### Round 2 — the sites the audit proved were unprotected
 | Mutation | Round 1 | Now |

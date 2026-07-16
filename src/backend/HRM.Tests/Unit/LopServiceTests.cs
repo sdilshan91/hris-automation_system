@@ -655,6 +655,79 @@ public sealed class LopServiceTests : IDisposable
         result.StatusCode.Should().Be(400);
     }
 
+    // ── ISSUE-313: LeaveYearForAsync reads the DATE's leave year, not date.Year ──
+
+    /// <summary>Seeds the tenant ROW carrying the FiscalYearStartMonth the resolver must READ.</summary>
+    private void SeedTenantFiscalMonth(int month)
+    {
+        using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenantId, Subdomain = $"t{month}", Name = "T",
+            Status = TenantStatus.Active, FiscalYearStartMonth = month,
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// ISSUE-313 KILLER for `LopService.LeaveYearForAsync` (`:36-37`). Month-4 tenant, a Feb-2027 shutdown day
+    /// (calendar 2027, LEAVE year 2026), balance credited under 2026. Correct code reads leave year 2026, finds
+    /// the balance, and DEDUCTS. Reverting the site to `date.Year` reads 2027 (empty) → the employee who HAS 5
+    /// days is forced into LOP (`LopCount` 0 → 1). Resolver is a REQUIRED ctor param, so the real one is always
+    /// injected (no null-fallback to hide the read).
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-LV-264")]
+    [Trait("Issue", "ISSUE-313")]
+    public async Task AssignCompulsory_FiscalTenant_ReadsTheDatesLeaveYear_NotTheCalendarYear()
+    {
+        SeedTenantFiscalMonth(4);
+        var shutdownDay = new DateOnly(2027, 2, 10);
+        SeedBalance(_employeeId, _annualLeaveTypeId, 2026, 5m); // credited under the fiscal leave year.
+
+        var result = await CreateService().AssignCompulsoryLeaveAsync(new CompulsoryLeaveRequest
+        {
+            LeaveTypeId = _annualLeaveTypeId, Dates = [shutdownDay], EmployeeIds = [_employeeId],
+            Reason = "Year-end shutdown",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.AssignedCount.Should().Be(1);
+        result.Value.LopCount.Should().Be(0,
+            "the employee HAS 5 days in fiscal leave year 2026; a raw date.Year reads leave year 2027 (empty) "
+            + "and forces LOP on someone who has leave");
+
+        using var db = CreateDbContext();
+        var used = db.LeaveLedgerEntries.Single(
+            l => l.EmployeeId == _employeeId && l.EntryType == LedgerEntryType.Used);
+        used.LeaveYear.Should().Be(2026, "the deduction is written against the fiscal leave year it read");
+        used.BalanceAfter.Should().Be(4m);
+        db.LeaveRequests.Any(lr => lr.EmployeeId == _employeeId && lr.IsLop && lr.StartDate == shutdownDay)
+            .Should().BeFalse("no LOP row for an employee who had the balance");
+    }
+
+    /// <summary>CONTROL: the same flow on a CALENDAR (month-1) tenant is unchanged — leave year == calendar year.</summary>
+    [Fact]
+    [Trait("TC", "TC-LV-264")]
+    [Trait("Issue", "ISSUE-313")]
+    public async Task AssignCompulsory_CalendarTenant_IsUnchanged()
+    {
+        SeedTenantFiscalMonth(1);
+        var shutdownDay = new DateOnly(2027, 2, 10);
+        SeedBalance(_employeeId, _annualLeaveTypeId, 2027, 5m);
+
+        var result = await CreateService().AssignCompulsoryLeaveAsync(new CompulsoryLeaveRequest
+        {
+            LeaveTypeId = _annualLeaveTypeId, Dates = [shutdownDay], EmployeeIds = [_employeeId],
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.LopCount.Should().Be(0, "for a January tenant the leave year is the calendar year");
+        using var db = CreateDbContext();
+        db.LeaveLedgerEntries.Single(l => l.EmployeeId == _employeeId && l.EntryType == LedgerEntryType.Used)
+            .LeaveYear.Should().Be(2027);
+    }
+
     // ── FR-5: payroll LOP summary ──────────────────────────────────
 
     [Fact]
