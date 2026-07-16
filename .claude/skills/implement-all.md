@@ -45,7 +45,10 @@ This pacing matches the "pause for review" PR strategy: each PR can be reviewed 
     gate below IN ORDER. Do NOT abort on the first failure — collect every failure,
     then hand them to the Remediation loop (see section below):
     a. `dotnet build src/backend/HRM.sln`
-    b. `dotnet test src/backend/HRM.sln` (the HRM.Tests project)
+    b. `bash scripts/run-backend-tests.sh src/backend/HRM.sln` (wraps `dotnet test`; ISSUE-312:
+       an ABORTED run — host crash / contention — must FAIL the gate, never exit 0 with a partial
+       `Passed!`. Do NOT read a raw `dotnet test` exit 0 as a full pass; a green `Passed!` two lines
+       below `Test Run Aborted.` is a partial run.)
     c. `npm run build` (in src/frontend/)
     d. `npx ng test --watch=false --browsers=ChromeHeadless` (in src/frontend/)
     - If ALL FOUR pass → go to step 11.

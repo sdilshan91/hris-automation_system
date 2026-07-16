@@ -45,7 +45,9 @@ jobs:
         run: dotnet build src/backend/HRM.sln --no-restore -c Release
 
       - name: Test
-        run: dotnet test src/backend/HRM.sln --no-build -c Release --logger "trx;LogFileName=backend-tests.trx"
+        # ISSUE-312: wrap `dotnet test` so an ABORTED run (test-host crash) FAILS the gate
+        # instead of exiting 0 with a partial `Passed!` line that hides the tests that never ran.
+        run: bash scripts/run-backend-tests.sh src/backend/HRM.sln --no-build -c Release --logger "trx;LogFileName=backend-tests.trx"
 
       - name: Upload test results
         if: always()
