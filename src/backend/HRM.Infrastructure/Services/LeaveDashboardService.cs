@@ -42,6 +42,7 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
     private readonly ICurrentUser _currentUser;
     private readonly ILeaveEntitlementService _entitlementService;
     private readonly ITenantLeaveYearResolver _leaveYearResolver;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<LeaveDashboardService> _logger;
 
     public LeaveDashboardService(
@@ -50,13 +51,19 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
         ICurrentUser currentUser,
         ILeaveEntitlementService entitlementService,
         ILogger<LeaveDashboardService> logger,
-        ITenantLeaveYearResolver leaveYearResolver)
+        ITenantLeaveYearResolver leaveYearResolver,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _entitlementService = entitlementService;
         _leaveYearResolver = leaveYearResolver;
+        // ISSUE-313: a clock seam so the default-leave-year path (ResolveLeaveYearAsync, year == null) is
+        // deterministically testable. Without it the mutant `year ?? DateTime.UtcNow.Year` only diverges from
+        // the resolver in the tenant's Jan–Mar window, so no test off those months could kill it. Trailing-
+        // optional (?? TimeProvider.System) so existing DI + fixtures keep compiling.
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger;
     }
 
@@ -259,7 +266,7 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             return Result<IReadOnlyList<UpcomingLeaveDto>>.Failure(
                 "No employee record is linked to the current user.", 403);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
 
         var upcoming = await _dbContext.LeaveRequests
             .AsNoTracking()
@@ -308,7 +315,7 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
     /// </summary>
     private async Task<int> ResolveLeaveYearAsync(int? year, CancellationToken cancellationToken)
         => year ?? await _leaveYearResolver.LabelForAsync(
-            DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+            DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime), cancellationToken);
 
     private async Task<decimal> ResolveEntitlementAsync(
         Guid employeeId, Guid leaveTypeId, int leaveYear, CancellationToken cancellationToken)
