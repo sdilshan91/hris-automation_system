@@ -2313,7 +2313,13 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 ## US-REC-002 — Applicant Submits Application with Resume Upload (API-layer pass 2026-06-26)
 
 ### BUG-058 — Resume MIME validation trusts the client-supplied Content-Type only (no content/magic-byte sniffing); a Windows .exe renamed to .pdf is accepted and stored (AC-2/BR-4/FR-1 content-based validation unmet)
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · ✅ RESOLVED (already fixed in a prior PR; ledger was stale — verified 2026-07-16)
+- **Resolution:** `HRM.Application/Common/Security/FileSignatureValidator.cs` sniffs the real leading "magic bytes"
+  (PDF `%PDF`, DOCX/OOXML `PK\x03\x04`, DOC/OLE `D0CF11E0…`, plus image types) and is **fail-closed** (an unknown/
+  unmappable declared type is rejected). It is wired into `ApplicantService.SubmitAsync` (before the virus scan):
+  a spoofed type → **400 `invalid_file_type`**. Same seam reused by the employee-document + self-assessment upload
+  paths. Tested by `FileSignatureValidatorTests` (21 arms, incl. `FileSignature_MzExe_Rejected_BUG058` — the exact
+  renamed-`.exe` case — PNG-claimed-PDF, blank/unmapped-type, and correct-bytes-OK), all green. No further work.
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-002 · TC-REC-002-04 (S1/S5 content-based MIME validation)
 - **Title:** AC-2/BR-4/FR-1 and TC-REC-002-04 require the resume MIME type to be validated **from the actual file content (magic bytes / sniffed content type)**, not the filename extension or the client-declared `Content-Type`. The submit pipeline validates **only** the client-supplied `IFormFile.ContentType` against the allow-list (PDF/DOCX/DOC). A Windows PE executable (`MZ` magic bytes) renamed to `malware.pdf` and uploaded with a spoofed `Content-Type: application/pdf` is **accepted (HTTP 201), stored, and an applicant row is created**. There is no compensating control because the virus scanner is a no-op stub (see ISSUE-101), so an executable can be both uploaded and persisted to recruiter-downloadable storage.
