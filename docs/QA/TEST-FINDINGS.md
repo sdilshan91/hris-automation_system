@@ -4021,7 +4021,11 @@ Live matrix (acme): **tenantadmin → 200** on all four endpoints (history, audi
 - **ID:** ISSUE-185
 - **Type:** ISSUE (authz design vs spec)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending) — `PayrollAuditController.ExportAuditTrail` re-gated from
+  `Payroll.Export` → **`Payroll.View`**, matching the three audit READ endpoints (the export is just a
+  downloadable form of the trail the caller can already see). The `Auditor` role (holds `Payroll.View`, not
+  `Payroll.Export`) — the AC-4 audit consumer — can now export; no wider payroll-data export is unlocked.
+  Mutation-verified by a reflection guard (`AuditTrailExport_IsGatedOnPayrollView_NotPayrollExport`).
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-012 / TC-PAY-012-09 (step 2) + TC-PAY-012-11 (FR-5 export by auditor)
 - **Title:** The `Auditor` built-in role is granted `Payroll.View` (audit-trail read) but not `Payroll.Export`, so `GET /payroll/audit-trail/export` is unreachable for the very persona the story designates as the audit consumer
@@ -4037,7 +4041,11 @@ Export **mechanics PASS**: `GET /audit-trail/export?format=csv` → `text/csv` +
 - **ID:** ISSUE-186
 - **Type:** ISSUE (incomplete export vs FR-5)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending) — `PayrollAuditService.ExportAuditTrailAsync` now appends
+  **`Before` + `After`** columns (the jsonb fields already on the entity + in `PayrollAuditEntryDto`), so the
+  exported CSV/XLSX conveys *what* changed (FR-5/BR-4 offline reconstruction), not merely *that* it changed.
+  Mutation-verified (`ExportAuditTrail_IncludesBeforeAndAfterColumns` — header carries Before/After + the
+  after-value is present; reverting the columns fails it).
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-012 / TC-PAY-012-11 (step 1) / FR-5, BR-4
 - **Title:** Exported audit trail (CSV + XLSX) contains no `before`/`after` columns, so the exported file cannot convey what actually changed
