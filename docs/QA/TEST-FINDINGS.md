@@ -6686,7 +6686,15 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-312 — An ABORTED test run reports `Passed!` and exits 0, so a partial run is indistinguishable from a green suite
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR #320) — the durable reporting defect (action 3) is fixed by a wrapper
+  **`scripts/run-backend-tests.sh`** that runs `dotnet test`, scans the output for VSTest abort markers
+  (`Test Run Aborted` / `Test host process crashed` / `The active test run was aborted`) and **forces a
+  non-zero exit regardless of dotnet's own exit code**, so an aborted/partial run can never be read as a pass.
+  Verified by `scripts/run-backend-tests.test.sh` (4 cases via a fake `dotnet` replaying canned transcripts:
+  aborted-but-`Passed!`-exit0 → gate fails; clean pass → passes; real failures → fails; aborted+exit1 → fails).
+  Wired into **`.github/workflows/ci-gate.yml`** (the Test step) and the **`/implement-all`** verify gate.
+  Action (2) — splitting the ~74 Testcontainers classes into a serialized second pass to *reduce* aborts —
+  remains an optional reliability follow-up (not required to close the reporting hole).
 - **Layer:** BE / test infra
 - **Module / US / TC:** Cross-cutting (all) / — / —
 - **⚠⚠ THIS FINDING WAS FILED TWICE WITH A WRONG ROOT CAUSE. Read the correction before acting.**
