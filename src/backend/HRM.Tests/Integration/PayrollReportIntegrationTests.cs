@@ -851,4 +851,126 @@ public sealed class PayrollReportIntegrationTests
             empNos.Should().NotContain("NC1"); // country-less → skipped, never fabricated as a 0-row.
         }
     }
+
+    // ── ISSUE-176: the Statutory report's YTD column uses the per-country income-tax FISCAL year ──
+
+    /// <summary>Adds a finalized-run slip + one Statutory (Provident Fund) detail line for an EXISTING employee.</summary>
+    private async Task SeedStatutorySlip(Guid tenantId, Guid runId, Guid empId, int month, int year, decimal pf)
+    {
+        using var db = Db(tenantId);
+        var slipId = BaseEntity.NewUuidV7();
+        db.PayrollSlips.Add(new PayrollSlip
+        {
+            Id = slipId, TenantId = tenantId, PayrollRunId = runId, EmployeeId = empId,
+            GrossEarnings = 100_000m, TotalDeductions = pf, NetSalary = 100_000m - pf,
+            WorkingDays = 22, PaidDays = 22, LopDays = 0, PayMonth = month, PayYear = year,
+        });
+        db.PayrollSlipDetails.Add(new PayrollSlipDetail
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId, PayrollSlipId = slipId,
+            SalaryComponentId = BaseEntity.NewUuidV7(), ComponentName = "Provident Fund",
+            ComponentType = nameof(SalaryComponentType.Statutory), Amount = pf,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>One finalized run + one statutory PF slip for an employee/period (each month gets its own run).</summary>
+    private async Task SeedFinalizedStatutorySlip(Guid tenantId, Guid empId, int month, int year, decimal pf)
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(tenantId, runId, PayrollRunStatus.Finalized, month, year);
+        await SeedStatutorySlip(tenantId, runId, empId, month, year, pf);
+    }
+
+    private async Task<PayrollReportResult> StatutoryReport(Guid tenantId, int month, int year)
+    {
+        var (db, _, svc) = Scope(tenantId);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(
+                PayrollReportType.StatutoryDeduction,
+                new PayrollReportQueryParams { PayMonth = month, PayYear = year });
+            result.IsSuccess.Should().BeTrue(result.Error);
+            return result.Value!;
+        }
+    }
+
+    // Columns: Statutory Component, Employee Count, Monthly Total, Year-to-Date Total. Cells[2]=Monthly, Cells[3]=YTD.
+    private static string Ytd(PayrollReportResult r) => r.Rows.Single(x => x.Cells[0] == "Provident Fund").Cells[3];
+    private static string Monthly(PayrollReportResult r) => r.Rows.Single(x => x.Cells[0] == "Provident Fund").Cells[2];
+
+    /// <summary>THE core ISSUE-176 arm: YTD spans the income-tax fiscal year [Apr..selected], excluding both the
+    /// PRIOR fiscal year AND in-FY months AFTER the selected one. Kills the calendar mutant, the
+    /// collapse-to-selected-month mutant (lower bound), and the no-upper-cap mutant simultaneously.</summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-176")]
+    public async Task StatutoryReport_Ytd_SpansFiscalYear_ExcludesPriorFyAndFutureMonths()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027", new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var emp = await SeedTaxEmployee(_tenantA, "LK1", await SeedLocationWithCountry(_tenantA, "LK"));
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 2, year: 2026, pf: 500m);   // prior FY → OUT
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 4, year: 2026, pf: 1_000m); // in-FY, before selected → IN
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 5, year: 2026, pf: 2_000m); // selected month → IN
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 6, year: 2026, pf: 4_000m); // in-FY, AFTER selected → OUT
+
+        var report = await StatutoryReport(_tenantA, month: 5, year: 2026);
+
+        Monthly(report).Should().Be("2000.00", "the selected month (May) alone");
+        Ytd(report).Should().Be(
+            "3000.00",
+            "fiscal YTD = Apr(1000)+May(2000). Excludes Feb (prior FY) and June (in-FY but after May). Calendar "
+            + "would give 3500 (Feb+Apr+May); collapse-to-selected would give 2000 (May only); no-cap gives 7000");
+    }
+
+    /// <summary>Guards the year-1 candidate load: an in-FY slip in the PRIOR calendar year (Apr 2026 for a
+    /// Feb-2027 selection, FY 2026-2027) must be included. Deleting `|| PayYear == year - 1` fails this.</summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-176")]
+    public async Task StatutoryReport_Ytd_IncludesPriorCalendarYearSlipsInTheSameFiscalYear()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027", new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var emp = await SeedTaxEmployee(_tenantA, "LK1", await SeedLocationWithCountry(_tenantA, "LK"));
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 4, year: 2026, pf: 1_000m); // PayYear 2026 = year-1
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 2, year: 2027, pf: 2_000m); // selected month
+
+        var report = await StatutoryReport(_tenantA, month: 2, year: 2027);
+
+        Monthly(report).Should().Be("2000.00", "Feb 2027 alone");
+        Ytd(report).Should().Be("3000.00", "FY 2026-2027 YTD includes the Apr-2026 (prior calendar year) slip");
+    }
+
+    /// <summary>The money-silent-drop guard: an employee with NO resolvable tax country (no location, no tenant
+    /// default, multi-country rules → no sole fallback) keeps the CALENDAR-year YTD — their EPF/ETF is never
+    /// dropped. Changing the fallback to "exclude" removes the PF row entirely and fails.</summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-176")]
+    public async Task StatutoryReport_Ytd_CountryLessEmployee_KeepsCalendarWindow_NotDropped()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027", new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        await SeedIncomeTaxRule(_tenantA, "IN", "FY26-27", new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var emp = await SeedTaxEmployee(_tenantA, "NC1", locationId: null); // no country resolves (multi-country, no default).
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 3, year: 2026, pf: 1_000m);
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 5, year: 2026, pf: 2_000m);
+
+        var report = await StatutoryReport(_tenantA, month: 5, year: 2026);
+
+        Ytd(report).Should().Be(
+            "3000.00", "no tax country → calendar YTD (Jan..May) = 1000+2000; the country-less EPF must NOT be dropped");
+    }
+
+    /// <summary>Regression: a single-country tenant whose income-tax rule is calendar-aligned (Jan–Dec) gets a
+    /// YTD identical to the old flat calendar behaviour — the fiscal window collapses correctly.</summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-176")]
+    public async Task StatutoryReport_Ytd_CalendarAlignedTenant_IsUnchanged()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+        var emp = await SeedTaxEmployee(_tenantA, "LK1", await SeedLocationWithCountry(_tenantA, "LK"));
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 3, year: 2026, pf: 1_000m);
+        await SeedFinalizedStatutorySlip(_tenantA, emp, month: 5, year: 2026, pf: 2_000m);
+
+        var report = await StatutoryReport(_tenantA, month: 5, year: 2026);
+
+        Ytd(report).Should().Be("3000.00", "a Jan–Dec fiscal year == the calendar year → YTD unchanged (Mar+May)");
+    }
 }

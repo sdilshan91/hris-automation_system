@@ -3778,19 +3778,19 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 - **Severity rationale:** LOW — cosmetic/contract drift between the note and the numbers; no incorrect disbursement, but misleading for CTC consumers.
 
 ### ISSUE-176 — StatutoryDeduction YTD uses calendar-year (Jan→month), ignoring the tenant fiscal-year start (BR-5)
-- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN — **confirmed + scoped (2026-07-16), deferred to its own PR** · **Layer:** BE
-- **⚠⚠ NEEDS A DESIGN DECISION (2026-07-16, on deeper inspection — NOT a mechanical swap):** the YTD column
-  aggregates **all** statutory components (income tax, EPF, ETF…), but a "fiscal year" is only well-defined for
-  **income tax** (per-country `StatutoryRule.EffectiveFrom`/`FiscalYear`). Three unresolved cases:
-  1. **Fiscal source:** BR-5's text says "the tenant's configured fiscal-year start month" (= `Tenant.FiscalYearStartMonth`,
-     flat) — but the payroll RUN's cumulative PAYE (`PayrollRunProcessor:434`) anchors YTD on the income-tax rule's
-     `EffectiveFrom` **per country**. Using `FiscalYearStartMonth` for the report would DIVERGE from the run;
-     using the per-country rule window matches the run but is ~100 lines (reuse `BuildPerEmployeeFiscalYearReport`
-     `:855-964` `fyByCountry`).
-  2. **Non-income-tax components** (EPF/ETF) have no income-tax rule to define their year — calendar? same tax FY?
-  3. **Employees with no resolvable tax country** are in YTD today (calendar); a per-country window would silently
-     drop their statutory. Awaiting a decision before coding — the current calendar behavior is only wrong for a
-     genuinely-fiscal tenant, and the run path is already correct, so the report column is the only divergence.
+- **Type:** ISSUE · **Severity:** LOW · **Status:** ✅ RESOLVED (2026-07-16, PR #324 — user decision: match the run, per-country) · **Layer:** BE
+- **Fix:** `PayrollReportService.ScopedSlipsForFiscalYtdAsync` (the statutory report's YTD column) now uses each
+  employee's **income-tax FISCAL-YEAR-to-date** window — the same per-country `StatutoryRule` (`EffectiveFrom`→
+  selected month) window the payroll RUN anchors cumulative PAYE on — via a new `ResolveEmployeeIncomeTaxWindowsAsync`
+  helper, loading candidate years {year-1, year} so an Apr–Mar FY that opens in the prior calendar year is covered.
+  Sub-decisions (per the user's "match the run" call): **non-income-tax components (EPF/ETF) follow the same
+  per-employee tax window**; **employees with no resolvable tax country keep the calendar-year window** (so their
+  statutory is never silently dropped). **Mutation-verified** (revert→calendar makes the fiscal YTD wrong: 3000 vs
+  2000) by 4 arms in `PayrollReportIntegrationTests` (spans-FY excluding prior-FY + future months · prior-calendar-year
+  slip in same FY · country-less keeps calendar · calendar-aligned unchanged); 22/22 green. **⚠ Follow-up (tidy):**
+  `ResolveEmployeeIncomeTaxWindowsAsync` deliberately DUPLICATES the `fyByCountry` resolution in
+  `BuildYearEndTaxStatementAsync` (to avoid touching that working money method) — extract to one shared reader when
+  convenient; keep them in lock-step until then.
 - **Module / US / TC:** Payroll / US-PAY-009 / TC-PAY-009-06 (BR-5)
 - **Title:** Statutory Deduction report's "Year-to-Date Total" is documented as "cumulative from January to the selected month of the same calendar year", but BR-5 requires reports to respect the tenant's configured fiscal-year start month (acme = April). YTD should run Apr→month, not Jan→month.
 - **Root cause:** Self-disclosed deferral — report note: "fiscal-year-start config is a documented follow-up, BR-3/BR-5." Same fiscal-year-start gap surfaces in YearEndTaxStatement (deferred) and Variance. Not empirically distinguishable in current data (only June run exists, so YTD=1800 either way). Confidence: 80% (note text + spec).
