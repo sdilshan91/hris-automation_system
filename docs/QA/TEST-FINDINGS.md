@@ -6745,7 +6745,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-288 — Changing `Tenant.FiscalYearStartMonth` silently orphans existing leave-ledger rows (no migration, no guard) — CAL-8 turned a dead setting into a live one
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** ✅ RESOLVED (2026-07-16, PR #319)
+- **Status:** 🟡 FIX READY — PR #319 **OPEN** (awaiting merge; flip to ✅ RESOLVED after merge)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console + Leave / US-ADM-006 (org profile), US-LV-006/008 / (new TC needed)
 - **Title:** A Tenant Admin can change `FiscalYearStartMonth` (1 → 4) at any time via the org-profile UI.
@@ -6782,7 +6782,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   (3) **migrate on change** (relabel affected rows in a transaction) — highest risk, touches the ledger.
   **Recommendation: (1) now** (it unblocks onboarding the first fiscal tenant safely), **(2) if a tenant ever
   needs to actually switch**. Do NOT ship the ability to flip it freely.
-- **Resolution (2026-07-16, PR #319 — option (1), the recommended one):** the basis is **FROZEN once the tenant
+- **Fix (2026-07-16, PR #319 — OPEN, option (1) the recommended one):** the basis is **FROZEN once the tenant
   has leave history**. `TenantSettingsService.UpdateOrgProfileAsync` now rejects a **change** with **422
   `fiscal_year_locked_by_leave_history`** when `LeaveLedgerEntries.AnyAsync()` is true, and the message tells
   the admin why (it would re-date existing entries and alter balances) rather than just refusing.
