@@ -207,6 +207,31 @@ public sealed class EmployeeServiceTests : IDisposable
         result.Value.EmploymentType.Should().Be("FullTime");
     }
 
+    // ── ISSUE-242: required custom fields must be enforced even when `customFields` is omitted ──
+    [Fact]
+    [Trait("Issue", "ISSUE-242")]
+    public async Task Create_EnforcesRequiredCustomFields_EvenWhenCustomFieldsOmitted()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+
+        // Stand in for a tenant with a required custom field: the validator rejects an omitted payload. ISSUE-242
+        // — the create must CALL the validator even when CustomFields is null; previously it skipped the call
+        // entirely for a null/empty payload, letting a caller bypass ALL required custom fields (201 instead of 400).
+        _customFieldService
+            .ValidateCustomFieldValuesAsync("employee", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Application.Common.Models.Result.Failure("Custom field 'Shirt Size' is required.", 400));
+
+        var result = await CreateService().CreateAsync(MakeRequest(deptId, jtId)); // MakeRequest leaves CustomFields null.
+
+        result.IsFailure.Should().BeTrue("a required custom field must be enforced even when the payload omits customFields");
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("Shirt Size");
+        await _customFieldService.Received(1)
+            .ValidateCustomFieldValuesAsync("employee", Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task Create_ShouldSetTenantIdFromContext()
     {
