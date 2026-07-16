@@ -58,7 +58,11 @@ public sealed class LeaveCarryForwardServiceTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private LeaveCarryForwardService CreateService()
-        => new(CreateDbContext(), _tenantContext, _entitlementService, _logger);
+    {
+        var db = CreateDbContext();
+        return new(db, _tenantContext, _entitlementService, _logger,
+            new TenantLeaveYearResolver(db, _tenantContext));
+    }
 
     private void SeedEmployee()
     {

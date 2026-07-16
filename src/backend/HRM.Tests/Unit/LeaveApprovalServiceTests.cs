@@ -60,7 +60,8 @@ public sealed class LeaveApprovalServiceTests
 
     private LeaveRequestService CreateService(ICurrentUser? user = null)
         => new(CreateDbContext(), _tenantContext, user ?? _managerUser,
-            _holidayProvider, _notificationService, _logger);
+            _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
 
     private static readonly DateOnly Base = new(2026, 6, 1);
 

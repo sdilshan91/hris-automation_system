@@ -75,7 +75,8 @@ public sealed class LeavePayrollLockServiceTests
 
     private LeaveRequestService CreateService(ICurrentUser user)
         => new(CreateDbContext(), _tenantContext, user,
-            _holidayProvider, _notificationService, _logger);
+            _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
 
     // A future Monday-ish start well inside the cancellation window so an approved leave is still
     // cancellable (the "already started" guard sits BEFORE the payroll-lock guard in CancelAsync).

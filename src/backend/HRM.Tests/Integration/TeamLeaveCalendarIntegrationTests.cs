@@ -97,6 +97,9 @@ public sealed class TeamLeaveCalendarIntegrationTests
         services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
         services.AddScoped<IHolidayService, HolidayService>();
         services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();
+        // ISSUE-305: required by the leave services — a missing registration now THROWS rather than
+        // silently falling back to the calendar year (which is how the credit/debit ledger split hid).
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>();
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(CreateLeaveRequestCommand).Assembly));

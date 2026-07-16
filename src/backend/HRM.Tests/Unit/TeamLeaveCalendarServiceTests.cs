@@ -88,7 +88,9 @@ public sealed class TeamLeaveCalendarServiceTests
         var db = CreateDbContext();
         var holidayService = new HolidayService(db, _tenantContext, user, _holidayLogger);
         return new LeaveRequestService(
-            db, _tenantContext, user, _holidayProvider, _notificationService, _logger, holidayService);
+            db, _tenantContext, user, _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(db, _tenantContext),
+            holidayService);
     }
 
     private void SeedReferenceData()

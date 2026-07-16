@@ -1,4 +1,5 @@
 using HRM.Domain.Entities;
+using HRM.Domain.Leave;
 
 namespace HRM.Infrastructure.Services;
 
@@ -62,11 +63,17 @@ internal static class LeaveCarryForwardCalculator
     /// BR-3: the date carried days expire = first day of the new leave year + expiry months.
     /// Null when the leave type configures no expiry (carried days never expire).
     /// </summary>
-    internal static DateOnly? ComputeExpiryDate(int toYear, int? carryForwardExpiryMonths)
+    internal static DateOnly? ComputeExpiryDate(
+        int toYear, int? carryForwardExpiryMonths,
+        int fiscalYearStartMonth = LeaveYear.CalendarStartMonth)
     {
         if (carryForwardExpiryMonths is null)
             return null;
-        var newYearStart = new DateOnly(toYear, 1, 1);
+
+        // ISSUE-305: expiry counts from the first day of the NEW LEAVE year, which is not 1 January for a
+        // fiscal tenant — an Apr–Mar tenant's carried days must expire from 1 April. fiscalYearStartMonth
+        // defaults to 1 (calendar), so an unconfigured tenant is byte-identical to the previous behaviour.
+        var newYearStart = LeaveYear.StartOf(toYear, fiscalYearStartMonth);
         return newYearStart.AddMonths(carryForwardExpiryMonths.Value);
     }
 

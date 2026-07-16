@@ -81,6 +81,9 @@ public sealed class LeaveCarryForwardIntegrationTests
 
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
 
+        // ISSUE-305: the real resolver, mirroring DependencyInjection.AddInfrastructure. These fixtures
+        // seed no tenant row (or a calendar one), so it resolves to calendar as these arms assume.
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>();
         services.AddScoped<ILeaveEntitlementService, LeaveEntitlementService>();
         services.AddScoped<ILeaveCarryForwardService, LeaveCarryForwardService>();
 

@@ -1,4 +1,5 @@
 using HRM.Domain.Entities;
+using HRM.Domain.Leave;
 using HRM.Domain.Enums;
 
 namespace HRM.Infrastructure.Services;
@@ -100,10 +101,21 @@ internal static class LeaveEntitlementEngine
         decimal fullYearEntitlement,
         DateTime dateOfJoining,
         int leaveYear,
+        // ISSUE-305: REQUIRED, deliberately NOT defaulted, and placed before the optional `fte`. A
+        // `= CalendarStartMonth` default was here and it made a missing argument INVISIBLE: drop
+        // `fiscalYearStartMonth:` at a call site and a fiscal tenant silently pro-rates over Jan-Dec — a wrong
+        // MONEY number credited to the ledger, with the suite green (the @test-authenticator proved exactly
+        // that mutant survived). Callers must now state the basis, so the same mistake is a compile error.
+        int fiscalYearStartMonth,
         decimal fte = 1.0m)
     {
-        var yearStart = new DateTime(leaveYear, 1, 1);
-        var yearEnd = new DateTime(leaveYear, 12, 31);
+        // ISSUE-305: the leave year is calendar-OR-fiscal per tenant (US-LV-002/006/008). This hardcoded
+        // 1 Jan – 31 Dec, so an Apr–Mar tenant pro-rated over the wrong window. fiscalYearStartMonth defaults
+        // to 1 (calendar) — the caller passes tenant.FiscalYearStartMonth — so an unconfigured tenant is
+        // byte-identical to the previous behaviour.
+        var (start, end) = LeaveYear.BoundsFor(leaveYear, fiscalYearStartMonth);
+        var yearStart = start.ToDateTime(TimeOnly.MinValue);
+        var yearEnd = end.ToDateTime(TimeOnly.MinValue);
 
         // If joined before this year, full entitlement for the year.
         DateTime effectiveStart = dateOfJoining <= yearStart ? yearStart : dateOfJoining;

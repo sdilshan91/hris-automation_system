@@ -3,6 +3,7 @@ using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveRequests.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Leave;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -40,6 +41,7 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly ILeaveEntitlementService _entitlementService;
+    private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly ILogger<LeaveDashboardService> _logger;
 
     public LeaveDashboardService(
@@ -47,12 +49,14 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         ILeaveEntitlementService entitlementService,
-        ILogger<LeaveDashboardService> logger)
+        ILogger<LeaveDashboardService> logger,
+        ITenantLeaveYearResolver leaveYearResolver)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _entitlementService = entitlementService;
+        _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }
 
@@ -72,7 +76,7 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             return Result<IReadOnlyList<LeaveBalanceDto>>.Failure(
                 "No employee record is linked to the current user.", 403);
 
-        int leaveYear = ResolveLeaveYear(year);
+        int leaveYear = await ResolveLeaveYearAsync(year, cancellationToken);
 
         // The leave types the employee has ANY ledger activity for in this year (drives archived
         // detection for deactivated types, BR-3). Tenant-scoped by the global query filter.
@@ -130,11 +134,19 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
 
         // BR-2: pending days per leave type from the employee's currently Pending requests.
         // Pending is shown separately and NOT subtracted from balance.
+        // ISSUE-305: bound Pending by the tenant's LEAVE year, not the calendar year. `StartDate.Year ==
+        // leaveYear` compares a raw calendar year against a leave-year LABEL — identical for a January
+        // tenant, but for an Apr-Mar tenant it both drops the Jan-Mar requests that DO belong to this leave
+        // year and admits last year's. The ledger queries above are keyed by the stored LeaveYear label and
+        // need no such translation; only this one filters on a raw date.
+        var (leaveYearStart, leaveYearEnd) = LeaveYear.BoundsFor(
+            leaveYear, await _leaveYearResolver.GetStartMonthAsync(cancellationToken));
+
         var pendingByType = (await _dbContext.LeaveRequests
                 .AsNoTracking()
                 .Where(lr => lr.EmployeeId == employee.Id
                              && lr.Status == LeaveRequestStatus.Pending
-                             && lr.StartDate.Year == leaveYear
+                             && lr.StartDate >= leaveYearStart && lr.StartDate <= leaveYearEnd
                              && leaveTypeIds.Contains(lr.LeaveTypeId))
                 .Select(lr => new { lr.LeaveTypeId, lr.TotalDays })
                 .ToListAsync(cancellationToken))
@@ -206,7 +218,7 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             return Result<IReadOnlyList<LeaveLedgerEntryDto>>.Failure(
                 "No employee record is linked to the current user.", 403);
 
-        int leaveYear = ResolveLeaveYear(year);
+        int leaveYear = await ResolveLeaveYearAsync(year, cancellationToken);
 
         var entries = await _dbContext.LeaveLedgerEntries
             .AsNoTracking()
@@ -282,14 +294,21 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
     // ══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// BR-4: resolve the leave year. No tenant fiscal-year config entity exists in the codebase,
-    /// so the established calendar-year convention (US-LV-002..005) is reused. The supplied year
-    /// (BR-5 previous-year selector) is used verbatim when provided.
-    /// TODO(tenant-settings): when a tenant leave-year config exists, derive the year boundary from
-    ///   it instead of the calendar year.
+    /// US-LV-006 AC-6/BR-4 (ISSUE-305): resolve the CURRENT leave year for this tenant. The supplied year
+    /// (BR-5 previous-year selector) is used verbatim when provided; only the default is derived.
+    ///
+    /// <para>This used to be <c>year ?? DateTime.UtcNow.Year</c>, on the since-falsified premise that "no
+    /// tenant fiscal-year config entity exists in the codebase". <c>Tenant.FiscalYearStartMonth</c> did
+    /// exist — it was simply read by nothing. The calendar default is only correct for a January tenant: for
+    /// an Apr-Mar tenant every January-March, <c>UtcNow.Year</c> names a leave year that has not STARTED
+    /// yet, so the employee's dashboard showed the wrong (empty) balance for a quarter of every year.</para>
+    ///
+    /// <para>A January tenant — and any tenant with no row / an unconfigured column — resolves to
+    /// <c>UtcNow.Year</c> exactly as before.</para>
     /// </summary>
-    private static int ResolveLeaveYear(int? year)
-        => year ?? DateTime.UtcNow.Year;
+    private async Task<int> ResolveLeaveYearAsync(int? year, CancellationToken cancellationToken)
+        => year ?? await _leaveYearResolver.LabelForAsync(
+            DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
 
     private async Task<decimal> ResolveEntitlementAsync(
         Guid employeeId, Guid leaveTypeId, int leaveYear, CancellationToken cancellationToken)

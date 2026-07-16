@@ -58,7 +58,8 @@ public sealed class CancelLeaveRequestServiceTests
 
     private LeaveRequestService CreateService(ICurrentUser? user = null)
         => new(CreateDbContext(), _tenantContext, user ?? _ownerUser,
-            _holidayProvider, _notificationService, _logger);
+            _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
 
     // A future Monday well inside the cancellation window so an approved leave is still cancellable.
     private static DateOnly FutureStart => DateOnly.FromDateTime(DateTime.UtcNow).AddDays(20);

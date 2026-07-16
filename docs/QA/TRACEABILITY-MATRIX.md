@@ -5327,5 +5327,5 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 | TC-CHR-330 | Probation period tenant-configurable + Dubai location override wins | Integration | Medium | US-CHR-009 | BR-6 | ISSUE-304 |
 | TC-LV-262 | Gulf Sun-Thu leave deducts 5 workdays; half-day Sun accepted / Fri rejected | Integration | High | US-LV-003 | day-count / half-day gate | BUG-284 |
 | TC-LV-263 | Single-branch Mon-Fri leave day-count unchanged (control) | Integration | High | US-LV-003 | day-count | BUG-284 |
-| TC-LV-264 | Apr-Mar fiscal leave-year boundary / accrual / carry-forward expiry anchor to April | Integration | High | US-LV-006 | leave-year (US-LV-002/008) | ISSUE-305 |
+| TC-LV-264 | Apr-Mar fiscal leave-year boundary / accrual / carry-forward expiry anchor to April | Integration | High | US-LV-006 | leave-year (US-LV-002/008) | ISSUE-305 ✅ #318 (automated: LeaveYearTests + ProcessLeaveYearEndJobWindowTests + FiscalLeaveYearIntegrationTests) |
 | TC-LV-ISO-049 | Cross-tenant LeaveEntitlementRule.LocationId never resolves (Postgres) | Security | Critical | US-LV-002 | entitlement location tier (US-ATT-011 AC-3, §7.1) | -- |

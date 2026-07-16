@@ -106,7 +106,10 @@ public sealed class OffboardingIntegrationTests
             // ISSUE-294 DI-swap seam: register the REAL F&F integration so the CompleteAsync → RealPayrollFnFIntegration
             // → persisted FinalSettlement chain is exercised end-to-end (a revert to LogOnly or a dropped call is caught).
             services.AddScoped<IStatutoryDeductionResolver, StatutoryDeductionResolver>();
-            services.AddScoped<IPayrollFnFIntegration, RealPayrollFnFIntegration>();
+            // ISSUE-305: required by the leave services — a missing registration now THROWS rather than
+        // silently falling back to the calendar year (which is how the credit/debit ledger split hid).
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>();
+        services.AddScoped<IPayrollFnFIntegration, RealPayrollFnFIntegration>();
         }
         else
         {

@@ -183,6 +183,9 @@ public static class DependencyInjection
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
         // Leave balance dashboard read/aggregation service (US-LV-006)
+        // ISSUE-305: the single reader of Tenant.FiscalYearStartMonth — injected by every service that
+        // touches a LeaveLedger.LeaveYear label, so reads and writes cannot drift onto different bases.
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>();
         services.AddScoped<ILeaveDashboardService, LeaveDashboardService>();
 
         // Holiday calendar service (US-LV-007)

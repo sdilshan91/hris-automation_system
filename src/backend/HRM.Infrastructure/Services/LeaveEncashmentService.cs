@@ -39,17 +39,22 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly IPayrollAdjustmentService _adjustmentService;
+    private readonly ITenantLeaveYearResolver? _leaveYearResolver;
     private readonly ILogger<LeaveEncashmentService> _logger;
 
     public LeaveEncashmentService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IPayrollAdjustmentService adjustmentService,
-        ILogger<LeaveEncashmentService> logger)
+        ILogger<LeaveEncashmentService> logger,
+        ITenantLeaveYearResolver? leaveYearResolver = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _adjustmentService = adjustmentService;
+        // ISSUE-305: trailing-optional so existing payroll fixtures keep compiling; DI always supplies it.
+        // Absent => the pay year, i.e. the pre-ISSUE-305 behaviour (correct for a calendar tenant).
+        _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }
 
@@ -70,7 +75,16 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
 
         // BR-6 (BUG-079): validate encashment eligibility + cap when a leave type is supplied.
         var eligibleDays = input.EligibleDays;
-        var leaveYear = input.PayYear;              // the leave year the balance/draw-down apply to.
+        // ISSUE-305: the leave year the balance/draw-down apply to. This was `input.PayYear` — the PAYROLL
+        // year, which is only the leave year for a calendar tenant. The ledger is keyed by the tenant's own
+        // leave year, so for an Apr-Mar tenant a Jan-Mar pay period read a leave year that had not started:
+        // availableBalance 0 => forfeitableCeiling 0 => encashment rejected outright, or (via F&F) a silent
+        // under-payment on termination. Resolved from the pay PERIOD, not the pay year, so the draw-down hits
+        // the same bucket the accrual credited.
+        var leaveYear = _leaveYearResolver is null
+            ? input.PayYear
+            : await _leaveYearResolver.LabelForAsync(
+                new DateOnly(input.PayYear, input.PayMonth, 1), cancellationToken);
         LeaveType? encashLeaveType = null;          // non-null => write a ledger draw-down (Part 2).
         decimal availableBalance = 0m;              // the ledger balance the draw-down chains from.
         if (input.LeaveTypeId is { } leaveTypeId)

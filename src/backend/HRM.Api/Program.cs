@@ -672,12 +672,17 @@ try
             job => job.RunAsync(),
             "0 1 1 12 *"); // 01:00 UTC on 1 December
 
-        // US-LV-008 FR-2 / AC-1: Year-end leave carry-forward + forfeiture (1 January, processes
-        // the just-closed year). Idempotent, so a daily-or-later cadence in early January is safe.
+        // US-LV-008 FR-2 / AC-1: Year-end leave carry-forward + forfeiture.
+        //
+        // ISSUE-305: was "0 2 1 1 *" (1 January only). A tenant's leave year need not start in January — an
+        // Apr-Mar tenant closes on 31 March — so a fixed 1-Jan cron could NEVER run their year-end, whatever
+        // the job computed internally. It now runs DAILY and the job itself decides which tenants are in their
+        // own year-end window (ProcessLeaveYearEndJob.ClosingLeaveYearIfDue). Safe because the per-pair work is
+        // idempotent: on the ~358 days no tenant is due, the job selects nothing and exits.
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.ProcessLeaveYearEndJob>(
             "leave-year-end-carry-forward",
             job => job.RunAsync(),
-            "0 2 1 1 *"); // 02:00 UTC on 1 January
+            "0 2 * * *"); // 02:00 UTC daily — the job filters to each tenant's own leave-year boundary
 
         // US-LV-008 FR-3 / AC-3: Monthly carry-forward expiry sweep (1st of each month).
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.ProcessCarryForwardExpiryJob>(
