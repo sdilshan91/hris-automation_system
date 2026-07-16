@@ -72,7 +72,14 @@ public sealed class LeaveDashboardServiceTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private LeaveDashboardService CreateService()
-        => new(CreateDbContext(), _tenantContext, _currentUser, _entitlementService, _logger);
+    {
+        // ISSUE-305: the REAL resolver over the same context (not a stub) — a stubbed month would let this
+        // fixture assert a leave year production never resolves. No tenant row is seeded here, so it falls
+        // back to calendar, which is what these US-LV-006 arms have always assumed.
+        var db = CreateDbContext();
+        return new(db, _tenantContext, _currentUser, _entitlementService, _logger,
+            new TenantLeaveYearResolver(db, _tenantContext));
+    }
 
     private void StubEntitlement(Guid leaveTypeId, decimal days)
     {
@@ -343,8 +350,10 @@ public sealed class LeaveDashboardServiceTests
         var otherUser = Substitute.For<ICurrentUser>();
         otherUser.UserId.Returns(Guid.NewGuid());
 
+        var db = CreateDbContext();
         var svc = new LeaveDashboardService(
-            CreateDbContext(), _tenantContext, otherUser, _entitlementService, _logger);
+            db, _tenantContext, otherUser, _entitlementService, _logger,
+            new TenantLeaveYearResolver(db, _tenantContext));
 
         var result = await svc.GetMyBalancesAsync(Year);
 

@@ -26,6 +26,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
     private readonly IHolidayService _holidayService;
     private readonly ILeaveNotificationService _notificationService;
     private readonly ILeaveTypeService? _leaveTypeService;
+    private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly ILogger<LeaveRequestService> _logger;
 
@@ -47,6 +48,11 @@ public sealed class LeaveRequestService : ILeaveRequestService
         IHolidayProvider holidayProvider,
         ILeaveNotificationService notificationService,
         ILogger<LeaveRequestService> logger,
+        // ISSUE-305: REQUIRED, and deliberately placed before the trailing optionals. The optional pattern
+        // used by its neighbours would mean a `?? date.Year` fallback — and that fallback is exactly how the
+        // credit/debit ledger split hid: delete the DI registration and the build, the suite and production
+        // all stay quiet while fiscal tenants silently read the wrong leave year. Better to not compile.
+        ITenantLeaveYearResolver leaveYearResolver,
         IHolidayService? holidayService = null,
         ILeaveTypeService? leaveTypeService = null,
         IWorkflowRuntime? workflowRuntime = null)
@@ -66,9 +72,28 @@ public sealed class LeaveRequestService : ILeaveRequestService
         // supplies it. When present AND the tenant has an Active Leave workflow definition, submission and
         // approval route through the generic workflow runtime; otherwise the legacy single-level path runs (AC-11).
         _workflowRuntime = workflowRuntime;
+        // ISSUE-305: trailing-optional for the same back-compat reason as the three above (a required
+        // param reds ~72 existing fixtures). DI always supplies it; when absent LeaveYearForAsync
+        // falls back to the calendar year, i.e. the exact pre-ISSUE-305 behaviour.
+        _leaveYearResolver = leaveYearResolver;
         _notificationService = notificationService;
         _logger = logger;
     }
+
+    /// <summary>
+    /// ISSUE-305: the LeaveLedger.LeaveYear label <paramref name="date"/> falls in for this tenant.
+    ///
+    /// <para>This used to be a raw <c>date.Year</c> at every ledger site. That is only correct for a calendar
+    /// tenant: for an Apr-Mar tenant, 2027-02-10 belongs to leave year <b>2026</b>. Because the accrual job
+    /// CREDITS the ledger under the tenant's own leave year, a debit site using <c>.Year</c> would read a
+    /// different bucket than the credit wrote — balance 0 → every request blocked as "insufficient balance"
+    /// for the whole Jan-Mar stretch. Reads and writes must share one basis.</para>
+    ///
+    /// <para>Falls back to the calendar year when the resolver is absent (unit fixtures that construct this
+    /// service directly); <c>LabelFor(d, 1) == d.Year</c>, so a calendar tenant is unchanged either way.</para>
+    /// </summary>
+    private Task<int> LeaveYearForAsync(DateOnly date, CancellationToken cancellationToken)
+        => _leaveYearResolver.LabelForAsync(date, cancellationToken);
 
     // ══════════════════════════════════════════════════════════════
     //  Create (FR-5/FR-6, AC-1..AC-6, BR-1..BR-6)
@@ -178,7 +203,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 "You already have a leave request for the selected dates.", 409);
 
         // AC-2: Balance check from the ledger running total.
-        int leaveYear = request.StartDate.Year;
+        int leaveYear = await LeaveYearForAsync(request.StartDate, cancellationToken);
         decimal currentBalance = await GetLedgerBalanceAsync(
             employee.Id, leaveType.Id, leaveYear, cancellationToken);
 
@@ -338,7 +363,8 @@ public sealed class LeaveRequestService : ILeaveRequestService
         if (leaveType is null)
             return Result<LeaveBalancePreviewDto>.Failure("Leave type not found.", 404);
 
-        int leaveYear = (startDate ?? DateOnly.FromDateTime(DateTime.UtcNow)).Year;
+        int leaveYear = await LeaveYearForAsync(
+            startDate ?? DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
         decimal currentBalance = await GetLedgerBalanceAsync(
             employee.Id, leaveTypeId, leaveYear, cancellationToken);
 
@@ -489,7 +515,8 @@ public sealed class LeaveRequestService : ILeaveRequestService
             //   source of truth. TODO(redis-balance-cache): wrap GetLedgerBalanceAsync in an
             //   IDistributedCache layer keyed tenant:{tenantId}:leave_balance:{empId}:{leaveTypeId}.
             decimal balance = await GetLedgerBalanceAsync(
-                lr.EmployeeId, lr.LeaveTypeId, lr.StartDate.Year, cancellationToken);
+                lr.EmployeeId, lr.LeaveTypeId, await LeaveYearForAsync(lr.StartDate, cancellationToken),
+                cancellationToken);
 
             // FR-5: count team-mates (excluding the requester) with an Approved leave overlapping
             //   this request's [StartDate, EndDate].
@@ -760,7 +787,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
         // BR-5 / AC-3: recompute balance at approval time (not at request time). If insufficient
         // and the leave type does NOT allow a negative balance -> block (400). If negative is
         // allowed, the API approves (the manager "confirmation" modal is a UI concern, AC-3).
-        int leaveYear = request.StartDate.Year;
+        int leaveYear = await LeaveYearForAsync(request.StartDate, cancellationToken);
         decimal currentBalance = await GetLedgerBalanceAsync(
             request.EmployeeId, leaveType.Id, leaveYear, cancellationToken);
 
@@ -1026,7 +1053,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
             return Result<(Guid, decimal)>.Failure(
                 "Cannot approve leave for a payroll-locked period. Please contact HR.", 400);
 
-        int leaveYear = request.StartDate.Year;
+        int leaveYear = await LeaveYearForAsync(request.StartDate, cancellationToken);
         decimal currentBalance = await GetLedgerBalanceAsync(
             request.EmployeeId, leaveType.Id, leaveYear, cancellationToken);
         decimal projected = currentBalance - request.TotalDays;
@@ -1174,7 +1201,7 @@ public sealed class LeaveRequestService : ILeaveRequestService
             //   True carry-forward-pool re-allocation is NOT modelled here (it would need per-pool
             //   ledger tagging). TODO(BR-4 carry-forward-pool): when carry-forward pools are tracked
             //   distinctly, split the reversal across the original allocation buckets.
-            int leaveYear = request.StartDate.Year;
+            int leaveYear = await LeaveYearForAsync(request.StartDate, cancellationToken);
             decimal currentBalance = await GetLedgerBalanceAsync(
                 request.EmployeeId, request.LeaveTypeId, leaveYear, cancellationToken);
 

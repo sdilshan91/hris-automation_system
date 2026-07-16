@@ -86,6 +86,9 @@ public sealed class LopIntegrationTests
         services.AddScoped<IAttendanceProvider, NoOpAttendanceProvider>();
         services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();
         services.AddScoped<ILeaveTypeService, LeaveTypeService>();
+        // ISSUE-305: required by the leave services — a missing registration now THROWS rather than
+        // silently falling back to the calendar year (which is how the credit/debit ledger split hid).
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>();
         services.AddScoped<ILopService, LopService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(CreateLeaveRequestCommand).Assembly));

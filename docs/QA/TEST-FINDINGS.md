@@ -6409,9 +6409,9 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-305 — Leave-year boundary / accrual ignore `Tenant.FiscalYearStartMonth` (calendar-year hardcoded), contradicting US-LV-002/006/008
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR #318 — CAL-8)
 - **Layer:** BE
-- **Module / US / TC:** Leave / US-LV-002, US-LV-006, US-LV-008 / (new TC needed)
+- **Module / US / TC:** Leave / US-LV-002, US-LV-006, US-LV-008 / TC-LV-264
 - **Title:** The leave subsystem universally hardcodes the leave year to calendar Jan 1–Dec 31 —
   `LeaveAccrualJob` (`leaveYear = DateTime.UtcNow.Year`), `ProcessLeaveYearEndJob` (explicit
   `TODO(tenant-settings)`), `LeaveCarryForwardCalculator.ComputeExpiryDate`, and
@@ -6427,6 +6427,58 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   calendar-only. Related: ISSUE-176 (statutory reports, LOW).
 - **Suggested action:** wire `FiscalYearStartMonth` into the accrual/year-end/expiry/pro-rata paths
   (spec Phase 4). Supersede ISSUE-176 or resolve it in the same change.
+- **⚠⚠ AUDIT CAUGHT A REGRESSION IN THE FIRST CUT OF THIS FIX (2026-07-16) — the reason the scope grew.**
+  The first attempt converted only the **7 engine/job sites** (the ledger's CREDIT side: accrual, carry-forward,
+  expiry). The **DEBIT side** — leave requests, LOP, encashment, F&F — still derived the label from a raw
+  `.Year`. Both sides key the same `LeaveLedger.LeaveYear` int, so an Apr–Mar tenant would have had accrual
+  credit leave year 2026 while every request read 2027: **balance 0 → every leave request blocked
+  "insufficient balance", every January–March**. That is *strictly worse* than the pre-fix code, which was
+  wrong for fiscal tenants but at least agreed with itself. The full suite stayed **green** throughout, because
+  calendar tenants are unaffected (`LabelFor(d,1) == d.Year`) and every new arm tested the converted side.
+  Caught by `@integration-enforcer`, verified at source, **fixed before merge** (user chose the full
+  conversion). Also caught: `LeaveYearEndJobRetryTests` was left **RED 358 days a year** by the daily-cron
+  rewrite (green only 1–7 Jan) — the job's due-window meant `RunAsync` did nothing on any other date.
+- **Resolution (2026-07-16, PR #318 — CAL-8, closes the CAL epic):** added `HRM.Domain.Leave.LeaveYear`
+  — one pure primitive (`BoundsFor` / `LabelFor` / `StartOf`) — and wired it through **all 7 engine/job
+  sites**: `LeaveEntitlementEngine.CalculateProRata`, `LeaveCarryForwardCalculator.ComputeExpiryDate`,
+  `LeaveCarryForwardService` (bounds + expiry + the 2 `referenceDate` sites), `LeaveAccrualJob`
+  (per-tenant `LabelFor`), and `ProcessLeaveYearEndJob`. Month resolved **once per sweep** (not per pair
+  — these page over every employee × leave type; a per-pair lookup would be an N+1), defaulting to
+  calendar when no tenant row resolves. The year **label** is unchanged (still an int, still the calendar
+  year the year starts in) so the change is additive — **no ledger row is renumbered**.
+- **⚠ The schedule was the un-fixable half.** `ProcessLeaveYearEndJob` ran on `"0 2 1 1 *"` — 1 January
+  only. No constant swap inside the job could fix that: a 1-Jan cron can never run on 1 April. It now
+  runs **daily** (`"0 2 * * *"`) and `ClosingLeaveYearIfDue` picks out the tenants inside their own
+  year-end window; on the ~358 days nobody is due it selects nothing and exits. Safe because the per-pair
+  work was already idempotent (NFR-3) — the property that previously justified the "daily-or-later cadence
+  in early January is safe" note. A 7-day grace window means a failed/missed run catches up the next day
+  instead of deferring a tenant's entire year-end by twelve months. `LeaveAccrualJob` needed no reschedule
+  (already daily) — only the per-tenant label.
+- **⚠ CORRECTION — ISSUE-176 is NOT superseded** (the claim above was wrong, made before reading it).
+  ISSUE-176 is **Payroll** (StatutoryDeduction report YTD, LOW), a different subsystem this change does not
+  touch; it stays **OPEN**. `LeaveYear` is leave-only and payroll's similarly-named `FiscalYearResolver` is
+  a different concern (effective-dating windows, not fiscal-year bounds) — checked, no duplication.
+  Separately, the leave **report/dashboard** layer still defaults an unspecified year to Jan–Dec in 5
+  places → filed as **ISSUE-311** rather than folded in silently.
+- **⚠ The fix is now ELEVEN sites, not 4 (the plan) or 7 (my first cut)** — one `ITenantLeaveYearResolver` is
+  injected into every service that touches a leave-year label, so "did this site read the column?" is
+  answerable from the constructor. Credit: `LeaveEntitlementEngine.CalculateProRata`,
+  `LeaveCarryForwardCalculator.ComputeExpiryDate`, `LeaveCarryForwardService` (bounds/expiry/2 referenceDates),
+  `LeaveAccrualJob`, `ProcessLeaveYearEndJob`. Debit: `LeaveRequestService` (6), `LopService` (2).
+  Money: `LeaveEncashmentService` (was keyed by the PAYROLL year → encashment rejected for a fiscal tenant),
+  `RealPayrollFnFIntegration` (was `lwd.Year` → **silent under-payment of leave encashment on termination**).
+  Plus `LeaveDashboardService` — incl. an 11th site the sweep found: the Pending filter compared
+  `lr.StartDate.Year == leaveYear`, a raw calendar year against a fiscal LABEL, now bounded by
+  `LeaveYear.BoundsFor`. The resolver also **collapsed 3 duplicated copies** of the tenant lookup that the
+  first cut had created; it is memoized **per tenant id** (not a bare field) so a reused scope can never apply
+  one tenant's leave year to another's ledger, and so the per-employee×leave-type accrual sweep does not cost
+  ~10k extra queries a day.
+- **Tests:** `LeaveYearTests` (34) + `ProcessLeaveYearEndJobWindowTests` (23) + `FiscalLeaveYearIntegrationTests` (10).
+  The integration arms seed two tenants **identical except for the column** and assert the persisted expiry
+  dates differ — which reproduces the original "settable in the UI, read by nothing" defect directly (a unit
+  test of a pure helper never could). **Mutation-verified:** 7/7 mutants killed, incl. re-hardcoding calendar
+  (killed, 2 arms) and anchoring the window on 1 Jan (killed, 10 arms). 2 survivors proved behaviourally
+  equivalent; the dead `daysSinceOpen >= 0` branch they exposed was deleted rather than tested.
 
 ### BUG-287 — Deleting the tenant default shift is permitted and silently flips every unassigned employee to a 7-day work week (wrong pro-rata pay)
 - **Type:** BUG
@@ -6596,3 +6648,55 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   partial-merge semantics, which would contradict AC-3's row-level model), or keep full-replace and add a
   contract test asserting the FE honours GET-then-PUT. Note the FE admin screen does not exist yet
   (deferred to P6), so nothing consumes this contract today — deciding now is cheap.
+
+### ISSUE-311 — Leave reports/dashboard still default an unspecified year to Jan–Dec, ignoring `Tenant.FiscalYearStartMonth` (ISSUE-305's read-layer sibling)
+- **Type:** ISSUE
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave / US-LV-006 (reports) / (new TC needed)
+- **Title:** ISSUE-305 (PR #318) wired `FiscalYearStartMonth` through the leave engine, jobs, ledger debit
+  paths and the **dashboard**. The remaining **report** read-layer sites still default an omitted year/range
+  to `DateTime.UtcNow.Year` + `new DateOnly(year,1,1)…(year,12,31)`: `LeaveReportService:278`, `:470`,
+  `:1054-1055` (`ResolveRange`), and `GetCarryForwardPreviewQueryHandler:24`. So an Apr–Mar tenant opening
+  "this year's" leave report with no explicit range sees a Jan–Dec window matching neither their leave year
+  nor the ledger the engine writes.
+- **⚠ SCOPE NARROWED (2026-07-16, same day, before merge):** filed as 5 sites incl.
+  `LeaveDashboardService:292`. That one was **promoted out and FIXED in #318**: it is not a display default —
+  it resolves the year used to LOOK UP balances, so an Apr–Mar employee's dashboard asked for a leave year
+  that had not started and showed an empty balance for a quarter of every year. It also blocked
+  **US-LV-006 AC-6** ("balances, ledger, and the year selector are bounded by the fiscal leave year"), a
+  written AC. The 4 report sites below are genuinely display defaults and stay LOW.
+- **Root cause (~95%, code):** `private static` range/year defaults with no tenant lookup. The fix is now
+  purely mechanical: inject the `ITenantLeaveYearResolver` that #318 added and swap the literals for
+  `LeaveYear.BoundsFor` / `LabelFor` — exactly what `LeaveDashboardService` does today. Making the statics
+  instance/async is the only real churn.
+- **Reproduction:** seed a tenant with `FiscalYearStartMonth = 4`; `GET /api/v1/leave/reports/...` with no
+  `year`/`from`/`to` → range is 1 Jan–31 Dec of the current calendar year, not 1 Apr–31 Mar.
+- **Severity rationale:** LOW, and deliberately lower than ISSUE-305 — read-only display defaults, no
+  ledger/money impact, and any caller passing an explicit range (which the FE screens do) is unaffected.
+  It is a reporting-vs-engine inconsistency, not a wrong balance.
+- **Discovered:** CAL-8 sweep, 2026-07-16 — surfaced while scoping "Site 8" (`LeaveReportService:1055`).
+  The sweep found **five** sites, not the one the plan named. Filed rather than folded in: it is a distinct
+  concern (read layer, no money impact) and the engine fix stands on its own.
+- **Suggested action:** fold into the P7 LOW tail. Fix all five together with the payroll-side **ISSUE-176**
+  (StatutoryDeduction YTD fiscal-year, LOW) — same "reports ignore the fiscal year" class, and `LeaveYear`
+  is now the ready-made primitive for the leave half.
+
+### ISSUE-312 — The full backend suite CANNOT COMPLETE: the test host crashes mid-run, so `dotnet test` reports a green PASS for a partial run (the verify gate is blind)
+- **Type:** ISSUE
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE / test infra
+- **Module / US / TC:** Cross-cutting (all) / — / —
+- **Title:** `dotnet test HRM.Tests` aborts partway through with **`The active test run was aborted. Reason: Test host process crashed`**, at a **non-deterministic point**, and then prints a **`Passed!`** line for the subset that completed plus **exit code 0**. The suite has **4,058 discoverable tests**; observed completions before the abort: **231, 371, 964, 1373**. Nobody — human or agent — is currently verifying this suite.
+- **⚠ Why this is HIGH and not a nuisance:** the run *looks* green. `Passed! - Failed: 0, Passed: 964` scrolls past and the `Test Run Aborted.` line is easy to miss; exit code 0 means **CI and every scripted gate treat a ~25%-complete run as a full pass**. This is a verification hole across the entire codebase, not a flaky test.
+- **⚠ It already hid a real regression (2026-07-16):** CAL-8 left `LeaveYearEndJobRetryTests` **red 358 days a year**, and my full-suite runs never reached it — I read the aborted `Passed!` as green. It was caught by an auditor, not by the suite.
+- **⚠ The "3991/3997 green" figures in the plan/session notes are therefore NOT credible** as full-suite results. They should be treated as stale or environment-specific until this is fixed.
+- **Root cause (~80%, infra/resource — CORRECTED after `--blame-crash`; my first guess was wrong):** **Testcontainers resource contention, not a memory leak in app code.** `--blame-crash` on BASE named the in-flight test in the sequence file:
+  `TenantGucInterceptorRlsPostgresTests.Interceptor_UnderRetryStrategy_SetsGuc_SupportsOwnTx_AndIsolatesPerOpen` → `Completed="False"`. That test **passes in isolation (1/1, 59s)**, and **Docker is up (29.5.3)**. **74 test files use Testcontainers**, each spinning a real Postgres container, at `xunit.runner.json` `maxParallelThreads: 4` — the host dies under the cumulative container load, at a point that moves with ordering.
+  - ⚠ **My first root cause here was wrong and is retained deliberately as a caution:** an auditor saw an `OutOfMemoryException` through `ReviewerAssignmentService.BuildConfigurationAsync` and read it as infinite recursion; that method is **not** recursive (2 distinct callers, `:77`/`:247`) and its test passes in isolation (12/12). "It's an OOM in the Performance module" was the comfortable narrative and it did not survive `--blame-crash`.
+  - This is consistent with the **standing repo practice** already recorded in the session notes — *"agent sandboxes red Testcontainers; run the Postgres suites directly"* — i.e. the constraint is known, but its consequence (a **silently green partial run**) was not.
+- **Reproduction:** `cd src/backend && dotnet test HRM.Tests/HRM.Tests.csproj --no-build` → aborts. **Reproduced on BASE (`test/local-subdomains` @ e2f957e0) in a clean isolated worktree — aborted at 231/4058.** So this is **pre-existing, NOT introduced by CAL-8** (which aborted at 371 on the same machine).
+- **Discovered:** CAL-8 verification, 2026-07-16. Found only because the CAL-8 count (964) was compared against the expected ~4,000 and the tail was actually read.
+- **Suggested action:** (1) ✅ done — `--blame-crash` named it (above); (2) **split the gate in two**: run the ~3,900 non-Testcontainers tests in one pass (completes cleanly) and the ~74 Postgres/Testcontainers classes in a second, serialized pass (`maxParallelThreads: 1` or a dedicated CI job with container limits); (3) **regardless of root cause, make an aborted run FAIL** — an aborted run must never exit 0 with a `Passed!` line, or the next regression hides the same way. Until then, treat "full suite green" as unproven and verify with targeted filters.

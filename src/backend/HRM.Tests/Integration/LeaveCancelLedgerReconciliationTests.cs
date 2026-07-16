@@ -138,6 +138,9 @@ public sealed class LeaveCancelLedgerReconciliationTests
         services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
         services.AddScoped<ILeaveNotificationService, LogOnlyLeaveNotificationService>();
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
+        // ISSUE-305: the real resolver, mirroring DependencyInjection.AddInfrastructure. These fixtures
+        // seed no tenant row (or a calendar one), so it resolves to calendar as these arms assume.
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>();
         services.AddScoped<ILeaveEntitlementService, LeaveEntitlementService>();
         services.AddScoped<ILeaveDashboardService, LeaveDashboardService>();
         services.AddMediatR(cfg =>

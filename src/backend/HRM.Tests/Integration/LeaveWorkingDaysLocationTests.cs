@@ -105,13 +105,15 @@ public sealed class LeaveWorkingDaysLocationTests : IAsyncLifetime
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlySet<DateOnly>>(new HashSet<DateOnly>()));
 
+        var ctx = new FixedTenantContext { TenantId = _tenantId };
         return new LeaveRequestService(
             db,
-            new FixedTenantContext { TenantId = _tenantId },
+            ctx,
             currentUser,
             holidays,
             Substitute.For<ILeaveNotificationService>(),
-            NullLogger<LeaveRequestService>.Instance);
+            NullLogger<LeaveRequestService>.Instance,
+            new TenantLeaveYearResolver(db, ctx));
     }
 
     // ── seeding ────────────────────────────────────────────────────────

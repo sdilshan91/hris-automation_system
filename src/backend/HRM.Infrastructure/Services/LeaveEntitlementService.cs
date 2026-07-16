@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Domain.Leave;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveEntitlements.DTOs;
@@ -19,6 +20,7 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly ILogger<LeaveEntitlementService> _logger;
 
     /// <summary>
@@ -30,11 +32,13 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
-        ILogger<LeaveEntitlementService> logger)
+        ILogger<LeaveEntitlementService> logger,
+        ITenantLeaveYearResolver leaveYearResolver)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }
 
@@ -412,7 +416,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         // Pro-rata for mid-year joiners (FR-3, AC-4) and part-timers (US-LV-002 AC-K1 — closed by
         // US-CHR-013's Employee.Fte; full-timers are 1.00 so this is unchanged for them).
         decimal prorated = LeaveEntitlementEngine.CalculateProRata(
-            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte);
+            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte,
+            fiscalYearStartMonth: await ResolveFiscalYearStartMonthAsync(cancellationToken));
 
         // Get current balance from ledger.
         decimal currentBalance = await GetLedgerBalanceAsync(
@@ -449,6 +454,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         if (employees.Count == 0 || leaveTypes.Count == 0)
             return result;
 
+        // ISSUE-305: resolved ONCE for the whole batch — this method exists to avoid per-employee work, so a
+        // per-employee tenant lookup would defeat its purpose.
+        var fiscalYearStartMonth = await ResolveFiscalYearStartMonthAsync(cancellationToken);
+
         var employeeIds = employees.Select(e => e.Id).ToList();
         var leaveTypeIds = leaveTypes.Select(lt => lt.Id).ToList();
 
@@ -467,7 +476,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
 
         // ONE query for the active rules effective at the year's reference date (mirrors the per-pair
         // ResolveEntitlementAsync: EffectiveFrom/To are timestamptz, so the reference date is UTC-kinded).
-        var referenceDate = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        // ISSUE-305: the reference date is the LEAVE year's first day — not 1 January for a fiscal tenant.
+        // EffectiveFrom/To are timestamptz, so it must stay UTC-kinded or Npgsql rejects it.
+        var referenceDate = LeaveYear.StartOf(year, fiscalYearStartMonth)
+            .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var ruleRows = await _dbContext.LeaveEntitlementRules
             .AsNoTracking()
             .Where(r => leaveTypeIds.Contains(r.LeaveTypeId)
@@ -520,7 +532,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
                 // Pro-rata for mid-year joiners (FR-3, AC-4) + part-timers (US-LV-002 AC-K1 / US-CHR-013),
                 // identical inputs to the per-pair path.
                 result[key] = LeaveEntitlementEngine.CalculateProRata(
-                    baseEntitlement, employee.DateOfJoining, year, fte: employee.Fte);
+                    baseEntitlement, employee.DateOfJoining, year, fte: employee.Fte,
+                    fiscalYearStartMonth: fiscalYearStartMonth);
             }
         }
 
@@ -603,7 +616,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         // Pro-rata for mid-year joiners (FR-3, AC-4) + part-timers (US-LV-002 AC-K1 / US-CHR-013). The
         // accrual job CREDITS the ledger, so an FTE miss here is a real over-credit, not just a display bug.
         decimal prorated = LeaveEntitlementEngine.CalculateProRata(
-            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte);
+            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte,
+            fiscalYearStartMonth: await ResolveFiscalYearStartMonthAsync(cancellationToken));
 
         // Check if an accrual entry already exists for this employee/leave type/year.
         var existingAccrual = await _dbContext.LeaveLedgerEntries
@@ -667,7 +681,9 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
 
         // 2. Fetch matching active rules for this leave type.
         // EffectiveFrom/To are timestamptz, so the reference date MUST be UTC-kinded or Npgsql rejects it.
-        var referenceDate = new DateTime(leaveYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        // ISSUE-305: the LEAVE year's first day (see above). Still UTC-kinded for the timestamptz compare.
+        var referenceDate = LeaveYear.StartOf(leaveYear, await ResolveFiscalYearStartMonthAsync(cancellationToken))
+            .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var rules = await _dbContext.LeaveEntitlementRules
             .AsNoTracking()
             .Where(r =>
@@ -898,4 +914,13 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         o.Reason,
         o.IsDeleted,
     }, AuditJsonOptions);
+
+    /// <summary>
+    /// ISSUE-305: the tenant's leave-year start month, via the shared <see cref="ITenantLeaveYearResolver"/>
+    /// (which owns the memo — this sits on the per-employee x leave-type accrual path, so an unmemoized
+    /// lookup would cost ~10k extra queries for 1,000 employees x 5 types, daily).
+    /// </summary>
+    private Task<int> ResolveFiscalYearStartMonthAsync(CancellationToken cancellationToken)
+        => _leaveYearResolver.GetStartMonthAsync(cancellationToken);
+
 }

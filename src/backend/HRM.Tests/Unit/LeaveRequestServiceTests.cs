@@ -55,12 +55,14 @@ public sealed class LeaveRequestServiceTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private LeaveRequestService CreateService()
-        => new(CreateDbContext(), _tenantContext, _currentUser, _holidayProvider, _notificationService, _logger);
+        => new(CreateDbContext(), _tenantContext, _currentUser, _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
 
     // US-LV-011 AC-1: the confirm-LOP path needs the optional ILeaveTypeService to resolve the
     // system LOP leave type. The other unit tests construct the service with the original 6 args.
     private LeaveRequestService CreateServiceWithLop()
         => new(CreateDbContext(), _tenantContext, _currentUser, _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext),
             holidayService: null,
             leaveTypeService: new LeaveTypeService(
                 CreateDbContext(), _tenantContext,
@@ -447,7 +449,8 @@ public sealed class LeaveRequestServiceTests
         otherUser.UserId.Returns(Guid.NewGuid());
 
         var svc = new LeaveRequestService(
-            CreateDbContext(), _tenantContext, otherUser, _holidayProvider, _notificationService, _logger);
+            CreateDbContext(), _tenantContext, otherUser, _holidayProvider, _notificationService, _logger,
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
 
         var monday = NextMonday();
         var result = await svc.CreateAsync(Req(_annualLeaveTypeId, monday, monday));

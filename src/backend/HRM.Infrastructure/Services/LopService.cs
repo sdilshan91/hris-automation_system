@@ -22,10 +22,19 @@ public sealed class LopService : ILopService
     private readonly ILeaveTypeService _leaveTypeService;
     private readonly IAttendanceProvider _attendanceProvider;
     private readonly ILeaveNotificationService _notificationService;
+    private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly ILogger<LopService> _logger;
 
     // FR-6: page size for the compulsory-leave employee scan (mirrors LeaveAccrualJob's batching).
     private const int EmployeePageSize = 500;
+
+    /// <summary>
+    /// ISSUE-305: the LeaveLedger.LeaveYear label for <paramref name="date"/> under this tenant's leave year.
+    /// Was a raw <c>.Year</c>, which reads a different ledger bucket than the accrual job writes for a fiscal
+    /// tenant every Jan-Mar (balance 0 => this service would force LOP for employees who HAVE leave).
+    /// </summary>
+    private Task<int> LeaveYearForAsync(DateOnly date, CancellationToken cancellationToken)
+        => _leaveYearResolver.LabelForAsync(date, cancellationToken);
 
     public LopService(
         AppDbContext dbContext,
@@ -33,13 +42,18 @@ public sealed class LopService : ILopService
         ILeaveTypeService leaveTypeService,
         IAttendanceProvider attendanceProvider,
         ILeaveNotificationService notificationService,
-        ILogger<LopService> logger)
+        ILogger<LopService> logger,
+        // ISSUE-305: REQUIRED — see LeaveRequestService's ctor for why no `?? .Year` fallback.
+        ITenantLeaveYearResolver leaveYearResolver)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _leaveTypeService = leaveTypeService;
         _attendanceProvider = attendanceProvider;
         _notificationService = notificationService;
+        // ISSUE-305: trailing-optional so existing fixtures constructing this service directly keep
+        // compiling; DI always supplies it. Absent => calendar year, the pre-ISSUE-305 behaviour.
+        _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }
 
@@ -257,7 +271,7 @@ public sealed class LopService : ILopService
                         continue;
 
                     // BR-4: deduct from balance first; if insufficient, fall back to LOP.
-                    int leaveYear = date.Year;
+                    int leaveYear = await LeaveYearForAsync(date, cancellationToken);
                     decimal balance = await GetLedgerBalanceAsync(
                         employee.Id, request.LeaveTypeId, leaveYear, cancellationToken);
 
@@ -437,7 +451,7 @@ public sealed class LopService : ILopService
 
             // Convert to a balance-backed type: flip type, clear LOP, set Approved, and apply a Used
             // deduction so the converted leave consumes balance (BR-3 — "convert to a different type").
-            int leaveYear = lopRequest.StartDate.Year;
+            int leaveYear = await LeaveYearForAsync(lopRequest.StartDate, cancellationToken);
             decimal balance = await GetLedgerBalanceAsync(
                 lopRequest.EmployeeId, targetType.Id, leaveYear, cancellationToken);
             decimal projected = balance - lopRequest.TotalDays;

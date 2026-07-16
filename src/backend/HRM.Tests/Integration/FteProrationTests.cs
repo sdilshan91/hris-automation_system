@@ -92,9 +92,13 @@ public sealed class FteProrationTests : IAsyncLifetime
         cu.IsAuthenticated.Returns(true);
         cu.UserId.Returns(Guid.NewGuid());
         cu.Email.Returns("hr@acme.test");
+        var ctx = new FixedTenantContext { TenantId = _tenantId };
+        // ISSUE-305: the REAL resolver over the same context — no tenant row is seeded, so it resolves to
+        // calendar, which is what these arms assume.
         return new LeaveEntitlementService(
-            db, new FixedTenantContext { TenantId = _tenantId }, cu,
-            NullLogger<LeaveEntitlementService>.Instance);
+            db, ctx, cu,
+            NullLogger<LeaveEntitlementService>.Instance,
+            new TenantLeaveYearResolver(db, ctx));
     }
 
     // ── seeding ────────────────────────────────────────────────────────

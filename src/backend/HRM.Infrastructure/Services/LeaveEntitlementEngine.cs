@@ -1,4 +1,5 @@
 using HRM.Domain.Entities;
+using HRM.Domain.Leave;
 using HRM.Domain.Enums;
 
 namespace HRM.Infrastructure.Services;
@@ -100,10 +101,16 @@ internal static class LeaveEntitlementEngine
         decimal fullYearEntitlement,
         DateTime dateOfJoining,
         int leaveYear,
-        decimal fte = 1.0m)
+        decimal fte = 1.0m,
+        int fiscalYearStartMonth = LeaveYear.CalendarStartMonth)
     {
-        var yearStart = new DateTime(leaveYear, 1, 1);
-        var yearEnd = new DateTime(leaveYear, 12, 31);
+        // ISSUE-305: the leave year is calendar-OR-fiscal per tenant (US-LV-002/006/008). This hardcoded
+        // 1 Jan – 31 Dec, so an Apr–Mar tenant pro-rated over the wrong window. fiscalYearStartMonth defaults
+        // to 1 (calendar) — the caller passes tenant.FiscalYearStartMonth — so an unconfigured tenant is
+        // byte-identical to the previous behaviour.
+        var (start, end) = LeaveYear.BoundsFor(leaveYear, fiscalYearStartMonth);
+        var yearStart = start.ToDateTime(TimeOnly.MinValue);
+        var yearEnd = end.ToDateTime(TimeOnly.MinValue);
 
         // If joined before this year, full entitlement for the year.
         DateTime effectiveStart = dateOfJoining <= yearStart ? yearStart : dateOfJoining;

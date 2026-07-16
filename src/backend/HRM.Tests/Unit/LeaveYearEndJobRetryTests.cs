@@ -39,12 +39,21 @@ public sealed class LeaveYearEndJobRetryTests
     private const int ThrowsBeforeSuccess = 2;
     private const int ExpectedInvocations = ThrowsBeforeSuccess + 1;
 
+    /// <summary>
+    /// ISSUE-305 (CAL-8) made this job DATE-DEPENDENT: it only does per-tenant work inside that tenant's
+    /// year-end window, so with the real clock it did nothing for 358 days a year and this test reported
+    /// 0 invocations instead of 3. The retry contract it guards is unchanged and still asserted verbatim —
+    /// the clock is pinned to 1 January (the seeded tenant is calendar) so RunAsync actually reaches the
+    /// per-tenant body it is meant to be testing.
+    /// </summary>
     [Fact]
     public async Task YearEndJob_RetriesTransientTenantFailure_ISSUE041()
     {
         var (provider, fault) = BuildProviderWithOneActiveTenant();
 
-        var job = new ProcessLeaveYearEndJob(provider.GetRequiredService<IServiceScopeFactory>());
+        var job = new ProcessLeaveYearEndJob(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new FakeTimeProvider(new DateTimeOffset(2027, 1, 1, 2, 0, 0, TimeSpan.Zero)));
         await job.RunAsync();
 
         // ProcessYearEndAsync threw twice then succeeded — RunAsync must have retried through the

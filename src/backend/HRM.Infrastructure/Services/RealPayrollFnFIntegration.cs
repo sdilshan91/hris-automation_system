@@ -37,6 +37,7 @@ public sealed class RealPayrollFnFIntegration : IPayrollFnFIntegration
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly IStatutoryDeductionResolver _statutoryResolver;
+    private readonly ITenantLeaveYearResolver? _leaveYearResolver;
     private readonly ILogger<RealPayrollFnFIntegration> _logger;
 
     /// <summary>Synthetic LOP component id passed to <see cref="PayrollSlipCalculator.Compute"/> (LOP is always 0 here).</summary>
@@ -57,11 +58,15 @@ public sealed class RealPayrollFnFIntegration : IPayrollFnFIntegration
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IStatutoryDeductionResolver statutoryResolver,
-        ILogger<RealPayrollFnFIntegration> logger)
+        ILogger<RealPayrollFnFIntegration> logger,
+        ITenantLeaveYearResolver? leaveYearResolver = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _statutoryResolver = statutoryResolver;
+        // ISSUE-305: trailing-optional so existing F&F fixtures keep compiling; DI always supplies it.
+        // Absent => the last-working-day's calendar year, i.e. the pre-ISSUE-305 behaviour.
+        _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }
 
@@ -227,7 +232,14 @@ public sealed class RealPayrollFnFIntegration : IPayrollFnFIntegration
             if (monthlyBasic > 0m)
             {
                 var dailyRate = Round(monthlyBasic / workingDays);
-                var encashLines = await ComputeLeaveEncashmentAsync(employeeId, lwd.Year, dailyRate, tenantId, cancellationToken);
+                // ISSUE-305: the LEAVE year the terminating employee's balance sits in — not `lwd.Year`.
+                // ComputeLeaveEncashmentAsync reads the ledger by this key, so for an Apr-Mar tenant a
+                // Jan-Mar last-working-day read a leave year that had not started yet => balance 0 => the
+                // leave-encashment lines silently vanish from the final settlement (under-payment on exit).
+                var leaveYear = _leaveYearResolver is null
+                    ? lwd.Year
+                    : await _leaveYearResolver.LabelForAsync(lwd, cancellationToken);
+                var encashLines = await ComputeLeaveEncashmentAsync(employeeId, leaveYear, dailyRate, tenantId, cancellationToken);
                 foreach (var (label, amount) in encashLines)
                 {
                     lines.Add(NewLine(tenantId, label, amount, FinalSettlementLineType.Encashment));

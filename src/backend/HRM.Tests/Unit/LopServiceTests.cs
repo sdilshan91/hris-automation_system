@@ -71,7 +71,8 @@ public sealed class LopServiceTests : IDisposable
         => new(
             CreateDbContext(), _tenantContext, CreateLeaveTypeService(),
             _attendanceProvider, _notificationService,
-            Substitute.For<ILogger<LopService>>());
+            Substitute.For<ILogger<LopService>>(),
+            new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
 
     private void SeedReferenceData()
     {

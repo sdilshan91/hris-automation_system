@@ -1,4 +1,5 @@
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Leave;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveCarryForward.DTOs;
 using HRM.Domain.Entities;
@@ -26,13 +27,16 @@ namespace HRM.Infrastructure.Services;
 /// DEFERRALS (seams only — see vault "Carry-Forward &amp; Expiry (US-LV-008)"):
 ///   - Redis cache invalidation after processing (FR-7/AC-3) — consistent with the module-wide
 ///     deferred-Redis decision. TODO(redis-balance-cache).
-///   - Tenant fiscal-year boundary (§10) — calendar year reused. TODO(tenant-settings).
+/// Tenant fiscal-year boundary (§10, ISSUE-305): RESOLVED — this service is now a primary consumer of
+/// the tenant's leave year via ITenantLeaveYearResolver; the bounds, the expiry anchor and the ledger
+/// OccurredAt stamps all follow Tenant.FiscalYearStartMonth. (The old TODO here said the opposite.)
 /// </summary>
 public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
 {
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ILeaveEntitlementService _entitlementService;
+    private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly ILogger<LeaveCarryForwardService> _logger;
 
     /// <summary>Batch size for year-end processing (NFR-1: handle 5,000 employees).</summary>
@@ -42,11 +46,13 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ILeaveEntitlementService entitlementService,
-        ILogger<LeaveCarryForwardService> logger)
+        ILogger<LeaveCarryForwardService> logger,
+        ITenantLeaveYearResolver leaveYearResolver)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _entitlementService = entitlementService;
+        _leaveYearResolver = leaveYearResolver;
         _logger = logger;
     }
 
@@ -82,6 +88,11 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
         int totalEmployees = await _dbContext.Employees
             .CountAsync(e => e.IsActive && !e.IsDeleted, cancellationToken);
 
+        // ISSUE-305: the tenant's leave-year start month, resolved ONCE for the whole sweep — this method
+        // pages over every employee x leave type, so a per-pair lookup would be an N+1. Default 1 = calendar,
+        // so an unconfigured tenant is byte-identical to the previous behaviour.
+        var fiscalYearStartMonth = await _leaveYearResolver.GetStartMonthAsync(cancellationToken);
+
         while (skip < totalEmployees)
         {
             var employees = await _dbContext.Employees
@@ -99,7 +110,8 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
             {
                 foreach (var leaveType in leaveTypes)
                 {
-                    if (await ProcessSinglePairAsync(employee, leaveType, fromYear, toYear, cancellationToken))
+                    if (await ProcessSinglePairAsync(
+                            employee, leaveType, fromYear, toYear, fiscalYearStartMonth, cancellationToken))
                         created++;
                 }
             }
@@ -123,7 +135,7 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
     /// </summary>
     private async Task<bool> ProcessSinglePairAsync(
         Employee employee, LeaveType leaveType, int fromYear, int toYear,
-        CancellationToken cancellationToken)
+        int fiscalYearStartMonth, CancellationToken cancellationToken)
     {
         // NFR-3 idempotency: skip if a tracking row already exists for this pair/year transition.
         bool alreadyTracked = await _dbContext.LeaveCarryForwardTrackings
@@ -142,11 +154,16 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
         // Nothing to carry or forfeit — still record a (zero) tracking row so the job is idempotent
         // and the preview/expiry have a stable anchor. But avoid creating noise ledger entries.
         DateOnly? expiryDate = LeaveCarryForwardCalculator.ComputeExpiryDate(
-            toYear, leaveType.CarryForwardExpiryMonths);
+            toYear, leaveType.CarryForwardExpiryMonths, fiscalYearStartMonth);
 
-        var newYearStart = new DateOnly(toYear, 1, 1);
-        var newYearStartUtc = new DateTime(toYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var yearEndUtc = new DateTime(fromYear, 12, 31, 0, 0, 0, DateTimeKind.Utc);
+        // ISSUE-305: the new leave year's first day and the closing year's last day are NOT 1 Jan / 31 Dec for
+        // a fiscal tenant — an Apr-Mar tenant carries forward on 1 April and closes on 31 March. The ledger
+        // entries below are stamped with these dates, so a hardcoded January would file a carry-forward months
+        // outside the year it belongs to.
+        var newYearStart = LeaveYear.StartOf(toYear, fiscalYearStartMonth);
+        var newYearStartUtc = newYearStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var yearEndUtc = LeaveYear.BoundsFor(fromYear, fiscalYearStartMonth).End
+            .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
         // ── Carry-forward ledger entry (positive, new leave year) — FR-6 ──
         if (outcome.CarriedDays > 0m)

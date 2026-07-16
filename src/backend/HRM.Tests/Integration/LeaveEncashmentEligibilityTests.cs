@@ -302,9 +302,12 @@ public sealed class LeaveEncashmentEligibilityTests
                 EmployeeId = empId, LeaveTypeId = typeId, LeaveYear = PayYear,
                 BaseEntitlementDays = 12m, ProratedEntitlementDays = 12m, Source = "leave_type_default",
             }));
+        var yeDb = Db();
+        var yeCtx = new MutableTenantContext { TenantId = _tenant };
         var yearEnd = new LeaveCarryForwardService(
-            Db(), new MutableTenantContext { TenantId = _tenant }, entitlement,
-            NullLogger<LeaveCarryForwardService>.Instance);
+            yeDb, yeCtx, entitlement,
+            NullLogger<LeaveCarryForwardService>.Instance,
+            new TenantLeaveYearResolver(yeDb, yeCtx));
         var yeResult = await yearEnd.ProcessYearEndAsync(PayYear);
         yeResult.IsSuccess.Should().BeTrue();
 

@@ -67,7 +67,11 @@ public sealed class LeaveEntitlementAuditRegressionTests
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private LeaveEntitlementService CreateService()
-        => new(CreateDbContext(), _tenantContext, _currentUser, _logger);
+    {
+        var db = CreateDbContext();
+        return new(db, _tenantContext, _currentUser, _logger,
+            new TenantLeaveYearResolver(db, _tenantContext));
+    }
 
     private void SeedReferenceData()
     {

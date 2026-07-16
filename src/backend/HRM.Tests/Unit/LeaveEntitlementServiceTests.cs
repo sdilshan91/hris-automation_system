@@ -58,7 +58,8 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
     private LeaveEntitlementService CreateService()
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
-        return new LeaveEntitlementService(dbContext, _tenantContext, _currentUser, _logger);
+        return new LeaveEntitlementService(dbContext, _tenantContext, _currentUser, _logger,
+            new TenantLeaveYearResolver(dbContext, _tenantContext));
     }
 
     private AppDbContext CreateDbContext()
@@ -491,7 +492,8 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
         tenantBContext.IsResolved.Returns(true);
 
         var dbB = TestDbContextFactory.Create(tenantBContext, _dbName);
-        var svcB = new LeaveEntitlementService(dbB, tenantBContext, _currentUser, _logger);
+        var svcB = new LeaveEntitlementService(dbB, tenantBContext, _currentUser, _logger,
+            new TenantLeaveYearResolver(dbB, tenantBContext));
 
         var result = await svcB.GetRulesAsync();
         result.IsSuccess.Should().BeTrue();
