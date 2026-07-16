@@ -43,16 +43,21 @@ public sealed class ShiftRequestValidator : AbstractValidator<ShiftRequest>
                 .LessThanOrEqualTo(24).WithMessage("Minimum hours cannot exceed 24.");
         });
 
-        // SINGLE / ROTATING: working days required, start/end required, and BR-7 (start != end).
+        // ISSUE-307: EVERY shift type must declare its working days. A Flexible shift used to skip this rule,
+        // so it could persist with an empty calendar; wired as a Location/tenant default it then silently
+        // deferred to the next resolver tier instead of carrying its own working days. Required for all types
+        // now — start/end stay optional for Flexible (BR-8), only the working-day calendar is mandatory.
+        RuleFor(x => x.WorkingDays)
+            .NotEmpty().WithMessage("At least one working day is required.");
+
+        RuleFor(x => x.WorkingDays)
+            .Must(days => days != null && days.All(d => d is >= 1 and <= 7))
+            .When(x => x.WorkingDays is { Count: > 0 })
+            .WithMessage("Working days must be between 1 (Mon) and 7 (Sun).");
+
+        // SINGLE / ROTATING: start/end required, and BR-7 (start != end).
         When(x => x.Type is ShiftType.Single or ShiftType.Rotating, () =>
         {
-            RuleFor(x => x.WorkingDays)
-                .NotEmpty().WithMessage("At least one working day is required.");
-
-            RuleFor(x => x.WorkingDays)
-                .Must(days => days.All(d => d is >= 1 and <= 7))
-                .WithMessage("Working days must be between 1 (Mon) and 7 (Sun).");
-
             RuleFor(x => x.StartTime)
                 .NotEmpty().WithMessage("Start time is required for non-flexible shifts.");
             RuleFor(x => x.EndTime)

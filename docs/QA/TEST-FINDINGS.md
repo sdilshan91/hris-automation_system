@@ -6580,12 +6580,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-307 — `Flexible` shifts bypass the `WorkingDays` NotEmpty rule, so a shift can persist with no declared calendar
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** ⚖ NEEDS-DECISION (analyzed 2026-07-16) — **NOT a live money bug.** `ShiftScheduleResolver` already
-  defends empty `WorkingDays`: `ToCalendar` returns `null` for an empty list and the tier guards require
-  `Count > 0`, so a Flexible shift with no days does NOT become a 7-day calendar — it falls through to the next
-  tier. The only residual is a **product question**: should a `Flexible` shift wired as a Location/tenant default
-  be *required* to carry its own `WorkingDays`, or is deferring-to-next-tier the intended semantics? No forced
-  validator change made — awaiting product call. Downgrade to LOW if product confirms defer-is-intended.
+- **Status:** ✅ RESOLVED (2026-07-16, PR #323 — user decision: require WorkingDays for Flexible). `ShiftRequestValidator`
+  now applies the `WorkingDays` NotEmpty + 1..7 range rules to **every** shift type (hoisted out of the
+  Single/Rotating `When` block), so a `Flexible` shift must declare its own working-day calendar; start/end stay
+  optional for Flexible (BR-8). **Mutation-verified** (re-exempting Flexible from NotEmpty → the new
+  `Flexible_requires_working_days` arm fails, the non-flexible control survives). Existing
+  `Br8_flexible_does_not_require_start_end_or_working_days` split into `..._does_not_require_start_end` (now seeds
+  WorkingDays) + the new required-days arm. Note: the resolver's empty-days defense stays as defence-in-depth for
+  any legacy/seeded Flexible shift with no days.
 - **Layer:** BE
 - **Module / US / TC:** Attendance / US-ATT-005 (shift creation) / (new TC needed)
 - **Title:** `ShiftRequestValidator` gates the `WorkingDays.NotEmpty()` rule inside
@@ -6656,13 +6658,12 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-310 — `PUT /attendance/settings` is a 24-field full replace: an omitted field silently RESETS a pay rule (BUG-117 class, on a payroll path)
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** ⚖ NEEDS-DECISION (analyzed 2026-07-16) — real defect confirmed (`AttendanceSettingsService.Apply`
-  maps all 24 fields unconditionally; an omitted JSON field arrives as the C# default and overwrites the stored
-  pay rule, e.g. `WeekendOvertimeMultiplier`→2.0, `FteScaledOvertimeBase`→false, `AbsenteeismThresholdDays`→3).
-  **The DTO is fully value-typed, so the real fix is a BREAKING API-contract change** — a nullable-per-field
-  patch DTO + `entity.X = dto.X ?? entity.X` — which the pinned contract FE/QA build against. "Require-all
-  get-then-put" (option a) only documents today's behavior; it does not stop the silent reset. Not fixed
-  unilaterally — awaiting the contract decision (breaking patch DTO vs. accept full-replace + document).
+- **Status:** ✅ RESOLVED-BY-DECISION (2026-07-16, PR #323 — user decision: accept full-replace, document). The
+  PUT is confirmed as an intentional **GET-then-PUT full-replace** contract, NOT a defect: the `AttendanceSettingsDto`
+  is fully value-typed, so a partial-update PATCH would be a breaking nullable-per-field change to the pinned
+  contract FE/QA build against. Clients own the read-modify-write. Reframed in-code from "known BUG-117 defect
+  class, not fixed" to "accepted API contract" on both `AttendanceSettingsDto` and `AttendanceSettingsService.Apply`.
+  (If a future client genuinely needs partial updates, add a separate PATCH endpoint rather than mutating this DTO.)
 - **Layer:** BE (API contract)
 - **Module / US / TC:** Attendance / US-ATT-011 AC-3 / TC-ATT-155
 - **Title:** CAL-4b's `PUT /api/v1/attendance/settings` and `PUT /api/v1/attendance/settings/overrides/{locationId}`
