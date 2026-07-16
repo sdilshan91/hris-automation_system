@@ -14,6 +14,8 @@ automation:
   - HRM.Tests/Unit/ProcessLeaveYearEndJobWindowTests.cs (23 arms — the per-tenant year-end window)
   - HRM.Tests/Integration/FiscalLeaveYearIntegrationTests.cs (10 arms — the column is actually READ, and
     the ledger's credit and debit sides agree)
+  - HRM.Tests/Integration/FiscalLeaveYearMoneyIntegrationTests.cs (ISSUE-313 — 4 arms: the two MONEY debit
+    sites, LeaveEncashmentService + RealPayrollFnFIntegration, now have mutation-verified fiscal guards)
   - HRM.Tests/Unit/LeaveYearEndJobRetryTests.cs (ISSUE-041 — clock pinned so the due-window job is drivable)
 defect:
   - ISSUE-305
@@ -96,10 +98,20 @@ mutated the sites I already believed were covered, so "7/7 killed" was true and 
 the suite green. The default is **removed**, so the mutant no longer compiles. (Same reasoning as removing the
 `?? .Year` fallbacks: prefer "won't build" to "won't pass".)
 
-**⚠ Still zero-resistance, correct by inspection only** (wiring-auditor swept, no site disagrees — but no
-regression guard): `LopService` debit · `LeaveDashboardService` Pending bounds + `ResolveLeaveYear` ·
-**`LeaveEncashmentService`** (money) · **`RealPayrollFnFIntegration`** (money — silent under-payment on
-termination). Tracked as follow-up.
+**The two MONEY sites are now guarded (ISSUE-313, 2026-07-16)** — mutation-verified in
+`FiscalLeaveYearMoneyIntegrationTests`:
+
+| Mutation | Before | Now |
+|---|---|---|
+| `LeaveEncashmentService` leave year `LabelForAsync(payPeriod)` → `input.PayYear` (a fiscal Jan–Mar encashment rejected 422) | SURVIVED | **KILLED** (fiscal arm; calendar control survives) |
+| `RealPayrollFnFIntegration` leave year `LabelForAsync(lwd)` → `lwd.Year` (F&F encashment line silently vanishes) | SURVIVED | **KILLED** (fiscal arm; calendar control survives) |
+
+Each fiscal arm injects a REAL `TenantLeaveYearResolver` (NOT the ctor's null fallback, which would re-key off
+the calendar year and hide the read under test), seeds a month-4 tenant, credits the balance under the fiscal
+leave-year label, and drives the REAL service in the Jan–Mar window.
+
+**⚠ Still zero-resistance, correct by inspection only** (3 remaining, all NON-money, wiring-auditor swept —
+tracked under ISSUE-313): `LopService` debit · `LeaveDashboardService` Pending bounds + `ResolveLeaveYear`.
 
 ### Round 2 — the sites the audit proved were unprotected
 | Mutation | Round 1 | Now |
