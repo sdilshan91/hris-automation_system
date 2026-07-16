@@ -4597,7 +4597,10 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-201
 - **Type:** ISSUE (missing input validation → unhandled DB exception; contained, normalized 500)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending) — new `GetEmployeesQueryValidator` rejects `Page < 1` and
+  `PageSize < 0` with a clean 400 (ValidationBehavior), so a negative offset never reaches EF `Skip()`.
+  `pageSize = 0` stays valid (empty page); no upper cap imposed (unchanged). Mutation-verified in
+  `GetEmployeesQueryValidatorTests` (page −1/0 + pageSize −5 rejected; valid pagination incl. pageSize 0/99999 passes).
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-003 (Employee directory) / TC-CHR-131-class (input-boundary)
 - **Title:** `GET /api/v1/tenant/employees?page=-1` (or `pageSize=-5`) passes a negative offset straight into EF `Skip()` → Postgres rejects it → 500, where a fast 400 is expected
