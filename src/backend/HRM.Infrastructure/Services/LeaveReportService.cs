@@ -7,6 +7,7 @@ using HRM.Application.Features.LeaveReports.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Leave;
 using HRM.Infrastructure.Persistence;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,7 @@ public sealed class LeaveReportService : ILeaveReportService
     private readonly ICurrentUser _currentUser;
     private readonly ILeaveEntitlementService _entitlementService;
     private readonly IReportExportStorage _exportStorage;
+    private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly IBackgroundJobClient? _backgroundJobs;
     private readonly ILogger<LeaveReportService> _logger;
 
@@ -54,6 +56,7 @@ public sealed class LeaveReportService : ILeaveReportService
         ILeaveEntitlementService entitlementService,
         IReportExportStorage exportStorage,
         ILogger<LeaveReportService> logger,
+        ITenantLeaveYearResolver leaveYearResolver,
         IBackgroundJobClient? backgroundJobs = null)
     {
         _dbContext = dbContext;
@@ -61,9 +64,19 @@ public sealed class LeaveReportService : ILeaveReportService
         _currentUser = currentUser;
         _entitlementService = entitlementService;
         _exportStorage = exportStorage;
+        _leaveYearResolver = leaveYearResolver;
         _backgroundJobs = backgroundJobs;
         _logger = logger;
     }
+
+    // ISSUE-311: the tenant's leave-year is fiscal-configurable (Tenant.FiscalYearStartMonth). An omitted
+    // year/range must default to the tenant's OWN leave year, not calendar Jan–Dec — mirroring
+    // LeaveDashboardService. These two helpers are the single reader the report sites route through.
+    private async Task<int> ResolveLeaveYearAsync(int? year, CancellationToken ct)
+        => year ?? await _leaveYearResolver.LabelForAsync(DateOnly.FromDateTime(DateTime.UtcNow), ct);
+
+    private async Task<(DateOnly Start, DateOnly End)> LeaveYearBoundsAsync(int year, CancellationToken ct)
+        => LeaveYear.BoundsFor(year, await _leaveYearResolver.GetStartMonthAsync(ct));
 
     // ══════════════════════════════════════════════════════════════
     //  Public API
@@ -275,7 +288,8 @@ public sealed class LeaveReportService : ILeaveReportService
             "Entitlement", "Used", "Pending", "Carry Forward", "Expired", "Balance",
         };
 
-        int year = qp.Year ?? DateTime.UtcNow.Year;
+        int year = await ResolveLeaveYearAsync(qp.Year, ct); // ISSUE-311: fiscal-aware default.
+        var (leaveYearStart, leaveYearEnd) = await LeaveYearBoundsAsync(year, ct);
 
         var employees = await ScopedEmployeesQuery(qp, scope).ToListAsync(ct);
         if (employees.Count == 0)
@@ -299,10 +313,13 @@ public sealed class LeaveReportService : ILeaveReportService
             .GroupBy(l => (l.EmployeeId, l.LeaveTypeId))
             .ToDictionary(g => g.Key, g => LedgerComponents.From(g.Select(e => (e.EntryType, e.Amount))));
 
+        // ISSUE-311: bound Pending by the tenant's LEAVE-year window, not `StartDate.Year == year` (a raw
+        // calendar-year vs a leave-year LABEL — identical for a January tenant, but for an Apr–Mar tenant it
+        // drops the Jan–Mar requests that DO belong to this leave year). Mirrors LeaveDashboardService.
         var pending = (await _dbContext.LeaveRequests.AsNoTracking()
                 .Where(lr => employeeIds.Contains(lr.EmployeeId)
                              && lr.Status == LeaveRequestStatus.Pending
-                             && lr.StartDate.Year == year
+                             && lr.StartDate >= leaveYearStart && lr.StartDate <= leaveYearEnd
                              && leaveTypeIds.Contains(lr.LeaveTypeId))
                 .Select(lr => new { lr.EmployeeId, lr.LeaveTypeId, lr.TotalDays })
                 .ToListAsync(ct))
@@ -397,7 +414,7 @@ public sealed class LeaveReportService : ILeaveReportService
             "Avg / Month", "Threshold", "Flagged",
         };
 
-        var (from, to) = ResolveRange(qp);
+        var (from, to) = await ResolveRangeAsync(qp, ct);
         int monthsSpanned = MonthsBetween(from, to);
         decimal threshold = await ResolveAbsenteeismThresholdAsync(ct);
 
@@ -467,7 +484,7 @@ public sealed class LeaveReportService : ILeaveReportService
             "Carried Days", "Expired Days", "Expiry Date", "Status",
         };
 
-        int fromYear = qp.Year ?? DateTime.UtcNow.Year;
+        int fromYear = await ResolveLeaveYearAsync(qp.Year, ct); // ISSUE-311: fiscal-aware default.
 
         var employees = await ScopedEmployeesQuery(qp, scope).ToListAsync(ct);
         var employeeIds = employees.Select(e => e.Id).ToList();
@@ -522,7 +539,7 @@ public sealed class LeaveReportService : ILeaveReportService
             "Employee No", "Employee", "Department", "LOP Days", "LOP Entries",
         };
 
-        var (from, to) = ResolveRange(qp);
+        var (from, to) = await ResolveRangeAsync(qp, ct);
 
         var employees = await ScopedEmployeesQuery(qp, scope).ToListAsync(ct);
         var employeeIds = employees.Select(e => e.Id).ToList();
@@ -582,7 +599,7 @@ public sealed class LeaveReportService : ILeaveReportService
             "Department", "Date", "On Leave", "Headcount", "Coverage %",
         };
 
-        var (from, to) = ResolveRange(qp);
+        var (from, to) = await ResolveRangeAsync(qp, ct);
         if (to < from)
             return (new List<LeaveReportRow>(), columns, null);
 
@@ -689,7 +706,7 @@ public sealed class LeaveReportService : ILeaveReportService
     private async Task<LeaveAnalyticsResult> BuildLeaveByTypeChartAsync(
         LeaveReportQueryParams qp, ReportScope scope, CancellationToken ct)
     {
-        var (from, to) = ResolveRange(qp);
+        var (from, to) = await ResolveRangeAsync(qp, ct);
         var employeeIds = await ScopedEmployeesQuery(qp, scope).Select(e => e.Id).ToListAsync(ct);
 
         var taken = await _dbContext.LeaveRequests.AsNoTracking()
@@ -799,8 +816,10 @@ public sealed class LeaveReportService : ILeaveReportService
     private async Task<List<UtilizationAggregate>> ComputeUtilizationAggregatesAsync(
         LeaveReportQueryParams qp, ReportScope scope, CancellationToken ct)
     {
-        var (from, to) = ResolveRange(qp);
-        int year = qp.Year ?? to.Year;
+        var (from, to) = await ResolveRangeAsync(qp, ct);
+        // ISSUE-311: the entitlement label for an omitted year is the tenant's leave year, NOT `to.Year` —
+        // once `to` is the fiscal END (e.g. 2027-03-31 for an Apr-2026 year), `to.Year` would be the wrong label.
+        int year = await ResolveLeaveYearAsync(qp.Year, ct);
 
         var employees = await ScopedEmployeesQuery(qp, scope).ToListAsync(ct);
         if (employees.Count == 0)
@@ -1045,14 +1064,17 @@ public sealed class LeaveReportService : ILeaveReportService
         return ordered.ToList();
     }
 
-    private static (DateOnly From, DateOnly To) ResolveRange(LeaveReportQueryParams qp)
+    // ISSUE-311: default an omitted range to the tenant's LEAVE year (fiscal-aware), not calendar Jan–Dec.
+    // For a month-4 tenant, year 2026 defaults to 2026-04-01..2027-03-31, not 2026-01-01..2026-12-31.
+    // Instance + async (was static) so it can read the tenant's FiscalYearStartMonth via the resolver.
+    private async Task<(DateOnly From, DateOnly To)> ResolveRangeAsync(LeaveReportQueryParams qp, CancellationToken ct)
     {
-        // Default range: the supplied year, or the current calendar year.
         if (qp.From is { } f && qp.To is { } t)
             return (f, t);
 
-        int year = qp.Year ?? DateTime.UtcNow.Year;
-        return (qp.From ?? new DateOnly(year, 1, 1), qp.To ?? new DateOnly(year, 12, 31));
+        int year = await ResolveLeaveYearAsync(qp.Year, ct);
+        var (start, end) = await LeaveYearBoundsAsync(year, ct);
+        return (qp.From ?? start, qp.To ?? end);
     }
 
     private static int MonthsBetween(DateOnly from, DateOnly to)

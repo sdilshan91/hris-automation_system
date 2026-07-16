@@ -120,6 +120,7 @@ public sealed class LeaveReportIntegrationTests
         services.AddSingleton(entitlement);
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>(); // ISSUE-311: report now reads the fiscal leave year.
         services.AddScoped<ILeaveReportService, LeaveReportService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(GetLeaveReportQuery).Assembly));
