@@ -103,6 +103,11 @@ internal static class ShiftScheduleResolver
 
         // (4) those locations' default shifts — ONE query. Under the global tenant filter, so a location
         //     pointing at another tenant's shift simply resolves nothing (TC-ATT-ISO-014).
+        //     ISSUE-306 (by design): this read deliberately does NOT filter on Shift.IsActive. LocationService
+        //     refuses to WIRE an inactive shift (400 invalid_default_shift), but a shift deactivated AFTER it
+        //     was wired keeps driving the calendar here — so an admin deactivating a shift mid-cycle does not
+        //     silently flip every employee at that location to the Mon-Fri code default (a silent pay change).
+        //     Rewiring the location to a new shift is the intended path. Do NOT add `&& s.IsActive` here.
         var locationIds = locationIdByEmp.Values.Distinct().ToList();
         var shiftIdByLocation = locationIds.Count == 0
             ? new Dictionary<Guid, Guid>()

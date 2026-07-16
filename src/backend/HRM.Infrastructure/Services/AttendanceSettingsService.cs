@@ -279,9 +279,11 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
     }
 
     /// <summary>
-    /// FULL REPLACE of the scope's policy (BUG-117 class): every one of the 25 fields is applied as sent, so
-    /// a field omitted from the JSON body takes the DTO default and RESETS that setting. LocationId is NOT
-    /// assigned here — the scope comes from the route and is fixed at row creation.
+    /// FULL REPLACE of the scope's policy — the accepted GET-then-PUT contract (ISSUE-310 decision): every one
+    /// of the fields is applied as sent, so a field omitted from the JSON body takes the DTO default and RESETS
+    /// that setting. Callers MUST read-modify-write the whole object; a partial-update PATCH would be a breaking
+    /// change to the pinned AttendanceSettingsDto. LocationId is NOT assigned here — the scope comes from the
+    /// route and is fixed at row creation.
     /// </summary>
     private static void Apply(AttendanceSettings entity, AttendanceSettingsDto dto)
     {

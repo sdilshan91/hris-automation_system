@@ -49,14 +49,29 @@ public sealed class ShiftRequestValidatorTests
     }
 
     [Fact]
-    public void Br8_flexible_does_not_require_start_end_or_working_days()
+    public void Br8_flexible_does_not_require_start_end()
     {
+        // BR-8: a Flexible shift needs minimum_hours + working days (ISSUE-307) but NOT start/end.
         var flexible = new ShiftRequest
         {
-            Name = "Flex", Type = ShiftType.Flexible, MinimumHours = 6m,
+            Name = "Flex", Type = ShiftType.Flexible, MinimumHours = 6m, WorkingDays = new[] { 1, 2, 3, 4, 5 },
         };
         var result = _validator.TestValidate(flexible);
         result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("Issue", "ISSUE-307")]
+    public void Flexible_requires_working_days()
+    {
+        // ISSUE-307: a Flexible shift with no working days used to pass — it could then be wired as a
+        // Location/tenant default with no calendar of its own. Every type must declare working days now.
+        var flexible = new ShiftRequest
+        {
+            Name = "Flex", Type = ShiftType.Flexible, MinimumHours = 6m, // WorkingDays left as the empty default.
+        };
+        var result = _validator.TestValidate(flexible);
+        result.ShouldHaveValidationErrorFor(x => x.WorkingDays);
     }
 
     [Fact]

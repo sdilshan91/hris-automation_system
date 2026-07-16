@@ -3778,7 +3778,19 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 - **Severity rationale:** LOW — cosmetic/contract drift between the note and the numbers; no incorrect disbursement, but misleading for CTC consumers.
 
 ### ISSUE-176 — StatutoryDeduction YTD uses calendar-year (Jan→month), ignoring the tenant fiscal-year start (BR-5)
-- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN — **confirmed + scoped (2026-07-16), deferred to its own PR** · **Layer:** BE
+- **⚠⚠ NEEDS A DESIGN DECISION (2026-07-16, on deeper inspection — NOT a mechanical swap):** the YTD column
+  aggregates **all** statutory components (income tax, EPF, ETF…), but a "fiscal year" is only well-defined for
+  **income tax** (per-country `StatutoryRule.EffectiveFrom`/`FiscalYear`). Three unresolved cases:
+  1. **Fiscal source:** BR-5's text says "the tenant's configured fiscal-year start month" (= `Tenant.FiscalYearStartMonth`,
+     flat) — but the payroll RUN's cumulative PAYE (`PayrollRunProcessor:434`) anchors YTD on the income-tax rule's
+     `EffectiveFrom` **per country**. Using `FiscalYearStartMonth` for the report would DIVERGE from the run;
+     using the per-country rule window matches the run but is ~100 lines (reuse `BuildPerEmployeeFiscalYearReport`
+     `:855-964` `fyByCountry`).
+  2. **Non-income-tax components** (EPF/ETF) have no income-tax rule to define their year — calendar? same tax FY?
+  3. **Employees with no resolvable tax country** are in YTD today (calendar); a per-country window would silently
+     drop their statutory. Awaiting a decision before coding — the current calendar behavior is only wrong for a
+     genuinely-fiscal tenant, and the run path is already correct, so the report column is the only divergence.
 - **Module / US / TC:** Payroll / US-PAY-009 / TC-PAY-009-06 (BR-5)
 - **Title:** Statutory Deduction report's "Year-to-Date Total" is documented as "cumulative from January to the selected month of the same calendar year", but BR-5 requires reports to respect the tenant's configured fiscal-year start month (acme = April). YTD should run Apr→month, not Jan→month.
 - **Root cause:** Self-disclosed deferral — report note: "fiscal-year-start config is a documented follow-up, BR-3/BR-5." Same fiscal-year-start gap surfaces in YearEndTaxStatement (deferred) and Variance. Not empirically distinguishable in current data (only June run exists, so YTD=1800 either way). Confidence: 80% (note text + spec).
@@ -6483,7 +6495,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-287 — Deleting the tenant default shift is permitted and silently flips every unassigned employee to a 7-day work week (wrong pro-rata pay)
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending). `ShiftService.DeleteAsync` now refuses (409) to delete a shift
+  that drives a working calendar for UNassigned employees: `IsDefault` → `shift_is_default`, or any
+  `Location.DefaultShiftId == shiftId` → `shift_wired_to_location` (symmetric with the existing `shift_in_use`
+  409; uses `_dbContext` only, no ctor change). **Mutation-verified 2/2 by hand** (both `if(false)` → both arms
+  fail). Guards in `ShiftServiceTests` (`Delete_blocked_when_shift_is_the_tenant_default` +
+  `..._is_a_location_default`). Note: the resolver was already hardened (no-shift → Mon–Fri code default, not a
+  7-day week), so the live impact was a *silent switch to the code default*, not the original 7-day catastrophe —
+  the guard closes the silent pay change at the delete boundary.
 - **Layer:** BE
 - **Module / US / TC:** Attendance / US-ATT-005 (BR-1/FR-5 tenant default shift), US-ATT-011 (AC-2 code-default tier) / (new TC needed)
 - **Title:** `ShiftService.DeleteAsync` (`ShiftService.cs:197-238`) blocks deletion only when **active
@@ -6531,7 +6550,13 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-306 — Working-calendar resolution has no `IsActive` filter: a shift deactivated AFTER being wired keeps driving calendars, contradicting write-time validation
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED-BY-DECISION (2026-07-16, user decision: KEEP the read behavior). The asymmetry is
+  **intentional**: `LocationService` refuses to WIRE an inactive shift (400 `invalid_default_shift`), but the
+  resolver deliberately does NOT filter `IsActive` — so a shift deactivated AFTER being wired keeps driving the
+  calendar, and an admin deactivating a shift mid-cycle does NOT silently flip every employee at that location to
+  the Mon–Fri code default (a silent pay change). Rewiring the location to a new shift is the intended path.
+  Documented in-code at `ShiftScheduleResolver` step (4) with an explicit "Do NOT add `&& s.IsActive` here."
+  No behavior change; no test arm (nothing to mutation-verify — the comment is the regression guard).
 - **Layer:** BE
 - **Module / US / TC:** Attendance / US-ATT-011 (AC-1 vs AC-2) / (new TC needed once the behaviour is decided)
 - **Title:** Write-time and read-time disagree on what an assignable calendar is. `LocationService`'s
@@ -6558,7 +6583,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-307 — `Flexible` shifts bypass the `WorkingDays` NotEmpty rule, so a shift can persist with no declared calendar
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR #323 — user decision: require WorkingDays for Flexible). `ShiftRequestValidator`
+  now applies the `WorkingDays` NotEmpty + 1..7 range rules to **every** shift type (hoisted out of the
+  Single/Rotating `When` block), so a `Flexible` shift must declare its own working-day calendar; start/end stay
+  optional for Flexible (BR-8). **Mutation-verified** (re-exempting Flexible from NotEmpty → the new
+  `Flexible_requires_working_days` arm fails, the non-flexible control survives). Existing
+  `Br8_flexible_does_not_require_start_end_or_working_days` split into `..._does_not_require_start_end` (now seeds
+  WorkingDays) + the new required-days arm. Note: the resolver's empty-days defense stays as defence-in-depth for
+  any legacy/seeded Flexible shift with no days.
 - **Layer:** BE
 - **Module / US / TC:** Attendance / US-ATT-005 (shift creation) / (new TC needed)
 - **Title:** `ShiftRequestValidator` gates the `WorkingDays.NotEmpty()` rule inside
@@ -6629,7 +6661,12 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-310 — `PUT /attendance/settings` is a 24-field full replace: an omitted field silently RESETS a pay rule (BUG-117 class, on a payroll path)
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED-BY-DECISION (2026-07-16, PR #323 — user decision: accept full-replace, document). The
+  PUT is confirmed as an intentional **GET-then-PUT full-replace** contract, NOT a defect: the `AttendanceSettingsDto`
+  is fully value-typed, so a partial-update PATCH would be a breaking nullable-per-field change to the pinned
+  contract FE/QA build against. Clients own the read-modify-write. Reframed in-code from "known BUG-117 defect
+  class, not fixed" to "accepted API contract" on both `AttendanceSettingsDto` and `AttendanceSettingsService.Apply`.
+  (If a future client genuinely needs partial updates, add a separate PATCH endpoint rather than mutating this DTO.)
 - **Layer:** BE (API contract)
 - **Module / US / TC:** Attendance / US-ATT-011 AC-3 / TC-ATT-155
 - **Title:** CAL-4b's `PUT /api/v1/attendance/settings` and `PUT /api/v1/attendance/settings/overrides/{locationId}`

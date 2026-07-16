@@ -29,8 +29,9 @@ namespace HRM.Application.Features.Attendance.DTOs;
 /// its stored value — so an omitted field RESETS that setting (e.g. omitting
 /// <c>weekendOvertimeMultiplier</c> resets it to 2.0, omitting <c>ipAllowlist</c> clears the list). The
 /// client contract is therefore <b>GET-then-PUT</b>: read the current policy, mutate the fields you mean
-/// to change, and send the whole object back. This is the known BUG-117 defect class and is documented,
-/// not fixed, here.</para>
+/// to change, and send the whole object back. This full-replace semantics is the <b>accepted API contract</b>
+/// (ISSUE-310 decision, 2026-07-16): a partial-update PATCH would be a breaking, nullable-per-field change to
+/// this pinned DTO, so clients own the read-modify-write. Do NOT partially populate this DTO.</para>
 /// </summary>
 public sealed record AttendanceSettingsDto
 {

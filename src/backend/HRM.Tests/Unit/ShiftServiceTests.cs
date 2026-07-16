@@ -218,6 +218,62 @@ public sealed class ShiftServiceTests
         all.Value!.Should().NotContain(s => s.Name == "Temp");
     }
 
+    // ── BUG-287 (money): a shift that drives a working calendar for UNassigned employees ──
+    // (tenant default / Location wiring) must not be deletable — deleting it silently switches those
+    // employees to the Mon–Fri code default, changing their pro-rata pay/F&F denominator.
+
+    private Guid SeedShift(bool isDefault, Guid? id = null)
+    {
+        using var db = CreateDbContext();
+        var shiftId = id ?? Guid.NewGuid();
+        db.Shifts.Add(new Shift
+        {
+            Id = shiftId, TenantId = _tenantId, Name = isDefault ? "General Shift" : "Gulf Sun-Thu",
+            Type = ShiftType.Single, StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+            WorkingDays = [1, 2, 3, 4, 5], IsDefault = isDefault, IsActive = true,
+        });
+        db.SaveChanges();
+        return shiftId;
+    }
+
+    [Fact]
+    [Trait("Bug", "BUG-287")]
+    public async Task Delete_blocked_when_shift_is_the_tenant_default()
+    {
+        var shiftId = SeedShift(isDefault: true); // no EmployeeShift assignments — only the default flag.
+
+        var delete = await CreateService().DeleteAsync(shiftId);
+
+        delete.IsFailure.Should().BeTrue(
+            "deleting the tenant default silently switches unassigned employees to the Mon–Fri code default");
+        delete.StatusCode.Should().Be(409);
+        delete.ErrorCode.Should().Be("shift_is_default");
+    }
+
+    [Fact]
+    [Trait("Bug", "BUG-287")]
+    public async Task Delete_blocked_when_shift_is_a_location_default()
+    {
+        var shiftId = SeedShift(isDefault: false);
+        using (var db = CreateDbContext())
+        {
+            db.Locations.Add(new Location
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, Name = "Dubai", TimeZone = "Asia/Dubai",
+                IsActive = true, DefaultShiftId = shiftId,
+            });
+            db.SaveChanges();
+        }
+
+        var delete = await CreateService().DeleteAsync(shiftId);
+
+        delete.IsFailure.Should().BeTrue(
+            "deleting a Location-wired shift silently breaks that location's working calendar (tier 2)");
+        delete.StatusCode.Should().Be(409);
+        delete.ErrorCode.Should().Be("shift_wired_to_location");
+        delete.Error.Should().Contain("1 location", "the guard names how many locations are wired");
+    }
+
     // ── Clone (FR-8) ───────────────────────────────────────────────────
 
     [Fact]

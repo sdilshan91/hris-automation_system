@@ -220,6 +220,24 @@ public sealed class ShiftService : IShiftService
                 $"This shift is assigned to {assignedCount} employees. Please reassign them before deleting.",
                 409, "shift_in_use");
 
+        // BUG-287 (money): a shift can also be the working-calendar source for employees who have NO explicit
+        // EmployeeShift — via the tenant default (Shift.IsDefault, resolver tier 3) or a Location wiring
+        // (Location.DefaultShiftId, tier 2). Deleting it silently switches every such employee to the Mon–Fri
+        // code default, changing their working-day denominator and therefore their pro-rata pay / F&F /
+        // encashment with no assignment to flag it. Refuse (409), symmetric with shift_in_use — set a new
+        // default / rewire the location(s) first.
+        if (shift.IsDefault)
+            return Result.Failure(
+                "This shift is the tenant default working calendar and cannot be deleted. " +
+                "Set another shift as the default first.", 409, "shift_is_default");
+
+        var wiredLocations = await _dbContext.Locations
+            .CountAsync(l => l.DefaultShiftId == shiftId, cancellationToken);
+        if (wiredLocations > 0)
+            return Result.Failure(
+                $"This shift is the default working calendar for {wiredLocations} location(s). " +
+                "Rewire those location(s) to another shift before deleting.", 409, "shift_wired_to_location");
+
         var beforeSnapshot = SnapshotShift(shift);
         shift.IsDeleted = true;
         foreach (var step in shift.RotationSteps)

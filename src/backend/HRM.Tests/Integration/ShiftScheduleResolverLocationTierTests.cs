@@ -308,9 +308,10 @@ public sealed class ShiftScheduleResolverLocationTierTests : IAsyncLifetime
     /// <summary>
     /// TC-ATT-149 step 3 (AC-2c) — **THE BEHAVIOUR-CHANGE REGRESSION ARM**. A tenant with NO default shift,
     /// no location default and no personal assignment previously resolved to an EMPTY set, which every caller
-    /// treats as "every calendar day is a working day" (7/week — weekends paid/counted as work; reachable in
-    /// production because ShiftService.DeleteAsync has no IsDefault guard, BUG-287). It must now resolve to
-    /// the Mon-Fri CODE DEFAULT {1,2,3,4,5} = 5 working days per week.
+    /// treats as "every calendar day is a working day" (7/week — weekends paid/counted as work). This tier is
+    /// the defence in depth: even if a tenant reaches a no-shift state, the resolver returns the Mon-Fri CODE
+    /// DEFAULT {1,2,3,4,5} = 5 working days per week. (BUG-287 additionally now guards ShiftService.DeleteAsync
+    /// from deleting a default/wired shift, so that particular route into this state is also closed.)
     /// </summary>
     [Fact]
     [Trait("TC", "TC-ATT-149")]
