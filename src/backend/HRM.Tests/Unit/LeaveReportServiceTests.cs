@@ -129,7 +129,20 @@ public sealed class LeaveReportServiceTests
 
     private LeaveReportService CreateService(ICurrentUser? caller = null)
         => new(CreateDbContext(), _tenantContext, caller ?? _hrUser, _entitlementService,
-            _exportStorage, _logger);
+            _exportStorage, _logger, new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
+
+    /// <summary>ISSUE-311: seeds the tenant ROW carrying the FiscalYearStartMonth the resolver must READ
+    /// (the fixture otherwise seeds no Tenant row, so the resolver falls back to calendar).</summary>
+    private void SeedTenantFiscalMonth(int month)
+    {
+        using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenantId, Subdomain = $"t{month}", Name = "T",
+            Status = TenantStatus.Active, FiscalYearStartMonth = month,
+        });
+        db.SaveChanges();
+    }
 
     // Stub the engine entitlement for a given (employee, leaveType) at the configured year.
     private void StubEntitlement(Guid employeeId, Guid leaveTypeId, decimal days, int year = Year)
@@ -568,6 +581,77 @@ public sealed class LeaveReportServiceTests
         Cell(aliceRow, report, "Unplanned Days").Should().Be("4");
         Cell(aliceRow, report, "Threshold").Should().Be("5");   // configured, not the hardcoded 3
         Cell(aliceRow, report, "Flagged").Should().Be("No");    // 4 does not exceed the configured 5
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  ISSUE-311: report range default is the tenant's LEAVE year, not calendar Jan–Dec
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// KILLER for `ResolveRange` (`LeaveReportService.cs`). Month-4 tenant, an Absenteeism report with an
+    /// explicit year 2026 and NO From/To. The default range must be the fiscal leave year 2026 =
+    /// 2026-04-01..2027-03-31, so a LOP day on 2027-02-10 (inside that window, but OUTSIDE calendar 2026) is
+    /// counted. Reverting the default to `new DateOnly(year,1,1)..new DateOnly(year,12,31)` excludes it and the
+    /// report is empty. Clock-free: the year is explicit, so only the RANGE derivation is under test.
+    /// </summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-311")]
+    public async Task Absenteeism_FiscalTenant_DefaultsRangeToTheFiscalLeaveYear_NotCalendar()
+    {
+        SeedTenantFiscalMonth(4);
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.HrAssigned,
+            new DateOnly(2027, 2, 10), new DateOnly(2027, 2, 10), totalDays: 1m, isLop: true);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.Absenteeism, Params(year: 2026, from: null, to: null));
+
+        result.IsSuccess.Should().BeTrue();
+        var report = result.Value!;
+        report.Rows.Should().ContainSingle(
+            "the fiscal leave-year range (Apr 2026–Mar 2027) includes the 2027-02-10 LOP day; a raw Jan–Dec "
+            + "2026 range would exclude it and the report would be empty");
+        Cell(report.Rows.Single(), report, "Employee No").Should().Be("EMP-0001");
+    }
+
+    /// <summary>CONTROL: a CALENDAR (month-1) tenant's default range is the calendar year — unchanged.</summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-311")]
+    public async Task Absenteeism_CalendarTenant_DefaultRangeIsTheCalendarYear()
+    {
+        SeedTenantFiscalMonth(1);
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.HrAssigned,
+            new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 1), totalDays: 1m, isLop: true);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.Absenteeism, Params(year: 2026, from: null, to: null));
+
+        result.Value!.Rows.Should().ContainSingle();
+        Cell(result.Value.Rows.Single(), result.Value, "Employee No").Should().Be("EMP-0001");
+    }
+
+    /// <summary>
+    /// KILLER for the balance-summary Pending bounds (`LeaveReportService.cs`, consistency-fixed with the
+    /// range default). Month-4 tenant, a Pending request on 2027-02-10 (inside leave year 2026, outside
+    /// calendar 2026). Correct code bounds Pending by 2026-04-01..2027-03-31 → counted. A raw
+    /// `StartDate.Year == year` compares 2027 against the label 2026 → dropped → 0.
+    /// </summary>
+    [Fact]
+    [Trait("Issue", "ISSUE-311")]
+    public async Task BalanceSummary_FiscalTenant_PendingBoundsUseTheLeaveYearWindow_NotCalendar()
+    {
+        SeedTenantFiscalMonth(4);
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Pending,
+            new DateOnly(2027, 2, 10), new DateOnly(2027, 2, 10), totalDays: 3m);
+
+        var result = await CreateService().GenerateReportAsync(
+            LeaveReportType.BalanceSummary, Params(year: 2026, leaveTypeId: _annualLeaveTypeId));
+
+        var alice = result.Value!.Rows.Single(r => Cell(r, result.Value, "Employee No") == "EMP-0001");
+        Cell(alice, result.Value, "Pending").Should().Be("3",
+            "leave year 2026 for an Apr–Mar tenant includes 2027-02-10; a raw StartDate.Year == 2026 shows 0");
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1032,7 +1116,7 @@ public sealed class LeaveReportServiceTests
         backgroundJobs.Create(Arg.Do<Job>(j => captured = j), Arg.Any<IState>()).Returns("job-1");
 
         var svc = new LeaveReportService(CreateDbContext(), _tenantContext, _hrUser, _entitlementService,
-            _exportStorage, _logger, backgroundJobs);
+            _exportStorage, _logger, new TenantLeaveYearResolver(CreateDbContext(), _tenantContext), backgroundJobs);
 
         var result = await svc.ExportReportAsync(
             LeaveReportType.BalanceSummary, ReportExportFormat.Csv, Params(leaveTypeId: _annualLeaveTypeId));

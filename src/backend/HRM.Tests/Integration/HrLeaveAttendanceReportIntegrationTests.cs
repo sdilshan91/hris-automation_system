@@ -130,6 +130,7 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
         if (sharedCache is not null)
             services.AddSingleton(sharedCache); // exercises HrReportService._cache (the scoped cache-key path)
+        services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>(); // ISSUE-311: report now reads the fiscal leave year.
         services.AddScoped<ILeaveReportService, LeaveReportService>();
         services.AddScoped<IHrReportService, HrReportService>();
         services.AddMediatR(cfg =>

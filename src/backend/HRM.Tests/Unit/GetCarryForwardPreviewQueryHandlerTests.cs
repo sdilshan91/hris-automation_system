@@ -36,6 +36,7 @@ namespace HRM.Tests.Unit;
 public sealed class GetCarryForwardPreviewQueryHandlerTests
 {
     private readonly ILeaveCarryForwardService _service = Substitute.For<ILeaveCarryForwardService>();
+    private readonly ITenantLeaveYearResolver _leaveYearResolver = Substitute.For<ITenantLeaveYearResolver>();
 
     private GetCarryForwardPreviewQueryHandler CreateHandler()
     {
@@ -46,7 +47,13 @@ public sealed class GetCarryForwardPreviewQueryHandlerTests
         _service.PreviewYearEndAsync(Arg.Is<int>(y => y >= 2000 && y <= 2100), Arg.Any<CancellationToken>())
             .Returns(Result<IReadOnlyList<CarryForwardPreviewDto>>.Success(Array.Empty<CarryForwardPreviewDto>()));
 
-        return new GetCarryForwardPreviewQueryHandler(_service);
+        // ISSUE-311: default resolver = a CALENDAR tenant (leave year == the calendar year of "today"), so the
+        // existing null-year arm below is byte-identical to the pre-fix `?? DateTime.UtcNow.Year`. Fiscal arms
+        // override this to return a distinctive label.
+        _leaveYearResolver.LabelForAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(DateTime.UtcNow.Year);
+
+        return new GetCarryForwardPreviewQueryHandler(_service, _leaveYearResolver);
     }
 
     // ── BUG-033: out-of-range year → clean 400, never a 500 ──
@@ -96,5 +103,22 @@ public sealed class GetCarryForwardPreviewQueryHandlerTests
 
         result.IsSuccess.Should().BeTrue(result.Error);
         await _service.Received(1).PreviewYearEndAsync(DateTime.UtcNow.Year, Arg.Any<CancellationToken>());
+    }
+
+    // ── ISSUE-311: a null year resolves the tenant's FISCAL leave year, not the raw calendar year ──
+    [Fact]
+    [Trait("Issue", "ISSUE-311")]
+    public async Task CarryForwardPreview_NullYear_FiscalTenant_UsesTheResolversLeaveYear_NotUtcNowYear()
+    {
+        var handler = CreateHandler();
+        // A fiscal tenant whose current leave year resolves to a fixed, distinctive in-range label (2099)
+        // that differs from any near-term UtcNow.Year — so a revert to `?? DateTime.UtcNow.Year` is caught.
+        _leaveYearResolver.LabelForAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(2099);
+
+        var result = await handler.Handle(new GetCarryForwardPreviewQuery(null), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        await _service.Received(1).PreviewYearEndAsync(2099, Arg.Any<CancellationToken>());
+        await _service.DidNotReceive().PreviewYearEndAsync(DateTime.UtcNow.Year, Arg.Any<CancellationToken>());
     }
 }

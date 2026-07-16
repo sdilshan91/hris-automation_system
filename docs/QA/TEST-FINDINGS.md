@@ -6652,7 +6652,23 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-311 — Leave reports/dashboard still default an unspecified year to Jan–Dec, ignoring `Tenant.FiscalYearStartMonth` (ISSUE-305's read-layer sibling)
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR #322). `LeaveReportService` + `GetCarryForwardPreviewQueryHandler`
+  now inject `ITenantLeaveYearResolver` and default an omitted year/range via one shared reader
+  (`ResolveLeaveYearAsync` → `LabelForAsync`, `LeaveYearBoundsAsync` → `LeaveYear.BoundsFor`) — mirroring
+  `LeaveDashboardService`. All 4 named sites fixed (`:278`, `:470`, `ResolveRange`→async, handler `:24`), plus
+  two adjacent hazards the `ResolveRange` change forced/surfaced: the utilization `qp.Year ?? to.Year` label
+  (would have become the fiscal END year) and the balance-summary Pending `StartDate.Year == year` filter
+  (fixed to `BoundsFor` for internal consistency, same class as the dashboard).
+  - **Mutation-verified 3/3, proven by hand:** `ResolveRange`→Jan–Dec (Absenteeism range), Pending
+    `StartDate.Year==year` (BalanceSummary), and handler `?? DateTime.UtcNow.Year` each fail their fiscal arm;
+    the calendar control survives. Guards in `LeaveReportServiceTests` + `GetCarryForwardPreviewQueryHandlerTests`.
+  - The A.2/A.3 **year-label** defaults (`:278`/`:470`, null-year path) route through the same shared reader;
+    their clock-coupled Jan–Mar-only divergence is covered by inspection + the mutation-verified handler arm
+    that exercises the identical `?? LabelForAsync(now)` pattern (no `TimeProvider` seam added — proportionate
+    to LOW, and matching the finding's "exactly what LeaveDashboardService does today").
+  - Forced sibling-DI fix: `LeaveReportIntegrationTests` + `HrLeaveAttendanceReportIntegrationTests` hand-roll a
+    `ServiceCollection` and now register `ITenantLeaveYearResolver` (the new required ctor dep). Production DI
+    (`AddInfrastructure`) already registered it. **ISSUE-176 (Payroll YTD) remains the open sibling.**
 - **Layer:** BE
 - **Module / US / TC:** Leave / US-LV-006 (reports) / (new TC needed)
 - **Title:** ISSUE-305 (PR #318) wired `FiscalYearStartMonth` through the leave engine, jobs, ledger debit
