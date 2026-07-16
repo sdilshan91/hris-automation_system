@@ -82,6 +82,35 @@ public sealed class TenantSettingsService : ITenantSettingsService
         tenant.Address = Normalize(request.Address);
         tenant.Industry = Normalize(request.Industry);
         tenant.CompanySize = Normalize(request.CompanySize);
+        // BUG-288: the leave year is a stored int LABEL on leave_ledger, and the label→date mapping is derived
+        // from THIS column. Changing it retroactively reinterprets every historical row: a row written under a
+        // January basis carries label 2026, but an April basis resolves a Jan–Mar date to 2025 — so that
+        // employee's Jan–Mar accruals/usage silently drop out of the balance they belong to. (Apr–Dec dates are
+        // unaffected, which makes the corruption PARTIAL and easy to mistake for a data oddity.)
+        //
+        // Until ISSUE-305 this was harmless — the column was read by NOTHING, so flipping it was a genuine
+        // no-op and nothing needed to guard it. CAL-8 made it load-bearing for balances/accrual/expiry/pro-rata
+        // and F&F money, so the write path has to catch up: once a tenant has leave history, their leave-year
+        // basis is FROZEN. Set it at provisioning (or before the first accrual runs).
+        //
+        // Only a CHANGE is rejected. This is a full-replace PUT (BUG-117/ISSUE-310 class): an admin editing
+        // their address resends the same month, and that must stay a no-op.
+        if (tenant.FiscalYearStartMonth != request.FiscalYearStartMonth)
+        {
+            // Tenant-scoped by the EF global query filter — this asks "does THIS tenant have leave history".
+            var hasLeaveHistory = await _db.LeaveLedgerEntries.AnyAsync(cancellationToken);
+            if (hasLeaveHistory)
+            {
+                return Result<OrgProfileDto>.Failure(
+                    $"The fiscal year start month cannot be changed from {tenant.FiscalYearStartMonth} to "
+                    + $"{request.FiscalYearStartMonth} because this organization already has leave history. "
+                    + "The leave year defines how existing leave-ledger entries are grouped, so changing it now "
+                    + "would silently re-date those entries and alter employees' balances. Contact support to "
+                    + "migrate the leave year.",
+                    422, "fiscal_year_locked_by_leave_history");
+            }
+        }
+
         tenant.FiscalYearStartMonth = request.FiscalYearStartMonth;
         // ISSUE-304: the probation period the reminder sweep resolves (a Location may override it).
         tenant.ProbationPeriodDays = request.ProbationPeriodDays;

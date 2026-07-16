@@ -6745,7 +6745,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-288 — Changing `Tenant.FiscalYearStartMonth` silently orphans existing leave-ledger rows (no migration, no guard) — CAL-8 turned a dead setting into a live one
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** OPEN
+- **Status:** 🟡 FIX READY — PR #319 **OPEN** (awaiting merge; flip to ✅ RESOLVED after merge)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console + Leave / US-ADM-006 (org profile), US-LV-006/008 / (new TC needed)
 - **Title:** A Tenant Admin can change `FiscalYearStartMonth` (1 → 4) at any time via the org-profile UI.
@@ -6782,3 +6782,22 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   (3) **migrate on change** (relabel affected rows in a transaction) — highest risk, touches the ledger.
   **Recommendation: (1) now** (it unblocks onboarding the first fiscal tenant safely), **(2) if a tenant ever
   needs to actually switch**. Do NOT ship the ability to flip it freely.
+- **Fix (2026-07-16, PR #319 — OPEN, option (1) the recommended one):** the basis is **FROZEN once the tenant
+  has leave history**. `TenantSettingsService.UpdateOrgProfileAsync` now rejects a **change** with **422
+  `fiscal_year_locked_by_leave_history`** when `LeaveLedgerEntries.AnyAsync()` is true, and the message tells
+  the admin why (it would re-date existing entries and alter balances) rather than just refusing.
+- **⚠ The lock triggers on a CHANGE, never on the field's presence.** This is a full-replace PUT
+  (BUG-117/ISSUE-310 class): an admin editing their address resends the unchanged month. A guard keyed on
+  "field supplied" would 422 **every org-profile edit for every tenant with leave history** — i.e. all of them.
+  That is the arm a naive fix breaks, and it is tested.
+- **⚠ The history check is TENANT-SCOPED via the EF global query filter** — an unfiltered `AnyAsync()` would let
+  ONE tenant's accrual lock the fiscal basis for every tenant in the system (Critical Rule #1). Tested.
+- **Provisioning stays open:** a tenant with no leave history can still choose its basis — that is how the
+  Apr–Mar tenant gets onboarded, so a blanket lock would have defeated the epic it was meant to protect.
+- **Tests:** 4 arms in `TenantSettingsServiceTests` (set-when-clean · reject-on-change-with-history ·
+  unrelated-edit-still-works · another-tenant's-history-does-not-lock-me). **Mutation-verified 3/3, anchors
+  proven applied:** guard removed → KILLED · guard on presence-not-change → KILLED · unfiltered history check
+  → KILLED.
+- **Not done (deliberate):** effective-dating (option 2) and ledger migration (option 3). A tenant that must
+  genuinely *switch* basis mid-life still has no path — it is now a support/migration task rather than a
+  silent corruption. Revisit if a real tenant asks; the `TenantFnFPolicy` effective-dated pattern is the model.
