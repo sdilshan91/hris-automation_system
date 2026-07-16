@@ -5,6 +5,7 @@
 // ============================================================================
 
 using FluentAssertions;
+using HRM.Domain.Leave;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Services;
@@ -192,6 +193,7 @@ public sealed class LeaveEntitlementEngineTests
             fullYearEntitlement: 20,
             dateOfJoining: new DateTime(2026, 7, 1),
             leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth,
             fte: 1.0m);
 
         result.Should().Be(10.08m); // 184/365 * 20 = 10.0822 -> 10.08 (half-up 2dp)
@@ -203,7 +205,8 @@ public sealed class LeaveEntitlementEngineTests
         var result = LeaveEntitlementEngine.CalculateProRata(
             fullYearEntitlement: 20,
             dateOfJoining: new DateTime(2026, 1, 1),
-            leaveYear: 2026);
+            leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
         result.Should().Be(20m);
     }
@@ -214,7 +217,8 @@ public sealed class LeaveEntitlementEngineTests
         var result = LeaveEntitlementEngine.CalculateProRata(
             fullYearEntitlement: 20,
             dateOfJoining: new DateTime(2020, 3, 15),
-            leaveYear: 2026);
+            leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
         result.Should().Be(20m);
     }
@@ -225,7 +229,8 @@ public sealed class LeaveEntitlementEngineTests
         var result = LeaveEntitlementEngine.CalculateProRata(
             fullYearEntitlement: 20,
             dateOfJoining: new DateTime(2026, 12, 31),
-            leaveYear: 2026);
+            leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
         // 1/365 * 20 = 0.0548 -> 0.05
         result.Should().Be(0.05m);
@@ -237,7 +242,8 @@ public sealed class LeaveEntitlementEngineTests
         var result = LeaveEntitlementEngine.CalculateProRata(
             fullYearEntitlement: 20,
             dateOfJoining: new DateTime(2027, 3, 1),
-            leaveYear: 2026);
+            leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
         result.Should().Be(0m);
     }
@@ -249,7 +255,8 @@ public sealed class LeaveEntitlementEngineTests
         var result = LeaveEntitlementEngine.CalculateProRata(
             fullYearEntitlement: 0,
             dateOfJoining: new DateTime(2026, 7, 1),
-            leaveYear: 2026);
+            leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
         result.Should().Be(0m);
     }
@@ -262,6 +269,7 @@ public sealed class LeaveEntitlementEngineTests
             fullYearEntitlement: 20,
             dateOfJoining: new DateTime(2026, 1, 1),
             leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth,
             fte: 0.5m);
 
         result.Should().Be(10m);
@@ -274,7 +282,8 @@ public sealed class LeaveEntitlementEngineTests
         var result = LeaveEntitlementEngine.CalculateProRata(
             fullYearEntitlement: 15,
             dateOfJoining: new DateTime(2026, 4, 1),
-            leaveYear: 2026);
+            leaveYear: 2026,
+            fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
         result.Should().Be(11.30m);
     }

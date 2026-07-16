@@ -347,20 +347,55 @@ public sealed class FiscalLeaveYearIntegrationTests
         preview.CurrentBalance.Should().Be(10m, "for a January tenant the leave year IS the calendar year");
     }
 
+
     /// <summary>
-    /// CONTROL for the arm above: for a calendar tenant the debit label IS the calendar year, so every
-    /// pre-ISSUE-305 `.Year` site was already correct and stays correct. This is what makes the 10-site
-    /// conversion provably a no-op for them.
+    /// GAP M13 (found by the @test-authenticator): the SERVICE→ENGINE wire.
+    ///
+    /// <para>My pro-rata arms in <c>LeaveYearTests</c> call <c>LeaveEntitlementEngine.CalculateProRata</c>
+    /// DIRECTLY with an explicit month. They prove the arithmetic and nothing about the wiring: dropping
+    /// `fiscalYearStartMonth:` from the service's call sites left the whole suite green, because the engine's
+    /// parameter was defaulted and silently yielded calendar. (That default is now REMOVED, so the mutant is a
+    /// compile error — this arm is the behavioural half of the same guard.)</para>
+    ///
+    /// <para>Drives the real <c>LeaveEntitlementService</c>. A 1-Oct joiner has ~6 of 12 months left in an
+    /// Apr–Mar leave year but only ~3 in a Jan–Dec one, so the pro-rated entitlement MUST differ. It is a
+    /// money number: the accrual job credits it to the ledger.</para>
     /// </summary>
     [Fact]
     [Trait("TC", "TC-LV-264")]
-    public async Task CalendarTenant_LeaveYearLabelIsStillJustTheCalendarYear()
+    public async Task Service_PassesTheTenantsBasisToTheProRataEngine()
     {
-        using var provider = BuildProvider(_calendarTenant);
-        var resolver = provider.GetRequiredService<ITenantLeaveYearResolver>();
+        var octoberJoiner = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+        SetDateOfJoining(_fiscalTenant, _fisEmployee, octoberJoiner);
+        SetDateOfJoining(_calendarTenant, _calEmployee, octoberJoiner);
 
-        foreach (var d in new[] { new DateOnly(2027, 1, 1), new DateOnly(2027, 2, 10), new DateOnly(2027, 12, 31) })
-            (await resolver.LabelForAsync(d)).Should().Be(d.Year);
+        var fiscal = await ComputeProRataAsync(_fiscalTenant, _fisEmployee, _fisLeaveType, leaveYear: 2026);
+        var calendar = await ComputeProRataAsync(_calendarTenant, _calEmployee, _calLeaveType, leaveYear: 2026);
+
+        fiscal.Should().BeGreaterThan(
+            calendar,
+            "the SERVICE must hand the engine the tenant's own basis: an Apr–Mar leave year 2026 runs to "
+            + "2027-03-31, leaving a 1-Oct joiner ~6 months; a Jan–Dec 2026 year leaves them ~3. If these "
+            + "match, the service is not passing fiscalYearStartMonth and every fiscal tenant is credited a "
+            + "wrong entitlement");
+    }
+
+    private void SetDateOfJoining(Guid tenant, Guid employee, DateTime dateOfJoining)
+    {
+        using var db = Db(tenant);
+        var e = db.Employees.Single(x => x.Id == employee);
+        e.DateOfJoining = dateOfJoining;
+        db.SaveChanges();
+    }
+
+    /// <summary>Pro-rated entitlement via the REAL service (which resolves the month and calls the engine).</summary>
+    private async Task<decimal> ComputeProRataAsync(Guid tenant, Guid employee, Guid leaveType, int leaveYear)
+    {
+        using var provider = BuildProvider(tenant);
+        var result = await provider.GetRequiredService<ILeaveEntitlementService>()
+            .ComputeEffectiveEntitlementAsync(employee, leaveType, leaveYear);
+        result.IsSuccess.Should().BeTrue(result.Error);
+        return result.Value!.ProratedEntitlementDays;
     }
 
     /// <summary>

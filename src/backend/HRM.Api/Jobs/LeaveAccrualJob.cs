@@ -20,10 +20,32 @@ public sealed class LeaveAccrualJob
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public LeaveAccrualJob(IServiceScopeFactory scopeFactory)
+    /// <summary>
+    /// ISSUE-305: this job's output now depends on TODAY (it accrues into the leave year today falls in for
+    /// each tenant), so "today" must be injectable or the per-tenant label is untestable. Trailing-optional
+    /// (mirrors ProcessLeaveYearEndJob / NotificationPreferenceService) so production and existing fixtures
+    /// keep the real clock.
+    /// </summary>
+    private readonly TimeProvider _timeProvider;
+
+    public LeaveAccrualJob(IServiceScopeFactory scopeFactory, TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
+
+    /// <summary>
+    /// ISSUE-305: the leave year this tenant should accrue into today.
+    ///
+    /// <para>Extracted as an internal static seam for the same reason as
+    /// <c>ProcessLeaveYearEndJob.ClosingLeaveYearIfDue</c>: the job body iterates every tenant and cannot be
+    /// driven against shared data in a test, so the per-tenant DECISION is tested in isolation. Before this,
+    /// the accrual label — the CREDIT side of the ledger — had no test at all, and reverting it to
+    /// <c>DateTime.UtcNow.Year</c> left the whole suite green (proven by the @test-authenticator's M6 mutant).
+    /// That regression would recreate the credit/debit leave-year split from the credit end.</para>
+    /// </summary>
+    internal static int AccrualLeaveYearFor(DateOnly today, int fiscalYearStartMonth)
+        => LeaveYear.LabelFor(today, fiscalYearStartMonth);
 
     public async Task RunAsync()
     {
@@ -33,7 +55,7 @@ public sealed class LeaveAccrualJob
         // tenant's leave year is labelled by the year it STARTS in, so every January-to-March run accrued into
         // the WRONG year for them. The label is now resolved PER TENANT from their FiscalYearStartMonth
         // (default 1 = calendar → byte-identical to the previous behaviour).
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
 
         // Get all active tenants WITH their leave-year start month (one query — no per-tenant lookup).
         List<(Guid Id, int FiscalYearStartMonth)> tenants;
@@ -64,7 +86,7 @@ public sealed class LeaveAccrualJob
                 // (and, gated on Rls:Enabled, the app.current_tenant GUC) — keeping it inside the RLS backstop.
                 await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}",
                     async _ => await entitlementService.ProcessAccrualsAsync(
-                        LeaveYear.LabelFor(today, fiscalYearStartMonth)));
+                        AccrualLeaveYearFor(today, fiscalYearStartMonth)));
 
                 Log.Information("LeaveAccrualJob: Completed accruals for tenant {TenantId}", tenantId);
             }

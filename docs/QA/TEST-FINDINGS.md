@@ -6683,17 +6683,25 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   (StatutoryDeduction YTD fiscal-year, LOW) — same "reports ignore the fiscal year" class, and `LeaveYear`
   is now the ready-made primitive for the leave half.
 
-### ISSUE-312 — The full backend suite CANNOT COMPLETE: the test host crashes mid-run, so `dotnet test` reports a green PASS for a partial run (the verify gate is blind)
+### ISSUE-312 — An ABORTED test run reports `Passed!` and exits 0, so a partial run is indistinguishable from a green suite
 - **Type:** ISSUE
-- **Severity:** HIGH
+- **Severity:** MED
 - **Status:** OPEN
 - **Layer:** BE / test infra
 - **Module / US / TC:** Cross-cutting (all) / — / —
-- **Title:** `dotnet test HRM.Tests` aborts partway through with **`The active test run was aborted. Reason: Test host process crashed`**, at a **non-deterministic point**, and then prints a **`Passed!`** line for the subset that completed plus **exit code 0**. The suite has **4,058 discoverable tests**; observed completions before the abort: **231, 371, 964, 1373**. Nobody — human or agent — is currently verifying this suite.
+- **⚠⚠ THIS FINDING WAS FILED TWICE WITH A WRONG ROOT CAUSE. Read the correction before acting.**
+  I filed it as "the full suite cannot complete" (HIGH) and blamed first an OOM in the Performance module, then
+  Testcontainers contention. **Both were wrong, and so was the headline.** The suite completes fine:
+  **3,933/3,933 green** (non-Testcontainers) on an idle machine. Every abort I saw happened while I was running
+  two background auditors plus parallel builds against the same machine — **self-inflicted resource
+  contention**. Even my "reproduced on BASE, so it's pre-existing" evidence was contaminated: that run was also
+  concurrent with a live auditor. The *only* durable defect here is the reporting behaviour below.
+- **Title:** When `dotnet test` aborts (**`The active test run was aborted. Reason: Test host process crashed`**), it still prints **`Passed! - Failed: 0, Passed: N`** for the subset that completed and **exits 0**. The `Test Run Aborted.` line sits two lines above the green one. Suite is **4,058 tests**; aborted runs reporting a green `Passed!` were observed at 231/371/519/964/1373/1593. **Any scripted gate — CI, `/implement-all`, an agent — reads that as a full pass.**
 - **⚠ Why this is HIGH and not a nuisance:** the run *looks* green. `Passed! - Failed: 0, Passed: 964` scrolls past and the `Test Run Aborted.` line is easy to miss; exit code 0 means **CI and every scripted gate treat a ~25%-complete run as a full pass**. This is a verification hole across the entire codebase, not a flaky test.
-- **⚠ It already hid a real regression (2026-07-16):** CAL-8 left `LeaveYearEndJobRetryTests` **red 358 days a year**, and my full-suite runs never reached it — I read the aborted `Passed!` as green. It was caught by an auditor, not by the suite.
-- **⚠ The "3991/3997 green" figures in the plan/session notes are therefore NOT credible** as full-suite results. They should be treated as stale or environment-specific until this is fixed.
-- **Root cause (~80%, infra/resource — CORRECTED after `--blame-crash`; my first guess was wrong):** **Testcontainers resource contention, not a memory leak in app code.** `--blame-crash` on BASE named the in-flight test in the sequence file:
+- **⚠ It already hid a real regression (2026-07-16):** CAL-8 left `LeaveYearEndJobRetryTests` **red 358 days a year**, and my aborted runs never reached it — I read the aborted `Passed!` as green. Caught by an auditor, not by the suite. **This is why the reporting defect stands on its own merits even though the abort was self-inflicted:** whatever kills a run — contention, a real crash, a killed process — the operator is told it passed.
+- **The "3991/3997 green" figures in the plan/session notes are plausible after all** — they were presumably measured on an idle machine. My earlier claim here that they were "not credible" was based on the contaminated runs and is **withdrawn**.
+- **Root cause (~90%, environmental — CORRECTED TWICE; see the warning above):** **running the suite concurrently with other heavy dotnet processes.** With the machine idle the suite is green; with 2 background agents + parallel builds it aborts, at a point that moves with load. `--blame-crash` named `TenantGucInterceptorRlsPostgresTests` as in-flight (it passes alone in 59s, Docker up) — a symptom of the contention, not the cause. **The earlier text below is retained deliberately as a record of two confident wrong answers.**
+- **Superseded root cause #2 (WRONG):** Testcontainers contention alone. `--blame-crash` on BASE named the in-flight test in the sequence file:
   `TenantGucInterceptorRlsPostgresTests.Interceptor_UnderRetryStrategy_SetsGuc_SupportsOwnTx_AndIsolatesPerOpen` → `Completed="False"`. That test **passes in isolation (1/1, 59s)**, and **Docker is up (29.5.3)**. **74 test files use Testcontainers**, each spinning a real Postgres container, at `xunit.runner.json` `maxParallelThreads: 4` — the host dies under the cumulative container load, at a point that moves with ordering.
   - ⚠ **My first root cause here was wrong and is retained deliberately as a caution:** an auditor saw an `OutOfMemoryException` through `ReviewerAssignmentService.BuildConfigurationAsync` and read it as infinite recursion; that method is **not** recursive (2 distinct callers, `:77`/`:247`) and its test passes in isolation (12/12). "It's an OOM in the Performance module" was the comfortable narrative and it did not survive `--blame-crash`.
   - This is consistent with the **standing repo practice** already recorded in the session notes — *"agent sandboxes red Testcontainers; run the Postgres suites directly"* — i.e. the constraint is known, but its consequence (a **silently green partial run**) was not.
