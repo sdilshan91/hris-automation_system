@@ -6741,3 +6741,44 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   (seed a month-4 tenant, credit the ledger under the fiscal label, drive the REAL service for a Jan–Mar date,
   assert it sees the balance). Do the two **money** sites first, with a proper F&F oracle — they deserve a
   focused review rather than an append to an already-large PR.
+
+### BUG-288 — Changing `Tenant.FiscalYearStartMonth` silently orphans existing leave-ledger rows (no migration, no guard) — CAL-8 turned a dead setting into a live one
+- **Type:** BUG
+- **Severity:** HIGH
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console + Leave / US-ADM-006 (org profile), US-LV-006/008 / (new TC needed)
+- **Title:** A Tenant Admin can change `FiscalYearStartMonth` (1 → 4) at any time via the org-profile UI.
+  `TenantSettingsService.cs:85` is a bare assignment and `UpdateOrgProfileValidator.cs:30` only checks
+  `InclusiveBetween(1, 12)`. **Nothing checks whether the tenant already has leave-ledger history, and nothing
+  migrates it.** `LeaveLedger.LeaveYear` rows keep the label they were written under; every read now resolves
+  the NEW basis. For **Jan–March-dated** activity the two disagree — `LabelFor(2026-02-10, 4) = 2025` while the
+  stored row says `2026` — so those rows drop out of the balance they belong to.
+- **⚠ Regression introduced by CAL-8 (#318) — by design, and this is the cost of it.** Before #318 the column
+  was **read by nothing**, so flipping it was a genuine no-op: harmless, and the reason no one guarded it.
+  ISSUE-305 made it load-bearing for balances, accrual, expiry, pro-rata and F&F. **The setting became live;
+  the write path did not change with it.** No fiscal tenant is seeded today, so nothing is currently corrupt —
+  but the first real fiscal tenant is exactly the scenario the epic exists to serve.
+- **Root cause (~90%, code):** the leave year is a stored `int` LABEL on the ledger, and the label→date mapping
+  is derived from a MUTABLE tenant column. Changing the mapping retroactively reinterprets every historical
+  row. This is the same class as any "reinterpret stored data by changing a config" bug; the F&F/tax money
+  knobs solved it with **effective-dating** (`TenantFnFPolicy` — the reference pattern for every money knob),
+  which `FiscalYearStartMonth` does not have.
+- **⚠ Nastier than a clean break:** Apr–Dec dates are UNAFFECTED (`LabelFor(d, 4) == d.Year` for them), so the
+  corruption is **partial and silent** — an employee's Jan–March accruals/usage quietly stop counting while the
+  rest of the year looks fine. Reads as a data oddity, not a config error.
+- **Reproduction:** seed a tenant with `FiscalYearStartMonth = 1`; let the accrual job write ledger rows for
+  Jan–Mar; `PUT /api/v1/tenant/settings/org-profile` with `FiscalYearStartMonth = 4`; read
+  `GET /leave/my-balance` → the Jan–Mar rows are no longer in the resolved leave year.
+- **Severity rationale:** HIGH — reachable by a supported admin action, silently changes employees' visible
+  leave balances (and, via encashment/F&F, money), with no warning and no way to undo beyond flipping back.
+  Latent only because no fiscal tenant exists yet — the same "latent" that ISSUE-305 had before the user
+  confirmed the Apr–Mar tenant is real.
+- **Discovered:** 2026-07-16, reviewing whether the F&F fix had deploy blockers (it does not; this does).
+- **Suggested action (needs-decision):** options, cheapest first — (1) **lock it once ledger history exists**
+  (reject the change with a 422 unless the tenant has no `leave_ledger` rows; set it at provisioning) — simple,
+  and provisioning is when a real tenant would set it anyway; (2) **effective-date it** like `TenantFnFPolicy`
+  so the change applies from the next leave year and history keeps its basis — correct, more work;
+  (3) **migrate on change** (relabel affected rows in a transaction) — highest risk, touches the ledger.
+  **Recommendation: (1) now** (it unblocks onboarding the first fiscal tenant safely), **(2) if a tenant ever
+  needs to actually switch**. Do NOT ship the ability to flip it freely.
