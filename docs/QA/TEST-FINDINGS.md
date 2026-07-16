@@ -3778,7 +3778,18 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 - **Severity rationale:** LOW — cosmetic/contract drift between the note and the numbers; no incorrect disbursement, but misleading for CTC consumers.
 
 ### ISSUE-176 — StatutoryDeduction YTD uses calendar-year (Jan→month), ignoring the tenant fiscal-year start (BR-5)
-- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** LOW · **Status:** ✅ RESOLVED (2026-07-16, PR pending — user decision: match the run, per-country) · **Layer:** BE
+- **Fix:** `PayrollReportService.ScopedSlipsForFiscalYtdAsync` (the statutory report's YTD column) now uses each
+  employee's **income-tax FISCAL-YEAR-to-date** window — the same per-country `StatutoryRule` (`EffectiveFrom`→
+  selected month) window the payroll RUN anchors cumulative PAYE on — via a new `ResolveEmployeeIncomeTaxWindowsAsync`
+  helper, loading candidate years {year-1, year} so an Apr–Mar FY that opens in the prior calendar year is covered.
+  Sub-decisions (per the user's "match the run" call): **non-income-tax components (EPF/ETF) follow the same
+  per-employee tax window**; **employees with no resolvable tax country keep the calendar-year window** (so their
+  statutory is never silently dropped). **Mutation-verified** (revert→calendar makes the fiscal YTD wrong: 3000 vs
+  2000) by `StatutoryReport_Ytd_UsesTheIncomeTaxFiscalYear_NotCalendar`; 47/47 green across payroll report/YTD/
+  statutory/multi-country suites. **⚠ Follow-up (tidy):** `ResolveEmployeeIncomeTaxWindowsAsync` deliberately
+  DUPLICATES the `fyByCountry` resolution in `BuildYearEndTaxStatementAsync` (to avoid touching that working money
+  method) — extract to one shared reader when convenient; keep them in lock-step until then.
 - **Module / US / TC:** Payroll / US-PAY-009 / TC-PAY-009-06 (BR-5)
 - **Title:** Statutory Deduction report's "Year-to-Date Total" is documented as "cumulative from January to the selected month of the same calendar year", but BR-5 requires reports to respect the tenant's configured fiscal-year start month (acme = April). YTD should run Apr→month, not Jan→month.
 - **Root cause:** Self-disclosed deferral — report note: "fiscal-year-start config is a documented follow-up, BR-3/BR-5." Same fiscal-year-start gap surfaces in YearEndTaxStatement (deferred) and Variance. Not empirically distinguishable in current data (only June run exists, so YTD=1800 either way). Confidence: 80% (note text + spec).

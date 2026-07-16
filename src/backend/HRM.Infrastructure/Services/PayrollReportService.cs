@@ -453,10 +453,10 @@ public sealed class PayrollReportService : IPayrollReportService
     /// YEAR-TO-DATE cumulative total across the fiscal year up to and including the period (BR-5), plus a
     /// grand-total row. Print/export-friendly for submission to statutory authorities.
     ///
-    /// <para>FISCAL-YEAR ASSUMPTION: no per-tenant fiscal-year-start config is modelled (BR-3 says it is a
-    /// tenant config), so the fiscal year is taken as the CALENDAR year (January .. selected month) of the
-    /// selected <paramref name="year"/>. When a fiscal-year-start config lands, change the YTD window's lower
-    /// bound. The YTD column reuses <see cref="FinalizedSlipsQuery"/> + the same employee-side filters.</para>
+    /// <para>ISSUE-176: the YTD window is each employee's income-tax FISCAL-YEAR-to-date (per-country
+    /// <see cref="StatutoryRule"/> EffectiveFrom → selected month), matching the payroll run's cumulative PAYE
+    /// window; employees with no in-effect income-tax rule fall back to the calendar year. See
+    /// <see cref="ScopedSlipsForFiscalYtdAsync"/>.</para>
     /// </summary>
     private async Task<Result<PayrollReportResult>> BuildStatutoryReportAsync(
         int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
@@ -475,7 +475,7 @@ public sealed class PayrollReportService : IPayrollReportService
                 g => (Count: g.Select(x => x.PayrollSlipId).Distinct().Count(), Total: g.Sum(x => x.Amount)),
                 StringComparer.OrdinalIgnoreCase);
 
-        // Year-to-date (January .. selected month, same fiscal year) statutory lines.
+        // Year-to-date (fiscal-year start .. selected month, per employee's income-tax country) statutory lines.
         var ytdSlips = await ScopedSlipsForFiscalYtdAsync(month, year, qp, ct);
         var ytdDetailsBySlip = await DetailsBySlipAsync(ytdSlips, ct);
         var ytdByComponent = ytdDetailsBySlip.Values
@@ -524,34 +524,128 @@ public sealed class PayrollReportService : IPayrollReportService
             Title = $"Statutory Deduction Report — {MonthName(month)} {year}",
             PayMonth = month, PayYear = year,
             Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
-            Note = "Year-to-Date is cumulative from January to the selected month of the same calendar year "
-                 + "(fiscal-year-start config is a documented follow-up, BR-3/BR-5).",
+            Note = "Year-to-Date is cumulative from each employee's income-tax FISCAL-YEAR start to the selected "
+                 + "month (BR-5) — the same per-country window the payroll run anchors cumulative PAYE on. "
+                 + "Employees with no in-effect income-tax rule use the calendar year (Jan..selected month).",
         });
     }
 
     /// <summary>
-    /// US-RPT-003 AC-3/BR-5: the finalized slips from January to the selected month (inclusive) of the same
-    /// fiscal (calendar) year, with the same employee-side filters applied. A specific PayrollRunId filter is
-    /// intentionally NOT applied here (YTD spans every finalized run in the window).
+    /// US-RPT-003 AC-3/BR-5 (ISSUE-176): the finalized slips in each employee's FISCAL-YEAR-to-date window up
+    /// to and including the selected month, with the same employee-side filters applied. The fiscal year is the
+    /// per-country income-tax window the payroll RUN anchors cumulative PAYE on (via <see cref="StatutoryRule"/>
+    /// EffectiveFrom/EffectiveTo), NOT the calendar year — so the report YTD equals the run's cumulative YTD.
+    /// An employee whose country has no in-effect income-tax rule keeps the calendar-year window (unchanged), so
+    /// non-income-tax statutory (EPF/ETF) for country-less employees is never silently dropped. A specific
+    /// PayrollRunId filter is intentionally NOT applied here (YTD spans every finalized run in the window).
     /// </summary>
     private async Task<List<PayrollSlip>> ScopedSlipsForFiscalYtdAsync(
         int month, int year, PayrollReportQueryParams qp, CancellationToken ct)
     {
+        var employees = await ScopedEmployeesQuery(qp).Select(e => new { e.Id, e.LocationId }).ToListAsync(ct);
+        if (employees.Count == 0)
+            return new List<PayrollSlip>();
+
+        var windows = await ResolveEmployeeIncomeTaxWindowsAsync(
+            employees.Select(e => (e.Id, e.LocationId)).ToList(), month, year, ct);
+        var employeeIds = employees.Select(e => e.Id).ToHashSet();
+        var selectedPeriod = FiscalYearResolver.PeriodDate(year, month);
+
+        // A fiscal year can start in the PRIOR calendar year (Apr–Mar tenant, selected month Jan–Mar), and YTD
+        // caps at the selected month — so the widest possible window is [year-1 .. year]. Load both, filter in memory.
         var slips = await FinalizedSlipsQuery()
-            .Where(s => s.PayYear == year && s.PayMonth >= 1 && s.PayMonth <= month)
+            .Where(s => (s.PayYear == year || s.PayYear == year - 1) && employeeIds.Contains(s.EmployeeId))
             .ToListAsync(ct);
 
-        if (slips.Count == 0)
-            return slips;
+        return slips.Where(s =>
+        {
+            var period = new DateOnly(s.PayYear, s.PayMonth, 1);
+            if (period > selectedPeriod)
+                return false;
+            if (windows.TryGetValue(s.EmployeeId, out var fy))
+                return period >= fy.From && (fy.To is null || period <= fy.To.Value);
+            // No resolvable tax fiscal year → keep the calendar-year YTD window (Jan..selected month of `year`).
+            return s.PayYear == year && s.PayMonth >= 1 && s.PayMonth <= month;
+        }).ToList();
+    }
 
-        bool hasEmployeeFilter = qp.DepartmentId is not null || qp.JobTitleId is not null
-            || qp.LocationId is not null || qp.SalaryStructureId is not null
-            || !string.IsNullOrWhiteSpace(qp.EmploymentType) || !string.IsNullOrWhiteSpace(qp.EmployeeSearch);
-        if (!hasEmployeeFilter)
-            return slips;
+    /// <summary>
+    /// ISSUE-176 / TAX-1: resolve each employee's income-tax FISCAL-YEAR window for the period (month, year) —
+    /// the per-country window the payroll RUN anchors cumulative PAYE on (<c>PayrollRunProcessor</c>), so the
+    /// report YTD matches the run. Country precedence mirrors the run: Location.CountryCode → Tenant default →
+    /// sole-rule country. Employees whose resolved country has no in-effect income-tax rule are ABSENT from the
+    /// result (the caller falls back to the calendar year).
+    ///
+    /// <para>NOTE: this duplicates the per-country resolution inside <c>BuildYearEndTaxStatementAsync</c>
+    /// (the <c>fyByCountry</c> block). It is a deliberate copy to keep this ISSUE-176 change from touching that
+    /// working money method; the two SHOULD be extracted to one shared reader as a follow-up (ISSUE: DRY the
+    /// income-tax fiscal-window resolver). Keep them in lock-step until then.</para>
+    /// </summary>
+    private async Task<Dictionary<Guid, (DateOnly From, DateOnly? To)>> ResolveEmployeeIncomeTaxWindowsAsync(
+        IReadOnlyList<(Guid Id, Guid? LocationId)> employees, int month, int year, CancellationToken ct)
+    {
+        var periodDate = FiscalYearResolver.PeriodDate(year, month);
+        var monthStart = periodDate;
+        var monthEnd = new DateOnly(year, month, DateTime.DaysInMonth(year, month));
 
-        var allowedEmployeeIds = (await ScopedEmployeesQuery(qp).Select(e => e.Id).ToListAsync(ct)).ToHashSet();
-        return slips.Where(s => allowedEmployeeIds.Contains(s.EmployeeId)).ToList();
+        var incomeTaxRuleRows = await _dbContext.StatutoryRules.AsNoTracking()
+            .Where(r => r.IsActive
+                && r.RuleType == StatutoryRuleType.IncomeTax
+                && r.EffectiveFrom <= monthEnd
+                && (r.EffectiveTo == null || r.EffectiveTo >= monthStart))
+            .Select(r => new { r.CountryCode, r.EffectiveFrom, r.EffectiveTo })
+            .ToListAsync(ct);
+
+        var fyByCountry = new Dictionary<string, (DateOnly From, DateOnly? To)>();
+        foreach (var grp in incomeTaxRuleRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.CountryCode))
+            .GroupBy(r => r.CountryCode!.Trim().ToUpperInvariant()))
+        {
+            var candidates = grp.ToList();
+            var ranges = candidates.Select(r => (r.EffectiveFrom, r.EffectiveTo)).ToList();
+            var idx = FiscalYearResolver.SelectEffective(periodDate, ranges);
+            if (idx >= 0)
+                fyByCountry[grp.Key] = (candidates[idx].EffectiveFrom, candidates[idx].EffectiveTo);
+        }
+
+        var locationCountry = await _dbContext.Locations.AsNoTracking()
+            .Where(l => l.CountryCode != null)
+            .Select(l => new { l.Id, l.CountryCode })
+            .ToDictionaryAsync(x => x.Id, x => x.CountryCode!, ct);
+
+        var tenantDefaultRaw = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.DefaultCountryCode)
+            .FirstOrDefaultAsync(ct);
+        var tenantDefaultCountry = string.IsNullOrWhiteSpace(tenantDefaultRaw)
+            ? null : tenantDefaultRaw.Trim().ToUpperInvariant();
+
+        var ruleCountriesRaw = await _dbContext.StatutoryRules.AsNoTracking()
+            .Where(r => r.IsActive && r.EffectiveFrom <= monthEnd && (r.EffectiveTo == null || r.EffectiveTo >= monthStart))
+            .Select(r => r.CountryCode)
+            .Distinct()
+            .ToListAsync(ct);
+        var ruleCountries = ruleCountriesRaw
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
+        var soleRuleCountry = ruleCountries.Count == 1 ? ruleCountries[0] : null;
+
+        var windows = new Dictionary<Guid, (DateOnly From, DateOnly? To)>();
+        foreach (var emp in employees)
+        {
+            string? empCountry = null;
+            if (emp.LocationId is { } locId && locationCountry.TryGetValue(locId, out var locCc))
+                empCountry = locCc;
+            empCountry ??= tenantDefaultCountry;
+            empCountry = string.IsNullOrWhiteSpace(empCountry) ? null : empCountry.Trim().ToUpperInvariant();
+            empCountry ??= soleRuleCountry;
+
+            if (empCountry is not null && fyByCountry.TryGetValue(empCountry, out var fy))
+                windows[emp.Id] = fy;
+        }
+        return windows;
     }
 
     /// <summary>
