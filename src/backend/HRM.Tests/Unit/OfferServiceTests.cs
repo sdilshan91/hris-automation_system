@@ -314,6 +314,45 @@ public sealed class OfferServiceTests
         history.Should().ContainSingle();
     }
 
+    // ── BUG-066 (BR-2/AC-3 single-outcome): no new offer once one is Accepted (applicant Hired) ──
+    [Fact]
+    [Trait("Bug", "BUG-066")]
+    public async Task Generate_Blocked_WhenApplicantAlreadyAcceptedAnOffer()
+    {
+        using var db = CreateDb();
+        var svc = CreateService(db);
+        var draft = (await svc.GenerateAsync(Input() with { ApplicantId = _applicantId })).Value!;
+        await svc.SendAsync(draft.Id);
+        (await svc.RespondAsync(draft.Id, new RespondToOfferInput { Accepted = true })).IsSuccess.Should().BeTrue();
+
+        // The outcome is settled — a fresh generate must be refused, not produce a contradictory v2 Draft.
+        var second = await svc.GenerateAsync(Input() with { ApplicantId = _applicantId });
+
+        second.IsFailure.Should().BeTrue("the single-outcome rule blocks a new offer once one is Accepted");
+        second.StatusCode.Should().Be(409);
+        second.ErrorCode.Should().Be("offer_already_accepted");
+        db.Offers.Count(o => o.ApplicantId == _applicantId).Should().Be(1, "no v2 Draft was created");
+    }
+
+    // ── BUG-066 negative control: a DECLINED prior offer is NOT settled — a re-offer is allowed (guards the
+    //    guard's precision: it must fire on `== Accepted`, not on any terminal/`!IsActive` offer). ──
+    [Fact]
+    [Trait("Bug", "BUG-066")]
+    public async Task Generate_AfterDecline_IsAllowed()
+    {
+        using var db = CreateDb();
+        var svc = CreateService(db);
+        var draft = (await svc.GenerateAsync(Input() with { ApplicantId = _applicantId })).Value!;
+        await svc.SendAsync(draft.Id);
+        (await svc.RespondAsync(draft.Id, new RespondToOfferInput { Accepted = false })).IsSuccess.Should().BeTrue();
+
+        var second = await svc.GenerateAsync(Input() with { ApplicantId = _applicantId });
+
+        second.IsSuccess.Should().BeTrue("only an ACCEPTED offer settles the outcome; a Declined one is supersedable (FR-9)");
+        second.Value!.Version.Should().Be(2);
+        second.Value.Status.Should().Be(OfferStatus.Draft);
+    }
+
     // ── AC-3: decline -> Declined + applicant stays in Offer ──────────
 
     [Fact]

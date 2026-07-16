@@ -2803,7 +2803,12 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ## US-REC-006 — Interviewer Scorecard (2026-06-26 REPORT-ONLY API run, @test-runner)
 
-### BUG-064 · BUG · MED · OPEN · BE — Omitted `overallRecommendation` is silently accepted as `StrongNoHire` instead of rejected (BR-3 mandatory field bypassed)
+### BUG-064 · BUG · MED · ✅ RESOLVED · BE — Omitted `overallRecommendation` is silently accepted as `StrongNoHire` instead of rejected (BR-3 mandatory field bypassed)
+- **Resolution (2026-07-16, PR pending):** `SubmitScorecardRequest`/`SubmitScorecardCommand.OverallRecommendation`
+  made **nullable** so an OMITTED field is `null` (not the enum's zero value StrongNoHire); `SubmitScorecardValidator`
+  gains `.NotNull()` (+ existing `.IsInEnum()`); handler maps `!.Value` post-validation. Mutation-verified.
+  `SubmitScorecardValidatorTests`: `OmittedRecommendation_IsRejected` · `PresentRecommendation_IsAccepted` (an
+  EXPLICIT StrongNoHire still passes — guards the fix's shape, not a blanket reject) · `OutOfRangeRecommendation_IsRejected`.
 - **Module / US / TC:** Recruitment / US-REC-006 / TC-REC-006-07 (BR-3, FR-1)
 - **Title:** A scorecard POST that omits `overallRecommendation` is accepted (201) and stored as `StrongNoHire`, not rejected — the "recommendation is mandatory" rule is unenforceable for the omitted case.
 - **Root cause (confidence 95%):** `OverallRecommendation` enum (`src/backend/HRM.Domain/Enums/OverallRecommendation.cs`) defines `StrongNoHire = 0` as its DEFAULT/zero value. When the JSON body omits the field, System.Text.Json binds the default `0` → `StrongNoHire`, which passes both the validator's `IsInEnum()` (`SubmitScorecardValidator.cs:28-29`) and the service's `Enum.IsDefined()` guard (`ScorecardService.cs:62`). There is no "was the field present?" check (the request DTO `SubmitScorecardRequest.OverallRecommendation` in `InterviewsController.cs:300` is a non-nullable enum with no `[Required]`). So a missing mandatory recommendation is indistinguishable from a deliberate "Strong No Hire". Verified live: omitted recommendation → 201, response `overallRecommendation:"StrongNoHire"`, average 4.00 persisted.
@@ -2811,7 +2816,13 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Evidence:** `{"success":true,...,"overallRecommendation":"StrongNoHire","averageScore":4.00,...}` HTTP 201.
 - **Severity rationale:** MED — no crash, no isolation breach, but it silently records a "Strong No Hire" against an interviewer who simply forgot to choose, corrupting the hiring signal (BR-3 calls the recommendation a "key signal for advancement"). Contained to the one zero-value enum default; fixable by making the DTO field nullable + a presence check, or re-ordering the enum so 0 is an explicit invalid `Unspecified` sentinel.
 
-### ISSUE-119 · ISSUE · MED · OPEN · BE — Scorecard submit does not require ALL configured criteria; a partial scorecard is accepted, skewing the average (TC-006-10 completeness gap)
+### ISSUE-119 · ISSUE · MED · ✅ RESOLVED · BE — Scorecard submit does not require ALL configured criteria; a partial scorecard is accepted, skewing the average (TC-006-10 completeness gap)
+- **Resolution (2026-07-16, PR pending):** `SubmitScorecardValidator` now requires every `ScorecardCriteria.Default`
+  key to be rated (FR-1/FR-3 completeness); a 3-of-4 card → 400. Mutation-verified (`PartialScorecard_MissingACriterion_IsRejected`
+  + `CompleteScorecard_AllCriteria_Passes` control). **⚠ Phase-1 invariant:** criteria are the shared default set;
+  the rule reads `ScorecardCriteria.Default`. When per-tenant configurable criteria (S35.2.9) land, swap `Default`
+  for the tenant set (commented in the validator). The finding's "confirm all-criteria with BA" caveat stands as a
+  forward-looking product note — the shipped behaviour matches the TC + FR-1.
 - **Module / US / TC:** Recruitment / US-REC-006 / TC-REC-006-10 (FR-1/FR-3 completeness)
 - **Title:** A submission rating only a SUBSET of the configured criteria (e.g. omitting `cultural_fit`) is accepted (201); the average is computed over only the submitted criteria, not all configured ones.
 - **Root cause (confidence 90%):** The validator requires `Ratings.NotEmpty()` (≥1) + each key valid + no dups (`SubmitScorecardValidator.cs:31-34`); the service mirrors this (`ScorecardService.cs:65-81`). Neither asserts that every key in `ScorecardCriteria.Default` is present. So a 3-of-4 card persists and `ComputeAverage` divides by 3. TC-006-10 ("Missing criterion → rejected; all configured criteria required") expects 400.
@@ -2881,7 +2892,11 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offers`. Writes gated `Recruitment.Manage`, reads `Recruitment.View` (the story's `Recruitment.Offer.All` does NOT exist; the controller documents the substitution). `Recruitment.ApproveOffer` exists in the catalog but is wired to NO endpoint. Core lifecycle (generate -> send -> accept/decline/withdraw, supersession/versioning, auto-expire Hangfire job, tenant isolation, authz, PDF-gen perf) is SOLID. Findings below.
 
 ### BUG-066 · BUG · MED · BE — A new active offer can be generated for an already-Accepted/Hired applicant (BR-2 / AC-3 single-outcome violation)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending) — `OfferService.GenerateAsync` now returns **409
+  `offer_already_accepted`** when any existing offer for the applicant/vacancy is `Accepted` (the outcome is
+  settled). Mutation-verified: `Generate_Blocked_WhenApplicantAlreadyAcceptedAnOffer` (real generate→send→accept→
+  generate-again) + the negative control `Generate_AfterDecline_IsAllowed` (a DECLINED prior stays supersedable →
+  re-offer succeeds v2 — proves the guard fires on `== Accepted`, not on any terminal/`!IsActive` offer).
 - **Layer:** BE
 - **Module / US / TC:** Recruitment / US-REC-007 / TC-REC-007-07 (step 5)
 - **Title:** `GenerateAsync` only supersedes ACTIVE (Draft/Sent) offers; it does not block generation when a terminal **Accepted** offer already exists, so a Hired applicant can be issued a fresh live Draft offer.

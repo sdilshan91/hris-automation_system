@@ -297,7 +297,9 @@ public sealed record UpdateInterviewRequest
 /// </summary>
 public sealed record SubmitScorecardRequest
 {
-    public OverallRecommendation OverallRecommendation { get; init; }
+    // BUG-064: nullable so an OMITTED recommendation is null (rejected), not silently bound to the enum's
+    // zero value StrongNoHire. BR-3 makes it mandatory — a missed choice must be a 400, not a "Strong No Hire".
+    public OverallRecommendation? OverallRecommendation { get; init; }
     public string? GeneralNotes { get; init; }
     public IReadOnlyList<CriterionRatingRequest> Ratings { get; init; } = [];
 }
