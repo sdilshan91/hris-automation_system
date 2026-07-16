@@ -3,6 +3,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Security;
 using HRM.Application.Features.TenantSettings.DTOs;
 using HRM.Domain.Entities;
+using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
@@ -358,6 +359,133 @@ public sealed class TenantSettingsServiceTests
     }
 
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
+
+    // ══ BUG-288: the leave-year basis is FROZEN once leave history exists ══════════════════════════
+    //
+    // The leave year is a stored int LABEL on leave_ledger and the label→date mapping comes from
+    // Tenant.FiscalYearStartMonth. Changing it retroactively re-dates every historical row: a Jan–Mar row
+    // written under a January basis (label 2026) is resolved to 2025 under an April basis, so it silently
+    // drops out of the employee's balance. Apr–Dec dates are unaffected, so the corruption is PARTIAL — which
+    // is what makes it read as a data oddity rather than a config error.
+    //
+    // Until ISSUE-305 the column was read by NOTHING, so flipping it was a genuine no-op. CAL-8 made it
+    // load-bearing (balances/accrual/expiry/pro-rata/F&F money) and the write path had to catch up.
+
+    /// <summary>
+    /// The provisioning path stays OPEN: a tenant with no leave history can still choose its basis. This is how
+    /// a real Apr–Mar tenant is onboarded, so a guard that blocked it would defeat the epic.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ADM-288")]
+    public async Task FiscalYearStartMonth_CanBeSet_WhenTheTenantHasNoLeaveHistory()
+    {
+        await SeedTenantAsync(_tenantId);
+        var service = CreateService();
+
+        var result = await service.UpdateOrgProfileAsync(OrgProfile(fiscalYearStartMonth: 4));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.FiscalYearStartMonth.Should().Be(4);
+    }
+
+    /// <summary>
+    /// THE guard: once the tenant has a single leave-ledger row, changing the basis is rejected 422 rather
+    /// than silently re-dating that row.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ADM-288")]
+    public async Task FiscalYearStartMonth_CannotBeChanged_OnceLeaveHistoryExists()
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedLeaveLedgerRowAsync(_tenantId);
+        var service = CreateService();
+
+        var result = await service.UpdateOrgProfileAsync(OrgProfile(fiscalYearStartMonth: 4));
+
+        result.IsSuccess.Should().BeFalse("changing the basis would re-date existing ledger rows");
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("fiscal_year_locked_by_leave_history");
+
+        using var db = CreateDbContext();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
+        tenant.FiscalYearStartMonth.Should().Be(1, "the rejected change must not have been persisted");
+    }
+
+    /// <summary>
+    /// ⚠ THE ARM A NAIVE GUARD BREAKS. This is a FULL-REPLACE PUT (BUG-117/ISSUE-310 class): an admin editing
+    /// the address resends every field, including the UNCHANGED fiscal month. If the guard fired on
+    /// "field present" rather than "value changed", every org-profile edit would 422 for any tenant with leave
+    /// history — i.e. all of them.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ADM-288")]
+    public async Task UnrelatedProfileEdits_StillWork_WhenTheFiscalMonthIsResent_Unchanged()
+    {
+        await SeedTenantAsync(_tenantId, name: "Old Co");
+        await SeedLeaveLedgerRowAsync(_tenantId);
+        var service = CreateService();
+
+        // Same month as seeded (1) — the admin is only changing the address.
+        var result = await service.UpdateOrgProfileAsync(
+            OrgProfile(fiscalYearStartMonth: 1, name: "New Co", address: "2 New St"));
+
+        result.IsSuccess.Should().BeTrue(
+            "resending the SAME basis is a no-op — the lock must trigger on a CHANGE, not on the field's presence");
+        result.Value!.Name.Should().Be("New Co");
+        result.Value.Address.Should().Be("2 New St");
+    }
+
+    /// <summary>
+    /// Tenant isolation (Critical Rule #1): the guard asks "does THIS tenant have leave history" via the EF
+    /// global query filter. Tenant B's ledger must never lock Tenant A — an unfiltered `AnyAsync()` would lock
+    /// every tenant in the system as soon as any one of them accrued leave.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ADM-288")]
+    public async Task AnotherTenantsLeaveHistory_DoesNotLockThisTenant()
+    {
+        var otherTenant = Guid.NewGuid();
+        await SeedTenantAsync(_tenantId);
+        await SeedTenantAsync(otherTenant, name: "Other Co");
+        await SeedLeaveLedgerRowAsync(otherTenant);   // history belongs to SOMEONE ELSE
+        var service = CreateService();
+
+        var result = await service.UpdateOrgProfileAsync(OrgProfile(fiscalYearStartMonth: 4));
+
+        result.IsSuccess.Should().BeTrue(
+            "this tenant has no leave history of its own; another tenant's rows must be invisible here");
+        result.Value!.FiscalYearStartMonth.Should().Be(4);
+    }
+
+    private static UpdateOrgProfileRequest OrgProfile(
+        int fiscalYearStartMonth, string name = "Test Co", string? address = null)
+        => new(
+            Name: name,
+            LegalName: null,
+            RegistrationNumber: null,
+            Address: address,
+            Industry: null,
+            CompanySize: null,
+            FiscalYearStartMonth: fiscalYearStartMonth,
+            DefaultCountryCode: null);
+
+    private async Task SeedLeaveLedgerRowAsync(Guid tenantId)
+    {
+        using var db = CreateDbContext();
+        db.LeaveLedgerEntries.Add(new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            EntryType = LedgerEntryType.Accrual,
+            EmployeeId = Guid.NewGuid(),
+            LeaveTypeId = Guid.NewGuid(),
+            LeaveYear = 2026,
+            Amount = 14m,
+            BalanceAfter = 14m,
+            OccurredAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+        await db.SaveChangesAsync();
+    }
 
     private async Task SeedTenantAsync(Guid tenantId, string name = "Test Tenant")
     {
