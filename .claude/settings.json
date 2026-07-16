@@ -65,7 +65,8 @@
           { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/secret-guard.py\"", "timeout": 5 },
           { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/test-integrity-guard.py\"", "timeout": 5 },
           { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/freeze-guard.py\"", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/config-protection-guard.py\"", "timeout": 5 }
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/config-protection-guard.py\"", "timeout": 5 },
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/antipattern-advisor.py\"", "timeout": 5 }
         ]
       },
       {

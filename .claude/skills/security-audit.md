@@ -98,6 +98,26 @@ where this platform gets breached — weight it hardest.
 - Idempotency on critical writes where the design calls for it.
 - File uploads: type/size limits, no path traversal.
 
+## Concrete .NET checks (quick reference)
+
+When the diff touches the relevant surface, these are fast, high-signal, low-false-positive
+checks (adapted from `dotnet-claude-kit`'s security-scan, MIT):
+
+- **Dependency CVEs (only if packages changed)** — run
+  `dotnet list package --vulnerable --include-transitive` and map CVSS to severity
+  (9.0+ Critical, 7.0+ High). This is the SCA pass referenced in exclusion #10 — don't
+  hand-guess CVEs.
+- **JWT `TokenValidationParameters` (only if auth config changed)** — confirm all four
+  validations are **on** and clock skew is tight:
+  `ValidateIssuer`, `ValidateAudience`, `ValidateLifetime`, `ValidateIssuerSigningKey` all
+  `true`; `ClockSkew <= TimeSpan.FromMinutes(1)` (the 5-min default is too generous). Any set
+  to `false` is a High finding (tokens from the wrong issuer/audience, or expired, are accepted).
+- **CORS (only if a CORS policy changed)** — `AllowAnyOrigin()` + `AllowCredentials()` is a
+  Critical misconfiguration; a wildcard origin in production is High. Explicit `WithOrigins(...)`
+  from config is the GOOD form.
+- **Raw SQL** — `FromSqlRaw`/`ExecuteSqlRaw` with interpolation is injection; the fix is
+  `FromSqlInterpolated` (parameterized) **plus** an explicit `WHERE tenant_id` (see §1).
+
 ## Output
 
 Write the report to `docs/Architecture/security-reviews/{scope}.md` (create the folder if absent; `{scope}`
