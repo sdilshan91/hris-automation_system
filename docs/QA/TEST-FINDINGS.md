@@ -6745,7 +6745,12 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### BUG-288 — Changing `Tenant.FiscalYearStartMonth` silently orphans existing leave-ledger rows (no migration, no guard) — CAL-8 turned a dead setting into a live one
 - **Type:** BUG
 - **Severity:** HIGH
-- **Status:** 🟡 FIX READY — PR #319 **OPEN** (awaiting merge; flip to ✅ RESOLVED after merge)
+- **Status:** ✅ RESOLVED — PR #319 **MERGED** to `test/local-subdomains` (merge `abe4b8c`). Verified
+  2026-07-16 via `/verify-fix BUG-288`: `TenantSettingsServiceTests` 18/18 green (real count, exit 0),
+  including all 4 fiscal-lock arms — `FiscalYearStartMonth_CanBeSet_WhenTheTenantHasNoLeaveHistory` ·
+  `..._CannotBeChanged_OnceLeaveHistoryExists` · `UnrelatedProfileEdits_StillWork_WhenTheFiscalMonthIsResent_Unchanged` ·
+  `AnotherTenantsLeaveHistory_DoesNotLockThisTenant`. Regression lives as these xUnit arms (no HTTP-probe
+  TC was needed; mutation-verified 3/3 in the PR). No `TEST-STATUS.md` row — the finding bound no `TC-*.md`.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console + Leave / US-ADM-006 (org profile), US-LV-006/008 / (new TC needed)
 - **Title:** A Tenant Admin can change `FiscalYearStartMonth` (1 → 4) at any time via the org-profile UI.
