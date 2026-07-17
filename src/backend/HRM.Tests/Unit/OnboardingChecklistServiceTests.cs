@@ -345,6 +345,34 @@ public sealed class OnboardingChecklistServiceTests
         instances[0].IdempotencyKey.Should().Be("retry-key-88");
     }
 
+    [Fact]
+    public async Task Assign_idempotency_holds_under_Merge_mode_retry_bug088()
+    {
+        // BUG-088: the dedup guard runs BEFORE the Replace/Merge branch, so a Merge-mode retry with the same key
+        // must ALSO short-circuit to the existing instance and NOT re-add the template's tasks. This pins that
+        // ordering (a refactor moving the guard after the branch would let Merge silently double the tasks).
+        SeedEmployees();
+        var templateId = SeedTemplate();
+
+        var first = await AuditingService().AssignAsync(Assign(templateId, idempotencyKey: "merge-key-88"));
+        first.IsSuccess.Should().BeTrue();
+        var firstTaskCount = first.Value!.Tasks.Count;
+        firstTaskCount.Should().BeGreaterThan(0);
+
+        var retry = await AuditingService().AssignAsync(
+            Assign(templateId, mode: ChecklistAssignmentMode.Merge, idempotencyKey: "merge-key-88"));
+
+        retry.IsSuccess.Should().BeTrue();
+        retry.Value!.Id.Should().Be(first.Value!.Id);
+
+        await using var db = AuditingDb();
+        var instances = await db.OnboardingChecklistInstances.Where(c => c.EmployeeId == _employeeId).ToListAsync();
+        instances.Should().HaveCount(1);
+        // The Merge retry must NOT re-add the template's tasks onto the existing checklist.
+        var taskRows = await db.OnboardingTaskInstances.CountAsync(t => t.ChecklistInstanceId == first.Value!.Id);
+        taskRows.Should().Be(firstTaskCount);
+    }
+
     // ── Inactive template + missing refs ────────────────────────────────
 
     [Fact]
