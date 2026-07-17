@@ -70,6 +70,32 @@
 
 ## Findings
 
+### ISSUE-316 — `RejectionReason` enum columns stay strict, so a corrupt `rejection_reason` still 500s the applicant board/detail (ISSUE-231 residual)
+- **ID:** ISSUE-316
+- **Type:** ISSUE (robustness / defense-in-depth)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Recruitment / US-REC-003, US-REC-004 / (new TC needed) · register [[DEFERRED-FOLLOWUPS]] DF-11
+- **Title:** PR #348 made `applicant.stage`/`.source` + `applicant_stage_history.from_stage`/`.to_stage` + `payroll_run.status` tolerant of out-of-enum strings, but **`applicant.rejection_reason`** (`ApplicantConfiguration`) and **`applicant_stage_history.rejection_reason`** (`ApplicantStageHistoryConfiguration`) still use strict `.HasConversion<string>()`. The pipeline board materializes the **whole** `Applicant` entity (`ApplicantService.GetPipelineBoardAsync` → `.ToListAsync()`), so a corrupt `rejection_reason` string **still 500s the entire board** (and the applicant detail timeline). The board is therefore only *partially* hardened against the ISSUE-231 class.
+- **Root cause (~95%, code + `@integration-enforcer` audit):** the tolerant-converter fix was scoped to the `ApplicantStage`/`ApplicationSource`/`PayrollRunStatus` enums; the separate **nullable** `RejectionReason` enum was left strict. Same materialization-throw class as ISSUE-231.
+- **Reproduction steps:** raw-SQL set an applicant's `rejection_reason` to a string outside the `RejectionReason` enum, then `GET /recruitment/vacancies/{id}/pipeline` → 500 (`Cannot convert string value '…' … 'RejectionReason' enum`). Same for the detail timeline.
+- **Fix direction (NOT applied — needs a decision):** add an `Unknown` member to `RejectionReason` + a **nullable**-aware tolerant converter (the current converter is non-nullable), wire both columns, guard the `MoveApplicantStage` `RejectionReason` `.IsInEnum()` rule with `.NotEqual(Unknown)`, and add a Postgres arm (corrupt `rejection_reason` → board 200). Lower likelihood than stage/source (only set on rejected rows, always to a validated value), hence MED not HIGH.
+- **Severity rationale:** MED — same "one bad row 500s the board" class as ISSUE-231, but a narrower trigger (rejected applicants only) and the same board is already resilient to the far more common stage/source corruption.
+
+### ISSUE-317 — FE has no `Unknown` badge/label for a tolerated corrupt enum row (renders blank, no crash)
+- **ID:** ISSUE-317
+- **Type:** ISSUE (FE robustness / UX)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** FE
+- **Module / US / TC:** Recruitment / Payroll / US-REC-003, US-REC-009, US-PAY-011 / (new Karma TC needed) · register [[DEFERRED-FOLLOWUPS]] DF-12
+- **Title:** After PR #348 the BE tolerates a corrupt enum row (maps it to the `Unknown` sentinel), but the FE enum unions + label/badge maps have no `Unknown` key — `applicant.models.ts` (`ApplicantStage`/`ApplicantSource`), `pipeline.models.ts` (`STAGE_BADGE`), `payroll-run.models.ts` (`RUN_STATUS_BADGE`/`RUN_STATUS_LABELS`). So a tolerated row surfaces as a **blank** badge/label (undefined key lookup) on the payroll-run list and the applicant list/detail — graceful (no crash) but silent, with no visible "unknown/corrupt row" affordance for someone to go fix the data.
+- **Root cause (~90%, `@integration-enforcer` audit):** PR #348 was backend-scoped; the FE contract enums were not touched.
+- **Reproduction steps:** with a BE-tolerated corrupt row present, load the payroll-run list or applicant board/detail → the affected badge renders empty rather than "Unknown".
+- **Fix direction (NOT applied — needs a decision):** add an `Unknown` member to the FE enum unions + an `Unknown` entry to the badge/label maps (surface the bad row) OR explicitly accept blank-degradation; either way document it. Karma spec asserting the badge renders "Unknown" not blank.
+- **Severity rationale:** LOW — cosmetic, only ever renders on a corrupt row the BE already tolerates; no crash, no data risk.
+
 ### BUG-001 — SystemSupport-initiated impersonation is NOT read-only (AC-6/BR-1 bypass; write gate never fires)
 - **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #130, verified 2026-07-02)
 - **Layer:** BE
