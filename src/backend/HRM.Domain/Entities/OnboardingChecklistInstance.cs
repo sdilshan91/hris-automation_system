@@ -38,6 +38,14 @@ public sealed class OnboardingChecklistInstance : BaseEntity
     /// <summary>The HR user who assigned the checklist (FR-3 "HR" resolution / FR-8 audit).</summary>
     public Guid? AssignedByUserId { get; set; }
 
+    /// <summary>
+    /// NFR-5 idempotency key (BUG-088). The client-supplied retry key for this assignment, used to detect a
+    /// duplicate POST and return the existing instance instead of creating a second one. A dedicated column —
+    /// NOT <see cref="BaseEntity.CreatedBy"/>, which the AuditInterceptor unconditionally overwrites with the
+    /// actor, so the previous CreatedBy-based dedup never matched. Null when no key was supplied.
+    /// </summary>
+    public string? IdempotencyKey { get; set; }
+
     // ── Navigation ─────────────────────────────────────────────────
     public List<OnboardingTaskInstance> Tasks { get; set; } = [];
 }

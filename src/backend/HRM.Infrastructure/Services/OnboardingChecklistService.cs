@@ -147,7 +147,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 .FirstOrDefaultAsync(
                     c => c.EmployeeId == input.EmployeeId
                          && c.TemplateId == input.TemplateId
-                         && c.CreatedBy == input.IdempotencyKey
+                         && c.IdempotencyKey == input.IdempotencyKey
                          && c.Status == OnboardingChecklistStatus.Active,
                     cancellationToken);
             if (existingByKey is not null)
@@ -213,9 +213,10 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 StartDate = startDate,
                 Version = version,
                 AssignedByUserId = _currentUser.UserId,
-                // Stash idempotency key in created_by when supplied so NFR-5 retry detection works without a
-                // dedicated column; the AuditInterceptor overwrites created_by with the real actor otherwise.
-                CreatedBy = string.IsNullOrWhiteSpace(input.IdempotencyKey) ? null : input.IdempotencyKey,
+                // NFR-5 (BUG-088): persist the retry key in its own column. The previous approach stashed it in
+                // created_by, but AuditInterceptor unconditionally overwrites created_by with the actor AFTER
+                // this runs, so the key was never persisted and the retry-dedup at :150 never matched.
+                IdempotencyKey = string.IsNullOrWhiteSpace(input.IdempotencyKey) ? null : input.IdempotencyKey,
                 IsDeleted = false,
             };
 
