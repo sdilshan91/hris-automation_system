@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
@@ -9,6 +10,9 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace HRM.Infrastructure.Services;
 
@@ -256,14 +260,15 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         var normalized = NormalizeFormat(format);
         if (normalized is null)
             return Result<PerformanceDashboardExportResult>.Failure(
-                "Export format must be one of csv, xlsx.", 400, "invalid_format");
+                "Export format must be one of csv, xlsx, pdf.", 400, "invalid_format");
 
         var overview = await GetOverviewAsync(filter, cancellationToken);
         if (overview.IsFailure)
             return Result<PerformanceDashboardExportResult>.Failure(
                 overview.Error!, overview.StatusCode ?? 400, overview.ErrorCode);
 
-        var (content, fileName, contentType) = RenderExport(normalized, overview.Value!);
+        // ISSUE-126: PDF (FR-8) carries tenant branding — the primary colour bands the header.
+        var (content, fileName, contentType) = RenderExport(normalized, overview.Value!, _tenantContext.PrimaryColor);
         return Result<PerformanceDashboardExportResult>.Success(new PerformanceDashboardExportResult
         {
             FileContent = content,
@@ -597,15 +602,130 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     // ══════════════════════════════════════════════════════════════
 
     private static (byte[] Content, string FileName, string ContentType) RenderExport(
-        string format, PerformanceDashboardDto d)
+        string format, PerformanceDashboardDto d, string? brandColor = null)
     {
         var baseName = $"performance-dashboard-{d.CycleId:N}";
         return format switch
         {
             "xlsx" => (RenderXlsx(d), $"{baseName}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            "pdf" => (RenderPdf(d, brandColor), $"{baseName}.pdf", "application/pdf"),
             _ => (RenderCsv(d), $"{baseName}.csv", "text/csv"),
         };
+    }
+
+    /// <summary>Default header colour when the tenant has no valid primary-colour brand set.</summary>
+    private const string DefaultBrandColor = "#1E3A8A";
+
+    /// <summary>ISSUE-126: a valid <c>#RRGGBB</c>/<c>#RGB</c> hex, or the default. Guards QuestPDF against a
+    /// malformed tenant colour.</summary>
+    private static string ResolveBrandColor(string? brandColor)
+    {
+        var c = brandColor?.Trim();
+        return !string.IsNullOrEmpty(c) && Regex.IsMatch(c, "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+            ? c
+            : DefaultBrandColor;
+    }
+
+    /// <summary>
+    /// ISSUE-126 (US-PRF-007 FR-8/AC-4): the dashboard as a branded PDF. The tenant's primary colour bands the
+    /// header (falling back to the default); the summary, cycle-progress, department averages and top/bottom
+    /// performers render as tables.
+    /// </summary>
+    private static byte[] RenderPdf(PerformanceDashboardDto d, string? brandColor)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+        var brand = ResolveBrandColor(brandColor);
+
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(24);
+                page.DefaultTextStyle(t => t.FontSize(9));
+
+                // Branded header band (tenant primary colour).
+                page.Header().Background(brand).Padding(12).Column(col =>
+                {
+                    col.Item().Text("Performance Dashboard").FontColor(Colors.White).FontSize(16).Bold();
+                    col.Item().Text($"{d.CycleName}  ·  Scope: {d.Scope}").FontColor(Colors.White).FontSize(9);
+                });
+
+                page.Content().PaddingTop(12).Column(col =>
+                {
+                    col.Spacing(10);
+
+                    col.Item().Text($"Average Score: {Num(d.AverageScore)}    Scored Employees: {d.ScoredEmployeeCount}").Bold();
+
+                    // Cycle progress.
+                    col.Item().Text("Cycle Progress").Bold();
+                    col.Item().Table(t =>
+                    {
+                        t.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(1); });
+                        void Row(string k, string v)
+                        {
+                            t.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(2).Text(k);
+                            t.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(2).AlignRight().Text(v);
+                        }
+                        Row("Total Participants", d.Progress.TotalParticipants.ToString(CultureInfo.InvariantCulture));
+                        Row("Goal Setting Completed", d.Progress.GoalSettingCompleted.ToString(CultureInfo.InvariantCulture));
+                        Row("Self Assessment Completed", d.Progress.SelfAssessmentCompleted.ToString(CultureInfo.InvariantCulture));
+                        Row("Manager Review Completed", d.Progress.ManagerReviewCompleted.ToString(CultureInfo.InvariantCulture));
+                        Row("Signed Off", d.Progress.SignedOff.ToString(CultureInfo.InvariantCulture));
+                        Row("Completion Rate (%)", Num(d.Progress.CompletionRate));
+                    });
+
+                    // Department averages.
+                    if (d.DepartmentAverages.Count > 0)
+                    {
+                        col.Item().Text("Department Averages").Bold();
+                        col.Item().Table(t =>
+                        {
+                            t.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(1); c.RelativeColumn(1); });
+                            foreach (var h in new[] { "Department", "Headcount", "Avg Score" })
+                                t.Cell().Background(brand).Padding(3).Text(h).FontColor(Colors.White).Bold();
+                            foreach (var dep in d.DepartmentAverages)
+                            {
+                                t.Cell().Padding(2).Text(dep.DepartmentName);
+                                t.Cell().Padding(2).AlignRight().Text(dep.Headcount.ToString(CultureInfo.InvariantCulture));
+                                t.Cell().Padding(2).AlignRight().Text(Num(dep.AverageScore));
+                            }
+                        });
+                    }
+
+                    // Top / bottom performers.
+                    void PerformerTable(string title, IReadOnlyList<PerformerDto> people)
+                    {
+                        if (people.Count == 0) return;
+                        col.Item().Text(title).Bold();
+                        col.Item().Table(t =>
+                        {
+                            t.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(2); c.RelativeColumn(3); c.RelativeColumn(1); });
+                            foreach (var h in new[] { "Employee", "Employee No", "Department", "Score" })
+                                t.Cell().Background(brand).Padding(3).Text(h).FontColor(Colors.White).Bold();
+                            foreach (var p in people)
+                            {
+                                t.Cell().Padding(2).Text(p.EmployeeName);
+                                t.Cell().Padding(2).Text(p.EmployeeNo);
+                                t.Cell().Padding(2).Text(p.DepartmentName);
+                                t.Cell().Padding(2).AlignRight().Text(Num(p.Score));
+                            }
+                        });
+                    }
+                    PerformerTable("Top Performers", d.TopPerformers);
+                    PerformerTable("Bottom Performers", d.BottomPerformers);
+                });
+
+                page.Footer().AlignRight().Text(t =>
+                {
+                    t.Span("Generated ");
+                    t.Span(DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));
+                });
+            });
+        });
+
+        return document.GeneratePdf();
     }
 
     private static byte[] RenderCsv(PerformanceDashboardDto d)
@@ -767,6 +887,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         {
             "csv" => "csv",
             "xlsx" or "excel" => "xlsx",
+            "pdf" => "pdf",
             _ => null,
         };
     }

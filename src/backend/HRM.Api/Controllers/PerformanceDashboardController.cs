@@ -19,8 +19,9 @@ namespace HRM.Api.Controllers;
 /// View.All ⇒ org-wide data + top/bottom performers, View.Team ⇒ ONLY the caller's direct reports + a team
 /// ranking (BR-1/BR-3/AC-5). Employees hold neither, so they are forbidden server-side (FE also redirects).
 ///
-/// DEFERRALS (documented in the service): PDF export (FR-8 — CSV + XLSX only here, QuestPDF seam) and the
-/// NFR-3/BR-4 materialized-view + Redis refresh (computed live each request — clearly-marked extension point).
+/// EXPORT (FR-8/AC-4): CSV, XLSX, and PDF (ISSUE-126 — the PDF is branded with the tenant primary colour via
+/// QuestPDF). DEFERRALS (documented in the service): the NFR-3/BR-4 materialized-view + Redis refresh
+/// (computed live each request — clearly-marked extension point).
 /// </summary>
 [ApiController]
 [Route("api/v1/tenant/performance")]
@@ -124,7 +125,7 @@ public sealed class PerformanceDashboardController : ControllerBase
     /// <summary>
     /// GET /api/v1/tenant/performance/dashboard/export?format=csv|xlsx&amp;cycleId=&amp;…
     /// Exports the overview's tabular data (overview + progress + distribution + department averages +
-    /// top/bottom performers) as a CSV/XLSX file download (FR-8/AC-4). PDF is deferred. Scope applies.
+    /// top/bottom performers) as a CSV/XLSX/PDF file download (FR-8/AC-4); the PDF is tenant-branded. Scope applies.
     /// </summary>
     [HttpGet("dashboard/export")]
     [RequirePermission("Performance.View.All", "Performance.View.Team")]
