@@ -77,7 +77,19 @@ public sealed class InterviewSchedulingIntegrationTests
         public void SetSystemContext() { }
     }
 
-    private IMediator BuildPipeline(Guid tenantId, Guid userId)
+    /// <summary>
+    /// Records reminder-scheduler interactions so tests can prove the reminder job is created on schedule
+    /// and cleared on cancel/complete (rather than asserting an always-null id under the no-op seam).
+    /// </summary>
+    private sealed class RecordingReminderScheduler : IInterviewReminderScheduler
+    {
+        private int _seq;
+        public List<string?> Cancelled { get; } = new();
+        public string? Schedule(Guid tenantId, Guid interviewId, DateTime fireAtUtc) => $"job-{++_seq}";
+        public void Cancel(string? jobId) => Cancelled.Add(jobId);
+    }
+
+    private IMediator BuildPipeline(Guid tenantId, Guid userId, IInterviewReminderScheduler? reminderScheduler = null)
     {
         var tenantContext = new MutableTenantContext { TenantId = tenantId };
 
@@ -95,7 +107,10 @@ public sealed class InterviewSchedulingIntegrationTests
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
 
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
-        // IInterviewReminderScheduler deliberately NOT registered (Hangfire no-op in tests).
+        // IInterviewReminderScheduler is a no-op by default (Hangfire seam); a test can inject a
+        // recording fake to assert the schedule/clear behaviour explicitly.
+        if (reminderScheduler is not null)
+            services.AddSingleton(reminderScheduler);
         services.AddScoped<IInterviewService, InterviewService>();
 
         services.AddMediatR(cfg =>
@@ -326,6 +341,97 @@ public sealed class InterviewSchedulingIntegrationTests
         var again = await mediator.Send(new CancelInterviewCommand(created.Id));
         again.IsFailure.Should().BeTrue();
         again.StatusCode.Should().Be(409);
+    }
+
+    // ── Outcome: Completed / No-Show + transition guard (FR-6, ISSUE-115) ─
+
+    [Fact]
+    public async Task Complete_SetsStatusCompleted_AndClearsReminderJob()
+    {
+        var scheduler = new RecordingReminderScheduler();
+        var mediator = BuildPipeline(_tenantA, _userA, scheduler);
+        var created = (await mediator.Send(Schedule(_applicantA, new[] { _empA1 }))).Value!;
+
+        // The reminder job was actually scheduled at creation — a real non-null id to clear later.
+        created.ReminderJobId.Should().NotBeNullOrEmpty();
+        var jobId = created.ReminderJobId;
+
+        var done = await mediator.Send(new CompleteInterviewCommand(created.Id));
+
+        done.IsSuccess.Should().BeTrue();
+        done.Value!.Status.Should().Be(InterviewStatus.Completed);
+        done.Value.StatusName.Should().Be("Completed");
+        // Not vacuous: the persisted id is nulled AND Cancel was invoked with the scheduled id.
+        done.Value.ReminderJobId.Should().BeNull();
+        scheduler.Cancelled.Should().Contain(jobId);
+    }
+
+    [Fact]
+    public async Task MarkNoShow_SetsStatusNoShow()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var created = (await mediator.Send(Schedule(_applicantA, new[] { _empA1 }))).Value!;
+
+        var noShow = await mediator.Send(new MarkInterviewNoShowCommand(created.Id));
+
+        noShow.IsSuccess.Should().BeTrue();
+        noShow.Value!.Status.Should().Be(InterviewStatus.NoShow);
+        noShow.Value.StatusName.Should().Be("NoShow");
+    }
+
+    [Fact]
+    public async Task NoShow_ThenComplete_IsRejectedAsInvalidTransition_409()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var created = (await mediator.Send(Schedule(_applicantA, new[] { _empA1 }))).Value!;
+        await mediator.Send(new MarkInterviewNoShowCommand(created.Id));
+
+        var complete = await mediator.Send(new CompleteInterviewCommand(created.Id));
+
+        complete.IsFailure.Should().BeTrue();
+        complete.StatusCode.Should().Be(409);
+        complete.ErrorCode.Should().Be("interview_invalid_transition");
+    }
+
+    [Fact]
+    public async Task Complete_ThenNoShow_IsRejectedAsInvalidTransition_409()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var created = (await mediator.Send(Schedule(_applicantA, new[] { _empA1 }))).Value!;
+        await mediator.Send(new CompleteInterviewCommand(created.Id));
+
+        var again = await mediator.Send(new MarkInterviewNoShowCommand(created.Id));
+
+        again.IsFailure.Should().BeTrue();
+        again.StatusCode.Should().Be(409);
+        again.ErrorCode.Should().Be("interview_invalid_transition");
+    }
+
+    [Fact]
+    public async Task Complete_OnCancelledInterview_IsRejectedAsInvalidTransition_409()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+        var created = (await mediator.Send(Schedule(_applicantA, new[] { _empA1 }))).Value!;
+        await mediator.Send(new CancelInterviewCommand(created.Id));
+
+        var complete = await mediator.Send(new CompleteInterviewCommand(created.Id));
+
+        complete.IsFailure.Should().BeTrue();
+        complete.StatusCode.Should().Be(409);
+        complete.ErrorCode.Should().Be("interview_invalid_transition");
+    }
+
+    [Fact]
+    public async Task Complete_CrossTenant_Returns404()
+    {
+        var medA = BuildPipeline(_tenantA, _userA);
+        var created = (await medA.Send(Schedule(_applicantA, new[] { _empA1 }))).Value!;
+
+        var medB = BuildPipeline(_tenantB, _userB);
+        var complete = await medB.Send(new CompleteInterviewCommand(created.Id));
+
+        complete.IsFailure.Should().BeTrue();
+        complete.StatusCode.Should().Be(404);
     }
 
     // ── BR-2: interviewer must be an active employee ──────────────────
