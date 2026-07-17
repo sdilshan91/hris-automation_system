@@ -161,6 +161,18 @@ public sealed class ReviewSignoffServiceTests
         result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
     }
 
+    /// <summary>
+    /// BR-2 (BUG-065): simulate the reviewed employee having opened their notes, so Acknowledge &amp; Sign is
+    /// permitted (read-before-sign). The read-path stamping itself is covered by ReviewSignoffSelfServiceTests.
+    /// </summary>
+    private async Task OpenNotesAsync()
+    {
+        using var db = CreateDbContext();
+        var review = await db.ManagerReviews.FirstAsync(r => r.EmployeeId == _reportEmpId && r.CycleId == _cycleId);
+        review.NotesOpenedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
     // ── BR-1: notes only after the manager review is submitted ──────────
 
     [Fact]
@@ -249,6 +261,7 @@ public sealed class ReviewSignoffServiceTests
     {
         Seed();
         await RequestSignOffAsync();
+        await OpenNotesAsync();   // BR-2 read-before-sign precondition
         var before = DateTime.UtcNow;
 
         var input = new SignoffActionInput(_cycleId, _reportEmpId, Comments: null, ClientIpAddress: "198.51.100.9");
@@ -407,6 +420,7 @@ public sealed class ReviewSignoffServiceTests
     {
         Seed();
         await RequestSignOffAsync();
+        await OpenNotesAsync();   // BR-2 read-before-sign precondition
         await CreateService(EmployeeUser())
             .AcknowledgeAsync(new SignoffActionInput(_cycleId, _reportEmpId, null, "198.51.100.9"));
 
@@ -461,6 +475,7 @@ public sealed class ReviewSignoffServiceTests
         await CreateService(HrUser())
             .ResolveDisputeAsync(new ResolveDisputeInput(_cycleId, _reportEmpId, Amend: true, "Revising.", "203.0.113.1"));
         await RequestSignOffAsync("203.0.113.7");
+        await OpenNotesAsync();   // BR-2 read-before-sign precondition
         await CreateService(EmployeeUser())
             .AcknowledgeAsync(new SignoffActionInput(_cycleId, _reportEmpId, null, "198.51.100.42"));
 
@@ -520,6 +535,7 @@ public sealed class ReviewSignoffServiceTests
     {
         Seed();
         await RequestSignOffAsync();
+        await OpenNotesAsync();   // BR-2 read-before-sign precondition
         await CreateService(EmployeeUser())
             .AcknowledgeAsync(new SignoffActionInput(_cycleId, _reportEmpId, null, "198.51.100.9"));
 

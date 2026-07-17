@@ -233,6 +233,12 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             return Result<ReviewMeetingNotesDto>.Failure(
                 "This review is not awaiting your sign-off.", 409, "not_pending_signoff");
 
+        // BR-2 read-before-sign: the employee must have opened the meeting notes before Acknowledge & Sign.
+        // (Disputing is exempt — a dispute is itself a considered rejection and has its own required comments.)
+        if (!dispute && review.NotesOpenedAt is null)
+            return Result<ReviewMeetingNotesDto>.Failure(
+                "You must open and read the review notes before signing off.", 409, "notes_not_read");
+
         var signerName = SignerDisplayName(actor);
 
         if (dispute)
@@ -407,6 +413,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             SummaryComment = review.SummaryComment,
             SubmittedAt = review.SubmittedAt,
             SignoffCompletedAt = review.SignoffCompletedAt,
+            NotesOpenedAt = review.NotesOpenedAt,
             IsLocked = review.IsLocked,
             Goals = goalDtos,
             MeetingNotes = review.MeetingNotes is null ? null : BuildNotesDtoFrom(cycle, employee, review),
@@ -430,12 +437,23 @@ public sealed class ReviewSignoffService : IReviewSignoffService
 
         // The caller reads their OWN review — employeeId was resolved FROM the caller, so the manager/HR authz
         // gate (which guards the manager-side notes surface) does not apply here. The "caller IS the reviewed
-        // employee" invariant is satisfied by construction.
-        var (loadResult, ctx) = await LoadContextAsync(employeeId, cycleId, tracking: false, cancellationToken);
+        // employee" invariant is satisfied by construction. Tracked load (BR-2): the first time the employee
+        // opens their notes while sign-off is pending, stamp NotesOpenedAt so Acknowledge & Sign can enforce
+        // read-before-sign.
+        var (loadResult, ctx) = await LoadContextAsync(employeeId, cycleId, tracking: true, cancellationToken);
         if (loadResult is not null)
             return loadResult;
 
-        return Result<ReviewMeetingNotesDto>.Success(BuildNotesDto(ctx!));
+        var review = ctx!.Review!;
+        if (review.SignoffStatus == ReviewSignoffStatus.PendingEmployeeSignOff && review.NotesOpenedAt is null)
+        {
+            review.NotesOpenedAt = DateTime.UtcNow;
+            var saveFailure = await SaveAsync(cancellationToken);
+            if (saveFailure is not null)
+                return saveFailure;
+        }
+
+        return Result<ReviewMeetingNotesDto>.Success(BuildNotesDto(ctx));
     }
 
     public async Task<Result<ReviewMeetingNotesDto>> AcknowledgeMyReviewAsync(
@@ -648,6 +666,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             SignoffStatusName = review.SignoffStatus.ToString(),
             SignoffRequestedAt = review.SignoffRequestedAt,
             SignoffCompletedAt = review.SignoffCompletedAt,
+            NotesOpenedAt = review.NotesOpenedAt,
             IsLocked = review.IsLocked,
             IsTemplate = isTemplate,
             Signoffs = review.Signoffs.Where(s => !s.IsDeleted).OrderBy(s => s.SignedAt).Select(MapSignoff).ToList(),

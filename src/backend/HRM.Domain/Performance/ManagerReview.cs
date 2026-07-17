@@ -76,6 +76,14 @@ public sealed class ManagerReview : BaseEntity, IAuditExempt
     public DateTime? SignoffCompletedAt { get; set; }
 
     /// <summary>
+    /// BR-2 (US-PRF-006): UTC timestamp the reviewed employee first opened their own meeting notes while
+    /// sign-off was pending. Null until they read the notes. Acknowledge &amp; Sign is gated on this being set
+    /// (read-before-sign), and it is surfaced on the export so the formal record shows the notes were reviewed
+    /// prior to signature.
+    /// </summary>
+    public DateTime? NotesOpenedAt { get; set; }
+
+    /// <summary>
     /// True once the review is locked against edits (BR-5) — set when the employee signs off
     /// (<see cref="ReviewSignoffStatus.SignedOff"/>). A locked review's notes and sign-off cannot be changed.
     /// </summary>
