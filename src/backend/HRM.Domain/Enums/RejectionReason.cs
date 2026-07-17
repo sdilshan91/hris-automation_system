@@ -20,4 +20,13 @@ public enum RejectionReason
 
     /// <summary>Any other reason — typically paired with free-text notes.</summary>
     Other = 3,
+
+    /// <summary>
+    /// Sentinel for a persisted <c>rejection_reason</c> string outside this enum (ISSUE-316, the ISSUE-231
+    /// class on the applicant board/detail row). Never written by the app — the stage-move validators reject
+    /// it — and only produced on READ by <see cref="Persistence.Converters.TolerantEnumToStringConverter{TEnum}"/>
+    /// so one corrupt row does not 500 the pipeline board (which materializes the whole Applicant entity) or
+    /// the detail timeline. Appended so it does not disturb the existing values.
+    /// </summary>
+    Unknown = 99,
 }

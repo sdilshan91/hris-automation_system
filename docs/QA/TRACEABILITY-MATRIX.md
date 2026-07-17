@@ -2181,7 +2181,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-001) | Multi-tenant isolation (vacancy) | Critical | TC-REC-ISO-001, TC-REC-ISO-002, TC-REC-ISO-003, TC-REC-ISO-004 | 4 | -- |
 | US-REC-002 | Applicant Submits Application with Resume Upload | Must Have | TC-REC-002-01, TC-REC-002-02, TC-REC-002-03, TC-REC-002-04, TC-REC-002-05, TC-REC-002-06, TC-REC-002-07, TC-REC-002-08, TC-REC-002-09, TC-REC-002-10, TC-REC-002-11, TC-REC-002-12, TC-REC-002-13 | 13 | 5/5 AC covered |
 | Cross-cutting (REC-002) | Multi-tenant isolation (applicant) | Critical | TC-REC-ISO-005, TC-REC-ISO-006, TC-REC-ISO-007, TC-REC-ISO-008 | 4 | -- |
-| US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | Must Have | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14, TC-REC-003-15 | 15 | 5/5 AC covered |
+| US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | Must Have | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14, TC-REC-003-15, TC-REC-003-16 | 16 | 5/5 AC covered |
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | Critical | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 | -- |
 | US-REC-004 | Move Applicant Through Pipeline Stages with Gates | Must Have | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 | 5/5 AC covered |
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | Critical | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
@@ -2251,6 +2251,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-003-13 | Kanban WCAG 2.1 AA + keyboard drag alternative + responsive 360px | Accessibility | High | US-REC-003 | AC-1, AC-2, NFR-4 |
 | TC-REC-003-14 | Search/filter XSS+SQLi sanitized; stage-move tampering/forged id rejected | Security | High | US-REC-003 | AC-2, AC-4, FR-3, FR-6, FR-7, NFR-3 |
 | TC-REC-003-15 | Board returns 200 with a corrupt applicant enum row (source/stage → Unknown, not 500) — ISSUE-231 | Integration | Medium | US-REC-003 | AC-1, FR-1 (robustness); PR #348 |
+| TC-REC-003-16 | Board + detail tolerate a corrupt applicant/history rejection_reason (→ Unknown, not 500) — ISSUE-316 | Integration | Medium | US-REC-003 | AC-1 (robustness); PR #351 |
 | TC-REC-ISO-009 | Tenant B sees zero of Tenant A's pipeline (read isolation) | Security | Critical | US-REC-003 | AC-5, NFR-3 |
 | TC-REC-ISO-010 | Pipeline + stage-move APIs reject requests without valid tenant context | Security | Critical | US-REC-003 | AC-5, NFR-3 |
 | TC-REC-ISO-011 | Cross-tenant stage moves blocked; tenant_id + history rows session-derived | Security | Critical | US-REC-003 | AC-5, NFR-3, BR-5, FR-3, FR-8 |

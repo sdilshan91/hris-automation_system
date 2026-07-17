@@ -67,8 +67,11 @@ public sealed class ApplicantConfiguration : IEntityTypeConfiguration<Applicant>
 
         // US-REC-004 AC-4/FR-3: structured rejection reason for the applicant's current state. Nullable —
         // set on move to Rejected, cleared on reactivation (BR-2). Stored as a string (varchar enum pattern).
+        // ISSUE-316: read through the tolerant converter — the board materializes the whole Applicant entity,
+        // so a corrupt rejection_reason would 500 the board just like stage/source did (ISSUE-231). The
+        // converter applies to the non-null value; null stays null.
         builder.Property(a => a.RejectionReason)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<RejectionReason>(RejectionReason.Unknown))
             .HasMaxLength(30);
 
         builder.Property(a => a.IsInternal).HasDefaultValue(false).IsRequired();
