@@ -2731,7 +2731,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 | **ID** | ISSUE-114 |
 | **Type** | ISSUE |
 | **Severity** | MED |
-| **Status** | OPEN |
+| **Status** | RESOLVED (PR #352, 2026-07-17) |
 | **Layer** | BE |
 | **Module / US / TC** | Recruitment / US-REC-005 / TC-REC-005-08 (step 5) |
 | **Title** | `interviewType=Video` with `videoLink="not-a-url"` is accepted (201) and persisted verbatim; only emptiness + max-length are validated, not URL shape |
@@ -2740,6 +2740,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Reproduction:** acme `hr@acme.test` (subdomain `acme`): `POST /api/v1/recruitment/interviews` `{applicantId, interviewType:"Video", scheduledDate:"2026-07-02", startTime:"14:00:00", durationMinutes:60, videoLink:"not-a-url", interviewerEmployeeIds:["019efced-88a9-..."]}` → **HTTP 201**; `GET` of the created interview returns `videoLink:"not-a-url"`.
 - **Evidence:** create → 201 `success:true`; read-back `videoLink='not-a-url'`, `interviewTypeName='Video'`. Positive control: empty `videoLink` → 400 `video_link_required`.
 - **Severity rationale:** MED — a bad/garbage link silently ships into reminder/notification content sent to candidates; not a security breach but defeats the FR-1 contract and degrades the participant experience. Contained to data quality.
+- **RESOLVED (PR #352, 2026-07-17):** added a shared `BeAValidVideoLink` rule to `ScheduleInterviewValidator`/`UpdateInterviewValidator` — a supplied `videoLink` must be a well-formed **absolute http/https URI** (requiredness unchanged; still enforced by the type-conditional `NotEmpty`). Regression: 6 arms in `ScheduleInterviewValidatorTests` (relative/`javascript:`/`ftp:`/garbage rejected; `http(s)` accepted). Binds TC-REC-005-08 step 5 (was failing).
 
 ### ISSUE-115 — No API to mark an interview Completed / No-Show; FR-6 status lifecycle is only Scheduled→Cancelled
 
