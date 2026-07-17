@@ -156,6 +156,7 @@ public sealed class ReviewSignoffSelfServiceTests
     public async Task AcknowledgeMy_ResolvesCaller_SignsOff_AndLocks()
     {
         Seed();
+        await CreateService(EmployeeUser()).GetMyMeetingNotesAsync();   // BR-2: open notes before signing
         var before = DateTime.UtcNow;
 
         var result = await CreateService(EmployeeUser()).AcknowledgeMyReviewAsync("198.51.100.9");
@@ -179,6 +180,42 @@ public sealed class ReviewSignoffSelfServiceTests
         var stored = await db.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == _reportEmpId);
         stored.IsLocked.Should().BeTrue();
         stored.SignoffStatus.Should().Be(ReviewSignoffStatus.SignedOff);
+    }
+
+    // ── BR-2 read-before-sign (BUG-065) ──────────────────────────────────
+
+    [Fact]
+    public async Task GetMyMeetingNotes_StampsNotesOpenedAt_WhenPendingSignoff()
+    {
+        Seed();
+
+        var result = await CreateService(EmployeeUser()).GetMyMeetingNotesAsync();
+
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+        result.Value!.NotesOpenedAt.Should().NotBeNull();   // stamped on first open
+
+        // Persisted — survives a fresh context.
+        using var db = CreateDbContext();
+        var stored = await db.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == _reportEmpId);
+        stored.NotesOpenedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task AcknowledgeMy_Rejected_WhenNotesNeverOpened()
+    {
+        Seed();   // pending sign-off, notes never opened
+
+        var result = await CreateService(EmployeeUser()).AcknowledgeMyReviewAsync("198.51.100.9");
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("notes_not_read");
+
+        // The review is untouched — still pending, not locked.
+        using var db = CreateDbContext();
+        var stored = await db.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == _reportEmpId);
+        stored.SignoffStatus.Should().Be(ReviewSignoffStatus.PendingEmployeeSignOff);
+        stored.IsLocked.Should().BeFalse();
     }
 
     // ── Dispute: caller disputes their own review with comments ──────────

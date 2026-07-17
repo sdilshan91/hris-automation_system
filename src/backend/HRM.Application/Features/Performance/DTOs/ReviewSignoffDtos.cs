@@ -36,6 +36,10 @@ public sealed record ReviewMeetingNotesDto
     public DateTime? SignoffRequestedAt { get; init; }
     public DateTime? SignoffCompletedAt { get; init; }
 
+    /// <summary>BR-2: when the reviewed employee first opened these notes. The FE enables Acknowledge &amp; Sign
+    /// only once this is set (read-before-sign). Null until read.</summary>
+    public DateTime? NotesOpenedAt { get; init; }
+
     /// <summary>True once locked by employee sign-off (BR-5) — the FE renders read-only.</summary>
     public bool IsLocked { get; init; }
 
@@ -91,6 +95,10 @@ public sealed record ReviewExportDto
     public string? SummaryComment { get; init; }
     public DateTime? SubmittedAt { get; init; }
     public DateTime? SignoffCompletedAt { get; init; }
+
+    /// <summary>BR-2: when the reviewed employee opened the notes prior to signature (read-before-sign). Null if never opened.</summary>
+    public DateTime? NotesOpenedAt { get; init; }
+
     public bool IsLocked { get; init; }
 
     public IReadOnlyList<ReviewExportGoalDto> Goals { get; init; } = [];

@@ -40,6 +40,7 @@ public sealed class ManagerReviewConfiguration : IEntityTypeConfiguration<Manage
             .IsRequired();
         builder.Property(r => r.SignoffRequestedAt);
         builder.Property(r => r.SignoffCompletedAt);
+        builder.Property(r => r.NotesOpenedAt);   // BR-2 read-before-sign (BUG-065)
         builder.Property(r => r.IsLocked).HasDefaultValue(false).IsRequired();
 
         builder.Property(r => r.WeightedManagerScore).HasColumnType("numeric(6,2)");

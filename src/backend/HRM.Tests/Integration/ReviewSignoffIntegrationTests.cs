@@ -63,6 +63,18 @@ public sealed class ReviewSignoffIntegrationTests
         return new AppDbContext(options, ctx);
     }
 
+    /// <summary>
+    /// BR-2 (BUG-065): simulate the reviewed employee having opened their notes so Acknowledge &amp; Sign is
+    /// permitted (read-before-sign). The read-path stamping is covered in ReviewSignoffSelfServiceTests.
+    /// </summary>
+    private async Task OpenNotesAsync(Guid tenantId, Guid reportEmpId, Guid cycleId)
+    {
+        using var db = Db(tenantId);
+        var review = await db.ManagerReviews.FirstAsync(r => r.EmployeeId == reportEmpId && r.CycleId == cycleId);
+        review.NotesOpenedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
     private ReviewSignoffService Service(Guid tenantId, Guid userId, params string[] permissions)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
@@ -154,6 +166,7 @@ public sealed class ReviewSignoffIntegrationTests
         request.IsSuccess.Should().BeTrue(request.ErrorCode + ": " + request.Error);
         request.Value!.SignoffStatus.Should().Be(ReviewSignoffStatus.PendingEmployeeSignOff);
 
+        await OpenNotesAsync(_tenantA, s.ReportEmpId, s.CycleId);   // BR-2 read-before-sign precondition
         var ack = await Service(_tenantA, s.ReportUserId, PermissionCatalog.Performance.ViewOwn)
             .AcknowledgeAsync(new SignoffActionInput(s.CycleId, s.ReportEmpId, null, "198.51.100.9"));
         ack.IsSuccess.Should().BeTrue(ack.ErrorCode + ": " + ack.Error);
@@ -181,6 +194,7 @@ public sealed class ReviewSignoffIntegrationTests
         // Tenant A drives a full sign-off.
         await Service(_tenantA, a.ManagerUserId, PermissionCatalog.Performance.ReviewTeam)
             .RequestSignOffAsync(Notes(a.CycleId, a.ReportEmpId), "203.0.113.5");
+        await OpenNotesAsync(_tenantA, a.ReportEmpId, a.CycleId);   // BR-2 read-before-sign precondition
         await Service(_tenantA, a.ReportUserId, PermissionCatalog.Performance.ViewOwn)
             .AcknowledgeAsync(new SignoffActionInput(a.CycleId, a.ReportEmpId, null, "198.51.100.9"));
 
@@ -242,6 +256,7 @@ public sealed class ReviewSignoffIntegrationTests
 
         await Service(_tenantA, s.ManagerUserId, PermissionCatalog.Performance.ReviewTeam)
             .RequestSignOffAsync(Notes(s.CycleId, s.ReportEmpId), "203.0.113.5");
+        await OpenNotesAsync(_tenantA, s.ReportEmpId, s.CycleId);   // BR-2 read-before-sign precondition
         await Service(_tenantA, s.ReportUserId, PermissionCatalog.Performance.ViewOwn)
             .AcknowledgeAsync(new SignoffActionInput(s.CycleId, s.ReportEmpId, null, "198.51.100.9"));
 
