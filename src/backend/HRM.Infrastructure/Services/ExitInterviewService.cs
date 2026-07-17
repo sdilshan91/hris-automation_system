@@ -176,7 +176,8 @@ public sealed class ExitInterviewService : IExitInterviewService
             TemplateId = template.Id,
             InterviewMode = mode,
             ConductedByUserId = mode == ExitInterviewMode.HrConducted ? _currentUser.UserId : null,
-            InterviewDate = input.InterviewDate.Date,
+            // BUG-289 class: interview_date is timestamptz — .Date is Kind=Unspecified (Npgsql rejects it). UTC-kind it.
+            InterviewDate = DateTime.SpecifyKind(input.InterviewDate.Date, DateTimeKind.Utc),
             OverallExperienceRating = input.OverallExperienceRating,
             WouldRecommendEmployer = input.WouldRecommendEmployer,
             AdditionalComments = string.IsNullOrWhiteSpace(input.AdditionalComments)
