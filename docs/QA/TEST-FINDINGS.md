@@ -4535,8 +4535,9 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** BUG-088
 - **Type:** BUG (contract — NFR-5 idempotency unmet)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (PR #330, 2026-07-17)
 - **Layer:** BE
+> **RESOLVED (2026-07-17):** Root cause confirmed exactly as filed — the dedup stashed the key in `CreatedBy`, which `AuditInterceptor` overwrites with the actor on every insert, so it never persisted. Fix: a **dedicated nullable `IdempotencyKey` column** on `OnboardingChecklistInstance` (+ EF config + scoped index + migration `20260717003336_Onboarding_ChecklistIdempotencyKey`); `AssignAsync` now stashes/looks up the key there (`OnboardingChecklistService.cs:150,218`). Regression guard `Assign_idempotency_survives_AuditInterceptor_createdby_overwrite_bug088` wires the **real AuditInterceptor** (the pre-existing idempotency test used a plain no-interceptor InMemory context and stayed green while prod was broken — InMemory-masks-Postgres theater). Mutation-verified: restoring the exact pre-fix code (both sites on `CreatedBy`) turns the new test RED while the old InMemory test stays GREEN. A second arm `Assign_idempotency_holds_under_Merge_mode_retry_bug088` pins that the dedup guard runs *before* the Replace/Merge branch (mutation: guard skips Merge → tasks double → KILLED). 32/32 onboarding+interceptor arms green; full solution builds. **`@test-authenticator` verdict: GENUINE — faithful reproduction, every assertion mutation-resistant.** Its two OUT-OF-LANE flags auto-healed to **[[ISSUE-314]]** (MED, needs-decision — the dedup is TOCTOU over a non-unique index; concurrent retries can still double-insert) and **[[ISSUE-315]]** (LOW — header-vs-body key precedence untested).
 - **Module / US / TC:** Onboarding / US-ONB-002 / TC-ONB-002-08 (idempotent retry)
 - **Title:** Two POSTs to `/api/v1/onboarding/checklists` with the SAME `Idempotency-Key` create TWO distinct checklist instances; the retry-dedup never matches
 - **Root cause:** `OnboardingChecklistService.AssignAsync` stashes the idempotency key into the entity's `CreatedBy` column (`OnboardingChecklistService.cs:218`) and later detects a retry via `c.CreatedBy == input.IdempotencyKey` (`:150`). But `AuditInterceptor.SavingChanges` unconditionally overwrites `CreatedBy = userId` for every Added entity (`AuditInterceptor.cs:51`), running AFTER the service sets it — so the key is never persisted; `created_by` always holds the actor's user GUID. The retry lookup at `:150` therefore never matches and a second instance (a new version, superseding the first under Replace mode) is created every time. The code comment at `:216-218` even anticipates the interceptor overwrite but the guard ships broken. Confidence: 97% (source: interceptor overwrite at :51 + the dead `created_by` lookup at :150; reproduced live, distinct IDs on identical key).
@@ -6920,3 +6921,29 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Not done (deliberate):** effective-dating (option 2) and ledger migration (option 3). A tenant that must
   genuinely *switch* basis mid-life still has no path — it is now a support/migration task rather than a
   silent corruption. Revisit if a real tenant asks; the `TenantFnFPolicy` effective-dated pattern is the model.
+
+---
+
+### ISSUE-314 — Onboarding checklist idempotency is app-level SELECT-then-INSERT over a NON-unique index → concurrent-retry TOCTOU race can still create two instances
+- **ID:** ISSUE-314
+- **Type:** ISSUE (robustness / concurrency)
+- **Severity:** MED
+- **Status:** OPEN · **needs-decision**
+- **Layer:** BE / DB
+- **Module / US / TC:** Onboarding / US-ONB-002 / (new) — auto-healed from a `@test-authenticator` OUT-OF-LANE flag while auditing the BUG-088 fix, 2026-07-17
+- **Title:** Two concurrent POSTs with the same `Idempotency-Key` can both pass the dedup guard before either commits, so the fixed single-request dedup still allows a double-insert under a genuine race
+- **Root cause:** BUG-088's fix (PR #330) added a dedicated `IdempotencyKey` column + a **non-unique** scoped index and does the dedup as `SELECT … WHERE key = @k` then `INSERT` in `OnboardingChecklistService.AssignAsync:143-233`. That closes the *sequential* retry (the reported bug) but not a **concurrent** one: two parallel retries can both run the `SELECT` (miss) before either `SaveChanges` commits → two instances. The DB has no constraint to reject the second write.
+- **Decision needed:** (a) promote the index to **UNIQUE** on `{TenantId, EmployeeId, TemplateId, IdempotencyKey}` (filtered `WHERE idempotency_key IS NOT NULL`) + catch the unique-violation and return the existing row — true once-only semantics; or (b) accept **single-request-scope** idempotency only (document that concurrent replays are out of scope). Recommend (a): it is the same "let the DB be the arbiter" pattern used for concurrent clock-in / applicant-conversion, and cheap to add.
+- **Evidence:** index is non-unique — `OnboardingChecklistInstanceConfiguration.cs:48` (`HasIndex`, no `IsUnique()`); dedup is TOCTOU — `OnboardingChecklistService.cs:145-233`. Flagged by `@test-authenticator` during the BUG-088 audit.
+- **Suggested test (after decision):** an `ApplicantConcurrencyPostgresTests`-style Postgres arm firing two simultaneous same-key assigns and asserting exactly one row survives.
+
+### ISSUE-315 — Onboarding idempotency-key header-vs-body precedence is untested at any layer
+- **ID:** ISSUE-315
+- **Type:** ISSUE (test-coverage gap)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE (controller)
+- **Module / US / TC:** Onboarding / US-ONB-002 / (new) — auto-healed from a `@test-authenticator` OUT-OF-LANE flag, 2026-07-17
+- **Title:** `OnboardingChecklistsController` resolves the idempotency key as "`Idempotency-Key` header else `request.IdempotencyKey` body" with no test — a mutation swapping precedence or dropping the body fallback would survive
+- **Root cause:** the header-takes-precedence merge (`OnboardingChecklistsController.cs:93-94`) has no controller/integration arm; the BUG-088 service unit test exercises only the resolved key, not how it's sourced.
+- **Suggested direction (NOT applied):** a thin controller/integration arm asserting the header wins when both are present and the body value is used when the header is absent. Report only.

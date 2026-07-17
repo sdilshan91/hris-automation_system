@@ -35,11 +35,17 @@ public sealed class OnboardingChecklistInstanceConfiguration : IEntityTypeConfig
         builder.Property(x => x.Version).HasDefaultValue(1).IsRequired();
         builder.Property(x => x.AssignedByUserId);
 
+        // NFR-5 idempotency key (BUG-088). Nullable; only set when the client supplies a retry key.
+        builder.Property(x => x.IdempotencyKey).HasMaxLength(200);
+
         builder.Property(x => x.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // BR-2: fast lookup of the employee's active checklist (the active-uniqueness is enforced in the
         // service before insert). Scoped by tenant + employee + status.
         builder.HasIndex(x => new { x.TenantId, x.EmployeeId, x.Status });
+
+        // NFR-5 (BUG-088): fast retry-dedup lookup. Scoped by tenant + employee + template + key.
+        builder.HasIndex(x => new { x.TenantId, x.EmployeeId, x.TemplateId, x.IdempotencyKey });
 
         builder.HasMany(x => x.Tasks)
             .WithOne(t => t.ChecklistInstance!)

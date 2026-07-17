@@ -20,6 +20,7 @@ using HRM.Application.Features.Onboarding.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Persistence.Interceptors;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +60,25 @@ public sealed class OnboardingChecklistServiceTests
 
     private OnboardingChecklistService Service() =>
         new(Db(), _tenantContext, _user, Substitute.For<IFileStorage>(),
+            CleanScanner(), Substitute.For<ILogger<OnboardingChecklistService>>());
+
+    /// <summary>
+    /// BUG-088: an AppDbContext with the REAL <see cref="AuditInterceptor"/> wired, so <c>created_by</c> is
+    /// overwritten with the actor on every insert exactly as it is in production. The plain
+    /// <see cref="Db"/> context has no interceptor, so it cannot reproduce the clobber that used to break the
+    /// created_by-based retry-dedup.
+    /// </summary>
+    private AppDbContext AuditingDb()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_dbName)
+            .AddInterceptors(new AuditInterceptor(_user))
+            .Options;
+        return new AppDbContext(options, _tenantContext);
+    }
+
+    private OnboardingChecklistService AuditingService() =>
+        new(AuditingDb(), _tenantContext, _user, Substitute.For<IFileStorage>(),
             CleanScanner(), Substitute.For<ILogger<OnboardingChecklistService>>());
 
     /// <summary>An IVirusScanner substitute that reports every file clean (US-ONB-003 NFR-3 seam).</summary>
@@ -295,6 +315,62 @@ public sealed class OnboardingChecklistServiceTests
         await using var db = Db();
         var count = await db.OnboardingChecklistInstances.CountAsync(c => c.EmployeeId == _employeeId);
         count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Assign_idempotency_survives_AuditInterceptor_createdby_overwrite_bug088()
+    {
+        // BUG-088: the retry-dedup key must live in its OWN column, not created_by. The AuditInterceptor
+        // overwrites created_by with the actor on EVERY insert (AuditInterceptor.cs:58) AFTER the service sets
+        // it, so the old created_by-based dedup never matched in production and a second instance was created
+        // on every retry. This test wires the real interceptor (the pre-existing idempotency test above uses a
+        // plain no-interceptor context and therefore could not catch the clobber).
+        SeedEmployees();
+        var templateId = SeedTemplate();
+
+        var first = await AuditingService().AssignAsync(Assign(templateId, idempotencyKey: "retry-key-88"));
+        var retry = await AuditingService().AssignAsync(Assign(templateId, idempotencyKey: "retry-key-88"));
+
+        first.IsSuccess.Should().BeTrue();
+        retry.IsSuccess.Should().BeTrue();
+        retry.Value!.Id.Should().Be(first.Value!.Id);
+
+        await using var db = AuditingDb();
+        var instances = await db.OnboardingChecklistInstances
+            .Where(c => c.EmployeeId == _employeeId).ToListAsync();
+        instances.Should().HaveCount(1);
+        // The interceptor DID overwrite created_by with the actor (proving it ran) — the key survived because
+        // it now lives in its own column.
+        instances[0].CreatedBy.Should().Be("hr@acme.com");
+        instances[0].IdempotencyKey.Should().Be("retry-key-88");
+    }
+
+    [Fact]
+    public async Task Assign_idempotency_holds_under_Merge_mode_retry_bug088()
+    {
+        // BUG-088: the dedup guard runs BEFORE the Replace/Merge branch, so a Merge-mode retry with the same key
+        // must ALSO short-circuit to the existing instance and NOT re-add the template's tasks. This pins that
+        // ordering (a refactor moving the guard after the branch would let Merge silently double the tasks).
+        SeedEmployees();
+        var templateId = SeedTemplate();
+
+        var first = await AuditingService().AssignAsync(Assign(templateId, idempotencyKey: "merge-key-88"));
+        first.IsSuccess.Should().BeTrue();
+        var firstTaskCount = first.Value!.Tasks.Count;
+        firstTaskCount.Should().BeGreaterThan(0);
+
+        var retry = await AuditingService().AssignAsync(
+            Assign(templateId, mode: ChecklistAssignmentMode.Merge, idempotencyKey: "merge-key-88"));
+
+        retry.IsSuccess.Should().BeTrue();
+        retry.Value!.Id.Should().Be(first.Value!.Id);
+
+        await using var db = AuditingDb();
+        var instances = await db.OnboardingChecklistInstances.Where(c => c.EmployeeId == _employeeId).ToListAsync();
+        instances.Should().HaveCount(1);
+        // The Merge retry must NOT re-add the template's tasks onto the existing checklist.
+        var taskRows = await db.OnboardingTaskInstances.CountAsync(t => t.ChecklistInstanceId == first.Value!.Id);
+        taskRows.Should().Be(firstTaskCount);
     }
 
     // ── Inactive template + missing refs ────────────────────────────────
