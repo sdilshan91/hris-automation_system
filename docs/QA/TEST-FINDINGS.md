@@ -2749,7 +2749,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 | **ID** | ISSUE-115 |
 | **Type** | ISSUE |
 | **Severity** | MED |
-| **Status** | OPEN |
+| **Status** | RESOLVED (PR #353, 2026-07-17) |
 | **Layer** | BE |
 | **Module / US / TC** | Recruitment / US-REC-005 / TC-REC-005-10 (steps 1-3) |
 | **Title** | The `InterviewStatus` enum defines Completed/Cancelled/NoShow but only Cancel is reachable via API; no recruiter action sets Completed or No-Show, and no invalid-transition guard exists |
@@ -2758,6 +2758,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Reproduction:** acme `hr@acme.test`: `POST /api/v1/recruitment/interviews/{id}/complete` → 404; `.../no-show` → 404; `.../status` → 404. The calendar **filter** by status works (positive: `?status=Cancelled` returns only Cancelled), but No-Show/Completed states are never set so those filters can only ever be empty.
 - **Evidence:** all four transition routes return 404 (no MVC route). `GET .../interviews?status=Scheduled` → 12 all Scheduled; `?status=Cancelled` → 1 Cancelled (filter half works).
 - **Severity rationale:** MED — a primary FR-6 lifecycle capability (and the No-Show/Completed reporting it feeds) is absent; recruiters cannot record interview outcomes. Not CRIT because scheduling/cancel/calendar still function and Completed is partially reachable via scorecards.
+- **RESOLVED (PR #353, 2026-07-17):** added `IInterviewService.MarkOutcomeAsync` (Completed|NoShow) with a transition guard — only a still-Scheduled interview can be concluded, any terminal state → 409 `interview_invalid_transition` — plus `CompleteInterviewCommand`/`MarkInterviewNoShowCommand` and `POST interviews/{id}/complete` + `POST interviews/{id}/no-show` (`Recruitment.Manage`), mirroring the Cancel path (reminder cleared, participants notified). Binds TC-REC-005-10 steps 1-3. Regression: 6 integration arms (happy Completed/NoShow; Completed/Cancelled/NoShow prior-state 409 guards; cross-tenant 404); clear-reminder arm made mutation-resistant with a recording scheduler fake. Auditors: integration-enforcer PASS, test-authenticator AUTHENTIC.
 
 ### ISSUE-116 — Interview reminder job is not strictly idempotent on re-run, and the reminder lead-time is app-global, not per-tenant — NFR-4 / BR-5 partial
 
