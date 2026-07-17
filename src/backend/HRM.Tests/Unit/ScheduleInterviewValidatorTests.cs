@@ -120,4 +120,25 @@ public sealed class ScheduleInterviewValidatorTests
         var result = _validator.TestValidate(MakeCommand(durationMinutes: 0));
         result.ShouldHaveValidationErrorFor(x => x.DurationMinutes);
     }
+
+    // ISSUE-114: a supplied video link must be a well-formed absolute http(s) URL.
+    [Theory]
+    [InlineData("not a url")]
+    [InlineData("meet.example.com/abc")]   // no scheme => relative, rejected
+    [InlineData("javascript:alert(1)")]
+    [InlineData("ftp://files.example.com/room")]
+    public void Video_WithMalformedLink_ShouldHaveError(string videoLink)
+    {
+        var result = _validator.TestValidate(MakeCommand(type: InterviewType.Video, videoLink: videoLink));
+        result.ShouldHaveValidationErrorFor(x => x.VideoLink);
+    }
+
+    [Theory]
+    [InlineData("https://meet.example.com/abc")]
+    [InlineData("http://teams.example.com/join/xyz")]
+    public void Video_WithWellFormedLink_IsValid(string videoLink)
+    {
+        var result = _validator.TestValidate(MakeCommand(type: InterviewType.Video, videoLink: videoLink));
+        result.ShouldNotHaveValidationErrorFor(x => x.VideoLink);
+    }
 }
