@@ -4749,7 +4749,12 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 - **ID:** BUG-095
 - **Type:** BUG (concurrency defect — unhandled `IOException` → HTTP 500 under load)
 - **Severity:** MEDIUM
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending) — `LocalReportExportStorage.SaveAsync` now writes to
+  `{reportId}-{fileName}` (the per-export `reportId` GUID was already passed in but only logged), so two
+  same-type exports completing in the same wall-clock second land on distinct files instead of racing one path.
+  Fixes the whole leave/attendance/HR/payroll export family that shares this seam. **Mutation-verified 2/2**
+  (`LocalReportExportStorageTests`): a deterministic distinct-paths arm + a 32-way concurrency arm that
+  **reproduces the exact `IOException`** under the reverted code. 51/51 green across the export integration suites.
 - **Layer:** BE
 - **Module / US / TC:** Reports & Analytics / US-RPT-004 (export reports) / perf scale-reads scenario (`perf/scripts/03-scale-reads.js`)
 - **Title:** `LocalReportExportStorage` derives the export file name from a **second-granularity timestamp with no per-export uniqueness** (`hr-report-{type}-{yyyyMMdd}-{HHmmss}.csv`), so when ≥2 exports of the same report type complete within the same wall-clock second they race to `File.WriteAllBytesAsync` on the **same path** → `System.IO.IOException: The process cannot access the file '…hr-report-headcount-20260630-090632.csv' because it is being used by another process.` → unhandled → 500.

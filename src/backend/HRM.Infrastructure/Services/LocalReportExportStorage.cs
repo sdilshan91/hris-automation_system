@@ -37,7 +37,12 @@ public sealed class LocalReportExportStorage : IReportExportStorage
             Path.GetTempPath(), "hrm-report-exports", tenantId.ToString(), "reports", "leave");
         Directory.CreateDirectory(directory);
 
-        var fullPath = Path.Combine(directory, fileName);
+        // BUG-095: the caller's fileName carries only second-granularity uniqueness
+        // (hr-report-{type}-{yyyyMMdd}-{HHmmss}.{ext}), so two exports of the SAME report type completing in
+        // the same wall-clock second raced to write the SAME path — the loser threw an exclusive-access
+        // IOException → 500. The per-export reportId GUID (already supplied) makes the on-disk path unique,
+        // matching this seam's documented {reportId}.{ext} layout while keeping the readable name.
+        var fullPath = Path.Combine(directory, $"{reportId}-{fileName}");
         await File.WriteAllBytesAsync(fullPath, content, cancellationToken);
 
         _logger.LogInformation(
