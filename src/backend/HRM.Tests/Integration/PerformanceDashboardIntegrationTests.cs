@@ -250,6 +250,7 @@ public sealed class PerformanceDashboardIntegrationTests
     [Theory]
     [InlineData("csv")]
     [InlineData("xlsx")]
+    [InlineData("pdf")]
     public async Task Export_produces_a_non_empty_file(string format)
     {
         var mediator = BuildPipeline(_tenantA, Hr(_tenantA));
@@ -258,5 +259,30 @@ public sealed class PerformanceDashboardIntegrationTests
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Value!.FileContent.Should().NotBeEmpty();
         result.Value!.FileName.Should().Contain("performance-dashboard");
+    }
+
+    [Fact]
+    public async Task Export_pdf_returns_a_pdf_document_Issue126()
+    {
+        // ISSUE-126 (FR-8/AC-4): PDF is now a supported dashboard export format (branded via the tenant colour).
+        var mediator = BuildPipeline(_tenantA, Hr(_tenantA));
+        var result = await mediator.Send(new ExportPerformanceDashboardQuery(Filter(_cycleA), "pdf"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var export = result.Value!;
+        export.ContentType.Should().Be("application/pdf");
+        export.FileName.Should().EndWith(".pdf");
+        // A real PDF starts with the "%PDF" magic bytes.
+        System.Text.Encoding.ASCII.GetString(export.FileContent, 0, 4).Should().Be("%PDF");
+    }
+
+    [Fact]
+    public async Task Export_rejects_an_unknown_format_Issue126()
+    {
+        var mediator = BuildPipeline(_tenantA, Hr(_tenantA));
+        var result = await mediator.Send(new ExportPerformanceDashboardQuery(Filter(_cycleA), "docx"));
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("invalid_format");
     }
 }
