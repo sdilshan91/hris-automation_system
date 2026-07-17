@@ -1,6 +1,7 @@
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace HRM.Infrastructure.Services;
 
@@ -87,8 +88,20 @@ internal static class AttendancePolicyResolver
             LocationId = null,   // the TENANT default — never auto-create a Location override
         };
         db.AttendanceSettings.Add(settings);
-        await db.SaveChangesAsync(ct);
-        return settings;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return settings;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // ISSUE-308: a concurrent first-clock-in inserted the tenant-default row first; the unique index
+            // (ix_attendance_settings_tenant_location_unique) rejected ours. Detach our failed insert and return
+            // the committed winner instead of throwing a 500 — the DB is the arbiter (cf. onboarding ISSUE-314,
+            // clock-in). InMemory does not enforce unique indexes, so this only ever fires on Postgres.
+            db.Entry(settings).State = EntityState.Detached;
+            return await db.AttendanceSettings.FirstAsync(s => s.LocationId == null, ct);
+        }
     }
 
     /// <summary>
