@@ -85,7 +85,10 @@ describe('OrgTreeService', () => {
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockNodes);
+      // ISSUE-207: the real payload is an OBJECT { nodes, view, reportingViewAvailable },
+      // not a bare array. The service must project `.nodes`; flushing the object here means
+      // this test fails against the pre-fix bare-array typing (which yielded 0 nodes).
+      req.flush({ nodes: mockNodes, view: 'department', reportingViewAvailable: false });
     });
 
     it('should send parentId param for lazy-loading children', () => {
@@ -103,10 +106,14 @@ describe('OrgTreeService', () => {
           r.params.get('depth') === '1'
       );
       expect(req.request.method).toBe('GET');
-      req.flush([
-        { ...mockNodes[1], parentId: 'dept-3', nodeId: 'dept-4', name: 'DevOps' },
-        { ...mockNodes[1], parentId: 'dept-3', nodeId: 'dept-5', name: 'QA' },
-      ]);
+      req.flush({
+        nodes: [
+          { ...mockNodes[1], parentId: 'dept-3', nodeId: 'dept-4', name: 'DevOps' },
+          { ...mockNodes[1], parentId: 'dept-3', nodeId: 'dept-5', name: 'QA' },
+        ],
+        view: 'department',
+        reportingViewAvailable: false,
+      });
     });
 
     it('should not send parentId when null', () => {
@@ -118,7 +125,7 @@ describe('OrgTreeService', () => {
         (r) => r.url === baseUrl && r.params.get('view') === 'reporting'
       );
       expect(req.request.params.has('parentId')).toBeFalse();
-      req.flush([]);
+      req.flush({ nodes: [], view: 'department', reportingViewAvailable: false });
     });
 
     it('should send reporting view param', () => {
@@ -130,7 +137,7 @@ describe('OrgTreeService', () => {
         (r) => r.url === baseUrl && r.params.get('view') === 'reporting'
       );
       expect(req.request.method).toBe('GET');
-      req.flush([]);
+      req.flush({ nodes: [], view: 'department', reportingViewAvailable: false });
     });
 
     it('should include withCredentials for tenant-scoped auth', () => {
@@ -138,7 +145,7 @@ describe('OrgTreeService', () => {
 
       const req = httpMock.expectOne((r) => r.url === baseUrl);
       expect(req.request.withCredentials).toBeTrue();
-      req.flush([]);
+      req.flush({ nodes: [], view: 'department', reportingViewAvailable: false });
     });
   });
 
