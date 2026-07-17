@@ -5633,7 +5633,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-230
 - **Type:** ISSUE (design flaw)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (PR #336, 2026-07-17)
+> **RESOLVED (2026-07-17):** `ExportReportAsync` now routes on a CHEAP row-count **upper bound** (`EstimateExportRowCountAsync` — a couple of `COUNT` queries: every report is employee-driven, so BalanceSummary/CarryForward ≈ employees×leaveTypes, the rest ≤ employees) computed BEFORE any generation. Only the sync branch (estimate ≤ threshold) generates inline; the oversized report is queued without being materialised, so it can no longer hang before reaching the 202 path. Over-estimating only queues a borderline report to the (correct) background job. New arm `Export_LargeDataset_RoutesToBackground_WithoutGeneratingInline_Issue230` asserts the entitlement batch (the expensive generation work) is **never invoked** for a queued export — mutation-verified: making the estimate generate first (the pre-fix ordering) fails exactly that arm. 38/38 LeaveReportService arms green.
 - **Layer:** BE
 - **Module / US / TC:** Leave Management / US-LV (export) / TC-LV-240
 - **Title:** `LeaveReportService.ExportReport` calls `GenerateReportCoreAsync` with `PageSize = int.MaxValue` to obtain the full row count **before** the `rowCount > SyncExportRowThreshold(5000)` routing that decides sync-vs-Hangfire (svc ~line 180 vs ~line 189). So any report large enough to warrant the background path must first be fully generated inline — which for the only >5,000-row report (BalanceSummary) is exactly the request that hangs (see BUG-124). The 202/queue logic and `LeaveReportExportJob` wiring exist but can never be exercised live for an oversized report.

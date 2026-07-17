@@ -187,19 +187,15 @@ public sealed class LeaveReportService : ILeaveReportService
         // Resolve scope once so both the routing decision and the background job use the same view.
         var scope = await ResolveScopeAsync(cancellationToken);
 
-        // Determine the FULL (unpaged) row count first so we can route sync vs. background (AC-5).
-        // We generate the whole report once (paged to MaxPageSize won't do — we need every row).
-        var fullParams = queryParams with { Page = 1, PageSize = int.MaxValue };
-        var fullResult = await GenerateReportCoreAsync(reportType, scope, fullParams, cancellationToken);
-        if (fullResult.IsFailure)
-            return Result<LeaveReportExportResult>.Failure(fullResult.Error!, fullResult.StatusCode ?? 400);
-
-        var report = fullResult.Value!;
-        int rowCount = report.Rows.Count;
+        // ISSUE-230 / AC-5: route sync-vs-background on a CHEAP row-count UPPER BOUND (a couple of COUNT
+        // queries) BEFORE generating anything. The previous code generated the whole report inline just to
+        // read report.Rows.Count, which for an oversized report is exactly the request that hangs — so the
+        // background path could never be reached for the very reports it exists to protect.
+        int estimatedRows = await EstimateExportRowCountAsync(reportType, scope, queryParams, cancellationToken);
 
         // FR-5 / AC-5: large exports go to a Hangfire background job (file written via the blob seam,
         // notification logged). The background job regenerates the report under the same scope/filters.
-        if (rowCount > SyncExportRowThreshold)
+        if (estimatedRows > SyncExportRowThreshold)
         {
             if (_backgroundJobs is null)
             {
@@ -209,7 +205,7 @@ public sealed class LeaveReportService : ILeaveReportService
                 {
                     Queued = true,
                     JobId = null,
-                    RowCount = rowCount,
+                    RowCount = estimatedRows,
                 });
             }
 
@@ -225,19 +221,25 @@ public sealed class LeaveReportService : ILeaveReportService
                 reportType, format, queryParams, CancellationToken.None));
 
             _logger.LogInformation(
-                "Leave report export {ReportId} ({Rows} rows > {Threshold}) queued as Hangfire job {JobId} " +
+                "Leave report export {ReportId} (~{Rows} rows > {Threshold}) queued as Hangfire job {JobId} " +
                 "for tenant {TenantId}. Action {AuditAction}.",
-                reportId, rowCount, SyncExportRowThreshold, jobId, tenantId, "Leave.ReportExportQueued");
+                reportId, estimatedRows, SyncExportRowThreshold, jobId, tenantId, "Leave.ReportExportQueued");
 
             return Result<LeaveReportExportResult>.Success(new LeaveReportExportResult
             {
                 Queued = true,
                 JobId = jobId,
-                RowCount = rowCount,
+                RowCount = estimatedRows,
             });
         }
 
-        // Synchronous path (NFR-2): generate the file inline and return the bytes.
+        // Synchronous path (NFR-2): the estimate is within the threshold, so generating inline is safe.
+        var fullParams = queryParams with { Page = 1, PageSize = int.MaxValue };
+        var fullResult = await GenerateReportCoreAsync(reportType, scope, fullParams, cancellationToken);
+        if (fullResult.IsFailure)
+            return Result<LeaveReportExportResult>.Failure(fullResult.Error!, fullResult.StatusCode ?? 400);
+
+        var report = fullResult.Value!;
         var (content, fileName, contentType) = RenderExport(reportType, format, report);
 
         return Result<LeaveReportExportResult>.Success(new LeaveReportExportResult
@@ -246,8 +248,30 @@ public sealed class LeaveReportService : ILeaveReportService
             FileContent = content,
             FileName = fileName,
             ContentType = contentType,
-            RowCount = rowCount,
+            RowCount = report.Rows.Count,
         });
+    }
+
+    /// <summary>
+    /// ISSUE-230: a CHEAP upper bound on an export's row count, used to route sync-vs-background WITHOUT
+    /// generating the report. Every report is driven by the scoped employee set: BalanceSummary and
+    /// CarryForwardSummary emit one row per (employee × leave type); the others emit at most one row per
+    /// employee. Over-estimating only queues a borderline report to the (correct) background job; the count
+    /// queries never materialise rows, so the oversized-report request can no longer hang.
+    /// </summary>
+    private async Task<int> EstimateExportRowCountAsync(
+        LeaveReportType reportType, ReportScope scope, LeaveReportQueryParams queryParams, CancellationToken ct)
+    {
+        var employeeCount = await ScopedEmployeesQuery(queryParams, scope).CountAsync(ct);
+        if (employeeCount == 0)
+            return 0;
+
+        return reportType switch
+        {
+            LeaveReportType.BalanceSummary or LeaveReportType.CarryForwardSummary
+                => (int)Math.Min(int.MaxValue, (long)employeeCount * Math.Max(1, await _dbContext.LeaveTypes.CountAsync(ct))),
+            _ => employeeCount,
+        };
     }
 
     public (byte[] Content, string FileName, string ContentType) RenderExport(

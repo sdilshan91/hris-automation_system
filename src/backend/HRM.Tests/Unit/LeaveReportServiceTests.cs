@@ -1090,6 +1090,31 @@ public sealed class LeaveReportServiceTests
     }
 
     [Fact]
+    public async Task Export_LargeDataset_RoutesToBackground_WithoutGeneratingInline_Issue230()
+    {
+        // ISSUE-230: the routing decision must be made from a CHEAP row-count estimate, WITHOUT generating the
+        // report — otherwise the only oversized report (BalanceSummary) hangs before it can ever be queued.
+        var bigCount = LeaveReportService.SyncExportRowThreshold + 1;
+        using (var db = CreateDbContext())
+        {
+            for (int i = 0; i < bigCount; i++)
+                db.Employees.Add(Emp(Guid.NewGuid(), $"Bulk{i}", $"BULK2-{i:D5}", _engineeringDeptId));
+            db.SaveChanges();
+        }
+
+        var result = await CreateService().ExportReportAsync(
+            LeaveReportType.BalanceSummary, ReportExportFormat.Csv, Params(leaveTypeId: _annualLeaveTypeId));
+
+        result.Value!.Queued.Should().BeTrue();
+        // The report was NEVER generated for the queued export: the entitlement batch (the expensive
+        // per-report work generation performs) is not invoked. The pre-fix generate-then-route ordering
+        // would have called it.
+        await _entitlementService.DidNotReceive().ComputeProratedEntitlementsBatchAsync(
+            Arg.Any<IReadOnlyList<Employee>>(), Arg.Any<IReadOnlyList<LeaveType>>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Export_LargeDataset_EnqueuesJob_ThreadingRequesterUserId()
     {
         // US-NTF-006 Phase 8: the caller's user id must be threaded into the enqueued LeaveReportExportJob so the job
