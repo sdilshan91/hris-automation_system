@@ -18,6 +18,14 @@ public interface ICustomFieldService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// ISSUE-206: the ACTIVE custom-field definitions for one entity type (ordered for display) — backs the
+    /// FE form's <c>GET /custom-fields/active?entityType=…</c> call.
+    /// </summary>
+    Task<Result<IReadOnlyList<CustomFieldDefinitionDto>>> GetActiveAsync(
+        string entityType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets a single custom field definition by ID.
     /// </summary>
     Task<Result<CustomFieldDefinitionDto>> GetByIdAsync(
