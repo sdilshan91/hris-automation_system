@@ -3791,11 +3791,19 @@ Scope: TC-PAY-007-01..12 + ISO TC-PAY-ISO-025..028. API-layer (curl + JWT), acme
 ### MORE NEW FINDINGS (US-PAY-008)
 
 **BUG-076 — Multi-step approval has no per-step approver assignment; a single approver can complete every step (AC-4/FR-2 not enforced)**
-- Type: BUG · Severity: MED · Status: OPEN · Layer: BE · Module: Payroll · US: US-PAY-008 · TC: TC-PAY-008-06
+- Type: BUG · Severity: MED · Status: RESOLVED (PR #356, 2026-07-18) · Layer: BE · Module: Payroll · US: US-PAY-008 · TC: TC-PAY-008-06, TC-PAY-008-13
 - Title: A 2-step workflow (intended "HR Manager THEN Finance Director") can be fully approved by ONE approver acting twice; steps are a counter, not assignments.
 - Root cause (confidence 95%): PayrollApprovalService.ApproveAsync only checks maker-checker (submitter != approver) and increments CurrentApprovalStep (PayrollApprovalService.cs:139-165). There is no per-step approver/role binding and no "this actor already approved an earlier step" guard. The submit command takes only totalApprovalSteps (an int) — no step-to-approver mapping. So any Payroll.Approve holder can approve the current step, and the same user can approve step1 AND step2. AC-4 ("sequentially through each step", distinct HR Manager / Finance Director) and FR-2 (configurable steps) are reduced to "the run must be approved N times by anyone with Payroll.Approve."
 - Reproduction: TA submit {totalApprovalSteps:2}; owner approve (step1->2, still AwaitingApproval); owner approve again (step2->Approved). Same actor, no rejection. (Evidence: history shows Approved step1 + step2 both actor 019ef3ba.)
 - Severity rationale: MED — multi-step is opt-in (default is single-step BR-2) and maker-checker still blocks the submitter, so the most common single-approver bypass is closed; but a tenant that configures 2 steps for separation-of-duties does NOT get it, which is the whole point of a multi-step finance control.
+- RESOLVED (PR #356, 2026-07-18): payroll-specific configurable step→role engine + distinct-person guard. New `PayrollApprovalStepConfig(StepNumber→RoleId)` per tenant (settable+audited via `GET/PUT /api/v1/payroll/approval/step-config`, gated `Payroll.Approve` = non-maker). `ApproveAsync` now enforces, after maker-checker: (a) distinct-person — a user who already Approved a step for this instance can't approve another (total>1) → 403 `distinct_approver_required`; (b) step-role — the actor must hold the current step's configured role → 403 `not_step_approver`. Submit derives TotalApprovalSteps from config. Regression: same-user-both-steps→403 (the repro), distinct-approvers→Approved, role-per-step, config-authoritative, CRUD persist+audit+validation-400s (bound TC-PAY-008-13). Full suite 4218/4218; auditors PASS (isolation + guards verified). Postgres/cross-tenant config test arms → DF-16; FE step-config editor → ISSUE-318 (deferred). ISSUE-173 (SLA/escalation/delegation, LOW) remains separate.
+
+**ISSUE-318 — No Angular UI for the payroll approval step→role config (BUG-076 backend endpoints are API-only)**
+- Type: ISSUE · Severity: MED · Status: OPEN (FE, deferred) · Layer: FE · Module: Payroll · US: US-PAY-008 · TC: (FE, none yet)
+- Title: BUG-076 (#356) added `GET/PUT /api/v1/payroll/approval/step-config` but there is no admin screen to view/edit the step→role approval chain; a Tenant Admin can only configure it via the raw API.
+- Root cause: backend-only fix scope (the MED-fix campaign was BE-only per user decision). The FE admin surface is net-new frontend work.
+- Suggested: an Angular admin screen (payroll settings) to view/edit the ordered step→role mapping, gated on `Payroll.Approve`, consuming the two endpoints. Sits with the deferred-FE queue (P6 class).
+- Severity rationale: MED — the FR-2 control is functionally complete and usable via API (and enforced regardless of UI); the gap is end-user configurability. No security/data risk.
 
 **ISSUE-173 — FR-3 (SLA auto-escalation to backup approver) and FR-6 (approval delegation) are not implemented**
 - Type: ISSUE · Severity: LOW · Status: OPEN · Layer: BE · Module: Payroll · US: US-PAY-008 · TC: TC-PAY-008-07
