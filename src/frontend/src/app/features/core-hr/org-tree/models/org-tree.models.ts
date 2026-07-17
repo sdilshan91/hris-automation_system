@@ -60,7 +60,21 @@ export interface IOrgTreeQueryParams {
 
 // ─── API response ────────────────────────────────────────────
 
-/** The API returns a flat array of nodes for the requested subtree. */
+/**
+ * The org-tree GET endpoint returns an OBJECT payload (after the global ApiResponse
+ * envelope is stripped): `{ nodes, view, reportingViewAvailable }` — NOT a bare array.
+ * ISSUE-207: the service consumed this object as an array, so `buildTreeFromFlat`'s
+ * `for..of` threw a TypeError and the page showed the empty state. The service now
+ * projects `.nodes` off this result. (Each node may also carry a nested `children`
+ * array to the requested depth; the flat parentId links are what the tree is built from.)
+ */
+export interface IOrgTreeResult {
+  nodes: IOrgTreeNode[];
+  view: OrgTreeView;
+  reportingViewAvailable: boolean;
+}
+
+/** The nodes the service exposes after projecting `.nodes` off {@link IOrgTreeResult}. */
 export type IOrgTreeResponse = IOrgTreeNode[];
 
 // ─── Search result ───────────────────────────────────────────

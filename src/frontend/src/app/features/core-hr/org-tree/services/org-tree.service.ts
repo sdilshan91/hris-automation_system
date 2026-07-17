@@ -1,10 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IOrgTreeQueryParams,
   IOrgTreeResponse,
+  IOrgTreeResult,
   IOrgTreeSearchResult,
 } from '../models/org-tree.models';
 
@@ -13,12 +15,15 @@ import {
  *
  * All requests are tenant-scoped via the tenantInterceptor (X-Tenant-Subdomain header).
  *
- * Backend endpoint (assumed contract — backend building in parallel):
- *   GET /api/v1/org-tree?view=department|reporting&parentId=&depth=
- *   Returns: IOrgTreeNode[] (flat array of nodes for the requested subtree)
+ * Backend endpoints (verified contract):
+ *   GET /api/v1/tenant/org-tree?view=department|reporting&parentId=&depth=
+ *   Returns (after the ApiResponse envelope is stripped) an OBJECT:
+ *     { nodes: IOrgTreeNode[], view, reportingViewAvailable }  — NOT a bare array.
+ *     ISSUE-207: we project `.nodes` off it; consuming the object as an array made
+ *     the tree builder throw and the page render "No departments found".
  *
- *   GET /api/v1/org-tree/search?q=&view=department|reporting
- *   Returns: IOrgTreeSearchResult[] (matching nodes with ancestor paths)
+ *   GET /api/v1/tenant/org-tree/search?q=&view=department|reporting
+ *   Returns: IOrgTreeSearchResult[] (a list payload → bare array after envelope-stripping).
  */
 @Injectable({ providedIn: 'root' })
 export class OrgTreeService {
@@ -40,10 +45,11 @@ export class OrgTreeService {
       httpParams = httpParams.set('depth', params.depth.toString());
     }
 
-    return this.http.get<IOrgTreeResponse>(this.baseUrl, {
-      params: httpParams,
-      withCredentials: true,
-    });
+    // ISSUE-207: the endpoint returns { nodes, view, reportingViewAvailable } — project the
+    // flat node list off it (a null/short payload degrades to []), never the raw object.
+    return this.http
+      .get<IOrgTreeResult>(this.baseUrl, { params: httpParams, withCredentials: true })
+      .pipe(map((result) => result?.nodes ?? []));
   }
 
   /**
