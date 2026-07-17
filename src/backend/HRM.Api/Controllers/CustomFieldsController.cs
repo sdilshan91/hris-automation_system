@@ -45,6 +45,29 @@ public sealed class CustomFieldsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/tenant/custom-fields/active?entityType=employee
+    /// ISSUE-206: the ACTIVE custom-field definitions for one entity type, ordered for display — the FE
+    /// create/edit forms call this to render dynamic inputs. Intentionally gated only on <c>[Authorize]</c>
+    /// (no <c>CustomField.View</c>): it returns non-sensitive field DEFINITIONS (not values), and is needed by
+    /// anyone who can create/edit the entity (e.g. HR on the employee wizard), not just the CustomField admin —
+    /// gating it on the admin permission would 403 those users and leave the form broken. Tenant-scoped by the
+    /// global query filter.
+    /// </summary>
+    [HttpGet("active")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<CustomFieldDefinitionDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetActiveCustomFields(
+        [FromQuery] string entityType,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new GetActiveCustomFieldsQuery(entityType), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<IReadOnlyList<CustomFieldDefinitionDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/tenant/custom-fields/{id}
     /// Gets a single custom field definition by ID.
     /// </summary>

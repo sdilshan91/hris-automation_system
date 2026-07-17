@@ -1029,4 +1029,37 @@ public sealed class CustomFieldServiceTests : IDisposable
         var result = CustomFieldService.ValidateFieldValue(def, doc.RootElement);
         result.Should().BeNull();
     }
+
+    // ── ISSUE-206: GET /custom-fields/active?entityType=… ───────────────────
+
+    [Fact]
+    public async Task GetActiveAsync_ReturnsOnlyActiveDefinitionsForTheEntityType_Issue206()
+    {
+        await SeedTenant();
+        var svc = CreateService();
+
+        await svc.CreateAsync(new CreateCustomFieldRequest { EntityType = "employee", FieldName = "Badge No", FieldType = "text" });
+        var toDeactivate = await svc.CreateAsync(new CreateCustomFieldRequest { EntityType = "employee", FieldName = "Shirt Size", FieldType = "text" });
+        await svc.CreateAsync(new CreateCustomFieldRequest { EntityType = "department", FieldName = "Cost Center", FieldType = "text" });
+
+        (await CreateService().DeactivateAsync(toDeactivate.Value!.Id)).IsSuccess.Should().BeTrue();
+
+        var result = await CreateService().GetActiveAsync("employee");
+
+        result.IsSuccess.Should().BeTrue();
+        // Only the ACTIVE "employee" field — not the deactivated one, not the "department" one.
+        result.Value!.Should().ContainSingle().Which.FieldName.Should().Be("Badge No");
+        result.Value.Should().OnlyContain(d => d.IsActive && d.EntityType == "employee");
+    }
+
+    [Fact]
+    public async Task GetActiveAsync_RequiresEntityType_Issue206()
+    {
+        await SeedTenant();
+
+        var result = await CreateService().GetActiveAsync("");
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+    }
 }

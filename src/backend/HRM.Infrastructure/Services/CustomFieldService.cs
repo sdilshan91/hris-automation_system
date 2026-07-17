@@ -124,6 +124,30 @@ public sealed class CustomFieldService : ICustomFieldService
         return Result<IReadOnlyList<CustomFieldDefinitionListResult>>.Success(grouped);
     }
 
+    /// <summary>
+    /// ISSUE-206: the ACTIVE custom-field definitions for one entity type, ordered for display. Backs
+    /// `GET /custom-fields/active?entityType=…`, which the FE create/edit forms call to render dynamic inputs.
+    /// </summary>
+    public async Task<Result<IReadOnlyList<CustomFieldDefinitionDto>>> GetActiveAsync(
+        string entityType,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<CustomFieldDefinitionDto>>.Failure("Tenant context is not resolved.", 400);
+
+        if (string.IsNullOrWhiteSpace(entityType))
+            return Result<IReadOnlyList<CustomFieldDefinitionDto>>.Failure("entityType is required.", 400);
+
+        var definitions = await _dbContext.CustomFieldDefinitions.AsNoTracking()
+            .Where(c => c.EntityType == entityType && c.IsActive)
+            .OrderBy(c => c.DisplayOrder)
+            .ThenBy(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var dtos = (IReadOnlyList<CustomFieldDefinitionDto>)definitions.Select(d => ToDto(d, 0)).ToList();
+        return Result<IReadOnlyList<CustomFieldDefinitionDto>>.Success(dtos);
+    }
+
     public async Task<Result<CustomFieldDefinitionDto>> GetByIdAsync(
         Guid customFieldId,
         CancellationToken cancellationToken = default)
