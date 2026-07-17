@@ -44,8 +44,14 @@ public sealed class OnboardingChecklistInstanceConfiguration : IEntityTypeConfig
         // service before insert). Scoped by tenant + employee + status.
         builder.HasIndex(x => new { x.TenantId, x.EmployeeId, x.Status });
 
-        // NFR-5 (BUG-088): fast retry-dedup lookup. Scoped by tenant + employee + template + key.
-        builder.HasIndex(x => new { x.TenantId, x.EmployeeId, x.TemplateId, x.IdempotencyKey });
+        // NFR-5 (BUG-088 + ISSUE-314): the retry-dedup lookup, promoted to a filtered UNIQUE index so the DB is
+        // the final arbiter under a concurrent same-key race (two parallel retries can both pass the app-level
+        // SELECT before either commits — the unique index rejects the second INSERT, which AssignAsync catches
+        // and turns into "return the existing instance"). Filtered to non-null keys AND Active instances, so a
+        // superseded instance's key never blocks a legitimate later assignment.
+        builder.HasIndex(x => new { x.TenantId, x.EmployeeId, x.TemplateId, x.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("idempotency_key IS NOT NULL AND status = 'Active'");
 
         builder.HasMany(x => x.Tasks)
             .WithOne(t => t.ChecklistInstance!)

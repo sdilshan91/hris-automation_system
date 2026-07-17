@@ -8,6 +8,7 @@ using HRM.Infrastructure.Persistence;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace HRM.Infrastructure.Services;
 
@@ -231,7 +232,33 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
 
             queuedNotifications = WriteOutbox(instance, resolution, employee);
             // NFR-3: outbox rows + instance + tasks all persist in ONE transaction (single SaveChanges).
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsIdempotencyKeyViolation(ex))
+            {
+                // ISSUE-314: a concurrent retry with the same Idempotency-Key won the race and committed first;
+                // the filtered UNIQUE index rejected our duplicate insert. Return the winner instead of a 500 —
+                // true once-only semantics under concurrency (the DB is the arbiter, cf. clock-in/conversion).
+                _logger.LogInformation(
+                    "Onboarding assign idempotency race (key {Key}, employee {EmployeeId}, template {TemplateId}) — " +
+                    "returning the concurrently-created instance.",
+                    input.IdempotencyKey, employee.Id, template.Id);
+
+                var winner = await _dbContext.OnboardingChecklistInstances
+                    .AsNoTracking()
+                    .Include(c => c.Tasks)
+                    .FirstOrDefaultAsync(
+                        c => c.EmployeeId == input.EmployeeId
+                             && c.TemplateId == input.TemplateId
+                             && c.IdempotencyKey == input.IdempotencyKey
+                             && c.Status == OnboardingChecklistStatus.Active,
+                        cancellationToken);
+                if (winner is not null)
+                    return Result<OnboardingChecklistInstanceDto>.Success(ToDto(winner, 0));
+                throw; // race winner not found (unexpected) — surface the original error rather than a null.
+            }
         }
 
         // NFR-3: enqueue the Hangfire dispatch worker AFTER the transaction commits.
@@ -246,6 +273,15 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
 
         return Result<OnboardingChecklistInstanceDto>.Success(ToDto(instance, queuedNotifications));
     }
+
+    /// <summary>
+    /// ISSUE-314: true when a <see cref="DbUpdateException"/> was caused by the filtered UNIQUE idempotency
+    /// index (Postgres 23505). It is the ONLY unique constraint on <c>onboarding_checklist_instance</c>, so a
+    /// unique-violation from the assign insert is necessarily the concurrent same-key race. (InMemory does not
+    /// enforce unique indexes, so this path only ever fires on Postgres.)
+    /// </summary>
+    private static bool IsIdempotencyKeyViolation(DbUpdateException ex)
+        => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
     // ── Get ─────────────────────────────────────────────────────────────
 
