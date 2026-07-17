@@ -73,5 +73,9 @@ public sealed class SubmitApplicationValidator : AbstractValidator<SubmitApplica
             .NotNull().NotEqual(Guid.Empty)
             .WithMessage("An internal application must be linked to an employee.")
             .When(x => x.Source == ApplicationSource.Internal);
+
+        // Unknown is a read-only sentinel for a corrupt DB row (ISSUE-231); it must never be submitted.
+        RuleFor(x => x.Source)
+            .NotEqual(ApplicationSource.Unknown).WithMessage("A valid application source is required.");
     }
 }

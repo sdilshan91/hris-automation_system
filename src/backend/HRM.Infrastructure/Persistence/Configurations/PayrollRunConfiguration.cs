@@ -1,4 +1,6 @@
 using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -23,8 +25,10 @@ public sealed class PayrollRunConfiguration : IEntityTypeConfiguration<PayrollRu
         builder.Property(x => x.PayYear).IsRequired();
 
         // Status stored as varchar(20) (FR-1) — matches the SalaryComponentType.HasConversion<string>() pattern.
+        // ENH-021: read through the tolerant converter so a row with a status string outside the enum maps to
+        // the Unknown sentinel (and is logged) instead of 500ing the run list/guard query on materialization.
         builder.Property(x => x.Status)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<PayrollRunStatus>(PayrollRunStatus.Unknown))
             .HasMaxLength(20)
             .IsRequired();
 

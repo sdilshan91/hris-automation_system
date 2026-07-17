@@ -22,7 +22,9 @@ public sealed class MoveApplicantStageValidator : AbstractValidator<MoveApplican
             .NotEmpty().WithMessage("Applicant is required.");
 
         RuleFor(x => x.ToStage)
-            .IsInEnum().WithMessage("A valid target stage is required.");
+            .IsInEnum().WithMessage("A valid target stage is required.")
+            // Unknown is a read-only sentinel for a corrupt DB row (ISSUE-231); it is not a movable target.
+            .NotEqual(ApplicantStage.Unknown).WithMessage("A valid target stage is required.");
 
         // BR-3: moving to Rejected requires a free-text reason.
         RuleFor(x => x.Reason)
@@ -63,7 +65,9 @@ public sealed class BulkMoveApplicantStageValidator : AbstractValidator<BulkMove
             .NotEmpty().WithMessage("Applicant ids must be non-empty.");
 
         RuleFor(x => x.ToStage)
-            .IsInEnum().WithMessage("A valid target stage is required.");
+            .IsInEnum().WithMessage("A valid target stage is required.")
+            // Unknown is a read-only sentinel for a corrupt DB row (ISSUE-231); it is not a movable target.
+            .NotEqual(ApplicantStage.Unknown).WithMessage("A valid target stage is required.");
 
         // BR-3: a bulk move to Rejected requires a free-text reason.
         RuleFor(x => x.Reason)

@@ -166,8 +166,11 @@ public sealed class ApplicantPipelineIntegrationTests
         var board = result.Value!;
         board.Total.Should().Be(4);
 
-        // Every stage column is present (FR-1), even empty ones.
-        board.Stages.Select(s => s.Stage).Should().Contain(Enum.GetValues<ApplicantStage>());
+        // Every REAL stage column is present (FR-1), even empty ones. The Unknown sentinel (ISSUE-231) is a
+        // read-only fallback for a corrupt DB row, not a pipeline stage, so it is deliberately not a column.
+        board.Stages.Select(s => s.Stage).Should()
+            .Contain(Enum.GetValues<ApplicantStage>().Where(s => s != ApplicantStage.Unknown))
+            .And.NotContain(ApplicantStage.Unknown);
 
         Count(board, ApplicantStage.Applied).Should().Be(2);
         Count(board, ApplicantStage.Screening).Should().Be(1);

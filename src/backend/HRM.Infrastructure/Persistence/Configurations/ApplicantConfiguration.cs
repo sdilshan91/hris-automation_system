@@ -1,4 +1,6 @@
 using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -50,14 +52,16 @@ public sealed class ApplicantConfiguration : IEntityTypeConfiguration<Applicant>
             .IsRequired();
 
         // Stage/Source stored as strings for readability/forward-compat (matches the codebase's varchar
-        // status pattern, e.g. VacancyConfiguration).
+        // status pattern, e.g. VacancyConfiguration). ISSUE-231: read through the tolerant converter so one
+        // row with a stale/renamed enum string does not 500 the whole pipeline board (which materializes
+        // every applicant on the vacancy) — the bad value maps to the Unknown sentinel and is logged.
         builder.Property(a => a.Stage)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<ApplicantStage>(ApplicantStage.Unknown))
             .HasMaxLength(20)
             .IsRequired();
 
         builder.Property(a => a.Source)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<ApplicationSource>(ApplicationSource.Unknown))
             .HasMaxLength(20)
             .IsRequired();
 

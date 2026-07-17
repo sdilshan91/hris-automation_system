@@ -1,4 +1,6 @@
 using HRM.Domain.Entities;
+using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -22,13 +24,16 @@ public sealed class ApplicantStageHistoryConfiguration : IEntityTypeConfiguratio
 
         builder.Property(h => h.ApplicantId).IsRequired();
 
+        // ISSUE-231 (same class, dashboard read path): the recruitment dashboard projects FromStage/ToStage
+        // from every history row (RecruitmentDashboardService), so a single stale/renamed stage string would
+        // 500 the whole dashboard. Read through the tolerant converter → the Unknown sentinel is off-funnel.
         builder.Property(h => h.FromStage)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<ApplicantStage>(ApplicantStage.Unknown))
             .HasMaxLength(20)
             .IsRequired();
 
         builder.Property(h => h.ToStage)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<ApplicantStage>(ApplicantStage.Unknown))
             .HasMaxLength(20)
             .IsRequired();
 

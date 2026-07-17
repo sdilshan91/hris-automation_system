@@ -42,4 +42,13 @@ public enum PayrollRunStatus
 
     /// <summary>Run was cancelled before finalization (BR-6).</summary>
     Cancelled,
+
+    /// <summary>
+    /// Sentinel for a persisted <c>status</c> string outside this enum (ENH-021). Never written by the app —
+    /// run status is only ever set by the code-controlled BR-6 transitions, never from user input — and only
+    /// produced on READ by <see cref="Persistence.Converters.TolerantEnumToStringConverter{TEnum}"/> so one
+    /// corrupt row does not 500 the payroll-run list/guard query. Appended so it does not disturb the existing
+    /// ordinal values.
+    /// </summary>
+    Unknown = 99,
 }

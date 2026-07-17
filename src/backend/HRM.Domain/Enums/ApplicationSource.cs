@@ -14,4 +14,12 @@ public enum ApplicationSource
 
     /// <summary>Submission attributed to an employee referral (forward-compat; not produced by US-REC-002 directly).</summary>
     Referral = 2,
+
+    /// <summary>
+    /// Sentinel for a persisted <c>source</c> string outside this enum (ISSUE-231). Never written by the app —
+    /// the write path rejects it (SubmitApplicationValidator) — and only produced on READ by
+    /// <see cref="Persistence.Converters.TolerantEnumToStringConverter{TEnum}"/> so one corrupt row does not
+    /// 500 the whole pipeline board. Appended (not 0) so it does not disturb the existing values.
+    /// </summary>
+    Unknown = 99,
 }
