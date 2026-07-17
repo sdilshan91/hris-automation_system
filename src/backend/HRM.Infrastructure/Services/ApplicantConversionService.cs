@@ -2,6 +2,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Application.Features.Recruitment.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -24,10 +25,14 @@ namespace HRM.Infrastructure.Services;
 /// (a manual employee-number override, the structured LocationId FK, and the reporting manager) are applied
 /// on the tracked entity within the same transaction.
 ///
+/// FR-5/BR-7 auto-create user account: IMPLEMENTED (ISSUE-140), gated on the per-tenant
+/// <see cref="Tenant.AutoCreateUserOnHire"/> toggle (default OFF — opt-in). When ON, the conversion
+/// provisions a passwordless User + Active UserTenant + built-in "Employee" role and links Employee.UserId,
+/// atomically inside the same transaction/SaveChanges as the conversion (see TryProvisionUserAccountAsync).
+/// An existing global User with the same email is REUSED (no duplicate account). Credential DELIVERY (welcome
+/// email) is deferred to US-NTF-006 — the account is created passwordless.
+///
 /// DEFERRALS (Phase 1):
-///  - FR-5/BR-7 auto-create user account: there is NO "auto-create user accounts on hire" tenant setting in
-///    the Tenant entity yet, so this is defaulted OFF and skipped. When that setting is added, create a
-///    User + UserTenant + UserTenantRole (default "Employee" role) here via IRoleService.
 ///  - FR-8 onboarding workflow trigger: there is no Onboarding module yet — DEFERRED (log-only seam below).
 ///  - FR-9 welcome email: log-only seam (real email + the Hangfire NFR-5 async queue are deferred, same as
 ///    the rest of recruitment).
@@ -172,6 +177,9 @@ public sealed class ApplicantConversionService : IApplicantConversionService
             AuditLog? auditLog = null;
             Employee? employee = null;
             Vacancy? vacancy = null;
+            // FR-5: entities the (optional) user-account provisioning added this attempt. Detached on rollback
+            // alongside the others so the retrying execution strategy re-inserts nothing (BUG-264).
+            var provisioned = new List<object>();
             try
             {
                 // Reuse the Core HR create path: email uniqueness (BR-2 employee), dept/job-title validation,
@@ -246,6 +254,10 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 };
                 _dbContext.AuditLogs.Add(auditLog);
 
+                // FR-5/BR-7: auto-create the login account when the tenant toggle is on (passwordless; credential
+                // delivery is deferred to US-NTF-006). Runs inside the same atomic unit as the conversion.
+                var userAccountCreated = await TryProvisionUserAccountAsync(applicant, employee, provisioned, cancellationToken);
+
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
                 if (transaction is not null)
@@ -270,7 +282,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                     VacancyFilledCount = filledCount,
                     VacancyHeadcount = headcount,
                     VacancyClosed = vacancyClosed,
-                    UserAccountCreated = false, // FR-5 deferred — no tenant auto-create setting yet.
+                    UserAccountCreated = userAccountCreated, // FR-5 — gated on Tenant.AutoCreateUserOnHire.
                 });
             }
             catch
@@ -289,6 +301,8 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                     _dbContext.Entry(employee).State = EntityState.Detached;
                 if (vacancy is not null)
                     _dbContext.Entry(vacancy).State = EntityState.Detached;
+                foreach (var e in provisioned)
+                    _dbContext.Entry(e).State = EntityState.Detached;
                 _dbContext.Entry(applicant).State = EntityState.Detached;
                 throw;
             }
@@ -318,6 +332,86 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 "The applicant does not have an accepted offer.", 409, "no_accepted_offer");
 
         return Result<Offer>.Success(acceptedOffer);
+    }
+
+    /// <summary>
+    /// FR-5/BR-7 (ISSUE-140): when the tenant's <see cref="Tenant.AutoCreateUserOnHire"/> toggle is on, provision
+    /// a login account for the new employee — a passwordless <see cref="User"/> (credential delivery deferred to
+    /// US-NTF-006), an Active <see cref="UserTenant"/> membership, and the built-in "Employee" role — then link
+    /// <c>Employee.UserId</c>. An existing GLOBAL user with the same email is REUSED (no duplicate account). All
+    /// entities are only Add()-ed here; the caller's single SaveChanges persists them in the same atomic unit
+    /// (NFR-3), and the newly-Added rows are recorded in <paramref name="provisioned"/> so the retry rollback
+    /// detaches them (BUG-264). Returns true when the toggle is on (an account was created or reused + linked).
+    /// </summary>
+    private async Task<bool> TryProvisionUserAccountAsync(
+        Applicant applicant, Employee employee, List<object> provisioned, CancellationToken cancellationToken)
+    {
+        var autoCreate = await _dbContext.Tenants
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.AutoCreateUserOnHire)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!autoCreate) return false;
+
+        var email = applicant.Email.Trim().ToLowerInvariant();
+
+        // Users are global (not tenant-scoped) — IgnoreQueryFilters so an existing account under another tenant
+        // is reused rather than duplicated (mirrors TenantProvisioningService's owner-link path).
+        var user = await _dbContext.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+        if (user is null)
+        {
+            user = new User
+            {
+                Id = BaseEntity.NewUuidV7(),
+                Email = email,
+                DisplayName = $"{applicant.FirstName} {applicant.LastName}".Trim(),
+                PasswordHash = null, // passwordless — credential delivery deferred (US-NTF-006).
+                IsActive = true,
+            };
+            _dbContext.Users.Add(user);
+            provisioned.Add(user);
+        }
+
+        var membership = await _dbContext.UserTenants
+            .FirstOrDefaultAsync(ut => ut.UserId == user.Id && ut.TenantId == _tenantContext.TenantId, cancellationToken);
+        if (membership is null)
+        {
+            membership = new UserTenant
+            {
+                Id = BaseEntity.NewUuidV7(),
+                UserId = user.Id,
+                TenantId = _tenantContext.TenantId,
+                Status = UserTenantStatus.Active,
+            };
+            _dbContext.UserTenants.Add(membership);
+            provisioned.Add(membership);
+        }
+        else if (membership.Status != UserTenantStatus.Active)
+        {
+            membership.Status = UserTenantStatus.Active;
+        }
+
+        var employeeRoleId = await _dbContext.Roles
+            .Where(r => r.TenantId == _tenantContext.TenantId && r.Name == PermissionCatalog.BuiltInRoles.Employee)
+            .Select(r => r.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (employeeRoleId != Guid.Empty &&
+            !await _dbContext.UserTenantRoles.AnyAsync(
+                x => x.UserTenantId == membership.Id && x.RoleId == employeeRoleId, cancellationToken))
+        {
+            var utr = new UserTenantRole
+            {
+                UserTenantId = membership.Id,
+                RoleId = employeeRoleId,
+                AssignedAt = DateTime.UtcNow,
+                AssignedBy = _currentUser.IsAuthenticated ? _currentUser.UserId.ToString() : null,
+            };
+            _dbContext.UserTenantRoles.Add(utr);
+            provisioned.Add(utr);
+        }
+
+        employee.UserId = user.Id; // link the login account to the employee record.
+        return true;
     }
 
     /// <summary>

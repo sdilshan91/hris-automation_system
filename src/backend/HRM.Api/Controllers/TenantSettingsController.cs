@@ -102,6 +102,21 @@ public sealed class TenantSettingsController : ControllerBase
         return Ok(ApiResponse<SessionPolicyDto>.Ok(result.Value!, "Session policy updated."));
     }
 
+    /// <summary>PUT /api/v1/tenant/settings/hiring — update the auto-create-user-on-hire toggle (US-REC-010 FR-5/BR-7).</summary>
+    [HttpPut("hiring")]
+    [RequirePermission("Tenant.ManageSettings")]
+    [ProducesResponseType(typeof(ApiResponse<HiringSettingsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateHiringSettings(
+        [FromBody] UpdateHiringSettingsRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdateHiringSettingsCommand(request), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<HiringSettingsDto>.Ok(result.Value!, "Hiring settings updated."));
+    }
+
     /// <summary>PUT /api/v1/tenant/settings/primary-color — update the primary brand color (FR-3).</summary>
     [HttpPut("primary-color")]
     [RequirePermission("Tenant.ManageSettings")]

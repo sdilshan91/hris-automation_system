@@ -106,6 +106,11 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.AllowManagerReviewerConfig)
             .HasDefaultValue(true);
 
+        // US-REC-010 FR-5/BR-7 (ISSUE-140): default false so existing tenants keep the prior behaviour
+        // (no auto-created login account on hire). New tenants also default false via the entity.
+        builder.Property(t => t.AutoCreateUserOnHire)
+            .HasDefaultValue(false);
+
         // MfaRequiredRoles stored as jsonb column with value converter and comparer
         builder.Property(t => t.MfaRequiredRoles)
             .HasColumnType("jsonb")

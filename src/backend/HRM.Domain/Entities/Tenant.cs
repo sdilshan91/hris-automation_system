@@ -175,6 +175,16 @@ public sealed class Tenant
     public bool PublicCareersEnabled { get; set; }
 
     /// <summary>
+    /// Tenant-level toggle (US-REC-010 FR-5 / BR-7, ISSUE-140) for auto-creating a login account when an
+    /// applicant is converted to an employee. When true, the conversion provisions a passwordless
+    /// <see cref="User"/> + Active <see cref="UserTenant"/> + built-in "Employee" role and links
+    /// <c>Employee.UserId</c>, atomically with the conversion. Defaults to false (opt-in) so existing tenants
+    /// keep the prior behaviour. Credential DELIVERY (welcome email) and the onboarding trigger remain deferred
+    /// (US-NTF-006). Mirrors the plain-boolean tenant flags above (<see cref="PublicCareersEnabled"/>).
+    /// </summary>
+    public bool AutoCreateUserOnHire { get; set; }
+
+    /// <summary>
     /// Tenant-level toggle for the year-to-date column on employee payslips (US-PAY-005 FR-7 / ISSUE-160). When
     /// false, the YTD earning/deduction totals are not surfaced on the self-service payslip detail; a tenant
     /// opts in. Defaults to false to preserve the prior behaviour. TODO(admin-console): surface this in tenant
