@@ -225,6 +225,78 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
         runs.Single(r => r.Id == runId).Status.Should().Be(PayrollRunStatus.Unknown);
     }
 
+    // ── ISSUE-316: a corrupt applicant.rejection_reason (a separate nullable enum on the same board row)
+    //    must not 500 the pipeline board — the board materializes the whole Applicant entity. ──
+    [Fact]
+    [Trait("TC", "TC-REC-003-16")]
+    public async Task PipelineBoardService_ToleratesCorruptRejectionReason_OnPostgres_Issue316()
+    {
+        Guid vacancyId = BaseEntity.NewUuidV7(), applicantId = BaseEntity.NewUuidV7();
+        await using (var seed = Db())
+        {
+            seed.Vacancies.Add(new Vacancy
+            {
+                Id = vacancyId, TenantId = _tenantId, ReferenceNumber = "VAC-2026-0004",
+                Title = "Engineer", Status = VacancyStatus.Open, EmploymentType = EmploymentType.FullTime,
+                Headcount = 1, Description = "Build things.",
+            });
+            seed.Applicants.Add(NewApplicant(applicantId, vacancyId, "rej@t.com"));
+            await seed.SaveChangesAsync();
+
+            // A rejection_reason string outside the RejectionReason enum (nullable column, non-null bad value).
+            await seed.Database.ExecuteSqlRawAsync(
+                "UPDATE applicant SET rejection_reason = 'HeadcountFrozen' WHERE id = {0}", applicantId);
+        }
+
+        await using var read = Db();
+        var service = new ApplicantService(read,
+            new MutableTenantContext { TenantId = _tenantId }, Substitute.For<ICurrentUser>(),
+            Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
+            Substitute.For<IRecruitmentNotificationService>(), NullLogger<ApplicantService>.Instance);
+
+        var result = await service.GetPipelineBoardAsync(vacancyId, new PipelineFilter());
+
+        result.IsSuccess.Should().BeTrue("a corrupt rejection_reason must not 500 the board");
+    }
+
+    // ── ISSUE-316: a corrupt applicant_stage_history.rejection_reason must not 500 the detail-timeline read. ──
+    [Fact]
+    [Trait("TC", "TC-REC-003-16")]
+    public async Task StageHistoryRead_ToleratesCorruptRejectionReason_OnPostgres_Issue316()
+    {
+        var historyId = BaseEntity.NewUuidV7();
+        Guid vacancyId = BaseEntity.NewUuidV7(), applicantId = BaseEntity.NewUuidV7();
+        await using (var seed = Db())
+        {
+            // The history row FKs to applicant, which FKs to vacancy — seed the parents first.
+            seed.Vacancies.Add(new Vacancy
+            {
+                Id = vacancyId, TenantId = _tenantId, ReferenceNumber = "VAC-2026-0005",
+                Title = "Engineer", Status = VacancyStatus.Open, EmploymentType = EmploymentType.FullTime,
+                Headcount = 1, Description = "Build things.",
+            });
+            seed.Applicants.Add(NewApplicant(applicantId, vacancyId, "histrej@t.com"));
+            seed.ApplicantStageHistories.Add(new ApplicantStageHistory
+            {
+                Id = historyId, TenantId = _tenantId, ApplicantId = applicantId,
+                FromStage = ApplicantStage.Interview, ToStage = ApplicantStage.Rejected,
+                RejectionReason = RejectionReason.Other, ChangedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+
+            await seed.Database.ExecuteSqlRawAsync(
+                "UPDATE applicant_stage_history SET rejection_reason = 'HeadcountFrozen' WHERE id = {0}", historyId);
+        }
+
+        await using var read = Db();
+        List<ApplicantStageHistory> rows = null!;
+        var act = async () => rows = await read.ApplicantStageHistories.AsNoTracking()
+            .Where(h => h.ApplicantId == applicantId).ToListAsync();
+
+        await act.Should().NotThrowAsync("a corrupt rejection_reason must not 500 the detail timeline");
+        rows.Single(h => h.Id == historyId).RejectionReason.Should().Be(RejectionReason.Unknown);
+    }
+
     private Applicant NewApplicant(Guid id, Guid vacancyId, string email) => new()
     {
         Id = id, TenantId = _tenantId, VacancyId = vacancyId,

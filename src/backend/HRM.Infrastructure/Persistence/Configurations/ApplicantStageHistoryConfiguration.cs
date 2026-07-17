@@ -43,9 +43,10 @@ public sealed class ApplicantStageHistoryConfiguration : IEntityTypeConfiguratio
         builder.Property(h => h.Notes).HasColumnType("text");
 
         // US-REC-004 AC-4/FR-3: structured rejection reason, stored as a string for readability (matches
-        // the varchar enum pattern). Nullable — only set on a move to Rejected.
+        // the varchar enum pattern). Nullable — only set on a move to Rejected. ISSUE-316: tolerant read so a
+        // corrupt rejection_reason on a history row does not 500 the detail timeline (the ISSUE-231 class).
         builder.Property(h => h.RejectionReason)
-            .HasConversion<string>()
+            .HasConversion(new TolerantEnumToStringConverter<RejectionReason>(RejectionReason.Unknown))
             .HasMaxLength(30);
 
         builder.Property(h => h.ChangedAt).IsRequired();

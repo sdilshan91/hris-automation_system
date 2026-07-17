@@ -36,6 +36,8 @@ public sealed class MoveApplicantStageValidator : AbstractValidator<MoveApplican
         RuleFor(x => x.RejectionReason)
             .NotNull().WithMessage("A rejection reason is required when rejecting an applicant.")
             .IsInEnum().WithMessage("A valid rejection reason is required.")
+            // Unknown is a read-only sentinel for a corrupt DB row (ISSUE-316); it is not a submittable reason.
+            .NotEqual(RejectionReason.Unknown).WithMessage("A valid rejection reason is required.")
             .When(x => x.ToStage == ApplicantStage.Rejected);
 
         RuleFor(x => x.Reason)
@@ -78,6 +80,8 @@ public sealed class BulkMoveApplicantStageValidator : AbstractValidator<BulkMove
         RuleFor(x => x.RejectionReason)
             .NotNull().WithMessage("A rejection reason is required when rejecting applicants.")
             .IsInEnum().WithMessage("A valid rejection reason is required.")
+            // Unknown is a read-only sentinel for a corrupt DB row (ISSUE-316); it is not a submittable reason.
+            .NotEqual(RejectionReason.Unknown).WithMessage("A valid rejection reason is required.")
             .When(x => x.ToStage == ApplicantStage.Rejected);
 
         RuleFor(x => x.Reason)
