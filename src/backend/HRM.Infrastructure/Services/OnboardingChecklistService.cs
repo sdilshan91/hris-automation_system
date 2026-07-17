@@ -163,8 +163,8 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 cancellationToken);
 
         // BR-4: anchor due dates to the override start date or the joining date, but never the past.
-        var startDate = (input.OverrideStartDate ?? employee.DateOfJoining).Date;
-        var today = DateTime.UtcNow.Date;
+        var startDate = UtcMidnight(input.OverrideStartDate ?? employee.DateOfJoining);
+        var today = UtcMidnight(DateTime.UtcNow);
         if (startDate < today)
             startDate = today;
 
@@ -283,6 +283,14 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
     private static bool IsIdempotencyKeyViolation(DbUpdateException ex)
         => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
+    /// <summary>
+    /// BUG-289: the date part at UTC midnight. Onboarding start/due dates are date-only but stored in
+    /// <c>timestamptz</c> columns; plain <c>.Date</c> yields <c>Kind=Unspecified</c>, which Npgsql REJECTS for
+    /// <c>timestamp with time zone</c> (the InMemory provider hid this — it ignores Kind). SpecifyKind(Utc)
+    /// makes the write valid on real Postgres. (A cleaner remodel to <c>date</c> columns is a tracked follow-up.)
+    /// </summary>
+    private static DateTime UtcMidnight(DateTime value) => DateTime.SpecifyKind(value.Date, DateTimeKind.Utc);
+
     // ── Get ─────────────────────────────────────────────────────────────
 
     public async Task<Result<OnboardingChecklistInstanceDto>> GetInstanceAsync(
@@ -342,7 +350,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
             }
             else if (change.NewDueDate.HasValue)
             {
-                task.DueDate = change.NewDueDate.Value.Date; // FR-6.
+                task.DueDate = UtcMidnight(change.NewDueDate.Value); // FR-6.
             }
         }
 
@@ -350,7 +358,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         if (input.AddTasks.Count > 0)
         {
             var resolution = await ResolveResponsiblePartiesAsync(employee, cancellationToken);
-            var today = DateTime.UtcNow.Date;
+            var today = UtcMidnight(DateTime.UtcNow);
             var maxSort = instance.Tasks.Count == 0 ? 0 : instance.Tasks.Max(t => t.SortOrder);
             foreach (var ad in input.AddTasks)
                 AddTaskInstance(NewAdHocTask(instance.Id, ad, today, resolution, employee, ++maxSort));
