@@ -14,6 +14,11 @@ public static class PayrollAuditAction
     public const string SalaryComponentDeleted = "SalaryComponent.Deleted";
     public const string SalaryStructureCreated = "SalaryStructure.Created";
     public const string SalaryStructureUpdated = "SalaryStructure.Updated";
+    // ISSUE-108 (NFR-5): structure delete + component link/unlink/reorder must also be audited.
+    public const string SalaryStructureDeleted = "SalaryStructure.Deleted";
+    public const string SalaryStructureComponentLinked = "SalaryStructure.ComponentLinked";
+    public const string SalaryStructureComponentUnlinked = "SalaryStructure.ComponentUnlinked";
+    public const string SalaryStructureComponentsReordered = "SalaryStructure.ComponentsReordered";
 
     // Employee salary
     public const string EmployeeSalaryAssigned = "EmployeeSalary.Assigned";

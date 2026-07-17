@@ -260,6 +260,97 @@ public sealed class SalaryStructureIntegrationTests
         entry.ResourceId.Should().NotBe(source.Value.Id.ToString());
     }
 
+    // ISSUE-108 (NFR-5): structure DELETE + component LINK/UNLINK/REORDER must also emit audit rows.
+
+    [Fact]
+    public async Task DeleteStructure_EmitsSalaryStructureDeletedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning());
+        var created = await mediator.Send(new CreateSalaryStructureCommand(
+            "Del", "DEL", null, new DateOnly(2026, 1, 1), false, true,
+            new[] { new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false) }));
+
+        var deleted = await mediator.Send(new DeleteSalaryStructureCommand(created.Value!.Id));
+        deleted.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureDeleted
+            && a.ResourceId == created.Value.Id.ToString());
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.SalaryStructure);
+        entry.Before.Should().NotBeNullOrWhiteSpace();
+        entry.TenantId.Should().Be(_tenantA);
+    }
+
+    [Fact]
+    public async Task LinkComponent_EmitsComponentLinkedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning("BASIC"));
+        var extra = await mediator.Send(Earning("HRA"));
+        var created = await mediator.Send(new CreateSalaryStructureCommand(
+            "S", "S", null, new DateOnly(2026, 1, 1), false, true,
+            new[] { new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false) }));
+
+        var linked = await mediator.Send(new LinkComponentToStructureCommand(
+            created.Value!.Id, extra.Value!.Id, null, null, 2, false));
+        linked.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureComponentLinked
+            && a.ResourceId == created.Value.Id.ToString());
+        entry.After.Should().NotBeNullOrWhiteSpace();
+        entry.TenantId.Should().Be(_tenantA);
+    }
+
+    [Fact]
+    public async Task UnlinkComponent_EmitsComponentUnlinkedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning("BASIC"));
+        var extra = await mediator.Send(Earning("HRA"));
+        var created = await mediator.Send(new CreateSalaryStructureCommand(
+            "S", "S", null, new DateOnly(2026, 1, 1), false, true,
+            new[]
+            {
+                new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false),
+                new SalaryStructureComponentInput(extra.Value!.Id, null, null, 2, false),
+            }));
+        var hraLink = created.Value!.Components.Single(c => c.SalaryComponentId == extra.Value!.Id);
+
+        var unlinked = await mediator.Send(new UnlinkComponentFromStructureCommand(created.Value.Id, hraLink.Id));
+        unlinked.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureComponentUnlinked
+            && a.ResourceId == created.Value.Id.ToString());
+        entry.Before.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ReorderComponents_EmitsComponentsReorderedAudit()
+    {
+        var mediator = Pipeline(_tenantA);
+        var basic = await mediator.Send(Earning());
+        var created = await mediator.Send(new CreateSalaryStructureCommand(
+            "S", "S", null, new DateOnly(2026, 1, 1), false, true,
+            new[] { new SalaryStructureComponentInput(basic.Value!.Id, null, null, 1, false) }));
+        var link = created.Value!.Components[0];
+
+        var reordered = await mediator.Send(new ReorderStructureComponentsCommand(
+            created.Value.Id, new[] { (link.Id, 5) }));
+        reordered.IsSuccess.Should().BeTrue();
+
+        using var db = Db(_tenantA);
+        var entry = await db.AuditLogs.AsNoTracking().SingleAsync(a =>
+            a.Action == PayrollAuditAction.SalaryStructureComponentsReordered
+            && a.ResourceId == created.Value.Id.ToString());
+        entry.After.Should().NotBeNullOrWhiteSpace();
+    }
+
     [Fact]
     public async Task OnlyOneDefaultStructure_PerTenant()
     {
