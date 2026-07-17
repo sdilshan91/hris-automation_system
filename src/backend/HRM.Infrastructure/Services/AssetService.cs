@@ -249,7 +249,8 @@ public sealed class AssetService : IAssetService
             asset.Condition = line.Condition;
             asset.Status = AssetStatus.Assigned;
             asset.AssignedEmployeeId = employee.Id;
-            asset.IssueDate = line.IssueDate.Date;
+            // BUG-289 class: issue_date is timestamptz — .Date is Kind=Unspecified, which Npgsql rejects. UTC-kind it.
+            asset.IssueDate = DateTime.SpecifyKind(line.IssueDate.Date, DateTimeKind.Utc);
             asset.Notes = string.IsNullOrWhiteSpace(line.Notes) ? null : line.Notes.Trim();
 
             // FR-8: explicit before/after audit line for the status transition (AuditInterceptor stamps columns).

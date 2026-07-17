@@ -79,7 +79,9 @@ public sealed class OffboardingService : IOffboardingService
                 409, "invalid_employee_status");
 
         // FR data rule: last working day must be today or in the future.
-        var lwd = input.LastWorkingDay.Date;
+        // BUG-289 class: last_working_day / task due_date are timestamptz — .Date is Kind=Unspecified (rejected
+        // by Npgsql). UTC-kind it here so it (and the derived task due dates) persist on real Postgres.
+        var lwd = DateTime.SpecifyKind(input.LastWorkingDay.Date, DateTimeKind.Utc);
         if (lwd < DateTime.UtcNow.Date)
             return Result<OffboardingInstanceDto>.Failure(
                 "Last working day must be today or in the future.", 400, "lwd_in_past");
@@ -437,8 +439,10 @@ public sealed class OffboardingService : IOffboardingService
     /// <summary>FR-2: due dates never precede today (a past LWD-offset is clamped to today).</summary>
     private static DateTime ClampDueDate(DateTime due)
     {
-        var today = DateTime.UtcNow.Date;
-        return due.Date < today ? today : due.Date;
+        // BUG-289 class: the result is persisted to the timestamptz due_date column, so both branches must be
+        // UTC-kinded (.Date alone is Kind=Unspecified, which Npgsql rejects).
+        var today = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc);
+        return due.Date < today ? today : DateTime.SpecifyKind(due.Date, DateTimeKind.Utc);
     }
 
     /// <summary>Maps a template task's free-text category/role to a clearance category for offboarding reuse.</summary>
