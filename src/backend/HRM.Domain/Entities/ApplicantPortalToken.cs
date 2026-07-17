@@ -28,6 +28,12 @@ public sealed class ApplicantPortalToken : BaseEntity
     /// <summary>UTC instant the token expires (FR-8 — default 30 days from issue). After this, access is denied.</summary>
     public DateTime ExpiresAt { get; set; }
 
+    /// <summary>
+    /// ISSUE-130 (NFR-6): the requester IP captured at issue time, used for the per-IP rate limit that catches
+    /// enumeration via rotating emails (the per-email guard alone misses it). Null when no HttpContext (jobs).
+    /// </summary>
+    public string? RequestIp { get; set; }
+
     // Issued-at uses the inherited BaseEntity.CreatedAt (stamped by AuditInterceptor / set explicitly on
     // issue). It also drives the basic regeneration rate-limit guard (NFR-6).
 }

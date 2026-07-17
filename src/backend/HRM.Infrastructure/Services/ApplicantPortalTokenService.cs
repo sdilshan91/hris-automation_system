@@ -3,6 +3,7 @@ using HRM.Application.Common.Models;
 using HRM.Domain.Entities;
 using HRM.Domain.Recruitment;
 using HRM.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,8 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
     private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ApplicantPortalTokenService> _logger;
+    // ISSUE-130: optional (nullable) so isolated construction/tests compile; DI injects it in production.
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     /// <summary>FR-8: default magic-link validity window (days) when not configured.</summary>
     private const int DefaultExpiryDays = 30;
@@ -30,16 +33,25 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
     /// <summary>NFR-6: basic rate-limit guard — reuse a token issued within this window instead of minting a new one.</summary>
     private const int RecentTokenWindowSeconds = 60;
 
+    /// <summary>ISSUE-130 (NFR-6): per-IP rate limit — max tokens one IP may have issued (across ALL emails) within
+    /// <see cref="IpWindowSeconds"/>. Catches enumeration via rotating emails that the per-email guard misses.</summary>
+    private const int MaxIssuesPerIp = 10;
+
+    /// <summary>ISSUE-130: the per-IP rate-limit window (1 hour).</summary>
+    private const int IpWindowSeconds = 3600;
+
     public ApplicantPortalTokenService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IConfiguration configuration,
-        ILogger<ApplicantPortalTokenService> logger)
+        ILogger<ApplicantPortalTokenService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _configuration = configuration;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<Result<IssuedPortalToken>> IssueAsync(
@@ -76,6 +88,26 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
                 "A portal link was just sent. Please wait a moment before requesting another.", 429, "rate_limited");
         }
 
+        // ISSUE-130 (NFR-6): per-IP throttle. The per-email guard above misses an attacker rotating DISTINCT
+        // emails from one IP (enumeration / provider-exhaustion), so also cap how many tokens a single IP may
+        // have issued (across all emails) within the window. Skipped when the IP is unknown (e.g. background job).
+        var requestIp = _httpContextAccessor?.HttpContext?.Connection.RemoteIpAddress?.ToString();
+        if (!string.IsNullOrEmpty(requestIp))
+        {
+            var ipIssueCount = await _dbContext.ApplicantPortalTokens
+                .AsNoTracking()
+                .CountAsync(t => t.RequestIp == requestIp
+                                 && t.CreatedAt > now.AddSeconds(-IpWindowSeconds), cancellationToken);
+            if (ipIssueCount >= MaxIssuesPerIp)
+            {
+                _logger.LogWarning(
+                    "Portal token issue throttled (NFR-6, per-IP) from {RequestIp} in tenant {TenantId} — {Count} issued in the last {Window}s.",
+                    requestIp, tenantId, ipIssueCount, IpWindowSeconds);
+                return Result<IssuedPortalToken>.Failure(
+                    "Too many portal link requests. Please try again later.", 429, "rate_limited");
+            }
+        }
+
         var expiresAt = now.AddDays(DefaultExpiryDays);
         var token = PortalMagicLink.Issue(tenantId, emailLower, expiresAt, secret);
         var tokenHash = PortalMagicLink.HashToken(token);
@@ -88,6 +120,7 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
             TokenHash = tokenHash,
             ExpiresAt = expiresAt,
             CreatedAt = now,
+            RequestIp = requestIp,
             IsDeleted = false,
         });
 
