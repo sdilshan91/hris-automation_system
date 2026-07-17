@@ -6940,9 +6940,10 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-314
 - **Type:** ISSUE (robustness / concurrency)
 - **Severity:** MED
-- **Status:** OPEN · **needs-decision**
+- **Status:** ✅ RESOLVED (PR #342, 2026-07-17) — decision (a): filtered-UNIQUE + catch-on-conflict
 - **Layer:** BE / DB
 - **Module / US / TC:** Onboarding / US-ONB-002 / (new) — auto-healed from a `@test-authenticator` OUT-OF-LANE flag while auditing the BUG-088 fix, 2026-07-17
+> **RESOLVED (2026-07-17, decision (a)):** Promoted the BUG-088 dedup index to a **filtered UNIQUE** index on `{TenantId, EmployeeId, TemplateId, IdempotencyKey}` `WHERE idempotency_key IS NOT NULL AND status = 'Active'` (migration `Onboarding_ChecklistIdempotencyUniqueIndex`) — the DB is now the arbiter. `AssignAsync` wraps its insert in a try/catch that, on the unique-violation (23505, the only unique constraint on the table), re-queries and **returns the concurrently-created winner** instead of a 500 (mirrors the `AttendanceService` clock-in idiom). The `status='Active'` filter means a superseded instance's key never blocks a legitimate later assignment. **Postgres-verified** (Testcontainers, `OnboardingIdempotencyConcurrencyPostgresTests`, 3 arms): 2nd active-same-key → 23505; superseded-same-key allowed; null-keys unconstrained. 16/16 InMemory onboarding arms still green. **Discovered while writing the Postgres test → auto-healed to [[BUG-289]]:** `AssignAsync`/`ModifyAsync` write `.Date` (Kind=Unspecified) DateTimes into the timestamptz `start_date`/`due_date` columns, which real Postgres rejects (kept OUT of this PR to stay surgical).
 - **Title:** Two concurrent POSTs with the same `Idempotency-Key` can both pass the dedup guard before either commits, so the fixed single-request dedup still allows a double-insert under a genuine race
 - **Root cause:** BUG-088's fix (PR #330) added a dedicated `IdempotencyKey` column + a **non-unique** scoped index and does the dedup as `SELECT … WHERE key = @k` then `INSERT` in `OnboardingChecklistService.AssignAsync:143-233`. That closes the *sequential* retry (the reported bug) but not a **concurrent** one: two parallel retries can both run the `SELECT` (miss) before either `SaveChanges` commits → two instances. The DB has no constraint to reject the second write.
 - **Decision needed:** (a) promote the index to **UNIQUE** on `{TenantId, EmployeeId, TemplateId, IdempotencyKey}` (filtered `WHERE idempotency_key IS NOT NULL`) + catch the unique-violation and return the existing row — true once-only semantics; or (b) accept **single-request-scope** idempotency only (document that concurrent replays are out of scope). Recommend (a): it is the same "let the DB be the arbiter" pattern used for concurrent clock-in / applicant-conversion, and cheap to add.
@@ -6959,3 +6960,18 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** `OnboardingChecklistsController` resolves the idempotency key as "`Idempotency-Key` header else `request.IdempotencyKey` body" with no test — a mutation swapping precedence or dropping the body fallback would survive
 - **Root cause:** the header-takes-precedence merge (`OnboardingChecklistsController.cs:93-94`) has no controller/integration arm; the BUG-088 service unit test exercises only the resolved key, not how it's sourced.
 - **Suggested direction (NOT applied):** a thin controller/integration arm asserting the header wins when both are present and the body value is used when the header is absent. Report only.
+
+---
+
+### BUG-289 — Onboarding checklist assign/modify write `.Date` (Kind=Unspecified) DateTimes into timestamptz columns → fails on real Postgres
+- **ID:** BUG-289
+- **Type:** BUG (latent — Postgres-only, hidden by InMemory tests)
+- **Severity:** HIGH (assign is a core onboarding flow; if confirmed against the prod DbContext it is broken on Postgres)
+- **Status:** OPEN
+- **Layer:** BE / DB
+- **Module / US / TC:** Onboarding / US-ONB-002 / (new) — discovered 2026-07-17 while adding the ISSUE-314 Postgres test
+- **Title:** `OnboardingChecklistService.AssignAsync` computes `startDate = (input.OverrideStartDate ?? employee.DateOfJoining).Date` and `today = DateTime.UtcNow.Date` — `.Date` yields `Kind=Unspecified` — then writes them (and the derived task due dates) into the **timestamptz** `onboarding_checklist_instance.start_date` / `onboarding_task_instance.due_date` columns. Npgsql rejects a `Kind=Unspecified` DateTime for `timestamp with time zone` (`ArgumentException: Cannot write DateTime with Kind=Unspecified …`), so the `SaveChanges` throws. The modify path (`task.DueDate = change.NewDueDate.Value.Date`, ~`:345`) has the same defect.
+- **Root cause:** `.Date` strips the `Kind`; the columns are `timestamptz` (confirmed in the model snapshot) and the app sets **no** `Npgsql.EnableLegacyTimestampBehavior` switch (grep is empty) and no timestamp value-converter in `AddInfrastructure`. So Unspecified→timestamptz is rejected.
+- **Evidence:** the ISSUE-314 Testcontainers test, when it drove `AssignAsync` end-to-end, threw `DbUpdateException ---- ArgumentException: Cannot write DateTime with Kind=Unspecified to PostgreSQL type 'timestamp with time zone'`. It reproduced on `postgres:17-alpine` via the real `AppDbContext` mapping. (The ISSUE-314 index test was rewritten to direct-insert with UTC-kinded dates to stay in lane; this finding tracks the assign/modify defect separately.)
+- **Reproduction:** run any real-Postgres exercise of `AssignAsync` (assign a checklist) — the insert of the instance/tasks fails on the `start_date`/`due_date` timestamptz write.
+- **Suggested direction (NOT applied):** `DateTime.SpecifyKind(<.Date value>, DateTimeKind.Utc)` at the four sites (assign `startDate`/`today`, modify `DueDate`/`today`), OR map those columns to `date`/`timestamp` if they are meant to be date-only. Confirm first that the **production** DbContext (with its full interceptor/data-source config) reproduces it — the discovery was via a test harness that mirrors, but is not identical to, the DI setup. Add a Postgres regression arm for the assign write path.
