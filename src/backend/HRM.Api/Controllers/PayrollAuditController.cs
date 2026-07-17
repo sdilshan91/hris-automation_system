@@ -106,7 +106,11 @@ public sealed class PayrollAuditController : ControllerBase
     /// FR-5: exports the filtered audit trail to a downloadable file. Reuses the US-PAY-009 report renderer.
     /// </summary>
     [HttpGet("audit-trail/export")]
-    [RequirePermission("Payroll.Export")]
+    // ISSUE-185: gate on Payroll.View (the same permission as the trail READ above), NOT Payroll.Export. The
+    // export is just a downloadable form of the trail the caller can already see; gating it on Payroll.Export
+    // locked out the Auditor role — the designated audit consumer (AC-4) — which holds Payroll.View but not
+    // Payroll.Export. Anyone who can view the trail can export it; no wider payroll-data export is unlocked.
+    [RequirePermission("Payroll.View")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportAuditTrail(

@@ -230,7 +230,10 @@ public sealed class PayrollAuditService : IPayrollAuditService
             Title = "Payroll Audit Trail",
             PayMonth = filter.FromUtc?.Month ?? DateTime.UtcNow.Month,
             PayYear = filter.FromUtc?.Year ?? DateTime.UtcNow.Year,
-            Columns = new[] { "Timestamp (UTC)", "Action", "Resource Type", "Resource Id", "Actor User Id", "Actor Emp No", "IP Address", "Trace Id" },
+            // ISSUE-186: include the Before/After JSON (FR-5/BR-4) so the exported file conveys WHAT changed,
+            // not merely that something changed — the whole point of an offline audit artifact. The columns are
+            // already on the entity and in the JSON API's PayrollAuditEntryDto; they were just missing here.
+            Columns = new[] { "Timestamp (UTC)", "Action", "Resource Type", "Resource Id", "Actor User Id", "Actor Emp No", "IP Address", "Trace Id", "Before", "After" },
             Rows = rows.Select(a => new PayrollReportRow
             {
                 Cells = new[]
@@ -243,6 +246,8 @@ public sealed class PayrollAuditService : IPayrollAuditService
                     a.ActorEmployeeNo ?? string.Empty,
                     a.IpAddress ?? string.Empty,
                     a.TraceId ?? string.Empty,
+                    a.Before ?? string.Empty,
+                    a.After ?? string.Empty,
                 },
             }).ToList(),
             TotalCount = rows.Count,

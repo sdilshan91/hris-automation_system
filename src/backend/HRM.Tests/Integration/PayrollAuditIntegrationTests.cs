@@ -147,6 +147,45 @@ public sealed class PayrollAuditIntegrationTests
         entry.After.Should().NotBeNullOrWhiteSpace();
     }
 
+    // ── ISSUE-185 / ISSUE-186: audit-trail EXPORT (FR-5/BR-4) ─────────────────────────
+
+    [Fact]
+    [Trait("Issue", "ISSUE-186")]
+    public async Task ExportAuditTrail_IncludesBeforeAndAfterColumns()
+    {
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var created = await mediator.Send(Earning("BASIC", 1000m));
+        await mediator.Send(UpdateEarning(created.Value!.Id, "BASIC", "Basic Pay", 1250m));
+
+        var export = await provider.GetRequiredService<IPayrollAuditService>().ExportAuditTrailAsync(
+            new PayrollAuditTrailFilter { Action = PayrollAuditAction.SalaryComponentUpdated },
+            PayrollExportFormat.Csv);
+
+        export.IsSuccess.Should().BeTrue(export.Error);
+        var csv = System.Text.Encoding.UTF8.GetString(export.Value!.FileContent);
+        csv.Split('\n')[0].Should().Contain("Before").And.Contain("After",
+            "the exported audit file must carry the before/after JSON (FR-5/BR-4), not just that a change occurred");
+        // The change is reconstructable offline from the export: the "after" name + value are present.
+        csv.Should().Contain("Basic Pay").And.Contain("1250");
+    }
+
+    [Fact]
+    [Trait("Issue", "ISSUE-185")]
+    public void AuditTrailExport_IsGatedOnPayrollView_NotPayrollExport()
+    {
+        var export = typeof(HRM.Api.Controllers.PayrollAuditController)
+            .GetMethod(nameof(HRM.Api.Controllers.PayrollAuditController.ExportAuditTrail))!;
+        var attr = export
+            .GetCustomAttributes(typeof(HRM.Infrastructure.Identity.RequirePermissionAttribute), inherit: false)
+            .Cast<HRM.Infrastructure.Identity.RequirePermissionAttribute>()
+            .Single();
+
+        attr.Policy.Should().Contain("Payroll.View").And.NotContain("Payroll.Export",
+            "the export is a downloadable form of the trail the caller can already view — gating it on " +
+            "Payroll.Export locked out the Auditor role (holds Payroll.View, not Payroll.Export) (ISSUE-185)");
+    }
+
     // ── AC-4: audit-trail query filtering ──────────────────────────────────────────
 
     [Fact]
