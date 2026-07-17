@@ -48,6 +48,38 @@ public sealed record PayrollApprovalResultDto
     public int? TotalApprovalSteps { get; init; }
 }
 
+// ── Configurable step → role approval config (US-PAY-008 AC-4/FR-2, BUG-076) ─────────────────
+
+/// <summary>One configured approval step's role binding as returned by GET step-config (US-PAY-008 AC-4/FR-2).</summary>
+public sealed record PayrollApprovalStepConfigDto
+{
+    /// <summary>1-based approval step (contiguous 1..N).</summary>
+    public int StepNumber { get; init; }
+
+    /// <summary>The tenant Role authorised to approve this step.</summary>
+    public Guid RoleId { get; init; }
+
+    /// <summary>The role's display name (resolved for the caller; empty if the role was since removed).</summary>
+    public string RoleName { get; init; } = string.Empty;
+}
+
+/// <summary>One (StepNumber, RoleId) pair in a step-config replacement request (US-PAY-008 AC-4/FR-2).</summary>
+public sealed record PayrollApprovalStepConfigItem
+{
+    public int StepNumber { get; init; }
+    public Guid RoleId { get; init; }
+}
+
+/// <summary>
+/// Request body for PUT step-config (US-PAY-008 AC-4/FR-2, BUG-076): the FULL ordered set of steps that
+/// atomically REPLACES the tenant's payroll-approval step → role config. Steps must be contiguous 1..N and
+/// every role must exist in the tenant and hold Payroll.Approve.
+/// </summary>
+public sealed record SetPayrollApprovalStepConfigRequest
+{
+    public IReadOnlyList<PayrollApprovalStepConfigItem> Steps { get; init; } = [];
+}
+
 /// <summary>A single row of a run's approval timeline (US-PAY-008 FR-7, §8 timeline view).</summary>
 public sealed record PayrollApprovalHistoryDto
 {

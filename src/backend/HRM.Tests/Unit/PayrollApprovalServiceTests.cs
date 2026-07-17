@@ -20,6 +20,7 @@
 
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -90,6 +91,35 @@ public sealed class PayrollApprovalServiceTests
             db.UserTenants.Add(new UserTenant { Id = utId, UserId = uid, TenantId = _tenantId, Status = UserTenantStatus.Active });
             db.UserTenantRoles.Add(new UserTenantRole { UserTenantId = utId, RoleId = roleId });
         }
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Seeds a tenant role that grants Payroll.Approve and assigns it to the given users (BUG-076).</summary>
+    private async Task<Guid> SeedApproverRoleAsync(string name, params Guid[] members)
+    {
+        using var db = Db();
+        var roleId = Guid.NewGuid();
+        db.Roles.Add(new Role { Id = roleId, TenantId = _tenantId, Name = name });
+        db.RolePermissions.Add(new RolePermission { RoleId = roleId, Permission = PermissionCatalog.Payroll.Approve });
+        foreach (var uid in members)
+        {
+            var utId = Guid.NewGuid();
+            db.UserTenants.Add(new UserTenant { Id = utId, UserId = uid, TenantId = _tenantId, Status = UserTenantStatus.Active });
+            db.UserTenantRoles.Add(new UserTenantRole { UserTenantId = utId, RoleId = roleId });
+        }
+        await db.SaveChangesAsync();
+        return roleId;
+    }
+
+    /// <summary>Seeds the tenant's payroll-approval step → role config directly (BUG-076).</summary>
+    private async Task SeedStepConfigAsync(params (int Step, Guid RoleId)[] steps)
+    {
+        using var db = Db();
+        foreach (var (step, roleId) in steps)
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = step, RoleId = roleId,
+            });
         await db.SaveChangesAsync();
     }
 
@@ -255,6 +285,7 @@ public sealed class PayrollApprovalServiceTests
     [Fact]
     public async Task Approve_MultiStep_StaysAwaitingUntilAllStepsApproved()
     {
+        var secondApprover = Guid.NewGuid(); // BUG-076: step 2 must be a DIFFERENT person (separation of duties).
         var instanceId = Guid.NewGuid();
         var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
             step: 1, totalSteps: 2, instanceId: instanceId);
@@ -265,14 +296,213 @@ public sealed class PayrollApprovalServiceTests
         first.Value!.Status.Should().Be(nameof(PayrollRunStatus.AwaitingApproval));
         first.Value.CurrentApprovalStep.Should().Be(2);
 
-        // Second approval — all steps complete, run becomes Approved.
-        var second = await Service(_financeUserId).ApproveAsync(runId, null, null);
+        // Second approval by a DISTINCT approver — all steps complete, run becomes Approved.
+        var second = await Service(secondApprover).ApproveAsync(runId, null, null);
         second.IsSuccess.Should().BeTrue();
         second.Value!.Status.Should().Be(nameof(PayrollRunStatus.Approved));
 
         using var db = Db();
         var historyCount = await db.PayrollApprovalHistories.CountAsync(h => h.PayrollRunId == runId);
         historyCount.Should().Be(2); // one per approval step
+    }
+
+    // ── BUG-076: distinct-person separation of duties (AC-4) ───────────────────
+
+    [Fact]
+    public async Task Approve_MultiStep_SameUserBothSteps_IsBlocked_DistinctApproverRequired()
+    {
+        // The BUG-076 repro: previously the SAME user could approve step 1 AND step 2.
+        var instanceId = Guid.NewGuid();
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
+            step: 1, totalSteps: 2, instanceId: instanceId);
+
+        var first = await Service(_financeUserId).ApproveAsync(runId, null, null);
+        first.IsSuccess.Should().BeTrue();
+        first.Value!.CurrentApprovalStep.Should().Be(2);
+
+        // Same user tries step 2 -> now blocked 403 distinct_approver_required (was previously allowed).
+        var second = await Service(_financeUserId).ApproveAsync(runId, null, null);
+        second.IsFailure.Should().BeTrue();
+        second.StatusCode.Should().Be(403);
+        second.ErrorCode.Should().Be("distinct_approver_required");
+
+        // Run stays AwaitingApproval at step 2; only ONE Approved history row was recorded.
+        using var db = Db();
+        var run = await db.PayrollRuns.SingleAsync(r => r.Id == runId);
+        run.Status.Should().Be(PayrollRunStatus.AwaitingApproval);
+        run.CurrentApprovalStep.Should().Be(2);
+        (await db.PayrollApprovalHistories.CountAsync(h => h.PayrollRunId == runId && h.Action == PayrollApprovalAction.Approved))
+            .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Approve_MultiStep_DistinctApprovers_ReachesApproved()
+    {
+        var secondApprover = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
+            step: 1, totalSteps: 2, instanceId: instanceId);
+
+        (await Service(_financeUserId).ApproveAsync(runId, null, null)).IsSuccess.Should().BeTrue();
+
+        var second = await Service(secondApprover).ApproveAsync(runId, null, null);
+        second.IsSuccess.Should().BeTrue();
+        second.Value!.Status.Should().Be(nameof(PayrollRunStatus.Approved));
+    }
+
+    // ── BUG-076: per-step role binding (FR-2) ──────────────────────────────────
+
+    [Fact]
+    public async Task Approve_RolePerStep_EnforcesAssignedRole_AndDistinctPerson()
+    {
+        var submitter = Guid.NewGuid();
+        var hrApprover = Guid.NewGuid();
+        var otherHr = Guid.NewGuid();  // holds the HR role (step 1) but NOT the Finance role (step 2).
+        var finApprover = Guid.NewGuid();
+
+        var roleHr = await SeedApproverRoleAsync("HR Approver", hrApprover, otherHr);
+        var roleFin = await SeedApproverRoleAsync("Finance Approver", finApprover);
+        await SeedStepConfigAsync((1, roleHr), (2, roleFin));
+
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: submitter,
+            step: 1, totalSteps: 2, instanceId: Guid.NewGuid());
+
+        // Step 1: an HR-role holder approves -> advances to step 2.
+        var s1 = await Service(hrApprover).ApproveAsync(runId, null, null);
+        s1.IsSuccess.Should().BeTrue();
+        s1.Value!.CurrentApprovalStep.Should().Be(2);
+
+        // Step 2 by a user WITHOUT the Finance role (and who did not approve step 1) -> 403 not_step_approver.
+        var wrong = await Service(otherHr).ApproveAsync(runId, null, null);
+        wrong.IsFailure.Should().BeTrue();
+        wrong.StatusCode.Should().Be(403);
+        wrong.ErrorCode.Should().Be("not_step_approver");
+
+        // Step 2 by the Finance-role holder (distinct person) -> Approved.
+        var s2 = await Service(finApprover).ApproveAsync(runId, null, null);
+        s2.IsSuccess.Should().BeTrue();
+        s2.Value!.Status.Should().Be(nameof(PayrollRunStatus.Approved));
+    }
+
+    // ── BUG-076: config is authoritative for the step count (FR-2) ─────────────
+
+    [Fact]
+    public async Task Submit_WithStepConfig_SetsTotalStepsFromConfig_IgnoringCallerValue()
+    {
+        var role1 = await SeedApproverRoleAsync("R1");
+        var role2 = await SeedApproverRoleAsync("R2");
+        await SeedStepConfigAsync((1, role1), (2, role2));
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending);
+
+        // Caller passes 1, but the 2-step config wins.
+        var result = await Service(_hrUserId).SubmitForApprovalAsync(runId, totalApprovalSteps: 1, null, null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.TotalApprovalSteps.Should().Be(2);
+
+        using var db = Db();
+        var run = await db.PayrollRuns.SingleAsync(r => r.Id == runId);
+        run.TotalApprovalSteps.Should().Be(2);
+    }
+
+    // ── BUG-076: step-config CRUD (FR-2) ───────────────────────────────────────
+
+    [Fact]
+    public async Task SetStepConfig_Persists_AndAudits()
+    {
+        var role1 = await SeedApproverRoleAsync("HR Manager Role");
+        var role2 = await SeedApproverRoleAsync("Finance Role");
+
+        // Use the REAL audit logger bound to the SAME context so a persisted audit_log row is asserted.
+        using var db = Db();
+        var currentUser = Substitute.For<ICurrentUser>();
+        currentUser.UserId.Returns(_hrUserId);
+        var audit = new PayrollAuditLogger(db, _tenantContext, currentUser, Substitute.For<ILogger<PayrollAuditLogger>>());
+        var service = new PayrollApprovalService(db, _tenantContext, currentUser,
+            Substitute.For<IPayrollNotificationService>(), audit, Substitute.For<ILogger<PayrollApprovalService>>());
+
+        var result = await service.SetApprovalStepConfigAsync(new[]
+        {
+            new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = role1 },
+            new PayrollApprovalStepConfigItem { StepNumber = 2, RoleId = role2 },
+        }, "1.1.1.1");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Select(s => s.StepNumber).Should().ContainInOrder(1, 2);
+        result.Value[0].RoleName.Should().Be("HR Manager Role");
+        result.Value[1].RoleName.Should().Be("Finance Role");
+
+        using var db2 = Db();
+        (await db2.PayrollApprovalStepConfigs.CountAsync()).Should().Be(2);
+        (await db2.AuditLogs.CountAsync(a => a.Action == "PayrollApprovalStepConfig.Updated")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SetStepConfig_ReplacesExistingConfig()
+    {
+        var role1 = await SeedApproverRoleAsync("R1");
+        var role2 = await SeedApproverRoleAsync("R2");
+        await SeedStepConfigAsync((1, role1), (2, role2));
+
+        // Replace the 2-step config with a single step.
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = role2 } }, null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().HaveCount(1);
+
+        using var db = Db();
+        (await db.PayrollApprovalStepConfigs.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SetStepConfig_NonContiguous_Returns400_AndPersistsNothing()
+    {
+        var r1 = await SeedApproverRoleAsync("R1");
+        var r3 = await SeedApproverRoleAsync("R3");
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(new[]
+        {
+            new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = r1 },
+            new PayrollApprovalStepConfigItem { StepNumber = 3, RoleId = r3 }, // gap: no step 2
+        }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("steps_not_contiguous");
+
+        using var db = Db();
+        (await db.PayrollApprovalStepConfigs.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SetStepConfig_RoleLacksApprovePermission_Returns400()
+    {
+        // A role that exists in the tenant but does NOT hold Payroll.Approve.
+        Guid roleNoApprove = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Roles.Add(new Role { Id = roleNoApprove, TenantId = _tenantId, Name = "No Approve" });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = roleNoApprove } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("role_missing_approve_permission");
+    }
+
+    [Fact]
+    public async Task SetStepConfig_UnknownRole_Returns400()
+    {
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = Guid.NewGuid() } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("role_not_found");
     }
 
     // ── Re-submit after rejection starts a new instance (BR-3) ─────────────────

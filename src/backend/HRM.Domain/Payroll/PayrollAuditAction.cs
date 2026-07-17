@@ -36,6 +36,8 @@ public static class PayrollAuditAction
     public const string PayrollRunRejected = "PayrollRun.Rejected";
     public const string PayrollRunFinalized = "PayrollRun.Finalized";
     public const string PayrollRunCancelled = "PayrollRun.Cancelled";
+    // US-PAY-008 AC-4/FR-2 (BUG-076): tenant's payroll-approval step → role config was replaced.
+    public const string PayrollApprovalStepConfigUpdated = "PayrollApprovalStepConfig.Updated";
     // ISSUE-154: HR re-ran a processed-but-not-approved run in place (re-enqueued the processing job).
     public const string PayrollRunReprocessed = "PayrollRun.Reprocessed";
 
@@ -64,6 +66,7 @@ public static class PayrollAuditAction
         public const string EmployeeSalary = "EmployeeSalary";
         public const string StatutoryRule = "StatutoryRule";
         public const string PayrollRun = "PayrollRun";
+        public const string PayrollApprovalStepConfig = "PayrollApprovalStepConfig";
         public const string PayrollAdjustment = "PayrollAdjustment";
         public const string PayrollSlip = "PayrollSlip";
         public const string PayrollReport = "PayrollReport";
