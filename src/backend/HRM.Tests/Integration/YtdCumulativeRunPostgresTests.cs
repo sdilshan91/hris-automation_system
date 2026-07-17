@@ -242,6 +242,7 @@ public sealed class YtdCumulativeRunPostgresTests : IAsyncLifetime
 
     // ── The load-bearing arm: multi-month cumulative true-up, PERSISTED and READ BACK on real Postgres ──
     [Fact]
+    [Trait("TC", "TC-PAY-016")]
     public async Task Cumulative_WithholdsYtdTrueUp_AcrossMonths_OnPostgres_Df2()
     {
         await SeedTenantDefaultCountry("LK");
@@ -278,6 +279,7 @@ public sealed class YtdCumulativeRunPostgresTests : IAsyncLifetime
     //    every month (1M/month < 3M taxed monthly) — kills an if(IsCumulative)→if(true) that the numeric
     //    cumulative arm alone cannot distinguish. ──
     [Fact]
+    [Trait("TC", "TC-PAY-016")]
     public async Task NonCumulative_TaxesEachMonthIndependently_OnPostgres_Df2()
     {
         await SeedTenantDefaultCountry("LK");

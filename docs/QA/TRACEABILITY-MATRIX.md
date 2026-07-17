@@ -3,7 +3,7 @@ title: Requirements Traceability Matrix
 project: HRM SaaS Platform
 created: 2026-05-11
 status: draft
-last_updated: 2026-06-14
+last_updated: 2026-07-17
 ---
 
 # Requirements Traceability Matrix
@@ -2181,7 +2181,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-001) | Multi-tenant isolation (vacancy) | Critical | TC-REC-ISO-001, TC-REC-ISO-002, TC-REC-ISO-003, TC-REC-ISO-004 | 4 | -- |
 | US-REC-002 | Applicant Submits Application with Resume Upload | Must Have | TC-REC-002-01, TC-REC-002-02, TC-REC-002-03, TC-REC-002-04, TC-REC-002-05, TC-REC-002-06, TC-REC-002-07, TC-REC-002-08, TC-REC-002-09, TC-REC-002-10, TC-REC-002-11, TC-REC-002-12, TC-REC-002-13 | 13 | 5/5 AC covered |
 | Cross-cutting (REC-002) | Multi-tenant isolation (applicant) | Critical | TC-REC-ISO-005, TC-REC-ISO-006, TC-REC-ISO-007, TC-REC-ISO-008 | 4 | -- |
-| US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | Must Have | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14 | 14 | 5/5 AC covered |
+| US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | Must Have | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14, TC-REC-003-15 | 15 | 5/5 AC covered |
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | Critical | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 | -- |
 | US-REC-004 | Move Applicant Through Pipeline Stages with Gates | Must Have | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 | 5/5 AC covered |
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | Critical | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
@@ -2193,7 +2193,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-007) | Multi-tenant isolation (offer / offer PDF) | Critical | TC-REC-ISO-016 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
 | US-REC-008 | Applicant Tracks Application Status (Candidate Portal) | Should Have | TC-REC-008-01, TC-REC-008-02, TC-REC-008-03, TC-REC-008-04, TC-REC-008-05, TC-REC-008-06, TC-REC-008-07, TC-REC-008-08, TC-REC-008-09, TC-REC-008-10, TC-REC-008-11, TC-REC-008-12, TC-REC-008-13 | 13 | 4/4 AC covered |
 | Cross-cutting (REC-008) | Multi-tenant isolation (candidate portal / `applicant_portal_token`) | Critical | TC-REC-ISO-017 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
-| US-REC-009 | Recruitment Dashboard and Analytics | Should Have | TC-REC-009-01, TC-REC-009-02, TC-REC-009-03, TC-REC-009-04, TC-REC-009-05, TC-REC-009-06, TC-REC-009-07, TC-REC-009-08, TC-REC-009-09, TC-REC-009-10, TC-REC-009-11, TC-REC-009-12, TC-REC-009-13 | 13 | 5/5 AC covered |
+| US-REC-009 | Recruitment Dashboard and Analytics | Should Have | TC-REC-009-01, TC-REC-009-02, TC-REC-009-03, TC-REC-009-04, TC-REC-009-05, TC-REC-009-06, TC-REC-009-07, TC-REC-009-08, TC-REC-009-09, TC-REC-009-10, TC-REC-009-11, TC-REC-009-12, TC-REC-009-13, TC-REC-009-14 | 14 | 5/5 AC covered |
 | Cross-cutting (REC-009) | Multi-tenant isolation (analytics aggregation / analytics cache + MV) | Critical | TC-REC-ISO-018 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
 | US-REC-010 | Convert Accepted Applicant to Employee Record | Must Have | TC-REC-010-01, TC-REC-010-02, TC-REC-010-03, TC-REC-010-04, TC-REC-010-05, TC-REC-010-06, TC-REC-010-07, TC-REC-010-08, TC-REC-010-09, TC-REC-010-10, TC-REC-010-11, TC-REC-010-12, TC-REC-010-13 | 13 | 5/5 AC covered |
 | Cross-cutting (REC-010) | Multi-tenant isolation (conversion graph: employee / user_tenant / applicant link / vacancy) | Critical | TC-REC-ISO-019 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
@@ -2250,6 +2250,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-003-12 | Board <=400ms P95 @ 200 applicants; stage move <=800ms P95 | Performance | High | US-REC-003 | AC-1, AC-2, NFR-1, NFR-2 |
 | TC-REC-003-13 | Kanban WCAG 2.1 AA + keyboard drag alternative + responsive 360px | Accessibility | High | US-REC-003 | AC-1, AC-2, NFR-4 |
 | TC-REC-003-14 | Search/filter XSS+SQLi sanitized; stage-move tampering/forged id rejected | Security | High | US-REC-003 | AC-2, AC-4, FR-3, FR-6, FR-7, NFR-3 |
+| TC-REC-003-15 | Board returns 200 with a corrupt applicant enum row (source/stage → Unknown, not 500) — ISSUE-231 | Integration | Medium | US-REC-003 | AC-1, FR-1 (robustness); PR #348 |
 | TC-REC-ISO-009 | Tenant B sees zero of Tenant A's pipeline (read isolation) | Security | Critical | US-REC-003 | AC-5, NFR-3 |
 | TC-REC-ISO-010 | Pipeline + stage-move APIs reject requests without valid tenant context | Security | Critical | US-REC-003 | AC-5, NFR-3 |
 | TC-REC-ISO-011 | Cross-tenant stage moves blocked; tenant_id + history rows session-derived | Security | Critical | US-REC-003 | AC-5, NFR-3, BR-5, FR-3, FR-8 |
@@ -2337,6 +2338,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-009-11 | Empty-state + boundary: no data, single record, divide-by-zero rate guards | Functional | Medium | US-REC-009 | FR-1, FR-2, FR-3, FR-4, FR-5, FR-9, BR-1, BR-2, BR-3 |
 | TC-REC-009-12 | Dashboard <=2.5s P95 @ 10k applicants; tenant-scoped cache/MV | Performance | High | US-REC-009 | NFR-1, NFR-3, AC-1 |
 | TC-REC-009-13 | Dashboard WCAG 2.1 AA + responsive 360px-4K chart reflow | Accessibility | High | US-REC-009 | NFR-4, AC-1, AC-2, AC-3, AC-4 |
+| TC-REC-009-14 | Dashboard returns 200 with a corrupt stage-history row (to_stage → Unknown, not a dashboard-wide 500) — ISSUE-231 | Integration | High | US-REC-009 | AC-1 (robustness); PR #348 |
 | TC-REC-ISO-018 | Tenant B dashboard aggregates zero of Tenant A across every metric/cache/MV; cross-table isolation | Security | Critical | US-REC-009 | AC-5, NFR-2, NFR-3 |
 | TC-REC-010-01 | Convert Hired+Accepted applicant -> pre-filled form, employee created + linked, vacancy filled_count++ (happy path) | E2E | Critical | US-REC-010 | AC-1, AC-2, FR-1, FR-2, FR-4, FR-6, FR-7, BR-4, BR-6 |
 | TC-REC-010-02 | Pre-fill mapping fidelity from application + offer; pre-filled fields editable + distinct | Functional | High | US-REC-010 | AC-1, FR-2, FR-3 |
@@ -2719,7 +2721,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-004) | Multi-tenant isolation (payslip blob storage / download / preview) | Critical | TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-015, TC-PAY-ISO-016 | 4 | -- |
 | US-PAY-005 | Employee Views and Downloads Payslips | Must Have | TC-PAY-005-01, TC-PAY-005-02, TC-PAY-005-03, TC-PAY-005-04, TC-PAY-005-05, TC-PAY-005-06, TC-PAY-005-07, TC-PAY-005-08, TC-PAY-005-09, TC-PAY-005-10, TC-PAY-005-11, TC-PAY-005-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-005) | Multi-tenant isolation (employee payslip read surface: list / detail / download / cache) | Critical | TC-PAY-ISO-017, TC-PAY-ISO-018, TC-PAY-ISO-019, TC-PAY-ISO-020 | 4 | -- |
-| US-PAY-006 | Statutory Deductions Configuration (Tax, Social Security) | Must Have | TC-PAY-006-01, TC-PAY-006-02, TC-PAY-006-03, TC-PAY-006-04, TC-PAY-006-05, TC-PAY-006-06, TC-PAY-006-07, TC-PAY-006-08, TC-PAY-006-09, TC-PAY-006-10, TC-PAY-006-11, TC-PAY-006-12 | 12 | 5/5 AC covered |
+| US-PAY-006 | Statutory Deductions Configuration (Tax, Social Security) | Must Have | TC-PAY-006-01, TC-PAY-006-02, TC-PAY-006-03, TC-PAY-006-04, TC-PAY-006-05, TC-PAY-006-06, TC-PAY-006-07, TC-PAY-006-08, TC-PAY-006-09, TC-PAY-006-10, TC-PAY-006-11, TC-PAY-006-12, TC-PAY-016 | 13 | 5/5 AC covered |
 | Cross-cutting (PAY-006) | Multi-tenant isolation (statutory_rule / tax_slab / social_security_rule + statutory cache) | Critical | TC-PAY-ISO-021, TC-PAY-ISO-022, TC-PAY-ISO-023, TC-PAY-ISO-024 | 4 | -- |
 | US-PAY-007 | Payroll Adjustments (Bonus, Deductions, Reimbursements) | Must Have | TC-PAY-007-01, TC-PAY-007-02, TC-PAY-007-03, TC-PAY-007-04, TC-PAY-007-05, TC-PAY-007-06, TC-PAY-007-07, TC-PAY-007-08, TC-PAY-007-09, TC-PAY-007-10, TC-PAY-007-11, TC-PAY-007-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-007) | Multi-tenant isolation (payroll_adjustment + supporting-document blob + bulk-CSV resolution + caches) | Critical | TC-PAY-ISO-025, TC-PAY-ISO-026, TC-PAY-ISO-027, TC-PAY-ISO-028 | 4 | -- |
@@ -2729,7 +2731,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-009) | Multi-tenant isolation (report/export/bank-advice/tax-statement surface + pre-aggregated dashboard table + caches) | Critical | TC-PAY-ISO-033, TC-PAY-ISO-034, TC-PAY-ISO-035, TC-PAY-ISO-036 | 4 | -- |
 | US-PAY-010 | Attendance and Leave Data Integration into Payroll | Must Have | TC-PAY-010-01, TC-PAY-010-02, TC-PAY-010-03, TC-PAY-010-04, TC-PAY-010-05, TC-PAY-010-06, TC-PAY-010-07, TC-PAY-010-08, TC-PAY-010-09, TC-PAY-010-10, TC-PAY-010-11, TC-PAY-010-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-010) | Multi-tenant isolation (attendance/leave fetch + reconciliation + encashment + advisory-lock + caches) | Critical | TC-PAY-ISO-037, TC-PAY-ISO-038, TC-PAY-ISO-039, TC-PAY-ISO-040 | 4 | -- |
-| US-PAY-011 | Bulk Payslip Email Distribution | Should Have | TC-PAY-011-01, TC-PAY-011-02, TC-PAY-011-03, TC-PAY-011-04, TC-PAY-011-05, TC-PAY-011-06, TC-PAY-011-07, TC-PAY-011-08, TC-PAY-011-09, TC-PAY-011-10, TC-PAY-011-11, TC-PAY-011-12 | 12 | 5/5 AC covered |
+| US-PAY-011 | Bulk Payslip Email Distribution | Should Have | TC-PAY-011-01, TC-PAY-011-02, TC-PAY-011-03, TC-PAY-011-04, TC-PAY-011-05, TC-PAY-011-06, TC-PAY-011-07, TC-PAY-011-08, TC-PAY-011-09, TC-PAY-011-10, TC-PAY-011-11, TC-PAY-011-12, TC-PAY-017 | 13 | 5/5 AC covered |
 | Cross-cutting (PAY-011) | Multi-tenant isolation (payslip_email_log + distribution job send/re-send + SMTP rate-limiter/sender/cache/SignalR) | Critical | TC-PAY-ISO-041, TC-PAY-ISO-042, TC-PAY-ISO-043, TC-PAY-ISO-044 | 4 | -- |
 | US-PAY-012 | Payroll History and Audit Trail | Must Have | TC-PAY-012-01, TC-PAY-012-02, TC-PAY-012-03, TC-PAY-012-04, TC-PAY-012-05, TC-PAY-012-06, TC-PAY-012-07, TC-PAY-012-08, TC-PAY-012-09, TC-PAY-012-10, TC-PAY-012-11, TC-PAY-012-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-012) | Multi-tenant isolation (payroll history + audit_log read/context-IDOR/write-stamp + history/audit cache + audit-export store) | Critical | TC-PAY-ISO-045, TC-PAY-ISO-046, TC-PAY-ISO-047, TC-PAY-ISO-048 | 4 | -- |
@@ -2832,6 +2834,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-006-10 | Single-employee tax calc <10ms P95; Redis 30-min TTL tenant-scoped cache invalidated on write | Performance | High | US-PAY-006 | AC-1, AC-2, AC-3, NFR-1, NFR-2, NFR-5 |
 | TC-PAY-006-11 | Test Calculation preview-before-save (no mutation); finalized-period rules immutable -> adjustments/new-version | Functional | High | US-PAY-006 | AC-1, AC-2, AC-3, FR-4, FR-5, FR-7, BR-7 |
 | TC-PAY-006-12 | Tabbed config + inline slab editor (colour+text highlight) + test-calc panel + FY selector + version timeline WCAG 2.1 AA | Accessibility | High | US-PAY-006 | AC-1, AC-2, AC-3, FR-5, FR-6, NFR-3 |
+| TC-PAY-016 | Cumulative-PAYE RUN true-up persists correct withheld deltas on real Postgres — DF-2 / ISSUE-300 | Integration | High | US-PAY-006 | cumulative true-up (money path); PR #347 |
 | TC-PAY-ISO-021 | Tenant B cannot see/retrieve Tenant A statutory rules/slabs/social-security (cross-tenant read iso) | Security | Critical | US-PAY-006 | AC-4, FR-8 |
 | TC-PAY-ISO-022 | Statutory-config APIs reject missing/invalid/mismatched tenant context; no rule/slab IDOR | Security | Critical | US-PAY-006 | AC-4, FR-1, FR-2, FR-8 |
 | TC-PAY-ISO-023 | Cross-tenant statutory writes blocked; tenant_id session-derived; foreign statutory_rule_id/component link rejected | Security | Critical | US-PAY-006 | AC-4, FR-1, FR-2, FR-8 |
@@ -2912,6 +2915,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-011-10 | 5,000 emails <=30min, rate-limited to tenant SMTP cap (e.g. 100/min) w/o bursting; tenant-configurable | Performance | High | US-PAY-011 | AC-1, FR-2, FR-5, FR-6, NFR-1 |
 | TC-PAY-011-11 | Template variables render + subject exact; header/HTML injection neutralized; terminated employee w/ email gets final payslip | Security | High | US-PAY-011 | AC-2, FR-2, FR-3, BR-7, NFR-5 |
 | TC-PAY-011-12 | Send button + confirm dialog + progress bar + summary card w/ expandable Sent/Failed/Skipped lists + Re-send WCAG 2.1 AA; 360-1920 | Accessibility | High | US-PAY-011 | AC-1, AC-3, AC-4, FR-4, FR-5, FR-7 |
+| TC-PAY-017 | Unmapped payroll-run status string reads as Unknown sentinel, not a 500 — ENH-021 | Integration | Medium | US-PAY-011 | run list robustness; PR #348 |
 | TC-PAY-ISO-041 | Cross-tenant READ -- B cannot see A's email logs/summaries/status; A's distribution consumes zero B employees/payslips (name-collision probe) | Security | Critical | US-PAY-011 | AC-5, FR-2, FR-5, FR-8 |
 | TC-PAY-ISO-042 | Distribution APIs reject missing/invalid/mismatched tenant context; no cross-tenant send/re-send/status IDOR via foreign run/log/employee id | Security | Critical | US-PAY-011 | AC-5, FR-1, FR-4, FR-5, FR-8 |
 | TC-PAY-ISO-043 | Cross-tenant write/send block -- job runs under job-arg tenant, log rows server-stamped, injected tenant_id ignored, foreign run/slip/employee rejected; A never emails B's payslip | Security | Critical | US-PAY-011 | AC-5, FR-1, FR-2, FR-5, FR-8 |
@@ -5300,6 +5304,7 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 | TC-PAY-015 | ExcludeHolidaysFromWorkingDays OFF -- holidays count in denominator | Integration | Medium | US-ATT-011 | AC-4, FR-5 |
 | TC-ATT-155 | Tenant attendance-policy CRUD -- Tenant Admin reads/upserts the tenant-default policy | Integration | High | US-ATT-011 | AC-3, FR-4 |
 | TC-ATT-156 | Location attendance-policy override CRUD -- create/update/delete + fall back to tenant default | Integration | High | US-ATT-011 | AC-3, FR-4 |
+| TC-ATT-157 | Concurrent first clock-ins create exactly one tenant-default AttendanceSettings row (23505 race tolerated) -- ISSUE-308 | Integration | High | US-ATT-011 | AC-3, FR-4 (concurrency); PR #346 |
 | TC-ATT-ISO-014 | Cross-tenant Location.DefaultShiftId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-1, BR-1, NFR-2 |
 | TC-ATT-ISO-015 | Cross-tenant AttendanceSettings override LocationId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |
 | TC-ATT-ISO-016 | Cross-tenant locationId rejected by the settings CRUD; nothing persisted (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |

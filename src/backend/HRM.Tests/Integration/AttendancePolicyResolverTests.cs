@@ -370,6 +370,7 @@ public sealed class AttendancePolicyResolverTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("TC", "TC-ATT-157")]
     public async Task Concurrent_first_clockins_create_exactly_one_tenant_default_issue308()
     {
         // ISSUE-308: two+ concurrent first-clock-ins for a tenant with NO settings row both read null and both

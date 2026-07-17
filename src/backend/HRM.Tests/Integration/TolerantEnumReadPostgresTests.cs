@@ -77,6 +77,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
 
     // ── ISSUE-231: a corrupt applicant enum string does not 500 the board materialization ──
     [Fact]
+    [Trait("TC", "TC-REC-003-15")]
     public async Task ApplicantRead_ToleratesUnknownSourceAndStage_OnPostgres_Issue231()
     {
         Guid vacancyId = BaseEntity.NewUuidV7(), badSourceId = BaseEntity.NewUuidV7(), badStageId = BaseEntity.NewUuidV7();
@@ -114,6 +115,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
 
     // ── ISSUE-231 end-to-end: the actual pipeline-board SERVICE returns 200 (not 500) with a corrupt row ──
     [Fact]
+    [Trait("TC", "TC-REC-003-15")]
     public async Task PipelineBoardService_ReturnsBoard_NotThrows_WithCorruptRows_OnPostgres_Issue231()
     {
         Guid vacancyId = BaseEntity.NewUuidV7();
@@ -159,6 +161,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
 
     // ── ISSUE-231 (dashboard read path): a corrupt stage-history string does not 500 the whole dashboard ──
     [Fact]
+    [Trait("TC", "TC-REC-009-14")]
     public async Task RecruitmentDashboardService_ReturnsDashboard_NotThrows_WithCorruptStageHistory_OnPostgres_Issue231()
     {
         Guid vacancyId = BaseEntity.NewUuidV7(), applicantId = BaseEntity.NewUuidV7(), historyId = BaseEntity.NewUuidV7();
@@ -196,6 +199,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
 
     // ── ENH-021: a corrupt payroll-run status string does not 500 the run list materialization ──
     [Fact]
+    [Trait("TC", "TC-PAY-017")]
     public async Task PayrollRunRead_ToleratesUnknownStatus_OnPostgres_Enh021()
     {
         var runId = BaseEntity.NewUuidV7();
