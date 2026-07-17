@@ -22,24 +22,36 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     private readonly ICurrentUser _currentUser;
     private readonly ITenantLeaveYearResolver _leaveYearResolver;
     private readonly ILogger<LeaveEntitlementService> _logger;
+    // BUG-118: optional so unit tests / non-Hangfire hosts construct the service without it (mirrors the
+    // IPayrollRunJobScheduler seam). Null → the recalc is simply not enqueued.
+    private readonly ILeaveEntitlementRecalcJobScheduler? _recalcScheduler;
 
     /// <summary>
     /// Batch size for accrual processing (NFR-1: handle 5,000 employees).
     /// </summary>
     private const int AccrualBatchSize = 500;
 
+    /// <summary>
+    /// BUG-118: sentinel Description prefix that tags an <c>Adjusted</c> ledger row as a rule-recalculation
+    /// delta (not a manual admin adjustment). The recalc counts these as "rule-derived granted" so it is
+    /// idempotent, and it never disturbs manual adjustments that lack this prefix.
+    /// </summary>
+    internal const string RecalcAdjustmentPrefix = "Entitlement recalculation";
+
     public LeaveEntitlementService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         ILogger<LeaveEntitlementService> logger,
-        ITenantLeaveYearResolver leaveYearResolver)
+        ITenantLeaveYearResolver leaveYearResolver,
+        ILeaveEntitlementRecalcJobScheduler? recalcScheduler = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _leaveYearResolver = leaveYearResolver;
         _logger = logger;
+        _recalcScheduler = recalcScheduler;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -126,6 +138,18 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         _logger.LogInformation(
             "Updated leave entitlement rule {RuleId} in tenant {TenantId}",
             rule.Id, _tenantContext.TenantId);
+
+        // BUG-118 (AC-5): a rule edit must recalculate affected employees' balances. Enqueue a tenant-scoped
+        // recalc for the current leave year + this rule's leave type, so already-accrued employees get an
+        // Adjusted ledger delta to the new entitlement (the recalc is idempotent, so a no-op edit writes none).
+        var leaveYear = await _leaveYearResolver.LabelForAsync(
+            DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        var jobId = _recalcScheduler?.Enqueue(
+            _tenantContext.TenantId, _tenantContext.Subdomain, leaveYear, rule.LeaveTypeId);
+        if (jobId is not null)
+            _logger.LogInformation(
+                "Enqueued entitlement recalc job {JobId} for rule {RuleId}, leaveType {LeaveTypeId}, year {LeaveYear}.",
+                jobId, rule.Id, rule.LeaveTypeId, leaveYear);
 
         return Result<LeaveEntitlementRuleDto>.Success(await ToRuleDtoAsync(rule, cancellationToken));
     }
@@ -599,6 +623,121 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         _logger.LogInformation(
             "Completed accrual processing for year {LeaveYear}. Total employees processed: {Total}",
             leaveYear, processed);
+    }
+
+    public async Task RecalculateEntitlementsAsync(
+        int leaveYear,
+        Guid? leaveTypeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Starting entitlement recalculation for year {LeaveYear}, leaveTypeId={LeaveTypeId}, tenant={TenantId}",
+            leaveYear, leaveTypeId, _tenantContext.TenantId);
+
+        var leaveTypes = await _dbContext.LeaveTypes
+            .Where(lt => lt.IsActive && (!leaveTypeId.HasValue || lt.Id == leaveTypeId.Value))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        if (leaveTypes.Count == 0)
+            return;
+
+        var fiscalYearStartMonth = await ResolveFiscalYearStartMonthAsync(cancellationToken);
+        var totalEmployees = await _dbContext.Employees
+            .CountAsync(e => e.IsActive && !e.IsDeleted, cancellationToken);
+
+        int skip = 0, adjusted = 0;
+        while (skip < totalEmployees)
+        {
+            var employees = await _dbContext.Employees
+                .Where(e => e.IsActive && !e.IsDeleted)
+                .OrderBy(e => e.Id)
+                .Skip(skip)
+                .Take(AccrualBatchSize)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            if (employees.Count == 0)
+                break;
+
+            foreach (var employee in employees)
+            {
+                foreach (var lt in leaveTypes)
+                {
+                    if (employee.Status == EmployeeStatus.Probation && !lt.ProbationEligible)
+                        continue;
+
+                    if (await RecalcSingleEntitlementAsync(employee, lt, leaveYear, fiscalYearStartMonth, cancellationToken))
+                        adjusted++;
+                }
+            }
+
+            skip += AccrualBatchSize;
+        }
+
+        _logger.LogInformation(
+            "Completed entitlement recalculation for year {LeaveYear}. Balance adjustments written: {Adjusted}",
+            leaveYear, adjusted);
+    }
+
+    /// <summary>
+    /// BUG-118: bring ONE already-accrued employee×type into line with the current rule by writing an
+    /// <c>Adjusted</c> ledger delta (target − rule-derived-granted). Returns true when an adjustment was written.
+    /// Not-yet-accrued employees are skipped (the accrual job credits them at the new amount). "Rule-derived
+    /// granted" = the Accrual row + prior recalc adjustments (tagged by <see cref="RecalcAdjustmentPrefix"/>),
+    /// so this is idempotent and never disturbs manual (untagged) adjustments, usage, carry-forward, or expiry.
+    /// </summary>
+    private async Task<bool> RecalcSingleEntitlementAsync(
+        Employee employee,
+        LeaveType leaveType,
+        int leaveYear,
+        int fiscalYearStartMonth,
+        CancellationToken cancellationToken)
+    {
+        var entries = await _dbContext.LeaveLedgerEntries
+            .Where(l => l.EmployeeId == employee.Id && l.LeaveTypeId == leaveType.Id && l.LeaveYear == leaveYear)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        // Only adjust employees who were already accrued for this period — a not-yet-accrued employee is
+        // credited (at the new amount) by the normal accrual run, so an Adjusted delta would double-count.
+        if (!entries.Any(l => l.EntryType == LedgerEntryType.Accrual))
+            return false;
+
+        // Rule-derived entitlement granted so far = the accrual + this recalc's own prior adjustments.
+        decimal ruleGranted = entries
+            .Where(l => l.EntryType == LedgerEntryType.Accrual
+                        || (l.EntryType == LedgerEntryType.Adjusted
+                            && l.Description != null
+                            && l.Description.StartsWith(RecalcAdjustmentPrefix, StringComparison.Ordinal)))
+            .Sum(l => l.Amount);
+
+        var resolution = await ResolveEntitlementAsync(employee, leaveType, leaveYear, cancellationToken);
+        decimal target = LeaveEntitlementEngine.CalculateProRata(
+            resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear,
+            fte: employee.Fte, fiscalYearStartMonth: fiscalYearStartMonth);
+
+        decimal delta = target - ruleGranted;
+        if (delta == 0m)
+            return false;
+
+        decimal currentBalance = await GetLedgerBalanceAsync(
+            employee.Id, leaveType.Id, leaveYear, cancellationToken);
+
+        _dbContext.LeaveLedgerEntries.Add(new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = employee.TenantId,
+            EntryType = LedgerEntryType.Adjusted,
+            EmployeeId = employee.Id,
+            LeaveTypeId = leaveType.Id,
+            LeaveYear = leaveYear,
+            Amount = delta,
+            BalanceAfter = currentBalance + delta,
+            Description = $"{RecalcAdjustmentPrefix}: {delta:+0.##;-0.##} days (rule entitlement now {target:0.##})",
+            OccurredAt = DateTime.UtcNow,
+        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     // ══════════════════════════════════════════════════════════════

@@ -91,4 +91,16 @@ public interface ILeaveEntitlementService
         int leaveYear,
         Guid? leaveTypeId = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-118 (US-LV-002 AC-5): recalculates ALREADY-ACCRUED employees' balances after an entitlement rule is
+    /// edited, writing an <c>Adjusted</c> ledger delta (new-rule target − already-granted) per employee×type.
+    /// Unlike <see cref="ProcessAccrualsAsync"/> (insert-only; skips already-accrued employees), this moves
+    /// existing balances. Idempotent, override-safe, and leaves manual adjustments + not-yet-accrued employees
+    /// untouched. Runs inside a tenant scope (enqueued via <see cref="ILeaveEntitlementRecalcJobScheduler"/>).
+    /// </summary>
+    Task RecalculateEntitlementsAsync(
+        int leaveYear,
+        Guid? leaveTypeId = null,
+        CancellationToken cancellationToken = default);
 }
