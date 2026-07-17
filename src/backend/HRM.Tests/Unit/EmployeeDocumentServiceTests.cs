@@ -971,6 +971,103 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
     }
 
+    // ========================================================================
+    // BUG-114 (TC-CHR-205): tenant storage-quota enforcement — warn at 80%, hard-block at 100%
+    // ========================================================================
+
+    private const long OneGb = 1024L * 1024L * 1024L;
+
+    /// <summary>Seeds this tenant with a plan (nullable MaxStorageGb) plus one existing document of
+    /// <paramref name="existingBytes"/> so cumulative usage is known before the upload under test.</summary>
+    private async Task SeedPlanAndUsage(int? maxStorageGb, long existingBytes)
+    {
+        using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenantId, Subdomain = "acme", Name = "Acme", Status = TenantStatus.Active, PlanId = "quota-plan",
+        });
+        db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            Id = Guid.NewGuid(), Code = "quota-plan", Name = "Quota Plan", MaxStorageGb = maxStorageGb,
+        });
+        if (existingBytes > 0)
+        {
+            db.EmployeeDocuments.Add(new EmployeeDocument
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeId = BaseEntity.NewUuidV7(),
+                FileName = "existing.pdf", StorageKey = "core-hr/x/existing.pdf", FileSizeBytes = existingBytes,
+                MimeType = "application/pdf", Category = DocumentCategory.Other, UploadedBy = Guid.NewGuid(),
+                IsDeleted = false,
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Upload_blocked_when_it_would_exceed_storage_quota_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb); // already at 100%
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+        result.ErrorCode.Should().Be("storage_quota_exceeded");
+        // Blocked before any storage write — no bytes were persisted.
+        await _fileStorage.DidNotReceive().UploadAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Upload_warns_at_80_percent_but_still_succeeds_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: (long)(OneGb * 0.85)); // 85%
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().NotBeNullOrEmpty();
+        result.Value!.StorageWarning.Should().Contain("%");
+    }
+
+    [Fact]
+    public async Task Upload_under_80_percent_has_no_warning_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb / 10); // 10%
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Upload_unlimited_plan_never_blocks_or_warns_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: null, existingBytes: OneGb * 50); // huge usage, but plan is unlimited
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().BeNull();
+    }
+
     public void Dispose()
     {
         // InMemory databases are cleaned up when the last connection closes

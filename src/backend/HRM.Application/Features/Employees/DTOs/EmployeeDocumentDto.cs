@@ -16,6 +16,13 @@ public sealed record EmployeeDocumentDto
     public Guid UploadedBy { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// BUG-114 (TC-CHR-205): set on an upload response when the tenant's cumulative document storage has
+    /// reached ≥80% of the plan's <c>MaxStorageGb</c> after this upload — a soft warning before the hard
+    /// block at 100%. Null when under 80% or when the plan has no storage limit (unlimited).
+    /// </summary>
+    public string? StorageWarning { get; init; }
 }
 
 /// <summary>
