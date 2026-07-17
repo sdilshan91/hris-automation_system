@@ -169,6 +169,7 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
             .Include(e => e.LocationEntity)
+            .Include(e => e.Manager)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
 
@@ -193,6 +194,7 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
             .Include(e => e.LocationEntity)
+            .Include(e => e.Manager)
             .AsNoTracking();
 
         if (activeOnly == true)
@@ -358,6 +360,7 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
             .Include(e => e.LocationEntity)
+            .Include(e => e.Manager)
             .Include(e => e.EmergencyContacts)
             .Include(e => e.EmploymentHistories)
             .AsNoTracking()
@@ -412,6 +415,7 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
             .Include(e => e.LocationEntity)
+            .Include(e => e.Manager)
             .Include(e => e.EmergencyContacts)
             .Include(e => e.EmploymentHistories)
             .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
@@ -832,6 +836,8 @@ public sealed class EmployeeService : IEmployeeService
         DepartmentName = e.Department?.Name,
         JobTitleId = e.JobTitleId,
         JobTitleName = e.JobTitle?.TitleName,
+        ReportsToEmployeeId = e.ReportsToEmployeeId,
+        ManagerName = e.Manager == null ? null : $"{e.Manager.FirstName} {e.Manager.LastName}",
         LocationId = e.LocationId,
         LocationName = e.LocationEntity?.Name,
         EmploymentType = e.EmploymentType.ToString(),
@@ -957,6 +963,7 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.Department)
             .Include(e => e.JobTitle)
             .Include(e => e.LocationEntity)
+            .Include(e => e.Manager)
             .AsNoTracking()
             .FirstAsync(e => e.Id == employeeId, cancellationToken);
 
@@ -978,6 +985,8 @@ public sealed class EmployeeService : IEmployeeService
         DepartmentName = e.Department?.Name,
         JobTitleId = e.JobTitleId,
         JobTitleName = e.JobTitle?.TitleName,
+        ReportsToEmployeeId = e.ReportsToEmployeeId,
+        ManagerName = e.Manager == null ? null : $"{e.Manager.FirstName} {e.Manager.LastName}",
         EmploymentType = e.EmploymentType.ToString(),
         Status = e.Status.ToString(),
         Fte = e.Fte,

@@ -22,6 +22,10 @@ public sealed record EmployeeProfileDto
     public string? DepartmentName { get; init; }
     public Guid JobTitleId { get; init; }
     public string? JobTitleName { get; init; }
+    /// <summary>US-CHR-011 (ISSUE-218): the reporting manager FK. Null when unassigned.</summary>
+    public Guid? ReportsToEmployeeId { get; init; }
+    /// <summary>US-CHR-011 (ISSUE-218): the reporting manager's full name. Null when unassigned.</summary>
+    public string? ManagerName { get; init; }
     public Guid? LocationId { get; init; }
     public string? LocationName { get; init; }
     public string EmploymentType { get; init; } = string.Empty;

@@ -1045,6 +1045,59 @@ public sealed class EmployeeServiceTests : IDisposable
         result.StatusCode.Should().Be(404);
     }
 
+    // ── ISSUE-218: reporting manager on the employee detail DTO ─────────────
+
+    [Fact]
+    public async Task GetById_ExposesReportingManager_Issue218()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+
+        Guid managerId, reportId;
+        using (var db = CreateDbContext())
+        {
+            var manager = SeedEmployeeEntity("EMP-MGR", "boss@test.com", deptId, jtId);
+            manager.FirstName = "Mona";
+            manager.LastName = "Manager";
+            managerId = manager.Id;
+
+            var report = SeedEmployeeEntity("EMP-RPT", "report@test.com", deptId, jtId);
+            report.ReportsToEmployeeId = managerId;
+            reportId = report.Id;
+
+            db.Employees.AddRange(manager, report);
+            await db.SaveChangesAsync();
+        }
+
+        var result = await CreateService().GetByIdAsync(reportId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ReportsToEmployeeId.Should().Be(managerId);
+        result.Value.ManagerName.Should().Be("Mona Manager");
+    }
+
+    [Fact]
+    public async Task GetById_ManagerFieldsNull_WhenNoManager_Issue218()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+
+        Guid empId;
+        using (var db = CreateDbContext())
+        {
+            var emp = SeedEmployeeEntity("EMP-SOLO", "solo@test.com", deptId, jtId); // ReportsToEmployeeId stays null
+            empId = emp.Id;
+            db.Employees.Add(emp);
+            await db.SaveChangesAsync();
+        }
+
+        var result = await CreateService().GetByIdAsync(empId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ReportsToEmployeeId.Should().BeNull();
+        result.Value.ManagerName.Should().BeNull();
+    }
+
     public void Dispose()
     {
         // InMemory databases are cleaned up when the last connection closes
