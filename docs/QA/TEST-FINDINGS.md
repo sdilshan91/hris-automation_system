@@ -5808,7 +5808,14 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-242
 - **Type:** ISSUE (validation asymmetry / required-field bypass)
 - **Severity:** MED
-- **Status:** OPEN — DEFERRED: investigation showed there is NO server-side required-custom-field presence validation in the employee-create path (handler just stores request.CustomFields). So this is not a null-skip to patch but missing validation to ADD (fetch active required defs, verify presence). Scoped as a small follow-up story, not folded into the BUG-240 fix. Confidence still ~70% pending a clean repro.
+- **Status:** ✅ RESOLVED (2026-07-16, PR pending). **⚠ The earlier "DEFERRED — no validation exists, must ADD
+  it" conclusion was WRONG** (it inferred from behaviour without opening the source). The validation DOES exist and
+  is correct: `CustomFieldService.ValidateCustomFieldValuesAsync` treats an empty/omitted payload as "no values
+  supplied" and flags every active REQUIRED definition (`CustomFieldService.cs:401-437`). The bug was a pure
+  **null-skip**: `EmployeeService.CreateAsync` only CALLED the validator `if (!string.IsNullOrWhiteSpace(request.CustomFields))`,
+  so omitting the object entirely skipped it → 201 bypass. Fix: **call the validator unconditionally** (it already
+  handles the empty case). Mutation-verified (`Create_EnforcesRequiredCustomFields_EvenWhenCustomFieldsOmitted` —
+  restoring the guard makes the create wrongly succeed). 84/84 green across the employee/custom-field suites.
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-001 / surfaced during TC-CHR-075 execution
 - **Title:** Tenant `acme` has required custom fields ("Nickname", "Shirt Size"). `POST /api/v1/tenant/employees` with a partial `customFields` (e.g. `{"nickname":"Johnny"}`) is correctly rejected 400 ("Custom field 'Shirt Size' is required."). But the same create with `customFields` omitted altogether returns 201 Created — the required-custom-field validation appears to run only when the `customFields` payload is present/non-null, so a caller can skip all required custom fields by not sending the object, creating employees that violate the tenant's required-custom-field configuration.

@@ -103,15 +103,15 @@ public sealed class EmployeeService : IEmployeeService
         if (planLimitResult.IsFailure)
             return Result<EmployeeDto>.Failure(planLimitResult.Error!, planLimitResult.StatusCode ?? 403);
 
-        // US-CHR-012: Validate custom field values against active definitions
-        // CROSS-CUTTING: This wiring was added by US-CHR-012 and touches US-CHR-001 create flow.
-        if (!string.IsNullOrWhiteSpace(request.CustomFields))
-        {
-            var cfValidation = await _customFieldService.ValidateCustomFieldValuesAsync(
-                "employee", request.CustomFields, cancellationToken);
-            if (cfValidation.IsFailure)
-                return Result<EmployeeDto>.Failure(cfValidation.Error!, cfValidation.StatusCode ?? 400);
-        }
+        // US-CHR-012: Validate custom field values against active definitions.
+        // ISSUE-242: validate UNCONDITIONALLY. ValidateCustomFieldValuesAsync already treats an empty/omitted
+        // customFields payload as "no values supplied" and flags every REQUIRED definition — so gating the call
+        // on a non-empty payload let a caller bypass ALL required custom fields simply by omitting the object
+        // (201 instead of 400), silently violating the tenant's required-custom-field policy (AC-6/FR-9).
+        var cfValidation = await _customFieldService.ValidateCustomFieldValuesAsync(
+            "employee", request.CustomFields, cancellationToken);
+        if (cfValidation.IsFailure)
+            return Result<EmployeeDto>.Failure(cfValidation.Error!, cfValidation.StatusCode ?? 400);
 
         // FR-2 / BR-1: auto-generate unique employee_no per tenant
         var employeeNo = await GenerateEmployeeNoAsync(cancellationToken);
