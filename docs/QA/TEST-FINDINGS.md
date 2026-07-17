@@ -5550,7 +5550,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-122
 - **Type:** BUG
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (PR #337, 2026-07-17)
+> **RESOLVED (2026-07-17):** `NotificationTemplateService.SaveAsync` now guards the NEW-language branch (`existing is null`) with a BR-6 cap of 2: it counts the tenant's distinct non-deleted language variants for the `(eventKey)` and rejects a 3rd with `422 variant_limit_reached`. An update to an existing language, or reactivating a reset one, is the `else` branch and never trips the cap; soft-deleted (reset) variants don't count; the count is tenant-scoped by the global filter. 3 arms (3rd-variant→422 · update-at-cap-allowed · cap-is-per-tenant) + 18 existing green (21/21); mutation-verified (disabling the cap fails only the reject arm). **Note:** BR-6 is described as plan-configurable (default 2) — implemented as a constant `MaxLanguageVariants = 2`; wiring it to `PlanLimitResolver` is a deferred follow-up (no plan-limit key exists for template variants yet).
 - **Layer:** BE
 - **Module / US / TC:** Notifications & Audit / US-NTF-002 / TC-NTF-002-09 (also touches TC-NTF-002-06)
 - **Title:** `PUT /api/v1/notification-templates/{eventKey}?language={lang}` upserts a per-(tenant, eventKey, language) override with no guard against BR-6's 2-variant-per-template cap. Saving a 3rd distinct language variant returns HTTP 200 "Template saved." instead of the expected 422/400 "max 2 variants" rejection.

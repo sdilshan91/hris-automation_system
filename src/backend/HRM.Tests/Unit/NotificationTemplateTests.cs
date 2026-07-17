@@ -374,4 +374,48 @@ public sealed class NotificationTemplateTests
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
     }
+
+    // ── BR-6: max 2 language variants per template per tenant ───────────────────
+
+    [Fact]
+    public async Task Save_rejects_a_third_language_variant_bug122()
+    {
+        (await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "en",
+            new TemplateBodyRequest("en", "<p>en</p>", "en"))).IsSuccess.Should().BeTrue();
+        (await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "es",
+            new TemplateBodyRequest("es", "<p>es</p>", "es"))).IsSuccess.Should().BeTrue();
+
+        var third = await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "fr",
+            new TemplateBodyRequest("fr", "<p>fr</p>", "fr"));
+
+        third.IsFailure.Should().BeTrue();
+        third.StatusCode.Should().Be(422);
+        third.ErrorCode.Should().Be("variant_limit_reached");
+    }
+
+    [Fact]
+    public async Task Save_allows_updating_an_existing_variant_at_the_cap_bug122()
+    {
+        await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "en", new TemplateBodyRequest("en", "<p>en</p>", "en"));
+        await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "es", new TemplateBodyRequest("es", "<p>es</p>", "es"));
+
+        // Re-saving an EXISTING language at the cap is an update, not a new variant → still allowed.
+        var update = await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "es",
+            new TemplateBodyRequest("es v2", "<p>es v2</p>", "es v2"));
+
+        update.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Save_variant_cap_is_per_tenant_bug122()
+    {
+        // Tenant A at the cap must not block Tenant B's first variant of the same event.
+        await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "en", new TemplateBodyRequest("en", "<p>en</p>", "en"));
+        await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "es", new TemplateBodyRequest("es", "<p>es</p>", "es"));
+
+        var tenantB = await MgmtSvc(_tenantB).SaveAsync(LeaveApproved, "fr",
+            new TemplateBodyRequest("fr", "<p>fr</p>", "fr"));
+
+        tenantB.IsSuccess.Should().BeTrue();
+    }
 }

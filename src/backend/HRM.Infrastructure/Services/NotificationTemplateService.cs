@@ -99,6 +99,20 @@ public sealed class NotificationTemplateService : INotificationTemplateService
 
         if (existing is null)
         {
+            // BR-6: at most 2 language variants per (tenant, eventKey). Adding a NEW language beyond the cap is
+            // rejected (an update to an existing language, or reactivating a reset one, is the `else` branch and
+            // never trips this). Soft-deleted (reset) variants do not count.
+            const int MaxLanguageVariants = 2;
+            var variantCount = await _db.NotificationTemplates
+                .Where(t => t.EventKey == def.EventKey && !t.IsDeleted)
+                .Select(t => t.Language)
+                .Distinct()
+                .CountAsync(cancellationToken);
+            if (variantCount >= MaxLanguageVariants)
+                return Result<TemplateDetailDto>.Failure(
+                    $"This template already has the maximum of {MaxLanguageVariants} language variants.",
+                    422, "variant_limit_reached");
+
             // First override for this event+language → version 1.
             var created = new NotificationTemplate
             {
