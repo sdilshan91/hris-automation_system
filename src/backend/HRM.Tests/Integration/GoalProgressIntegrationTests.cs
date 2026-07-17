@@ -209,4 +209,36 @@ public sealed class GoalProgressIntegrationTests
         await notifications.DidNotReceive().NotifyGoalProgressAsync(
             "goal-stale-nudge", b.goalId, b.empId, b.empId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task Sweep_is_idempotent_same_day_no_double_nudge_issue142()
+    {
+        // ISSUE-142 (TC-009-04): a same-day re-run / retry must NOT re-dispatch the nudge.
+        var a = await SeedTenantAsync(_tenantA, nudgeDays: 14, goalSettingEnd: DateTime.UtcNow.AddDays(-20));
+        var notifications = Substitute.For<IPerformanceNotificationService>();
+        var now = DateTime.UtcNow;
+
+        var first = await Sweep(_tenantA, notifications).RunSweepAsync(now);
+        var second = await Sweep(_tenantA, notifications).RunSweepAsync(now);
+
+        first.Should().Be(1);
+        second.Should().Be(0); // already nudged today → skipped
+        await notifications.Received(1).NotifyGoalProgressAsync(
+            "goal-stale-nudge", a.goalId, a.empId, a.empId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Sweep_re_nudges_on_a_later_day_issue142()
+    {
+        // The dedup is per-DAY, not permanent — a genuinely later run nudges again.
+        var a = await SeedTenantAsync(_tenantA, nudgeDays: 14, goalSettingEnd: DateTime.UtcNow.AddDays(-20));
+        var notifications = Substitute.For<IPerformanceNotificationService>();
+        var day1 = DateTime.UtcNow;
+
+        var first = await Sweep(_tenantA, notifications).RunSweepAsync(day1);
+        var second = await Sweep(_tenantA, notifications).RunSweepAsync(day1.AddDays(1));
+
+        first.Should().Be(1);
+        second.Should().Be(1); // a new day → nudged again
+    }
 }
