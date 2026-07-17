@@ -38,7 +38,10 @@ public sealed class TenantStatusEnforcementMiddleware
 
     // Substrings that mark an export endpoint (kept reachable during terminating read-only mode and on a
     // suspended tenant for admins — data export is the whole point of the grace period).
-    private static readonly string[] ExportMarkers = { "/export", "/exports" };
+    // ISSUE-217: `/data-exports` is listed explicitly — the `/export(s)` markers require a leading slash, so
+    // the GDPR data-export path `/api/v1/tenant/data-exports` (a hyphen, not a slash, before "exports") was
+    // NOT matched and got 403'd during the very grace window whose purpose is data extraction.
+    private static readonly string[] ExportMarkers = { "/export", "/exports", "/data-exports" };
 
     private readonly RequestDelegate _next;
     private readonly ILogger<TenantStatusEnforcementMiddleware> _logger;
