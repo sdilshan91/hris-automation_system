@@ -239,6 +239,10 @@ public sealed class SalaryStructureService : ISalaryStructureService
         if (structure is null)
             return Result.Failure("Salary structure not found.", 404);
 
+        // ISSUE-108 (NFR-5): audit the delete — before=snapshot, after=null — captured pre-mutation.
+        _audit.Log(PA.SalaryStructureDeleted, PA.ResourceType.SalaryStructure,
+            structure.Id.ToString(), before: Snapshot(structure), after: null);
+
         structure.IsDeleted = true;
         var links = await _dbContext.SalaryStructureComponents
             .Where(x => x.SalaryStructureId == structureId)
@@ -280,7 +284,7 @@ public sealed class SalaryStructureService : ISalaryStructureService
                 return Result<SalaryStructureDto>.Failure($"Invalid override formula: {error}", 400, "invalid_formula");
         }
 
-        _dbContext.SalaryStructureComponents.Add(new SalaryStructureComponent
+        var newLink = new SalaryStructureComponent
         {
             Id = BaseEntity.NewUuidV7(),
             TenantId = _tenantContext.TenantId,
@@ -291,7 +295,13 @@ public sealed class SalaryStructureService : ISalaryStructureService
             ProcessingOrder = input.ProcessingOrder,
             IsMandatory = input.IsMandatory,
             IsDeleted = false,
-        });
+        };
+        _dbContext.SalaryStructureComponents.Add(newLink);
+
+        // ISSUE-108 (NFR-5): audit the component link — resource is the structure, after=link detail.
+        _audit.Log(PA.SalaryStructureComponentLinked, PA.ResourceType.SalaryStructure, structureId.ToString(),
+            before: null,
+            after: new { newLink.Id, newLink.SalaryComponentId, newLink.ProcessingOrder, newLink.IsMandatory });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return await BuildDtoResultAsync(structureId, cancellationToken);
@@ -312,6 +322,11 @@ public sealed class SalaryStructureService : ISalaryStructureService
         if (component is { IsStatutory: true } && link.IsMandatory)
             return Result<SalaryStructureDto>.Failure(
                 "A mandatory statutory component cannot be removed from the structure.", 409, "statutory_mandatory");
+
+        // ISSUE-108 (NFR-5): audit the component unlink — before=link detail, after=null.
+        _audit.Log(PA.SalaryStructureComponentUnlinked, PA.ResourceType.SalaryStructure, structureId.ToString(),
+            before: new { link.Id, link.SalaryComponentId, link.ProcessingOrder, link.IsMandatory },
+            after: null);
 
         link.IsDeleted = true;
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -340,6 +355,11 @@ public sealed class SalaryStructureService : ISalaryStructureService
                     $"Component link {id} does not belong to this structure.", 400, "invalid_link");
             link.ProcessingOrder = processingOrder;
         }
+
+        // ISSUE-108 (NFR-5): audit the reorder — after=the new (linkId, order) mapping.
+        _audit.Log(PA.SalaryStructureComponentsReordered, PA.ResourceType.SalaryStructure, structureId.ToString(),
+            before: null,
+            after: order.Select(o => new { o.StructureComponentId, o.ProcessingOrder }).ToList());
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return await BuildDtoResultAsync(structureId, cancellationToken);

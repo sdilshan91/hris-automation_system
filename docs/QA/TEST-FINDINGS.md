@@ -2596,7 +2596,8 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 
 ### ISSUE-108 — Salary-structure writes are not audit-logged (NFR-5 half-unmet)
 
-- **Type:** ISSUE · **Severity:** MEDIUM · **Status:** OPEN · **Layer:** BE
+- **Type:** ISSUE · **Severity:** MEDIUM · **Status:** ✅ RESOLVED (PR #334, 2026-07-17) · **Layer:** BE
+> **RESOLVED (2026-07-17):** Finding was **partially stale** — `SalaryStructureService` already injects `IPayrollAuditLogger` and audits **Create/Update/Clone** (added since the finding was filed). The real remaining gap was **Delete / Link / Unlink / Reorder** (verified: no `_audit.Log` in those 4). Added 4 new action constants (`SalaryStructure.Deleted/.ComponentLinked/.ComponentUnlinked/.ComponentsReordered`) and an `_audit.Log(...)` (before/after payload) to each of the 4 methods, committed atomically with the business change. 4 integration arms through the real MediatR pipeline + real `PayrollAuditLogger` assert the audit rows land (15/15); mutation-verified (swapping the 4 new actions to `Created` fails exactly the 4 arms). NFR-5 now met for all structure writes.
 - **Module / US / TC:** Payroll / US-PAY-001 / TC-PAY-001-01/-10
 - **Title:** Component create/update/delete are audited to `audit_logs` (with before/after), but **structure** create/update/delete/link/unlink/reorder/clone/activate produce **zero** audit entries. NFR-5 requires "all write operations on salary components **and structures**" to be audit-logged.
 - **Root cause:** `SalaryStructureService` has no `IPayrollAuditLogger` dependency and never calls `_audit.Log(...)` — only `SalaryComponentService` does (confidence 100%, read both services). Confirmed live: after creating + activating a structure with 3 links + a reorder, `SELECT count(*) FROM audit_logs WHERE resource_type ILIKE '%SalaryStructure%'` = **0**.
