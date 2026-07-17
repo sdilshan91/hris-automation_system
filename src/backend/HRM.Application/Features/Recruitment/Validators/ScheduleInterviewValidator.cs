@@ -65,6 +65,11 @@ public sealed class ScheduleInterviewValidator : AbstractValidator<ScheduleInter
             .NotEmpty().WithMessage("A video meeting link is required for a video interview.")
             .When(x => x.InterviewType == InterviewType.Video);
 
+        // ISSUE-114: a supplied video link must be a well-formed absolute http(s) URL.
+        RuleFor(x => x.VideoLink)
+            .Must(BeAValidVideoLink).WithMessage("The video meeting link must be a valid http(s) URL.")
+            .When(x => !string.IsNullOrWhiteSpace(x.VideoLink));
+
         RuleFor(x => x.Location)
             .MaximumLength(MaxLocationLength).When(x => !string.IsNullOrWhiteSpace(x.Location));
         RuleFor(x => x.VideoLink)
@@ -84,4 +89,19 @@ public sealed class ScheduleInterviewValidator : AbstractValidator<ScheduleInter
     }
 
     private static bool BeInTheFuture(ScheduleInterviewCommand c) => BeInTheFuture(c.ScheduledDate, c.StartTime);
+
+    /// <summary>
+    /// ISSUE-114: a supplied video meeting link must be a well-formed absolute http/https URL.
+    /// Requiredness (video interviews must have a link) is handled by the type-conditional NotEmpty
+    /// rule; this only shapes non-empty values, so an empty/whitespace value passes here. Shared by
+    /// the schedule + update validators.
+    /// </summary>
+    internal static bool BeAValidVideoLink(string? videoLink)
+    {
+        if (string.IsNullOrWhiteSpace(videoLink))
+            return true;
+
+        return Uri.TryCreate(videoLink, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
 }

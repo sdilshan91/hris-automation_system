@@ -49,6 +49,11 @@ public sealed class UpdateInterviewValidator : AbstractValidator<UpdateInterview
             .NotEmpty().WithMessage("A video meeting link is required for a video interview.")
             .When(x => x.InterviewType == InterviewType.Video);
 
+        // ISSUE-114: a supplied video link must be a well-formed absolute http(s) URL.
+        RuleFor(x => x.VideoLink)
+            .Must(ScheduleInterviewValidator.BeAValidVideoLink).WithMessage("The video meeting link must be a valid http(s) URL.")
+            .When(x => !string.IsNullOrWhiteSpace(x.VideoLink));
+
         RuleFor(x => x.Location)
             .MaximumLength(ScheduleInterviewValidator.MaxLocationLength).When(x => !string.IsNullOrWhiteSpace(x.Location));
         RuleFor(x => x.VideoLink)
