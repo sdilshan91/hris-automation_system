@@ -100,6 +100,46 @@ public sealed class InterviewsController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/v1/recruitment/interviews/{interviewId}/complete
+    /// Marks a scheduled interview Completed (FR-6). Requires Recruitment.Manage (BR-1). 409 if the
+    /// interview is not in the Scheduled state (invalid transition).
+    /// </summary>
+    [HttpPost("interviews/{interviewId:guid}/complete")]
+    [RequirePermission("Recruitment.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<InterviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Complete(Guid interviewId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CompleteInterviewCommand(interviewId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<InterviewDto>.Ok(result.Value!, "Interview marked completed."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/recruitment/interviews/{interviewId}/no-show
+    /// Marks a scheduled interview No-Show (FR-6). Requires Recruitment.Manage (BR-1). 409 if the
+    /// interview is not in the Scheduled state (invalid transition).
+    /// </summary>
+    [HttpPost("interviews/{interviewId:guid}/no-show")]
+    [RequirePermission("Recruitment.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<InterviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> MarkNoShow(Guid interviewId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new MarkInterviewNoShowCommand(interviewId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<InterviewDto>.Ok(result.Value!, "Interview marked no-show."));
+    }
+
+    /// <summary>
     /// GET /api/v1/recruitment/interviews/{interviewId}
     /// Gets a single interview (tenant-scoped). Requires Recruitment.View.
     /// </summary>

@@ -261,6 +261,50 @@ public sealed class InterviewService : IInterviewService
         return await BuildDtoResultAsync(interview.Id, [], cancellationToken);
     }
 
+    // ── Outcome: Completed / No-Show (FR-6) ───────────────────────────
+
+    public async Task<Result<InterviewDto>> MarkOutcomeAsync(
+        Guid interviewId, InterviewStatus outcome, CancellationToken cancellationToken = default)
+    {
+        // Only conclusive outcomes are settable here; Scheduled/Cancelled have their own paths.
+        if (outcome is not (InterviewStatus.Completed or InterviewStatus.NoShow))
+            return Result<InterviewDto>.Failure(
+                "Only 'Completed' or 'NoShow' outcomes can be recorded.", 400, "invalid_outcome");
+
+        if (!_tenantContext.IsResolved)
+            return Result<InterviewDto>.Failure("Tenant context is not resolved.", 400);
+
+        var interview = await _dbContext.Interviews
+            .Include(i => i.Interviewers)
+            .FirstOrDefaultAsync(i => i.Id == interviewId, cancellationToken);
+        if (interview is null)
+            return Result<InterviewDto>.Failure("Interview not found.", 404, "interview_not_found");
+
+        // FR-6: an outcome can only be recorded on a still-Scheduled interview. Any terminal state
+        // (Completed / Cancelled / NoShow) is a no-longer-valid transition.
+        if (interview.Status != InterviewStatus.Scheduled)
+            return Result<InterviewDto>.Failure(
+                $"Cannot mark an interview that is '{interview.Status}' as '{outcome}'. Only a scheduled interview can be concluded.",
+                409, "interview_invalid_transition");
+
+        interview.Status = outcome;
+
+        // A concluded interview no longer needs a reminder.
+        _reminderScheduler?.Cancel(interview.ReminderJobId);
+        interview.ReminderJobId = null;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Interview marked {Outcome}. InterviewId={InterviewId}, ApplicantId={ApplicantId}, TenantId={TenantId}",
+            outcome, interview.Id, interview.ApplicantId, _tenantContext.TenantId);
+
+        var eventType = outcome == InterviewStatus.NoShow ? "interview-no-show" : "interview-completed";
+        await NotifyParticipantsSafeAsync(eventType, interview, cancellationToken);
+
+        return await BuildDtoResultAsync(interview.Id, [], cancellationToken);
+    }
+
     // ── Reads ─────────────────────────────────────────────────────────
 
     public async Task<Result<InterviewDto>> GetByIdAsync(Guid interviewId, CancellationToken cancellationToken = default)

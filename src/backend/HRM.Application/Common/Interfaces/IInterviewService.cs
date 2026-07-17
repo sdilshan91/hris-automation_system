@@ -1,5 +1,6 @@
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Recruitment.DTOs;
+using HRM.Domain.Enums;
 
 namespace HRM.Application.Common.Interfaces;
 
@@ -32,6 +33,14 @@ public interface IInterviewService
     /// participants (FR-3). Does NOT change the applicant's pipeline stage (BR-4).
     /// </summary>
     Task<Result<InterviewDto>> CancelAsync(Guid interviewId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-6: records the outcome of a scheduled interview — <see cref="InterviewStatus.Completed"/> or
+    /// <see cref="InterviewStatus.NoShow"/>. Only a still-<see cref="InterviewStatus.Scheduled"/> interview
+    /// can be concluded; any terminal state is a 409 invalid transition. Clears the reminder job and
+    /// notifies participants (FR-3). <paramref name="outcome"/> must be Completed or NoShow (else 400).
+    /// </summary>
+    Task<Result<InterviewDto>> MarkOutcomeAsync(Guid interviewId, InterviewStatus outcome, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single interview by id (tenant-scoped, with interviewer details).</summary>
     Task<Result<InterviewDto>> GetByIdAsync(Guid interviewId, CancellationToken cancellationToken = default);
