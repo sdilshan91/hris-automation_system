@@ -31,6 +31,10 @@ public interface ITenantSettingsService
     Task<Result<SessionPolicyDto>> UpdateSessionPolicyAsync(
         UpdateSessionPolicyRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Update the tenant hiring settings (US-REC-010 FR-5/BR-7): auto-create a login account on hire.</summary>
+    Task<Result<HiringSettingsDto>> UpdateHiringSettingsAsync(
+        UpdateHiringSettingsRequest request, CancellationToken cancellationToken = default);
+
     /// <summary>Update the primary brand color (FR-3) — a validated hex string; FE derives shades.</summary>
     Task<Result<BrandingDto>> UpdatePrimaryColorAsync(
         string primaryColor, CancellationToken cancellationToken = default);

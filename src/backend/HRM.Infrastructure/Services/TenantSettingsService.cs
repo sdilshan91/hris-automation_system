@@ -222,6 +222,26 @@ public sealed class TenantSettingsService : ITenantSettingsService
         return Result<SessionPolicyDto>.Success(after);
     }
 
+    // ── Update hiring settings (US-REC-010 FR-5/BR-7, ISSUE-140) ──────────────
+
+    public async Task<Result<HiringSettingsDto>> UpdateHiringSettingsAsync(
+        UpdateHiringSettingsRequest request, CancellationToken cancellationToken = default)
+    {
+        var tenant = await LoadCurrentTenantAsync(cancellationToken);
+        if (tenant is null)
+            return Result<HiringSettingsDto>.Failure("Tenant not found.", 404);
+
+        var before = ToHiringSettingsDto(tenant);
+
+        tenant.AutoCreateUserOnHire = request.AutoCreateUserOnHire;
+        tenant.UpdatedAt = DateTime.UtcNow;
+
+        var after = ToHiringSettingsDto(tenant);
+        await PersistAsync(tenant, "tenant_settings.hiring_updated", before, after, cancellationToken);
+
+        return Result<HiringSettingsDto>.Success(after);
+    }
+
     // ── Update primary color (FR-3) ───────────────────────────────────────────
 
     public async Task<Result<BrandingDto>> UpdatePrimaryColorAsync(
@@ -363,7 +383,8 @@ public sealed class TenantSettingsService : ITenantSettingsService
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static TenantSettingsDto ToDto(Tenant t) => new(
-        ToOrgProfileDto(t), ToBrandingDto(t), ToLocalizationDto(t), ToPasswordPolicyDto(t), ToSessionPolicyDto(t));
+        ToOrgProfileDto(t), ToBrandingDto(t), ToLocalizationDto(t), ToPasswordPolicyDto(t), ToSessionPolicyDto(t),
+        t.AutoCreateUserOnHire);
 
     private static OrgProfileDto ToOrgProfileDto(Tenant t) => new(
         t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize,
@@ -381,4 +402,6 @@ public sealed class TenantSettingsService : ITenantSettingsService
 
     private static SessionPolicyDto ToSessionPolicyDto(Tenant t) => new(
         t.IdleTimeoutMinutes, t.AbsoluteTimeoutHours, t.MaxConcurrentSessions, t.ConcurrentSessionStrategy);
+
+    private static HiringSettingsDto ToHiringSettingsDto(Tenant t) => new(t.AutoCreateUserOnHire);
 }

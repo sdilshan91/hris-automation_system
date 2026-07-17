@@ -15,6 +15,7 @@ using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -288,5 +289,200 @@ public sealed class ApplicantConversionServiceTests
         second.IsFailure.Should().BeTrue();
         second.StatusCode.Should().Be(409);
         second.ErrorCode.Should().Be("already_converted");
+    }
+
+    // ── FR-5/BR-7 (ISSUE-140): auto-create login account gated on the tenant toggle ──
+
+    [Fact]
+    public async Task Convert_AutoCreateOn_ProvisionsUserMembershipAndRole_AndLinksEmployee()
+    {
+        EnableAutoCreateUserOnHire();
+        var roleId = SeedEmployeeRole();
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _) = CreateService(db, empId);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.UserAccountCreated.Should().BeTrue();
+
+        using var assertDb = CreateDb();
+        // A User row exists for the applicant email (lower-cased).
+        var user = await assertDb.Users.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(u => u.Email == "ada@acme.com");
+        user.Should().NotBeNull("the toggle is on, so a login account is provisioned");
+        user!.PasswordHash.Should().BeNull("credential delivery is deferred (US-NTF-006) — passwordless account");
+        user.IsActive.Should().BeTrue();
+
+        // An ACTIVE UserTenant membership for this tenant.
+        var membership = await assertDb.UserTenants.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(ut => ut.UserId == user.Id && ut.TenantId == _tenantId);
+        membership.Should().NotBeNull();
+        membership!.Status.Should().Be(UserTenantStatus.Active);
+
+        // A UserTenantRole assigning the built-in Employee role.
+        var hasRole = await assertDb.UserTenantRoles.IgnoreQueryFilters()
+            .AnyAsync(x => x.UserTenantId == membership.Id && x.RoleId == roleId);
+        hasRole.Should().BeTrue("the new account is granted the built-in Employee role");
+
+        // Employee.UserId is linked to the provisioned user.
+        var employee = await assertDb.Employees.IgnoreQueryFilters().SingleAsync(e => e.Id == empId);
+        employee.UserId.Should().Be(user.Id);
+    }
+
+    [Fact]
+    public async Task Convert_AutoCreateOff_CreatesNoUser_AndFlagFalse()
+    {
+        // Default: the seeded tenant has AutoCreateUserOnHire = false. Preserves the prior behaviour.
+        SeedEmployeeRole(); // role present, but the toggle is off so it must not be used.
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _) = CreateService(db, empId);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.UserAccountCreated.Should().BeFalse();
+
+        using var assertDb = CreateDb();
+        (await assertDb.Users.IgnoreQueryFilters().CountAsync()).Should().Be(0, "toggle off — no account created");
+        (await assertDb.UserTenants.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await assertDb.UserTenantRoles.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+
+        var employee = await assertDb.Employees.IgnoreQueryFilters().SingleAsync(e => e.Id == empId);
+        employee.UserId.Should().BeNull("no account was provisioned, so nothing is linked");
+    }
+
+    [Fact]
+    public async Task Convert_AutoCreateOn_ExistingGlobalUser_IsReusedNotDuplicated()
+    {
+        EnableAutoCreateUserOnHire();
+        var roleId = SeedEmployeeRole();
+
+        // A global user already exists with the applicant's email (e.g. they belong to another tenant).
+        var existingUserId = Guid.NewGuid();
+        using (var seedDb = CreateDb())
+        {
+            seedDb.Users.Add(new User
+            {
+                Id = existingUserId,
+                Email = "ada@acme.com",
+                DisplayName = "Existing Ada",
+                PasswordHash = "existing-hash",
+                IsActive = true,
+            });
+            seedDb.SaveChanges();
+        }
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _) = CreateService(db, empId);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.UserAccountCreated.Should().BeTrue();
+
+        using var assertDb = CreateDb();
+        // No duplicate: still exactly ONE user with that email, and it is the pre-existing one (hash untouched).
+        var users = await assertDb.Users.IgnoreQueryFilters().Where(u => u.Email == "ada@acme.com").ToListAsync();
+        users.Should().ContainSingle("the existing global account is reused, not duplicated");
+        users[0].Id.Should().Be(existingUserId);
+        users[0].PasswordHash.Should().Be("existing-hash", "the existing account must not be mutated");
+
+        // The existing user is linked + granted membership/role in THIS tenant.
+        var membership = await assertDb.UserTenants.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(ut => ut.UserId == existingUserId && ut.TenantId == _tenantId);
+        membership.Should().NotBeNull();
+        membership!.Status.Should().Be(UserTenantStatus.Active);
+        (await assertDb.UserTenantRoles.IgnoreQueryFilters()
+            .AnyAsync(x => x.UserTenantId == membership.Id && x.RoleId == roleId)).Should().BeTrue();
+
+        var employee = await assertDb.Employees.IgnoreQueryFilters().SingleAsync(e => e.Id == empId);
+        employee.UserId.Should().Be(existingUserId);
+    }
+
+    // Tenant isolation (Critical Rule #1): hiring a globally-known user in THIS tenant must not touch that
+    // user's membership/roles in ANOTHER tenant, and must grant only THIS tenant's Employee role.
+    [Fact]
+    public async Task Convert_AutoCreateOn_DoesNotTouchAnotherTenantsMembershipOrRole()
+    {
+        EnableAutoCreateUserOnHire();
+        var roleIdA = SeedEmployeeRole();
+
+        // The applicant's email already belongs to a user who is an active member of a DIFFERENT tenant (B),
+        // holding a B-scoped role. (UserTenant is not a BaseEntity, so its TenantId is not auto-stamped.)
+        var otherTenantId = Guid.NewGuid();
+        var existingUserId = Guid.NewGuid();
+        var bMembershipId = Guid.NewGuid();
+        var bRoleId = Guid.NewGuid();
+        using (var seedDb = CreateDb())
+        {
+            seedDb.Users.Add(new User
+            {
+                Id = existingUserId, Email = "ada@acme.com", DisplayName = "Ada", PasswordHash = "b-hash", IsActive = true,
+            });
+            seedDb.UserTenants.Add(new UserTenant
+            {
+                Id = bMembershipId, UserId = existingUserId, TenantId = otherTenantId, Status = UserTenantStatus.Active,
+            });
+            seedDb.UserTenantRoles.Add(new UserTenantRole
+            {
+                UserTenantId = bMembershipId, RoleId = bRoleId, AssignedAt = DateTime.UtcNow,
+            });
+            seedDb.SaveChanges();
+        }
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _) = CreateService(db, empId);
+        (await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId)))
+            .IsSuccess.Should().BeTrue();
+
+        using var assertDb = CreateDb();
+
+        // Tenant B's membership + role are UNTOUCHED.
+        var bMembership = await assertDb.UserTenants.IgnoreQueryFilters().SingleOrDefaultAsync(ut => ut.Id == bMembershipId);
+        bMembership.Should().NotBeNull("hiring in tenant A must not remove tenant B's membership");
+        bMembership!.TenantId.Should().Be(otherTenantId);
+        (await assertDb.UserTenantRoles.IgnoreQueryFilters().CountAsync(x => x.UserTenantId == bMembershipId))
+            .Should().Be(1, "tenant B's role assignment is untouched");
+
+        // Tenant A got its OWN new membership for the reused global user, with only A's Employee role.
+        var aMembership = await assertDb.UserTenants.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(ut => ut.UserId == existingUserId && ut.TenantId == _tenantId);
+        aMembership.Should().NotBeNull();
+        aMembership!.Id.Should().NotBe(bMembershipId);
+        (await assertDb.UserTenantRoles.IgnoreQueryFilters()
+            .AnyAsync(x => x.UserTenantId == aMembership.Id && x.RoleId == roleIdA)).Should().BeTrue();
+        (await assertDb.UserTenantRoles.IgnoreQueryFilters()
+            .AnyAsync(x => x.UserTenantId == aMembership.Id && x.RoleId == bRoleId))
+            .Should().BeFalse("tenant A must never pick up tenant B's role");
+    }
+
+    private void EnableAutoCreateUserOnHire()
+    {
+        using var db = CreateDb();
+        var tenant = db.Tenants.IgnoreQueryFilters().Single(t => t.Id == _tenantId);
+        tenant.AutoCreateUserOnHire = true;
+        db.SaveChanges();
+    }
+
+    private Guid SeedEmployeeRole()
+    {
+        using var db = CreateDb();
+        var roleId = Guid.NewGuid();
+        db.Roles.Add(new Role
+        {
+            Id = roleId,
+            TenantId = _tenantId,
+            Name = PermissionCatalog.BuiltInRoles.Employee,
+            IsBuiltIn = true,
+        });
+        db.SaveChanges();
+        return roleId;
     }
 }

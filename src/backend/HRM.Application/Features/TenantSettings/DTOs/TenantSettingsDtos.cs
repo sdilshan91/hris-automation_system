@@ -8,7 +8,10 @@ public sealed record TenantSettingsDto(
     BrandingDto Branding,
     LocalizationDto Localization,
     PasswordPolicyDto PasswordPolicy,
-    SessionPolicyDto SessionPolicy);
+    SessionPolicyDto SessionPolicy,
+    // US-REC-010 FR-5/BR-7 (ISSUE-140): auto-create a login account when an applicant is hired. APPENDED —
+    // positional record; trailing default keeps existing construction valid.
+    bool AutoCreateUserOnHire = false);
 
 public sealed record OrgProfileDto(
     string Name,
@@ -52,6 +55,9 @@ public sealed record SessionPolicyDto(
     int MaxConcurrentSessions,
     string ConcurrentSessionStrategy);
 
+/// <summary>US-REC-010 FR-5/BR-7 (ISSUE-140): tenant hiring settings — auto-create a login account on hire.</summary>
+public sealed record HiringSettingsDto(bool AutoCreateUserOnHire);
+
 // ── Update request bodies ────────────────────────────────────────────────────
 
 public sealed record UpdateOrgProfileRequest(
@@ -89,6 +95,9 @@ public sealed record UpdateSessionPolicyRequest(
     int AbsoluteTimeoutHours,
     int MaxConcurrentSessions,
     string? ConcurrentSessionStrategy);
+
+/// <summary>US-REC-010 FR-5/BR-7 (ISSUE-140): update the tenant's auto-create-user-on-hire toggle.</summary>
+public sealed record UpdateHiringSettingsRequest(bool AutoCreateUserOnHire);
 
 public sealed record UpdatePrimaryColorRequest(string PrimaryColor);
 

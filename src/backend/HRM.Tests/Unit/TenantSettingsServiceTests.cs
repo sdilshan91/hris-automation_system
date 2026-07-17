@@ -197,6 +197,36 @@ public sealed class TenantSettingsServiceTests
         tenant.ConcurrentSessionStrategy.Should().Be("deny_new");
     }
 
+    // ── Hiring settings (US-REC-010 FR-5/BR-7, ISSUE-140) ────────────────────
+
+    [Fact]
+    public async Task UpdateHiringSettings_Persists_AndWritesBeforeAfterAudit()
+    {
+        await SeedTenantAsync(_tenantId);
+        var service = CreateService();
+
+        // Default is false; flip it on.
+        var result = await service.UpdateHiringSettingsAsync(new UpdateHiringSettingsRequest(AutoCreateUserOnHire: true));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.AutoCreateUserOnHire.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
+        tenant.AutoCreateUserOnHire.Should().BeTrue("the toggle must be persisted");
+
+        var audit = await db.AuditLogs.IgnoreQueryFilters()
+            .SingleAsync(a => a.EventType == "tenant_settings.hiring_updated");
+        audit.TenantId.Should().Be(_tenantId);
+        audit.UserId.Should().Be(_userId);
+        audit.Before.Should().Contain("false"); // before: default off
+        audit.After.Should().Contain("true");   // after: on
+
+        // And it round-trips through the GET snapshot.
+        var snapshot = await service.GetSettingsAsync();
+        snapshot.Value!.AutoCreateUserOnHire.Should().BeTrue();
+    }
+
     // ── Primary color (FR-3) ─────────────────────────────────────────────────
 
     [Fact]

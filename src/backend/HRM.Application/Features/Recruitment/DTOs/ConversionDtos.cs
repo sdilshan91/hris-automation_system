@@ -62,7 +62,8 @@ public sealed record ConversionResultDto
     public int VacancyHeadcount { get; init; }
     public bool VacancyClosed { get; init; }
 
-    /// <summary>True when an associated login user account was also created (FR-5). Currently always false
-    /// — there is no "auto-create user on hire" tenant setting yet (deferred, see the handler note).</summary>
+    /// <summary>True when an associated login user account was created/linked as part of the conversion (FR-5,
+    /// ISSUE-140). Set only when the tenant's <c>AutoCreateUserOnHire</c> toggle is on; false otherwise (the
+    /// default). Credential delivery (welcome email) is deferred to US-NTF-006, so the account is passwordless.</summary>
     public bool UserAccountCreated { get; init; }
 }
