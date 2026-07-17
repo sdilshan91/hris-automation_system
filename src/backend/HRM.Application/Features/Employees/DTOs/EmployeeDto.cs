@@ -20,6 +20,10 @@ public sealed record EmployeeDto
     public string? DepartmentName { get; init; }
     public Guid JobTitleId { get; init; }
     public string? JobTitleName { get; init; }
+    /// <summary>US-CHR-011 (ISSUE-218): the reporting manager FK. Null when the employee has no manager.</summary>
+    public Guid? ReportsToEmployeeId { get; init; }
+    /// <summary>US-CHR-011 (ISSUE-218): the reporting manager's full name, resolved from the Manager nav. Null when unassigned.</summary>
+    public string? ManagerName { get; init; }
     public string EmploymentType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     /// <summary>US-CHR-013: full-time equivalent. 1.00 = full-time, 0.50 = half-time.</summary>
