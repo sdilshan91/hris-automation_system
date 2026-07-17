@@ -368,4 +368,31 @@ public sealed class AttendancePolicyResolverTests : IAsyncLifetime
         var tenantDefault = await AttendancePolicyResolver.GetOrCreateTenantDefaultAsync(db, default);
         tenantDefault.WeekendOvertimeMultiplier.Should().Be(2.0m, "tenant A's default, not B's 7.0x");
     }
+
+    [Fact]
+    public async Task Concurrent_first_clockins_create_exactly_one_tenant_default_issue308()
+    {
+        // ISSUE-308: two+ concurrent first-clock-ins for a tenant with NO settings row both read null and both
+        // insert; the unique index (ix_attendance_settings_tenant_location_unique) rejects the loser. The
+        // catch-on-conflict must return the committed winner instead of throwing a 500. InMemory can't
+        // reproduce this (no unique enforcement) — real Postgres only.
+        var tenantId = Guid.NewGuid();
+        const int parallelism = 8;
+
+        var tasks = Enumerable.Range(0, parallelism).Select(async _ =>
+        {
+            await using var db = Db(tenantId);
+            return await AttendancePolicyResolver.GetOrCreateTenantDefaultAsync(db, default);
+        }).ToArray();
+
+        var results = await Task.WhenAll(tasks); // must NOT throw — the loser catches 23505 and returns the winner
+
+        results.Should().OnlyContain(s => s.LocationId == null);
+        results.Select(s => s.Id).Distinct().Should().HaveCount(1, "every racer resolves to the one committed tenant-default row");
+
+        await using var verify = Db(tenantId);
+        var count = await verify.AttendanceSettings.IgnoreQueryFilters()
+            .CountAsync(s => s.TenantId == tenantId && s.LocationId == null);
+        count.Should().Be(1, "exactly one tenant-default row exists despite the concurrent lazy-create race");
+    }
 }
