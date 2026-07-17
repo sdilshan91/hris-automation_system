@@ -81,8 +81,14 @@ public sealed class StaleGoalNudgeService : IStaleGoalNudgeService
             .ToDictionary(c => c.Id, c => c.GoalSettingEnd == default ? c.StartDate : c.GoalSettingEnd);
 
         var dispatched = 0;
+        var nudgedGoalIds = new List<Guid>();
         foreach (var goal in goals)
         {
+            // ISSUE-142 (TC-009-04): idempotency — a goal already nudged on the current UTC date is skipped, so
+            // a same-day re-run or Hangfire retry never double-notifies.
+            if (goal.LastStaleNudgeAtUtc?.Date == nowUtc.Date)
+                continue;
+
             DateTime? lastUpdated = latestByGoal.TryGetValue(goal.Id, out var ts) ? ts : null;
             cycleStarts.TryGetValue(goal.CycleId, out var since);
 
@@ -95,7 +101,20 @@ public sealed class StaleGoalNudgeService : IStaleGoalNudgeService
             await _notifications.NotifyGoalProgressAsync(
                 "goal-stale-nudge", goal.Id, goal.EmployeeId, goal.EmployeeId,
                 $"{goal.Title}|{staleSinceDays}", cancellationToken);
+            nudgedGoalIds.Add(goal.Id);
             dispatched++;
+        }
+
+        // ISSUE-142: stamp the nudge date on the goals just nudged so a same-day re-run skips them. A tracked
+        // update + SaveChanges (works on both the InMemory test provider and Postgres; ExecuteUpdate does not).
+        if (nudgedGoalIds.Count > 0)
+        {
+            var toMark = await _dbContext.Goals
+                .Where(g => nudgedGoalIds.Contains(g.Id))
+                .ToListAsync(cancellationToken);
+            foreach (var g in toMark)
+                g.LastStaleNudgeAtUtc = nowUtc;
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
         _logger.LogInformation(

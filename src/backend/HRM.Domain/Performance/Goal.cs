@@ -51,6 +51,13 @@ public sealed class Goal : BaseEntity, IAuditExempt
     public GoalStatus Status { get; set; } = GoalStatus.Draft;
 
     /// <summary>
+    /// ISSUE-142 (US-PRF-009 TC-009-04): the UTC instant this goal was last nudged as a stale goal. The daily
+    /// sweep skips a goal already nudged on the current date, so a same-day re-run / retry never double-notifies.
+    /// Null = never nudged.
+    /// </summary>
+    public DateTime? LastStaleNudgeAtUtc { get; set; }
+
+    /// <summary>
     /// Optimistic concurrency token (NFR-4). On PostgreSQL this maps to the xmin system column via the
     /// Npgsql row-version convention (no schema DDL); the InMemory test provider ignores it. Mirrors the
     /// <c>LeaveRequest.Version</c> pattern.
