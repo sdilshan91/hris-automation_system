@@ -55,11 +55,11 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
 
     public void Dispose() { }
 
-    private LeaveEntitlementService CreateService()
+    private LeaveEntitlementService CreateService(ILeaveEntitlementRecalcJobScheduler? recalcScheduler = null)
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
         return new LeaveEntitlementService(dbContext, _tenantContext, _currentUser, _logger,
-            new TenantLeaveYearResolver(dbContext, _tenantContext));
+            new TenantLeaveYearResolver(dbContext, _tenantContext), recalcScheduler);
     }
 
     private AppDbContext CreateDbContext()
@@ -688,8 +688,196 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  BUG-118: recalc-on-rule-edit — enqueue + Adjusted ledger delta
+    // ══════════════════════════════════════════════════════════════
+
+    private async Task<List<LeaveLedger>> LedgerFor(Guid leaveTypeId, int year)
+    {
+        await using var db = CreateDbContext();
+        return await db.LeaveLedgerEntries
+            .Where(l => l.EmployeeId == _employeeId && l.LeaveTypeId == leaveTypeId && l.LeaveYear == year)
+            .OrderBy(l => l.OccurredAt).ThenBy(l => l.CreatedAt)
+            .ToListAsync();
+    }
+
+    [Fact]
+    public async Task UpdateRule_enqueues_entitlement_recalc_bug118()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+        var created = await svc.CreateRuleAsync(MakeRuleRequest());
+        created.IsSuccess.Should().BeTrue();
+
+        var updated = await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 25));
+        updated.IsSuccess.Should().BeTrue();
+
+        // A rule edit must enqueue a tenant-scoped recalc for THIS leave type and the CURRENT leave year
+        // (no tenant seeded → calendar fiscal year → the current UTC year). Create does NOT enqueue.
+        scheduler.Received(1).Enqueue(
+            _tenantId, Arg.Any<string>(), Arg.Is<int>(y => y == DateTime.UtcNow.Year), _leaveTypeId);
+    }
+
+    [Fact]
+    public async Task Recalculate_writes_positive_delta_when_rule_increased_bug118()
+    {
+        var svc = CreateService();
+        var created = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.ProcessAccrualsAsync(2026, _leaveTypeId);                                   // accrue 20
+        await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 25));   // rule → 25
+
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);
+
+        var adjustment = (await LedgerFor(_leaveTypeId, 2026))
+            .Single(l => l.EntryType == LedgerEntryType.Adjusted);
+        adjustment.Amount.Should().Be(5m);
+        adjustment.BalanceAfter.Should().Be(25m);   // 20 accrued + 5 delta
+        adjustment.Description.Should().StartWith("Entitlement recalculation");
+    }
+
+    [Fact]
+    public async Task Recalculate_writes_negative_delta_when_rule_decreased_bug118()
+    {
+        var svc = CreateService();
+        var created = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.ProcessAccrualsAsync(2026, _leaveTypeId);                                   // accrue 20
+        await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 15));   // rule → 15
+
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);
+
+        var adjustment = (await LedgerFor(_leaveTypeId, 2026))
+            .Single(l => l.EntryType == LedgerEntryType.Adjusted);
+        adjustment.Amount.Should().Be(-5m);
+        adjustment.BalanceAfter.Should().Be(15m);
+    }
+
+    [Fact]
+    public async Task Recalculate_is_idempotent_bug118()
+    {
+        var svc = CreateService();
+        var created = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.ProcessAccrualsAsync(2026, _leaveTypeId);
+        await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 25));
+
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);  // writes +5
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);  // must add nothing (granted now == target)
+
+        (await LedgerFor(_leaveTypeId, 2026))
+            .Count(l => l.EntryType == LedgerEntryType.Adjusted).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Recalculate_skips_employee_not_yet_accrued_bug118()
+    {
+        var svc = CreateService();
+        var created = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 25)); // never accrued
+
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);
+
+        // No Accrual row → nothing to adjust; the accrual run will credit them at the new amount.
+        (await LedgerFor(_leaveTypeId, 2026)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Recalculate_does_not_count_a_manual_adjustment_as_rule_grant_bug118()
+    {
+        var svc = CreateService();
+        var created = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.ProcessAccrualsAsync(2026, _leaveTypeId);   // accrue 20
+
+        // A manual admin adjustment of +3 (NO recalc sentinel in its Description).
+        await using (var db = CreateDbContext())
+        {
+            db.LeaveLedgerEntries.Add(new LeaveLedger
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EntryType = LedgerEntryType.Adjusted,
+                EmployeeId = _employeeId, LeaveTypeId = _leaveTypeId, LeaveYear = 2026,
+                Amount = 3m, BalanceAfter = 23m, Description = "Manual bonus by HR",
+                OccurredAt = new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 25)); // rule → 25
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);
+
+        var entries = await LedgerFor(_leaveTypeId, 2026);
+        entries.Should().Contain(l => l.Description == "Manual bonus by HR" && l.Amount == 3m); // survives
+        var recalc = entries.Single(l =>
+            l.EntryType == LedgerEntryType.Adjusted && l.Description!.StartsWith("Entitlement recalculation"));
+        // target 25 − rule-granted 20 (the manual +3 is NOT counted) = +5, not +2.
+        recalc.Amount.Should().Be(5m);
+    }
+
+    [Fact]
+    public async Task Recalculate_honors_employee_override_writes_no_adjustment_bug118()
+    {
+        // AC-3: a per-employee override wins over the rule. Editing the RULE must NOT touch an overridden
+        // employee — a recalc that resolved the rule instead of the override would write a spurious negative
+        // delta that silently CLOBBERS the override (a BUG-003-adjacent corruption).
+        var svc = CreateService();
+        var rule = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.UpsertOverrideAsync(new UpsertLeaveEntitlementOverrideRequest
+        {
+            EmployeeId = _employeeId, LeaveTypeId = _leaveTypeId, LeaveYear = 2026,
+            EntitlementDays = 30, Reason = "Exceptional contribution",
+        });
+        await svc.ProcessAccrualsAsync(2026, _leaveTypeId);                                // accrues the override (30)
+        await svc.UpdateRuleAsync(rule.Value!.Id, MakeRuleRequest(entitlementDays: 25));   // rule → 25 (irrelevant to this employee)
+
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);
+
+        // target = override 30, rule-granted = accrued 30 → delta 0 → NO adjustment.
+        (await LedgerFor(_leaveTypeId, 2026))
+            .Any(l => l.EntryType == LedgerEntryType.Adjusted).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Recalculate_prorates_delta_for_mid_year_joiner_bug118()
+    {
+        // A mid-year joiner's recalc delta must be PRORATED (via CalculateProRata), not the full rule delta.
+        var joinerId = await SeedEmployee(new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc));
+        var svc = CreateService();
+        var rule = await svc.CreateRuleAsync(MakeRuleRequest(entitlementDays: 20));
+        await svc.ProcessAccrualsAsync(2026, _leaveTypeId);                                // both accrue (joiner prorated)
+        await svc.UpdateRuleAsync(rule.Value!.Id, MakeRuleRequest(entitlementDays: 24));   // rule → 24
+
+        await svc.RecalculateEntitlementsAsync(2026, _leaveTypeId);
+
+        await using var db = CreateDbContext();
+        var joinerAdj = await db.LeaveLedgerEntries.SingleAsync(l =>
+            l.EmployeeId == joinerId && l.LeaveTypeId == _leaveTypeId && l.EntryType == LedgerEntryType.Adjusted);
+        // A full (non-prorated) delta would be 24 − 20 = 4; a July joiner's prorated delta is strictly less.
+        joinerAdj.Amount.Should().BeGreaterThan(0m);
+        joinerAdj.Amount.Should().BeLessThan(4m);
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
+
+    private async Task<Guid> SeedEmployee(DateTime dateOfJoining)
+    {
+        using var db = CreateDbContext();
+        var emp = new Employee
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantId,
+            EmployeeNo = $"EMP-{Guid.NewGuid().ToString()[..4]}",
+            FirstName = "Mid",
+            LastName = "Year",
+            Email = $"mid-{Guid.NewGuid().ToString()[..4]}@test.com",
+            DateOfJoining = dateOfJoining,
+            DepartmentId = _departmentId,
+            JobTitleId = _jobTitleId,
+            EmploymentType = EmploymentType.FullTime,
+            Status = EmployeeStatus.Active,
+            IsActive = true,
+        };
+        db.Employees.Add(emp);
+        await db.SaveChangesAsync();
+        return emp.Id;
+    }
 
     private UpsertLeaveEntitlementRuleRequest MakeRuleRequest(
         decimal entitlementDays = 20,

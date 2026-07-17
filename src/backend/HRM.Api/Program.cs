@@ -381,6 +381,11 @@ try
     builder.Services.AddScoped<HRM.Api.Jobs.ProcessPayrollRunJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayrollRunJobScheduler, HRM.Api.Jobs.HangfirePayrollRunJobScheduler>();
 
+    // BUG-118 (US-LV-002 AC-5): tenant-aware entitlement-recalc job + its Hangfire scheduler seam (bound to
+    // ILeaveEntitlementRecalcJobScheduler so LeaveEntitlementService.UpdateRuleAsync can enqueue by interface).
+    builder.Services.AddScoped<HRM.Api.Jobs.RecalcLeaveEntitlementsJob>();
+    builder.Services.AddScoped<HRM.Application.Common.Interfaces.ILeaveEntitlementRecalcJobScheduler, HRM.Api.Jobs.HangfireLeaveEntitlementRecalcScheduler>();
+
     // US-PAY-004 FR-4: tenant-aware payslip-PDF generation job + the Hangfire-backed scheduler seam (bound to
     // IPayslipGenerationJobScheduler so the Infrastructure PayslipGenerationService can enqueue by interface).
     // The job is enqueued by GeneratePayslips and restores the tenant context before rendering.
