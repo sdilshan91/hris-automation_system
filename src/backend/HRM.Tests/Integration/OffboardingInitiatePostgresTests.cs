@@ -74,6 +74,7 @@ public sealed class OffboardingInitiatePostgresTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("TC", "TC-ONB-005-13")]
     public async Task Initiate_persists_last_working_day_and_task_due_dates_on_postgres_bug289()
     {
         await using (var seed = CreateContext())
@@ -96,8 +97,9 @@ public sealed class OffboardingInitiatePostgresTests : IAsyncLifetime
         }
 
         // A FUTURE last working day → LastWorkingDay + the derived (clamped) task due dates all write to
-        // timestamptz columns; the write path must NOT throw on Postgres.
-        var lwd = DateTime.SpecifyKind(DateTime.UtcNow.AddDays(30).Date, DateTimeKind.Utc);
+        // timestamptz columns; the write path must NOT throw on Postgres. Kind MUST be Unspecified (as a date
+        // arrives from model binding): `.Date` PRESERVES Kind, so a Utc seed would let the mutant survive.
+        var lwd = new DateTime(2026, 12, 1);
         await using var db = CreateContext();
         var result = await CreateService(db).InitiateAsync(new InitiateOffboardingInput(
             _employeeId, lwd, null, OffboardingReason.Resignation, null));

@@ -4606,9 +4606,9 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | User Story ID | User Story Title | Priority | Test Cases | TC Count | Coverage |
 |---------------|-----------------|----------|------------|----------|----------|
 | US-ONB-001 | Create Onboarding Checklist Template | Must Have | TC-ONB-001-01, TC-ONB-001-02, TC-ONB-001-03, TC-ONB-001-04, TC-ONB-001-05, TC-ONB-001-06, TC-ONB-001-07, TC-ONB-001-08, TC-ONB-001-09, TC-ONB-001-10, TC-ONB-001-11, TC-ONB-001-12 | 12 | 5/5 AC covered |
-| US-ONB-002 | Assign Onboarding Checklist to New Hire | Must Have | TC-ONB-002-01, TC-ONB-002-02, TC-ONB-002-03, TC-ONB-002-04, TC-ONB-002-05, TC-ONB-002-06, TC-ONB-002-07, TC-ONB-002-08, TC-ONB-002-09, TC-ONB-002-10, TC-ONB-002-11, TC-ONB-002-12 | 12 | 5/5 AC covered |
+| US-ONB-002 | Assign Onboarding Checklist to New Hire | Must Have | TC-ONB-002-01, TC-ONB-002-02, TC-ONB-002-03, TC-ONB-002-04, TC-ONB-002-05, TC-ONB-002-06, TC-ONB-002-07, TC-ONB-002-08, TC-ONB-002-09, TC-ONB-002-10, TC-ONB-002-11, TC-ONB-002-12, TC-ONB-002-13 | 13 | 5/5 AC covered |
 | US-ONB-003 | New Hire Completes Onboarding Tasks | Must Have | TC-ONB-003-01, TC-ONB-003-02, TC-ONB-003-03, TC-ONB-003-04, TC-ONB-003-05, TC-ONB-003-06, TC-ONB-003-07, TC-ONB-003-08, TC-ONB-003-09, TC-ONB-003-10, TC-ONB-003-11, TC-ONB-003-12 | 12 | 5/5 AC covered |
-| US-ONB-004 | Asset Issuance Tracking During Onboarding | Should Have | TC-ONB-004-01, TC-ONB-004-02, TC-ONB-004-03, TC-ONB-004-04, TC-ONB-004-05, TC-ONB-004-06, TC-ONB-004-07, TC-ONB-004-08, TC-ONB-004-09, TC-ONB-004-10, TC-ONB-004-11, TC-ONB-004-12 | 12 | 5/5 AC covered |
+| US-ONB-004 | Asset Issuance Tracking During Onboarding | Should Have | TC-ONB-004-01, TC-ONB-004-02, TC-ONB-004-03, TC-ONB-004-04, TC-ONB-004-05, TC-ONB-004-06, TC-ONB-004-07, TC-ONB-004-08, TC-ONB-004-09, TC-ONB-004-10, TC-ONB-004-11, TC-ONB-004-12, TC-ONB-004-13 | 13 | 5/5 AC covered |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-ONB-ISO-001, TC-ONB-ISO-002, TC-ONB-ISO-003, TC-ONB-ISO-004, TC-ONB-ISO-005, TC-ONB-ISO-006, TC-ONB-ISO-007, TC-ONB-ISO-008, TC-ONB-ISO-009, TC-ONB-ISO-010, TC-ONB-ISO-011, TC-ONB-ISO-012, TC-ONB-ISO-013, TC-ONB-ISO-014, TC-ONB-ISO-015 | 15 | AC-5 / NFR-2 (EF query filters; RLS deferred) |
 | **TOTAL** | | | **63 test cases** | **63** | **20/20 AC** |
 
@@ -4659,6 +4659,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ONB-002-10 | XSS/SQLi in ad-hoc task free-text neutralized | Security | High | US-ONB-002 | AC-2, AC-4, FR-5 |
 | TC-ONB-002-11 | Assignment API <= 1000 ms P95 | Performance | High | US-ONB-002 | AC-2, NFR-1, NFR-3 |
 | TC-ONB-002-12 | Keyboard-navigable + responsive 360px-4K assignment UI | Accessibility | Medium | US-ONB-002 | AC-1, AC-2, AC-3, FR-1/6, NFR-4 |
+| TC-ONB-002-13 | Assign persists start/due dates on real Postgres (.Date Kind=Unspecified → timestamptz) — BUG-289 | Integration | High | US-ONB-002 | assign write path; PR #344 |
 | TC-ONB-ISO-005 | Tenant A cannot see Tenant B assignments (READ block) | Security | Critical | US-ONB-002 | AC-2, NFR-2 (EF) |
 | TC-ONB-ISO-006 | Missing tenant context + cross-tenant ID injection -> 404 | Security | Critical | US-ONB-002 | AC-2, FR-7 |
 | TC-ONB-ISO-007 | EF query filter blocks reads; writes+outbox tenant-stamped (RLS deferred) | Security | Critical | US-ONB-002 | AC-2, AC-5, FR-3/7, NFR-2/3 |
@@ -4724,6 +4725,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ONB-004-10 | XSS/SQLi in free-text neutralized; client tenant_id ignored (session wins) | Security | High | US-ONB-004 | FR-7, data: notes 500 |
 | TC-ONB-004-11 | Issuance API <= 600 ms P95 | Performance | High | US-ONB-004 | NFR-1, NFR-5 |
 | TC-ONB-004-12 | Issuance form keyboard navigable + 360px mobile + WCAG 2.1 AA | Accessibility | Medium | US-ONB-004 | NFR-3 |
+| TC-ONB-004-13 | Asset issuance persists issue_date on real Postgres (.Date Kind=Unspecified → timestamptz) — BUG-290 | Integration | High | US-ONB-004 | issue_date write; PR #345 (net-new arm) |
 | TC-ONB-ISO-012 | Tenant A cannot see Tenant B assets/issuances (READ block) | Security | Critical | US-ONB-004 | AC-5, NFR-2 (EF) |
 | TC-ONB-ISO-013 | Missing tenant context + cross-tenant asset ID injection -> 404 | Security | Critical | US-ONB-004 | AC-5, FR-7 |
 | TC-ONB-ISO-014 | EF filter blocks reads; writes tenant-stamped; uniqueness per tenant (RLS deferred) | Security | Critical | US-ONB-004 | AC-5, FR-7, NFR-2/5, BR-3 |
@@ -4761,6 +4763,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ONB-005-10 | Audit: each clearance decision + final completion logged, attributable, tenant-scoped | Integration | High | US-ONB-005 | FR-9, AC-2/3/4 |
 | TC-ONB-005-11 | Initiation API <= 1000 ms P95 (NFR-1); deactivation + revocation <= 30 s (NFR-3) | Performance | High | US-ONB-005 | NFR-1, NFR-3 |
 | TC-ONB-005-12 | Clearance dashboard keyboard navigable + WCAG 2.1 AA; 360px Kanban -> accordion | Accessibility | Medium | US-ONB-005 | AC-3, AC-4, NFR-4/5 |
+| TC-ONB-005-13 | Offboarding initiate persists last-working-day + task due dates on real Postgres (.Date → timestamptz) — BUG-290 | Integration | High | US-ONB-005 | LWD + ClampDueDate write; PR #345 |
 | TC-ONB-ISO-016 | Tenant A cannot see Tenant B offboarding records (cross-tenant READ block) | Security | Critical | US-ONB-005 | AC-6, NFR-2 (EF) |
 | TC-ONB-ISO-017 | Missing tenant context + cross-tenant offboarding ID injection -> 404 | Security | Critical | US-ONB-005 | AC-6, FR-8 |
 | TC-ONB-ISO-018 | EF filter blocks reads; writes/clearance/audit tenant-stamped (RLS deferred) | Security | Critical | US-ONB-005 | AC-6, FR-8, NFR-2 |
@@ -4822,6 +4825,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ONB-006-10 | XSS/SQLi free-text neutralized; offboarding_id/question_id tenant-belonging; client tenant_id ignored | Security | High | US-ONB-006 | FR-6, data (S7) |
 | TC-ONB-006-11 | Form load <= 500 ms P95 (NFR-1); analytics render <= 2 s for 1000 interviews (NFR-3) | Performance | High | US-ONB-006 | NFR-1, NFR-3 |
 | TC-ONB-006-12 | Questionnaire keyboard navigable + WCAG 2.1 AA; 360px touch-friendly rating; responsive to 4K | Accessibility | Medium | US-ONB-006 | NFR-4, NFR-5 |
+| TC-ONB-006-13 | Exit interview persists interview_date on real Postgres (.Date Kind=Unspecified → timestamptz) — BUG-290 | Integration | High | US-ONB-006 | interview_date write; PR #345 (net-new arm) |
 | TC-ONB-ISO-020 | Tenant A cannot see Tenant B exit interviews or analytics (cross-tenant READ block) | Security | Critical | US-ONB-006 | AC-5, NFR-2 (EF), BR-4 |
 | TC-ONB-ISO-021 | Missing tenant context + cross-tenant exit-interview ID injection -> 404 | Security | Critical | US-ONB-006 | AC-5, FR-6 |
 | TC-ONB-ISO-022 | EF filter blocks reads; writes/versions/outbox/audit tenant-stamped (RLS deferred) | Security | Critical | US-ONB-006 | AC-5, FR-6, NFR-2 |
