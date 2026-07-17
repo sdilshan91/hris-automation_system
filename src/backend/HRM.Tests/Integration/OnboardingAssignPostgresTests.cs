@@ -77,6 +77,7 @@ public sealed class OnboardingAssignPostgresTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("TC", "TC-ONB-002-13")]
     public async Task Assign_persists_on_real_postgres_bug289()
     {
         await using (var seed = CreateContext())
@@ -92,8 +93,10 @@ public sealed class OnboardingAssignPostgresTests : IAsyncLifetime
                 FirstName = "Nora", LastName = "Newhire", Email = "nora@acme.com",
                 DepartmentId = deptId, JobTitleId = jobTitleId,
                 // A FUTURE joining date (the realistic new-hire case) so startDate comes from DateOfJoining —
-                // this exercises the primary write site (instance.StartDate + task due dates from it).
-                DateOfJoining = DateTime.SpecifyKind(DateTime.UtcNow.AddDays(10).Date, DateTimeKind.Utc),
+                // this exercises the primary write site (instance.StartDate + task due dates from it). Kind MUST
+                // be Unspecified (as a date arrives from model binding): `.Date` PRESERVES Kind, so a Utc seed
+                // would make the mutant survive (the write would still be Utc) — green theater.
+                DateOfJoining = new DateTime(2026, 12, 1),
             });
             seed.OnboardingChecklistTemplates.Add(new OnboardingChecklistTemplate
             {
