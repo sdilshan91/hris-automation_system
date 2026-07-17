@@ -25,4 +25,13 @@ public enum ApplicantStage
 
     /// <summary>Rejected at any stage (later stories).</summary>
     Rejected = 5,
+
+    /// <summary>
+    /// Sentinel for a persisted <c>stage</c> string outside this enum (ISSUE-231 class). Never written by the
+    /// app — the stage-move validators reject it — and only produced on READ by
+    /// <see cref="Persistence.Converters.TolerantEnumToStringConverter{TEnum}"/> so one corrupt row does not
+    /// 500 the whole pipeline board. Excluded from the board's stage-column list. Appended (not 0) so it does
+    /// not disturb the existing values.
+    /// </summary>
+    Unknown = 99,
 }

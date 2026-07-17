@@ -286,7 +286,9 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
         List<ApplicantRow> periodApplicants, Dictionary<Guid, DateTime> hiredAtByApplicant)
     {
         var result = new List<SourceEffectivenessDto>();
-        foreach (var source in Enum.GetValues<ApplicationSource>())
+        // Skip the Unknown sentinel (ISSUE-231): it is not a real acquisition channel, only the read-time
+        // fallback for a corrupt source string, so it must not appear as a source-effectiveness line.
+        foreach (var source in Enum.GetValues<ApplicationSource>().Where(s => s != ApplicationSource.Unknown))
         {
             var inSource = periodApplicants.Where(a => a.Source == source).ToList();
             if (inSource.Count == 0) continue; // omit sources with no applicants in the period.

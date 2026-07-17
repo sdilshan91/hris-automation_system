@@ -346,8 +346,11 @@ public sealed class ApplicantService : IApplicantService
             .ToListAsync(cancellationToken);
 
         // FR-1: one column per stage, in pipeline (enum) order, even when empty (so the Kanban renders
-        // every column). FR-5: per-stage count + overall total.
+        // every column). FR-5: per-stage count + overall total. The Unknown sentinel (ISSUE-231) is not a real
+        // pipeline stage — it only ever appears when a corrupt row is read through the tolerant converter — so
+        // it never gets a column; such a card is logged at read time and simply not shown on the board.
         var stages = Enum.GetValues<ApplicantStage>()
+            .Where(s => s != ApplicantStage.Unknown)
             .OrderBy(s => (int)s)
             .Select((s, order) =>
             {
