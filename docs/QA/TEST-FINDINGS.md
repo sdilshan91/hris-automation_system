@@ -1,5 +1,9 @@
 # Test Findings Ledger — Bugs · Issues · Enhancements
 
+> **Deferred "do/verify later" items** (documented deferrals, residual risks, needs-infra test gaps,
+> bug-class-killing refactors) are indexed in [`DEFERRED-FOLLOWUPS.md`](DEFERRED-FOLLOWUPS.md) — when a fix
+> defers something, add a row there in addition to the inline note here, so it isn't lost in a RESOLVED block.
+
 > Living ledger produced by `/test-all` and `/test-us` (via `@test-runner`). **REPORT-ONLY**: findings are
 > recorded here for a human to triage and fix. The testing loop never fixes code, never opens PRs, and never
 > sets a downstream fix-state — it only ever appends an `OPEN` finding.
