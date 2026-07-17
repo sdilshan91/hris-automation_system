@@ -395,8 +395,16 @@ public sealed class ApplicantConversionService : IApplicantConversionService
             .Where(r => r.TenantId == _tenantContext.TenantId && r.Name == PermissionCatalog.BuiltInRoles.Employee)
             .Select(r => r.Id)
             .FirstOrDefaultAsync(cancellationToken);
-        if (employeeRoleId != Guid.Empty &&
-            !await _dbContext.UserTenantRoles.AnyAsync(
+        if (employeeRoleId == Guid.Empty)
+        {
+            // Built-in roles are seeded per tenant at provisioning, so this is unexpected. Fails CLOSED
+            // (Active membership, zero permissions — not a privilege leak), but surface it so it's fixable.
+            _logger.LogWarning(
+                "Hire auto-provisioning: no built-in 'Employee' role found for tenant {TenantId}; the provisioned " +
+                "account for {Email} has Active membership but no role until one is granted.",
+                _tenantContext.TenantId, email);
+        }
+        else if (!await _dbContext.UserTenantRoles.AnyAsync(
                 x => x.UserTenantId == membership.Id && x.RoleId == employeeRoleId, cancellationToken))
         {
             var utr = new UserTenantRole
