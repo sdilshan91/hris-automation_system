@@ -61,4 +61,20 @@ public interface IPayrollApprovalService
     /// <summary>FR-4: the approval-review summary (totals + previous-month variance + exceptions).</summary>
     Task<Result<PayrollApprovalSummaryDto>> GetSummaryAsync(
         Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AC-4/FR-2 (BUG-076): the tenant's configured payroll-approval step → role bindings, ordered by step.
+    /// Empty when the tenant has not configured a chain (legacy caller-supplied step count is then used).
+    /// </summary>
+    Task<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>> GetApprovalStepConfigAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AC-4/FR-2 (BUG-076): atomically REPLACE the tenant's payroll-approval step → role config. Validates the
+    /// steps are contiguous 1..N and each role exists in the tenant AND holds <c>Payroll.Approve</c> (else 400),
+    /// then swaps the config and writes an audit entry. Returns the persisted config (ordered).
+    /// </summary>
+    Task<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>> SetApprovalStepConfigAsync(
+        IReadOnlyList<PayrollApprovalStepConfigItem> steps, string? ipAddress,
+        CancellationToken cancellationToken = default);
 }

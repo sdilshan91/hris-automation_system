@@ -18,6 +18,19 @@ public sealed class GetPayrollApprovalHistoryQueryHandler
         => _service.GetHistoryAsync(request.RunId, cancellationToken);
 }
 
+/// <summary>AC-4/FR-2 (BUG-076): read the tenant's configured payroll-approval step → role bindings.</summary>
+public sealed record GetPayrollApprovalStepConfigQuery() : IRequest<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>>;
+
+public sealed class GetPayrollApprovalStepConfigQueryHandler
+    : IRequestHandler<GetPayrollApprovalStepConfigQuery, Result<IReadOnlyList<PayrollApprovalStepConfigDto>>>
+{
+    private readonly IPayrollApprovalService _service;
+    public GetPayrollApprovalStepConfigQueryHandler(IPayrollApprovalService service) => _service = service;
+
+    public Task<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>> Handle(GetPayrollApprovalStepConfigQuery request, CancellationToken cancellationToken)
+        => _service.GetApprovalStepConfigAsync(cancellationToken);
+}
+
 /// <summary>FR-4: the approval-review summary (totals + previous-month variance + exceptions).</summary>
 public sealed record GetPayrollApprovalSummaryQuery(Guid RunId) : IRequest<Result<PayrollApprovalSummaryDto>>;
 

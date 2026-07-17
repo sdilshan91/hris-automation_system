@@ -71,6 +71,24 @@ public sealed class ReturnPayrollRunToHrCommandHandler
         => _service.ReturnToHrAsync(request.RunId, request.Comments, request.IpAddress, cancellationToken);
 }
 
+/// <summary>
+/// AC-4/FR-2 (BUG-076): atomically REPLACE the tenant's payroll-approval step → role config. Thin delegate to
+/// IPayrollApprovalService, which validates contiguity + role/permission and audits the swap.
+/// </summary>
+public sealed record SetPayrollApprovalStepConfigCommand(
+    IReadOnlyList<PayrollApprovalStepConfigItem> Steps, string? IpAddress
+) : IRequest<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>>;
+
+public sealed class SetPayrollApprovalStepConfigCommandHandler
+    : IRequestHandler<SetPayrollApprovalStepConfigCommand, Result<IReadOnlyList<PayrollApprovalStepConfigDto>>>
+{
+    private readonly IPayrollApprovalService _service;
+    public SetPayrollApprovalStepConfigCommandHandler(IPayrollApprovalService service) => _service = service;
+
+    public Task<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>> Handle(SetPayrollApprovalStepConfigCommand request, CancellationToken cancellationToken)
+        => _service.SetApprovalStepConfigAsync(request.Steps, request.IpAddress, cancellationToken);
+}
+
 /// <summary>AC-5/BR-1/BR-6: Approved -&gt; Finalized (terminal; requires a prior approval step).</summary>
 public sealed record FinalizePayrollRunCommand(
     Guid RunId, string? IpAddress

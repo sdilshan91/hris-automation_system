@@ -110,6 +110,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<SalaryRevisionHistory> SalaryRevisionHistories => Set<SalaryRevisionHistory>();
     public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
     public DbSet<PayrollApprovalHistory> PayrollApprovalHistories => Set<PayrollApprovalHistory>();
+    // US-PAY-008 AC-4/FR-2 (BUG-076): tenant's configurable payroll-approval step → role bindings.
+    public DbSet<PayrollApprovalStepConfig> PayrollApprovalStepConfigs => Set<PayrollApprovalStepConfig>();
     public DbSet<PayrollSlip> PayrollSlips => Set<PayrollSlip>();
     public DbSet<PayrollSlipDetail> PayrollSlipDetails => Set<PayrollSlipDetail>();
     public DbSet<PayslipEmailLog> PayslipEmailLogs => Set<PayslipEmailLog>();
@@ -449,6 +451,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-PAY-008: PayrollApprovalHistory tenant isolation + soft-delete filter (BR-8).
         modelBuilder.Entity<PayrollApprovalHistory>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-008 AC-4/FR-2 (BUG-076): PayrollApprovalStepConfig tenant isolation + soft-delete filter.
+        modelBuilder.Entity<PayrollApprovalStepConfig>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PAY-003: PayrollSlip tenant isolation + soft-delete filter (AC-7).

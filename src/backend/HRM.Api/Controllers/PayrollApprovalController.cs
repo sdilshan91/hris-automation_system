@@ -90,6 +90,42 @@ public sealed class PayrollApprovalController : ControllerBase
         return Respond(result);
     }
 
+    /// <summary>
+    /// GET — AC-4/FR-2 (BUG-076): the tenant's configured payroll-approval step → role chain (ordered).
+    /// Gated by <c>Payroll.Approve</c> — the admin-restricted approver capability (Tenant Owner / Tenant Admin
+    /// only). Deliberately NOT <c>Payroll.Configure</c>, which HR Officer holds: the HR Officer is the payroll
+    /// MAKER (submits/runs payroll) and is excluded from approvals for separation of duties, so letting them
+    /// define who approves would undermine the very maker-checker/distinct-approver control this fixes.
+    /// </summary>
+    [HttpGet("approval/step-config")]
+    [RequirePermission("Payroll.Approve")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PayrollApprovalStepConfigDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetStepConfig(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPayrollApprovalStepConfigQuery(), cancellationToken);
+        return result.IsFailure
+            ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))
+            : Ok(ApiResponse<IReadOnlyList<PayrollApprovalStepConfigDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// PUT — AC-4/FR-2 (BUG-076): atomically REPLACE the tenant's payroll-approval step → role chain. Same
+    /// <c>Payroll.Approve</c> gate as the GET (see its remarks). 400 on non-contiguous steps or a role that is
+    /// unknown to the tenant / lacks Payroll.Approve.
+    /// </summary>
+    [HttpPut("approval/step-config")]
+    [RequirePermission("Payroll.Approve")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PayrollApprovalStepConfigDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetStepConfig([FromBody] SetPayrollApprovalStepConfigRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new SetPayrollApprovalStepConfigCommand(request?.Steps ?? [], Ip), cancellationToken);
+        return result.IsFailure
+            ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))
+            : Ok(ApiResponse<IReadOnlyList<PayrollApprovalStepConfigDto>>.Ok(result.Value!));
+    }
+
     /// <summary>GET — FR-7: the run's approval timeline, newest-first.</summary>
     [HttpGet("runs/{runId:guid}/approval-history")]
     [RequirePermission("Payroll.Run")]

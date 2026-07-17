@@ -81,7 +81,13 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         if (run.Status is not (PayrollRunStatus.ReviewPending or PayrollRunStatus.Rejected))
             return InvalidTransition(run.Status, "submitted for approval");
 
-        int steps = totalApprovalSteps is { } s && s > 0 ? s : 1;  // BR-2 default single-step.
+        // BUG-076 (FR-2): when the tenant has configured a step→role chain, the configured step COUNT is
+        // authoritative — it overrides any caller-supplied totalApprovalSteps. With no config, keep the legacy
+        // behaviour (caller value, BR-2 default single-step).
+        int configuredSteps = await _dbContext.PayrollApprovalStepConfigs.AsNoTracking().CountAsync(cancellationToken);
+        int steps = configuredSteps >= 1
+            ? configuredSteps
+            : (totalApprovalSteps is { } s && s > 0 ? s : 1);
 
         // BR-3: every submission is a fresh workflow instance.
         var instanceId = BaseEntity.NewUuidV7();
@@ -139,6 +145,32 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         int step = run.CurrentApprovalStep ?? 1;
         int total = run.TotalApprovalSteps ?? 1;
         var instanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7();
+
+        // BUG-076 AC-4 (separation of duties): the CORE fix. Whenever a run needs more than one approval, a
+        // user who already recorded an Approved decision for THIS workflow instance cannot approve another step.
+        // Applies regardless of whether a step→role config exists (a numeric multi-step run is also protected).
+        if (total > 1)
+        {
+            var alreadyApproved = await _dbContext.PayrollApprovalHistories.AsNoTracking().AnyAsync(
+                h => h.WorkflowInstanceId == instanceId
+                    && h.Action == PayrollApprovalAction.Approved
+                    && h.ActorUserId == _currentUser.UserId,
+                cancellationToken);
+            if (alreadyApproved)
+                return Result<PayrollApprovalResultDto>.Failure(
+                    "Each approval step must be completed by a different person (separation of duties).",
+                    403, "distinct_approver_required");
+        }
+
+        // BUG-076 FR-2 (step-role binding): when this step has a configured approver role, the acting user must
+        // hold that tenant Role (the same UserTenant→UserTenantRole join used for eligibility). No config row for
+        // the step = no per-step role restriction (legacy numeric behaviour).
+        var stepConfig = await _dbContext.PayrollApprovalStepConfigs.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.StepNumber == step, cancellationToken);
+        if (stepConfig is not null && !await UserHoldsRoleAsync(stepConfig.RoleId, cancellationToken))
+            return Result<PayrollApprovalResultDto>.Failure(
+                "You are not the assigned approver role for this step.", 403, "not_step_approver");
+
         var beforeApprove = RunSnapshot(run);
 
         var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Approved, Trim(comments), ipAddress);
@@ -398,6 +430,106 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Configurable step → role approval config (AC-4/FR-2, BUG-076)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>> GetApprovalStepConfigAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure("Tenant context is not resolved.", 400);
+
+        // Role names are resolved via a separate keyed lookup rather than a nav/GroupJoin projection — the
+        // latter silently empties on the EF InMemory provider used by the unit/integration suites.
+        var configs = await _dbContext.PayrollApprovalStepConfigs.AsNoTracking()
+            .OrderBy(c => c.StepNumber)
+            .ToListAsync(cancellationToken);
+
+        var roleIds = configs.Select(c => c.RoleId).Distinct().ToList();
+        var roleNames = await _dbContext.Roles.AsNoTracking()
+            .Where(r => roleIds.Contains(r.Id))
+            .ToDictionaryAsync(r => r.Id, r => r.Name, cancellationToken);
+
+        var rows = configs.Select(c => new PayrollApprovalStepConfigDto
+        {
+            StepNumber = c.StepNumber,
+            RoleId = c.RoleId,
+            RoleName = roleNames.TryGetValue(c.RoleId, out var name) ? name : string.Empty,
+        }).ToList();
+
+        return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Success(rows);
+    }
+
+    public async Task<Result<IReadOnlyList<PayrollApprovalStepConfigDto>>> SetApprovalStepConfigAsync(
+        IReadOnlyList<PayrollApprovalStepConfigItem> steps, string? ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure("Tenant context is not resolved.", 400);
+
+        if (steps is null || steps.Count == 0)
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                "At least one approval step is required.", 400, "steps_required");
+
+        // Steps must be contiguous 1..N (no gaps, no duplicates) once ordered by step number.
+        var ordered = steps.OrderBy(s => s.StepNumber).ToList();
+        for (int i = 0; i < ordered.Count; i++)
+            if (ordered[i].StepNumber != i + 1)
+                return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                    "Approval steps must be contiguous starting at 1 (1..N with no gaps or duplicates).",
+                    400, "steps_not_contiguous");
+
+        var roleIds = ordered.Select(s => s.RoleId).Distinct().ToList();
+
+        // Every role must exist IN THIS TENANT (tenant-owned role, not a null/system role).
+        var tenantRoleIds = await _dbContext.Roles.AsNoTracking()
+            .Where(r => r.TenantId == _tenantContext.TenantId && roleIds.Contains(r.Id))
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+        if (roleIds.Any(id => !tenantRoleIds.Contains(id)))
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                "One or more step roles do not exist in this tenant.", 400, "role_not_found");
+
+        // Every role must hold Payroll.Approve — a step role that can't pass the controller's approve gate would
+        // be a dead misconfiguration (nobody in it could ever approve the step).
+        var approveRoleIds = await _dbContext.RolePermissions.AsNoTracking()
+            .Where(rp => rp.Permission == PermissionCatalog.Payroll.Approve && roleIds.Contains(rp.RoleId))
+            .Select(rp => rp.RoleId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (roleIds.Any(id => !approveRoleIds.Contains(id)))
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                "Every step role must hold the Payroll.Approve permission.", 400, "role_missing_approve_permission");
+
+        // Atomic replace: drop the tenant's existing config and insert the new ordered set in one SaveChanges.
+        var existing = await _dbContext.PayrollApprovalStepConfigs.ToListAsync(cancellationToken);
+        var before = existing.OrderBy(c => c.StepNumber)
+            .Select(c => new { c.StepNumber, c.RoleId }).ToList();
+        _dbContext.PayrollApprovalStepConfigs.RemoveRange(existing);
+
+        foreach (var s in ordered)
+            _dbContext.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                StepNumber = s.StepNumber,
+                RoleId = s.RoleId,
+            });
+
+        var after = ordered.Select(s => new { s.StepNumber, s.RoleId }).ToList();
+        _audit.Log(PA.PayrollApprovalStepConfigUpdated, PA.ResourceType.PayrollApprovalStepConfig,
+            _tenantContext.TenantId.ToString(), before: before, after: after, ipAddress: ipAddress);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Payroll approval step-config replaced ({StepCount} steps) by {User} in tenant {TenantId}.",
+            ordered.Count, _currentUser.UserId, _tenantContext.TenantId);
+
+        return await GetApprovalStepConfigAsync(cancellationToken);
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
 
@@ -420,6 +552,26 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             select ut.UserId;
 
         return await query.Distinct().CountAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// BUG-076 FR-2: does the acting user hold the given tenant <paramref name="roleId"/>? Uses the same
+    /// UserTenant → UserTenantRole join as <see cref="CountEligibleApproversAsync"/>, keyed on the acting user +
+    /// the configured step role. UserTenant / role join tables are not BaseEntity, so they are filtered
+    /// explicitly by tenant id.
+    /// </summary>
+    private async Task<bool> UserHoldsRoleAsync(Guid roleId, CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var userId = _currentUser.UserId;
+
+        return await (
+            from ut in _dbContext.UserTenants.AsNoTracking()
+            where ut.TenantId == tenantId && ut.UserId == userId && ut.Status == UserTenantStatus.Active
+            join utr in _dbContext.UserTenantRoles.AsNoTracking() on ut.Id equals utr.UserTenantId
+            where utr.RoleId == roleId
+            select ut.Id
+        ).AnyAsync(cancellationToken);
     }
 
     private async Task<(PayrollRun? Run, Result<PayrollApprovalResultDto>? Failure)> LoadRunAsync(

@@ -189,6 +189,22 @@ public sealed class PayrollApprovalIntegrationTests
     [Fact]
     public async Task MultiStep_RoutesSequentially()
     {
+        var secondApprover = Guid.NewGuid(); // BUG-076: step 2 must be a DIFFERENT person.
+        var runId = await SeedRunAsync(_tenantA, PayrollRunStatus.AwaitingApproval, submittedBy: _hrUser,
+            step: 1, totalSteps: 2, instanceId: Guid.NewGuid());
+
+        var first = await Pipeline(_tenantA, _financeUser).Send(new ApprovePayrollRunCommand(runId, null, null));
+        first.Value!.Status.Should().Be(nameof(PayrollRunStatus.AwaitingApproval));
+
+        var second = await Pipeline(_tenantA, secondApprover).Send(new ApprovePayrollRunCommand(runId, null, null));
+        second.Value!.Status.Should().Be(nameof(PayrollRunStatus.Approved));
+    }
+
+    // ── BUG-076: distinct-person separation of duties through the full pipeline ──
+
+    [Fact]
+    public async Task MultiStep_SameApproverTwice_IsBlocked_DistinctApproverRequired()
+    {
         var runId = await SeedRunAsync(_tenantA, PayrollRunStatus.AwaitingApproval, submittedBy: _hrUser,
             step: 1, totalSteps: 2, instanceId: Guid.NewGuid());
 
@@ -196,7 +212,9 @@ public sealed class PayrollApprovalIntegrationTests
         first.Value!.Status.Should().Be(nameof(PayrollRunStatus.AwaitingApproval));
 
         var second = await Pipeline(_tenantA, _financeUser).Send(new ApprovePayrollRunCommand(runId, null, null));
-        second.Value!.Status.Should().Be(nameof(PayrollRunStatus.Approved));
+        second.IsFailure.Should().BeTrue();
+        second.StatusCode.Should().Be(403);
+        second.ErrorCode.Should().Be("distinct_approver_required");
     }
 
     // ── AC-5 / BR-1: finalize locks; direct finalize blocked ────────────────────
