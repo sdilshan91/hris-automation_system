@@ -3,6 +3,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -111,6 +112,13 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         if (!employeeExists)
             return Result<EmployeeDocumentDto>.Failure("Employee not found.", 404);
 
+        // BUG-114 (TC-CHR-205): enforce the tenant-wide storage quota (plan MaxStorageGb) — hard-block an upload
+        // that would exceed 100%, and carry an ≥80% soft warning into the response. Runs before the expensive
+        // scan/EXIF/upload work so an over-quota tenant fails fast.
+        var (quotaBlock, storageWarning) = await EnforceStorageQuotaAsync(fileSize, cancellationToken);
+        if (quotaBlock is not null)
+            return quotaBlock;
+
         // BUG-058: sniff the real magic bytes BEFORE the virus scan — the AllowedMimeTypes check above only
         // trusts the client-supplied Content-Type, so a renamed .exe with an allowed MIME string would
         // otherwise be accepted. Reject (400 invalid_file_type) when the bytes don't match. Resets the stream.
@@ -181,7 +189,65 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
             "Category={Category}, Size={Size}, TenantId={TenantId}, By={User}",
             document.Id, fileName, employeeId, category, fileSize, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<EmployeeDocumentDto>.Success(ToDto(document));
+        return Result<EmployeeDocumentDto>.Success(ToDto(document) with { StorageWarning = storageWarning });
+    }
+
+    /// <summary>
+    /// BUG-114 (TC-CHR-205): enforce the tenant document-storage quota against the plan's <c>MaxStorageGb</c>
+    /// (resolved with override &gt; plan precedence, same as the employee-count limit). Returns a non-null
+    /// <c>block</c> Result (HTTP 403 <c>storage_quota_exceeded</c>) when this upload would push cumulative usage
+    /// past 100% of the limit; otherwise returns a <c>warning</c> string when projected usage is ≥80%. When the
+    /// plan has no storage limit (unlimited), both are null.
+    /// </summary>
+    private async Task<(Result<EmployeeDocumentDto>? block, string? warning)> EnforceStorageQuotaAsync(
+        long incomingBytes, CancellationToken cancellationToken)
+    {
+        var tenant = await _dbContext.Tenants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
+        if (tenant is null)
+            return (null, null);
+
+        var planValue = await _dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxStorageGb)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _dbContext.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenant.Id)
+            .ToListAsync(cancellationToken);
+
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxStorageGb, planValue, overrides, DateTime.UtcNow);
+        if (resolved.Value is not { } limitGb)
+            return (null, null); // unlimited
+
+        var limitBytes = limitGb * 1024L * 1024L * 1024L;
+        // Cumulative usage across the tenant's non-deleted documents (the global query filter scopes to tenant).
+        var currentUsage = await _dbContext.EmployeeDocuments
+            .SumAsync(d => (long?)d.FileSizeBytes, cancellationToken) ?? 0L;
+        var projected = currentUsage + incomingBytes;
+
+        if (projected > limitBytes)
+        {
+            _logger.LogWarning(
+                "Document upload blocked — storage quota exceeded. TenantId={TenantId}, UsedBytes={Used}, " +
+                "IncomingBytes={Incoming}, LimitBytes={Limit}.",
+                _tenantContext.TenantId, currentUsage, incomingBytes, limitBytes);
+            return (Result<EmployeeDocumentDto>.Failure(
+                "Storage quota reached for your current plan. Please free space or upgrade your plan.",
+                403, "storage_quota_exceeded"), null);
+        }
+
+        // 80% soft warning based on projected usage after this upload.
+        if (projected * 100 >= limitBytes * 80)
+        {
+            var percent = (int)(projected * 100 / limitBytes);
+            return (null, $"Storage is at {percent}% of your plan limit ({limitGb} GB).");
+        }
+
+        return (null, null);
     }
 
     /// <inheritdoc />

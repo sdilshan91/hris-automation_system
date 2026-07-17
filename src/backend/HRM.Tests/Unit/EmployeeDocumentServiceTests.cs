@@ -12,6 +12,7 @@
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -969,6 +970,195 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
         var result = await service.GetDownloadUrlAsync(empId, doc.Id);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    // ========================================================================
+    // BUG-114 (TC-CHR-205): tenant storage-quota enforcement — warn at 80%, hard-block at 100%
+    // ========================================================================
+
+    private const long OneGb = 1024L * 1024L * 1024L;
+
+    /// <summary>Seeds this tenant with a plan (nullable MaxStorageGb) plus known cumulative usage. Optionally
+    /// seeds a per-tenant <see cref="PlanLimitOverride"/> (active or expired) for the override&gt;plan precedence,
+    /// and a soft-deleted document that must NOT count toward usage.</summary>
+    private async Task SeedPlanAndUsage(
+        int? maxStorageGb, long existingBytes,
+        int? overrideStorageGb = null, bool overrideExpired = false, long existingDeletedBytes = 0)
+    {
+        using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenantId, Subdomain = "acme", Name = "Acme", Status = TenantStatus.Active, PlanId = "quota-plan",
+        });
+        db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            Id = Guid.NewGuid(), Code = "quota-plan", Name = "Quota Plan", MaxStorageGb = maxStorageGb,
+        });
+        if (overrideStorageGb is not null)
+        {
+            db.PlanLimitOverrides.Add(new PlanLimitOverride
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, LimitKey = PlanLimitKeys.MaxStorageGb,
+                Value = overrideStorageGb, CreatedAt = DateTime.UtcNow,
+                ExpiresAt = overrideExpired ? DateTime.UtcNow.AddDays(-1) : null,
+            });
+        }
+        if (existingBytes > 0)
+            db.EmployeeDocuments.Add(MakeDoc(existingBytes, isDeleted: false));
+        if (existingDeletedBytes > 0)
+            db.EmployeeDocuments.Add(MakeDoc(existingDeletedBytes, isDeleted: true));
+        await db.SaveChangesAsync();
+    }
+
+    private EmployeeDocument MakeDoc(long bytes, bool isDeleted) => new()
+    {
+        Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeId = BaseEntity.NewUuidV7(),
+        FileName = "existing.pdf", StorageKey = "core-hr/x/existing.pdf", FileSizeBytes = bytes,
+        MimeType = "application/pdf", Category = DocumentCategory.Other, UploadedBy = Guid.NewGuid(),
+        IsDeleted = isDeleted,
+    };
+
+    [Fact]
+    public async Task Upload_blocked_when_it_would_exceed_storage_quota_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb); // already at 100%
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+        result.ErrorCode.Should().Be("storage_quota_exceeded");
+        // Blocked before any storage write — no bytes were persisted.
+        await _fileStorage.DidNotReceive().UploadAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Upload_warns_at_80_percent_but_still_succeeds_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: (long)(OneGb * 0.85)); // 85%
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().NotBeNullOrEmpty();
+        result.Value!.StorageWarning.Should().Contain("85%"); // pins the computed percentage, not just "a warning"
+    }
+
+    [Fact]
+    public async Task Upload_just_under_80_percent_has_no_warning_bug114()
+    {
+        // Lower boundary — 79% must NOT warn. Pairs with the 85% arm to pin the threshold near 80 (kills a
+        // threshold-shift mutant that the 10%/85% pair alone would survive).
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: (long)(OneGb * 0.79));
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Upload_at_exactly_100_percent_of_quota_succeeds_bug114()
+    {
+        // Block boundary: projected == limit must be ALLOWED (the block is strict `>`, not `>=`).
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb - 1024);
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Upload_active_override_raises_limit_above_plan_bug114()
+    {
+        // Override > plan precedence: usage exceeds the PLAN (1 GB) but not the active OVERRIDE (10 GB) → allowed.
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb * 2, overrideStorageGb: 10);
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Upload_expired_override_does_not_raise_limit_bug114()
+    {
+        // An EXPIRED override must be ignored → the plan limit (1 GB) applies → over-plan usage is blocked.
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb * 2, overrideStorageGb: 10, overrideExpired: true);
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("storage_quota_exceeded");
+    }
+
+    [Fact]
+    public async Task Upload_soft_deleted_documents_do_not_count_toward_quota_bug114()
+    {
+        // A soft-deleted 1 GB doc must NOT consume quota (the global query filter excludes it from the sum).
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: 0, existingDeletedBytes: OneGb);
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Upload_under_80_percent_has_no_warning_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: 1, existingBytes: OneGb / 10); // 10%
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Upload_unlimited_plan_never_blocks_or_warns_bug114()
+    {
+        var empId = await SeedEmployee();
+        await SeedPlanAndUsage(maxStorageGb: null, existingBytes: OneGb * 50); // huge usage, but plan is unlimited
+        var service = CreateService();
+
+        using var stream = MakeStream();
+        var result = await service.UploadAsync(
+            empId, stream, "x.pdf", "application/pdf", 1024, MakeMetadata("Other"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.StorageWarning.Should().BeNull();
     }
 
     public void Dispose()
