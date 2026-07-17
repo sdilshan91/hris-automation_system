@@ -2923,7 +2923,8 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Severity rationale:** LOW — produces an inconsistent but non-crashing record; the offer would auto-expire before its own start date. Edge-case data-quality bug, not exploitable.
 
 ### ISSUE-122 · ISSUE · MED · BE — FR-7/AC-4 reminder notification is not implemented: only the expiry auto-status job is scheduled, no "reminder ahead of expiry" job
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (stale — implemented by ISSUE-262, 2026-07-09; verified 2026-07-17)
+> **RESOLVED (stale, verified 2026-07-17):** The pre-expiry reminder job was fully built by the ISSUE-262 work: `IOfferExpiryReminderScheduler` + `HangfireOfferExpiryReminderScheduler` + `OfferExpiryReminderJob`, `OfferService.ScheduleExpiryReminder` (fires `ExpiryReminderDaysBefore` days before expiry, stored on the separate `Offer.ExpiryReminderJobId` field so cancelling the reminder never clobbers the expiry job), migration `AddOfferExpiryReminderJobId`, DI registration, and regression arms `Send_SchedulesExpiryReminder_AndStoresJobId` / `Withdraw_CancelsExpiryReminder_AndNullsJobId`. Verified: 21/21 OfferService arms green. No code change needed — the ledger entry predated the ISSUE-262 fix.
 - **Layer:** BE
 - **Module / US / TC:** Recruitment / US-REC-007 / TC-REC-007-02 (step4), TC-REC-007-05 (step1)
 - **Title:** Send schedules a SINGLE Hangfire job (`OfferExpiryJob`, fires at expiry+1d to auto-set Expired). The spec's reminder job (configurable lead-time notification to recruiter/applicant before expiry) does not exist.
