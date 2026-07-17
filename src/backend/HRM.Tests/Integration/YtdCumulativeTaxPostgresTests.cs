@@ -157,4 +157,56 @@ public sealed class YtdCumulativeTaxPostgresTests : IAsyncLifetime
 
         rows.Should().BeEquivalentTo(new[] { 22m, 33m }); // Dec-2026 + Jan-2027 only; Jan-2026 excluded.
     }
+
+    [Fact]
+    public async Task MultiMonthYtdAccumulation_SumsTaxableAndWithheld_OnPostgres_Issue300()
+    {
+        // ISSUE-300: the cumulative-run true-up consumes a YTD accumulation summed over the prior months'
+        // persisted slips. The InMemory arms prove the arithmetic; this proves that multi-month accumulation
+        // SUM over REAL Postgres slips (numeric aggregation + the ordinal window), which was previously
+        // untested on the real provider. Mirrors PayrollRunProcessor's prior-slip window query (:327-337).
+        var (tc, cu) = Actors();
+        await using var db = CreateContext(tc, cu);
+        await db.Database.MigrateAsync();
+
+        var emp = BaseEntity.NewUuidV7();
+        async Task AddSlip(int month, decimal taxable, decimal withheld)
+        {
+            db.PayrollSlips.Add(new PayrollSlip
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, PayrollRunId = BaseEntity.NewUuidV7(),
+                EmployeeId = emp, PayYear = 2026, PayMonth = month,
+                GrossEarnings = taxable, TotalDeductions = withheld, NetSalary = taxable - withheld,
+                WorkingDays = 22m, PaidDays = 22m, LopDays = 0m,
+                TaxableIncome = taxable, IncomeTaxWithheld = withheld, IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+        // LK FY26 cumulative run (mirrors YtdCumulativeTaxIntegrationTests): Apr–Jun stay ≤ the 3M threshold
+        // (0 withheld); July crosses cum 4M → 60,000 withheld.
+        await AddSlip(4, 1_000_000m, 0m);
+        await AddSlip(5, 1_000_000m, 0m);
+        await AddSlip(6, 1_000_000m, 0m);
+        await AddSlip(7, 1_000_000m, 60_000m);
+
+        async Task<(decimal Taxable, decimal Withheld)> PriorYtd(int currentYear, int currentMonth)
+        {
+            await using var read = CreateContext(tc, cu);
+            var currentOrdinal = currentYear * 12 + currentMonth;
+            var lookback = new DateOnly(currentYear, currentMonth, 1).AddMonths(-13);
+            var lowerOrdinal = lookback.Year * 12 + lookback.Month;
+            var rows = await read.PayrollSlips.AsNoTracking()
+                .Where(s => s.EmployeeId == emp
+                    && (s.PayYear * 12 + s.PayMonth) < currentOrdinal
+                    && (s.PayYear * 12 + s.PayMonth) >= lowerOrdinal)
+                .Select(s => new { s.TaxableIncome, s.IncomeTaxWithheld })
+                .ToListAsync();
+            return (rows.Sum(r => r.TaxableIncome), rows.Sum(r => r.IncomeTaxWithheld));
+        }
+
+        // Entering JULY: prior = Apr+May+Jun = 3,000,000 taxable, 0 withheld (the state that yields July's 60,000).
+        (await PriorYtd(2026, 7)).Should().Be((3_000_000m, 0m));
+        // Entering AUGUST: prior = Apr..Jul = 4,000,000 taxable, 60,000 withheld (August's true-up input).
+        (await PriorYtd(2026, 8)).Should().Be((4_000_000m, 60_000m));
+    }
 }
