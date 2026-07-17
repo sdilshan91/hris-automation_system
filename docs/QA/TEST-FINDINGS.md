@@ -6682,7 +6682,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-308 — `AttendanceSettings` lazy-create is not 23505-tolerant: two concurrent first-clock-ins race and the loser throws
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (PR #346, base `test/local-subdomains`, 2026-07-17)
+- **Resolution:** `GetOrCreateTenantDefaultAsync` now wraps the insert in a catch-on-conflict:
+  `catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState:
+  PostgresErrorCodes.UniqueViolation })` → detach the failed insert, re-read the committed winner
+  (same idiom as onboarding ISSUE-314). New Testcontainers arm
+  `Concurrent_first_clockins_create_exactly_one_tenant_default_issue308` (8 parallel
+  `GetOrCreateTenantDefaultAsync` on independent contexts → no throw, all return the same Id, exactly
+  1 row) passes 8/8 on real Postgres. Mutation-verified: neutering the catch filter (`SqlState:
+  "99999"`) makes the arm fail with the 23505, proving the catch is load-bearing. InMemory does not
+  enforce unique indexes, so this only ever reproduced on Postgres.
 - **Layer:** BE
 - **Module / US / TC:** Attendance / US-ATT-001, US-ATT-011 / (new TC needed)
 - **Title:** `AttendancePolicyResolver.GetOrCreateTenantDefaultAsync` (and the three call sites it
