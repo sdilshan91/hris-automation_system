@@ -338,6 +338,74 @@ public sealed class TenantSettingsServiceTests
         result.Error.Should().Contain("maximum size");
     }
 
+    // ── DF-29: cross-tenant public logo by subdomain (tenant switcher) ────────
+    // The switcher lists OTHER tenants, so GetPublicTenantLogoAsync resolves a tenant by SUBDOMAIN
+    // (IgnoreQueryFilters, like TenantResolutionMiddleware) and streams ONLY that tenant's public logo.
+
+    [Fact]
+    public async Task GetPublicTenantLogo_ByOtherTenantSubdomain_StreamsThatTenantsLogo()
+    {
+        var tenantB = Guid.NewGuid();
+        await SeedTenantAsync(_tenantId, name: "Tenant A");                        // caller context = A
+        await SeedTenantWithLogoAsync(tenantB, subdomain: "beta", logoFile: "logo.png");
+
+        // Service runs in Tenant A's context but must resolve Tenant B's PUBLIC logo by subdomain (by design).
+        var storage = new SeededLogoFileStorage(new byte[] { 1, 2, 3, 4 });
+        var service = new TenantSettingsService(
+            CreateDbContext(), _tenantContext, _currentUser, storage,
+            Substitute.For<ILogger<TenantSettingsService>>(), cache: null);
+
+        var result = await service.GetPublicTenantLogoAsync("beta");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Content.Should().Equal(1, 2, 3, 4);
+        result.Value.ContentType.Should().Be("image/png");
+        // ISOLATION-CRITICAL: the read must use the RESOLVED tenant (B), NOT the ambient caller (A).
+        // Guards the "pass the resolved id, not _tenantContext" invariant — otherwise it would read A's partition.
+        storage.LastReadTenantId.Should().Be(tenantB).And.NotBe(_tenantId);
+    }
+
+    [Fact]
+    public async Task GetPublicTenantLogo_SubdomainMatchIsCaseInsensitive()
+    {
+        var tenantB = Guid.NewGuid();
+        await SeedTenantWithLogoAsync(tenantB, subdomain: "beta", logoFile: "logo.png");
+        var service = new TenantSettingsService(
+            CreateDbContext(), _tenantContext, _currentUser,
+            new SeededLogoFileStorage(new byte[] { 9 }),
+            Substitute.For<ILogger<TenantSettingsService>>(), cache: null);
+
+        (await service.GetPublicTenantLogoAsync("BETA")).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetPublicTenantLogo_UnknownSubdomain_Is404()
+    {
+        await SeedTenantAsync(_tenantId);
+        var service = CreateService();
+
+        var result = await service.GetPublicTenantLogoAsync("does-not-exist");
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task GetPublicTenantLogo_TenantWithoutLogo_Is404()
+    {
+        var tenantB = Guid.NewGuid();
+        await SeedTenantAsync(tenantB, name: "No-Logo Co"); // seeded with no LogoUrl
+        // subdomain of SeedTenantAsync is t-{guid}; look it up.
+        using (var db = CreateDbContext())
+        {
+            var sub = (await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == tenantB)).Subdomain;
+            var service = CreateService();
+            var result = await service.GetPublicTenantLogoAsync(sub);
+            result.IsFailure.Should().BeTrue();
+            result.StatusCode.Should().Be(404);
+        }
+    }
+
     // ── Isolation (AC-5) ─────────────────────────────────────────────────────
 
     [Fact]
@@ -554,6 +622,48 @@ public sealed class TenantSettingsServiceTests
             CreatedAt = DateTime.UtcNow,
         });
         await db.SaveChangesAsync();
+    }
+
+    // DF-29: a tenant with an explicit subdomain + a stored logo path (the cross-tenant switcher target).
+    private async Task SeedTenantWithLogoAsync(Guid tenantId, string subdomain, string logoFile)
+    {
+        using var db = CreateDbContext();
+        db.Tenants.Add(new Tenant
+        {
+            Id = tenantId,
+            Subdomain = subdomain,
+            Name = subdomain,
+            Status = TenantStatus.Active,
+            PlanId = "default",
+            LogoUrl = $"/{tenantId}/branding/{logoFile}",
+            CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>IFileStorage whose OpenReadAsync returns fixed bytes, so the cross-tenant logo READ path
+    /// is exercised (the default InMemoryFileStorage returns null on read). Captures the tenantId it was
+    /// read with so a test can prove the RESOLVED tenant (not the ambient caller) drives the read.</summary>
+    private sealed class SeededLogoFileStorage : IFileStorage
+    {
+        private readonly byte[] _bytes;
+        public Guid? LastReadTenantId { get; private set; }
+        public SeededLogoFileStorage(byte[] bytes) => _bytes = bytes;
+
+        public Task<Stream?> OpenReadAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
+        {
+            LastReadTenantId = tenantId;
+            return Task.FromResult<Stream?>(new MemoryStream(_bytes));
+        }
+
+        public Task<string> UploadAsync(Guid tenantId, string relativePath, Stream content, string contentType, CancellationToken cancellationToken = default)
+            => Task.FromResult($"/{tenantId}/{relativePath}");
+
+        public string GetSignedUrl(Guid tenantId, string relativePath, TimeSpan? expiresIn = null)
+            => $"/files/{tenantId}/{relativePath}";
+
+        public Task DeleteAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private static byte[] ValidPngBytes()

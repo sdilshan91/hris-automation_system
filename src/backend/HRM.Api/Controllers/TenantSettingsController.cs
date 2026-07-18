@@ -199,6 +199,41 @@ public sealed class TenantSettingsController : ControllerBase
     public Task<IActionResult> GetEmailLogo(CancellationToken cancellationToken)
         => ServeBrandingAsync(BrandingAssetKind.EmailLogo, cancellationToken);
 
+    /// <summary>
+    /// GET /api/v1/tenant/settings/branding/favicon — streams the current tenant's stored favicon (DF-29).
+    /// Anonymous for the same reason as <see cref="GetLogo"/> (public pre-auth branding). 404 when none is
+    /// uploaded. Upload + storage are already wired (see <see cref="UploadFavicon"/>).
+    /// </summary>
+    [HttpGet("branding/favicon")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> GetFavicon(CancellationToken cancellationToken)
+        => ServeBrandingAsync(BrandingAssetKind.Favicon, cancellationToken);
+
+    /// <summary>
+    /// GET /api/v1/tenant/{subdomain}/branding/logo — streams a SPECIFIC tenant's logo, addressed by subdomain
+    /// (DF-29). Serves the cross-tenant tenant-switcher, which lists OTHER tenants the user belongs to and so
+    /// cannot use the host-subdomain-resolved own-tenant <see cref="GetLogo"/> endpoint. Absolute-route override
+    /// (single-origin, no wildcard DNS needed for local dev). <b>Anonymous</b>: the logo is public pre-auth
+    /// branding already shown on each tenant's login page. Publicly cacheable (shareable). 404 on unknown/reserved
+    /// subdomain, no logo, or missing blob.
+    /// </summary>
+    [HttpGet("/api/v1/tenant/{subdomain}/branding/logo")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPublicTenantLogo(string subdomain, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPublicTenantLogoQuery(subdomain), cancellationToken);
+        if (result.IsFailure)
+            return NotFound();
+
+        // Public branding: shareable across users/tenants, so a shared (not private) short cache is fine.
+        Response.Headers.CacheControl = "public, max-age=300";
+        return File(result.Value!.Content, result.Value!.ContentType);
+    }
+
     private async Task<IActionResult> ServeBrandingAsync(BrandingAssetKind kind, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetBrandingAssetQuery(kind), cancellationToken);
@@ -211,9 +246,9 @@ public sealed class TenantSettingsController : ControllerBase
     }
 
     /// <summary>
-    /// ISSUE-204: rewrite the raw internal storage paths (<c>/{tenantId}/branding/…</c>, which no route serves)
-    /// into absolute URLs to the public serve endpoints above, built from the current request. Null stays null
-    /// so the FE shows its fallback. Favicon is left as-is (no serve endpoint yet — see finding follow-up).
+    /// ISSUE-204/DF-29: rewrite the raw internal storage paths (<c>/{tenantId}/branding/…</c>, which no route
+    /// serves) into absolute URLs to the public serve endpoints above, built from the current request. Null
+    /// stays null so the FE shows its fallback.
     /// </summary>
     private BrandingDto ToServableBranding(BrandingDto branding)
     {
@@ -222,6 +257,7 @@ public sealed class TenantSettingsController : ControllerBase
         {
             LogoUrl = BrandingAssetUrls.Servable(branding.LogoUrl, baseUrl, BrandingAssetUrls.LogoRoutePath),
             EmailLogoUrl = BrandingAssetUrls.Servable(branding.EmailLogoUrl, baseUrl, BrandingAssetUrls.EmailLogoRoutePath),
+            FaviconUrl = BrandingAssetUrls.Servable(branding.FaviconUrl, baseUrl, BrandingAssetUrls.FaviconRoutePath),
         };
     }
 

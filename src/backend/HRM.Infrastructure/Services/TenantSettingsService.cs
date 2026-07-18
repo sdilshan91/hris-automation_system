@@ -358,6 +358,45 @@ public sealed class TenantSettingsService : ITenantSettingsService
         return Result<BrandingAssetContentDto>.Success(new BrandingAssetContentDto(buffer.ToArray(), contentType));
     }
 
+    // ── Serve a specific tenant's LOGO by subdomain (DF-29) ───────────────────
+
+    public async Task<Result<BrandingAssetContentDto>> GetPublicTenantLogoAsync(
+        string subdomain, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(subdomain))
+            return Result<BrandingAssetContentDto>.Failure("Tenant not found.", 404);
+
+        var normalized = subdomain.Trim().ToLowerInvariant();
+
+        // The ONLY query-filter bypass permitted by this method: resolve the tenant by EXACT subdomain match,
+        // exactly as TenantResolutionMiddleware does. Reserved/system subdomains can never be persisted as a
+        // tenant (ProvisionTenantValidator forbids them), so an unknown/reserved subdomain simply misses here.
+        // We read ONLY the id + logo path — nothing else from the cross-tenant row is exposed.
+        var tenant = await _db.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(t => !t.IsDeleted)
+            .Where(t => t.Subdomain == normalized)
+            .Select(t => new { t.Id, t.LogoUrl })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (tenant is null || string.IsNullOrWhiteSpace(tenant.LogoUrl))
+            return Result<BrandingAssetContentDto>.Failure("Tenant logo not found.", 404);
+
+        var relativePath = BrandingAssetUrls.ToStorageRelativePath(tenant.LogoUrl, tenant.Id);
+
+        // Cross-tenant by design: pass the RESOLVED tenant id explicitly, NOT the ambient _tenantContext.
+        await using var stream = await _fileStorage.OpenReadAsync(tenant.Id, relativePath, cancellationToken);
+        if (stream is null)
+            return Result<BrandingAssetContentDto>.Failure("Tenant logo not found.", 404);
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        var contentType = BrandingAssetUrls.ContentTypeFromExtension(relativePath);
+        return Result<BrandingAssetContentDto>.Success(new BrandingAssetContentDto(buffer.ToArray(), contentType));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>

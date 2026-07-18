@@ -54,4 +54,16 @@ public interface ITenantSettingsService
     /// </summary>
     Task<Result<BrandingAssetContentDto>> GetBrandingAssetAsync(
         BrandingAssetKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// DF-29: reads a specific tenant's LOGO bytes addressed by <paramref name="subdomain"/>, for the public
+    /// tenant-switcher (which lists OTHER tenants the user belongs to, so the ambient own-tenant context cannot
+    /// serve them). Resolves the tenant by EXACT subdomain match bypassing the global query filter — the ONLY
+    /// permitted bypass, mirroring how TenantResolutionMiddleware itself looks up the tenant — then streams that
+    /// resolved tenant's logo via <see cref="IFileStorage"/> with its id passed explicitly (NOT the ambient
+    /// context; this route is cross-tenant by design). Serves ONLY the logo image; nothing else is exposed.
+    /// 404 when the subdomain is unknown/reserved, no logo is stored, or the blob is missing.
+    /// </summary>
+    Task<Result<BrandingAssetContentDto>> GetPublicTenantLogoAsync(
+        string subdomain, CancellationToken cancellationToken = default);
 }
