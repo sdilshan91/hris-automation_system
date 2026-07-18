@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
@@ -318,6 +319,40 @@ public sealed class TenantSettingsService : ITenantSettingsService
         await PersistAsync(tenant, "tenant_settings.branding_uploaded", before, after, cancellationToken);
 
         return Result<BrandingUploadResultDto>.Success(new BrandingUploadResultDto(kind.ToString(), url));
+    }
+
+    // ── Serve branding asset (ISSUE-204) ──────────────────────────────────────
+
+    public async Task<Result<BrandingAssetContentDto>> GetBrandingAssetAsync(
+        BrandingAssetKind kind, CancellationToken cancellationToken = default)
+    {
+        var tenant = await LoadCurrentTenantAsync(cancellationToken);
+        if (tenant is null)
+            return Result<BrandingAssetContentDto>.Failure("Tenant not found.", 404);
+
+        var storedPath = kind switch
+        {
+            BrandingAssetKind.Logo => tenant.LogoUrl,
+            BrandingAssetKind.EmailLogo => tenant.EmailLogoUrl,
+            BrandingAssetKind.Favicon => tenant.FaviconUrl,
+            _ => null,
+        };
+        if (string.IsNullOrWhiteSpace(storedPath))
+            return Result<BrandingAssetContentDto>.Failure("No branding asset uploaded.", 404);
+
+        // The stored form is the IFileStorage return value ("/{tenantId}/branding/{file}"); OpenReadAsync
+        // re-prefixes the tenant id, so strip the leading "/{tenantId}/" back to the relative path.
+        var relativePath = BrandingAssetUrls.ToStorageRelativePath(storedPath, tenant.Id);
+
+        await using var stream = await _fileStorage.OpenReadAsync(tenant.Id, relativePath, cancellationToken);
+        if (stream is null)
+            return Result<BrandingAssetContentDto>.Failure("Branding asset not found.", 404);
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        var contentType = BrandingAssetUrls.ContentTypeFromExtension(relativePath);
+        return Result<BrandingAssetContentDto>.Success(new BrandingAssetContentDto(buffer.ToArray(), contentType));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

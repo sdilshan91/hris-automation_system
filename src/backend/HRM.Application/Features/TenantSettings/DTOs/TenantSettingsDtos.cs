@@ -103,3 +103,9 @@ public sealed record UpdatePrimaryColorRequest(string PrimaryColor);
 
 /// <summary>Result of a branding upload: the stored, tenant-scoped URL the FE renders (US-ADM-006 AC-2).</summary>
 public sealed record BrandingUploadResultDto(string AssetKind, string Url);
+
+/// <summary>
+/// The buffered bytes + content-type of a stored branding asset, streamed back to the caller by the public
+/// branding-serve endpoints (ISSUE-204). Logos are ≤2 MB (BR-6), so buffering is cheap.
+/// </summary>
+public sealed record BrandingAssetContentDto(byte[] Content, string ContentType);

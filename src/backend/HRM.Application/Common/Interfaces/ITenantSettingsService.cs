@@ -46,4 +46,12 @@ public interface ITenantSettingsService
     /// </summary>
     Task<Result<BrandingUploadResultDto>> UploadBrandingAsync(
         BrandingAssetKind kind, byte[] content, string originalFileName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the current tenant's stored branding asset back as bytes (ISSUE-204). Resolves the stored storage
+    /// path for <paramref name="kind"/>, streams it via <see cref="IFileStorage"/>, and returns the buffered
+    /// content + content-type. 404 when the tenant is unresolved, no asset is stored, or the blob is missing.
+    /// </summary>
+    Task<Result<BrandingAssetContentDto>> GetBrandingAssetAsync(
+        BrandingAssetKind kind, CancellationToken cancellationToken = default);
 }

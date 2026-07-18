@@ -198,7 +198,9 @@ public sealed class AuthController : ControllerBase
 
         if (result.IsFailure)
         {
-            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+            // Propagate the ErrorCode so the FE can branch on invalid_current_password /
+            // password_reused / policy failures (parity with the reset + lockout paths).
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
         }
 
         return Ok(ApiResponse.Ok("Password updated successfully."));

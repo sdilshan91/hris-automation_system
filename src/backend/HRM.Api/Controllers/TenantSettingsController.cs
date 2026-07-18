@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Security;
 using HRM.Application.DTOs;
 using HRM.Application.Features.TenantSettings.Commands;
@@ -45,7 +46,10 @@ public sealed class TenantSettingsController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        return Ok(ApiResponse<TenantSettingsDto>.Ok(result.Value!));
+        // ISSUE-204: expose SERVABLE branding URLs (pointing at the GET serve endpoints below) rather than the
+        // raw internal storage path, which no route serves and 404s in the browser.
+        var dto = result.Value! with { Branding = ToServableBranding(result.Value!.Branding) };
+        return Ok(ApiResponse<TenantSettingsDto>.Ok(dto));
     }
 
     /// <summary>PUT /api/v1/tenant/settings/org-profile — update organization profile (AC-1).</summary>
@@ -135,7 +139,8 @@ public sealed class TenantSettingsController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        return Ok(ApiResponse<BrandingDto>.Ok(result.Value!, "Primary color updated."));
+        // ISSUE-204: return servable branding URLs (see GetSettings), never the raw internal storage path.
+        return Ok(ApiResponse<BrandingDto>.Ok(ToServableBranding(result.Value!), "Primary color updated."));
     }
 
     /// <summary>
@@ -170,6 +175,55 @@ public sealed class TenantSettingsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public Task<IActionResult> UploadFavicon(IFormFile file, CancellationToken cancellationToken)
         => UploadBrandingAsync(BrandingAssetKind.Favicon, file, cancellationToken);
+
+    /// <summary>
+    /// GET /api/v1/tenant/settings/branding/logo — streams the current tenant's stored logo (ISSUE-204).
+    /// <b>Anonymous</b>: the logo is PUBLIC branding shown on the pre-auth login page; the tenant is resolved
+    /// from the subdomain by TenantResolutionMiddleware (which runs before auth). 404 when no logo is uploaded.
+    /// </summary>
+    [HttpGet("branding/logo")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> GetLogo(CancellationToken cancellationToken)
+        => ServeBrandingAsync(BrandingAssetKind.Logo, cancellationToken);
+
+    /// <summary>
+    /// GET /api/v1/tenant/settings/branding/email-logo — streams the current tenant's stored email-header logo
+    /// (ISSUE-204). Anonymous for the same reason as <see cref="GetLogo"/>. 404 when none is uploaded.
+    /// </summary>
+    [HttpGet("branding/email-logo")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> GetEmailLogo(CancellationToken cancellationToken)
+        => ServeBrandingAsync(BrandingAssetKind.EmailLogo, cancellationToken);
+
+    private async Task<IActionResult> ServeBrandingAsync(BrandingAssetKind kind, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetBrandingAssetQuery(kind), cancellationToken);
+        if (result.IsFailure)
+            return NotFound();
+
+        // Small private cache: the asset is tenant-branding, changes rarely, but is not shared across tenants.
+        Response.Headers.CacheControl = "private, max-age=300";
+        return File(result.Value!.Content, result.Value!.ContentType);
+    }
+
+    /// <summary>
+    /// ISSUE-204: rewrite the raw internal storage paths (<c>/{tenantId}/branding/…</c>, which no route serves)
+    /// into absolute URLs to the public serve endpoints above, built from the current request. Null stays null
+    /// so the FE shows its fallback. Favicon is left as-is (no serve endpoint yet — see finding follow-up).
+    /// </summary>
+    private BrandingDto ToServableBranding(BrandingDto branding)
+    {
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        return branding with
+        {
+            LogoUrl = BrandingAssetUrls.Servable(branding.LogoUrl, baseUrl, BrandingAssetUrls.LogoRoutePath),
+            EmailLogoUrl = BrandingAssetUrls.Servable(branding.EmailLogoUrl, baseUrl, BrandingAssetUrls.EmailLogoRoutePath),
+        };
+    }
 
     private async Task<IActionResult> UploadBrandingAsync(
         BrandingAssetKind kind, IFormFile? file, CancellationToken cancellationToken)
