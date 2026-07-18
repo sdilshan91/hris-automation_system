@@ -1769,7 +1769,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-068 — Geofence supports a single center only (FR-3 "any allowed location" unmet) + permission-name drift Attendance.Clock.Self vs Attendance.CheckIn
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED-by-decision (permission is Attendance.CheckIn by design; multi-location geofence deferred → DF-23) 2026-07-18
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-007 (step 5 — multiple allowed locations), TC-ATT-008 (permission name)
 - **Title:** Two contained nits. (a) **Single geofence center:** `attendance_settings` exposes one `geo_fence_latitude/longitude/radius_meters`; FR-3 and TC-ATT-007 step 5 require accepting coordinates within **any** of multiple allowed locations. Only one fence can be configured, so the "any allowed location" case is unverifiable/unsupported. (b) **Permission-name drift:** the user story preconditions and every TC name the gate `Attendance.Clock.Self`, but the implemented endpoint is gated by `Attendance.CheckIn` (`AttendanceController.cs:37`). The Employee role holds `Attendance.CheckIn`, so behavior is correct, but the spec↔code identifier mismatch will confuse traceability and any future permission audit.
@@ -1824,7 +1824,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-072 — Future-date / validation rejections return no machine-readable `code`, and the service's `future_date` code path is effectively unreachable (shadowed by the validator's future-time rule)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (keep branch — not a defect; the tenant-local future_date guard IS reachable for behind-UTC tenants; validator naive-UTC frame = ISSUE-065-family nit, needs-decision) 2026-07-18
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-003 · TC-ATT-030 (validation), TC-ATT-027/031 (boundary — comparison)
 - **Title:** Two contained contract nits on the regularization-create error envelope. (a) **No `code` on validator rejections:** the service-layer policy rejections carry a stable machine-readable `code` (`lookback_exceeded`, `duplicate_pending`, `payroll_period_locked`), but the FluentValidation rejections (reason-too-short, clock-in-not-before-clock-out, future-time, bad type, missing/invalid time) return `code: null` — only a human message. FE/clients cannot branch on a stable identifier for these. (b) **`future_date` code unreachable:** `SubmitRegularizationAsync:356-358` returns code `future_date` for a future *date*, but every valid `regularization_type` requires at least one time, and the validator's "corrected time cannot be in the future" rule (`SubmitRegularizationValidator.cs:74-83`) fires **first** for any future date+time combination — so a future-date request is rejected at the validator with `code: null` and the message "The corrected time cannot be in the future.", never reaching the service's `future_date` branch. AC-3/BR-4 (future dates rejected) is still satisfied — just by a different layer/message than the service code implies.
@@ -1895,7 +1895,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only. (Same fix locus as ISSUE-067/069/071/073 — route shift writes through the tenant audit pipeline.)
 
 ### ISSUE-076 — An employee cannot resolve their OWN shift: `GET /attendance/employees/{id}/shift` is gated by `Attendance.Shift.Manage`, so employees and managers get 403 even for self
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #361, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-063 (step 6, FAIL vs documented expectation)
 - **Title:** TC-ATT-063 documents that "the read-only shift-resolve endpoint follows its documented authorization (employee may resolve own shift)". In the implementation the resolve endpoint `GET /api/v1/attendance/employees/{employeeId}/shift` carries `[RequirePermission("Attendance.Shift.Manage")]` (the same HR-only gate as every shift management endpoint), so an authenticated **employee resolving their own id → 403**, and a manager → 403. There is no self-scoped read path for an employee to see their own assigned shift.
@@ -1951,7 +1951,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — converge both surfaces on one standard source (likely the shift-derived value), or document the dual baseline and ensure US-ATT-009 payroll reads only the record.
 
 ### ISSUE-079 — Daily/weekly cap flags (daily_cap_applied, weekly_cap_exceeded) are persisted + logged but NOT exposed on any overtime API DTO; HR cannot see via the API that overtime was truncated or that the weekly cap was breached
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #361, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-070 (step 2) / TC-ATT-071 (steps 2-3) / FR-8
 - **Title:** When the daily cap bites, the record stores `daily_cap_applied=true` and overtime is capped at the configured max; when the weekly cap is crossed, `weekly_cap_exceeded=true` is set and a Serilog WRN "Overtime cap exceeded …" fires. But `OvertimeDto`, `OvertimeQueueItemDto`, `OvertimeDecisionDto`, and `OvertimeReportRowDto` expose **none** of these flags (`OvertimeDtos.cs`) — an HR/manager consuming the API sees the capped number with no indication it was truncated, and the FR-8 "alert HR if exceeded" surfaces only in the server log, not in any HR-facing response.
@@ -1962,7 +1962,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — add `dailyCapApplied`/`weeklyCapExceeded` (and a raw-vs-capped pair) to the overtime DTOs.
 
 ### ISSUE-080 — UNAPPROVED overtime minutes are invisible in the monthly report (counted in recordCount but absent from approved/pending/rejected columns)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #361, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-079 (step 2) / AC-5 / BR-6
 - **Title:** The monthly report sums only APPROVED→`approvedMinutes`, PENDING→`pendingMinutes`, REJECTED→`rejectedMinutes`. UNAPPROVED records (pre-approval policy on, no matching pre-approval — BR-6) contribute to `recordCount` (grouped over all statuses) but their minutes appear in **none** of the three minute columns — exactly the BR-6 "excluded from payroll until HR reviews" population is made invisible.
@@ -2055,7 +2055,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — pick ONE grain (almost certainly **per-day**, since lateness is a once-a-day concept and the deduction tiers on it) and have the report/my-score aggregate distinct late days too (or guarantee one log per employee per day upstream so the grains coincide).
 
 ### ISSUE-085 — `late_minutes` / `late_by_minutes` are persisted as non-zero on records that are NOT late (and remain set after a regularization clears the flag), so the "Late by N min" badge would render on on-time rows
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #361, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-008 · TC-ATT-106 (grace fallback), TC-ATT-110 (regularization recompute)
 - **Title:** When a clock-in is after shift start but within grace (on-time), `late_minutes` is still stored as the full minutes-past-start (e.g. 15) with `is_late=false`. Same after regularizing a late punch down to an on-time value: `is_late` flips to false but `late_minutes` keeps a non-zero leftover (5). FR-3 says `late_minutes` = "0 if not late"; the FE §8 badge ("Late by {late_minutes} min") keyed only on minutes would mis-render.
@@ -2139,7 +2139,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-091 — Terminated-employee payroll-data row caps `total_working_days` (BR-7 cutoff works) but HARD-ZEROS present/absent/lop instead of computing them up to the last working day (under-counts LOP for terminated staff)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #361, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-009 · TC-ATT-125 (S1/S2 — terminated employee BR-7)
 - **Title:** BR-7 ("attendance for terminated employees is included up to their last working day") is **partially** implemented: the terminated employee's `total_working_days` is correctly capped (acme "Doj" shows 19 vs 22 for active staff in 2026-06, proving the EmploymentHistory `status_change→Terminated` cutoff applies), but the row's `total_present_days`, `total_absent_days`, and `lop_days` are all **hard-set to 0** rather than computed up to the last working day. A terminated employee who had unexcused absences (= LOP) before termination therefore feeds payroll `lop_days = 0`, under-counting their loss-of-pay deduction.

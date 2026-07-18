@@ -16,7 +16,8 @@ Status legend: ☐ pending · ▶ in progress · ✅ done (PR#) · ⛔ WONTFIX �
 
 ## A. REAL-FIX — value-first queue (71)
 
-> **PROGRESS:** A1 security (7) ✅ #358. Leave module (7) ✅ #359 (+ extracted shared `EnumParsing` helper — user reusability rule). Next: Attendance batch.
+> **PROGRESS:** A1 security (7) ✅ #358 · Leave (7) ✅ #359 · reusability sweep ✅ #360 · Attendance (5) ✅ #361 (ISSUE-072 reclassified keep-branch; ISSUE-068 spec-align + geofence→DF-23). Next: Core-HR.
+> **NEW needs-decision surfaced (add to §C review):** (a) ISSUE-072 validator naive-UTC vs service tenant-local future-date frame (ISSUE-065 family) — keep the service guard, fix the validator frame? (b) non-tolerant `Enum.TryParse` endpoints (Payroll/Notification/Onboarding/Offboarding) — make them separator-tolerant like the report endpoints? (c) `SanitizeFileName` ×4 differ on fallback string — unify with a `(fileName, fallback)` shared helper?
 
 ### A1. Security / authz / info-disclosure (do first)
 - ☐ ISSUE-049 (Auth/BE) refresh token accepted on ANY subdomain → cross-tenant replay · TC-AUTH-ISO-001
