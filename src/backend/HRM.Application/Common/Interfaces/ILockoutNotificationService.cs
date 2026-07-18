@@ -14,5 +14,8 @@ public interface ILockoutNotificationService
         string? displayName,
         DateTime lockedUntilUtc,
         int lockoutDurationMinutes,
+        // ISSUE-063: the login-time resolved tenant name, threaded through for email branding/sign-off. Null when
+        // the tenant could not be resolved (content degrades gracefully). Trailing data param, BEFORE the token.
+        string? tenantName,
         CancellationToken cancellationToken = default);
 }

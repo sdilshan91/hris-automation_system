@@ -28,7 +28,10 @@ public sealed record OrgProfileDto(
     int ProbationPeriodDays = 90,
     // ISSUE-159 (US-PAY-004 BR-3): tenant-configurable payslip footer disclaimer. Null/blank → the payslip
     // renderer uses the standard wording (PayslipBranding.DefaultFooterDisclaimer). APPENDED positional.
-    string? PayslipFooterDisclaimer = null);
+    string? PayslipFooterDisclaimer = null,
+    // ISSUE-229 (US-PAY-011 BR-4): tenant-configurable "From" address for payslip distribution emails. Null/blank
+    // → payslip emails use the system default sender. APPENDED positional.
+    string? PayrollFromEmail = null);
 
 public sealed record BrandingDto(
     string? LogoUrl,
@@ -78,7 +81,11 @@ public sealed record UpdateOrgProfileRequest(
     int ProbationPeriodDays = 90,
     // ISSUE-159 (US-PAY-004 BR-3): tenant-configurable payslip footer disclaimer. Null/blank clears it (renderer
     // falls back to the standard wording). APPENDED positional.
-    string? PayslipFooterDisclaimer = null);
+    string? PayslipFooterDisclaimer = null,
+    // ISSUE-229 (US-PAY-011 BR-4): tenant-configurable "From" address for payslip distribution emails. Null/blank
+    // clears it (payslip emails fall back to the system default sender). Validated as a well-formed email on
+    // write. APPENDED positional.
+    string? PayrollFromEmail = null);
 
 public sealed record UpdateLocalizationRequest(
     string DefaultLanguage,

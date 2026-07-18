@@ -32,6 +32,7 @@ public sealed class LockoutNotificationService : ILockoutNotificationService
         string? displayName,
         DateTime lockedUntilUtc,
         int lockoutDurationMinutes,
+        string? tenantName,
         CancellationToken cancellationToken = default)
     {
         // Support-contact link/address comes from configuration (no per-call plumbing); falls back to a sensible
@@ -39,7 +40,7 @@ public sealed class LockoutNotificationService : ILockoutNotificationService
         var supportContact = _configuration["Support:ContactEmail"]
             ?? _configuration["Support:ContactUrl"];
 
-        var content = BuildContent(userEmail, displayName, lockedUntilUtc, lockoutDurationMinutes, supportContact);
+        var content = BuildContent(userEmail, displayName, lockedUntilUtc, lockoutDurationMinutes, supportContact, tenantName);
 
         var smtpHost = _configuration["Smtp:Host"];
         if (string.IsNullOrWhiteSpace(smtpHost))
@@ -71,22 +72,28 @@ public sealed class LockoutNotificationService : ILockoutNotificationService
         string? displayName,
         DateTime lockedUntilUtc,
         int lockoutDurationMinutes,
-        string? supportContact)
+        string? supportContact,
+        string? tenantName = null)
     {
         var greetingName = string.IsNullOrWhiteSpace(displayName) ? userEmail : displayName!;
         var restoreUtc = lockedUntilUtc.ToUniversalTime().ToString("f", CultureInfo.InvariantCulture) + " UTC";
         var support = string.IsNullOrWhiteSpace(supportContact) ? "your system administrator" : supportContact!;
+        // ISSUE-063: brand the opening line + sign-off with the tenant name when the login-time tenant resolved;
+        // degrades to the generic "your account" / "The HRM Team" wording when it is unknown.
+        var hasTenant = !string.IsNullOrWhiteSpace(tenantName);
+        var accountClause = hasTenant ? $"Your {tenantName!.Trim()} account" : "Your account";
+        var signOff = hasTenant ? $"The {tenantName!.Trim()} Team" : "The HRM Team";
 
         const string subject = "Your account has been temporarily locked";
 
         var body =
             $"Hello {greetingName},\n\n" +
-            "Your account has been temporarily locked following several unsuccessful sign-in attempts.\n\n" +
+            $"{accountClause} has been temporarily locked following several unsuccessful sign-in attempts.\n\n" +
             $"For your security, access is suspended for {lockoutDurationMinutes} minute(s). " +
             $"You can try signing in again after {restoreUtc}.\n\n" +
             "If this wasn't you, or you need to regain access sooner, please reset your password or " +
             $"contact {support} for assistance.\n\n" +
-            "Regards,\nThe HRM Team";
+            $"Regards,\n{signOff}";
 
         return new LockoutEmailContent(subject, body);
     }

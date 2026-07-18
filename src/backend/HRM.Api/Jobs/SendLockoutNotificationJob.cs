@@ -16,12 +16,15 @@ public sealed class SendLockoutNotificationJob
         _notificationService = notificationService;
     }
 
-    public async Task RunAsync(string userEmail, string? displayName, DateTime lockedUntilUtc, int lockoutDurationMinutes)
+    // ISSUE-063: tenantName added as the last DATA param (Hangfire serializes args by position — it must match
+    // the enqueue call's argument order in AuthService).
+    public async Task RunAsync(
+        string userEmail, string? displayName, DateTime lockedUntilUtc, int lockoutDurationMinutes, string? tenantName)
     {
         try
         {
             await _notificationService.SendLockoutNotificationAsync(
-                userEmail, displayName, lockedUntilUtc, lockoutDurationMinutes);
+                userEmail, displayName, lockedUntilUtc, lockoutDurationMinutes, tenantName);
 
             Log.Information(
                 "Lockout notification job completed for {Email}", userEmail);

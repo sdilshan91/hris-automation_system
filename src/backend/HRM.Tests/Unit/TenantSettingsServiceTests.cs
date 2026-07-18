@@ -338,6 +338,48 @@ public sealed class TenantSettingsServiceTests
         result.Error.Should().Contain("maximum size");
     }
 
+    // ── ISSUE-229 (BR-4): tenant payslip "From" address round-trips + is validated ──
+    [Fact]
+    public async Task UpdateOrgProfile_PayrollFromEmail_RoundTripsThroughGet()
+    {
+        await SeedTenantAsync(_tenantId, name: "Acme");
+        var service = CreateService();
+
+        var update = await service.UpdateOrgProfileAsync(new UpdateOrgProfileRequest(
+            Name: "Acme",
+            LegalName: null, RegistrationNumber: null, Address: null,
+            Industry: null, CompanySize: null, FiscalYearStartMonth: 1, DefaultCountryCode: null,
+            PayrollFromEmail: "payroll@acme.test"));
+
+        update.IsSuccess.Should().BeTrue(update.Error);
+        update.Value!.PayrollFromEmail.Should().Be("payroll@acme.test");
+
+        // ...and it round-trips through the GET read path (not write-only — the ISSUE-159 lesson).
+        // Fresh service → fresh DbContext, so this is a true cross-context read of the persisted value.
+        var snapshot = await CreateService().GetSettingsAsync();
+        snapshot.Value!.OrgProfile.PayrollFromEmail.Should().Be("payroll@acme.test");
+    }
+
+    [Fact]
+    public async Task UpdateOrgProfile_InvalidPayrollFromEmail_Is400_AndNotPersisted()
+    {
+        await SeedTenantAsync(_tenantId, name: "Acme");
+        var service = CreateService();
+
+        var result = await service.UpdateOrgProfileAsync(new UpdateOrgProfileRequest(
+            Name: "Acme",
+            LegalName: null, RegistrationNumber: null, Address: null,
+            Industry: null, CompanySize: null, FiscalYearStartMonth: 1, DefaultCountryCode: null,
+            PayrollFromEmail: "not-an-email"));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+
+        using var db = CreateDbContext();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
+        tenant.PayrollFromEmail.Should().BeNull("a rejected invalid address must not be persisted");
+    }
+
     // ── DF-29: cross-tenant public logo by subdomain (tenant switcher) ────────
     // The switcher lists OTHER tenants, so GetPublicTenantLogoAsync resolves a tenant by SUBDOMAIN
     // (IgnoreQueryFilters, like TenantResolutionMiddleware) and streams ONLY that tenant's public logo.

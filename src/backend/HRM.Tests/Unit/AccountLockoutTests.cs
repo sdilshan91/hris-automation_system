@@ -144,6 +144,15 @@ public sealed class AccountLockoutTests
         _backgroundJobClient.Received().Create(
             Arg.Any<Hangfire.Common.Job>(),
             Arg.Any<Hangfire.States.IState>());
+
+        // ISSUE-063: the enqueued job must carry the RESOLVED tenant name (login-time tenant), not null —
+        // proves AuthService actually plumbs Tenant.Name into the lockout notification (BuildContent alone
+        // can't prove the wiring). "Test Tenant" is the seeded tenant for _tenantId.
+        var createCall = _backgroundJobClient.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == nameof(IBackgroundJobClient.Create));
+        var job = (Hangfire.Common.Job)createCall.GetArguments()[0]!;
+        job.Method.Name.Should().Be(nameof(ILockoutNotificationService.SendLockoutNotificationAsync));
+        job.Args.Should().Contain("Test Tenant", "the resolved tenant name must be plumbed into the lockout email");
     }
 
     #endregion

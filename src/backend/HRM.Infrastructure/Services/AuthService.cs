@@ -183,8 +183,10 @@ public sealed class AuthService : IAuthService
 
             if (lockoutEmail is not null)
             {
+                // ISSUE-063: enrich with the login-time tenant name (the tenant is not yet loaded on this path).
+                lockoutEmail = lockoutEmail with { TenantName = await ResolveTenantNameAsync(cancellationToken) };
                 _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, default));
+                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, default));
             }
 
             _logger.LogWarning("Login failed: invalid password for user {UserId}, attempt {Attempt}",
@@ -332,8 +334,10 @@ public sealed class AuthService : IAuthService
 
                 if (lockoutEmail is not null)
                 {
+                    // ISSUE-063: reuse the already-loaded login-time tenant for the email branding (no extra query).
+                    lockoutEmail = lockoutEmail with { TenantName = currentTenant.Name };
                     _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                        svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, default));
+                        svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, default));
                 }
 
                 return Result<LoginResponse>.Failure("Invalid verification code.", 401);
@@ -1443,8 +1447,10 @@ public sealed class AuthService : IAuthService
 
             if (lockoutEmail is not null)
             {
+                // ISSUE-063: enrich with the login-time tenant name (the tenant is loaded later on this path).
+                lockoutEmail = lockoutEmail with { TenantName = await ResolveTenantNameAsync(cancellationToken) };
                 _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, default));
+                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, default));
             }
 
             return Result<LoginResponse>.Failure("Invalid verification code.", 401);
@@ -2337,7 +2343,27 @@ public sealed class AuthService : IAuthService
     /// <summary>Deferred lockout-notification email params (BUG-045): captured inside the transactional unit
     /// but only enqueued to Hangfire AFTER a successful commit, so a rolled-back or retried attempt never
     /// sends a spurious lockout email.</summary>
-    private sealed record LockoutNotification(string Email, string DisplayName, DateTime LockedUntil, int Minutes);
+    private sealed record LockoutNotification(
+        string Email, string DisplayName, DateTime LockedUntil, int Minutes, string? TenantName = null);
+
+    /// <summary>
+    /// ISSUE-063 (US-AUTH-010 FR-8): resolves the login-time tenant's display name for lockout-email branding.
+    /// Reads <c>Tenant.Name</c> by the resolved <c>_tenantContext.TenantId</c> (IgnoreQueryFilters/AsNoTracking —
+    /// the Tenant row is not itself tenant-scoped). Login can be cross-tenant (per-subdomain), so this is the
+    /// tenant the login was ATTEMPTED against. Returns null when unresolved; the email content degrades gracefully.
+    /// </summary>
+    private async Task<string?> ResolveTenantNameAsync(CancellationToken cancellationToken)
+    {
+        if (!_tenantContext.IsResolved)
+            return null;
+
+        return await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 
     /// <summary>
     /// BUG-045 / BUG-068: runs a failed-authentication-attempt handler as a single atomic, retriable unit.

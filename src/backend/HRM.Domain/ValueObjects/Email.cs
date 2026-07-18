@@ -28,6 +28,25 @@ public sealed partial record Email
         return new Email(email);
     }
 
+    /// <summary>
+    /// Non-throwing counterpart to <see cref="Create"/> for validation paths that must return a 400 rather than
+    /// surface an exception (e.g. tenant-settings writes). Returns false for null/blank, over-length, or
+    /// malformed input; on success yields the normalized (trimmed, lower-cased) <see cref="Email"/>.
+    /// </summary>
+    public static bool TryCreate(string? email, out Email? result)
+    {
+        result = null;
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        var normalized = email.Trim().ToLowerInvariant();
+        if (normalized.Length > 150 || !EmailRegex().IsMatch(normalized))
+            return false;
+
+        result = new Email(normalized);
+        return true;
+    }
+
     public override string ToString() => Value;
 
     public static implicit operator string(Email email) => email.Value;
