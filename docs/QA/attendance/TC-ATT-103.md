@@ -23,7 +23,7 @@ Verify AC-3/FR-2/FR-3/BR-2: when an employee clocks out before the shift end tim
 
 ## 3. Preconditions
 - Tenant "acme"; employee "Asha" with a SINGLE shift end_time 17:00, minimum_hours sufficient that a 16:30 departure leaves it unmet (e.g. 8h with an on-time 09:00 start -> ~7.5h worked < 8h).
-- Asha has an OPEN clock-in for today (on-time start); `Attendance.Clock.Self`.
+- Asha has an OPEN clock-in for today (on-time start); `Attendance.CheckIn`.
 
 ## 4. Test Data
 | Field | Value | Notes |

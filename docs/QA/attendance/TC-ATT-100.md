@@ -22,7 +22,7 @@ Verify AC-2/FR-1/BR-1/BR-3: when an employee clocks in after the shift start tim
 
 ## 3. Preconditions
 - Tenant "acme" active, Attendance module enabled.
-- Employee "Asha" authenticated with `Attendance.Clock.Self`, assigned a SINGLE shift with start_time 09:00, grace_period_minutes = 15, on a working weekday.
+- Employee "Asha" authenticated with `Attendance.CheckIn`, assigned a SINGLE shift with start_time 09:00, grace_period_minutes = 15, on a working weekday.
 - Asha has no open clock-in for today.
 
 ## 4. Test Data

@@ -11,8 +11,8 @@ then implement the chosen ones in a follow-up batch.
 - **ISSUE-192 (Notifications)** — audit-log pageSize cap is 200; docs say 100. · *rec: update the docs to 200 (already WONTFIX'd; noted for completeness).*
 
 ## B. Naming / contract / spec alignment
-- **ISSUE-068 permission drift (Attendance)** — spec `Attendance.Clock.Self` vs shipped `Attendance.CheckIn`. · *rec: align the spec/US to the shipped `Attendance.CheckIn`.* (multi-location geofence = DF-23.)
-- **ISSUE-211 status-casing (Admin/FE)** — FE type is lowercase, BE wire is PascalCase; FE now normalizes case-insensitively (#368). · *rec: pin the serialized casing in the Swagger contract so FE model + i18n keys match exactly.*
+- ✅ **DONE (doc-align, 39 files)** **ISSUE-068 permission drift (Attendance)** — spec `Attendance.Clock.Self` vs shipped `Attendance.CheckIn`. · *rec: align the spec/US to the shipped `Attendance.CheckIn`.* (multi-location geofence = DF-23.)
+- ✅ **DONE (US-ADM-005 contract note)** **ISSUE-211 status-casing (Admin/FE)** — FE type is lowercase, BE wire is PascalCase; FE now normalizes case-insensitively (#368). · *rec: pin the serialized casing in the Swagger contract so FE model + i18n keys match exactly.*
 - **ISSUE-007 (Admin)** — `TenantUsersController` `{id}` means two things + mixed authz gates. · *rec: split into distinct routes; needs an API-shape call.*
 - **ISSUE-280 (Payroll)** — BASIC component identified by Code vs Name; `PayrollSlipLine` drops Code. · *rec: durable refactor to key on Code; defer until a payroll-model pass.*
 - ✅ **DONE (#371)** **ISSUE-072 validator frame (Attendance)** — the tenant-local future-date service guard is CORRECT (kept); the validator uses naive-UTC (ISSUE-065 family). · *rec: align the validator to the tenant-local frame (small); keep the service guard.*
@@ -42,7 +42,7 @@ then implement the chosen ones in a follow-up batch.
 ## F. Infra / platform / observability
 - **ISSUE-032 (Leave/DB)** — RLS not enabled (0 policies); EF filter only. · *rec: the RLS prod flip is the standing ops step (built + proven OFF).*
 - **ISSUE-062 (Auth)** — lockout audit dual-write needs a system audit store that doesn't exist. · *rec: defer to US-PLT-004 observability.*
-- **ISSUE-060 (Auth)** — session-policy path drift vs spec. · *rec: align to spec path or document the deviation.*
+- ✅ **DONE (doc-align to shipped route)** **ISSUE-060 (Auth)** — session-policy path drift vs spec. · *rec: align to spec path or document the deviation.*
 - **ISSUE-083 (Attendance)** — stale materialized monthly summary vs live drill-down. · *rec: define an invalidation strategy.*
 - **ISSUE-276 (Cache)** — Redis `IDistributedCache`→shared-multiplexer coupling would break a future non-API host. · *rec: refactor when a second host is added.*
 - **ISSUE-295 (Payroll)** — BUG-079 residual clauses (encashment BASIC basis / carry-forward parity). · *rec: needs a payroll call.*

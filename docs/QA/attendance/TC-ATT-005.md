@@ -22,7 +22,7 @@ Verify that when the tenant enables IP-allowlist enforcement (`ip_allowlist_enab
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled.
 - Tenant attendance settings: `ip_allowlist_enabled = true`, allowlist = [`203.0.113.10`, `203.0.113.0/24`].
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, no clock-in for the current local day.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, no clock-in for the current local day.
 
 ## 4. Test Data
 | Field | Value | Notes |

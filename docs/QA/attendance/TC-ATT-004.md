@@ -23,7 +23,7 @@ Verify that when the tenant policy requires geolocation (`require_geolocation = 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled.
 - Tenant attendance settings: `require_geolocation = true` (mandatory).
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, no clock-in for the current local day.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, no clock-in for the current local day.
 - The browser/test harness is configured to DENY the geolocation permission prompt.
 - The app is served over HTTPS (Geolocation API requires a secure context per NFR-3).
 

@@ -21,7 +21,7 @@ Verify NFR-1: the clock-out endpoint's response time stays at or below 500ms at 
 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled.
-- A pool of distinct active employees (e.g., 200), each holding `Attendance.Clock.Self`, each with exactly ONE OPEN clock-in record at the start of the run (so each request exercises the close/calculate path, not the no-open-record reject path).
+- A pool of distinct active employees (e.g., 200), each holding `Attendance.CheckIn`, each with exactly ONE OPEN clock-in record at the start of the run (so each request exercises the close/calculate path, not the no-open-record reject path).
 - Each employee assigned to a shift so the overtime/short-day evaluation runs (representative config documented).
 - Test environment representative of production; a warm-up phase precedes measurement.
 

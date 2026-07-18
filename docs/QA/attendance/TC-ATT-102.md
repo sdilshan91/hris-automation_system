@@ -20,7 +20,7 @@ Verify the exact grace boundary semantics of BR-1/FR-1: late = clock_in > (start
 - Business Rules: BR-1 (strict greater-than -- equality is on-time)
 
 ## 3. Preconditions
-- Tenant "acme"; employee "Asha" with a SINGLE shift start 09:00, grace 15 min, working weekday; `Attendance.Clock.Self`.
+- Tenant "acme"; employee "Asha" with a SINGLE shift start 09:00, grace 15 min, working weekday; `Attendance.CheckIn`.
 - Two independent test runs (or two employees) so each boundary punch is the first clock-in of its day.
 
 ## 4. Test Data

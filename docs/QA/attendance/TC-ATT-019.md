@@ -21,7 +21,7 @@ Verify FR-7 / BR-6 at the 16-hour boundary: a clock-in/out session whose `clock_
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
 - Anomaly threshold = 16h (960 min) span between clock_in and clock_out.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - Two independent runs (reset between runs), each from a single open record.
 
 ## 4. Test Data

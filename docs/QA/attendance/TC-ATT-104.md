@@ -22,7 +22,7 @@ Verify the second condition of BR-2: early departure requires BOTH clock_out < s
 ## 3. Preconditions
 - Tenant "acme"; employee "Asha" with a SINGLE shift end_time 17:00, minimum_hours = 480 min (8h).
 - Asha has an OPEN clock-in early enough that by 16:30 she has logged >= 8h net (e.g. clocked in 08:15, no/short break), so the minimum is met before the shift end.
-- `Attendance.Clock.Self`.
+- `Attendance.CheckIn`.
 
 ## 4. Test Data
 | Field | Value | Notes |

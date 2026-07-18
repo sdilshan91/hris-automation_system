@@ -21,7 +21,7 @@ Verify BR-1 / AC-2: an employee who has no open (un-clocked-out) `attendance_log
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled, timezone `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - Jordan Lee has NO open `attendance_log` for the current local day (never clocked in today).
 
 ## 4. Test Data

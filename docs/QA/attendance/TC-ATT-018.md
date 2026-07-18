@@ -22,7 +22,7 @@ Verify FR-3 / BR-2 at the auto-break threshold boundary: when the tenant policy 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
 - Tenant break policy: deduct 60 min when raw span > 360 min (6h); no deduction at or below 360 min.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - Two independent runs, each starting from a single open record (reset between runs).
 
 ## 4. Test Data

@@ -22,7 +22,7 @@ Verify that an authenticated employee with an open clock-in record can clock out
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, subdomain `acme.yourhrm.com`, timezone `America/New_York`, Attendance module enabled.
-- Employee "Jordan Lee" is `active`, authenticated (valid JWT with `tenant_id` and `employee_id`), holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated (valid JWT with `tenant_id` and `employee_id`), holds `Attendance.CheckIn`.
 - Jordan Lee is assigned to "Day Shift" (standard 8h = 480 min; break deduction 60 min for shifts > 6h).
 - Jordan Lee has ONE open `attendance_log` for the current local day: `clock_in` = 09:00 local, `clock_out` null.
 - Geolocation NOT required on clock-out for this tenant; IP allowlist off.

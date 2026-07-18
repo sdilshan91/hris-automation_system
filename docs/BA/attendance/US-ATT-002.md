@@ -18,7 +18,7 @@ acceptance_criteria_count: 5
 
 ## 2. Preconditions
 - Employee must be authenticated with a valid JWT session.
-- Employee must have the `Attendance.Clock.Self` permission.
+- Employee must have the `Attendance.CheckIn` permission.
 - Employee must have an open (un-clocked-out) attendance record for the current day.
 - The Attendance module must be enabled for the tenant.
 

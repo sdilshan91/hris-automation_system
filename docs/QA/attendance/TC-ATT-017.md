@@ -21,7 +21,7 @@ Verify AC-4 / FR-4 / BR-4: when total work minutes are below the shift's minimum
 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - "Day Shift": standard 480 min (8h); minimum required = 360 min (6h) for short-day determination.
 - Break deduction assumed 0 for this 4h case (document the configuration so the 240-min expectation is exact).
 - Jordan Lee has ONE open record: `clock_in` 09:00 local, `clock_out` null.

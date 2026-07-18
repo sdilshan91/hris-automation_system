@@ -33,7 +33,7 @@ acceptance_criteria_count: 6
 | AC-6 | A user views their own active sessions from their profile | They access `GET /api/v1/auth/me/sessions` | The system returns all their active sessions in the current tenant with device info, IP, and timestamps, and allows them to revoke any session except the current one. |
 
 ## 4. Functional Requirements
-- FR-1: Session policy SHALL be configurable per tenant via `PUT /api/v1/tenant/auth-settings` with fields: `idleTimeoutMinutes` (default: 60), `absoluteTimeoutHours` (default: 24), `maxConcurrentSessions` (default: 5), `concurrentSessionStrategy` ("deny_new" | "revoke_oldest").
+- FR-1: Session policy SHALL be configurable per tenant via `PUT /api/v1/tenant/settings/session-policy` with fields: `idleTimeoutMinutes` (default: 60), `absoluteTimeoutHours` (default: 24), `maxConcurrentSessions` (default: 5), `concurrentSessionStrategy` ("deny_new" | "revoke_oldest").
 - FR-2: The refresh endpoint SHALL check idle timeout by comparing the current time against the session's `last_active_at` timestamp.
 - FR-3: The refresh endpoint SHALL check absolute timeout by comparing the current time against the session's `issued_at` timestamp.
 - FR-4: On each successful API request, the system SHALL update `last_active_at` for the user's current session (debounced to avoid excessive writes, e.g., at most once per minute).

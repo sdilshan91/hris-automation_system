@@ -69,6 +69,8 @@ acceptance_criteria_count: 6
 - Pending Invitations tab: shows email, invited roles, invited at, expires at, status, with "Resend" and "Revoke" actions.
 - Notion-like aesthetic: clean cards, subtle borders, smooth hover transitions, consistent spacing.
 
+> **API contract — status casing (ISSUE-211).** Although the `user_tenant.status` DB column is lowercase (`invited`/`active`/`disabled`), the JSON API serializes the status enum as its **PascalCase member name** (`Invited`/`Active`/`Disabled`) — the platform registers `JsonStringEnumConverter` with **no naming policy** (`Program.cs`), so this is the wire casing for every enum, not just user status. The FE status model and the `userManagement.status.*` i18n keys therefore key on the PascalCase value; the FE also normalizes case-insensitively as a defensive fallback (PR #368). Pin the PascalCase form in the Swagger/OpenAPI schema so FE models and translation keys stay in sync.
+
 ## 9. Dependencies
 - US-ADM-001: Tenant must be provisioned with at least the Tenant Owner user.
 - Authentication system (JWT, refresh tokens).

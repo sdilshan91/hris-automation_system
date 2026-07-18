@@ -22,7 +22,7 @@ Verify FR-2, BR-1, and NFR-4: when two clock-in requests for the same employee a
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, and has NO open clock-in for the current local day.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, and has NO open clock-in for the current local day.
 - A test harness capable of firing two requests concurrently (same employee, same JWT) with minimal time skew.
 
 ## 4. Test Data
