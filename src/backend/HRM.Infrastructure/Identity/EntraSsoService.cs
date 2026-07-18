@@ -62,8 +62,11 @@ public sealed class EntraSsoService : IEntraSsoService
         var tenant = (subdomain ?? string.Empty).Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(tenant))
         {
+            // ISSUE-220: distinguish "no/unresolved tenant supplied" from "SSO genuinely not configured".
+            // Reusing `not_configured` here wrongly implied SSO was disabled for a request that simply carried
+            // no tenant; `tenant_required` lets a genuinely-misconfigured deployment be told apart in logs/UX.
             _logger.LogInformation("SSO challenge rejected: no tenant subdomain supplied.");
-            return Result<string>.Failure("not_configured");
+            return Result<string>.Failure("tenant_required");
         }
 
         OpenIdConnectConfiguration config;
