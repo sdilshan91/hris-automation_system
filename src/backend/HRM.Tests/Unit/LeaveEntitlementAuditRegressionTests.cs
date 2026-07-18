@@ -212,10 +212,12 @@ public sealed class LeaveEntitlementAuditRegressionTests
     [Fact]
     public async Task BulkCreateRules_WritesAuditRowPerRule_BUG028()
     {
+        // ISSUE-033: distinct dimensions per rule — the duplicate-rule guard rejects a second rule for the
+        // same (leaveType + department + ...) combination.
         var result = await CreateService().BulkCreateRulesAsync(new List<UpsertLeaveEntitlementRuleRequest>
         {
-            MakeRuleRequest(entitlementDays: 15),
-            MakeRuleRequest(entitlementDays: 20),
+            MakeRuleRequest(entitlementDays: 15) with { EmploymentType = "FullTime" },
+            MakeRuleRequest(entitlementDays: 20) with { EmploymentType = "PartTime" },
         });
         result.IsSuccess.Should().BeTrue();
 

@@ -43,7 +43,7 @@ public sealed class LeaveReportsController : ControllerBase
         [FromQuery] LeaveReportQueryParams queryParams,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<LeaveReportType>(reportType, ignoreCase: true, out var parsed))
+        if (!TryParseReportEnum<LeaveReportType>(reportType, out var parsed))
             return StatusCode(400, ApiResponse.Fail($"Unknown report type '{reportType}'."));
 
         var result = await _mediator.Send(new GetLeaveReportQuery(parsed, queryParams), cancellationToken);
@@ -68,7 +68,7 @@ public sealed class LeaveReportsController : ControllerBase
         [FromQuery] LeaveReportQueryParams queryParams,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<LeaveAnalyticsChartType>(chartType, ignoreCase: true, out var parsed))
+        if (!TryParseReportEnum<LeaveAnalyticsChartType>(chartType, out var parsed))
             return StatusCode(400, ApiResponse.Fail($"Unknown chart type '{chartType}'."));
 
         var result = await _mediator.Send(new GetLeaveAnalyticsQuery(parsed, queryParams), cancellationToken);
@@ -96,9 +96,9 @@ public sealed class LeaveReportsController : ControllerBase
         [FromQuery] LeaveReportQueryParams queryParams,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<LeaveReportType>(reportType, ignoreCase: true, out var parsedType))
+        if (!TryParseReportEnum<LeaveReportType>(reportType, out var parsedType))
             return StatusCode(400, ApiResponse.Fail($"Unknown report type '{reportType}'."));
-        if (!Enum.TryParse<ReportExportFormat>(format, ignoreCase: true, out var parsedFormat))
+        if (!TryParseReportEnum<ReportExportFormat>(format, out var parsedFormat))
             return StatusCode(400, ApiResponse.Fail($"Unknown export format '{format}'. Use 'csv' or 'xlsx'."));
 
         var result = await _mediator.Send(
@@ -116,5 +116,18 @@ public sealed class LeaveReportsController : ControllerBase
 
         // Synchronous: stream the file.
         return File(export.FileContent!, export.ContentType!, export.FileName!);
+    }
+
+    /// <summary>
+    /// ISSUE-047: parses a report/chart/format enum from the route segment accepting BOTH the PascalCase
+    /// enum name (<c>BalanceSummary</c>) AND the kebab/snake-case form the story/TCs and FE use
+    /// (<c>balance-summary</c>, <c>lop_summary</c>). <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/>
+    /// is case-insensitive but NOT separator-insensitive, so the hyphen/underscore is stripped first.
+    /// </summary>
+    private static bool TryParseReportEnum<TEnum>(string? value, out TEnum result)
+        where TEnum : struct
+    {
+        var normalized = value?.Replace("-", string.Empty).Replace("_", string.Empty);
+        return Enum.TryParse(normalized, ignoreCase: true, out result);
     }
 }

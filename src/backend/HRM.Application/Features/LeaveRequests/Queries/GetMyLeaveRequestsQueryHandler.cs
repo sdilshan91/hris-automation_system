@@ -18,6 +18,7 @@ public sealed class GetMyLeaveRequestsQueryHandler
     public Task<Result<IReadOnlyList<LeaveRequestDto>>> Handle(
         GetMyLeaveRequestsQuery request, CancellationToken cancellationToken)
     {
-        return _service.GetMineAsync(cancellationToken);
+        return _service.GetMineAsync(
+            request.Status, request.LeaveTypeId, request.Year, cancellationToken);
     }
 }

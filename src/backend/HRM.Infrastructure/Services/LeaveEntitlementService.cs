@@ -112,7 +112,7 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         if (rule == null)
             return Result<LeaveEntitlementRuleDto>.Failure("Leave entitlement rule not found.", 404);
 
-        var validationResult = await ValidateRuleReferencesAsync(request, cancellationToken);
+        var validationResult = await ValidateRuleReferencesAsync(request, cancellationToken, excludeRuleId: ruleId);
         if (validationResult != null)
             return Result<LeaveEntitlementRuleDto>.Failure(validationResult, 400);
 
@@ -866,7 +866,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
 
     private async Task<string?> ValidateRuleReferencesAsync(
         UpsertLeaveEntitlementRuleRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? excludeRuleId = null)
     {
         var leaveTypeExists = await _dbContext.LeaveTypes
             .AnyAsync(lt => lt.Id == request.LeaveTypeId, cancellationToken);
@@ -889,6 +890,12 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
                 return "Job title not found.";
         }
 
+        // ISSUE-033 (TC-LV-038 step 4): the job-level dimension is not yet implemented (no JobLevel entity),
+        // so a job_level_id can never resolve. Reject any supplied value rather than persisting it unvalidated
+        // and inert. When the job-level dimension lands, replace this with a JobLevels FK existence check.
+        if (request.JobLevelId.HasValue)
+            return "Job level not found.";
+
         if (request.EmploymentType != null &&
             !Enum.TryParse<EmploymentType>(request.EmploymentType, true, out _))
         {
@@ -898,6 +905,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         if (request.EntitlementDays < 0)
             return "Entitlement days cannot be negative.";
 
+        // ISSUE-033 (TC-LV-038): a single leave type cannot grant more than a full year of days.
+        if (request.EntitlementDays > 365)
+            return "Entitlement days cannot exceed 365.";
+
         if (request.TenureMinMonths.HasValue && request.TenureMaxMonths.HasValue &&
             request.TenureMinMonths.Value >= request.TenureMaxMonths.Value)
         {
@@ -906,6 +917,26 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
 
         if (request.EffectiveTo.HasValue && request.EffectiveTo.Value < request.EffectiveFrom)
             return "Effective to date must be after effective from date.";
+
+        // ISSUE-033 (TC-LV-038 step 11): reject a duplicate rule for the same targeting dimensions, so
+        // identical overlapping rules cannot silently pile up. A rule is a duplicate when an ACTIVE,
+        // non-deleted rule already targets the same (leaveType + department + jobTitle + jobLevel +
+        // employmentType + tenure) combination (excluding the rule being updated).
+        var empType = ParseEmploymentType(request.EmploymentType);
+        var duplicateExists = await _dbContext.LeaveEntitlementRules
+            .AnyAsync(r =>
+                r.IsActive && !r.IsDeleted &&
+                (excludeRuleId == null || r.Id != excludeRuleId.Value) &&
+                r.LeaveTypeId == request.LeaveTypeId &&
+                r.DepartmentId == request.DepartmentId &&
+                r.JobTitleId == request.JobTitleId &&
+                r.JobLevelId == request.JobLevelId &&
+                r.EmploymentType == empType &&
+                r.TenureMinMonths == request.TenureMinMonths &&
+                r.TenureMaxMonths == request.TenureMaxMonths,
+                cancellationToken);
+        if (duplicateExists)
+            return "A leave entitlement rule for this combination already exists.";
 
         return null; // Valid.
     }

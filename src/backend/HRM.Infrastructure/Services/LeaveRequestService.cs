@@ -3,6 +3,7 @@ using HRM.Application.Common.Models;
 using HRM.Application.Features.Holidays.DTOs;
 using HRM.Application.Features.LeaveRequests;
 using HRM.Application.Features.LeaveRequests.DTOs;
+using HRM.Application.Features.LeaveTypes.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -321,6 +322,9 @@ public sealed class LeaveRequestService : ILeaveRequestService
     // ══════════════════════════════════════════════════════════════
 
     public async Task<Result<IReadOnlyList<LeaveRequestDto>>> GetMineAsync(
+        string? status = null,
+        Guid? leaveTypeId = null,
+        int? year = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -331,15 +335,81 @@ public sealed class LeaveRequestService : ILeaveRequestService
             return Result<IReadOnlyList<LeaveRequestDto>>.Failure(
                 "No employee record is linked to the current user.", 403);
 
-        var requests = await _dbContext.LeaveRequests
+        var query = _dbContext.LeaveRequests
             .AsNoTracking()
             .Include(lr => lr.LeaveType)
-            .Where(lr => lr.EmployeeId == employee.Id)
+            .Where(lr => lr.EmployeeId == employee.Id);
+
+        // ISSUE-038 (US-LV-006 FR-6): honour the server-side history filters instead of returning the full
+        // all-status list. status is parsed case-insensitively; an unparseable status narrows to nothing
+        // (a quiet no-op would re-create the bug the filter is supposed to fix).
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<LeaveRequestStatus>(status, ignoreCase: true, out var statusFilter))
+                return Result<IReadOnlyList<LeaveRequestDto>>.Success([]);
+            query = query.Where(lr => lr.Status == statusFilter);
+        }
+
+        if (leaveTypeId.HasValue)
+            query = query.Where(lr => lr.LeaveTypeId == leaveTypeId.Value);
+
+        if (year.HasValue)
+            query = query.Where(lr => lr.StartDate.Year == year.Value);
+
+        var requests = await query
             .OrderByDescending(lr => lr.RequestedAt)
             .ToListAsync(cancellationToken);
 
         var dtos = requests.Select(lr => MapToDto(lr, lr.LeaveType?.Name ?? string.Empty)).ToList();
         return Result<IReadOnlyList<LeaveRequestDto>>.Success(dtos);
+    }
+
+    public async Task<Result<IReadOnlyList<LeaveTypeDto>>> GetEligibleLeaveTypesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<LeaveTypeDto>>.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await GetCurrentEmployeeAsync(cancellationToken);
+        if (employee is null)
+            return Result<IReadOnlyList<LeaveTypeDto>>.Failure(
+                "No employee record is linked to the current user.", 403);
+
+        // ISSUE-035: reuse the leave-type list (active-only) and apply the SAME BR-4 gender + BR-5 probation
+        // gates the apply-submit path enforces, so the apply-form dropdown never lists a type the submit
+        // would reject. _leaveTypeService is always supplied by DI; guard defensively for the unit fixtures.
+        if (_leaveTypeService is null)
+            return Result<IReadOnlyList<LeaveTypeDto>>.Failure("Leave types are not available.", 400);
+
+        var all = await _leaveTypeService.GetAllAsync(activeOnly: true, cancellationToken);
+        if (all.IsFailure)
+            return Result<IReadOnlyList<LeaveTypeDto>>.Failure(all.Error!, all.StatusCode ?? 400);
+
+        bool onProbation = employee.Status == EmployeeStatus.Probation;
+        var eligible = all.Value!
+            .Where(lt => IsLeaveTypeEligibleForEmployee(lt, employee.Gender, onProbation))
+            .ToList();
+
+        return Result<IReadOnlyList<LeaveTypeDto>>.Success(eligible);
+    }
+
+    /// <summary>
+    /// ISSUE-035: mirrors the apply-gate eligibility (BR-4 gender + BR-5 probation) on a leave-type DTO so the
+    /// eligible-types list matches what <see cref="CreateAsync"/> would accept.
+    /// </summary>
+    private static bool IsLeaveTypeEligibleForEmployee(LeaveTypeDto lt, Gender? employeeGender, bool onProbation)
+    {
+        // BR-4: gender-restricted types are only shown to matching employees.
+        if (Enum.TryParse<LeaveTypeGender>(lt.Gender, ignoreCase: true, out var required)
+            && required != LeaveTypeGender.All
+            && !EmployeeMatchesLeaveTypeGender(employeeGender, required))
+            return false;
+
+        // BR-5: employees on probation only see probation-eligible types.
+        if (onProbation && !lt.ProbationEligible)
+            return false;
+
+        return true;
     }
 
     public async Task<Result<LeaveBalancePreviewDto>> GetBalancePreviewAsync(
@@ -574,8 +644,25 @@ public sealed class LeaveRequestService : ILeaveRequestService
         if (!_tenantContext.IsResolved)
             return Result<TeamLeaveCalendarDto>.Failure("Tenant context is not resolved.", 400);
 
+        // ISSUE-042 (US-LV-009 FR-1 / TC-LV-182 step 4): apply a sane default range and reject an
+        // excessive span rather than serving a degenerate 0001-01-01 window or an unbounded scan.
+        // When BOTH bounds are omitted (they bind to DateOnly.MinValue), default to the current month.
+        if (queryParams.From == default && queryParams.To == default)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var monthStart = new DateOnly(today.Year, today.Month, 1);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            queryParams = queryParams with { From = monthStart, To = monthEnd };
+        }
+
         if (queryParams.To < queryParams.From)
             return Result<TeamLeaveCalendarDto>.Failure("'to' must be on or after 'from'.", 400);
+
+        // Cap the span at 366 days (a full leap year) to prevent an unbounded date-range scan.
+        if (queryParams.To.DayNumber - queryParams.From.DayNumber > 366)
+            return Result<TeamLeaveCalendarDto>.Failure(
+                "invalid_date_range: The requested date range is too large. Please request a span of at most 366 days.",
+                400);
 
         var employee = await GetCurrentEmployeeAsync(cancellationToken);
         if (employee is null)

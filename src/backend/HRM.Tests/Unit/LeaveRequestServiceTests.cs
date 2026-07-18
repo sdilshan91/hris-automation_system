@@ -509,4 +509,143 @@ public sealed class LeaveRequestServiceTests
         db.LeaveTypes.Single(lt => lt.Id == lop.LeaveTypeId)
             .SystemCategory.Should().Be(LeaveTypeSystemCategory.LossOfPay);
     }
+
+    // ── ISSUE-038: GetMine server-side history filters (US-LV-006 FR-6, TC-LV-120) ──
+
+    private void SeedRequest(Guid leaveTypeId, DateOnly start, LeaveRequestStatus status)
+    {
+        using var db = CreateDbContext();
+        db.LeaveRequests.Add(new LeaveRequest
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            EmployeeId = _employeeId,
+            LeaveTypeId = leaveTypeId,
+            StartDate = start,
+            EndDate = start,
+            TotalDays = 1m,
+            Status = status,
+            RequestedAt = DateTime.UtcNow,
+        });
+        db.SaveChanges();
+    }
+
+    [Fact]
+    public async Task GetMine_NoFilter_ReturnsAll_ISSUE038()
+    {
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2026, 3, 1), LeaveRequestStatus.Approved);
+        SeedRequest(_sickLeaveTypeId, new DateOnly(2026, 5, 1), LeaveRequestStatus.Rejected);
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2027, 2, 1), LeaveRequestStatus.Pending);
+
+        var result = await CreateService().GetMineAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task GetMine_StatusFilter_NarrowsToThatStatus_ISSUE038()
+    {
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2026, 3, 1), LeaveRequestStatus.Approved);
+        SeedRequest(_sickLeaveTypeId, new DateOnly(2026, 5, 1), LeaveRequestStatus.Rejected);
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2027, 2, 1), LeaveRequestStatus.Pending);
+
+        var result = await CreateService().GetMineAsync(status: "Rejected");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().ContainSingle();
+        result.Value![0].Status.Should().Be("Rejected");
+        result.Value![0].LeaveTypeId.Should().Be(_sickLeaveTypeId);
+    }
+
+    [Fact]
+    public async Task GetMine_LeaveTypeFilter_NarrowsToThatType_ISSUE038()
+    {
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2026, 3, 1), LeaveRequestStatus.Approved);
+        SeedRequest(_sickLeaveTypeId, new DateOnly(2026, 5, 1), LeaveRequestStatus.Rejected);
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2027, 2, 1), LeaveRequestStatus.Pending);
+
+        var result = await CreateService().GetMineAsync(leaveTypeId: _annualLeaveTypeId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().HaveCount(2);
+        result.Value!.Should().OnlyContain(r => r.LeaveTypeId == _annualLeaveTypeId);
+    }
+
+    [Fact]
+    public async Task GetMine_YearFilter_NarrowsToThatStartYear_ISSUE038()
+    {
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2026, 3, 1), LeaveRequestStatus.Approved);
+        SeedRequest(_sickLeaveTypeId, new DateOnly(2026, 5, 1), LeaveRequestStatus.Rejected);
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2027, 2, 1), LeaveRequestStatus.Pending);
+
+        var result = await CreateService().GetMineAsync(year: 2027);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().ContainSingle();
+        result.Value![0].StartDate.Year.Should().Be(2027);
+    }
+
+    // ── ISSUE-035: eligible-types filters by BR-4 gender + BR-5 probation (TC-LV-058/059) ──
+
+    [Fact]
+    public async Task GetEligibleTypes_ExcludesGenderRestrictedType_ISSUE035()
+    {
+        // The seeded employee is Male; Maternity is Female-only and must NOT appear.
+        var result = await CreateServiceWithLop().GetEligibleLeaveTypesAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        var names = result.Value!.Select(lt => lt.Name).ToList();
+        names.Should().Contain("Annual Leave");
+        names.Should().Contain("Sick Leave");
+        names.Should().NotContain("Maternity Leave");
+    }
+
+    [Fact]
+    public async Task GetEligibleTypes_OnProbation_ExcludesNonProbationEligibleType_ISSUE035()
+    {
+        using (var db = CreateDbContext())
+        {
+            var emp = db.Employees.Find(_employeeId)!;
+            emp.Status = EmployeeStatus.Probation;
+            db.SaveChanges();
+        }
+
+        var result = await CreateServiceWithLop().GetEligibleLeaveTypesAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        var names = result.Value!.Select(lt => lt.Name).ToList();
+        // Sick is probation-eligible → shown; Annual is not → hidden; Maternity gender-excluded anyway.
+        names.Should().Contain("Sick Leave");
+        names.Should().NotContain("Annual Leave");
+        names.Should().NotContain("Maternity Leave");
+    }
+
+    // ── ISSUE-042: team-calendar default range + max-span cap (US-LV-009 FR-1, TC-LV-182) ──
+
+    [Fact]
+    public async Task TeamCalendar_OmittedRange_DefaultsToCurrentMonth_ISSUE042()
+    {
+        var result = await CreateService().GetTeamLeaveCalendarAsync(new TeamLeaveCalendarQueryParams());
+
+        result.IsSuccess.Should().BeTrue();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        result.Value!.From.Should().Be(monthStart);
+        result.Value!.To.Should().Be(monthStart.AddMonths(1).AddDays(-1));
+    }
+
+    [Fact]
+    public async Task TeamCalendar_ExcessiveSpan_RejectedWith400_ISSUE042()
+    {
+        var result = await CreateService().GetTeamLeaveCalendarAsync(new TeamLeaveCalendarQueryParams
+        {
+            From = new DateOnly(2020, 1, 1),
+            To = new DateOnly(2030, 1, 1),
+        });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("invalid_date_range");
+    }
 }

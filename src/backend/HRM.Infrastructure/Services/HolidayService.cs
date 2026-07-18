@@ -248,7 +248,10 @@ public sealed class HolidayService : IHolidayService
         if (locationId.HasValue)
             query = query.Where(h => h.LocationId == locationId.Value || h.LocationId == null);
 
-        if (activeOnly == true)
+        // ISSUE-040 (US-LV-007, TC-LV-143 step 3): the default calendar/list view is active-only, so a
+        // deactivated holiday drops out unless the caller EXPLICITLY asks for all rows (activeOnly=false).
+        // null (no param) now behaves like true; only an explicit false includes deactivated holidays.
+        if (activeOnly != false)
             query = query.Where(h => h.IsActive);
 
         var holidays = await query

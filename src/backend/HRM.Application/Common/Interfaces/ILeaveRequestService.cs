@@ -1,5 +1,6 @@
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveRequests.DTOs;
+using HRM.Application.Features.LeaveTypes.DTOs;
 
 namespace HRM.Application.Common.Interfaces;
 
@@ -19,9 +20,24 @@ public interface ILeaveRequestService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists the current employee's own leave requests, newest first (FR-1, "My Leaves").
+    /// Lists the current employee's own leave requests, newest first (FR-1, "My Leaves"), with optional
+    /// server-side history filters (US-LV-006 FR-6 / ISSUE-038): <paramref name="status"/> (case-insensitive
+    /// leave-request status), <paramref name="leaveTypeId"/>, and <paramref name="year"/> (the year of the
+    /// leave's start date). A null argument leaves that dimension unfiltered.
     /// </summary>
     Task<Result<IReadOnlyList<LeaveRequestDto>>> GetMineAsync(
+        string? status = null,
+        Guid? leaveTypeId = null,
+        int? year = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the active leave types the current employee is ELIGIBLE to apply for (US-LV-003 FR-1 /
+    /// ISSUE-035), applying the same BR-4 gender and BR-5 probation gates that the apply-submit path
+    /// enforces — so the apply-form dropdown never lists a type the submit would reject. Distinct from
+    /// my-balance (which still shows all held balances). Returns 403 when no employee is linked.
+    /// </summary>
+    Task<Result<IReadOnlyList<LeaveTypeDto>>> GetEligibleLeaveTypesAsync(
         CancellationToken cancellationToken = default);
 
     /// <summary>

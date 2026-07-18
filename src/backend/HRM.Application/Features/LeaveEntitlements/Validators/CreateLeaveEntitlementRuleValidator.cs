@@ -15,7 +15,9 @@ public sealed class CreateLeaveEntitlementRuleValidator : AbstractValidator<Crea
             .NotEmpty().WithMessage("Leave type ID is required.");
 
         RuleFor(x => x.EntitlementDays)
-            .GreaterThanOrEqualTo(0).WithMessage("Entitlement days must be zero or positive.");
+            .GreaterThanOrEqualTo(0).WithMessage("Entitlement days must be zero or positive.")
+            // ISSUE-033 (TC-LV-038): a single leave type cannot grant more than a full year of days.
+            .LessThanOrEqualTo(365).WithMessage("Entitlement days cannot exceed 365.");
 
         RuleFor(x => x.Priority)
             .GreaterThanOrEqualTo(0).WithMessage("Priority must be zero or positive.");
