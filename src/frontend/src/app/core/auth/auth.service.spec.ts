@@ -121,7 +121,7 @@ describe('AuthService', () => {
     });
 
     const req = httpMock.expectOne(
-      `${environment.apiBaseUrl}/tenant/users/user-abc/sessions`
+      `${environment.apiBaseUrl}/tenant/users/by-user/user-abc/sessions`
     );
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
@@ -134,7 +134,7 @@ describe('AuthService', () => {
     });
 
     const req = httpMock.expectOne(
-      `${environment.apiBaseUrl}/tenant/users/user-abc/sessions/revoke`
+      `${environment.apiBaseUrl}/tenant/users/by-user/user-abc/sessions/revoke`
     );
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ sessionId: 's2' });
@@ -148,7 +148,7 @@ describe('AuthService', () => {
     });
 
     const req = httpMock.expectOne(
-      `${environment.apiBaseUrl}/tenant/users/user-abc/sessions/revoke`
+      `${environment.apiBaseUrl}/tenant/users/by-user/user-abc/sessions/revoke`
     );
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
@@ -176,7 +176,7 @@ describe('AuthService', () => {
     });
 
     const req = httpMock.expectOne(
-      `${environment.apiBaseUrl}/tenant/users/user-locked/unlock`
+      `${environment.apiBaseUrl}/tenant/users/by-user/user-locked/unlock`
     );
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toBeNull();

@@ -33,12 +33,12 @@ Verify that only users with the tenant admin (or equivalent `User.Manage`) permi
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | As `employee@acme.com`, send `POST /api/v1/tenant/users/{alice_id}/unlock`. | HTTP 403 Forbidden -- insufficient permissions. |
+| 1 | As `employee@acme.com`, send `POST /api/v1/tenant/users/by-user/{alice_id}/unlock`. | HTTP 403 Forbidden -- insufficient permissions. |
 | 2 | Verify `alice@acme.com` remains locked (no change to `locked_until` or `failed_login_count`). | Lockout state unchanged. |
 | 3 | Verify no `account_unlocked_by_admin` audit event was created. | No audit record for this attempted unlock. |
 | 4 | Send the unlock request without authentication (no JWT). | HTTP 401 Unauthorized. |
 | 5 | Verify `alice@acme.com` remains locked. | Lockout state unchanged. |
-| 6 | As `admin@acme.com`, send `POST /api/v1/tenant/users/{alice_id}/unlock`. | HTTP 200 OK; unlock succeeds (positive control). |
+| 6 | As `admin@acme.com`, send `POST /api/v1/tenant/users/by-user/{alice_id}/unlock`. | HTTP 200 OK; unlock succeeds (positive control). |
 
 ## 6. Postconditions
 - Only authorized admins can unlock accounts.

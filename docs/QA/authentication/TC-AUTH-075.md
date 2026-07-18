@@ -44,8 +44,8 @@ Verify that (a) tenant A's session policies (idle timeout, absolute timeout, con
 | 3 | Verify the multi-tenant user has 2 active sessions in tenant A and 1 in tenant B. | Session counts are per tenant-user pair. |
 | 4 | **Idle timeout isolation:** In tenant A (idleTimeout=15min), wait 20 minutes without activity. Attempt refresh in tenant A. | HTTP 401; idle expired per tenant A's policy. |
 | 5 | The same user's tenant B session has been idle the same 20 minutes. Attempt refresh in tenant B. | HTTP 200; tenant B's idle timeout is 60 minutes, so the session is still valid. |
-| 6 | **Admin view isolation:** As `adminA@acme.com`, call `GET /api/v1/tenant/users/{userB-id}/sessions` (attempting to view tenant B user's sessions via tenant A context). | HTTP 404 or HTTP 403; the user does not exist in tenant A's context, or access is denied. |
-| 7 | As `adminA@acme.com`, call `POST /api/v1/tenant/users/{userB-id}/sessions/revoke` with a known tenant B session ID. | HTTP 404 or HTTP 403; cannot revoke cross-tenant sessions. |
+| 6 | **Admin view isolation:** As `adminA@acme.com`, call `GET /api/v1/tenant/users/by-user/{userB-id}/sessions` (attempting to view tenant B user's sessions via tenant A context). | HTTP 404 or HTTP 403; the user does not exist in tenant A's context, or access is denied. |
+| 7 | As `adminA@acme.com`, call `POST /api/v1/tenant/users/by-user/{userB-id}/sessions/revoke` with a known tenant B session ID. | HTTP 404 or HTTP 403; cannot revoke cross-tenant sessions. |
 | 8 | Verify `userB@globex.com`'s sessions are unaffected. | Both sessions in tenant B remain active. |
 | 9 | **RLS verification:** If possible, execute a direct DB query (simulating SQL injection or bypassed application layer): `SELECT * FROM refresh_tokens WHERE tenant_id = '{tenantB-id}'` from a tenant A connection context. | RLS policy blocks the query or returns 0 rows. |
 | 10 | **Session list scoping:** As `multi@yourhrm.test` in tenant A, call `GET /api/v1/auth/me/sessions`. | Only tenant A sessions are returned; tenant B sessions are not visible. |

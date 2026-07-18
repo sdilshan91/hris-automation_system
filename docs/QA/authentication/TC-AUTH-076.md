@@ -32,16 +32,16 @@ Verify that session metadata (user_agent, IP address, device details) is only vi
 | User B | jane@acme.com | Employee, same tenant |
 | Admin | admin@acme.com | Tenant Admin |
 | Self endpoint | GET /api/v1/auth/me/sessions | User's own sessions |
-| Admin endpoint | GET /api/v1/tenant/users/{id}/sessions | Admin view |
+| Admin endpoint | GET /api/v1/tenant/users/by-user/{id}/sessions | Admin view |
 
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | As `john@acme.com`, call `GET /api/v1/auth/me/sessions`. | HTTP 200; john sees his own 2 sessions with full metadata (device, browser, OS, IP, timestamps). |
 | 2 | As `jane@acme.com`, call `GET /api/v1/auth/me/sessions`. | HTTP 200; jane sees only her own 1 session. John's sessions are NOT included. |
-| 3 | As `jane@acme.com`, call `GET /api/v1/tenant/users/{john-id}/sessions`. | HTTP 403 Forbidden; jane does not have admin permissions to view john's sessions. |
-| 4 | As `admin@acme.com`, call `GET /api/v1/tenant/users/{john-id}/sessions`. | HTTP 200; admin sees john's 2 sessions with full metadata. |
-| 5 | As `admin@acme.com`, call `GET /api/v1/tenant/users/{jane-id}/sessions`. | HTTP 200; admin sees jane's 1 session with full metadata. |
+| 3 | As `jane@acme.com`, call `GET /api/v1/tenant/users/by-user/{john-id}/sessions`. | HTTP 403 Forbidden; jane does not have admin permissions to view john's sessions. |
+| 4 | As `admin@acme.com`, call `GET /api/v1/tenant/users/by-user/{john-id}/sessions`. | HTTP 200; admin sees john's 2 sessions with full metadata. |
+| 5 | As `admin@acme.com`, call `GET /api/v1/tenant/users/by-user/{jane-id}/sessions`. | HTTP 200; admin sees jane's 1 session with full metadata. |
 | 6 | Verify no session endpoint returns sessions belonging to a different user when called by a non-admin. | The self-service endpoint always scopes results to the authenticated user. |
 | 7 | Verify IP addresses and user-agent strings are not included in any non-session API response (e.g., user profile, user list). | Session metadata only appears in dedicated session endpoints. |
 | 8 | As `john@acme.com`, attempt to guess another user's session ID and call `POST /api/v1/auth/me/sessions/{jane-session-id}/revoke`. | HTTP 404; the session does not belong to john. |

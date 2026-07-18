@@ -325,7 +325,7 @@ export class AuthService {
 
   getUserSessions(userId: string): Observable<ISession[]> {
     return this.http.get<ISession[]>(
-      `${this.apiUrl}/tenant/users/${userId}/sessions`,
+      `${this.apiUrl}/tenant/users/by-user/${userId}/sessions`,
       { withCredentials: true }
     );
   }
@@ -333,7 +333,7 @@ export class AuthService {
   revokeUserSession(userId: string, sessionId?: string): Observable<IMessageResponse> {
     const body = sessionId ? { sessionId } : {};
     return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/tenant/users/${userId}/sessions/revoke`,
+      `${this.apiUrl}/tenant/users/by-user/${userId}/sessions/revoke`,
       body,
       { withCredentials: true }
     );
@@ -431,11 +431,11 @@ export class AuthService {
 
   /**
    * Admin unlock of a locked user account (US-AUTH-010 AC-5).
-   * POST /tenant/users/{userId}/unlock
+   * POST /tenant/users/by-user/{userId}/unlock (ISSUE-007: keyed by global userId)
    */
   unlockUser(userId: string): Observable<IMessageResponse> {
     return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/tenant/users/${userId}/unlock`,
+      `${this.apiUrl}/tenant/users/by-user/${userId}/unlock`,
       null,
       { withCredentials: true }
     );
