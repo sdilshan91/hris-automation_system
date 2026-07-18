@@ -23,5 +23,12 @@ public sealed class UpdateSessionPolicyValidator : AbstractValidator<UpdateSessi
             .Must(s => ValidStrategies.Contains(s))
             .WithMessage("Concurrent session strategy must be 'deny_new' or 'revoke_oldest'.")
             .When(x => !string.IsNullOrWhiteSpace(x.Request.ConcurrentSessionStrategy));
+
+        // ISSUE-009: cross-field invariant — the idle timeout (minutes) must not exceed the absolute timeout
+        // (hours). Normalize units first (absolute * 60 minutes); a policy where a session may idle longer than
+        // its absolute lifetime is nonsensical. Only meaningful once both single-field ranges hold.
+        RuleFor(x => x.Request.IdleTimeoutMinutes)
+            .Must((request, idleMinutes) => idleMinutes <= request.Request.AbsoluteTimeoutHours * 60)
+            .WithMessage("Idle timeout must not exceed the absolute timeout.");
     }
 }

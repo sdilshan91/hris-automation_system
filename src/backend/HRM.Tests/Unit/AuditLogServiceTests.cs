@@ -170,6 +170,35 @@ public sealed class AuditLogServiceTests
             .Value!.Items.Should().HaveCount(1);
     }
 
+    // ── ISSUE-012: inverted date range (start > end) must be rejected 400, not silently return empty ──
+
+    [Fact]
+    public async Task List_InvertedDateRange_Returns400InvalidDateRange()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser);
+
+        var result = await Service(_tenantA).ListAsync(
+            EmptyFilter() with { StartDate = Base.AddDays(1), EndDate = Base.AddDays(-1) }, 1, 50);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("invalid_date_range");
+    }
+
+    [Fact]
+    public async Task List_ValidDateRange_ReturnsResults()
+    {
+        await SeedTenantsAndUsersAsync();
+        await AddAuditAsync(_tenantA, Base, _actorUser);
+
+        var result = await Service(_tenantA).ListAsync(
+            EmptyFilter() with { StartDate = Base.AddDays(-1), EndDate = Base.AddDays(1) }, 1, 50);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Items.Should().HaveCount(1);
+    }
+
     [Fact]
     public async Task List_SearchMatchesBeforeAfterAndDetail()
     {

@@ -67,6 +67,13 @@ public sealed class AuditLogService : IAuditLogService
         if (!_tenantContext.IsResolved)
             return Result<AuditLogPageDto>.Failure("No tenant context.", 400);
 
+        // ISSUE-012: reject an inverted date range (start > end) with 400 rather than silently applying two
+        // independent >=/<= predicates that no row can satisfy → a misleading 200/empty result. Same
+        // "validate inputs, don't silently no-op" family as ISSUE-003.
+        if (filter.StartDate is { } start && filter.EndDate is { } end && start > end)
+            return Result<AuditLogPageDto>.Failure(
+                "The start date must not be after the end date.", 400, "invalid_date_range");
+
         page = page < 1 ? 1 : page;
         pageSize = NormalizePageSize(pageSize);
 

@@ -21,8 +21,14 @@ namespace HRM.Api.Controllers;
 [Authorize]
 public sealed class TenantSettingsController : ControllerBase
 {
-    // Branding upload caps mirror BrandingFileValidator; enforced again here to reject oversize bodies early.
-    private const long MaxUploadBytes = BrandingFileValidator.LogoMaxBytes;
+    // Kestrel request-size cap for branding uploads. ISSUE-008: this caps the WHOLE multipart request
+    // (boundary + part headers + file body), whereas BrandingFileValidator caps only the file BODY at
+    // LogoMaxBytes (2 MB). Setting them equal left a dead-band where a file body at/near 2 MB pushed the total
+    // request over the Kestrel limit and was rejected with an opaque 400 before the friendly validator could
+    // run. Leave a margin above LogoMaxBytes for the multipart envelope so a ≤2 MB body always reaches the
+    // friendly size validator (which then accepts ≤2 MB / rejects >2 MB with a clear message).
+    private const long MultipartOverheadMargin = 64 * 1024; // 64 KB — ample for boundary + part headers
+    private const long MaxUploadBytes = BrandingFileValidator.LogoMaxBytes + MultipartOverheadMargin;
 
     private readonly IMediator _mediator;
 
