@@ -259,7 +259,7 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         if (!_tenantContext.IsResolved)
             return Result<MonthlySummaryExportResult>.Failure("Tenant context is not resolved.", 400);
 
-        var normalizedFormat = NormalizeFormat(format);
+        var normalizedFormat = ExportFormatNormalizer.Normalize(format);
         if (normalizedFormat is null)
             return Result<MonthlySummaryExportResult>.Failure(
                 "Export format must be one of csv, xlsx, pdf.", 400, "invalid_format");
@@ -820,18 +820,6 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         status = default;
         if (string.IsNullOrWhiteSpace(value)) return false;
         return Enum.TryParse(value.Trim(), ignoreCase: true, out status);
-    }
-
-    private static string? NormalizeFormat(string? format)
-    {
-        var f = format?.Trim().ToLowerInvariant();
-        return f switch
-        {
-            "csv" => "csv",
-            "xlsx" or "excel" => "xlsx",
-            "pdf" => "pdf",
-            _ => null,
-        };
     }
 
     // ══════════════════════════════════════════════════════════════

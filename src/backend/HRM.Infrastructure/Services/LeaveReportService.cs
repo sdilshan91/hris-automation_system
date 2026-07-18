@@ -1,6 +1,7 @@
 using System.Globalization;
 using ClosedXML.Excel;
 using CsvHelper;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveReports.DTOs;
@@ -1001,7 +1002,7 @@ public sealed class LeaveReportService : ILeaveReportService
             query = query.Where(e => e.DepartmentId == deptId);
         if (qp.JobTitleId is { } jobId)
             query = query.Where(e => e.JobTitleId == jobId);
-        if (TryParseEmploymentType(qp.EmploymentType, out var empType))
+        if (EmploymentTypeParsing.TryParse(qp.EmploymentType, out var empType))
             query = query.Where(e => e.EmploymentType == empType);
         if (!string.IsNullOrWhiteSpace(qp.EmployeeSearch))
         {
@@ -1106,14 +1107,6 @@ public sealed class LeaveReportService : ILeaveReportService
         if (to < from) return 0;
         int months = (to.Year - from.Year) * 12 + (to.Month - from.Month) + 1;
         return Math.Max(1, months);
-    }
-
-    private static bool TryParseEmploymentType(string? value, out EmploymentType type)
-    {
-        type = default;
-        if (string.IsNullOrWhiteSpace(value)) return false;
-        var normalised = value.Replace("-", string.Empty).Replace(" ", string.Empty);
-        return Enum.TryParse(normalised, ignoreCase: true, out type);
     }
 
     private static string Num(decimal value) => value.ToString("0.##", CultureInfo.InvariantCulture);

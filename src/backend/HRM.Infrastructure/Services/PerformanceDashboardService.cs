@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
@@ -257,7 +258,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         if (!_tenantContext.IsResolved)
             return Result<PerformanceDashboardExportResult>.Failure("Tenant context is not resolved.", 400);
 
-        var normalized = NormalizeFormat(format);
+        var normalized = ExportFormatNormalizer.Normalize(format);
         if (normalized is null)
             return Result<PerformanceDashboardExportResult>.Failure(
                 "Export format must be one of csv, xlsx, pdf.", 400, "invalid_format");
@@ -879,18 +880,6 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     private static decimal Round(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
     private static string Num(decimal value) => value.ToString("0.##", CultureInfo.InvariantCulture);
-
-    private static string? NormalizeFormat(string? format)
-    {
-        var f = format?.Trim().ToLowerInvariant();
-        return f switch
-        {
-            "csv" => "csv",
-            "xlsx" or "excel" => "xlsx",
-            "pdf" => "pdf",
-            _ => null,
-        };
-    }
 
     private static string Csv(string value)
     {
