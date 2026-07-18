@@ -369,7 +369,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would order the writes so the conflicting row's `is_active=false` is flushed before the restored row's `is_active=true` — e.g. an intermediate `SaveChanges`, a deferred-constraint approach, or explicit statement ordering — and add a **real-Postgres** (Testcontainers) integration test for restore-with-same-type-conflict, since the InMemory unit test cannot reproduce it.)
 
 ### ISSUE-010 — BR-2 auto-archive of a prior active workflow writes NO `workflow.archived` audit row (NFR-4 "archive transition is audited" unmet for the auto-archive side)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-007 · TC-ADM-007-03 (step 5 — "audit_log has entries for Leave-B create AND Leave-A auto-archive")
 - **Title:** When creating (or restoring) an active workflow auto-archives the previously-active workflow for the same entity type (BR-2), only ONE audit row is written — `workflow.created` (or `workflow.restored`) for the NEW workflow. The auto-archived prior workflow gets **no** `workflow.archived` audit row, and the create's `after` snapshot does not reference the sibling that was archived. TC-03 step 5 explicitly requires an audit entry for the auto-archive; NFR-4 says the archive transition is audited.
@@ -487,7 +487,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would (a) make `ValidationBehavior` return a failed `Result`/ProblemDetails instead of throwing — eliminating the exception unwind+symbolication for the common validation-failure case — or short-circuit at the MVC `ValidationFilter` before MediatR; (b) downgrade the validation-failure log to a message-only WRN without the full stack trace (a validation failure is expected, not exceptional); (c) switch Serilog to an async/buffered file sink so logging never blocks the request thread. Add a perf test asserting a validation-rejected create returns <800 ms, and a small-burst test asserting `/health` stays 200.)
 
 ### ISSUE-015 — Employee audit `created_by` / `updated_by` store the actor's EMAIL string, not the user's UUID — TC-CHR-081 expects "created_by = the authenticated user's ID"
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-001 · TC-CHR-081 (FR-7 audit columns)
 - **Title:** TC-CHR-081 step 2 expects `created_by` to be "set to the authenticated user's ID (the user's UUID)". The persisted value is the actor's **email** (`hr@acme.test`), not their user UUID (`019efa61-e61f-7704-bea7-33305994a743`). This is a consistent, intentional-looking convention (the `AuditInterceptor`/`ICurrentUser` stamps `Email`), so it is a spec-vs-implementation mismatch rather than a defect — the audit identity is present and human-readable, just not the UUID the TC assumed.
@@ -639,7 +639,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-020 — Department deactivate is audited as `Department.Update` with a delta summary, not a distinct `Department.Deactivate` action with before/after snapshots
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-031 (audit entries for create/update/deactivate; NFR-5)
 - **Title:** The department lifecycle IS audited (create/update/deactivate all produce tenant-scoped rows with actor user_id, actor email, resourceType=Department, resourceId, timestamp, ipAddress — NFR-5 core met → TC-CHR-031 PASS). But two contract details from the TC are not met: (a) **deactivate** is recorded as `action: Department.Update` (with `summary: {"IsActive":false}`), not the distinct `department_deactivated` action the TC/spec expects; and (b) the audit `summary` is a **changed-fields delta** (e.g. `{"Name":"AuditUpd…"}`, `{"IsActive":false}`), not the full **before/after snapshots** the TC describes for each action.
@@ -1066,7 +1066,7 @@
 - **Severity rationale:** MED — contained to leave types explicitly flagged `negative_balance_allowed` (a minority; most acme types are `false` and are correctly blocked — see TC-LV-092 PASS). For those types it lets balances run unbounded-negative, defeating the configured guardrail and potentially over-granting unpaid/special leave, but it is not a cross-tenant/auth breach and does not affect the common positive-balance path.
 
 ### ISSUE-037 — Approve/reject audit rows are written by the generic `AuditInterceptor` as `LeaveRequest.Update` (Status int before/after), not the FR-7-mandated `action = Leave.Approved` / `Leave.Rejected` with a semantic before/after snapshot
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-005 · TC-LV-105 (steps 1-3 — `action = Leave.Approved`/`Leave.Rejected`), TC-LV-089 step 5, TC-LV-090 step 6. FR-7, AC-1, AC-2.
 - **Title:** An audit trail **is** produced for approve/reject (unlike the missing-audit pattern of BUG-025/028 elsewhere in the leave module), but it does not match the FR-7 contract. The `AuditInterceptor` (SaveChanges) emits a generic `action = "LeaveRequest.Update"`, `resource_type = "LeaveRequest"`, `resource_id` = the request, correct actor `user_id`, tenant-scoped, with `before = {"Status": 0}` / `after = {"Status": 1|2}` (raw enum ints: Pending=0, Approved=1, Rejected=2). FR-7 requires `action = "Leave.Approved"` / `"Leave.Rejected"` and a before/after JSON snapshot capturing the labeled status transition (and ideally the decision context: approver, comment/reason).
@@ -1324,7 +1324,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev must (a) correct the existing `leave_ledger.entry_type='Accrued'` rows to `'Accrual'` and (b) find and fix the writer that emitted `'Accrued'`; optionally make the enum converter fail-soft. This likely overlaps the prior BUG-030 ledger-vs-engine reconciliation area.)
 
 ### ISSUE-046 — LOP assignment / compulsory-leave / override writes are audited only via the generic `LeaveRequest.Create/Update` AuditInterceptor row + a Serilog line; there is NO distinct LOP-semantic audit action (`Leave.LopAssigned` / `Leave.CompulsoryAssigned` / `Leave.LopOverridden`), so NFR-4's LOP audit trail is not queryable by LOP action
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-011 · TC-LV-223 (NFR-4 audit trail for ALL LOP assignments)
 - **Title:** NFR-4 requires an audit trail (actor, action, before/after) for every LOP assignment (auto/manual/compulsory). The implementation DOES capture actor + before/after state via the generic `AuditInterceptor` (`LeaveRequest.Create`/`LeaveRequest.Update` rows with `actorUserId`/`actorName`/`actorEmail` + a `summary` JSON containing `IsLop`, `LopSource`, reason, status) — so the requirement is substantially met. However, the LOP-specific actions the `LopService` emits (`Action Leave.LopAssigned`, `Leave.CompulsoryAssigned`, `Leave.LopOverridden`) exist **only as Serilog log lines**, not as distinct audit-log actions. An HR/compliance reviewer cannot filter the audit log by "LOP assigned" vs an ordinary leave create; LOP events are indistinguishable from normal leave writes except by inspecting the `summary.IsLop` flag.
@@ -1614,7 +1614,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-059 — Session audit rows carry NO session-specific detail: `summary` is empty — none of the spec's `revoked_session_id` / `new_session_id` / `strategy` / `active_session_count` / `idle_duration` / `session_duration_hours` metadata is recorded (FR-9 / Data-Requirements granularity unmet)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-009 · TC-AUTH-078
 - **Title:** US-AUTH-009 Data Requirements enumerate rich per-event metadata for each session audit type (e.g. `concurrent_session_denied` → `active_session_count`, `strategy`; `concurrent_session_oldest_revoked` → `revoked_session_id`, `new_session_id`; `session_expired_idle` → `idle_duration`; `session_expired_absolute` → `session_duration_hours`). In practice every session audit row stores only `event_type + user_id + tenant_id + ip + user_agent`; the `summary` column is an empty string and no session id / count / strategy / duration is captured.
@@ -6097,7 +6097,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** confirm interviewers (who log in to submit scorecards) reliably get `Employee.UserId` set; if not, address it in the employee/user provisioning flow. Report only.
 
 ### ISSUE-266 — WorkflowService Create/Update drop the `ErrorCode` on a step-validation failure
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag surfaced building US-ADM-011b, 2026-07-10)
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #366, 2026-07-18) (auto-healed from an OUT-OF-LANE flag surfaced building US-ADM-011b, 2026-07-10)
 - **Layer:** BE · **Module:** Admin Console · US-ADM-007 workflow definitions (create/update)
 - **Title:** `WorkflowService.CreateAsync` (~142) and `UpdateAsync` (~214) forward only `stepValidation.Error` + `StatusCode` on a validation failure and **drop** `stepValidation.ErrorCode` (e.g. `invalid_approver`), so the API response loses the machine-readable code that `ValidateStepsAsync` sets. Pre-existing US-ADM-007 behavior, unrelated to 011b's parallel/SLA scope; 011b's new multi-approver membership check flows through the same suppressed path.
 - **Evidence:** surfaced while adding the parallel-approver tenant-membership validation in US-ADM-011b; the new round-trip test asserts on the message text instead of the code as a workaround.
