@@ -107,7 +107,7 @@ import { IOnboardingTemplateSummary } from '../../models/onboarding-template.mod
                 </p>
               }
 
-              <p class="mt-3 text-xs font-medium text-neutral-400">
+              <p class="mt-3 text-xs font-medium text-neutral-600">
                 {{ t.taskCount }} task{{ t.taskCount === 1 ? '' : 's' }}
               </p>
 

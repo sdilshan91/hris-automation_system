@@ -176,6 +176,21 @@ describe('AuditLogListComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('jane@acme.com');
   });
 
+  it('gives the results table a caption and scoped column headers (ISSUE-213 / WCAG 1.3.1)', () => {
+    configure();
+    flushInit();
+    fixture.detectChanges();
+
+    const table: HTMLTableElement = fixture.nativeElement.querySelector('table');
+    expect(table).toBeTruthy();
+    // Caption present (sr-only) so a screen reader announces the table's purpose.
+    expect(table.querySelector('caption')).toBeTruthy();
+    // Every header cell carries scope="col".
+    const headers = Array.from(table.querySelectorAll('thead th'));
+    expect(headers.length).toBe(6);
+    expect(headers.every((th) => th.getAttribute('scope') === 'col')).toBeTrue();
+  });
+
   it('shows the retention badge from the response', () => {
     configure();
     flushInit();

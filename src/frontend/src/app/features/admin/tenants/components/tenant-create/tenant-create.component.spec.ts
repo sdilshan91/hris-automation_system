@@ -169,6 +169,34 @@ describe('TenantCreateComponent', () => {
     }));
   });
 
+  describe('plan card entitlement copy (ISSUE-216)', () => {
+    it('renders "Unlimited employees" for a null max_employees plan', () => {
+      const enterprise: ISubscriptionPlan = {
+        id: 'plan-3',
+        name: 'Enterprise',
+        code: 'ENTERPRISE',
+        priceMonthly: 199,
+        trialDays: 0,
+        maxEmployees: null,
+      };
+      service.getSubscriptionPlans.and.returnValue(of([plans[0], enterprise]));
+
+      const f2 = TestBed.createComponent(TenantCreateComponent);
+      f2.detectChanges();
+
+      const cards = Array.from(
+        f2.nativeElement.querySelectorAll('[role="radio"]'),
+      ) as HTMLElement[];
+      const enterpriseCard = cards.find((c) => c.textContent?.includes('Enterprise'));
+      expect(enterpriseCard).toBeTruthy();
+      expect(enterpriseCard!.textContent).toContain('Unlimited employees');
+      expect(enterpriseCard!.textContent).not.toContain('Up to');
+
+      const starterCard = cards.find((c) => c.textContent?.includes('Starter'));
+      expect(starterCard!.textContent).toContain('Up to 25 employees');
+    });
+  });
+
   describe('plan selection', () => {
     it('sets the plan id and defaults trial days from the plan', () => {
       component.form.get('trialDays')?.setValue(null);

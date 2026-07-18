@@ -198,6 +198,28 @@ export function bandFromPercent(percent: number | null): UsageBand | null {
 }
 
 /**
+ * Accessible name for an employee usage gauge (BUG-105 / WCAG 2.1 AA 4.1.2). A
+ * bare `role="progressbar"` announces only "progressbar"; this composes the metric,
+ * the used/limit counts (∞ for an unlimited/null limit) and the percentage so a
+ * screen reader announces the value. Optionally prefixed with the tenant name for
+ * the multi-row dashboard table. Shared by the dashboard + detail gauges.
+ */
+export function employeeGaugeLabel(
+  used: number | null | undefined,
+  limit: number | null | undefined,
+  usagePercent: number | null | undefined,
+  tenantName?: string | null,
+): string {
+  const prefix = tenantName ? `${tenantName} — ` : '';
+  const limitText = limit ?? '∞';
+  const pctText =
+    usagePercent !== null && usagePercent !== undefined
+      ? ` (${Math.round(usagePercent)}%)`
+      : '';
+  return `${prefix}Employees: ${used ?? 0} of ${limitText}${pctText}`;
+}
+
+/**
  * True when a tenant row is at/above the 80% attention threshold (FR-3) — either
  * its headline band is Amber/Red/Breached, or its computed usagePercent is >= 80.
  */

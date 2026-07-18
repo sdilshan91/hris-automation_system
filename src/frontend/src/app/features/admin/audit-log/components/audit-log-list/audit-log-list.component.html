@@ -346,14 +346,15 @@
       <!-- Desktop table -->
       <div class="hidden overflow-x-auto md:block">
         <table class="w-full text-left text-sm">
+          <caption class="sr-only">{{ 'audit.tableCaption' | translate }}</caption>
           <thead>
             <tr class="border-b border-neutral-100 text-xs uppercase tracking-wide text-neutral-400">
-              <th class="px-5 py-3 font-medium">{{ 'audit.col.timestamp' | translate }}</th>
-              <th class="px-5 py-3 font-medium">{{ 'audit.col.user' | translate }}</th>
-              <th class="px-5 py-3 font-medium">{{ 'audit.col.action' | translate }}</th>
-              <th class="px-5 py-3 font-medium">{{ 'audit.col.resource' | translate }}</th>
-              <th class="px-5 py-3 font-medium">{{ 'audit.col.ip' | translate }}</th>
-              <th class="px-5 py-3 font-medium">{{ 'audit.col.summary' | translate }}</th>
+              <th scope="col" class="px-5 py-3 font-medium">{{ 'audit.col.timestamp' | translate }}</th>
+              <th scope="col" class="px-5 py-3 font-medium">{{ 'audit.col.user' | translate }}</th>
+              <th scope="col" class="px-5 py-3 font-medium">{{ 'audit.col.action' | translate }}</th>
+              <th scope="col" class="px-5 py-3 font-medium">{{ 'audit.col.resource' | translate }}</th>
+              <th scope="col" class="px-5 py-3 font-medium">{{ 'audit.col.ip' | translate }}</th>
+              <th scope="col" class="px-5 py-3 font-medium">{{ 'audit.col.summary' | translate }}</th>
             </tr>
           </thead>
           <tbody>

@@ -59,7 +59,7 @@ import { IUserDetail } from '../../models/user-management.models';
                 class="inline-block mt-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
                 [ngClass]="statusClass(u.status)"
               >
-                {{ ('userManagement.status.' + u.status) | translate }}
+                {{ ('userManagement.status.' + (u.status | lowercase)) | translate }}
               </span>
             </div>
           </div>
@@ -196,7 +196,9 @@ export class UserDetailComponent implements OnInit {
   }
 
   statusClass(status: string): string {
-    switch (status) {
+    // BE may serialize the status PascalCase ("Active"); normalize so the badge
+    // colour resolves regardless of casing (ISSUE-211).
+    switch ((status || '').toLowerCase()) {
       case 'active':
         return 'bg-emerald-50 text-emerald-700';
       case 'invited':

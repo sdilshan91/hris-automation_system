@@ -242,7 +242,11 @@ type AvailabilityState = 'idle' | 'checking' | 'available' | 'unavailable';
                     {{ plan.priceMonthly | currency }}<span class="text-xs font-normal text-neutral-400">/mo</span>
                   </div>
                   <div class="mt-2 text-xs text-neutral-500">
-                    Up to {{ plan.maxEmployees }} employees
+                    @if (plan.maxEmployees) {
+                      Up to {{ plan.maxEmployees }} employees
+                    } @else {
+                      Unlimited employees
+                    }
                   </div>
                   @if (plan.trialDays > 0) {
                     <div class="mt-1 text-xs text-brand-600">

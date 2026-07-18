@@ -179,7 +179,7 @@
                   <!-- Status -->
                   <td class="px-4 py-3 hidden sm:table-cell">
                     <span class="px-2 py-0.5 rounded-full text-xs font-medium" [ngClass]="statusClass(user.status)">
-                      {{ ('userManagement.status.' + user.status) | translate }}
+                      {{ ('userManagement.status.' + (user.status | lowercase)) | translate }}
                     </span>
                   </td>
 

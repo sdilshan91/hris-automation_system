@@ -196,7 +196,7 @@ type TaskGroup = FormGroup<{
             <div class="mb-3 flex items-center justify-between">
               <h2 class="text-sm font-semibold text-neutral-700">
                 Tasks
-                <span class="ml-1 text-neutral-400">({{ tasks.length }})</span>
+                <span class="ml-1 text-neutral-600">({{ tasks.length }})</span>
               </h2>
             </div>
 
@@ -460,7 +460,7 @@ type TaskGroup = FormGroup<{
       .hint {
         margin-top: 0.25rem;
         font-size: 0.6875rem;
-        color: #a3a3a3;
+        color: #525252;
       }
       .err {
         margin-top: 0.25rem;

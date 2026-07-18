@@ -1,11 +1,12 @@
 import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { TenantService } from '../../core/tenant/tenant.service';
+import { LogoFallbackDirective } from '../../shared/directives/logo-fallback.directive';
 
 @Component({
   selector: 'app-auth-layout',
   standalone: true,
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, LogoFallbackDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="auth-layout">
@@ -19,13 +20,12 @@ import { TenantService } from '../../core/tenant/tenant.service';
       <div class="auth-content">
         <!-- Logo / brand -->
         <div class="auth-brand">
-          @if (tenant().logoUrl) {
-            <img
-              [src]="tenant().logoUrl"
-              [alt]="tenantName()"
-              class="auth-logo"
-            />
-          } @else {
+          <!--
+            ISSUE-204: the placeholder is the base layer; a real logo (when set)
+            overlays it and hides itself via appLogoFallback if its URL 404s, so a
+            broken brand asset degrades to the placeholder instead of a broken image.
+          -->
+          <div class="auth-logo-wrap">
             <div class="auth-logo-placeholder">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -42,7 +42,15 @@ import { TenantService } from '../../core/tenant/tenant.service';
                 />
               </svg>
             </div>
-          }
+            @if (tenant().logoUrl) {
+              <img
+                [src]="tenant().logoUrl"
+                [alt]="tenantName()"
+                class="auth-logo"
+                appLogoFallback
+              />
+            }
+          </div>
           <h1 class="auth-title">{{ tenantName() }}</h1>
         </div>
 
@@ -93,13 +101,23 @@ import { TenantService } from '../../core/tenant/tenant.service';
       @apply flex flex-col items-center mb-8;
     }
 
+    .auth-logo-wrap {
+      @apply flex items-center justify-center mb-3;
+    }
+
     .auth-logo {
-      @apply h-10 w-auto mb-3;
+      @apply h-10 w-auto max-w-[8rem] object-contain;
     }
 
     .auth-logo-placeholder {
       @apply w-12 h-12 rounded-xl bg-brand-600 text-white
-        flex items-center justify-center mb-3 shadow-sm;
+        flex items-center justify-center shadow-sm;
+    }
+
+    /* ISSUE-204: with a valid (non-404) logo, show only the logo; otherwise the
+       placeholder shows (no logo set, or appLogoFallback hid a broken one). */
+    .auth-logo-wrap:has(.auth-logo:not([hidden])) .auth-logo-placeholder {
+      display: none;
     }
 
     .auth-title {
@@ -110,7 +128,7 @@ import { TenantService } from '../../core/tenant/tenant.service';
       @apply mt-8 text-center;
 
       p {
-        @apply text-xs text-neutral-400;
+        @apply text-xs text-neutral-600;
       }
     }
   `],

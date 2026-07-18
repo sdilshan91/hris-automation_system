@@ -16,6 +16,7 @@ import { IdleTimeoutService } from '../../core/services/idle-timeout.service';
 import { IdleTimeoutWarningComponent } from '../../shared/components/idle-timeout-warning/idle-timeout-warning.component';
 import { ImpersonationBannerComponent } from '../../features/admin/impersonation/components/impersonation-banner/impersonation-banner.component';
 import { NotificationBellComponent } from '../../features/notifications/components/notification-bell/notification-bell.component';
+import { LogoFallbackDirective } from '../../shared/directives/logo-fallback.directive';
 
 interface INavItem {
   label: string;
@@ -44,6 +45,7 @@ interface INavItem {
     IdleTimeoutWarningComponent,
     ImpersonationBannerComponent,
     NotificationBellComponent,
+    LogoFallbackDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -75,14 +77,13 @@ interface INavItem {
               [class.icon-only]="sidebarCollapsed()"
               [attr.aria-expanded]="tenantMenuOpen()"
               aria-haspopup="menu"
-              aria-label="Switch organization"
+              [attr.aria-label]="tenantSwitchLabel()"
               (click)="toggleTenantMenu()"
             >
               <span class="tenant-logo">
+                <span>{{ tenantInitial() }}</span>
                 @if (currentTenantLogo()) {
-                  <img [src]="currentTenantLogo()" [alt]="tenantName()" />
-                } @else {
-                  <span>{{ tenantInitial() }}</span>
+                  <img [src]="currentTenantLogo()" [alt]="tenantName()" appLogoFallback />
                 }
               </span>
               @if (!sidebarCollapsed()) {
@@ -131,10 +132,9 @@ interface INavItem {
                     (click)="switchTenant(tenant)"
                   >
                     <span class="tenant-logo option-logo">
+                      <span>{{ tenantInitial(tenant.name) }}</span>
                       @if (tenant.logoUrl) {
-                        <img [src]="tenant.logoUrl" [alt]="tenant.name" />
-                      } @else {
-                        <span>{{ tenantInitial(tenant.name) }}</span>
+                        <img [src]="tenant.logoUrl" [alt]="tenant.name" appLogoFallback />
                       }
                     </span>
                     <span class="tenant-option-copy">
@@ -283,13 +283,12 @@ interface INavItem {
             (click)="toggleTenantMenu()"
             [attr.aria-expanded]="tenantMenuOpen()"
             aria-haspopup="menu"
-            aria-label="Switch organization"
+            [attr.aria-label]="tenantSwitchLabel()"
           >
             <span class="tenant-logo">
+              <span>{{ tenantInitial() }}</span>
               @if (currentTenantLogo()) {
-                <img [src]="currentTenantLogo()" [alt]="tenantName()" />
-              } @else {
-                <span>{{ tenantInitial() }}</span>
+                <img [src]="currentTenantLogo()" [alt]="tenantName()" appLogoFallback />
               }
             </span>
             <span class="mobile-tenant-name">{{ tenantName() }}</span>
@@ -320,10 +319,9 @@ interface INavItem {
                   (click)="switchTenant(tenant)"
                 >
                   <span class="tenant-logo option-logo">
+                    <span>{{ tenantInitial(tenant.name) }}</span>
                     @if (tenant.logoUrl) {
-                      <img [src]="tenant.logoUrl" [alt]="tenant.name" />
-                    } @else {
-                      <span>{{ tenantInitial(tenant.name) }}</span>
+                      <img [src]="tenant.logoUrl" [alt]="tenant.name" appLogoFallback />
                     }
                   </span>
                   <span class="tenant-option-copy">
@@ -457,12 +455,13 @@ interface INavItem {
     }
 
     .tenant-logo {
-      @apply flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden
+      @apply relative flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden
         rounded-lg bg-brand-600 text-xs font-semibold text-white;
     }
 
+    /* ISSUE-204: logo overlays the initial; appLogoFallback hides it on 404 so the initial shows. */
     .tenant-logo img {
-      @apply h-full w-full object-cover;
+      @apply absolute inset-0 h-full w-full object-cover;
     }
 
     .tenant-trigger-copy,
@@ -1100,6 +1099,15 @@ export class MainLayoutComponent implements OnInit {
 
   tenantName(): string {
     return this.authService.currentTenant()?.name || this.tenantService.displayName();
+  }
+
+  /**
+   * Accessible name for the tenant-switcher triggers (ISSUE-205 / WCAG 2.5.3 Label
+   * in Name): the button visibly renders the tenant name, so its accessible name
+   * must contain that visible text — not just the action verb "Switch organization".
+   */
+  tenantSwitchLabel(): string {
+    return `Switch organization, ${this.tenantName()}`;
   }
 
   /** Load tenant auth settings and start idle timeout tracking (US-AUTH-009). */
