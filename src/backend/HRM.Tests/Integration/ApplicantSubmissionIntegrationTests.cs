@@ -85,6 +85,7 @@ public sealed class ApplicantSubmissionIntegrationTests
         services.AddSingleton<IFileStorage, InMemoryFileStorage>();
         services.AddSingleton<IVirusScanner, AllowWithLogVirusScanner>();
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
+        services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();   // ISSUE-103: ApplicantService now sanitizes free-text on write
         services.AddScoped<IApplicantService, ApplicantService>();
 
         services.AddMediatR(cfg =>
