@@ -12,6 +12,8 @@ Survey found **120 OPEN·LOW** findings (3 BUG, 117 ISSUE). Approach (user-chose
 
 Status legend: ☐ pending · ▶ in progress · ✅ done (PR#) · ⛔ WONTFIX · ⏸ deferred-decision.
 
+> **✅ LOW-TIER CAMPAIGN COMPLETE (2026-07-18).** All REAL-FIX clusters merged: A1 security #358 · A2 data-integrity #359/#361/#362/#363/#364/#365 (+reuse #360) · A3 audit #366 · A4 seam #367 · A5 a11y #368 (+OrgTree #357-spec-fix). Full suites green throughout (BE 4390, FE 3818). 6 stale-fixed closed up front. **20 WONTFIX** batch-closed (reasons in §B below). **~30 needs-decision** compiled → `docs/QA/LOW-TIER-DECISIONS.md` for one-sitting review. Deferred/feature-sized → DF-13..28. FE follow-ups (DF-24/26/27/28) + BE logo (DF-28) remain. NOTHING broken shipped — every merge gated on build + full suite + auditors.
+
 ---
 
 ## A. REAL-FIX — value-first queue (71)

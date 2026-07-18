@@ -383,7 +383,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Emit a `workflow.archived` audit row for each row the BR-2 helper auto-archives, or include the archived sibling id(s) in the creating workflow's audit `after` snapshot.)
 
 ### ISSUE-011 — Workflow create/edit/archive/restore return HTTP 200 (not 201) and the plan-limit rejection is 409 (not 400/422) — contract drift vs the US-ADM-007 TCs
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-007 · TC-ADM-007-02 (step 1 "201") / TC-ADM-007-03/-04 / TC-ADM-007-05 (step 3 "HTTP 400/422")
 - **Title:** Several US-ADM-007 endpoints diverge from the status codes the TCs specify: (a) `POST /api/v1/tenant/workflows` (create) returns **200** with the created body, not **201 Created** + `Location` as TC-02/-03 assert; and (b) the plan-limit rejection is **409 Conflict** with code `workflow_limit_reached`, while TC-05 step 3 expects **400/422**. The behaviors are otherwise correct (creation works, the exact AC-4 plan-limit MESSAGE is produced) — only the HTTP status contract drifts.
@@ -443,7 +443,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would replace the snapshot read in `CheckPlanLimitAsync` (and any other limit check) with a resolution that loads the tenant's plan by `PlanId` + its `plan_limit_override` rows and calls the existing `PlanLimitResolver.Resolve`, wiring the already-built-and-tested resolver into the live path; correct the misleading `SubscriptionPlanService.cs:21-22` doc-comment; and add a real-DB integration test that edits a plan limit and asserts an existing tenant's enforced cap changes, plus one that asserts an override changes the enforced cap.)
 
 ### ISSUE-013 — Plans list is not sortable via the API: `GET /api/v1/system/plans` ignores any sort param and always returns a fixed `PriceMonthly asc, Name` order — AC-1 "sortable by name/price/active-tenant-count" unmet server-side
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-009 · TC-ADM-009-01 (steps 4-6 — sort by name / price / active tenant count)
 - **Title:** The plans list endpoint accepts no sort/order parameters and always returns plans ordered by `PriceMonthly` ascending then `Name`. TC-01 asserts the list is sortable by name, by price (desc), and by active-tenant-count; none of those orderings can be requested from the server.
@@ -498,7 +498,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Either update TC-CHR-081 to accept the email-identity convention, or, if a UUID FK is desired for joins, change the audit stamp to user-id and add a denormalized actor-email — a product decision, not a bug fix.)
 
 ### ISSUE-016 — Login page fails WCAG 2.1 AA color-contrast (Lighthouse a11y 95/100)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** FE
 - **Module / US / TC:** Core HR · US-CHR-001 · (UI/a11y representative sample — app auth shell)
 - **Title:** Chrome DevTools **Lighthouse** audit of `/auth/login` scores Accessibility **95** with one hard fail: **`color-contrast`** — "Background and foreground colors do not have a sufficient contrast ratio." The frontend guide mandates **WCAG 2.1 AA**, which requires ≥4.5:1 for normal text; at least one element on the login page is below threshold (likely the muted-gray helper/placeholder text on white per the Notion-inspired palette).
@@ -509,7 +509,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-017 — `favicon.ico` 404 on every page load (console error)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** FE
 - **Module / US / TC:** Core HR · US-CHR-001 · (UI representative sample — console)
 - **Title:** Every FE page load logs a console **error**: `Failed to load resource: 404 (Not Found) @ http://localhost:4200/favicon.ico`. No `favicon.ico` is served (or the `<link rel="icon">` points at a missing asset).
@@ -936,7 +936,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Point provisioning at the canonical `LeaveTypeService.SeedDefaultsForTenantAsync` (which already includes LOP + the full set and is idempotent) and delete the inline 3-type `TenantProvisioningService.SeedDefaultLeaveTypes`, or reconcile the two into one source of truth; decide deliberately whether LOP should be seeded at provisioning vs. lazily.)
 
 ### ISSUE-030 — Leave-type duplicate-name and field-validation rejections return HTTP 400, but TC-LV-003 (and the IEEE-829 suite) expect 409 Conflict / 422 Unprocessable Entity for these semantic conflicts — a status-code contract nit (the error message text is exactly correct)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-001 · TC-LV-003 (step 2 expects "API returns 409 Conflict or 422 Unprocessable Entity"). Same **400-vs-409/422 status nit** seen on other modules' uniqueness checks.
 - **Title:** Duplicate leave-type name (BR-1) returns **HTTP 400** with body `{"success":false,"message":"A leave type with this name already exists."}`. The message matches the AC-3 / TC-LV-003 expected string *exactly* and the case-insensitive behaviour is correct (exact/lowercase/uppercase all rejected), but the TC's expected status is 409 or 422. All field-validation failures (empty name, length, bad color/gender/accrual, negative numbers) likewise return 400, which is conventionally fine, but the *conflict* case (duplicate name, "already deactivated", "already active") arguably warrants 409.
@@ -947,7 +947,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Return 409 for uniqueness/state conflicts and 422/400 for field validation if the IEEE-829 expected statuses are to be met, or relax the TC's expected status to 400 — a QA-vs-impl contract decision.)
 
 ### ISSUE-031 — Leave-type `name`/`description`/`color`/`code` are persisted verbatim with no server-side HTML/script sanitization or encoding; a `<script>`/`<img onerror>` payload is stored as-is (stored-XSS depends entirely on the consumer escaping it)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-001 · TC-LV-015 (input sanitization / XSS). TC-LV-015 PASSES as written (its expected result explicitly accepts "stores the value … No script execution on retrieval", which Angular's default interpolation guarantees), so this is filed as a defense-in-depth observation, not a test failure.
 - **Title:** `POST /leave-types` with `name = "QA <script>alert(1)</script>"` and `description = "<img src=x onerror=alert(1)>"` returns **201** and stores both strings byte-for-byte (confirmed on read-back). No 400 rejection, no entity-encoding at the API boundary. The SQL-injection arm (`code = "; DROP TABLE leave_types; --`) is safely handled (EF parameterizes; the long code was also rejected by the 20-char rule) and the table is intact (64 rows) — so injection is closed; only output-encoding responsibility is pushed entirely to the client.
@@ -1796,7 +1796,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-070 — TC-ATT-017 / TC-ATT-018 short-day & break test data assume a 6h (360m) minimum, but the live `attendance_settings` minimum is 4h (240m) — the calculator is correct against the seeded config
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** TEST
 - **Module / US / TC:** Attendance · US-ATT-002 · TC-ATT-017 (short-day), TC-ATT-018 (break boundary)
 - **Title:** The test cases assert SHORT_DAY at a **4h (240m) worked span against a 6h (360m) minimum** (TC-ATT-017 test data) and frame the short-day threshold as 6h. The actually-seeded `AttendanceSettings.MinimumWorkMinutes` default is **240 (4h)**, not 360. With the live config a 240-minute span is NOT short (240 is not < 240) → it correctly returns COMPLETE, contradicting the TC's expected SHORT_DAY. The clock-out **engine is correct** against its configured minimum (a 180-minute span < 240 DID return SHORT_DAY with `overtime_minutes` null, as the rule requires); the discrepancy is purely the TC's test-data assumption vs the seeded tenant policy. Reported as a TEST-layer drift, NOT weakened — the TC's literal sub-case was executed and recorded.
@@ -1984,7 +1984,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — add an export endpoint mirroring `summary/monthly/export`, or render export client-side.
 
 ### ISSUE-082 — TC-ATT-067/068/070 pin overtime expected values against standard=480, but the live engine uses the shift-derived standard=420; the TC worked-example minutes are stale (engine is correct)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** TEST
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-067, TC-ATT-068, TC-ATT-070
 - **Title:** TC-ATT-067 expects `overtime_minutes=60` (brief said 30) for "9h on an 8h shift"; TC-068/070 assume an 8h (480) standard. The live engine resolves the *assigned shift's* standard (John's Day Shift = 420 net) per FR-1 "shift's standard_hours", so a net-540 day yields **120** (not 60/30) and the 30-min gate sits at 420+30=450 net. The engine is correct per FR-1; the TC worked examples assume the tenant default (480). The *boundary logic* (gate at standard+threshold, cap at max-daily) is verified correct under either baseline.
@@ -3339,7 +3339,7 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 Scope: 12 functional TCs (TC-PAY-002-01..12) + 4 isolation TCs (TC-PAY-ISO-005..008), executed API-layer (curl + JWT) against http://localhost:5000, acme tenant. FE (:4200) + Docker down → UI/a11y/perf-browser/Testcontainers arms BLOCKED. Routes discovered: `POST /api/v1/payroll/salary-assignments/preview`, `POST /api/v1/payroll/salary-assignments`, `POST /api/v1/payroll/salary-assignments/bulk`, `GET /api/v1/payroll/employees/{id}/compensation`, `GET /api/v1/payroll/employees/{id}/revision-history` — all `[RequirePermission("Payroll.Configure")]` (Tenant Admin only; HR/Manager hold zero payroll perms → see BUG-060). Seed already present: FT_IN (active, BASIC 40%GROSS / HRA 20%BASIC / CONV fixed 24000 / SPECIAL fixed 288000 → balances exactly at CTC 600000), LEG_24 (inactive), SR_FT (active). NOTE: implementation has NO automatic CTC balancer (SPECIAL is fixed, not a residual) — structures only "balance" at the CTC their fixed components were designed for.
 
 ### ISSUE-151 — Salary-assignment POST returns 200 OK, not 201 Created (REST contract drift)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-002 / TC-PAY-002-01 (also -02, -05)
 - **Title:** `POST /api/v1/payroll/salary-assignments` returns 200 OK on resource creation; TCs + REST convention expect 201 Created with a Location header.
@@ -3956,7 +3956,7 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 ### ISSUE-182 — (positive) Encashment write-path is tenant-self-protected against IDOR — foreign employee_id under correct context returns 404, no cross-tenant write
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-010 / TC-PAY-ISO-038, -039
 - **Title:** Drift-correction / positive finding. Unlike the read-side BUG-003 leak, the encashment WRITE endpoint resolves the employee through the tenant-filtered DbContext, so a foreign (techoneglobal) employee_id submitted under the acme context is rejected 404 `employee_not_found` with no write — cross-tenant encashment IDOR is blocked at the query layer.
@@ -3981,7 +3981,7 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 ### ISSUE-183 — Distribution summary `completedAt` can be earlier than `startedAt` (computed from different columns)
 - **Type:** ISSUE (behavioral nit / data-presentation)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-011 / TC-PAY-011-01 (summary), BR-6 §7 (started_at/completed_at)
 - **Title:** `startedAt = MIN(log.created_at)` but `completedAt = MAX(log.sent_at)` — the two come from different timestamp sources, so completedAt < startedAt is possible
@@ -4391,7 +4391,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-192
 - **Type:** ISSUE (contract drift -- minor)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-005 / TC-NTF-005-10 (AC-1, FR-6)
 - **Title:** Requesting pageSize=5000 on the audit-log list returns pageSize=200 (200 items), whereas the US-NTF-005 matrix note states the page size is capped at 100.
@@ -4495,7 +4495,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-196
 - **Type:** ISSUE (filter-handling / least-surprise; not a data-integrity defect — period is relabeled, not falsified)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Reports & Analytics / US-RPT-003 / TC-RPT-003-09, TC-RPT-003-10
 - **Title:** `GET /payroll/reports/PayrollSummary?year=2025&month=1` (no run for that period) and `month=13` (invalid) both return the latest finalized run (June 2026) with `currentLabel/payYear/payMonth` set to June 2026
@@ -4537,7 +4537,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-199
 - **Type:** ISSUE (test-observability / behavior note; not clearly a defect)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Reports & Analytics / US-RPT-005 / TC-RPT-005-03
 - **Title:** `employee@acme.test` holds the `Employee` RBAC role yet `GET /dashboard/widgets` returns role='manager' (team widgets) under acme; only under an empty foreign tenant does the same user resolve to role='employee'
@@ -5428,7 +5428,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-219
 - **Type:** ISSUE (spec/contract drift — implementation exceeds SLA but doesn't match the stated mechanism)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / plan configuration / TC-ADM-009-15
 - **Title:** NFR-4 specifies plan/limit data is "cached in Redis and invalidated on update (<60s propagation)". In practice the plan is **live-read** every request (no `hrm:*:plan` Redis key is ever created, and a plan update never touches a `:config` cache key). The behavior is CORRECT and in fact *exceeds* the SLA (0s staleness, not <60s), but the literal "cached in Redis / invalidated on update" mechanism does not exist.
@@ -6127,7 +6127,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied — flip-prep):** set-GUC-per-short-unit for GeneratePayslips + SendPayslipEmails (read in a short tx → render/upload/send OUTSIDE any tx → write in a short tx; periodic-commit the email log rows, which also improves crash resumability). **Leave `ProcessPayrollRunJob` atomic** (a run should be all-or-nothing) — add `statement_timeout` + tx-duration monitoring instead. `DataExportGeneration`/`HrReportExport` are low-frequency → defer. Report only; do BEFORE a high-volume RLS flip.
 
 ### ISSUE-270 — No dedicated notification-preference Category for Training/Benefits (reuse OnboardingOffboarding)
-- **Type / Severity / Status:** ENH · LOW · OPEN (auto-healed from US-TRN-001/003 build flags, 2026-07-11)
+- **Type / Severity / Status:** ENH · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B) (auto-healed from US-TRN-001/003 build flags, 2026-07-11)
 - **Layer:** BE · **Module:** Notifications (cross-cutting) · Training & Benefits
 - **Title:** The new training (`training_*`) and benefit (`benefit_*`) US-NTF-006 catalog events reuse `NotificationCategory.OnboardingOffboarding` because there is no Training/Benefits category. Users can't set notification preferences for training/benefits separately from onboarding.
 - **Suggested (NOT applied):** add a `BenefitsAndDevelopment` (or split) `NotificationCategory` covering training + benefits and re-point those events; wire the preference UI. Shared-enum change → own small story. Report only.
@@ -6145,13 +6145,13 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested (NOT applied):** a follow-up FE story — an instance step-chain widget embedded in each request-detail page + an admin instance list per workflow definition. Cross-module; net-new. Report only.
 
 ### ISSUE-273 — Additive test-hardening arms across US-ADM-011 + Training/Benefits (batch)
-- **Type / Severity / Status:** TEST-HEALTH · LOW · OPEN (auto-healed from test-authenticator/integration-enforcer notes, 2026-07-11)
+- **Type / Severity / Status:** TEST-HEALTH · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B) (auto-healed from test-authenticator/integration-enforcer notes, 2026-07-11)
 - **Layer:** BE tests · **Module:** Workflows / Training / Benefits
 - **Title:** Auditors rated all suites AUTHENTIC but flagged additive (non-blocking) missing arms: (a) TRN-003 partial-unique-index concurrency backstop (23505→409) + `already_terminated` 409 + cross-employee 403 authz + persisted EffectiveDate/ElectedBy; (b) TRN-002 status-change audit-row + illegal-transition no-side-effect re-read; (c) TRN-001 FE↔BE course status-transition-matrix contract test (two hand-copied matrices, no test pins them equal); (d) recurring: the new-module integration tests drive services directly, not the controller→MediatR→RequirePermission HTTP chain (a WebApplicationFactory smoke test per module would cover the authz/route edge). None are mutation-holes in shipped ACs.
 - **Suggested (NOT applied):** hand to @qa-engineer to add the arms; strengthen only, never weaken. Report only.
 
 ### ISSUE-274 — EF second-level cache Redis commands not covered by OTel Redis command-spans
-- **Type / Severity / Status:** ENH · LOW · OPEN (auto-healed from the Redis command-spans build, 2026-07-11)
+- **Type / Severity / Status:** ENH · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B) (auto-healed from the Redis command-spans build, 2026-07-11)
 - **Layer:** Observability / infra · **Module:** Caching
 - **Title:** The Redis command-span instrumentation (`AddRedisInstrumentation` on the shared `IConnectionMultiplexer`) covers `IDistributedCache` + the SignalR backplane, but NOT the EF second-level cache: `EFCoreSecondLevelCacheInterceptor.StackExchange.Redis` 5.3.13 owns a PRIVATE multiplexer (its public API — `UseStackExchangeRedisCacheProvider(string|ConfigurationOptions, TimeSpan, bool)` — neither exposes nor accepts a shared one). Covering it would need a custom `IEFCacheServiceProvider` built on the shared multiplexer (deferred).
 - **Note:** the shared-multiplexer change also **consolidates Redis connection pools** (one pool instead of two/three).
@@ -6184,7 +6184,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested:** add the GRANT (or schema pre-provision) to the greenfield path of the runbook. Report only.
 
 ### ISSUE-279 — RLS reconciler bypass-warning false-fires in the correct config
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (found by the 2026-07-11 RLS validation)
+- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B) (found by the 2026-07-11 RLS validation)
 - **Layer:** BE / logging · **Module:** Platform (DbInitializer)
 - **Title:** On startup the reconciler warns `RLS is ENABLED but the app connection (current_user=hrm_owner) bypasses RLS … point DefaultConnection at hrm_app`. It fires because `DbInitializer` runs on the privileged (`hrm_owner`) connection BY DESIGN — it does not mean `DefaultConnection` is wrong. Misleading in the correct setup.
 - **Suggested (NOT applied):** scope the bypass-check to the request-path role (e.g. probe a `hrm_app` connection), not the reconciler's own privileged connection; or downgrade/reword to note it's expected for the reconciler. Report only.
@@ -6229,7 +6229,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-282 — Payroll job-path audit emitters (Completed/PdfGenerated/EmailSent) covered only on InMemory, not Testcontainers Postgres
 - **Type:** TEST-HEALTH (defence-in-depth gap)
 - **Severity:** LOW
-- **Status:** OPEN (deferred — P7 hardening)
+- **Status:** WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B) (deferred — P7 hardening)
 - **Layer:** BE (tests)
 - **Module / US / TC:** Payroll / US-PAY-012 / (auto-healed from BUG-080 test-authenticator + backend-dev OUT-OF-LANE)
 - **Title:** The 3 job-driven BUG-080 audit emitters live inside Hangfire job paths (`PayrollRunProcessor`, `PayslipBatchRenderer`, `PayslipDistributionRunner`). Their regression tests run on the InMemory provider. For these specific scalar-column assertions InMemory does not mask a Postgres failure (no jsonb `Contains`, no manual tx in the insert path), so the tests are valid — but there is no real-Postgres arm proving the audit row commits under prod `EnableRetryOnFailure` semantics (the BUG-068/ISSUE-277 class this repo has been burned by).
@@ -6346,7 +6346,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ---
 
 ### ISSUE-292 — Onboarding/offboarding audit rows use GENERIC entity action names, not semantic ones
-- **Type / Severity / Status:** ISSUE (ENH — audit UX) · LOW · OPEN
+- **Type / Severity / Status:** ISSUE (ENH — audit UX) · LOW · WONTFIX (LOW-tier triage 2026-07-18 — reason in LOW-TIER-TRIAGE.md §B)
 - **Layer:** BE · (auto-healed from ISSUE-200 close, #280)
 - **Module / US / TC:** Onboarding / US-ONB-001..006
 - **Title:** Since #272 every onboarding/offboarding action is centrally audited, but the action strings are generic entity names (`OnboardingTaskInstance.Update`, `Asset.Create`, `OffboardingTaskInstance.Update`) rather than semantic ones (`Task.Completed`, `Asset.Issued`, `Clearance.Approved`). Functionally complete (actor/before/after captured), but the audit log reads mechanically rather than in business terms.
