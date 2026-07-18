@@ -21,7 +21,7 @@ Verify BR-6 and §10: employees on FLEXIBLE shifts (no fixed start/end) are not 
 
 ## 3. Preconditions
 - Tenant "acme"; employee "Finn" assigned a FLEXIBLE shift (minimum_hours = 360 min / 6h, no start_time/end_time -- per US-ATT-005 TC-ATT-054).
-- `Attendance.Clock.Self`; no open clock-in for today.
+- `Attendance.CheckIn`; no open clock-in for today.
 
 ## 4. Test Data
 | Field | Value | Notes |

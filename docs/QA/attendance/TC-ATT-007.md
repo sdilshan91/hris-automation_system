@@ -23,7 +23,7 @@ Verify the geo-fence radius boundary defined by FR-3. When `geo_fence_enabled = 
 - Tenant "acme" exists, `active`, Attendance module enabled.
 - Tenant attendance settings: `require_geolocation = true`, `geo_fence_enabled = true`.
 - An allowed location is configured: center `40.7128, -74.0060` (NYC office), radius `100` meters.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, no clock-in for the current local day, browser location permission granted.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, no clock-in for the current local day, browser location permission granted.
 
 ## 4. Test Data
 | Sub-case | Latitude, Longitude | Distance from center | Expected | Notes |

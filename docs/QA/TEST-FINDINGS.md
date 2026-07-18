@@ -1625,7 +1625,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-060 — Session-policy endpoint path drifts from the spec: implemented as `PUT /api/v1/tenant/settings/session-policy`, but FR-1 / TC-AUTH-080 specify `PUT /api/v1/tenant/auth-settings`; the spec'd path resolves to an unrelated 200 (silent contract mismatch / missing 404)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED-BY-DECISION (doc-align, 2026-07-18: US-AUTH-009 FR-1 + TC-AUTH-080 aligned to the shipped route PUT /api/v1/tenant/settings/session-policy; read via GET /api/v1/tenant/settings snapshot. Capability was always correct; docs matched to code — no code change)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-009 · TC-AUTH-080
 - **Title:** US-AUTH-009 FR-1 (and TC-AUTH-080) state session policy is configured via `PUT /api/v1/tenant/auth-settings`. The working endpoint is actually `PUT /api/v1/tenant/settings/session-policy` (under `TenantSettingsController`, permission `Tenant.ManageSettings`). The functional endpoint works correctly (validates ranges, rejects bad strategy, persists, takes effect on subsequent logins/refreshes); the issue is the URL contract drift — a client following the story/TC literally would target a non-existent management route.
@@ -1769,7 +1769,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-068 — Geofence supports a single center only (FR-3 "any allowed location" unmet) + permission-name drift Attendance.Clock.Self vs Attendance.CheckIn
-- **Type / Severity / Status:** ISSUE · LOW · RESOLVED-by-decision (permission is Attendance.CheckIn by design; multi-location geofence deferred → DF-23) 2026-07-18
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED-BY-DECISION (permission is Attendance.CheckIn by design — 39 US-ATT/TC-ATT docs aligned Attendance.Clock.Self→Attendance.CheckIn on 2026-07-18; multi-location geofence deferred → DF-23) 2026-07-18
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-001 · TC-ATT-007 (step 5 — multiple allowed locations), TC-ATT-008 (permission name)
 - **Title:** Two contained nits. (a) **Single geofence center:** `attendance_settings` exposes one `geo_fence_latitude/longitude/radius_meters`; FR-3 and TC-ATT-007 step 5 require accepting coordinates within **any** of multiple allowed locations. Only one fence can be configured, so the "any allowed location" case is unverifiable/unsupported. (b) **Permission-name drift:** the user story preconditions and every TC name the gate `Attendance.Clock.Self`, but the implemented endpoint is gated by `Attendance.CheckIn` (`AttendanceController.cs:37`). The Employee role holds `Attendance.CheckIn`, so behavior is correct, but the spec↔code identifier mismatch will confuse traceability and any future permission audit.
@@ -5042,7 +5042,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — the list itself renders and is usable, but two contained features are broken on a primary admin screen: pagination is non-functional/misleading (would break navigation once the tenant exceeds one page) and the role filter is dead. Not HIGH because the core list + per-row actions work and the tenant currently fits one page.
 
 ### ISSUE-211 — Admin → Users page renders raw i18n keys `userManagement.status.Active` / `userManagement.status.Disabled` instead of translated status labels
-- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (FE normalized, PR #368; FE↔BE status-casing pin = needs-decision) 2026-07-18
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (FE normalized, PR #368; FE↔BE status-casing pinned: US-ADM-005 contract note documents PascalCase wire casing (global JsonStringEnumConverter, no naming policy) 2026-07-18) 2026-07-18
 - **Layer:** FE (i18n)
 - **Module / US / TC:** Admin Console / US-ADM-005 / Users list UI
 - **Title:** Every user row's Status cell (and the corresponding aria text) shows the literal translation key `userManagement.status.Active` / `userManagement.status.Disabled` rather than "Active" / "Disabled".

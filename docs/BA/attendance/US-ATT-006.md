@@ -18,7 +18,7 @@ acceptance_criteria_count: 9
 
 ## 2. Preconditions
 - Employee must be authenticated with a valid JWT session.
-- Employee must have the `Attendance.Clock.Self` permission.
+- Employee must have the `Attendance.CheckIn` permission.
 - The Attendance module must be enabled for the tenant.
 - Overtime rules must be configured for the tenant.
 - The employee must have completed a clock-in/out cycle where total hours exceed the shift's standard hours.

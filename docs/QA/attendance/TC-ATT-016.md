@@ -22,7 +22,7 @@ Verify AC-3 / FR-4 / BR-3: when total work minutes exceed the shift's standard h
 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - "Day Shift": standard hours = 480 min (8h); overtime threshold = 0 (any excess over standard counts) for this case.
 - Auto-break: assume the scenario configures NO break deduction (or the 10h is already net of break) so the worked total is exactly 600 min — document which, to keep the 120-min expectation exact.
 - Jordan Lee has ONE open record: `clock_in` 08:00 local, `clock_out` null.

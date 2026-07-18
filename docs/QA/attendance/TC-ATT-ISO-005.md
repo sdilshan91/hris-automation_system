@@ -21,7 +21,7 @@ Verify write-side tenant isolation on the clock-out path: an authenticated emplo
 
 ## 3. Preconditions
 - Tenant "acme" and Tenant "globex" both exist and are `active`, Attendance module enabled.
-- Employee "Jordan Lee" is authenticated in "acme" with `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is authenticated in "acme" with `Attendance.CheckIn`.
 - Employee "Sam Doe" in "globex" has ONE OPEN `attendance_log` (clock_in set, clock_out null). The UUID of that record is known to the test (to attempt cross-tenant closure).
 
 ## 4. Test Data

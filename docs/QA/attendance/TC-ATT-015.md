@@ -22,7 +22,7 @@ Verify BR-1: once a record for the day has been clocked out (`clock_out` populat
 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - Jordan Lee has ONE COMPLETED `attendance_log` for today: `clock_in` 09:00 local, `clock_out` 17:00 local, `total_work_minutes = 420`, `status = COMPLETE`.
 
 ## 4. Test Data

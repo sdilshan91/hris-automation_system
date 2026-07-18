@@ -22,7 +22,7 @@ Verify that when the tenant policy treats geolocation as optional (`require_geol
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled.
 - Tenant attendance settings: `require_geolocation = false`, `ip_allowlist_enabled = false`, `require_photo = false`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, and has no clock-in for the current local day.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, and has no clock-in for the current local day.
 - The browser/test harness is configured to DENY the geolocation permission prompt.
 
 ## 4. Test Data

@@ -22,7 +22,7 @@ Verify BR-3's grace-period fallback chain used by the late-detection comparison:
 ## 3. Preconditions
 - Tenant "acme"; a tenant-level default grace is configured (e.g. 10 min).
 - Three SINGLE shifts on a 09:00 start: Shift-X grace = 15 (shift-level set); Shift-Y grace = null (falls back to tenant default 10); Shift-Z grace = null with the tenant default ALSO cleared (falls back to 0).
-- Three employees A/B/C assigned to X/Y/Z respectively; `Attendance.Clock.Self`.
+- Three employees A/B/C assigned to X/Y/Z respectively; `Attendance.CheckIn`.
 
 ## 4. Test Data
 | Field | Value | Notes |

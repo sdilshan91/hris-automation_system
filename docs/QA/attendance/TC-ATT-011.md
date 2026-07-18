@@ -20,7 +20,7 @@ Verify that the dashboard Clock-In card meets WCAG 2.1 AA: it is fully operable 
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, no open clock-in.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, no open clock-in.
 - Test tools available: keyboard-only navigation, a screen reader (NVDA/VoiceOver), and an automated a11y checker (axe) plus manual verification.
 
 ## 4. Test Data

@@ -20,7 +20,7 @@ Verify the dashboard clock-out experience meets WCAG 2.1 AA and the story's UI/U
 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, with ONE open record (live elapsed timer running).
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, with ONE open record (live elapsed timer running).
 - Test tools: keyboard-only navigation, a screen reader (NVDA/VoiceOver), an automated a11y checker (axe), and a contrast checker.
 
 ## 4. Test Data

@@ -21,7 +21,7 @@ Verify AC-2/FR-4/BR-6: when the tenant policy requires pre-approval for overtime
 
 ## 3. Preconditions
 - Tenant "acme" with overtime pre-approval policy = ON.
-- Employee "Asha" authenticated with `Attendance.Clock.Self`.
+- Employee "Asha" authenticated with `Attendance.CheckIn`.
 
 ## 4. Test Data
 | Field | Value | Notes |

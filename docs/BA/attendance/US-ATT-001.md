@@ -18,7 +18,7 @@ acceptance_criteria_count: 7
 
 ## 2. Preconditions
 - Employee must be authenticated and have an active session (JWT valid).
-- Employee must have the `Attendance.Clock.Self` permission.
+- Employee must have the `Attendance.CheckIn` permission.
 - Employee's tenant must have the Attendance module enabled.
 - Employee must be assigned to an active shift (or a default shift must exist for the tenant).
 - The current date must be a working day for the employee (unless tenant policy allows clock-in on holidays).

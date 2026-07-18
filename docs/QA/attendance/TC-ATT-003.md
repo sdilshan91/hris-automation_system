@@ -21,7 +21,7 @@ Verify that an employee who has already clocked in today without clocking out ca
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled, timezone `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - Jordan Lee already has ONE open `attendance_log` for the current local day (clocked in at 09:00 local, `clock_out` null).
 
 ## 4. Test Data

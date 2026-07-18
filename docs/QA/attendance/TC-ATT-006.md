@@ -21,7 +21,7 @@ Verify the grace-period boundary defined by BR-4. With a configured grace period
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled, timezone `America/New_York`.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`.
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`.
 - Jordan Lee is assigned to "Day Shift" with expected start 09:00 local.
 - Tenant grace period = 15 minutes (late threshold therefore at 09:15:00 local).
 - The clock allows the clock-in time to be controlled for each sub-case (no pre-existing record before each attempt).

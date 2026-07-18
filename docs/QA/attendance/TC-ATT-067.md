@@ -22,7 +22,7 @@ Verify FR-1/FR-2/AC-1/BR-1/NFR-1: when an employee clocks out and the net work t
 
 ## 3. Preconditions
 - Tenant "acme" active, Attendance module enabled; overtime rules configured (threshold 30 min, weekday multiplier 1.5x, daily cap 4h, weekly cap 20h).
-- Employee "Asha" authenticated with `Attendance.Clock.Self`, assigned a SINGLE shift with standard_hours = 8h (480 min) on a weekday.
+- Employee "Asha" authenticated with `Attendance.CheckIn`, assigned a SINGLE shift with standard_hours = 8h (480 min) on a weekday.
 - Asha has an OPEN attendance_log clocked in 9h ago (net of any auto-break), so the clock-out will compute 9h net.
 
 ## 4. Test Data

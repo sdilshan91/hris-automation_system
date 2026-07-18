@@ -11,7 +11,7 @@ created: 2026-06-14
 # TC-ATT-001: Employee clocks in successfully and a tenant-scoped attendance_log is created (happy path)
 
 ## 1. Test Objective
-Verify that an authenticated employee with the `Attendance.Clock.Self` permission can clock in from the browser when they have not clocked in today, that a new `attendance_log` record is created with the clock-in timestamp stored in UTC and `tenant_id` taken from the session context, that the IP/user-agent/source audit fields are captured, that the dashboard cache is updated, and that the UI shows a success confirmation with the time converted to the employee's local timezone.
+Verify that an authenticated employee with the `Attendance.CheckIn` permission can clock in from the browser when they have not clocked in today, that a new `attendance_log` record is created with the clock-in timestamp stored in UTC and `tenant_id` taken from the session context, that the IP/user-agent/source audit fields are captured, that the dashboard cache is updated, and that the UI shows a success confirmation with the time converted to the employee's local timezone.
 
 ## 2. Related Requirements
 - User Story: US-ATT-001
@@ -24,14 +24,14 @@ Verify that an authenticated employee with the `Attendance.Clock.Self` permissio
 - Tenant "acme" exists with status `active`, subdomain `acme.yourhrm.com`, timezone `America/New_York`, and the Attendance module enabled.
 - Employee "Jordan Lee" exists in "acme", is `active`, and is assigned to an active shift ("Day Shift", expected start 09:00 local).
 - Tenant attendance settings: `require_geolocation = false`, `ip_allowlist_enabled = false`, `require_photo = false`.
-- Jordan Lee is authenticated (valid JWT with `tenant_id` and `employee_id` claims) and holds the `Attendance.Clock.Self` permission.
+- Jordan Lee is authenticated (valid JWT with `tenant_id` and `employee_id` claims) and holds the `Attendance.CheckIn` permission.
 - Jordan Lee has NO open or completed `attendance_log` record for the current local calendar day.
 
 ## 4. Test Data
 | Field | Value | Notes |
 |-------|-------|-------|
 | Subdomain | acme.yourhrm.com | Active tenant, tz America/New_York |
-| User | Jordan Lee (Employee) | Has Attendance.Clock.Self |
+| User | Jordan Lee (Employee) | Has Attendance.CheckIn |
 | Shift | Day Shift, start 09:00 local | Active assignment |
 | Local clock-in time | 08:55 (within shift, before start) | For confirmation display check |
 | require_geolocation | false | Geo not enforced |

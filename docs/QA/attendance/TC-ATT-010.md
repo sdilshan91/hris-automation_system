@@ -20,7 +20,7 @@ Verify NFR-1: the clock-in endpoint's response time stays at or below 500ms at t
 
 ## 3. Preconditions
 - Tenant "acme" exists, `active`, Attendance module enabled.
-- A pool of distinct active employees (e.g., 200) each holding `Attendance.Clock.Self`, each with NO open clock-in at the start of the run (so each request is a valid first clock-in, exercising the create path, not the duplicate-reject path).
+- A pool of distinct active employees (e.g., 200) each holding `Attendance.CheckIn`, each with NO open clock-in at the start of the run (so each request is a valid first clock-in, exercising the create path, not the duplicate-reject path).
 - Test environment representative of production (DB sizing, network, cache layer); a warm-up phase precedes measurement.
 - Geo and IP policies set to a representative configuration (document which: optional geo, IP allowlist off) so the measured path reflects the common case.
 

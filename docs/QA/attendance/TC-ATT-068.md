@@ -21,7 +21,7 @@ Verify BR-2/FR-1: work that exceeds the shift standard by LESS than the tenant o
 
 ## 3. Preconditions
 - Tenant "acme", overtime threshold = 30 min, standard_hours = 480 min (8h), weekday.
-- Employee "Asha" authenticated with `Attendance.Clock.Self`, an OPEN record that will compute to the net minutes per the variant.
+- Employee "Asha" authenticated with `Attendance.CheckIn`, an OPEN record that will compute to the net minutes per the variant.
 
 ## 4. Test Data
 | Field | Value | Notes |

@@ -21,7 +21,7 @@ Verify NFR-3: the clock-out operation (set `clock_out`, compute `total_work_minu
 
 ## 3. Preconditions
 - Tenant "acme", `active`, Attendance module enabled.
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, with ONE open record (clock_in 09:00 local).
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, with ONE open record (clock_in 09:00 local).
 - A fault-injection mechanism is available to fail the transaction after the `clock_out` write but before the derived fields / commit (e.g., forced exception, DB error, or cache-write failure depending on the design).
 
 ## 4. Test Data

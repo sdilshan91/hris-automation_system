@@ -23,7 +23,7 @@ Verify AC-5 / FR-6: when the tenant policy requires geolocation on clock-out, th
 - Tenant "acme", `active`, Attendance module enabled, tz `America/New_York`.
 - Tenant policy: `require_geolocation_on_clock_out = true`.
 - App served over HTTPS (Geolocation API requires a secure context).
-- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.Clock.Self`, with ONE open record (clock_in 09:00 local).
+- Employee "Jordan Lee" is `active`, authenticated, holds `Attendance.CheckIn`, with ONE open record (clock_in 09:00 local).
 
 ## 4. Test Data
 | Field | Value | Notes |

@@ -21,7 +21,7 @@ Verify that attendance data is fully tenant-isolated on reads: a user authentica
 ## 3. Preconditions
 - Tenant "acme" exists with attendance records for employee "Jordan Lee".
 - Tenant "globex" exists with attendance records for employee "Sam Doe".
-- A user with `Attendance.Clock.Self` (and any read permission) is authenticated in the "acme" tenant context.
+- A user with `Attendance.CheckIn` (and any read permission) is authenticated in the "acme" tenant context.
 
 ## 4. Test Data
 | Field | Value | Notes |

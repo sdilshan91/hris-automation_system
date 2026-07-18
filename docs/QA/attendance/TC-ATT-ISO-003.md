@@ -20,7 +20,7 @@ Verify write-side tenant isolation: an authenticated employee in Tenant A cannot
 
 ## 3. Preconditions
 - Tenant "acme" and Tenant "globex" both exist and are `active`.
-- Employee "Jordan Lee" is authenticated in "acme" with `Attendance.Clock.Self`, no open clock-in.
+- Employee "Jordan Lee" is authenticated in "acme" with `Attendance.CheckIn`, no open clock-in.
 - The UUIDs of a globex tenant and a globex employee are known to the test (to attempt spoofing).
 
 ## 4. Test Data

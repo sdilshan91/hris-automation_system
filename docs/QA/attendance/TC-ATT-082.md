@@ -15,11 +15,11 @@ Verify the authn/authz contract for the overtime endpoints: all require a valid 
 
 ## 2. Related Requirements
 - User Story: US-ATT-006
-- Preconditions: Section 2 (authenticated, `Attendance.Clock.Self`; manager/HR permissions for approval/report)
+- Preconditions: Section 2 (authenticated, `Attendance.CheckIn`; manager/HR permissions for approval/report)
 - Functional Requirements: FR-4 (pre-approval self-service), FR-5 (manager approval), FR-6 (approve/reject), AC-5 (HR report)
 
 ## 3. Preconditions
-- Tenant "acme". Employee "Asha" (`Attendance.Clock.Self`), Manager "Ben" (overtime-approve), HR "Priya" (overtime-report). A PENDING overtime_record exists for Asha.
+- Tenant "acme". Employee "Asha" (`Attendance.CheckIn`), Manager "Ben" (overtime-approve), HR "Priya" (overtime-report). A PENDING overtime_record exists for Asha.
 
 ## 4. Test Data
 | Field | Value | Notes |
