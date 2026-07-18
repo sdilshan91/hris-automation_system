@@ -65,7 +65,8 @@ public sealed class SelfAssessmentServiceTests
         Substitute.For<ILogger<SelfAssessmentService>>());
 
     /// <param name="windowOpen">when false the self-assessment window is in the past (AC-4 closed).</param>
-    private void Seed(bool windowOpen = true)
+    /// <param name="windowFuture">when true the self-assessment window has NOT yet opened (ISSUE-107).</param>
+    private void Seed(bool windowOpen = true, bool windowFuture = false)
     {
         using var db = CreateDbContext();
 
@@ -93,8 +94,8 @@ public sealed class SelfAssessmentServiceTests
             Status = AppraisalCycleStatus.Active,
             GoalSettingStart = now.AddDays(-60),
             GoalSettingEnd = now.AddDays(-30),
-            SelfAssessmentStart = windowOpen ? now.AddDays(-5) : now.AddDays(-20),
-            SelfAssessmentEnd = windowOpen ? now.AddDays(5) : now.AddDays(-10),
+            SelfAssessmentStart = windowFuture ? now.AddDays(10) : windowOpen ? now.AddDays(-5) : now.AddDays(-20),
+            SelfAssessmentEnd = windowFuture ? now.AddDays(20) : windowOpen ? now.AddDays(5) : now.AddDays(-10),
             RatingScaleMax = 5,
             SelfWeightPercent = 30,
             IsDeleted = false,
@@ -276,6 +277,27 @@ public sealed class SelfAssessmentServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("self_assessment_closed");
+    }
+
+    // ── ISSUE-107: a FUTURE (not-yet-open) self-assessment window must return a "not yet open"
+    //    message + code, NOT the "has ended" wording used for a genuinely past window. ──
+    [Fact]
+    public async Task Submit_FutureWindow_Returns_NotYetOpen_NotEnded()
+    {
+        Seed(windowFuture: true);
+        var input = new SaveSelfAssessmentInput(_cycleId, new[]
+        {
+            Rated(_goal1, 5, 100, ValidComment),
+            Rated(_goal2, 3, 70, ValidComment),
+        });
+
+        var result = await CreateService().SubmitAsync(input);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("self_assessment_not_open");
+        result.Error.Should().Be("The self-assessment period for this cycle has not opened yet.");
+        result.Error.Should().NotContain("ended");
     }
 
     [Fact]

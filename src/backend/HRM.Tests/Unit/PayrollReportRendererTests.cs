@@ -49,6 +49,21 @@ public sealed class PayrollReportRendererTests
         text.Should().Contain("Engineering").And.Contain("TOTAL");
     }
 
+    // ── ISSUE-198: payroll CSV must begin with the UTF-8 BOM (EF BB BF) so Excel auto-detects
+    //    UTF-8 — matching the HR + leave CSV writers via the shared CsvExport helper. ──
+    [Fact]
+    public void Csv_StartsWith_Utf8Bom()
+    {
+        var bytes = PayrollReportRenderer.RenderCsv(SampleReport());
+
+        bytes.Should().HaveCountGreaterThanOrEqualTo(3);
+        bytes[0].Should().Be(0xEF);
+        bytes[1].Should().Be(0xBB);
+        bytes[2].Should().Be(0xBF);
+        // exactly one BOM — the byte immediately after must be the start of the header, not a second BOM.
+        bytes[3].Should().NotBe(0xEF);
+    }
+
     [Fact]
     public void Xlsx_HeaderCells_MatchColumns()
     {

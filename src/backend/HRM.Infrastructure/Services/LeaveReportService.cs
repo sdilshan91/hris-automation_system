@@ -1180,7 +1180,9 @@ public sealed class LeaveReportService : ILeaveReportService
     private static byte[] RenderCsv(LeaveReportResult result)
     {
         using var stream = new MemoryStream();
-        using (var writer = new StreamWriter(stream, leaveOpen: true))
+        // ISSUE-198: prepend the UTF-8 BOM so Excel auto-detects UTF-8 (matches the HR + payroll CSV writers).
+        CsvExport.WriteBom(stream);
+        using (var writer = new StreamWriter(stream, CsvExport.NoBomEncoding, leaveOpen: true))
         using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
         {
             foreach (var header in result.Columns)

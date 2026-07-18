@@ -15,7 +15,10 @@ public sealed class UpdateVacancyValidator : AbstractValidator<UpdateVacancyComm
             .NotEmpty().WithMessage("Vacancy title is required.")
             .MaximumLength(200).WithMessage("Vacancy title cannot exceed 200 characters.");
 
+        // ISSUE-096: FR-1 lists headcount as required (≥1). Reject an omitted/null headcount (an absent
+        // body field now binds to null, not a default of 1) as well as an explicit value < 1.
         RuleFor(x => x.Headcount)
+            .NotNull().WithMessage("Headcount is required.")
             .GreaterThanOrEqualTo(1).WithMessage("Headcount must be at least 1.");
 
         RuleFor(x => x.EmploymentType)

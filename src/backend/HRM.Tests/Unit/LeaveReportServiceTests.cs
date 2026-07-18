@@ -1018,6 +1018,30 @@ public sealed class LeaveReportServiceTests
         lines.Should().HaveCount(2);
     }
 
+    // ── ISSUE-198: leave CSV must begin with the UTF-8 BOM (EF BB BF) so Excel auto-detects
+    //    UTF-8 — matching the HR + payroll CSV writers via the shared CsvExport helper. ──
+    [Fact]
+    public async Task Export_Csv_StartsWith_Utf8Bom()
+    {
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 14m);
+        StubEntitlement(_empAlice, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empBob, _annualLeaveTypeId, 0m);
+        StubEntitlement(_empBob, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empCarol, _annualLeaveTypeId, 0m);
+        StubEntitlement(_empCarol, _sickLeaveTypeId, 0m);
+
+        var result = await CreateService().ExportReportAsync(
+            LeaveReportType.BalanceSummary, ReportExportFormat.Csv, Params(leaveTypeId: _annualLeaveTypeId));
+
+        result.IsSuccess.Should().BeTrue();
+        var bytes = result.Value!.FileContent!;
+        bytes.Should().HaveCountGreaterThanOrEqualTo(3);
+        bytes[0].Should().Be(0xEF);
+        bytes[1].Should().Be(0xBB);
+        bytes[2].Should().Be(0xBF);
+        bytes[3].Should().NotBe(0xEF); // exactly one BOM
+    }
+
     [Fact]
     public async Task Export_Xlsx_ProducesReadableWorkbookWithHeadersAndRows()
     {

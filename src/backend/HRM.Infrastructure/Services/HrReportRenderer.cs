@@ -1,6 +1,7 @@
 using System.Globalization;
 using ClosedXML.Excel;
 using CsvHelper;
+using HRM.Application.Common.Helpers;
 using HRM.Domain.Entities;
 using HRM.Application.Features.Reports.DTOs;
 using QuestPDF.Fluent;
@@ -63,11 +64,10 @@ public static class HrReportRenderer
         using var stream = new MemoryStream();
 
         // Write the UTF-8 BOM explicitly (FR-2/AC-4). The StreamWriter below is created with a NO-BOM encoding
-        // so we control the single leading BOM ourselves.
-        stream.Write([0xEF, 0xBB, 0xBF], 0, 3);
+        // so we control the single leading BOM ourselves (ISSUE-198: shared with payroll + leave writers).
+        CsvExport.WriteBom(stream);
 
-        var noBomUtf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        using (var writer = new StreamWriter(stream, noBomUtf8, leaveOpen: true))
+        using (var writer = new StreamWriter(stream, CsvExport.NoBomEncoding, leaveOpen: true))
         using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
         {
             foreach (var header in report.Table.Columns)

@@ -1,4 +1,6 @@
 using HRM.Application.Common.Interfaces;
+using HRM.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 
 namespace HRM.Api.Middleware;
@@ -16,7 +18,24 @@ public sealed class SessionActivityMiddleware
     // ConcurrentDictionary is used for thread safety across concurrent requests.
     private static readonly ConcurrentDictionary<Guid, DateTime> _lastUpdateTimes = new();
 
-    private static readonly TimeSpan DebounceInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan DefaultDebounceInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// The effective debounce window, clamped below the tenant's configured idle timeout so a very short
+    /// idle window (the policy validator permits idle = 1 minute) is never defeated by the debounce
+    /// (ISSUE-061). Without the clamp, when the fixed 1-minute debounce is >= the idle timeout an actively
+    /// used session can still be marked idle-expired because the intermediate requests are debounced out of
+    /// advancing <c>last_active_at</c>. Returns <c>min(configured, idleTimeout / 2)</c>; a non-positive idle
+    /// timeout falls back to <paramref name="configured"/>.
+    /// </summary>
+    public static TimeSpan ClampDebounce(TimeSpan configured, int idleTimeoutMinutes)
+    {
+        if (idleTimeoutMinutes <= 0)
+            return configured;
+
+        var half = TimeSpan.FromMinutes(idleTimeoutMinutes) / 2;
+        return half < configured ? half : configured;
+    }
 
     public SessionActivityMiddleware(RequestDelegate next)
     {
@@ -52,16 +71,6 @@ public sealed class SessionActivityMiddleware
 
         var now = DateTime.UtcNow;
 
-        // Debounce: only update if more than 1 minute has passed since last update for this session
-        if (_lastUpdateTimes.TryGetValue(sessionId.Value, out var lastUpdate) &&
-            (now - lastUpdate) < DebounceInterval)
-        {
-            return;
-        }
-
-        // Update the timestamp and record the time
-        _lastUpdateTimes[sessionId.Value] = now;
-
         // ISSUE-268: RLS-on GUC gap. The fire-and-forget Task runs on a detached fresh scope whose AppDbContext gets
         // no app.current_tenant GUC from the caller, so under RLS-on the RLS-policy-bearing refresh_tokens UPDATE
         // would silently affect 0 rows (IgnoreQueryFilters does NOT bypass DB RLS). Capture the resolved tenant id
@@ -73,6 +82,34 @@ public sealed class SessionActivityMiddleware
             ? tc.TenantId
             : null;
         var scopeSubdomain = tenantContext?.Subdomain ?? string.Empty;
+
+        // ISSUE-061: clamp the debounce below the tenant's configured idle timeout so a short idle window
+        // (the policy validator permits idle = 1 min) is never defeated by the fixed 1-min debounce — the
+        // intermediate requests must keep advancing last_active_at. Only resolved tenants have a policy; the
+        // system/unresolved path keeps the default debounce.
+        var debounceInterval = DefaultDebounceInterval;
+        if (scopeTenantId is { } clampTenantId)
+        {
+            var idleTimeoutMinutes = await context.RequestServices
+                .GetRequiredService<AppDbContext>().Tenants
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(t => t.Id == clampTenantId)
+                .Select(t => (int?)t.IdleTimeoutMinutes)
+                .FirstOrDefaultAsync(context.RequestAborted);
+            if (idleTimeoutMinutes is { } idle)
+                debounceInterval = ClampDebounce(DefaultDebounceInterval, idle);
+        }
+
+        // Debounce: only update once the (clamped) debounce window has elapsed for this session
+        if (_lastUpdateTimes.TryGetValue(sessionId.Value, out var lastUpdate) &&
+            (now - lastUpdate) < debounceInterval)
+        {
+            return;
+        }
+
+        // Update the timestamp and record the time
+        _lastUpdateTimes[sessionId.Value] = now;
 
         // Fire-and-forget to avoid adding latency to the request
         // The update is non-critical; if it fails, the next request will retry
