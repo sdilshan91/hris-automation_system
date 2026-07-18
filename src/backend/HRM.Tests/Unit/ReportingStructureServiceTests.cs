@@ -396,6 +396,41 @@ public sealed class ReportingStructureServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task BulkAssignManager_ItemCarriesRealEmployeeName_AndSeparateMessage_Issue027()
+    {
+        var manager = CreateEmployee("Manager", "Bulk");
+        var emp1 = CreateEmployee("Alice", "Alpha");
+        var emp2 = CreateEmployee("Bob", "Bravo");
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.AddRange(manager, emp1, emp2);
+            await db.SaveChangesAsync();
+        }
+
+        var result = await CreateService().BulkAssignManagerAsync(new BulkAssignManagerRequest
+        {
+            EmployeeIds = [emp1.Id, emp2.Id],
+            ManagerEmployeeId = manager.Id,
+            Reason = "Bulk assignment",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+
+        var item1 = result.Value!.Results.First(r => r.EmployeeId == emp1.Id);
+        // ISSUE-027: EmployeeName is the REAL name, not the status sentence.
+        item1.EmployeeName.Should().Be("Alice Alpha");
+        // The status sentence now lives in its own Message field.
+        item1.Message.Should().NotBeNullOrWhiteSpace();
+        item1.Message.Should().Contain("Alice Alpha");
+        item1.Message.Should().Contain("Manager Bulk");
+        item1.EmployeeName.Should().NotBe(item1.Message);
+
+        var item2 = result.Value.Results.First(r => r.EmployeeId == emp2.Id);
+        item2.EmployeeName.Should().Be("Bob Bravo");
+    }
+
+    [Fact]
     public async Task BulkAssignManager_WithSelfAssignment_ReportsPerEmployeeFailure()
     {
         var manager = CreateEmployee("Manager", "B");

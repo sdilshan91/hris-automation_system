@@ -191,6 +191,72 @@ public sealed class CustomFieldServiceTests : IDisposable
         result.Error.Should().Contain("already exists");
     }
 
+    // ── ISSUE-028: field_name case-insensitive uniqueness + trim-on-write ─────────
+
+    [Fact]
+    public async Task CreateAsync_RejectsCaseVariantFieldName_SameTenantAndEntity_Issue028()
+    {
+        await SeedTenant();
+
+        // Distinct explicit field keys so the separate key-uniqueness guard does NOT mask the
+        // case-insensitive display-name check we are exercising.
+        var first = await CreateService().CreateAsync(new CreateCustomFieldRequest
+        {
+            EntityType = "employee", FieldName = "Region", FieldKey = "region_a", FieldType = "text",
+        });
+        first.IsSuccess.Should().BeTrue();
+
+        var result = await CreateService().CreateAsync(new CreateCustomFieldRequest
+        {
+            EntityType = "employee", FieldName = "region", FieldKey = "region_b", FieldType = "text",
+        });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("already exists");
+    }
+
+    [Fact]
+    public async Task CreateAsync_TrimsFieldName_OnPersist_Issue028()
+    {
+        await SeedTenant();
+
+        var result = await CreateService().CreateAsync(new CreateCustomFieldRequest
+        {
+            EntityType = "employee", FieldName = "  Padded Name  ", FieldKey = "padkey", FieldType = "text",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.FieldName.Should().Be("Padded Name");
+
+        // Confirm the persisted row is trimmed, not just the returned DTO.
+        await using var db = CreateDbContext();
+        var stored = await db.CustomFieldDefinitions.FirstAsync(c => c.Id == result.Value.Id);
+        stored.FieldName.Should().Be("Padded Name");
+    }
+
+    [Fact]
+    public async Task UpdateAsync_TrimsFieldName_OnPersist_Issue028()
+    {
+        await SeedTenant();
+        var created = await CreateService().CreateAsync(new CreateCustomFieldRequest
+        {
+            EntityType = "employee", FieldName = "Original", FieldType = "text",
+        });
+
+        var result = await CreateService().UpdateAsync(created.Value!.Id, new UpdateCustomFieldRequest
+        {
+            FieldName = "  Renamed  ",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.FieldName.Should().Be("Renamed");
+
+        await using var db = CreateDbContext();
+        var stored = await db.CustomFieldDefinitions.FirstAsync(c => c.Id == created.Value.Id);
+        stored.FieldName.Should().Be("Renamed");
+    }
+
     [Fact]
     public async Task CreateAsync_BlocksWhenPlanLimitReached()
     {

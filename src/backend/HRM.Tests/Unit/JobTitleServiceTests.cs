@@ -181,6 +181,38 @@ public sealed class JobTitleServiceTests : IDisposable
         result.Error.Should().Be("A job title with this name already exists.");
     }
 
+    // ── ISSUE-022: title_name is trimmed on create/update (TC-CHR-046) ───────────
+
+    [Fact]
+    public async Task CreateJobTitle_TrimsSurroundingWhitespace_OnPersist_Issue022()
+    {
+        var service = CreateService();
+
+        var result = await service.CreateAsync("  Trim Probe  ", null, null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.TitleName.Should().Be("Trim Probe");
+
+        // Confirm the persisted row is trimmed, not just the returned DTO.
+        using var db = CreateDbContext();
+        db.JobTitles.Single().TitleName.Should().Be("Trim Probe");
+    }
+
+    [Fact]
+    public async Task UpdateJobTitle_TrimsSurroundingWhitespace_OnPersist_Issue022()
+    {
+        var id = await SeedJobTitle("Original Title");
+        var service = CreateService();
+
+        var result = await service.UpdateAsync(id, "  Renamed Title  ", null, null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.TitleName.Should().Be("Renamed Title");
+
+        using var db = CreateDbContext();
+        db.JobTitles.Single(j => j.Id == id).TitleName.Should().Be("Renamed Title");
+    }
+
     [Fact]
     public async Task CreateJobTitle_GenuinelyDistinctName_Succeeds_BUG016()
     {
