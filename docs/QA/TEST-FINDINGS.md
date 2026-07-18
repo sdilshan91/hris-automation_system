@@ -256,7 +256,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-007 — `{id}` path parameter means TWO different things on the same TenantUsersController (userTenantId vs userId) + mixed authz gates
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #379, merged 2026-07-19 — split TenantUsersController: US-ADM-005 actions keyed by {userTenantId}, US-AUTH-009/010 actions moved to by-user/{userId}/... ; FE auth.service + 12 TC docs aligned; enforcer PASS, no route collision, gates unchanged)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-005 · (cross-cutting; surfaced while testing TC-ADM-005-11/-14/-18 + the unlock/sessions endpoints)
 - **Title:** On `TenantUsersController`, the US-ADM-005 actions (`PUT {id}/roles`, `POST {id}/deactivate`, `/force-password-reset`, `/end-sessions`, `GET {id}/detail`) take a **`userTenantId`** in `{id}`, while the AUTH-carryover actions on the same controller (`POST {id}/unlock`, `GET {id}/sessions`, `POST {id}/sessions/revoke`) take a **`userId`** in `{id}`. The two groups also use different authorization: the US-ADM-005 actions use `[RequirePermission("Tenant.ManageUsers")]`, the AUTH actions use `[Authorize(Roles="Tenant Admin,Tenant Owner")]`. A caller cannot tell from the route which id-kind / which gate applies.
@@ -6216,7 +6216,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-280 — Codebase is split on how it identifies the BASIC salary component (by Code vs by display Name); `PayrollSlipLine` drops `Code`, forcing post-slip consumers to re-string-match names
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN (deferred — durable refactor)
+- **Status:** DEFERRED (2026-07-19 — payroll-model pass, DF-37) (deferred — durable refactor)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-003/006/010 / (auto-healed from BUG-078 OUT-OF-LANE OL-3)
 - **Title:** BASIC is identified correctly-by-Code in `PayrollSlipCalculator` (LOP base), `CtcResidualBalancer`, `CtcBreakdownCalculator`, `LeaveEncashmentService`, but was wrongly-by-Name in `PayrollRunProcessor` (BUG-078/BUG-280, now fixed) and via a name/basis heuristic in `PayrollReportService`. The root enabler is that `PayrollSlipLine`/`PayrollSlipDetail` carry only `Name`+`ComponentId`, not `Code`, so every consumer downstream of the slip has to re-identify BASIC.
@@ -6387,7 +6387,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ---
 
 ### ISSUE-295 — BUG-079 residual clauses: encashment daily-rate BASIC basis, null carry-forward-limit, and gate-vs-year-end forfeitable parity
-- **Type / Severity / Status:** ISSUE (residual / needs-decision) · LOW · OPEN
+- **Type / Severity / Status:** ISSUE (residual / needs-decision) · LOW · DEFERRED (2026-07-19 — user decision: fold into a focused payroll-model pass, DEFERRED-FOLLOWUPS DF-37; a piecemeal component-keying change risks pay math)
 - **Layer:** BE · (auto-healed from BUG-079, #284)
 - **Module / US / TC:** Payroll / US-PAY-010 (leave encashment)
 - **Title:** Three LOW residuals surfaced while resolving BUG-079 (the BR-6 gate + double-pay were fixed in #284):
