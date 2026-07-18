@@ -26,12 +26,16 @@ public sealed class EmployeeService : IEmployeeService
     private readonly ICustomFieldService _customFieldService;
     private readonly ILogger<EmployeeService> _logger;
 
-    // Allowed MIME types for profile photos (FR-6)
+    // Allowed MIME types for profile photos (FR-6).
+    // ISSUE-246: WebP is intentionally EXCLUDED. AC-4/FR-6 requires stripping EXIF/IPTC/XMP (GPS + camera
+    // PII) before storage, but ImageSharp is pinned to 2.1.x, whose WebP support cannot re-encode a
+    // metadata-stripped WebP — so a WebP upload would be stored with its location/PII profile intact.
+    // Rejecting WebP (rather than silently passing it through un-stripped) is the safe choice until the
+    // ImageSharp upgrade / a dedicated WebP strip path lands. JPEG/PNG are fully stripped.
     private static readonly HashSet<string> AllowedPhotoMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/jpeg",
         "image/png",
-        "image/webp",
     };
 
     // Maximum photo file size: 5 MB (FR-6)
@@ -252,7 +256,7 @@ public sealed class EmployeeService : IEmployeeService
         // Validate MIME type
         if (!AllowedPhotoMimeTypes.Contains(contentType))
             return Result<string>.Failure(
-                $"Invalid file type '{contentType}'. Allowed types: JPEG, PNG, WebP.", 400);
+                $"Invalid file type '{contentType}'. Allowed types: JPEG, PNG.", 400);
 
         // Validate file size (5 MB max)
         if (fileSize > MaxPhotoSizeBytes)
@@ -272,7 +276,7 @@ public sealed class EmployeeService : IEmployeeService
         var signature = await FileSignatureValidator.ValidateStreamAsync(contentType, fileStream, cancellationToken);
         if (signature.IsFailure)
             return Result<string>.Failure(
-                "File content does not match its type. Allowed types: JPEG, PNG, WebP.",
+                "File content does not match its type. Allowed types: JPEG, PNG.",
                 400, FileSignatureValidator.ErrorCode);
 
         // NFR-3: Virus scan before persistence

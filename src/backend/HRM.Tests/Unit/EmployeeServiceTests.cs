@@ -507,6 +507,29 @@ public sealed class EmployeeServiceTests : IDisposable
         result.Error.Should().Contain("Invalid file type");
     }
 
+    // ── ISSUE-246: WebP is rejected — ImageSharp 2.1.x can't strip WebP EXIF, so allowing it would
+    //    store un-stripped GPS/PII metadata. WebP must be refused, not passed through. ──
+    [Fact]
+    public async Task UploadPhoto_WebP_IsRejected_ISSUE246()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var service = CreateService();
+
+        var createResult = await service.CreateAsync(MakeRequest(deptId, jtId));
+        createResult.IsSuccess.Should().BeTrue();
+
+        service = CreateService();
+        using var stream = new MemoryStream(new byte[1024]);
+        var result = await service.UploadProfilePhotoAsync(
+            createResult.Value!.Id, stream, "photo.webp", "image/webp", 1024);
+
+        result.IsFailure.Should().BeTrue("WebP EXIF cannot be stripped on the pinned ImageSharp, so it is refused");
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("Allowed types: JPEG, PNG").And.NotContain("WebP");
+    }
+
     [Fact]
     public async Task UploadPhoto_ExceedsMaxSize_ShouldFail()
     {
