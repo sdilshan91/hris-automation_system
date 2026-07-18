@@ -510,9 +510,17 @@ public sealed class GoalService : IGoalService
         if (cycle is null)
             return Result.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
 
-        if (!cycle.IsGoalSettingOpen(DateTime.UtcNow))
-            return Result.Failure(
-                "The goal-setting window for this cycle has closed.", 409, "goal_setting_closed");
+        var now = DateTime.UtcNow;
+        if (!cycle.IsGoalSettingOpen(now))
+        {
+            // ISSUE-098: distinguish "not yet open" (future window) from "closed" (past window) so the
+            // manager isn't told they missed a deadline when the window simply hasn't opened yet.
+            return cycle.IsGoalSettingNotYetOpen(now)
+                ? Result.Failure(
+                    "The goal-setting window for this cycle has not opened yet.", 409, "goal_setting_not_open")
+                : Result.Failure(
+                    "The goal-setting window for this cycle has closed.", 409, "goal_setting_closed");
+        }
 
         return Result.Success();
     }

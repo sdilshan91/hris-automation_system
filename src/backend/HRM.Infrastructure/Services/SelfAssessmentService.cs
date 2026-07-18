@@ -92,9 +92,17 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
             return Result<SelfAssessmentDto>.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
 
         // BR-1/AC-4: edits/submits only while the self-assessment window is open.
-        if (!cycle.IsSelfAssessmentOpen(DateTime.UtcNow))
-            return Result<SelfAssessmentDto>.Failure(
-                "The self-assessment period for this cycle has ended.", 409, "self_assessment_closed");
+        var now = DateTime.UtcNow;
+        if (!cycle.IsSelfAssessmentOpen(now))
+        {
+            // ISSUE-107: distinguish "not yet open" (future window) from "has ended" (past window) so the
+            // employee isn't told the period ended when it simply hasn't opened yet.
+            return cycle.IsSelfAssessmentNotYetOpen(now)
+                ? Result<SelfAssessmentDto>.Failure(
+                    "The self-assessment period for this cycle has not opened yet.", 409, "self_assessment_not_open")
+                : Result<SelfAssessmentDto>.Failure(
+                    "The self-assessment period for this cycle has ended.", 409, "self_assessment_closed");
+        }
 
         var goals = await LoadGoalsAsync(employee.Id, input.CycleId, cancellationToken);
         if (goals.Count == 0)

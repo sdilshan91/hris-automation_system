@@ -1,6 +1,7 @@
 using System.Globalization;
 using ClosedXML.Excel;
 using CsvHelper;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Features.Payroll.DTOs;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -41,11 +42,13 @@ public static class PayrollReportRenderer
         };
     }
 
-    // ── CSV (CsvHelper — same approach as the leave-report renderer) ──────────
+    // ── CSV (CsvHelper, UTF-8 BOM — same approach as the leave-report renderer) ──
+    // ISSUE-198: prepend the UTF-8 BOM so Excel auto-detects UTF-8 (matches the HR + leave CSV writers).
     public static byte[] RenderCsv(PayrollReportResult report)
     {
         using var stream = new MemoryStream();
-        using (var writer = new StreamWriter(stream, leaveOpen: true))
+        CsvExport.WriteBom(stream);
+        using (var writer = new StreamWriter(stream, CsvExport.NoBomEncoding, leaveOpen: true))
         using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
         {
             foreach (var header in report.Columns)

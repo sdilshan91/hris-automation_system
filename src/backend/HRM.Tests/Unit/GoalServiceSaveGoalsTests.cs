@@ -295,6 +295,48 @@ public sealed class GoalServiceSaveGoalsTests
         result.ErrorCode.Should().Be("goal_setting_closed");
     }
 
+    // ── ISSUE-098: a FUTURE (not-yet-open) goal-setting window must return a "not yet open"
+    //    message + code, NOT the "has closed" wording used for a genuinely past window. ──
+    [Fact]
+    public async Task SaveGoals_FutureWindow_Returns_NotYetOpen_NotClosed()
+    {
+        SeedFutureGoalWindow();
+
+        var request = new[] { Item(null, "A", 40) };
+
+        var result = await Service().SaveGoalsAsync(_employeeId, _cycleId, request);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("goal_setting_not_open");
+        result.Error.Should().Be("The goal-setting window for this cycle has not opened yet.");
+        result.Error.Should().NotContain("closed");
+    }
+
+    private void SeedFutureGoalWindow()
+    {
+        using var db = Db();
+        var now = DateTime.UtcNow;
+
+        db.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme" });
+        db.Employees.Add(new Employee
+        {
+            Id = _employeeId, TenantId = _tenantId, UserId = Guid.NewGuid(),
+            EmployeeNo = "EMP-0001", FirstName = "Ada", LastName = "Lovelace",
+            Email = "ada@acme.com", Status = EmployeeStatus.Active, IsDeleted = false,
+        });
+        db.AppraisalCycles.Add(new AppraisalCycle
+        {
+            Id = _cycleId, TenantId = _tenantId, Name = "FY2026",
+            Status = AppraisalCycleStatus.Active,
+            // Goal-setting window starts in ~20 days — not yet open.
+            GoalSettingStart = now.AddDays(20), GoalSettingEnd = now.AddDays(40),
+            SelfAssessmentStart = now.AddDays(50), SelfAssessmentEnd = now.AddDays(60),
+            RatingScaleMax = 5, SelfWeightPercent = 30, IsDeleted = false,
+        });
+        db.SaveChanges();
+    }
+
     // ── BR-4: not the direct manager (Team scope only) → 403 ──────────
 
     [Fact]

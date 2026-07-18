@@ -174,6 +174,24 @@ public sealed class AppraisalCycle : BaseEntity
         return nowUtc >= legacyStart && nowUtc <= legacyEnd;
     }
 
+    // ── "Not yet open" discriminators (ISSUE-098 / ISSUE-107) ───────────
+    // A window that is not open is either NOT-YET-OPEN (now is before its start) or CLOSED (now is past its
+    // end). These let callers pick accurate user-facing wording instead of a single "has closed"/"has ended"
+    // message for both cases. Phase-vs-legacy resolution mirrors IsPhaseOpen exactly.
+
+    /// <summary>True when "now" is before the goal-setting window has opened (ISSUE-098).</summary>
+    public bool IsGoalSettingNotYetOpen(DateTime nowUtc) => IsPhaseNotYetOpen(CyclePhaseType.GoalSetting, GoalSettingStart, nowUtc);
+
+    /// <summary>True when "now" is before the self-assessment window has opened (ISSUE-107).</summary>
+    public bool IsSelfAssessmentNotYetOpen(DateTime nowUtc) => IsPhaseNotYetOpen(CyclePhaseType.SelfAssessment, SelfAssessmentStart, nowUtc);
+
+    private bool IsPhaseNotYetOpen(CyclePhaseType phaseType, DateTime legacyStart, DateTime nowUtc)
+    {
+        var phase = Phases.FirstOrDefault(p => p.PhaseType == phaseType);
+        var start = phase?.StartDate ?? legacyStart;
+        return nowUtc < start;
+    }
+
     /// <summary>The manager weight in the self-vs-manager blend (BR-4): 100 - SelfWeightPercent.</summary>
     public int ManagerWeightPercent => 100 - SelfWeightPercent;
 

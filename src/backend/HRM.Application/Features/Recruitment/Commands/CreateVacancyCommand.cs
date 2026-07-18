@@ -14,7 +14,7 @@ public sealed record CreateVacancyCommand(
     Guid? LocationId,
     Guid? HiringManagerId,
     EmploymentType EmploymentType,
-    int Headcount,
+    int? Headcount,
     decimal? SalaryMin,
     decimal? SalaryMax,
     string? SalaryCurrency,
@@ -33,7 +33,7 @@ public sealed class CreateVacancyCommandHandler : IRequestHandler<CreateVacancyC
     public Task<Result<VacancyDto>> Handle(CreateVacancyCommand request, CancellationToken cancellationToken)
         => _service.CreateAsync(new VacancyInput(
             request.Title, request.DepartmentId, request.JobTitleId, request.LocationId,
-            request.HiringManagerId, request.EmploymentType, request.Headcount,
+            request.HiringManagerId, request.EmploymentType, request.Headcount!.Value,
             request.SalaryMin, request.SalaryMax, request.SalaryCurrency,
             request.Description, request.Qualifications, request.ApplicationDeadline,
             request.PublishToPublicCareers), cancellationToken);

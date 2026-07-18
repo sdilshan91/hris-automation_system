@@ -110,7 +110,9 @@ public sealed record CreateVacancyRequest
     public Guid? LocationId { get; init; }
     public Guid? HiringManagerId { get; init; }
     public EmploymentType EmploymentType { get; init; } = EmploymentType.FullTime;
-    public int Headcount { get; init; } = 1;
+    // ISSUE-096: nullable + no default so an omitted headcount is rejected (FR-1 "required") rather than
+    // silently defaulting to 1. The NotNull/GreaterThanOrEqualTo(1) rule lives in the vacancy validators.
+    public int? Headcount { get; init; }
     public decimal? SalaryMin { get; init; }
     public decimal? SalaryMax { get; init; }
     public string? SalaryCurrency { get; init; }
@@ -129,7 +131,9 @@ public sealed record UpdateVacancyRequest
     public Guid? LocationId { get; init; }
     public Guid? HiringManagerId { get; init; }
     public EmploymentType EmploymentType { get; init; } = EmploymentType.FullTime;
-    public int Headcount { get; init; } = 1;
+    // ISSUE-096: nullable + no default so an omitted headcount is rejected (FR-1 "required") rather than
+    // silently defaulting to 1. The NotNull/GreaterThanOrEqualTo(1) rule lives in the vacancy validators.
+    public int? Headcount { get; init; }
     public decimal? SalaryMin { get; init; }
     public decimal? SalaryMax { get; init; }
     public string? SalaryCurrency { get; init; }
