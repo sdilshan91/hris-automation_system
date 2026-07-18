@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Onboarding.DTOs;
@@ -652,7 +653,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         if (storageKey is not null)
         {
             task.AttachmentStorageKey = storageKey;
-            task.AttachmentFileName = SanitizeFileName(input.AttachmentFileName!);
+            task.AttachmentFileName = FileNameSanitizer.Sanitize(input.AttachmentFileName!, "attachment");
         }
 
         // AC-3/AC-4/FR-5: notify HR + manager via the outbox (same transaction as the completion).
@@ -861,7 +862,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
 
         // AC-4: tenant-isolated path. IFileStorage already prefixes the tenant id, so the relative path is
         // onboarding/{employeeId}/{taskId}/{filename} → physical {tenantId}/onboarding/{employeeId}/{taskId}/{filename}.
-        var fileName = SanitizeFileName(input.AttachmentFileName!);
+        var fileName = FileNameSanitizer.Sanitize(input.AttachmentFileName!, "attachment");
         var relativePath = $"onboarding/{employeeId}/{taskId}/{fileName}";
         await _fileStorage.UploadAsync(
             _tenantContext.TenantId, relativePath, stream, input.AttachmentContentType!, cancellationToken);
@@ -975,14 +976,6 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
     }
 
     /// <summary>Sanitizes a file name (strip path components + invalid chars) for storage-key safety.</summary>
-    private static string SanitizeFileName(string fileName)
-    {
-        var name = Path.GetFileName(fileName);
-        foreach (var c in Path.GetInvalidFileNameChars())
-            name = name.Replace(c, '_');
-        return string.IsNullOrWhiteSpace(name) ? "attachment" : name;
-    }
-
     // ── Mapping ─────────────────────────────────────────────────────────
 
     private static OnboardingChecklistInstanceDto ToDto(OnboardingChecklistInstance c, int notificationsQueued) => new()

@@ -194,6 +194,13 @@ public sealed class Tenant
     public bool PayslipYtdEnabled { get; set; }
 
     /// <summary>
+    /// ISSUE-159 (US-PAY-004 BR-3): tenant-configurable payslip footer disclaimer. Null/blank → the renderer
+    /// falls back to <see cref="HRM.Domain.Payroll.PayslipBranding.DefaultFooterDisclaimer"/> so existing
+    /// tenants keep the standard wording. Settable via the tenant-settings (org-profile) surface.
+    /// </summary>
+    public string? PayslipFooterDisclaimer { get; set; }
+
+    /// <summary>
     /// Tenant-level toggle (BUG-244 Feedback360) letting DIRECT MANAGERS — not just HR — configure the 360
     /// reviewer set (add/remove Peer + Direct Report nominations) for their OWN direct reports (US-PRF-005
     /// AC-1/FR-2). HR (Performance.Review.All) is always unrestricted; when this is true a manager holding

@@ -25,7 +25,10 @@ public sealed record OrgProfileDto(
     string? DefaultCountryCode,
     // ISSUE-304 (US-CHR-009 BR-6): tenant probation period in days from date of joining. APPENDED — these are
     // positional records. A Location may override it (Location.ProbationPeriodDays).
-    int ProbationPeriodDays = 90);
+    int ProbationPeriodDays = 90,
+    // ISSUE-159 (US-PAY-004 BR-3): tenant-configurable payslip footer disclaimer. Null/blank → the payslip
+    // renderer uses the standard wording (PayslipBranding.DefaultFooterDisclaimer). APPENDED positional.
+    string? PayslipFooterDisclaimer = null);
 
 public sealed record BrandingDto(
     string? LogoUrl,
@@ -72,7 +75,10 @@ public sealed record UpdateOrgProfileRequest(
     string? DefaultCountryCode,
     // ISSUE-304 (US-CHR-009 BR-6): tenant probation period in days from date of joining. APPENDED — these are
     // positional records. A Location may override it (Location.ProbationPeriodDays).
-    int ProbationPeriodDays = 90);
+    int ProbationPeriodDays = 90,
+    // ISSUE-159 (US-PAY-004 BR-3): tenant-configurable payslip footer disclaimer. Null/blank clears it (renderer
+    // falls back to the standard wording). APPENDED positional.
+    string? PayslipFooterDisclaimer = null);
 
 public sealed record UpdateLocalizationRequest(
     string DefaultLanguage,

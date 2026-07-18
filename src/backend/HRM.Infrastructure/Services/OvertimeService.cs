@@ -1,3 +1,6 @@
+using System.Globalization;
+using CsvHelper;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
@@ -671,6 +674,72 @@ public sealed class OvertimeService : IOvertimeService
             Items = items,
             Totals = totals,
         });
+    }
+
+    public async Task<Result<OvertimeReportExportResult>> ExportMonthlyReportAsync(
+        int year, int month, string? format, CancellationToken cancellationToken = default)
+    {
+        // ISSUE-081: only CSV is offered for the overtime report. Normalize tolerantly (null/blank → csv);
+        // reject a genuinely different, understood format (xlsx/pdf) rather than silently returning CSV.
+        var normalized = ExportFormatNormalizer.Normalize(format) ?? "csv";
+        if (normalized != "csv")
+            return Result<OvertimeReportExportResult>.Failure(
+                "Only CSV export is supported for the overtime report.", 400, "unsupported_format");
+
+        // Reuse the report builder so the export matches the on-screen report exactly (and inherits its
+        // tenant-scope + month validation).
+        var report = await GetMonthlyReportAsync(year, month, cancellationToken);
+        if (report.IsFailure)
+            return Result<OvertimeReportExportResult>.Failure(
+                report.Error!, report.StatusCode ?? 400, report.ErrorCode);
+
+        var bytes = RenderOvertimeReportCsv(report.Value!);
+        return Result<OvertimeReportExportResult>.Success(new OvertimeReportExportResult
+        {
+            FileContent = bytes,
+            FileName = $"overtime-report-{year:D4}-{month:D2}.csv",
+            ContentType = "text/csv",
+        });
+    }
+
+    // ISSUE-081: CSV writer mirroring PayrollReportRenderer/HrReportRenderer — UTF-8 BOM (so Excel
+    // auto-detects UTF-8) via CsvExport, CsvHelper for RFC-4180 field escaping, and a trailing totals row.
+    private static byte[] RenderOvertimeReportCsv(OvertimeReportResult report)
+    {
+        using var stream = new MemoryStream();
+        CsvExport.WriteBom(stream);
+        using (var writer = new StreamWriter(stream, CsvExport.NoBomEncoding, leaveOpen: true))
+        using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+        {
+            foreach (var header in new[]
+                     {
+                         "Employee", "Approved (min)", "Pending (min)",
+                         "Rejected (min)", "Unapproved (min)", "Record Count",
+                     })
+                csv.WriteField(header);
+            csv.NextRecord();
+
+            foreach (var r in report.Items)
+            {
+                csv.WriteField(r.EmployeeName);
+                csv.WriteField(r.ApprovedMinutes);
+                csv.WriteField(r.PendingMinutes);
+                csv.WriteField(r.RejectedMinutes);
+                csv.WriteField(r.UnapprovedMinutes);
+                csv.WriteField(r.RecordCount);
+                csv.NextRecord();
+            }
+
+            var t = report.Totals;
+            csv.WriteField("Total");
+            csv.WriteField(t.ApprovedMinutes);
+            csv.WriteField(t.PendingMinutes);
+            csv.WriteField(t.RejectedMinutes);
+            csv.WriteField(t.UnapprovedMinutes);
+            csv.WriteField(t.RecordCount);
+            csv.NextRecord();
+        }
+        return stream.ToArray();
     }
 
     // ══════════════════════════════════════════════════════════════

@@ -12,10 +12,10 @@ namespace HRM.Application.Features.Attendance.Validators;
 ///
 /// The corrected times arrive as wall-clock "HH:mm" strings paired with <c>Date</c>; this validator
 /// checks the request shape: a valid type, the conditionally-required times are present and parse as
-/// "HH:mm", and that the COMBINED (date + HH:mm, treated as UTC) timestamps are logically consistent —
-/// clock-in before clock-out (FR-5) and not in the future versus now (UTC). Combined times trivially
-/// fall on the regularized date (we combine them with that date), so no separate same-day check is
-/// needed. The reason minimum length (BR-7) is also checked here.
+/// "HH:mm", and that the COMBINED clock-in/clock-out are logically consistent — clock-in before
+/// clock-out (FR-5, frame-independent since both combine identically). The future-DATE guard here is
+/// coarse (date-only, UTC-calendar with a +1 day tolerance); the authoritative tenant-local future-date
+/// rejection lives in the service (ISSUE-072). The reason minimum length (BR-7) is also checked here.
 /// </summary>
 public sealed class SubmitRegularizationValidator : AbstractValidator<SubmitRegularizationCommand>
 {
@@ -68,18 +68,16 @@ public sealed class SubmitRegularizationValidator : AbstractValidator<SubmitRegu
             .WithMessage("The clock-in time must be before the clock-out time.")
             .OverridePropertyName(nameof(SubmitRegularizationCommand.Request));
 
-        // BR-4 (fine-grained): the combined date+time must not be in the future versus now (UTC).
-        // The service still enforces the future-DATE rejection with the exact code; this catches a
-        // valid (e.g. today's) date paired with a still-future time.
-        RuleFor(x => x.Request)
-            .Must(r =>
-            {
-                var now = DateTime.UtcNow;
-                var inTs = r.CombineToUtc(r.RequestedClockIn);
-                var outTs = r.CombineToUtc(r.RequestedClockOut);
-                return (inTs is null || inTs.Value <= now) && (outTs is null || outTs.Value <= now);
-            })
-            .WithMessage("The corrected time cannot be in the future.")
+        // ISSUE-072 / BR-4 (coarse): the corrected DATE must not be in the future. This is a shape-level
+        // guard only — the AUTHORITATIVE, tenant-local future-date rejection (with the "future_date" code)
+        // lives in the service (AttendanceService.SubmitRegularizationAsync, using TenantClock.TodayIn).
+        // We deliberately compare DATE-only against the UTC calendar day with a +1 day tolerance: the
+        // previous rule combined the wall-clock "HH:mm" with the date AS UTC and compared to DateTime.UtcNow,
+        // which wrongly rejected valid local-past times for tenants ahead of UTC (up to +14h). A stateless
+        // validator has no tenant time zone, so the precise boundary is left to the service.
+        RuleFor(x => x.Request.Date)
+            .Must(d => d <= DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1))
+            .WithMessage("The corrected date cannot be in the future.")
             .OverridePropertyName(nameof(SubmitRegularizationCommand.Request));
     }
 }

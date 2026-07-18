@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Onboarding.DTOs;
@@ -273,7 +274,7 @@ public sealed class AssetService : IAssetService
             foreach (var asset in issued)
             {
                 asset.AcknowledgmentDocKey = upload.Value;
-                asset.AcknowledgmentDocFileName = SanitizeFileName(input.AcknowledgmentFileName!);
+                asset.AcknowledgmentDocFileName = FileNameSanitizer.Sanitize(input.AcknowledgmentFileName!, "acknowledgment");
             }
         }
 
@@ -365,7 +366,7 @@ public sealed class AssetService : IAssetService
             stream.Position = 0;
 
         // IFileStorage already prefixes the tenant id → physical {tenantId}/onboarding/assets/{employeeId}/{filename}.
-        var fileName = SanitizeFileName(input.AcknowledgmentFileName!);
+        var fileName = FileNameSanitizer.Sanitize(input.AcknowledgmentFileName!, "acknowledgment");
         var relativePath = $"onboarding/assets/{employeeId}/{fileName}";
         await _fileStorage.UploadAsync(
             _tenantContext.TenantId, relativePath, stream, input.AcknowledgmentContentType!, cancellationToken);
@@ -397,11 +398,4 @@ public sealed class AssetService : IAssetService
         };
     }
 
-    private static string SanitizeFileName(string fileName)
-    {
-        var name = Path.GetFileName(fileName);
-        foreach (var c in Path.GetInvalidFileNameChars())
-            name = name.Replace(c, '_');
-        return string.IsNullOrWhiteSpace(name) ? "acknowledgment" : name;
-    }
 }

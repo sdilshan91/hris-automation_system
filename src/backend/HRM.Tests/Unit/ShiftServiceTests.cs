@@ -493,4 +493,53 @@ public sealed class ShiftServiceTests
         result.Value!.StartTime.Should().Be("22:00");
         result.Value.EndTime.Should().Be("06:00");
     }
+
+    // ── ISSUE-077: set/transfer the tenant default shift ───────────────
+    // The endpoint enforces the BR-1 "exactly one default" invariant: setting a new default
+    // CLEARS the flag on the prior default (there is normally one — the seeded "General Shift")
+    // and sets it on the target, so the resolver's IsDefault fallback stays unambiguous.
+
+    [Fact]
+    public async Task SetDefault_transfers_the_flag_and_keeps_exactly_one_default()
+    {
+        var oldDefaultId = SeedShift(isDefault: true);                 // "General Shift"
+        var targetId = SeedShift(isDefault: false, id: Guid.NewGuid()); // "Gulf Sun-Thu"
+
+        var result = await CreateService().SetDefaultAsync(targetId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Id.Should().Be(targetId);
+        result.Value.IsDefault.Should().BeTrue();
+
+        // BR-1: the previous default was cleared → exactly one default remains, and it is the target.
+        using var db = CreateDbContext();
+        var defaults = db.Shifts.Where(s => s.IsDefault).ToList();
+        defaults.Should().ContainSingle().Which.Id.Should().Be(targetId);
+        db.Shifts.Single(s => s.Id == oldDefaultId).IsDefault.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SetDefault_on_the_current_default_is_an_idempotent_noop()
+    {
+        var defaultId = SeedShift(isDefault: true);
+
+        var result = await CreateService().SetDefaultAsync(defaultId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.IsDefault.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        db.Shifts.Count(s => s.IsDefault).Should().Be(1);
+        // Idempotent path writes no audit row (no transfer occurred).
+        db.AuditLogs.Count(a => a.Action == "Shift.DefaultSet").Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SetDefault_unknown_shift_is_404()
+    {
+        var result = await CreateService().SetDefaultAsync(Guid.NewGuid());
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+    }
 }

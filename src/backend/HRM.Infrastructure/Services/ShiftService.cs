@@ -316,6 +316,58 @@ public sealed class ShiftService : IShiftService
         return Result<ShiftDto>.Success(ToDto(clone, 0));
     }
 
+    public async Task<Result<ShiftDto>> SetDefaultAsync(
+        Guid shiftId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ShiftDto>.Failure("Tenant context is not resolved.", 400);
+
+        var target = await _dbContext.Shifts
+            .Include(s => s.RotationSteps)
+            .FirstOrDefaultAsync(s => s.Id == shiftId, cancellationToken);
+        if (target is null)
+            return Result<ShiftDto>.Failure("Shift not found.", 404);
+
+        // Idempotent: the target is already the default → no write, return current state.
+        if (target.IsDefault)
+        {
+            var currentCount = (await GetAssignedCountsAsync(new List<Guid> { target.Id }, cancellationToken))
+                .GetValueOrDefault(target.Id, 0);
+            return Result<ShiftDto>.Success(ToDto(target, currentCount));
+        }
+
+        // ISSUE-077: transfer the default flag. Clear it from every current tenant default (there is
+        // normally exactly one — the seeded "General Shift") then set it on the target, so the BR-1
+        // "exactly one default" invariant holds and the resolver's IsDefault fallback stays unambiguous.
+        var previousDefaults = await _dbContext.Shifts
+            .Where(s => s.IsDefault && s.Id != shiftId)
+            .ToListAsync(cancellationToken);
+        foreach (var d in previousDefaults)
+            d.IsDefault = false;
+
+        target.IsDefault = true;
+
+        // ISSUE-075: queryable tenant audit row for the default transfer, same transaction.
+        AddShiftAudit("Shift.DefaultSet", target.Id, before: null,
+            after: JsonSerializer.Serialize(new
+            {
+                ShiftId = target.Id,
+                target.Name,
+                PreviousDefaultIds = previousDefaults.Select(d => d.Id),
+            }, AuditJsonOptions),
+            detail: $"Shift '{target.Name}' set as the tenant default working calendar.");
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Shift default set. Id={ShiftId}, Name={Name}, TenantId={TenantId}, By={User}",
+            target.Id, target.Name, _tenantContext.TenantId, _currentUser.Email);
+
+        var count = (await GetAssignedCountsAsync(new List<Guid> { target.Id }, cancellationToken))
+            .GetValueOrDefault(target.Id, 0);
+        return Result<ShiftDto>.Success(ToDto(target, count));
+    }
+
     public async Task<Result<AssignmentResultDto>> AssignAsync(
         Guid shiftId, IReadOnlyList<Guid> employeeIds, DateOnly effectiveFrom,
         CancellationToken cancellationToken = default)
