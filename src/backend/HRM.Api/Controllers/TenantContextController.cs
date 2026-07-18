@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Domain.Entities;
@@ -31,6 +32,13 @@ public sealed class TenantContextController : ControllerBase
             return BadRequest(ApiResponse.Fail("Tenant context is not resolved."));
         }
 
+        // ISSUE-204: _tenantContext.LogoUrl holds the raw internal storage path (/{tenantId}/branding/logo.png),
+        // which no route serves and 404s in the browser. Expose the servable URL to the public logo endpoint
+        // instead (built from this request), or null so the FE shows its fallback.
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var logoUrl = BrandingAssetUrls.Servable(
+            _tenantContext.LogoUrl, baseUrl, BrandingAssetUrls.LogoRoutePath);
+
         var response = new TenantContextResponse(
             _tenantContext.TenantId,
             _tenantContext.Subdomain,
@@ -38,7 +46,7 @@ public sealed class TenantContextController : ControllerBase
             _tenantContext.Plan,
             _tenantContext.EnabledModules,
             _tenantContext.IsSystemContext,
-            _tenantContext.LogoUrl,
+            logoUrl,
             _tenantContext.PrimaryColor);
 
         return Ok(ApiResponse<TenantContextResponse>.Ok(response));
