@@ -230,6 +230,64 @@ public sealed class WorkflowServiceTests
         actives.Should().Be(1);
     }
 
+    // ── ISSUE-010: the BR-2 auto-archive of the prior active workflow is itself audited ──
+
+    [Fact]
+    [Trait("TC", "TC-ADM-007-03")]
+    public async Task Create_SecondActive_WritesWorkflowArchivedAuditForAutoArchivedSibling_ISSUE010()
+    {
+        await SeedTenantAsync();
+        var first = (await Service().CreateAsync(LeaveWorkflow("First Leave"))).Value!;
+
+        (await Service().CreateAsync(LeaveWorkflow("Second Leave"))).IsSuccess.Should().BeTrue();
+
+        using var db = Db();
+        // A DISTINCT workflow.archived audit row must reference the auto-archived sibling (First), not only
+        // the workflow.created row for Second. Pre-fix (ISSUE-010) no such row existed.
+        var archived = await db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.Action == "workflow.archived" && a.ResourceId == first.Id.ToString())
+            .ToListAsync();
+
+        archived.Should().ContainSingle("the BR-2 auto-archive of the prior active workflow must be audited");
+        var row = archived[0];
+        row.EventType.Should().Be("workflow.archived");
+        row.ResourceType.Should().Be("WorkflowDefinition");
+        row.UserId.Should().Be(_currentUser.UserId);
+        row.TenantId.Should().Be(_tenantId);
+        row.After.Should().Contain("Archived", "the after-snapshot records the archived status");
+    }
+
+    // ── ISSUE-266: step-validation failure must propagate the machine-readable ErrorCode ──
+
+    [Fact]
+    [Trait("TC", "TC-ADM-007-02")]
+    public async Task Create_WithInvalidApprover_PropagatesInvalidApproverErrorCode_ISSUE266()
+    {
+        await SeedTenantAsync();
+
+        // A NamedUser step referencing a user that is not a member of the tenant → ValidateStepsAsync fails
+        // with ErrorCode "invalid_approver". Pre-fix CreateAsync dropped the code (returned only message+status).
+        var badStep = new WorkflowStepRequest(1, "NamedUser", Guid.NewGuid(), false, 24, null, null, null, false, null);
+        var result = await Service().CreateAsync(new CreateWorkflowRequest("W", "Leave", true, new[] { badStep }));
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("invalid_approver");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ADM-007-03")]
+    public async Task Update_WithInvalidApprover_PropagatesInvalidApproverErrorCode_ISSUE266()
+    {
+        await SeedTenantAsync();
+        var created = (await Service().CreateAsync(LeaveWorkflow())).Value!;
+
+        var badStep = new WorkflowStepRequest(1, "NamedUser", Guid.NewGuid(), false, 24, null, null, null, false, null);
+        var result = await Service().UpdateAsync(created.LineageId, new UpdateWorkflowRequest("W", new[] { badStep }));
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("invalid_approver");
+    }
+
     // ── FR-6: archive / restore ─────────────────────────────────────────────
 
     [Fact]

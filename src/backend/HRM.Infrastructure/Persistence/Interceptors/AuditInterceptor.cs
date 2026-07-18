@@ -47,7 +47,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (context is null) return;
 
         var now = DateTime.UtcNow;
-        var userId = _currentUser.IsAuthenticated ? _currentUser.Email : "system";
+        // ISSUE-015: stamp the actor's user UUID (not their email) into CreatedBy/UpdatedBy so these audit
+        // columns match the rest of the audit envelope (AuditLog.UserId, the structured audit rows). The
+        // "system" sentinel is preserved for background/unauthenticated writes. Applies platform-wide to
+        // every BaseEntity (this is the single stamping seam) — see TC-CHR-081 for the employee case.
+        var userId = _currentUser.IsAuthenticated ? _currentUser.UserId.ToString() : "system";
 
         foreach (var entry in context.ChangeTracker.Entries<BaseEntity>())
         {

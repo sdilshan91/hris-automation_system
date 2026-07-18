@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Holidays.DTOs;
@@ -917,12 +918,19 @@ public sealed class LeaveRequestService : ILeaveRequestService
             OccurredAt = DateTime.UtcNow,
         };
 
+        var priorStatus = request.Status;
         request.Status = LeaveRequestStatus.Approved;
 
         var history = NewHistory(request.Id, manager.Id, LeaveApprovalAction.Approved, comment);
 
         _dbContext.LeaveLedgerEntries.Add(ledgerEntry);
         _dbContext.LeaveApprovalHistories.Add(history);
+
+        // ISSUE-037 / FR-7: emit a DISTINCT semantic audit action (Leave.Approved) with a before/after
+        // status snapshot + decision context, so the trail is queryable by action (the generic
+        // AuditCaptureInterceptor separately records the LeaveRequest.Update field diff). Added to the same
+        // change set so it commits atomically with the status change + ledger deduction.
+        AddDecisionAudit("Leave.Approved", request, manager.Id, priorStatus, request.Status, comment);
 
         try
         {
@@ -984,10 +992,15 @@ public sealed class LeaveRequestService : ILeaveRequestService
         var manager = ctx.Manager!;
 
         // FR-4: no ledger entry on rejection — only a status update and approval-history record.
+        var priorStatus = request.Status;
         request.Status = LeaveRequestStatus.Rejected;
 
         var history = NewHistory(request.Id, manager.Id, LeaveApprovalAction.Rejected, reason);
         _dbContext.LeaveApprovalHistories.Add(history);
+
+        // ISSUE-037 / FR-7: emit a DISTINCT semantic audit action (Leave.Rejected) capturing the status
+        // transition + the rejection reason (see ApproveAsync).
+        AddDecisionAudit("Leave.Rejected", request, manager.Id, priorStatus, request.Status, reason);
 
         try
         {
@@ -1436,6 +1449,36 @@ public sealed class LeaveRequestService : ILeaveRequestService
         Comment = comment,
         ActionedAt = DateTime.UtcNow,
     };
+
+    /// <summary>
+    /// ISSUE-037 / FR-7: adds a DISTINCT semantic audit row (Leave.Approved / Leave.Rejected) to the change
+    /// set WITHOUT saving — the caller's SaveChanges commits it atomically with the decision. Captures the
+    /// labeled status transition (before/after) plus the deciding manager and the comment/reason, so an
+    /// auditor can filter the trail by action rather than only seeing the generic LeaveRequest.Update.
+    /// </summary>
+    private void AddDecisionAudit(
+        string action, LeaveRequest request, Guid approverEmployeeId,
+        LeaveRequestStatus before, LeaveRequestStatus after, string? comment)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "LeaveRequest",
+            ResourceId = request.Id.ToString(),
+            Before = JsonSerializer.Serialize(new { Status = before.ToString() }),
+            After = JsonSerializer.Serialize(new
+            {
+                Status = after.ToString(),
+                ApproverEmployeeId = approverEmployeeId,
+                Comment = comment,
+            }),
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
 
     private sealed class DecisionContext
     {
