@@ -175,6 +175,48 @@ public sealed class PayslipDistributionTests
         return (runId, result);
     }
 
+    /// <summary>ISSUE-229 (BR-4): seed the tenant row with a configured payslip "From" address (or none).</summary>
+    private async Task SeedTenantAsync(string? payrollFromEmail)
+    {
+        using var db = Db();
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenant, Subdomain = "acme", Name = "Acme Corp",
+            Status = TenantStatus.Active, PlanId = "default",
+            PayrollFromEmail = payrollFromEmail, CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    // ── ISSUE-229 (BR-4): payslip "From" uses the tenant's configured sender, else the system default ──
+
+    [Fact]
+    public async Task Runner_UsesTenantConfiguredFromAddress_WhenSet()
+    {
+        var storage = new FakeFileStorage();
+        var sender = new RecordingEmailSender();
+        await SeedTenantAsync(payrollFromEmail: "payroll@acme.test");
+        var (runId, _) = await SeedFinalizedRun(storage, ("EMP-1", "emp1@t.com", true));
+
+        await Runner(sender, storage).RunAsync(runId, null);
+
+        sender.Sent.Should().ContainSingle().Which.FromAddress.Should().Be("payroll@acme.test");
+    }
+
+    [Fact]
+    public async Task Runner_FromAddressIsNull_WhenTenantHasNoConfiguredSender()
+    {
+        var storage = new FakeFileStorage();
+        var sender = new RecordingEmailSender();
+        await SeedTenantAsync(payrollFromEmail: null); // BR-4: falls back to the system default (null here)
+        var (runId, _) = await SeedFinalizedRun(storage, ("EMP-1", "emp1@t.com", true));
+
+        await Runner(sender, storage).RunAsync(runId, null);
+
+        sender.Sent.Should().ContainSingle().Which.FromAddress.Should().BeNull(
+            "no tenant sender configured → null so SmtpEmailSender applies the system default");
+    }
+
     // ── AC-3: no email -> Skipped, loop continues ────────────────────────────
 
     [Fact]

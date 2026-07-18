@@ -114,7 +114,8 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
 
         var tenantId = _tenantContext.TenantId;
         var companyName = string.IsNullOrWhiteSpace(_tenantContext.Subdomain) ? "Company" : _tenantContext.Subdomain;
-        var fromAddress = ResolveFromAddress(); // BR-4: tenant sender domain deferred -> system default.
+        // BR-4: the tenant's CONFIGURED payslip sender ("From"), else null → SmtpEmailSender system default.
+        var fromAddress = await ResolveFromAddressAsync(cancellationToken);
 
         // ISSUE-269: load slips AsNoTracking + project — no tracked entities carried into the WORK phase.
         var slips = await _dbContext.PayrollSlips.AsNoTracking()
@@ -365,9 +366,23 @@ public sealed class PayslipDistributionRunner : IPayslipDistributionRunner
         return buffer.ToArray();
     }
 
-    /// <summary>BR-4: the tenant sender ("From") address. No tenant sender-domain config surface exists yet, so
-    /// this returns null (the sender uses the system default). Wire to a tenant payroll-settings entity later.</summary>
-    private string? ResolveFromAddress() => null;
+    /// <summary>
+    /// BR-4 (ISSUE-229): the tenant's CONFIGURED payslip sender ("From") address. Reads
+    /// <see cref="Tenant.PayrollFromEmail"/> for the run's tenant (resolved via <c>_tenantContext.TenantId</c> —
+    /// the job restores the tenant context before this runs, so the query is tenant-scoped). Returns the
+    /// configured address when non-blank, else null so <c>SmtpEmailSender</c> uses the system default sender.
+    /// Never auto-derived from the subdomain (SPF/DKIM deliverability risk) — BR-4 requires a CONFIGURED value.
+    /// </summary>
+    private async Task<string?> ResolveFromAddressAsync(CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var configured = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.PayrollFromEmail)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return string.IsNullOrWhiteSpace(configured) ? null : configured.Trim();
+    }
 
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max];

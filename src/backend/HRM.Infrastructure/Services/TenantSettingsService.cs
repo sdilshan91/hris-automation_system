@@ -6,6 +6,7 @@ using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
 using HRM.Application.Features.TenantSettings.DTOs;
 using HRM.Domain.Entities;
+using HRM.Domain.ValueObjects;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
@@ -75,6 +76,18 @@ public sealed class TenantSettingsService : ITenantSettingsService
         if (tenant is null)
             return Result<OrgProfileDto>.Failure("Tenant not found.", 404);
 
+        // ISSUE-229 (BR-4): validate the payslip sender address BEFORE any mutation. Blank/null clears it; a
+        // non-blank value must be a well-formed email (reuses the Email value object) else 400. On success we keep
+        // the value object's normalized (trimmed, lower-cased) form.
+        var payrollFromEmail = Normalize(request.PayrollFromEmail);
+        if (payrollFromEmail is not null)
+        {
+            if (!Email.TryCreate(payrollFromEmail, out var validFromEmail))
+                return Result<OrgProfileDto>.Failure(
+                    "The payroll sender email address is not a valid email.", 400);
+            payrollFromEmail = validFromEmail!.Value;
+        }
+
         var before = ToOrgProfileDto(tenant);
 
         tenant.Name = request.Name.Trim();
@@ -118,6 +131,9 @@ public sealed class TenantSettingsService : ITenantSettingsService
 
         // ISSUE-159 (BR-3): tenant payslip footer disclaimer. Blank clears it → renderer default fallback.
         tenant.PayslipFooterDisclaimer = Normalize(request.PayslipFooterDisclaimer);
+        // ISSUE-229 (BR-4): tenant payslip sender "From" address (normalized/validated above). Blank clears it →
+        // payslip distribution falls back to the system default sender.
+        tenant.PayrollFromEmail = payrollFromEmail;
         // Multi-country tax foundation: normalize the default tax country to upper-case (matches StatutoryRule.CountryCode).
         tenant.DefaultCountryCode = string.IsNullOrWhiteSpace(request.DefaultCountryCode)
             ? null
@@ -465,7 +481,8 @@ public sealed class TenantSettingsService : ITenantSettingsService
 
     private static OrgProfileDto ToOrgProfileDto(Tenant t) => new(
         t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize,
-        t.FiscalYearStartMonth, t.DefaultCountryCode, t.ProbationPeriodDays, t.PayslipFooterDisclaimer);
+        t.FiscalYearStartMonth, t.DefaultCountryCode, t.ProbationPeriodDays, t.PayslipFooterDisclaimer,
+        t.PayrollFromEmail);
 
     private static BrandingDto ToBrandingDto(Tenant t) => new(
         t.LogoUrl, t.EmailLogoUrl, t.FaviconUrl, t.PrimaryColor);

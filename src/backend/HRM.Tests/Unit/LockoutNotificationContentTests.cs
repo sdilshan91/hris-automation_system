@@ -52,4 +52,35 @@ public sealed class LockoutNotificationContentTests
         content.BodyText.Should().Contain("30 minute");
         content.BodyText.Should().Contain("your system administrator", "a missing support link falls back to a default contact");
     }
+
+    // ── ISSUE-063 (FR-8): the lockout email is branded with the tenant name when it is known ──
+    [Fact]
+    public void BuildContent_BrandsWithTenantName_WhenPresent()
+    {
+        var content = LockoutNotificationService.BuildContent(
+            userEmail: "qa@acme.test",
+            displayName: "QA User",
+            lockedUntilUtc: LockedUntil,
+            lockoutDurationMinutes: 15,
+            supportContact: "support@acme.test",
+            tenantName: "Acme Corporation");
+
+        content.BodyText.Should().Contain("Acme Corporation", "FR-8: the tenant name must appear when resolved");
+    }
+
+    [Fact]
+    public void BuildContent_DegradesGracefully_WhenTenantNameNull()
+    {
+        // A cross-tenant login whose tenant could not be resolved → null tenant name must not break the email.
+        var content = LockoutNotificationService.BuildContent(
+            userEmail: "qa@acme.test",
+            displayName: "QA User",
+            lockedUntilUtc: LockedUntil,
+            lockoutDurationMinutes: 15,
+            supportContact: "support@acme.test",
+            tenantName: null);
+
+        content.Subject.Should().NotBeNullOrWhiteSpace();
+        content.BodyText.Should().Contain("QA User").And.NotContain("TODO");
+    }
 }

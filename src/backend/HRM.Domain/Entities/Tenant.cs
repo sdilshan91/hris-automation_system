@@ -201,6 +201,15 @@ public sealed class Tenant
     public string? PayslipFooterDisclaimer { get; set; }
 
     /// <summary>
+    /// ISSUE-229 (US-PAY-011 BR-4): tenant-configurable sender ("From") address for payslip distribution emails.
+    /// Null/blank → <see cref="HRM.Infrastructure.Services.PayslipDistributionRunner"/> resolves null and the
+    /// SmtpEmailSender falls back to the system default sender, so existing tenants are unchanged. The value is
+    /// NOT auto-derived from the subdomain (SPF/DKIM deliverability risk) — BR-4 requires a CONFIGURED address.
+    /// Settable via the tenant-settings (org-profile) surface, validated as a well-formed email on write.
+    /// </summary>
+    public string? PayrollFromEmail { get; set; }
+
+    /// <summary>
     /// Tenant-level toggle (BUG-244 Feedback360) letting DIRECT MANAGERS — not just HR — configure the 360
     /// reviewer set (add/remove Peer + Direct Report nominations) for their OWN direct reports (US-PRF-005
     /// AC-1/FR-2). HR (Performance.Review.All) is always unrestricted; when this is true a manager holding
