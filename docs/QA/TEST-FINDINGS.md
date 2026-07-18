@@ -1636,7 +1636,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-061 — Idle-reset (BR-6) is defeated when the activity-tracking debounce window (fixed 1 min) is >= the configured idle timeout: a continuously-active user can be idle-expired because intermediate requests are debounced out of updating `last_active_at`
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #365, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-009 · TC-AUTH-081 (BR-6)
 - **Title:** BR-6 requires idle timeout to be reset by *any* authenticated API request. The reset works for normal configs (a regular request updates `last_active_at` — verified: 16:10:56→16:10:58 on one `/auth/me`), but the `last_active_at` write is **debounced to at most once per minute per session** (`SessionActivityMiddleware`, fixed 1-min window). When `idleTimeoutMinutes` is set <= the 1-min debounce, an actively-used session can still be marked idle-expired on refresh because the requests between debounce boundaries are skipped and never advance `last_active_at`. The system does not guard against `debounceInterval >= idleTimeout`.
@@ -2231,7 +2231,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-096 — Omitted `headcount` silently defaults to 1 instead of being a validation error (FR-1 "required" not enforced on create)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #365, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-001 · TC-REC-001-07 (S5 blank headcount)
 - **Title:** FR-1 lists headcount as a required integer ≥ 1. The create/update request DTO declares `public int Headcount { get; init; } = 1;`, so a body that omits `headcount` entirely is accepted and persists `headcount = 1` rather than returning a "headcount is required" error. Explicit invalid values are correctly rejected (0 → 400 "Headcount must be at least 1", -1 → 400, 2.5 → 400 JSON-int-conversion), but a missing field is silently defaulted.
@@ -2301,7 +2301,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-098 — A not-yet-open (future) goal-setting window returns the *closed* message "The goal-setting window for this cycle has closed" instead of a "not yet open" message
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #365, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-08 (step 4, before-window case)
 - **Title:** TC-08 step 4 attempts to create a goal in cycle QA-PRF001-FUTURE whose goal-setting window starts in the future. The request is correctly blocked (409 `goal_setting_closed`) — but the message is "The goal-setting window for this cycle has closed", which is inaccurate for a window that has **not opened yet**. The block behavior is correct; only the user-facing wording is wrong for the pre-window case.
@@ -2453,7 +2453,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-107 — Closing-window message is used for a NOT-YET-OPEN self-assessment window: future cycle returns "The self-assessment period for this cycle has ended" (wording inaccurate for the before-window case)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #365, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-002 · TC-PRF-002-07 (step 3, before-window case)
 - **Title:** Submitting/saving in a cycle whose self-assessment window has not yet opened is correctly blocked (409 `self_assessment_closed`) but returns "The self-assessment period for this cycle has **ended**" — inaccurate for a window that hasn't started. Same pattern as the goal-module wording issue (ISSUE-098): `SelfAssessmentService.UpsertAsync` (`:93-95`) and `AppraisalCycle.IsSelfAssessmentOpen` return a single closed message for both before- and after-window instants. The block is correct; only the message is wrong for the pre-window case. (The exact AC-4 text "The self-assessment period for this cycle has ended" IS correct for the genuinely-closed case — verified.)
@@ -4521,7 +4521,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-198
 - **Type:** ISSUE (export fidelity / cross-module inconsistency)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #365, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Reports & Analytics / US-RPT-004 / TC-RPT-004-04 (CSV UTF-8 BOM)
 - **Title:** HR report CSV starts with the UTF-8 BOM (EF BB BF) for Excel compatibility, but the payroll-report and leave-report CSV writers omit it

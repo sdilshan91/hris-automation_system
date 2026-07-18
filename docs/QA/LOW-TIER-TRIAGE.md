@@ -17,6 +17,7 @@ Status legend: ☐ pending · ▶ in progress · ✅ done (PR#) · ⛔ WONTFIX �
 ## A. REAL-FIX — value-first queue (71)
 
 > **PROGRESS:** A1 security (7) ✅ #358 · Leave (7) ✅ #359 · reusability sweep ✅ #360 · Attendance (5) ✅ #361 (ISSUE-072 reclassified keep-branch; ISSUE-068 spec-align + geofence→DF-23). Next: Core-HR.
+> **A2 DATA-INTEGRITY COMPLETE (2026-07-18):** all module batches merged — Leave #359, Attendance #361, Core-HR #362, Payroll #363, Admin #364, misc(Rec/Perf/Auth/Reports) #365, + reuse sweep #360. Several were already-fixed (verify-before-fix caught them; bound TCs added). Deferred (feature-sized): DF-19/20/21/22/23. Follow-ups: DF-24/25/26. ISSUE-072 keep-branch; ISSUE-068 spec-align. **Next: A3 audit (7) / A4 seam (5) / A5 a11y (8) / WONTFIX sweep (20) / decisions doc.**
 > **NEW needs-decision surfaced (add to §C review):** (a) ISSUE-072 validator naive-UTC vs service tenant-local future-date frame (ISSUE-065 family) — keep the service guard, fix the validator frame? (b) non-tolerant `Enum.TryParse` endpoints (Payroll/Notification/Onboarding/Offboarding) — make them separator-tolerant like the report endpoints? (c) `SanitizeFileName` ×4 differ on fallback string — unify with a `(fileName, fallback)` shared helper?
 
 ### A1. Security / authz / info-disclosure (do first)
