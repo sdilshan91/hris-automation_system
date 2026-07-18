@@ -134,8 +134,11 @@ public sealed class TenantBrandingServeTests
 
         body.Branding.LogoUrl.Should().Be("https://acme.myhrm.org/api/v1/tenant/settings/branding/logo");
         body.Branding.EmailLogoUrl.Should().Be("https://acme.myhrm.org/api/v1/tenant/settings/branding/email-logo");
+        // DF-29: the favicon is rewritten to its servable endpoint too (previously passed through as the raw path).
+        body.Branding.FaviconUrl.Should().Be("https://acme.myhrm.org/api/v1/tenant/settings/branding/favicon");
         body.Branding.LogoUrl.Should().NotContain(_tenantId.ToString());
         body.Branding.EmailLogoUrl.Should().NotContain(_tenantId.ToString());
+        body.Branding.FaviconUrl.Should().NotContain(_tenantId.ToString());
         body.Branding.PrimaryColor.Should().Be("#4F46E5", "non-URL branding fields are untouched");
     }
 

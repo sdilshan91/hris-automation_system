@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Auth.Commands;
@@ -224,7 +225,9 @@ public sealed class AuthController : ControllerBase
             return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
         }
 
-        return Ok(ApiResponse<CurrentUserDto>.Ok(result.Value!));
+        // DF-29: rewrite the nested membership logos to servable subdomain-qualified URLs (see ToServableLogos).
+        var dto = result.Value! with { TenantMemberships = ToServableLogos(result.Value!.TenantMemberships) };
+        return Ok(ApiResponse<CurrentUserDto>.Ok(dto));
     }
 
     /// <summary>
@@ -245,7 +248,26 @@ public sealed class AuthController : ControllerBase
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
         }
 
-        return Ok(ApiResponse<IReadOnlyList<TenantMembershipDto>>.Ok(result.Value!));
+        return Ok(ApiResponse<IReadOnlyList<TenantMembershipDto>>.Ok(ToServableLogos(result.Value!)));
+    }
+
+    /// <summary>
+    /// DF-29: the service stores the raw internal logo storage path on <see cref="TenantMembershipDto.LogoUrl"/>
+    /// (a presence indicator, kept origin-agnostic in the my-tenants cache). Rewrite it here — where request
+    /// context is available — into a servable, subdomain-qualified absolute URL to the public cross-tenant logo
+    /// route (<c>GET /api/v1/tenant/{subdomain}/branding/logo</c>); null stays null so the FE shows its fallback.
+    /// Applied to every surface that returns memberships to the tenant switcher (/my-tenants and /me).
+    /// </summary>
+    private IReadOnlyList<TenantMembershipDto> ToServableLogos(IReadOnlyList<TenantMembershipDto> memberships)
+    {
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        return memberships
+            .Select(m => m with
+            {
+                LogoUrl = BrandingAssetUrls.Servable(
+                    m.LogoUrl, baseUrl, BrandingAssetUrls.TenantLogoBySubdomainRoutePath(m.Subdomain)),
+            })
+            .ToList();
     }
 
     /// <summary>

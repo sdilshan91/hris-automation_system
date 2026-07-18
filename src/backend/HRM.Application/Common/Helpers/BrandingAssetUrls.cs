@@ -23,6 +23,19 @@ public static class BrandingAssetUrls
     /// <summary>Public serving route for the email-header logo (see TenantSettingsController).</summary>
     public const string EmailLogoRoutePath = "/api/v1/tenant/settings/branding/email-logo";
 
+    /// <summary>Public serving route for the favicon (see TenantSettingsController).</summary>
+    public const string FaviconRoutePath = "/api/v1/tenant/settings/branding/favicon";
+
+    /// <summary>
+    /// Public, subdomain-qualified serving route for a specific tenant's logo (DF-29). Used by the
+    /// tenant-switcher, which lists OTHER tenants the user belongs to: the host-subdomain-resolved own-tenant
+    /// <see cref="LogoRoutePath"/> endpoint can only serve the current tenant, so cross-tenant switcher logos are
+    /// addressed by subdomain instead. Single-origin (path-qualified, not host-qualified) so it works in local
+    /// dev, which has no wildcard DNS. The logo is public pre-auth branding, so serving it by subdomain is safe.
+    /// </summary>
+    public static string TenantLogoBySubdomainRoutePath(string subdomain)
+        => $"/api/v1/tenant/{subdomain}/branding/logo";
+
     /// <summary>
     /// Converts a stored branding URL (<c>/{tenantId}/branding/{file}</c>) into the tenant-scoped relative path
     /// <see cref="Interfaces.IFileStorage.OpenReadAsync"/> expects (<c>branding/{file}</c>) — IFileStorage
