@@ -681,7 +681,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-022 — Job title `title_name` leading/trailing whitespace is NOT trimmed on create/update — TC-CHR-046 trim expectation unmet
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #362, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-005 · TC-CHR-046 (boundary values incl. whitespace trimming)
 - **Title:** `POST /api/v1/tenant/job-titles` `{"titleName":"  Trim Probe  "}` persists the name with leading/trailing spaces verbatim (`titleName = "  Trim Probe 1782367638  "`). TC-CHR-046 expects leading/trailing whitespace to be trimmed. Combined with the case-sensitive compare (BUG-016), an untrimmed name also evades the duplicate check (`" Software Engineer"` ≠ `"Software Engineer"`).
@@ -692,7 +692,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-023 — Org-tree `reportingViewAvailable` flag contradicts itself between views: department view reports `false` while the reporting view simultaneously returns data (`true`) for the same tenant/data
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #362, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-006 · TC-CHR-153 (reporting-view availability) / TC-CHR-151 (department-view payload)
 - **Title:** The `org-tree` response carries a `reportingViewAvailable` boolean that a UI would use to show/hide the Department↔Reporting toggle. For acme's same data, `GET …?view=department` returns `reportingViewAvailable: false` while `GET …?view=reporting` returns `reportingViewAvailable: true` and a populated reporting tree. A client that loads the default (department) view first reads `false` and would hide the Reporting toggle, yet the reporting view is fully functional — a self-contradicting contract field.
@@ -848,7 +848,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would have the AssignManager/BulkAssignManager handlers emit a tenant audit action — e.g. `Employee.ManagerAssigned` with before/after manager id+name and acting user — reusing the existing Department/JobTitle audit writer, and assert retrievability in TC-268/271/278 automation. Shared remediation shape with BUG-018.)
 
 ### ISSUE-027 — `GET /api/v1/tenant/employees/{id}` detail DTO omits the reporting-manager FK entirely (no `reportsToEmployeeId`/`managerName`), so a client cannot read an employee's current manager from the profile endpoint — only indirectly via the manager's `/direct-reports`; plus the bulk-assign result mislabels the success message into the `employeeName` field
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #362, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-011 · TC-CHR-268 (step 5: "employee record has `reports_to_employee_id` set") / TC-CHR-269 (Reporting Manager field shows current manager or "Not Assigned").
 - **Title:** Two contract nits on the manager surface: (a) the employee-detail response (`GET /employees/{id}`) has **no** field exposing the reporting manager — its keys are `id, employeeNo, firstName, lastName, email, phone, dateOfBirth, gender, dateOfJoining, departmentId, departmentName, jobTitleId, jobTitleName, employmentType, status, profilePhotoUrl, location, customFields, userId, isActive, createdAt, updatedAt` — so TC-268 step 5 / TC-269's "read the current manager off the profile" cannot be satisfied from this endpoint (the FK IS persisted; it's just confirmable only via the manager's `/direct-reports`). (b) `bulk-assign-manager` returns each item's success **message** string in the field named `employeeName` (e.g. `employeeName: "Manager assigned successfully. Et FullTime now reports to John Doe."`), a mislabel — `employeeName` should hold the employee's name, with the message in a separate field or the `message`/`error` field.
@@ -876,7 +876,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would have the five Custom-field commands emit tenant audit actions — e.g. `CustomField.Created/Updated/Deactivated/Reactivated/Reordered` with before/after + acting user — reusing the existing JobTitle/Department audit writer.)
 
 ### ISSUE-028 — Custom-field name uniqueness is case-SENSITIVE and the name is stored un-trimmed: "Region" and "region" coexist as two distinct fields in the same tenant+entity, and "  Padded Name  " is persisted with leading/trailing spaces
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #362, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-012 · TC-CHR-303 (duplicate field name within tenant+entity rejected) / TC-CHR-295. Same **case-sensitive-uniqueness class** as BUG-013/016/017 and the **whitespace-not-trimmed class** as ISSUE-022.
 - **Title:** Two related contract nits on `field_name`: (a) the BR-1 uniqueness check (`CustomFieldService.CreateAsync` line 162 / `UpdateAsync` line 236) compares `c.FieldName == request.FieldName` — an ordinal/case-sensitive Postgres equality — so a tenant can create both "Region" and "region" as separate definitions for the same `entityType`. The exact-case duplicate IS correctly rejected (TC-303 passes), and single-token case variants that slugify to the *same* `field_key` are incidentally blocked by the separate key-uniqueness guard (line 174) — but as soon as an explicit distinct `fieldKey` is supplied (or a multi-word name slugs differently), case-variant display names coexist. (b) `field_name` is never trimmed: `"  Padded Name  "` is stored verbatim (verified via read-back), so a UI label and any name-based lookup carry the surrounding whitespace.
@@ -5558,7 +5558,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-225
 - **Type:** ISSUE (missing field in DTO)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #362, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-006 / TC-CHR-269 (reporting-manager field), TC-CHR-283 (reporting-chain breadcrumb)
 - **Title:** After assigning a manager (`POST /tenant/employees/{id}/manager` with `managerEmployeeId`) — which correctly reflects in `GET /tenant/employees/{managerId}/direct-reports` (manager→report link works) — the subordinate's own profile response (`GET /tenant/employees/{id}/profile`) contains **no** manager fields at all (full key set: id, employeeNo, name, email, personalEmail, phone, address, dob, gender, dateOfJoining, department*, jobTitle*, employmentType, status, profilePhotoUrl, customFields, userId, isActive, timestamps, rowVersion, emergencyContacts, employmentHistory — no `managerId`/`managerName`/`reportsTo`). TC-CHR-269 ("Reporting Manager field displays current manager or 'Not Assigned'") and TC-CHR-283 (reporting-chain breadcrumb) therefore have no backing field in the profile payload; the FE would have to make a separate `/direct-reports`-style call to reconstruct it.
