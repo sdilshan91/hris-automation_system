@@ -2511,7 +2511,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none -- report only.
 
 ### ISSUE-108 -- FR-1/BR-1 Interview-stage soft-gate seam is absent: moving to Interview with no scheduled interview produces NO warning (only Offer-scorecard + headcount soft gates exist)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #375, merged 2026-07-19 — BR-1 Interview soft-gate: advancing to Interview with no interview on record now surfaces a non-blocking warning, per user decision warn-not-block; +2 TCs)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-004 · TC-REC-004-04 (FR-1/BR-1, step 3)
 - **Title:** BR-1's default gates are "Screening->notes, Interview->>=1 scheduled interview, Offer->>=1 completed scorecard." The Offer-scorecard soft warning and the BR-4 headcount warning are implemented, but moving an applicant Screening->Interview with no scheduled interview returns warnings: [] -- there is no soft-gate seam (not even a stub warning) for the Interview gate. TC-REC-004-04 step 6 explicitly says do NOT weaken to "no gate at all"; the Interview gate is exactly that.
