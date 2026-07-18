@@ -37,7 +37,7 @@ Verify that a tenant admin can manually unlock a locked user account via the unl
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Confirm `alice@acme.com` is locked: `locked_until` is in the future, `failed_login_count = 5`. | Precondition verified. |
-| 2 | As `admin@acme.com`, send `POST /api/v1/tenant/users/{alice_user_id}/unlock` (or the designated unlock endpoint). | HTTP 200 OK; unlock succeeds. |
+| 2 | As `admin@acme.com`, send `POST /api/v1/tenant/users/by-user/{alice_user_id}/unlock` (or the designated unlock endpoint). | HTTP 200 OK; unlock succeeds. |
 | 3 | Query `users.failed_login_count` for `alice@acme.com`. | Value is `0`. |
 | 4 | Query `users.locked_until` for `alice@acme.com`. | Value is `null`. |
 | 5 | Query the audit log for an `account_unlocked_by_admin` event. | Event exists with: `user_id` (alice), `admin_user_id` (admin@acme.com's ID), and timestamp. |

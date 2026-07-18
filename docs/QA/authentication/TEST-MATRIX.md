@@ -146,7 +146,7 @@ status: draft
 | /api/v1/tenant/roles/{id} | DELETE | TC-AUTH-040, TC-AUTH-046, TC-AUTH-050 |
 | /api/v1/tenant/users | GET | TC-AUTH-016, TC-AUTH-017, TC-AUTH-042 |
 | /api/v1/tenant/users/{id} | PATCH | TC-AUTH-039, TC-AUTH-042, TC-AUTH-043, TC-AUTH-046, TC-AUTH-047, TC-AUTH-050, TC-AUTH-ISO-004 |
-| /api/v1/tenant/users/{id}/unlock | POST | TC-AUTH-087, TC-AUTH-093, TC-AUTH-094, TC-AUTH-107, TC-AUTH-112 |
+| /api/v1/tenant/users/by-user/{id}/unlock | POST | TC-AUTH-087, TC-AUTH-093, TC-AUTH-094, TC-AUTH-107, TC-AUTH-112 |
 | /api/v1/tenant/leave/requests | GET | TC-AUTH-039, TC-AUTH-049 |
 | /api/v1/tenant/leave/requests/{id}/approve | POST | TC-AUTH-045 |
 | /api/v1/tenant/payroll/runs | GET | TC-AUTH-017, TC-AUTH-039, TC-AUTH-049 |
@@ -156,8 +156,8 @@ status: draft
 | /api/v1/auth/me | GET | TC-AUTH-067, TC-AUTH-077, TC-AUTH-081, TC-AUTH-095 |
 | /api/v1/auth/me/sessions | GET | TC-AUTH-025, TC-AUTH-069, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 |
 | /api/v1/auth/me/sessions/{sessionId}/revoke | POST | TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-076, TC-AUTH-078 |
-| /api/v1/tenant/users/{id}/sessions | GET | TC-AUTH-069, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 |
-| /api/v1/tenant/users/{id}/sessions/revoke | POST | TC-AUTH-025, TC-AUTH-070, TC-AUTH-073, TC-AUTH-075, TC-AUTH-078 |
+| /api/v1/tenant/users/by-user/{id}/sessions | GET | TC-AUTH-069, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 |
+| /api/v1/tenant/users/by-user/{id}/sessions/revoke | POST | TC-AUTH-025, TC-AUTH-070, TC-AUTH-073, TC-AUTH-075, TC-AUTH-078 |
 
 ## FR/NFR/BR Coverage for US-AUTH-010
 
@@ -195,7 +195,7 @@ status: draft
 | FR-3 (Refresh checks absolute timeout via issued_at) | TC-AUTH-068, TC-AUTH-074 |
 | FR-4 (last_active_at updated on each authenticated request, debounced) | TC-AUTH-067, TC-AUTH-077, TC-AUTH-081 |
 | FR-5 (Concurrent session check at login time, count non-revoked non-expired tokens) | TC-AUTH-024, TC-AUTH-065, TC-AUTH-066, TC-AUTH-074, TC-AUTH-075, TC-AUTH-082 |
-| FR-6 (Admin sessions endpoint: GET /api/v1/tenant/users/{id}/sessions) | TC-AUTH-069, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 |
+| FR-6 (Admin sessions endpoint: GET /api/v1/tenant/users/by-user/{id}/sessions) | TC-AUTH-069, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 |
 | FR-7 (Self sessions endpoint: GET /api/v1/auth/me/sessions) | TC-AUTH-025, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077 |
 | FR-8 (Session revocation endpoints: admin and self) | TC-AUTH-025, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-076 |
 | FR-9 (All session management actions recorded in audit log) | TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-070, TC-AUTH-071, TC-AUTH-078 |

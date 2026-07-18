@@ -35,11 +35,11 @@ Verify that a tenant admin can only unlock users who have an active membership i
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | As `admin@acme.com`, send `POST /api/v1/tenant/users/{alice_id}/unlock`. | HTTP 200 OK; unlock succeeds. `alice@acme.com` has `locked_until = null`, `failed_login_count = 0`. |
+| 1 | As `admin@acme.com`, send `POST /api/v1/tenant/users/by-user/{alice_id}/unlock`. | HTTP 200 OK; unlock succeeds. `alice@acme.com` has `locked_until = null`, `failed_login_count = 0`. |
 | 2 | Verify `account_unlocked_by_admin` audit event for alice. | Audit event logged with admin_user_id of `admin@acme.com`. |
-| 3 | As `admin@acme.com`, send `POST /api/v1/tenant/users/{bob_id}/unlock` (bob is in "globex," not "acme"). | HTTP 403 Forbidden or HTTP 404 Not Found -- the acme admin cannot see or unlock users outside their tenant. |
+| 3 | As `admin@acme.com`, send `POST /api/v1/tenant/users/by-user/{bob_id}/unlock` (bob is in "globex," not "acme"). | HTTP 403 Forbidden or HTTP 404 Not Found -- the acme admin cannot see or unlock users outside their tenant. |
 | 4 | Verify `bob@globex.com` remains locked: `locked_until` still in the future, `failed_login_count` unchanged. | No change to bob's lockout state. |
-| 5 | As `admin@globex.com`, send `POST /api/v1/tenant/users/{bob_id}/unlock`. | HTTP 200 OK; unlock succeeds for bob within their own tenant context. |
+| 5 | As `admin@globex.com`, send `POST /api/v1/tenant/users/by-user/{bob_id}/unlock`. | HTTP 200 OK; unlock succeeds for bob within their own tenant context. |
 | 6 | As `admin@globex.com`, attempt to unlock `alice@acme.com` (already unlocked, but testing cross-tenant access). | HTTP 403 or 404 -- globex admin cannot access acme users. |
 
 ## 6. Postconditions

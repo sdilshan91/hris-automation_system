@@ -6,12 +6,12 @@ priority: high
 type: performance
 status: blocked
 created: 2026-06-11
-exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Targets are the session-list endpoints (GET /auth/me/sessions + /tenant/users/{id}/sessions <=200ms P95) — not part of the P3b read scenarios — plus last_active_at debounced write overhead <=2ms which needs server-side instrumentation, not k6. Needs a seeded multi-session user + the session-list flow scripted. Re-run after seeding sessions."
+exec_note: "P3b k6 2026-06-30: NOT MEASURED — kept blocked. Targets are the session-list endpoints (GET /auth/me/sessions + /tenant/users/by-user/{id}/sessions <=200ms P95) — not part of the P3b read scenarios — plus last_active_at debounced write overhead <=2ms which needs server-side instrumentation, not k6. Needs a seeded multi-session user + the session-list flow scripted. Re-run after seeding sessions."
 
 # TC-AUTH-077: Session list P95 <= 200 ms and last_active_at update overhead <= 2 ms
 
 ## 1. Test Objective
-Verify that (a) the session list endpoints (`GET /api/v1/auth/me/sessions` and `GET /api/v1/tenant/users/{id}/sessions`) return results within 200 ms at P95 under normal load (NFR-3), and (b) the `last_active_at` debounced update adds no more than 2 ms overhead to regular API requests (NFR-1).
+Verify that (a) the session list endpoints (`GET /api/v1/auth/me/sessions` and `GET /api/v1/tenant/users/by-user/{id}/sessions`) return results within 200 ms at P95 under normal load (NFR-3), and (b) the `last_active_at` debounced update adds no more than 2 ms overhead to regular API requests (NFR-1).
 
 ## 2. Related Requirements
 - User Story: US-AUTH-009
@@ -29,7 +29,7 @@ Verify that (a) the session list endpoints (`GET /api/v1/auth/me/sessions` and `
 | Field | Value | Notes |
 |-------|-------|-------|
 | Self endpoint | GET /api/v1/auth/me/sessions | User's own sessions |
-| Admin endpoint | GET /api/v1/tenant/users/{id}/sessions | Admin view |
+| Admin endpoint | GET /api/v1/tenant/users/by-user/{id}/sessions | Admin view |
 | Request volume | 200 requests per endpoint | P95 sample |
 | P95 SLA | <= 200 ms | NFR-3 |
 | Overhead SLA | <= 2 ms | NFR-1 |
@@ -41,7 +41,7 @@ Verify that (a) the session list endpoints (`GET /api/v1/auth/me/sessions` and `
 |------|--------|-----------------|
 | 1 | Seed the tenant with 50 users, each having 3-10 active sessions. | Realistic data volume in the `refresh_token` table. |
 | 2 | As a regular user, execute 200 sequential requests to `GET /api/v1/auth/me/sessions`. Record response times. | P95 response time is <= 200 ms. |
-| 3 | As admin, execute 200 sequential requests to `GET /api/v1/tenant/users/{id}/sessions` for various users. Record response times. | P95 response time is <= 200 ms. |
+| 3 | As admin, execute 200 sequential requests to `GET /api/v1/tenant/users/by-user/{id}/sessions` for various users. Record response times. | P95 response time is <= 200 ms. |
 | 4 | **Overhead measurement:** Execute a baseline API request (e.g., `GET /api/v1/auth/me`) 500 times. Record average response time. | Baseline established. |
 | 5 | Enable `last_active_at` tracking (if toggleable) and repeat the same 500 requests. | Average response time increase is <= 2 ms compared to baseline. |
 | 6 | Verify that `last_active_at` is NOT updated on every request (debounced per FR-4). | When two requests are made within 1 minute, `last_active_at` is updated at most once. |

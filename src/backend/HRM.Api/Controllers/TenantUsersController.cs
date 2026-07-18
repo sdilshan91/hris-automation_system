@@ -39,14 +39,16 @@ public sealed class TenantUsersController : ControllerBase
     /// AC-3: Updates user_tenant_role; next JWT refresh carries updated claims.
     /// FR-4, FR-8: Replaces the current role set; protects sole Tenant Owner.
     /// </summary>
-    [HttpPatch("{id:guid}")]
+    // ISSUE-007: US-ADM-005 user-management actions are keyed by the {userTenantId} (the membership id),
+    // distinct from the AUTH-carryover actions under by-user/{userId}. The param name now says which.
+    [HttpPatch("{userTenantId:guid}")]
     [RequirePermission("Roles.AssignUsers")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> AssignUserRoles(Guid id, [FromBody] AssignUserRolesRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> AssignUserRoles(Guid userTenantId, [FromBody] AssignUserRolesRequest request, CancellationToken cancellationToken)
     {
-        var command = new AssignUserRolesCommand(id, request.RoleIds);
+        var command = new AssignUserRolesCommand(userTenantId, request.RoleIds);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsFailure)
@@ -85,13 +87,13 @@ public sealed class TenantUsersController : ControllerBase
     /// GET /api/v1/tenant/users/{id}/detail
     /// FR-6: profile + roles + active sessions + invitation history for one membership.
     /// </summary>
-    [HttpGet("{id:guid}/detail")]
+    [HttpGet("{userTenantId:guid}/detail")]
     [RequirePermission("Tenant.ManageUsers")]
     [ProducesResponseType(typeof(ApiResponse<TenantUserDetailDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetUserDetail(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetUserDetail(Guid userTenantId, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetTenantUserDetailQuery(id), cancellationToken);
+        var result = await _mediator.Send(new GetTenantUserDetailQuery(userTenantId), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
@@ -140,14 +142,14 @@ public sealed class TenantUsersController : ControllerBase
     /// PUT /api/v1/tenant/users/{id}/roles
     /// AC-3/FR-4: replace a membership's role set with a new complete set. BR-2: Tenant Owner cannot be removed.
     /// </summary>
-    [HttpPut("{id:guid}/roles")]
+    [HttpPut("{userTenantId:guid}/roles")]
     [RequirePermission("Tenant.ManageUsers")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> EditRoles(Guid id, [FromBody] EditUserRolesRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> EditRoles(Guid userTenantId, [FromBody] EditUserRolesRequest request, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new EditUserRolesCommand(id, request.RoleIds), cancellationToken);
+        var result = await _mediator.Send(new EditUserRolesCommand(userTenantId, request.RoleIds), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
@@ -159,14 +161,14 @@ public sealed class TenantUsersController : ControllerBase
     /// POST /api/v1/tenant/users/{id}/deactivate
     /// AC-4: status→Disabled, revoke this-tenant sessions, audit. BR-3: cannot deactivate yourself.
     /// </summary>
-    [HttpPost("{id:guid}/deactivate")]
+    [HttpPost("{userTenantId:guid}/deactivate")]
     [RequirePermission("Tenant.ManageUsers")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Deactivate(Guid userTenantId, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new DeactivateUserCommand(id), cancellationToken);
+        var result = await _mediator.Send(new DeactivateUserCommand(userTenantId), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
@@ -178,13 +180,13 @@ public sealed class TenantUsersController : ControllerBase
     /// POST /api/v1/tenant/users/{id}/force-password-reset
     /// AC-5: revoke ALL refresh tokens across all tenants (global password), null PasswordChangedAt, email, audit.
     /// </summary>
-    [HttpPost("{id:guid}/force-password-reset")]
+    [HttpPost("{userTenantId:guid}/force-password-reset")]
     [RequirePermission("Tenant.ManageUsers")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ForcePasswordReset(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ForcePasswordReset(Guid userTenantId, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new ForcePasswordResetCommand(id), cancellationToken);
+        var result = await _mediator.Send(new ForcePasswordResetCommand(userTenantId), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
@@ -196,13 +198,13 @@ public sealed class TenantUsersController : ControllerBase
     /// POST /api/v1/tenant/users/{id}/end-sessions
     /// FR-5: revoke all of the user's refresh tokens within the current tenant only, audit.
     /// </summary>
-    [HttpPost("{id:guid}/end-sessions")]
+    [HttpPost("{userTenantId:guid}/end-sessions")]
     [RequirePermission("Tenant.ManageUsers")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> EndSessions(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> EndSessions(Guid userTenantId, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new EndAllSessionsCommand(id), cancellationToken);
+        var result = await _mediator.Send(new EndAllSessionsCommand(userTenantId), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
@@ -270,18 +272,21 @@ public sealed class TenantUsersController : ControllerBase
     #region Account Lockout Management (US-AUTH-010)
 
     /// <summary>
-    /// POST /api/v1/tenant/users/{id}/unlock
+    /// POST /api/v1/tenant/users/by-user/{userId}/unlock
     /// Admin unlocks a locked user account (AC-5).
     /// BR-3: Admin may only unlock users with a membership in their tenant.
+    /// ISSUE-007: the AUTH-carryover actions are keyed by the global <c>userId</c> (NOT the
+    /// <c>userTenantId</c> the US-ADM-005 actions use) and live under the <c>by-user/</c> segment so the
+    /// two id semantics can never be confused on the same route shape.
     /// </summary>
-    [HttpPost("{id:guid}/unlock")]
+    [HttpPost("by-user/{userId:guid}/unlock")]
     [Authorize(Roles = "Tenant Admin,Tenant Owner")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UnlockUser(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> UnlockUser(Guid userId, CancellationToken cancellationToken)
     {
-        var command = new UnlockUserCommand(id, _currentUser.TenantId, _currentUser.UserId);
+        var command = new UnlockUserCommand(userId, _currentUser.TenantId, _currentUser.UserId);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsFailure)
@@ -297,18 +302,18 @@ public sealed class TenantUsersController : ControllerBase
     #region Session Management (US-AUTH-009)
 
     /// <summary>
-    /// GET /api/v1/tenant/users/{id}/sessions
+    /// GET /api/v1/tenant/users/by-user/{userId}/sessions
     /// Returns all active sessions for a user in the current tenant (AC-4).
-    /// Restricted to Tenant Admin and Tenant Owner roles.
+    /// Restricted to Tenant Admin and Tenant Owner roles. ISSUE-007: keyed by the global userId.
     /// </summary>
-    [HttpGet("{id:guid}/sessions")]
+    [HttpGet("by-user/{userId:guid}/sessions")]
     [Authorize(Roles = "Tenant Admin,Tenant Owner")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<SessionDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetUserSessions(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetUserSessions(Guid userId, CancellationToken cancellationToken)
     {
         var query = new GetUserSessionsQuery(
-            id,
+            userId,
             _currentUser.TenantId,
             CurrentSessionId: null);
 
@@ -323,24 +328,24 @@ public sealed class TenantUsersController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/v1/tenant/users/{id}/sessions/revoke
+    /// POST /api/v1/tenant/users/by-user/{userId}/sessions/revoke
     /// Revokes a specific session or all sessions for a user (AC-5).
     /// If body contains { sessionId }, revokes that session.
     /// If body is empty or sessionId is null, revokes all sessions.
-    /// Restricted to Tenant Admin and Tenant Owner roles.
+    /// Restricted to Tenant Admin and Tenant Owner roles. ISSUE-007: keyed by the global userId.
     /// </summary>
-    [HttpPost("{id:guid}/sessions/revoke")]
+    [HttpPost("by-user/{userId:guid}/sessions/revoke")]
     [Authorize(Roles = "Tenant Admin,Tenant Owner")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RevokeUserSessions(
-        Guid id,
+        Guid userId,
         [FromBody] SessionRevokeRequest? request,
         CancellationToken cancellationToken)
     {
         var command = new AdminRevokeSessionsCommand(
-            id,
+            userId,
             _currentUser.TenantId,
             request?.SessionId);
 

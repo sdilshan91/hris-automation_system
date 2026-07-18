@@ -32,7 +32,7 @@ Verify that calling the admin unlock endpoint on a user who is NOT currently loc
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Confirm `alice@acme.com` has `failed_login_count = 0`, `locked_until = null`. | Not locked. |
-| 2 | As `admin@acme.com`, send `POST /api/v1/tenant/users/{alice_id}/unlock`. | HTTP 200 OK (idempotent) or HTTP 409/400 indicating the user is not locked. Either is acceptable as long as it does not error with 500. |
+| 2 | As `admin@acme.com`, send `POST /api/v1/tenant/users/by-user/{alice_id}/unlock`. | HTTP 200 OK (idempotent) or HTTP 409/400 indicating the user is not locked. Either is acceptable as long as it does not error with 500. |
 | 3 | Query `users.failed_login_count` and `users.locked_until`. | Both remain at 0 and null respectively -- no corruption. |
 | 4 | Verify no spurious `account_unlocked_by_admin` audit event is created (or if one is created, it accurately reflects the action). | Audit log does not contain misleading unlock events for an account that was not locked. |
 | 5 | `alice@acme.com` logs in with correct credentials. | HTTP 200 OK -- login works normally. The unlock call did not affect her ability to log in. |

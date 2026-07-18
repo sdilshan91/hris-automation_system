@@ -29,20 +29,20 @@ Verify that a tenant admin can (a) revoke a specific session by providing a `ses
 |-------|-------|-------|
 | Admin user | admin@acme.com | Tenant Admin |
 | Target user | john@acme.com | userId = {john-id} |
-| Revoke endpoint | POST /api/v1/tenant/users/{john-id}/sessions/revoke | Admin session revocation |
+| Revoke endpoint | POST /api/v1/tenant/users/by-user/{john-id}/sessions/revoke | Admin session revocation |
 | Specific revoke body | `{ "sessionId": "<S2-id>" }` | Revoke Session 2 only |
 | Revoke-all body | (empty or `{}`) | Revoke all remaining sessions |
 
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | As admin, call `POST /api/v1/tenant/users/{john-id}/sessions/revoke` with `{ "sessionId": "<S2-id>" }`. | HTTP 200; response confirms Session S2 is revoked. |
+| 1 | As admin, call `POST /api/v1/tenant/users/by-user/{john-id}/sessions/revoke` with `{ "sessionId": "<S2-id>" }`. | HTTP 200; response confirms Session S2 is revoked. |
 | 2 | Verify Session S2 in the database. | `revoked_at` is set; S1 and S3 remain active (`revoked_at IS NULL`). |
 | 3 | From S2's device, call `POST /api/v1/auth/refresh` with S2's refresh token. | HTTP 401 Unauthorized; S2's user is forced to re-authenticate. |
 | 4 | From S1's device, call `POST /api/v1/auth/refresh` with S1's refresh token. | HTTP 200; S1 continues to work normally. |
 | 5 | Verify `session_revoked_by_admin` audit event for specific revocation. | Audit record contains: `event_type = "session_revoked_by_admin"`, `admin_user_id`, `target_user_id`, `revoked_session_id = S2`, `tenant_id`. |
 | 6 | Verify notification is sent to the affected user (BR-5). | If john has another active session, an in-app notification is delivered. If not, an email notification is sent. |
-| 7 | As admin, call `POST /api/v1/tenant/users/{john-id}/sessions/revoke` with no body or empty body. | HTTP 200; response confirms all remaining sessions (S1, S3) are revoked. |
+| 7 | As admin, call `POST /api/v1/tenant/users/by-user/{john-id}/sessions/revoke` with no body or empty body. | HTTP 200; response confirms all remaining sessions (S1, S3) are revoked. |
 | 8 | Verify all of john's refresh tokens are now revoked. | All tokens have `revoked_at` set. |
 | 9 | From S1's device, call `POST /api/v1/auth/refresh`. | HTTP 401 Unauthorized. |
 | 10 | From S3's device, call `POST /api/v1/auth/refresh`. | HTTP 401 Unauthorized. |

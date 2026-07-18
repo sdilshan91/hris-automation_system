@@ -11,7 +11,7 @@ created: 2026-06-11
 # TC-AUTH-069: Admin views a user's active sessions with device, browser, IP, and timestamps
 
 ## 1. Test Objective
-Verify that a tenant admin can retrieve the list of active sessions for any user in their tenant via `GET /api/v1/tenant/users/{id}/sessions`, and that the response contains correctly parsed device/browser/OS information, IP address, `issued_at`, `last_active_at`, and the `isCurrent` flag.
+Verify that a tenant admin can retrieve the list of active sessions for any user in their tenant via `GET /api/v1/tenant/users/by-user/{id}/sessions`, and that the response contains correctly parsed device/browser/OS information, IP address, `issued_at`, `last_active_at`, and the `isCurrent` flag.
 
 ## 2. Related Requirements
 - User Story: US-AUTH-009
@@ -37,13 +37,13 @@ Verify that a tenant admin can retrieve the list of active sessions for any user
 | Session 2 IP | 10.0.0.42 | Home network |
 | Session 3 UA | Mozilla/5.0 (Linux; Android 14) Mobile | Mobile browser |
 | Session 3 IP | 203.0.113.5 | Mobile network |
-| Endpoint | GET /api/v1/tenant/users/{john-id}/sessions | Admin endpoint |
+| Endpoint | GET /api/v1/tenant/users/by-user/{john-id}/sessions | Admin endpoint |
 
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Authenticate as `admin@acme.com` with Tenant Admin JWT. | Admin session established. |
-| 2 | Call `GET /api/v1/tenant/users/{john-id}/sessions` with admin JWT. | HTTP 200 is returned. |
+| 2 | Call `GET /api/v1/tenant/users/by-user/{john-id}/sessions` with admin JWT. | HTTP 200 is returned. |
 | 3 | Inspect the response array. | Exactly 3 session objects are returned (only active, non-revoked, non-expired). |
 | 4 | Verify each session object structure. | Each contains: `sessionId` (UUID), `device`, `browser`, `os`, `ipAddress`, `issuedAt` (ISO 8601), `lastActiveAt` (ISO 8601), `isCurrent` (boolean). |
 | 5 | Verify Session 1 parsed fields. | `browser = "Chrome"`, `os = "Windows"`, `device = "Desktop"`, `ipAddress = "192.168.1.10"`. |
