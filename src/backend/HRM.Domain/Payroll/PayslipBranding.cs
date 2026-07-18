@@ -24,10 +24,21 @@ public sealed record PayslipBranding
     public byte[]? LogoBytes { get; init; }
 
     /// <summary>
+    /// ISSUE-159 (US-PAY-004 BR-3): the payslip footer disclaimer. Defaults to
+    /// <see cref="DefaultFooterDisclaimer"/> so branding built inline (empty/no-tenant plans) keeps the
+    /// standard wording; <see cref="From"/> substitutes the tenant's configured text when present.
+    /// </summary>
+    public string FooterDisclaimer { get; init; } = DefaultFooterDisclaimer;
+
+    /// <summary>BR-3 standard footer wording used when a tenant has not configured its own.</summary>
+    public const string DefaultFooterDisclaimer =
+        "This is a computer-generated document and does not require a signature.";
+
+    /// <summary>
     /// Builds the branding from a tenant. Pure — the caller resolves the logo bytes (via IFileStorage) and any
     /// fallback name up front. Applies defensive fallbacks: a blank name degrades to <paramref name="fallbackName"/>
     /// (typically the subdomain) then "Company"; blank address/colour degrade to null so the renderer uses its
-    /// neutral default.
+    /// neutral default; a blank footer disclaimer degrades to <see cref="DefaultFooterDisclaimer"/> (ISSUE-159).
     /// </summary>
     public static PayslipBranding From(Tenant tenant, byte[]? logoBytes = null, string? fallbackName = null)
     {
@@ -38,6 +49,7 @@ public sealed record PayslipBranding
             CompanyAddress = Blank(tenant.Address),
             PrimaryColor = Blank(tenant.PrimaryColor),
             LogoBytes = logoBytes,
+            FooterDisclaimer = Blank(tenant.PayslipFooterDisclaimer) ?? DefaultFooterDisclaimer,
         };
     }
 

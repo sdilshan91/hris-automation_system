@@ -196,3 +196,13 @@ public sealed record OvertimeReportTotals
 
     public int RecordCount { get; init; }
 }
+
+/// <summary>
+/// ISSUE-081 (US-ATT-006 §8/AC-5): the rendered monthly-overtime-report export (CSV) as a file download.
+/// </summary>
+public sealed record OvertimeReportExportResult
+{
+    public byte[] FileContent { get; init; } = [];
+    public string FileName { get; init; } = string.Empty;
+    public string ContentType { get; init; } = string.Empty;
+}

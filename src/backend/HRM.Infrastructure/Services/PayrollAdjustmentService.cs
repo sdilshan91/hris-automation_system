@@ -1,4 +1,5 @@
 using System.Globalization;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
@@ -347,7 +348,7 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
         // AC-3: store at {tenantId}/payroll/adjustments/{adjustmentId}/ — IFileStorage prefixes {tenantId}/,
         // so the within-tenant path is payroll/adjustments/{adjustmentId}/{fileName}. The file name is
         // sanitized to a safe charset; the path is GUID-derived so traversal is structurally impossible.
-        var safeName = SanitizeFileName(fileName);
+        var safeName = FileNameSanitizer.Sanitize(fileName, "document");
         var relativePath = $"payroll/adjustments/{adjustmentId}/{safeName}";
 
         await _fileStorage.UploadAsync(_tenantContext.TenantId, relativePath, content, contentType, cancellationToken);
@@ -663,14 +664,6 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
 
     private static string Field(string[] fields, int index)
         => index < fields.Length ? fields[index].Trim() : string.Empty;
-
-    private static string SanitizeFileName(string fileName)
-    {
-        var name = Path.GetFileName(fileName);
-        var invalid = Path.GetInvalidFileNameChars();
-        var clean = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        return string.IsNullOrWhiteSpace(clean) ? "document" : clean;
-    }
 
     private static string ContentTypeFor(string extension) => extension.ToLowerInvariant() switch
     {

@@ -128,4 +128,49 @@ public sealed class OvertimeReportAndDtoTests
 
         result.Value.Totals.UnapprovedMinutes.Should().Be(230);
     }
+
+    // ── ISSUE-081: monthly overtime report CSV export (AC-5) ────────────
+
+    [Fact]
+    public async Task ExportMonthlyReport_Csv_ReturnsBomEncodedFile_WithTotalsRow()
+    {
+        SeedOvertime(new DateOnly(2026, 6, 5), OvertimeStatus.Approved, overtimeMinutes: 120, approvedMinutes: 100);
+        SeedOvertime(new DateOnly(2026, 6, 6), OvertimeStatus.Pending, overtimeMinutes: 60);
+
+        var result = await Service().ExportMonthlyReportAsync(2026, 6, format: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentType.Should().Be("text/csv");
+        result.Value.FileName.Should().Be("overtime-report-2026-06.csv");
+
+        // UTF-8 BOM so Excel auto-detects the encoding.
+        result.Value.FileContent.Should().StartWith(new byte[] { 0xEF, 0xBB, 0xBF });
+
+        var text = System.Text.Encoding.UTF8.GetString(result.Value.FileContent);
+        text.Should().Contain("Employee").And.Contain("John Doe");
+        // Trailing totals row (Approved=100, Pending=60 across the two records).
+        text.Should().Contain("Total,100,60,");
+    }
+
+    [Fact]
+    public async Task ExportMonthlyReport_BlankFormat_DefaultsToCsv()
+    {
+        SeedOvertime(new DateOnly(2026, 6, 5), OvertimeStatus.Approved, overtimeMinutes: 120, approvedMinutes: 100);
+
+        var result = await Service().ExportMonthlyReportAsync(2026, 6, format: "  ");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentType.Should().Be("text/csv");
+    }
+
+    [Fact]
+    public async Task ExportMonthlyReport_UnsupportedFormat_Is400()
+    {
+        // A genuinely different, understood format is REJECTED — not silently downgraded to CSV.
+        var result = await Service().ExportMonthlyReportAsync(2026, 6, format: "xlsx");
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("unsupported_format");
+    }
 }

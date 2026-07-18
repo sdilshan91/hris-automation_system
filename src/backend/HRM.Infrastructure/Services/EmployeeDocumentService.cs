@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
@@ -151,7 +152,7 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
 
         // FR-3 / AC-2: Build storage path: core-hr/{employeeId}/{yyyy}/{mm}/{filename}
         var now = DateTime.UtcNow;
-        var sanitizedFileName = SanitizeFileName(fileName);
+        var sanitizedFileName = FileNameSanitizer.Sanitize(fileName);
         var relativePath = $"core-hr/{employeeId}/{now:yyyy}/{now:MM}/{sanitizedFileName}";
 
         // Upload to tenant-isolated storage
@@ -466,17 +467,6 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
     /// <summary>
     /// Sanitizes file names to prevent path traversal and unsafe characters.
     /// </summary>
-    private static string SanitizeFileName(string fileName)
-    {
-        var name = Path.GetFileName(fileName); // Strip any path components
-        // Replace characters not safe for storage keys
-        foreach (var c in Path.GetInvalidFileNameChars())
-        {
-            name = name.Replace(c, '_');
-        }
-        return name;
-    }
-
     private static EmployeeDocumentDto ToDto(EmployeeDocument d) => new()
     {
         Id = d.Id,

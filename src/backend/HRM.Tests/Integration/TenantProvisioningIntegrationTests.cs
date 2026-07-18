@@ -339,4 +339,30 @@ public sealed class TenantProvisioningIntegrationTests
             .SingleAsync(lt => lt.TenantId == tenant.Id && lt.Name == "Unpaid Leave");
         unpaid.AnnualEntitlement.Should().Be(0m);
     }
+
+    // ── ISSUE-222 (US-LV-011 FR-1): the system LOP leave type is seeded AT tenant provisioning ──
+    // (not lazily on first assign). A brand-new tenant that has never issued an assign-lop/compulsory
+    // request must already list "Loss of Pay" (code LOP, SystemCategory=LossOfPay, zero entitlement).
+    [Fact]
+    public async Task ProvisionTenant_SeedsLopSystemLeaveType_WithoutAnyAssign_ISSUE222()
+    {
+        var planId = await SeedPlanAsync();
+        var (service, _) = Service();
+
+        await service.ProvisionAsync(Input(planId));
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+
+        // No assign-lop / EnsureLopTypeForTenantAsync was ever called — the LOP type must exist purely
+        // from provisioning-time seeding (the canonical default set).
+        var lop = await db.LeaveTypes.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(lt => lt.TenantId == tenant.Id
+                && lt.SystemCategory == LeaveTypeSystemCategory.LossOfPay);
+
+        lop.Should().NotBeNull("provisioning must seed the LOP system type at setup, not lazily on first assign");
+        lop!.Code.Should().Be("LOP");
+        lop.Name.Should().Be("Loss of Pay");
+        lop.AnnualEntitlement.Should().Be(0m);
+    }
 }

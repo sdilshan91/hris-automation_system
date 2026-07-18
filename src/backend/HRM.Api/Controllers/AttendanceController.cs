@@ -411,6 +411,28 @@ public sealed class AttendanceController : ControllerBase
     }
 
     /// <summary>
+    /// PUT /api/v1/attendance/shifts/{id}/default
+    /// ISSUE-077 (US-ATT-005 FR-5/BR-1): sets this shift as the tenant default working calendar,
+    /// transferring the default flag off the current default so exactly one shift is the default at any
+    /// time. Idempotent; returns 404 when the shift does not exist. Gated by Attendance.Shift.Manage.
+    /// </summary>
+    [HttpPut("shifts/{id:guid}/default")]
+    [RequirePermission("Attendance.Shift.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ShiftDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetDefaultShift(
+        [FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new SetDefaultShiftCommand(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ShiftDto>.Ok(result.Value!, "Default shift updated."));
+    }
+
+    /// <summary>
     /// POST /api/v1/attendance/shifts/{id}/assign
     /// Bulk-assigns a shift to employees with an effective date (US-ATT-005 AC-2/AC-3/FR-3). Closes any
     /// overlapping current assignment so an employee has exactly one active shift (BR-2).
@@ -626,6 +648,41 @@ public sealed class AttendanceController : ControllerBase
                 ApiResponse.Fail(result.Error!, result.ErrorCode));
 
         return Ok(ApiResponse<OvertimeReportResult>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/attendance/overtime/report/export?month=yyyy-MM&amp;format=csv
+    /// ISSUE-081 (US-ATT-006 §8/AC-5): downloads the monthly overtime report as a CSV file (UTF-8 with
+    /// BOM). Gated by Attendance.View.All — the same HR read permission as the on-screen report.
+    /// </summary>
+    [HttpGet("overtime/report/export")]
+    [RequirePermission("Attendance.View.All")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ExportOvertimeReport(
+        [FromQuery] string? month, [FromQuery] string? format, CancellationToken cancellationToken)
+    {
+        int year, mon;
+        if (string.IsNullOrWhiteSpace(month))
+        {
+            var now = DateTime.UtcNow;
+            year = now.Year; mon = now.Month;
+        }
+        else if (!TryParseMonth(month, out year, out mon))
+        {
+            return StatusCode(400, ApiResponse.Fail(
+                "Month must be in the format yyyy-MM.", "invalid_month"));
+        }
+
+        var result = await _mediator.Send(
+            new ExportOvertimeReportQuery(year, mon, format), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400,
+                ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var export = result.Value!;
+        return File(export.FileContent, export.ContentType, export.FileName);
     }
 
     private static bool TryParseMonth(string value, out int year, out int month)

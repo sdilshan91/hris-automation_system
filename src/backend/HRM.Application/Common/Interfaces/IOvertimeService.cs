@@ -86,4 +86,12 @@ public interface IOvertimeService
     /// </summary>
     Task<Result<OvertimeReportResult>> GetMonthlyReportAsync(
         int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-081 (US-ATT-006 §8/AC-5): renders the monthly overtime report as a CSV file download (UTF-8
+    /// with BOM). Reuses <see cref="GetMonthlyReportAsync"/> so the export matches the on-screen report.
+    /// 400 tenant unresolved / invalid month / unsupported (non-CSV) format.
+    /// </summary>
+    Task<Result<OvertimeReportExportResult>> ExportMonthlyReportAsync(
+        int year, int month, string? format, CancellationToken cancellationToken = default);
 }

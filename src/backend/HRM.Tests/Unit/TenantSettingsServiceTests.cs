@@ -95,6 +95,30 @@ public sealed class TenantSettingsServiceTests
         result.Value.Localization.DefaultLanguage.Should().Be("en");
     }
 
+    // ── ISSUE-159: the payslip footer disclaimer round-trips through save → GET ──
+    // Regression for the write/read asymmetry: the value is persisted and consumed by the payslip
+    // renderer, but ToOrgProfileDto originally dropped it, so the settings GET always returned null.
+    [Fact]
+    public async Task UpdateOrgProfile_PayslipFooterDisclaimer_RoundTripsThroughGet()
+    {
+        await SeedTenantAsync(_tenantId, name: "Acme");
+        var service = CreateService();
+
+        var update = await service.UpdateOrgProfileAsync(new UpdateOrgProfileRequest(
+            Name: "Acme",
+            LegalName: null, RegistrationNumber: null, Address: null,
+            Industry: null, CompanySize: null, FiscalYearStartMonth: 1, DefaultCountryCode: null,
+            PayslipFooterDisclaimer: "Confidential — payroll use only."));
+
+        // The update result itself echoes the saved value...
+        update.IsSuccess.Should().BeTrue(update.Error);
+        update.Value!.PayslipFooterDisclaimer.Should().Be("Confidential — payroll use only.");
+
+        // ...and so does a fresh GET (the ToOrgProfileDto read path — null before the fix).
+        var snapshot = await service.GetSettingsAsync();
+        snapshot.Value!.OrgProfile.PayslipFooterDisclaimer.Should().Be("Confidential — payroll use only.");
+    }
+
     // ── Localization (AC-3, FR-4) ────────────────────────────────────────────
 
     [Fact]

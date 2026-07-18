@@ -32,8 +32,6 @@ namespace HRM.Infrastructure.Services;
 public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
 {
     private const int MaxConcurrency = 10; // NFR-3: bounded parallelism (PDF render is CPU-bound).
-    private const string DefaultDisclaimer =
-        "This is a computer-generated document and does not require a signature.";
 
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
@@ -341,7 +339,7 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             CompanyLogoUrl = null,                    // logo carried as bytes below (renderer never fetches a URL).
             CompanyLogoBytes = branding.LogoBytes,    // ISSUE-158: pre-resolved tenant logo (PNG/JPEG) or null.
             BrandPrimaryColor = branding.PrimaryColor, // ISSUE-158: tenant primary colour for header/accents.
-            FooterDisclaimer = DefaultDisclaimer, // BR-3: tenant-configurable footer deferred — see module note.
+            FooterDisclaimer = branding.FooterDisclaimer, // ISSUE-159/BR-3: tenant-configured footer, else the default.
             PayMonth = slip.PayMonth,
             PayYear = slip.PayYear,
             EmployeeName = employee is null ? "Employee" : $"{employee.FirstName} {employee.LastName}".Trim(),
