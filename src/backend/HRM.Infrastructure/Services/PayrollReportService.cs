@@ -1466,16 +1466,9 @@ public sealed class PayrollReportService : IPayrollReportService
     //  Helpers
     // ══════════════════════════════════════════════════════════════
 
-    /// <summary>BR-2: mask all but the last 4 digits of an account number.</summary>
-    public static string MaskAccount(string account)
-    {
-        if (string.IsNullOrWhiteSpace(account))
-            return string.Empty;
-        var trimmed = account.Trim();
-        if (trimmed.Length <= 4)
-            return new string('*', trimmed.Length);
-        return new string('*', trimmed.Length - 4) + trimmed[^4..];
-    }
+    /// <summary>BR-2: mask all but the last 4 digits of an account number. Delegates to the shared
+    /// <see cref="AccountMasking.MaskLast4"/> so reports and payslips (ISSUE-161) mask identically.</summary>
+    public static string MaskAccount(string account) => AccountMasking.MaskLast4(account);
 
     /// <summary>Component-type split: Deduction + Statutory = deductions; Earning + Reimbursement = gross.</summary>
     private static bool IsStatutory(string componentType) =>

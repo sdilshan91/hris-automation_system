@@ -33,6 +33,12 @@ public sealed record PayslipDocumentModel
     public string? Department { get; init; }
     public string? Designation { get; init; }
     public DateTime? DateOfJoining { get; init; }
+    /// <summary>
+    /// FR-2/ISSUE-161: the employee's bank account for salary disbursement, MASKED to the last 4 digits
+    /// (e.g. <c>******7890</c>). The full number is never placed on the payslip. Null when the employee has
+    /// no bank account on file (renders as "-").
+    /// </summary>
+    public string? MaskedBankAccount { get; init; }
 
     // ── Earnings / deductions tables (FR-2) ────────────────────────────────────
     /// <summary>Earning + reimbursement lines (positive contributions to gross).</summary>

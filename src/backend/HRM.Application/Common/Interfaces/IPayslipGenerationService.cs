@@ -122,7 +122,9 @@ public sealed record PayslipSlipSnapshot(
 /// <summary>The employee scalars the payslip model needs, copied off the tracked entity.</summary>
 public sealed record PayslipEmployeeSnapshot(
     string FirstName, string LastName, string EmployeeNo,
-    Guid DepartmentId, Guid JobTitleId, DateTime? DateOfJoining);
+    Guid DepartmentId, Guid JobTitleId, DateTime? DateOfJoining,
+    // ISSUE-161: raw bank account (masked to last-4 by the renderer for the payslip employee section, FR-2).
+    string? BankAccountNumber = null);
 
 /// <summary>One payslip line's scalars, copied off the tracked detail entity.</summary>
 public sealed record PayslipDetailSnapshot(string ComponentName, string ComponentType, decimal Amount);

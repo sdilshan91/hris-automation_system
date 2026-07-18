@@ -12,6 +12,10 @@ public sealed class PreviewCtcBreakdownValidator : AbstractValidator<PreviewCtcB
             .NotEmpty().WithMessage("A salary structure reference is required.");
 
         RuleFor(x => x.AnnualCtc)
-            .GreaterThan(0).WithMessage("Annual CTC must be greater than zero.");
+            .GreaterThan(0).WithMessage("Annual CTC must be greater than zero.")
+            // ISSUE-152: same numeric(18,2) money contract as the assign path — reject >2 decimal places.
+            .PrecisionScale(18, 2, ignoreTrailingZeros: true)
+                .WithMessage("Annual CTC cannot have more than 2 decimal places.")
+                .WithErrorCode("invalid_ctc_scale");
     }
 }
