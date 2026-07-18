@@ -232,7 +232,7 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
         if (!_tenantContext.IsResolved)
             return Result<CustomReportExportResult>.Failure("Tenant context is not resolved.", 400);
 
-        var normalizedFormat = NormalizeFormat(format);
+        var normalizedFormat = ExportFormatNormalizer.Normalize(format);
         if (normalizedFormat is null)
             return Result<CustomReportExportResult>.Failure(
                 "Export format must be one of csv, xlsx, pdf.", 400, "invalid_format");
@@ -736,18 +736,6 @@ public sealed class AttendanceDashboardService : IAttendanceDashboardService
     private static string FullName(Employee e) => $"{e.FirstName} {e.LastName}".Trim();
 
     private static string FullName(DashboardEmployee e) => $"{e.FirstName} {e.LastName}".Trim();
-
-    private static string? NormalizeFormat(string? format)
-    {
-        var f = format?.Trim().ToLowerInvariant();
-        return f switch
-        {
-            "csv" => "csv",
-            "xlsx" or "excel" => "xlsx",
-            "pdf" => "pdf",
-            _ => null,
-        };
-    }
 
     // ── Scheduled-config mapping / validation ──────────────────────────
 

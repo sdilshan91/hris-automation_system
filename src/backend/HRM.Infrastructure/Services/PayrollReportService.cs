@@ -1,4 +1,5 @@
 using System.Globalization;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Payroll.DTOs;
@@ -1350,7 +1351,7 @@ public sealed class PayrollReportService : IPayrollReportService
                             && esc.EffectiveFrom <= today
                             && (esc.EffectiveTo == null || esc.EffectiveTo >= today)));
         }
-        if (TryParseEmploymentType(qp.EmploymentType, out var empType))
+        if (EmploymentTypeParsing.TryParse(qp.EmploymentType, out var empType))
             query = query.Where(e => e.EmploymentType == empType);
         if (!string.IsNullOrWhiteSpace(qp.EmployeeSearch))
         {
@@ -1484,14 +1485,6 @@ public sealed class PayrollReportService : IPayrollReportService
         string.Equals(d.ComponentName, "Basic", StringComparison.OrdinalIgnoreCase)
         || string.Equals(d.ComponentName, "Basic Salary", StringComparison.OrdinalIgnoreCase)
         || (d.CalculationBasis?.Contains("BASIC", StringComparison.OrdinalIgnoreCase) ?? false);
-
-    private static bool TryParseEmploymentType(string? value, out EmploymentType type)
-    {
-        type = default;
-        if (string.IsNullOrWhiteSpace(value)) return false;
-        var normalised = value.Replace("-", string.Empty).Replace(" ", string.Empty);
-        return Enum.TryParse(normalised, ignoreCase: true, out type);
-    }
 
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
