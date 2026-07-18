@@ -3359,7 +3359,7 @@ Scope: 12 functional TCs (TC-PAY-002-01..12) + 4 isolation TCs (TC-PAY-ISO-005..
 - **Severity rationale:** MED — assignment still works when components are authored/overridden to balance, and CTC-derived percentage structures (no fixed comps) balance naturally; but the documented single-override UX (AC-3) and any structure with a fixed allowance is unusable at off-design CTCs without manual rebalancing. Contained to override/varied-CTC flows, not the happy path.
 
 ### ISSUE-152 — Declared annual CTC accepts >2 decimal places (no numeric(18,2) input normalization/rejection)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · PARTIALLY RESOLVED (>2dp rejected, PR #363; JSON-string-numeric coercion = global NumberHandling → needs-decision) 2026-07-18
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-002 / TC-PAY-002-06 (step 6)
 - **Title:** `annualCtc` with 3 decimal places (e.g. 600000.555) is accepted by both preview and assign without normalization or a validation error; TC-PAY-002-06 expects rejection or normalization to 2 dp per the numeric(18,2) contract.
@@ -3487,7 +3487,7 @@ Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl
 - **Severity rationale:** A spec'd optional feature (BR-4) is entirely unreachable; financially the payslip is still correct, so contained.
 
 ### ISSUE-161 — Payslip omits the masked bank account (FR-2 employee section)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #363, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-004 / TC-PAY-004-01 (step 5), TC-PAY-004-11
 - **Title:** FR-2 requires a masked bank account in the employee section; `PayslipDocumentModel` has no bank-account field and the renderer never emits one.
@@ -4022,7 +4022,7 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 - **ID:** ISSUE-184
 - **Type:** ISSUE (filter contract nit)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #363, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-012 / TC-PAY-012-01 (AC-1/FR-1 filter)
 - **Title:** `GET /runs/history?status=<invalid>` (e.g. `Draft`, `zzz`) silently drops the filter and returns ALL runs instead of 400 / empty
