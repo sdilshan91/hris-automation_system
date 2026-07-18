@@ -91,7 +91,9 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
         {
             Nodes = nodes,
             View = "department",
-            ReportingViewAvailable = false,
+            // ISSUE-023: view-INDEPENDENT tenant capability — true iff any employee has a manager link,
+            // so a client reading the department view first sees the same flag as the reporting view.
+            ReportingViewAvailable = await HasReportingLinksAsync(cancellationToken),
         });
     }
 
@@ -109,6 +111,9 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
         // Root nodes are employees with no manager (ReportsToEmployeeId == null).
         // Children are loaded by ReportsToEmployeeId.
         // Note: no Include(e => e.JobTitle) — load job titles separately for InMemory compatibility.
+
+        // ISSUE-023: same view-independent capability as the department view.
+        var reportingViewAvailable = await HasReportingLinksAsync(cancellationToken);
 
         var empQuery = _dbContext.Employees
             .AsNoTracking();
@@ -141,7 +146,7 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
                 {
                     Nodes = [],
                     View = "reporting",
-                    ReportingViewAvailable = true,
+                    ReportingViewAvailable = reportingViewAvailable,
                 });
 
             var directReports = childrenLookup[parentId.Value]
@@ -152,7 +157,7 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
             {
                 Nodes = directReports,
                 View = "reporting",
-                ReportingViewAvailable = true,
+                ReportingViewAvailable = reportingViewAvailable,
             });
         }
 
@@ -165,11 +170,22 @@ public sealed class OrganizationTreeService : IOrganizationTreeService
         {
             Nodes = rootNodes,
             View = "reporting",
-            ReportingViewAvailable = true,
+            ReportingViewAvailable = reportingViewAvailable,
         });
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// ISSUE-023: view-independent tenant capability — whether any employee in the tenant has a
+    /// reporting manager (non-null ReportsToEmployeeId). Returned identically by both org-tree views
+    /// so a client never gates the Department↔Reporting toggle on a self-contradicting flag.
+    /// Tenant-scoped by the EF global query filter.
+    /// </summary>
+    private async Task<bool> HasReportingLinksAsync(CancellationToken cancellationToken) =>
+        await _dbContext.Employees
+            .AsNoTracking()
+            .AnyAsync(e => e.ReportsToEmployeeId != null, cancellationToken);
 
     /// <summary>
     /// Recursively builds a department node with children limited by depth.

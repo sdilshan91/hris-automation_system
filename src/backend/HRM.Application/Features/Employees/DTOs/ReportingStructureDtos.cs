@@ -69,7 +69,10 @@ public sealed record BulkAssignManagerItemResult
     public Guid EmployeeId { get; init; }
     public bool Success { get; init; }
     public string? Error { get; init; }
+    /// <summary>ISSUE-027: the assigned employee's real display name (was previously mislabelled with the status message).</summary>
     public string? EmployeeName { get; init; }
+    /// <summary>ISSUE-027: the human-readable status sentence for this item (moved out of EmployeeName).</summary>
+    public string? Message { get; init; }
 }
 
 /// <summary>

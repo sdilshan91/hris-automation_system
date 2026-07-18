@@ -181,18 +181,22 @@ public sealed class CustomFieldService : ICustomFieldService
             return Result<CustomFieldDefinitionDto>.Failure(
                 $"You have reached the maximum number of custom fields ({maxAllowed}) for your current plan. Upgrade to add more.", 403);
 
-        // BR-1: field_name unique per tenant + entity_type
+        // ISSUE-028: trim once and store the trimmed value; the BR-1 duplicate pre-check is case-INsensitive
+        // (LOWER(field_name) = LOWER(@p)) so "Region" and "region" cannot both persist. Mirrors BUG-016/017.
+        var fieldName = request.FieldName.Trim();
+
+        // BR-1: field_name unique per tenant + entity_type (trimmed + case-insensitive)
         var nameExists = await _dbContext.CustomFieldDefinitions
-            .AnyAsync(c => c.EntityType == request.EntityType && c.FieldName == request.FieldName,
+            .AnyAsync(c => c.EntityType == request.EntityType && c.FieldName.ToLower() == fieldName.ToLower(),
                 cancellationToken);
 
         if (nameExists)
             return Result<CustomFieldDefinitionDto>.Failure(
-                $"A custom field with name '{request.FieldName}' already exists for entity type '{request.EntityType}'.", 400);
+                $"A custom field with name '{fieldName}' already exists for entity type '{request.EntityType}'.", 400);
 
         // Generate or validate field_key
         var fieldKey = string.IsNullOrWhiteSpace(request.FieldKey)
-            ? Slugify(request.FieldName)
+            ? Slugify(fieldName)
             : request.FieldKey;
 
         var keyExists = await _dbContext.CustomFieldDefinitions
@@ -219,7 +223,7 @@ public sealed class CustomFieldService : ICustomFieldService
             Id = BaseEntity.NewUuidV7(),
             TenantId = _tenantContext.TenantId,
             EntityType = request.EntityType,
-            FieldName = request.FieldName,
+            FieldName = fieldName,
             FieldKey = fieldKey,
             FieldType = request.FieldType.ToLowerInvariant(),
             IsRequired = request.IsRequired,
@@ -256,18 +260,21 @@ public sealed class CustomFieldService : ICustomFieldService
         if (definition is null)
             return Result<CustomFieldDefinitionDto>.Failure("Custom field definition not found.", 404);
 
-        // BR-1: field_name unique per tenant + entity_type (excluding self)
-        if (request.FieldName != definition.FieldName)
+        // ISSUE-028: trim once and store the trimmed value; the BR-1 duplicate check is case-INsensitive.
+        var fieldName = request.FieldName.Trim();
+
+        // BR-1: field_name unique per tenant + entity_type (excluding self, trimmed + case-insensitive)
+        if (fieldName != definition.FieldName)
         {
             var nameExists = await _dbContext.CustomFieldDefinitions
                 .AnyAsync(c => c.EntityType == definition.EntityType &&
-                               c.FieldName == request.FieldName &&
+                               c.FieldName.ToLower() == fieldName.ToLower() &&
                                c.Id != customFieldId,
                     cancellationToken);
 
             if (nameExists)
                 return Result<CustomFieldDefinitionDto>.Failure(
-                    $"A custom field with name '{request.FieldName}' already exists for entity type '{definition.EntityType}'.", 400);
+                    $"A custom field with name '{fieldName}' already exists for entity type '{definition.EntityType}'.", 400);
         }
 
         // BR-6: Cannot remove dropdown options that are in use
@@ -286,7 +293,7 @@ public sealed class CustomFieldService : ICustomFieldService
         // BUG-024 (FR-7): snapshot the pre-mutation state so the audit row can capture before/after.
         var beforeSnapshot = Snapshot(definition);
 
-        definition.FieldName = request.FieldName;
+        definition.FieldName = fieldName;
         definition.IsRequired = request.IsRequired;
 
         if (OptionFieldTypes.Contains(definition.FieldType) && request.Options is not null)

@@ -203,6 +203,62 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         profile.EmploymentHistory.Should().BeEmpty();
     }
 
+    // ── ISSUE-225: profile DTO exposes the reporting manager (TC-CHR-269) ─────────
+
+    [Fact]
+    public async Task GetProfile_ExposesReportingManager_Issue225()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+
+        Guid managerId, reportId;
+        using (var db = CreateDbContext())
+        {
+            var manager = new Employee
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeNo = "EMP-MGR",
+                FirstName = "Mona", LastName = "Manager", Email = "boss@test.com",
+                DateOfJoining = DateTime.UtcNow.AddDays(-60), DepartmentId = deptId, JobTitleId = jtId,
+                EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+            };
+            managerId = manager.Id;
+
+            var report = new Employee
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeNo = "EMP-RPT",
+                FirstName = "Riley", LastName = "Report", Email = "report@test.com",
+                DateOfJoining = DateTime.UtcNow.AddDays(-30), DepartmentId = deptId, JobTitleId = jtId,
+                EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+                ReportsToEmployeeId = managerId,
+            };
+            reportId = report.Id;
+
+            db.Employees.AddRange(manager, report);
+            await db.SaveChangesAsync();
+        }
+
+        var result = await CreateService().GetProfileAsync(reportId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ReportsToEmployeeId.Should().Be(managerId);
+        result.Value.ManagerName.Should().Be("Mona Manager");
+    }
+
+    [Fact]
+    public async Task GetProfile_ManagerFieldsNull_WhenNoManager_Issue225()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var result = await CreateService().GetProfileAsync(empId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ReportsToEmployeeId.Should().BeNull();
+        result.Value.ManagerName.Should().BeNull();
+    }
+
     [Fact]
     public async Task GetProfile_NonExistent_ShouldReturn404()
     {

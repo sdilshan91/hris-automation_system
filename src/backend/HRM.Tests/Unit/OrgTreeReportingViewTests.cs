@@ -154,6 +154,54 @@ public sealed class OrgTreeReportingViewTests : IDisposable
         result.Value.Nodes.Should().OnlyContain(n => n.ParentId == null);
     }
 
+    // ── ISSUE-023: reportingViewAvailable is a view-INDEPENDENT tenant capability ──────
+
+    [Fact]
+    public async Task ReportingViewAvailable_IsTrueInBothViews_WhenReportingLinksExist_Issue023()
+    {
+        // Arrange: a manager link exists (emp reports to boss).
+        var boss = CreateEmployee("Boss", "One");
+        var emp = CreateEmployee("Emp", "Two", reportsTo: boss.Id);
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.AddRange(boss, emp);
+            await db.SaveChangesAsync();
+        }
+
+        // Act: both views, same tenant/data.
+        var deptResult = await CreateService().GetDepartmentTreeAsync(null, depth: 2, includeInactive: false);
+        var reportingResult = await CreateService().GetReportingTreeAsync(null, depth: 2, includeInactive: false);
+
+        // Assert: identical, non-contradicting flag.
+        deptResult.IsSuccess.Should().BeTrue();
+        reportingResult.IsSuccess.Should().BeTrue();
+        deptResult.Value!.ReportingViewAvailable.Should().BeTrue();
+        reportingResult.Value!.ReportingViewAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReportingViewAvailable_IsFalseInBothViews_WhenNoReportingLinks_Issue023()
+    {
+        // Arrange: employees exist but NONE report to anyone.
+        var a = CreateEmployee("Solo", "A");
+        var b = CreateEmployee("Solo", "B");
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.AddRange(a, b);
+            await db.SaveChangesAsync();
+        }
+
+        var deptResult = await CreateService().GetDepartmentTreeAsync(null, depth: 2, includeInactive: false);
+        var reportingResult = await CreateService().GetReportingTreeAsync(null, depth: 2, includeInactive: false);
+
+        deptResult.IsSuccess.Should().BeTrue();
+        reportingResult.IsSuccess.Should().BeTrue();
+        deptResult.Value!.ReportingViewAvailable.Should().BeFalse();
+        reportingResult.Value!.ReportingViewAvailable.Should().BeFalse();
+    }
+
     public void Dispose()
     {
         // InMemory database is cleaned up automatically

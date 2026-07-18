@@ -180,6 +180,13 @@ public sealed class ReportingStructureService : IReportingStructureService
             return Result<BulkAssignManagerResult>.Failure(
                 "Bulk assignment is limited to 100 employees per request (NFR-6).", 400);
 
+        // ISSUE-027: resolve each employee's real display name up-front (one batched query) so the item
+        // result carries the employee's name in EmployeeName — the status sentence now lives in Message.
+        var employeeNames = await _dbContext.Employees
+            .AsNoTracking()
+            .Where(e => request.EmployeeIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => $"{e.FirstName} {e.LastName}", cancellationToken);
+
         var results = new List<BulkAssignManagerItemResult>();
 
         foreach (var employeeId in request.EmployeeIds)
@@ -197,7 +204,8 @@ public sealed class ReportingStructureService : IReportingStructureService
                 EmployeeId = employeeId,
                 Success = result.IsSuccess,
                 Error = result.Error,
-                EmployeeName = result.Value?.Message,
+                EmployeeName = employeeNames.TryGetValue(employeeId, out var name) ? name : null,
+                Message = result.Value?.Message,
             });
         }
 
