@@ -15,14 +15,14 @@ then implement the chosen ones in a follow-up batch.
 - **ISSUE-211 status-casing (Admin/FE)** — FE type is lowercase, BE wire is PascalCase; FE now normalizes case-insensitively (#368). · *rec: pin the serialized casing in the Swagger contract so FE model + i18n keys match exactly.*
 - **ISSUE-007 (Admin)** — `TenantUsersController` `{id}` means two things + mixed authz gates. · *rec: split into distinct routes; needs an API-shape call.*
 - **ISSUE-280 (Payroll)** — BASIC component identified by Code vs Name; `PayrollSlipLine` drops Code. · *rec: durable refactor to key on Code; defer until a payroll-model pass.*
-- **ISSUE-072 validator frame (Attendance)** — the tenant-local future-date service guard is CORRECT (kept); the validator uses naive-UTC (ISSUE-065 family). · *rec: align the validator to the tenant-local frame (small); keep the service guard.*
+- ✅ **DONE (#371)** **ISSUE-072 validator frame (Attendance)** — the tenant-local future-date service guard is CORRECT (kept); the validator uses naive-UTC (ISSUE-065 family). · *rec: align the validator to the tenant-local frame (small); keep the service guard.*
 
 ## C. New setting / endpoint / feature (small)
-- **ISSUE-222 (Leave)** — LOP leave type created lazily on first assign vs at tenant setup. · *rec: seed at provisioning.*
-- **ISSUE-077 (Attendance)** — no API to set/transfer the tenant default shift. · *rec: add a small admin endpoint.*
-- **ISSUE-081 (Attendance)** — monthly OT report has no export endpoint (AC-5). · *rec: add CSV/XLSX export (reuse CsvExport/ExportFormatNormalizer).*
-- **ISSUE-159 (Payroll)** — payslip footer disclaimer hardcoded, not tenant-configurable. · *rec: make it a tenant setting.*
-- **ISSUE-162 (Payroll)** — no per-employee payslip retry endpoint (FR-8). · *rec: add the endpoint.*
+- ✅ **DONE (#371, TC added; code already seeded)** **ISSUE-222 (Leave)** — LOP leave type created lazily on first assign vs at tenant setup. · *rec: seed at provisioning.*
+- ✅ **DONE (#371)** **ISSUE-077 (Attendance)** — no API to set/transfer the tenant default shift. · *rec: add a small admin endpoint.*
+- ✅ **DONE (#371)** **ISSUE-081 (Attendance)** — monthly OT report has no export endpoint (AC-5). · *rec: add CSV/XLSX export (reuse CsvExport/ExportFormatNormalizer).*
+- ✅ **DONE (#371)** **ISSUE-159 (Payroll)** — payslip footer disclaimer hardcoded, not tenant-configurable. · *rec: make it a tenant setting.*
+- ⏸ **DEFERRED (#371 → DF-31, story-sized)** **ISSUE-162 (Payroll)** — no per-employee payslip retry endpoint (FR-8). · *rec: add the endpoint.*
 - **ISSUE-036 (Leave)** — attachment 5MB cap + tenant-scoped blob storage not implemented. · *rec: story-sized; defer.*
 - **ISSUE-248-style change-password (done #367)** — no decision; noted resolved.
 
@@ -54,5 +54,5 @@ then implement the chosen ones in a follow-up batch.
 - **DF-24 / DF-26 / DF-27** — bulk-assign message field, vacancy headcount, auth FE (tenant_required / regenerate prompt / change-password form). · *rec: one FE follow-up batch.*
 
 ## H. Code-quality (reuse, from the sweep)
-- **SanitizeFileName ×4** — 4 copies differ on fallback string. · *rec: unify with a shared `SanitizeFileName(fileName, fallback)` helper.*
+- ✅ **DONE (#371, FileNameSanitizer helper)** **SanitizeFileName ×4** — 4 copies differ on fallback string. · *rec: unify with a shared `SanitizeFileName(fileName, fallback)` helper.*
 - **Non-tolerant `Enum.TryParse` endpoints** (Payroll/Notification/Onboarding/Offboarding) — reject kebab-case where the report endpoints accept it. · *rec: decide per-endpoint whether to make them separator-tolerant (behavior change) vs leave strict.*

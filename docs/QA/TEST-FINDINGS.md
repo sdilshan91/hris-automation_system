@@ -1824,7 +1824,8 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-072 — Future-date / validation rejections return no machine-readable `code`, and the service's `future_date` code path is effectively unreachable (shadowed by the validator's future-time rule)
-- **Type / Severity / Status:** ISSUE · LOW · WONTFIX (keep branch — not a defect; the tenant-local future_date guard IS reachable for behind-UTC tenants; validator naive-UTC frame = ISSUE-065-family nit, needs-decision) 2026-07-18
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED-BY-DECISION (PR #371, merged 2026-07-18 — validator aligned to a coarse date-only future guard, frame-independent; the naive-UTC combined-timestamp rule that wrongly rejected valid local-past times for tenants ahead of UTC is removed; the authoritative tenant-local `future_date` rejection stays in the service. Original keep-branch note preserved below.) 2026-07-18
+  - (prior) WONTFIX (keep branch — not a defect; the tenant-local future_date guard IS reachable for behind-UTC tenants; validator naive-UTC frame = ISSUE-065-family nit, needs-decision)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-003 · TC-ATT-030 (validation), TC-ATT-027/031 (boundary — comparison)
 - **Title:** Two contained contract nits on the regularization-create error envelope. (a) **No `code` on validator rejections:** the service-layer policy rejections carry a stable machine-readable `code` (`lookback_exceeded`, `duplicate_pending`, `payroll_period_locked`), but the FluentValidation rejections (reason-too-short, clock-in-not-before-clock-out, future-time, bad type, missing/invalid time) return `code: null` — only a human message. FE/clients cannot branch on a stable identifier for these. (b) **`future_date` code unreachable:** `SubmitRegularizationAsync:356-358` returns code `future_date` for a future *date*, but every valid `regularization_type` requires at least one time, and the validator's "corrected time cannot be in the future" rule (`SubmitRegularizationValidator.cs:74-83`) fires **first** for any future date+time combination — so a future-date request is rejected at the validator with `code: null` and the message "The corrected time cannot be in the future.", never reaching the service's `future_date` branch. AC-3/BR-4 (future dates rejected) is still satisfied — just by a different layer/message than the service code implies.
@@ -1906,7 +1907,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only. (If self-view is intended, add a self-scope or a dedicated `Attendance.Shift.ViewSelf` permission.)
 
 ### ISSUE-077 — No API to set/transfer the tenant default shift (`is_default`): create & clone hard-code `is_default=false` and there is no manage-default endpoint; the seeded provisioning default cannot be changed
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #371, merged 2026-07-18; PUT shifts/{id}/default + SetDefaultShiftCommand enforcing BR-1 single-default; +3 TCs; full suite 4403 green)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-005 · TC-ATT-058 (step 6 not testable)
 - **Title:** FR-5/BR-1 require a tenant default shift and the resolver correctly falls back to `shift.is_default = true`. Provisioning DOES seed exactly one default ("General Shift") per tenant, so the fallback works. But there is **no way to manage the default via the API**: `CreateAsync`/`CloneAsync` hard-set `IsDefault = false`, `UpdateAsync` does not touch `IsDefault` (it is not even in `ShiftRequest`), and there is no "set as default" route. TC-ATT-058 step 6 (reject clearing the only default / transfer the flag so exactly one stays default) is therefore untestable through the API.
@@ -1973,7 +1974,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — add an `unapprovedMinutes` column (TC-ATT-079 §8 anticipates this) or a needs-review view.
 
 ### ISSUE-081 — The monthly overtime report has no export endpoint, but §8 specifies an export button (AC-5 export unbacked)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #371, merged 2026-07-18; GET overtime/report/export CSV via ExportOvertimeReportQuery, rejects xlsx/pdf 400; +3 TCs)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-006 · TC-ATT-079 (step 5) / §8
 - **Title:** §8 ("monthly overtime report … with an export button") and TC-ATT-079 step 5 expect CSV/XLSX export. The controller exposes `GET /overtime/report` only; there is no `overtime/report/export` route (the module's `summary/monthly/export` is the *attendance summary*, not overtime). The export action has no backend.
@@ -3467,7 +3468,7 @@ Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl
 - **Severity rationale:** Contained — the payslip is legible and financially correct; missing branding is a content-completeness gap vs the spec, not a broken flow.
 
 ### ISSUE-159 — Payslip footer disclaimer (BR-3) is hardcoded, not tenant-configurable (FR-3)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #371, merged 2026-07-18; Tenant.PayslipFooterDisclaimer setting + migration; fixed ToOrgProfileDto write-only read-back gap; +1 round-trip TC)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-004 / TC-PAY-004-11
 - **Title:** `FooterDisclaimer = DefaultDisclaimer` — the BR-3 disclaimer is always the built-in default; the tenant-configurable footer text (FR-3) is not wired.
@@ -3497,7 +3498,7 @@ Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl
 - **Severity rationale:** Cosmetic/content-completeness; the rest of the employee section is present.
 
 ### ISSUE-162 — No per-employee payslip retry endpoint (FR-8 individual retry not exposed)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · DEFERRED (story-sized; needs a single-employee render path through PayslipBatchRenderer + new command/handler — see DEFERRED-FOLLOWUPS DF-31; PR #371 assessed 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-004 / TC-PAY-004-05, TC-PAY-004-12
 - **Title:** FR-8 requires failed payslips to be "retryable individually"; the API exposes only run-level generate/regenerate — no `.../payslips/{employeeId}/retry`.
@@ -5467,7 +5468,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-222
 - **Type:** ISSUE (behavioral drift vs spec)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #371, merged 2026-07-18; code already seeded LOP at provisioning via GetDefaultLeaveTypes — added the missing provisioning regression TC so it is visible to /test-all)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management / US-LV-011 / TC-LV-218
 - **Title:** TC-LV-218 (FR-1) asserts the LOP leave type is "auto-created at tenant setup". Actual behavior: no LOP type exists in a fresh tenant's `leave-types` list; it is created on-demand the first time `LeaveTypeService.EnsureLopTypeForTenantAsync` is called (i.e. on the first `assign-lop` / `compulsory` / an LOP-producing leave request). Until then the LOP type is absent from the tenant catalog. The other system properties DO hold once created: `SystemCategory=LossOfPay`, `AnnualEntitlement=0`, cannot be deactivated ("This is a system leave type and cannot be deactivated."), and it can be renamed.
