@@ -4,6 +4,8 @@ Working register for the user-directed **LOW-tier fix campaign** (bugs+issues on
 Survey found **120 OPEN·LOW** findings (3 BUG, 117 ISSUE). Approach (user-chosen):
 **survey+triage → batch-fix the worthwhile ones (value-first) + explicitly WONTFIX/defer the noise.**
 
+> **STALENESS SWEEP (2026-07-18):** verify-before-fix pass found **6 of the 71 REAL-FIX already fixed** (with tests + fix commits) but left stale-OPEN — now closed RESOLVED: **ISSUE-049, ISSUE-050, ISSUE-053, ISSUE-054, ISSUE-006, ISSUE-244** (cf5bb243 / f806d890 / fd99a3bb). **65 genuinely open** remain. Lesson: the LOW ledger is stale-prone — grep the code for each ID before "fixing" it.
+
 - **Execution order:** security → data-integrity → a11y → then the rest by module.
 - **NEEDS-DECISION (25):** deferred to the "Deferred decisions" section below (one review sitting), NOT surfaced one-by-one.
 - **Per fix:** own `fix/{ID}` (or `fix/low-{module}` batch) branch → build + targeted tests → auditor(s) on security/data/isolation ones → gated auto-merge → ledger close-out.

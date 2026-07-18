@@ -233,7 +233,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-006 — US-ADM-005 audit rows omit `ip_address` and `user_agent` — NFR-2 envelope (actor/action/before/after/**IP**/timestamp) is incomplete
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (stale-fixed — verified in code; LOW-tier sweep 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-005 · TC-ADM-005-17 (NFR-2 envelope) / TC-ADM-005-04/-08/-11/-14 (audit steps)
 - **Title:** Every user-management `audit_log` row written by this story has `ip_address` and `user_agent` NULL. The `audit_logs` table HAS both columns, and NFR-2 names IP as a required envelope field, but `UserManagementService.WriteAudit` never populates them.
@@ -1404,7 +1404,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would add a `WriteAuditLogWithDetailAsync(user.Id, "login_success", ipAddress, userAgent, new { tenantId, … }, ct)` in `IssueTokensAsync` just before returning — mirroring the `login_failure` write — so the success event lands in `audit_logs` with actor/IP/user-agent/timestamp like the failure path already does.)
 
 ### ISSUE-049 — `POST /api/v1/auth/refresh` is accepted on ANY resolved subdomain regardless of the refresh token's bound tenant; TC-AUTH-ISO-001 step 7 expects a 401 when a tenant-A refresh token is replayed on tenant B
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (stale-fixed — verified in code; LOW-tier sweep 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-001 (ISO) / US-AUTH-009 · TC-AUTH-ISO-001 (step 7: "Send `POST /api/v1/auth/refresh` to `globex.yourhrm.com` with john's acme refresh token cookie → HTTP 401; refresh token is bound to acme tenant, not globex")
 - **Title:** The refresh endpoint looks up the refresh token by hash **globally** (`IgnoreQueryFilters`) and derives the tenant from the stored token's own `TenantId` — it never checks that the request's resolved subdomain (`X-Tenant-Subdomain` / host) matches that bound tenant. So an acme-bound refresh cookie replayed at the `platform` (or any other) subdomain returns **HTTP 200** and successfully rotates the token, whereas TC-AUTH-ISO-001 step 7 expects a **401** for a tenant-mismatched refresh. **Calibration (why this is LOW, not an isolation breach):** the access token minted by that cross-subdomain refresh carries **acme's** `tenant_id` (`019ef3ba-…`), NOT the request subdomain's — i.e. the user only ever gets a token for the tenant the refresh token was already bound to, gaining no foreign-tenant access. The deviation is that the endpoint does not *reject* the subdomain mismatch (defense-in-depth / spec contract), not that it issues a cross-tenant token.
@@ -1434,7 +1434,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev would add a synchronous `WriteAuditLogAsync(storedToken.UserId, "logout", ipAddress, userAgent, ct, storedToken.TenantId)` in `LogoutAsync` before returning — mirroring the existing `session_expired_*` calls — and thread `ipAddress`/`userAgent` through from the controller as the refresh path already does.)
 
 ### ISSUE-050 — Refresh-token reuse detection logs only a Serilog WRN, writes NO security audit row (TC-AUTH-009 step 7 unmet)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (stale-fixed — verified in code; LOW-tier sweep 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-003 · TC-AUTH-009 (step 7); also US-AUTH-002 reuse-detection surface
 - **Title:** When a revoked refresh token is replayed (e.g. after logout), the system correctly detects reuse and revokes the whole token chain, but records the security event **only** as a Serilog `WRN` — it writes **no `audit_logs` row**. TC-AUTH-009 step 7 expects "a security event is logged… Audit record indicates potential token reuse/theft attempt." A log line satisfies "logged", but there is no durable, queryable audit record of the suspected theft.
@@ -1491,7 +1491,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-053 — Password reset does not enforce password history (NFR-4 / BR-2): the immediately-previous password is accepted on reset
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (stale-fixed — verified in code; LOW-tier sweep 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-004 · TC-AUTH-012 (step 10)
 - **Title:** NFR-4 / BR-2 require the last N (default 5) password hashes retained and reuse rejected on reset ("Password has been used recently…"). There is no password-history table and no history check — resetting to a recently-used password succeeds with 200. (Related: BUG-004 — the reset validator is a hardcoded min12+complexity rule that ignores the tenant's configurable policy.)
@@ -1518,7 +1518,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-054 — Authorization-denied security log records the actor as `User=unknown` instead of the real user id/email (NFR-4 partial)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (stale-fixed — verified in code; LOW-tier sweep 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-006 · TC-AUTH-017 (step 8), TC-AUTH-039 (step 9), TC-AUTH-050 (step 9)
 - **Title:** NFR-4 requires authorization failures logged "with details (user, endpoint, missing permission)". The `PermissionAuthorizationHandler` DOES log a `WRN Authorization denied` line with the endpoint (via `RequestPath`) and `MissingPermission`, but the **user is always `User=unknown`** rather than the authenticated user's id/email — so a security-monitoring dashboard cannot attribute a 403 to a specific principal.
@@ -2480,7 +2480,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-244 — Applicant detail leaks the raw resume blob storage key (`resumeStorageKey`) in the embedded profile DTO, partially undercutting NFR-5 ("no raw blob path exposed")
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (stale-fixed — verified in code; LOW-tier sweep 2026-07-18)
 - **Note:** renumbered from ISSUE-105 on 2026-07-05 (ledger ID-hygiene) — the ID collided with the US-PRF-002 self-assessment attachment-API ISSUE-105 (fix PR #177). This US-REC-003 resume-blob-key occurrence took the fresh ID.
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-003 · TC-REC-003-03 (AC-3/NFR-5)
