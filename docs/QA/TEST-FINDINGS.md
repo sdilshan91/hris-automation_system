@@ -1697,7 +1697,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-063 — Lockout notification is a stub: the Hangfire job fires but `LockoutNotificationService` only logs a `[LOCKOUT-EMAIL-STUB]` line (no real SMTP send), and the spec'd email content/data (subject, instructions, tenant name, lockout duration text, support-contact link) is a TODO not built; the service isn't even passed tenant name or support link (FR-8 / NFR-3 partial)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · PARTIALLY RESOLVED (content built PR #367; real SMTP delivery + tenant-name → US-NTF-006) 2026-07-18
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-010 · TC-AUTH-100 (steps 5-7), TC-AUTH-026 (step 10), FR-8
 - **Title:** FR-8 / TC-100 require a lockout email within 60 s containing the user's name, lockout duration, wait/contact instructions, tenant name, and a support-contact link. The dispatch *seam* is correct (lockout enqueues `ILockoutNotificationService.SendLockoutNotificationAsync` via `_backgroundJobClient.Enqueue`), but the implementation, when `Smtp:Host` is unset (the dev/QA default), only logs a stub and sends nothing; even with SMTP configured the body is an explicit `// TODO: Send real SMTP email`. The method signature receives only `(email, displayName, lockedUntilUtc, durationMinutes)` — tenant name and support link (both required by Data Requirements) are never passed in.
@@ -5441,7 +5441,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-220
 - **Type:** ISSUE (diagnostics/UX — wrong error code)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #367, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-011 (SSO challenge) / SSO negative arms
 - **Title:** `EntraSsoService.BuildAuthorizeUrlAsync` (`EntraSsoService.cs:63-66`) returns `Result.Failure("not_configured")` for TWO distinct conditions: (a) SSO genuinely not configured (`!IsConfigured`, line 57), and (b) SSO IS configured but the caller supplied no `tenant` (line 63-66, which even logs "SSO challenge rejected: no tenant subdomain supplied"). A caller hitting `/api/v1/auth/sso/challenge` without `?tenant=` gets `sso_error=not_configured`, wrongly implying SSO is disabled.
@@ -5545,7 +5545,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-224
 - **Type:** ISSUE (missing notification emitter)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #367, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-003 / TC-CHR-260
 - **Title:** TC-CHR-260 requires that when a large (>500-row) import is processed as a background Hangfire job, the initiating user is notified in-app on completion. The async import works end-to-end (job queued, `status:Processing`→`Completed`, 1200/1200 rows), but after completion the initiating admin's notification feed is empty (`GET /api/v1/notifications?includeRead=true` → `totalCount:0`, `unreadCount:0`). No completion notification is created. Consistent with the known incomplete-notification-emitter theme (BUG-082 class).
@@ -5860,7 +5860,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-241
 - **Type:** ISSUE (missing secondary behavior / contract nit)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #367, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-005 / TC-AUTH-030 (step 8)
 - **Title:** Logging in via a recovery code (`POST /api/v1/auth/mfa/challenge` with `{email, code:<recoveryCode>}`) correctly issues tokens and marks the code used, but the returned `LoginResponse` has no field prompting the user to regenerate recovery codes (e.g. `promptRegenerateRecoveryCodes: true`) and no warning message. TC-AUTH-030 step 8 expects the response (or a follow-up notification) to nudge the user to regenerate/re-enroll after burning a code. `LoginResponse` exposes only `{accessToken,user,tenant,permissions,mfaChallenge,mfaMethod,mfaEnrollmentRequired,refreshToken}` — none signal remaining-code depletion.
@@ -5991,7 +5991,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** persist the DataProtection key ring to a shared store (`PersistKeysToDbContext`/Redis/blob) + `ProtectKeysWith*` (a certificate/KMS) — **Phase 4 infra**. Belongs with the Redis/RLS/OTel provisioning. Report only.
 
 ### ISSUE-248 — No authenticated self-service "change password" endpoint; password-history (FR-5) is enforced only on the token-based reset path
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (auto-healed from an OUT-OF-LANE flag, Phase 1b-B)
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #367, 2026-07-18) (auto-healed from an OUT-OF-LANE flag, Phase 1b-B)
 - **Layer:** BE
 - **Module / US / TC:** Auth · US-AUTH-004 · (surfaced 2026-07-08)
 - **Title:** The only password-set path is token-based `AuthService.ResetPasswordAsync` (also used by the welcome/set-password link); there is **no** logged-in self-service change-password flow. Password-history enforcement (ISSUE-053, Phase 1b-B) is wired to that single path, which covers reset + welcome. If a self-service change-password feature is added later, it must route through the same history check or it silently bypasses FR-5.
