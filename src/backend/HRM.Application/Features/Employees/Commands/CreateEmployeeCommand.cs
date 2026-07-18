@@ -30,5 +30,7 @@ public sealed record CreateEmployeeCommand(
     /// <summary>US-CHR-013: full-time equivalent, (0, 1.00]. Null → 1.00 (full-time).</summary>
     decimal? Fte = null,
     /// <summary>US-CHR-013: work arrangement. Null → OnSite.</summary>
-    WorkArrangement? WorkArrangement = null
+    WorkArrangement? WorkArrangement = null,
+    /// <summary>ISSUE-293: national identity number (free-text, max 50, PII — encrypted at rest). Null → not captured.</summary>
+    string? NationalId = null
 ) : IRequest<Result<EmployeeDto>>;

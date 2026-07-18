@@ -14,6 +14,7 @@
 using System.Security.Cryptography;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Performance;
 using HRM.Infrastructure.Persistence;
@@ -87,6 +88,42 @@ public sealed class FieldEncryptionIntegrationTests
             pip.Reason.Should().Be("Repeated missed deadlines in Q2 — confidential.");
             pip.FinalOutcomeNotes.Should().Be("Improved but not fully met.");
             pip.EscalationNotes.Should().Be("Escalating to a final written warning.");
+        }
+    }
+
+    // ISSUE-293: Employee.NationalId (first encrypted field on Employee) DECRYPT round-trips through the
+    // REAL encryptor via a fresh context. (On InMemory this can't prove the ApplyEncryption WIRING or
+    // at-rest ciphertext — a missing converter would still round-trip plaintext; the ciphertext + wiring
+    // proof for the national_id column lives in FieldEncryptionPostgresTests.)
+    [Fact]
+    public async Task Employee_national_id_round_trips_through_the_encrypting_context()
+    {
+        var empId = Guid.NewGuid();
+
+        await using (var db = EncryptingDb())
+        {
+            db.Employees.Add(new Employee
+            {
+                Id = empId,
+                TenantId = _tenantId,
+                EmployeeNo = "EMP-1",
+                FirstName = "Ada",
+                LastName = "Lovelace",
+                Email = "ada@e2e.test",
+                NationalId = "SL-931204567V",
+                DepartmentId = Guid.NewGuid(),
+                JobTitleId = Guid.NewGuid(),
+                EmploymentType = EmploymentType.FullTime,
+                Status = EmployeeStatus.Active,
+                IsActive = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await using (var fresh = EncryptingDb())
+        {
+            var emp = await fresh.Employees.SingleAsync(e => e.Id == empId);
+            emp.NationalId.Should().Be("SL-931204567V", "the encrypted National ID must decrypt back to the original");
         }
     }
 

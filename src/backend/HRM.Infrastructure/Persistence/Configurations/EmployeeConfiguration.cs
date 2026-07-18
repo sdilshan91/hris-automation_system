@@ -1,5 +1,7 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -101,6 +103,12 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
 
         builder.Property(e => e.BankAccountNumber)
             .HasMaxLength(50);
+
+        // ISSUE-293: national identity number. Plain (non-encrypted-build) config only declares the property;
+        // the AES-at-rest converter + `text` column type are applied by ApplyEncryption (invoked from
+        // AppDbContext.OnModelCreating with the injected IFieldEncryptor). HasMaxLength is intentionally NOT set:
+        // the ciphertext is longer than 50 chars and ApplyEncryption maps the column to unbounded `text`.
+        builder.Property(e => e.NationalId);
 
         builder.Property(e => e.IsActive)
             .HasDefaultValue(true)
@@ -207,5 +215,20 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.HasIndex(e => e.CustomFields)
             .HasDatabaseName("ix_employees_custom_fields_gin")
             .HasMethod("gin");
+    }
+
+    /// <summary>
+    /// ISSUE-293: applies the field-at-rest encryption value converter to <see cref="Employee.NationalId"/>
+    /// (PII, mirrors the Pip/Recommendation pattern). Invoked from <c>AppDbContext.OnModelCreating</c> with the
+    /// context's injected <see cref="IFieldEncryptor"/> (this config is parameterless so the assembly-scan is
+    /// unaffected). The column is <c>text</c> — the AES-GCM ciphertext is longer than the 50-char plaintext, so
+    /// no length cap is applied. ⚠ The converter MUST be wired here + invoked from AppDbContext: a converter in
+    /// the parameterless Configure alone would silently store PLAINTEXT.
+    /// </summary>
+    public static void ApplyEncryption(EntityTypeBuilder<Employee> builder, IFieldEncryptor encryptor)
+    {
+        builder.Property(e => e.NationalId)
+            .HasConversion(EncryptedFieldConverters.NullableString(encryptor))
+            .HasColumnType("text");
     }
 }

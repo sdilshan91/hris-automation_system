@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
@@ -6,6 +7,7 @@ using HRM.Application.Features.Employees.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -24,6 +26,7 @@ public sealed class EmployeeService : IEmployeeService
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
     private readonly ICustomFieldService _customFieldService;
+    private readonly IPayrollAuditLogger _auditLogger;
     private readonly ILogger<EmployeeService> _logger;
 
     // Allowed MIME types for profile photos (FR-6).
@@ -48,6 +51,7 @@ public sealed class EmployeeService : IEmployeeService
         IFileStorage fileStorage,
         IVirusScanner virusScanner,
         ICustomFieldService customFieldService,
+        IPayrollAuditLogger auditLogger,
         ILogger<EmployeeService> logger)
     {
         _dbContext = dbContext;
@@ -56,6 +60,7 @@ public sealed class EmployeeService : IEmployeeService
         _fileStorage = fileStorage;
         _virusScanner = virusScanner;
         _customFieldService = customFieldService;
+        _auditLogger = auditLogger;
         _logger = logger;
     }
 
@@ -147,6 +152,8 @@ public sealed class EmployeeService : IEmployeeService
             // send these creates exactly the employee it created before.
             Fte = request.Fte ?? 1.00m,
             WorkArrangement = request.WorkArrangement ?? WorkArrangement.OnSite,
+            // ISSUE-293: PII — persisted encrypted at rest via the EmployeeConfiguration.ApplyEncryption converter.
+            NationalId = request.NationalId,
             IsActive = true,
             IsDeleted = false,
         };
@@ -469,6 +476,15 @@ public sealed class EmployeeService : IEmployeeService
                 before["Gender"] = employee.Gender?.ToString();
                 employee.Gender = request.PersonalInfo.Gender;
                 after["Gender"] = employee.Gender?.ToString();
+            }
+            // ISSUE-293: national ID (PII, HR-writable). Null leaves the value unchanged. The before/after JSON
+            // is safe: the audit interceptor's SensitiveFieldMasker already redacts `national_id`, and these
+            // snapshots are stored MASKED (last-4) so the plaintext never lands in the EmployeeFieldAuditLog.
+            if (request.PersonalInfo.NationalId is not null && request.PersonalInfo.NationalId != employee.NationalId)
+            {
+                before["NationalId"] = AccountMasking.MaskLast4(employee.NationalId);
+                employee.NationalId = request.PersonalInfo.NationalId;
+                after["NationalId"] = AccountMasking.MaskLast4(employee.NationalId);
             }
 
             if (before.Count > 0)
@@ -794,6 +810,39 @@ public sealed class EmployeeService : IEmployeeService
         return await LoadProfileAsync(employeeId, cancellationToken);
     }
 
+    /// <summary>
+    /// ISSUE-293: reveals the FULL decrypted national ID for a tenant-scoped employee (Employee.View.All-gated at
+    /// the controller). EF auto-decrypts NationalId on read via the ApplyEncryption converter. Every authorized
+    /// access — including one that returns a null value — writes an Employee.NationalId.ViewSensitive audit row
+    /// that NAMES the field but stores NO value (mirrors the Recommendation/Payslip PII-reveal convention).
+    /// </summary>
+    public async Task<Result<NationalIdRevealDto>> RevealNationalIdAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<NationalIdRevealDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant-scoped by the EF global query filter — the reveal can only decrypt an employee in this tenant.
+        var employee = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+
+        if (employee is null)
+            return Result<NationalIdRevealDto>.Failure("Employee not found.", 404);
+
+        // Audit the authorized reveal AFTER the read succeeds (a 404 is not audited). Field name only, no value.
+        await _auditLogger.LogAndSaveAsync(
+            action: PayrollAuditAction.EmployeeNationalIdViewSensitive,
+            resourceType: PayrollAuditAction.ResourceType.Employee,
+            resourceId: employee.Id.ToString(),
+            before: null,
+            after: new { fields = new[] { "nationalId" }, employeeId = employee.Id },
+            cancellationToken: cancellationToken);
+
+        return Result<NationalIdRevealDto>.Success(new NationalIdRevealDto { NationalId = employee.NationalId });
+    }
+
     // ── Private helpers ──────────────────────────────────────────────
 
     /// <summary>
@@ -855,6 +904,8 @@ public sealed class EmployeeService : IEmployeeService
         CreatedAt = e.CreatedAt,
         UpdatedAt = e.UpdatedAt,
         RowVersion = e.RowVersion,
+        // ISSUE-293: PII masked (last-4) by default; null stays null. Full value only via RevealNationalIdAsync.
+        NationalId = string.IsNullOrWhiteSpace(e.NationalId) ? null : AccountMasking.MaskLast4(e.NationalId),
         EmergencyContacts = e.EmergencyContacts
             .Where(ec => !ec.IsDeleted)
             .Select(ec => new EmergencyContactDto
@@ -1004,6 +1055,8 @@ public sealed class EmployeeService : IEmployeeService
         IsActive = e.IsActive,
         CreatedAt = e.CreatedAt,
         UpdatedAt = e.UpdatedAt,
+        // ISSUE-293: PII masked (last-4) by default; null stays null so the FE distinguishes "unset" from a value.
+        NationalId = string.IsNullOrWhiteSpace(e.NationalId) ? null : AccountMasking.MaskLast4(e.NationalId),
     };
 
     /// <summary>

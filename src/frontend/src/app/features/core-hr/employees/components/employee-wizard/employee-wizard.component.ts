@@ -323,6 +323,26 @@ import {
                     </select>
                   </div>
                 </div>
+
+                <!-- National ID (ISSUE-293) — optional PII, encrypted server-side -->
+                <div class="form-section">
+                  <label class="label-notion" for="nationalId">National ID</label>
+                  <input
+                    id="nationalId"
+                    type="text"
+                    formControlName="nationalId"
+                    class="input-notion"
+                    placeholder="e.g. national identity / passport number"
+                    maxlength="50"
+                    autocomplete="off"
+                  />
+                  @if (showError('nationalId')) {
+                    <p class="field-error" role="alert">
+                      National ID cannot exceed 50 characters.
+                    </p>
+                  }
+                  <p class="field-hint">Optional — stored securely and masked by default.</p>
+                </div>
               </div>
             }
 
@@ -1226,6 +1246,8 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       email: ['', [Validators.required, Validators.email, Validators.maxLength(150)]],
       dateOfBirth: [null, [this.dateOfBirthValidator]],
       gender: [null as EmployeeGender | null],
+      // ISSUE-293: National ID — optional free-text PII (formats vary by country)
+      nationalId: ['', [Validators.maxLength(50)]],
 
       // Step 1: Contact
       phone: [''],
@@ -1445,7 +1467,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   private getStepFields(stepIndex: number): string[] {
     switch (stepIndex) {
       case 0:
-        return ['firstName', 'lastName', 'email', 'dateOfBirth', 'gender'];
+        return ['firstName', 'lastName', 'email', 'dateOfBirth', 'gender', 'nationalId'];
       case 1:
         return ['phone', 'address', 'city', 'state', 'postalCode', 'country'];
       case 2:
@@ -1575,6 +1597,8 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       phone: formValue.phone?.trim() || null,
       dateOfBirth: formValue.dateOfBirth || null,
       gender: formValue.gender || null,
+      // ISSUE-293: optional National ID — null when blank
+      nationalId: formValue.nationalId?.trim() || null,
       dateOfJoining: formValue.dateOfJoining,
       departmentId: formValue.departmentId,
       jobTitleId: formValue.jobTitleId,

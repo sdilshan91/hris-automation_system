@@ -11,6 +11,8 @@
 
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Common.Helpers;
+using HRM.Domain.Payroll;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -30,6 +32,7 @@ public sealed class EmployeeServiceTests : IDisposable
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
     private readonly ICustomFieldService _customFieldService;
+    private readonly IPayrollAuditLogger _auditLogger;
     private readonly ILogger<EmployeeService> _logger;
 
     public EmployeeServiceTests()
@@ -58,13 +61,15 @@ public sealed class EmployeeServiceTests : IDisposable
         _customFieldService.ValidateCustomFieldValuesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Application.Common.Models.Result.Success());
 
+        _auditLogger = Substitute.For<IPayrollAuditLogger>();
+
         _logger = Substitute.For<ILogger<EmployeeService>>();
     }
 
     private EmployeeService CreateService()
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
-        return new EmployeeService(dbContext, _tenantContext, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        return new EmployeeService(dbContext, _tenantContext, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
     }
 
     private Infrastructure.Persistence.AppDbContext CreateDbContext()
@@ -161,6 +166,79 @@ public sealed class EmployeeServiceTests : IDisposable
             JobTitleId = jobTitleId,
             EmploymentType = EmploymentType.FullTime,
         };
+    }
+
+    // ── ISSUE-293: National ID is encrypted PII — masked by default, full only via an audited reveal ──
+
+    [Fact]
+    public async Task Create_ThenGet_NationalId_IsMaskedInDto_ISSUE293()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+
+        var request = MakeRequest(deptId, jtId) with { NationalId = "SL-931204567V" };
+        var created = await CreateService().CreateAsync(request);
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        var dto = await CreateService().GetByIdAsync(created.Value!.Id);
+
+        dto.IsSuccess.Should().BeTrue();
+        // The list/detail DTO must NEVER carry the full National ID — only the masked (last-4) form.
+        dto.Value!.NationalId.Should().Be(AccountMasking.MaskLast4("SL-931204567V"))
+            .And.NotBe("SL-931204567V");
+        dto.Value.NationalId.Should().EndWith("567V").And.StartWith("*");
+    }
+
+    [Fact]
+    public async Task RevealNationalId_ReturnsFullValue_AndWritesViewSensitiveAudit_ISSUE293()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+
+        var created = await CreateService().CreateAsync(MakeRequest(deptId, jtId) with { NationalId = "SL-931204567V" });
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        var reveal = await CreateService().RevealNationalIdAsync(created.Value!.Id);
+
+        reveal.IsSuccess.Should().BeTrue();
+        reveal.Value!.NationalId.Should().Be("SL-931204567V", "the reveal returns the FULL decrypted value");
+
+        // The reveal is audited (field name only, never the value) — the PII-read audit ISSUE-293 requires.
+        await _auditLogger.Received().LogAndSaveAsync(
+            PayrollAuditAction.EmployeeNationalIdViewSensitive,
+            Arg.Any<string>(),
+            created.Value.Id.ToString(),
+            Arg.Any<object?>(),
+            Arg.Any<object?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+
+        // CRITICAL: the audit payload names the field but must NEVER contain the actual National ID value.
+        var auditCall = _auditLogger.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IPayrollAuditLogger.LogAndSaveAsync));
+        var afterPayload = System.Text.Json.JsonSerializer.Serialize(auditCall.GetArguments()[4]);
+        afterPayload.Should().Contain("nationalId").And.NotContain("SL-931204567V",
+            "the PII-read audit records the field name, never the sensitive value");
+    }
+
+    [Fact]
+    public async Task RevealNationalId_UnknownEmployee_Is404_ISSUE293()
+    {
+        await SeedTenant(_tenantId);
+
+        var reveal = await CreateService().RevealNationalIdAsync(Guid.NewGuid());
+
+        reveal.IsFailure.Should().BeTrue();
+        reveal.StatusCode.Should().Be(404);
+        // A 404 (nothing revealed) must NOT write a reveal audit — no access happened.
+        await _auditLogger.DidNotReceive().LogAndSaveAsync(
+            PayrollAuditAction.EmployeeNationalIdViewSensitive,
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<object?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 
     private Employee SeedEmployeeEntity(string employeeNo, string email, Guid deptId, Guid jtId, Guid? tenantId = null)
@@ -321,7 +399,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var r1 = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "John", LastName = "Doe", Email = "same@test.com",
@@ -340,7 +418,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantB);
 
         var dbB = TestDbContextFactory.Create(ctxB, _dbName);
-        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var r2 = await serviceB.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Jane", LastName = "Doe", Email = "same@test.com",
@@ -369,7 +447,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var r1 = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "A1", LastName = "Test", Email = "a1@test.com",
@@ -387,7 +465,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantB);
 
         var dbB = TestDbContextFactory.Create(ctxB, _dbName);
-        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var r2 = await serviceB.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "B1", LastName = "Test", Email = "b1@test.com",
@@ -630,7 +708,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Tenant A", LastName = "Employee", Email = "a@test.com",
@@ -647,7 +725,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantB);
 
         var dbB = TestDbContextFactory.Create(ctxB, _dbName);
-        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceB = new EmployeeService(dbB, ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         await serviceB.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Tenant B", LastName = "Employee", Email = "b@test.com",
@@ -657,7 +735,7 @@ public sealed class EmployeeServiceTests : IDisposable
 
         // Query from tenant A
         var queryServiceA = new EmployeeService(
-            TestDbContextFactory.Create(ctxA, _dbName), ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+            TestDbContextFactory.Create(ctxA, _dbName), ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var resultA = await queryServiceA.GetAllAsync();
 
         resultA.IsSuccess.Should().BeTrue();
@@ -666,7 +744,7 @@ public sealed class EmployeeServiceTests : IDisposable
 
         // Query from tenant B
         var queryServiceB = new EmployeeService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var resultB = await queryServiceB.GetAllAsync();
 
         resultB.IsSuccess.Should().BeTrue();
@@ -688,7 +766,7 @@ public sealed class EmployeeServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var createResult = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Secret", LastName = "Employee", Email = "secret@test.com",
@@ -701,7 +779,7 @@ public sealed class EmployeeServiceTests : IDisposable
         ctxB.TenantId.Returns(tenantB);
         ctxB.IsResolved.Returns(true);
         var serviceB = new EmployeeService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
 
         var result = await serviceB.GetByIdAsync(createResult.Value!.Id);
 

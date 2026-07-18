@@ -216,6 +216,9 @@ public sealed class ApplicantConversionPostgresTests : IAsyncLifetime
             .Returns(Result.Success());
         services.AddSingleton(customFields);
 
+        // ISSUE-293: EmployeeService now depends on IPayrollAuditLogger (National-ID reveal audit).
+        // The conversion path never reveals, so a substitute suffices.
+        services.AddSingleton(Substitute.For<IPayrollAuditLogger>());
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
         services.AddScoped<IApplicantConversionService, ApplicantConversionService>();

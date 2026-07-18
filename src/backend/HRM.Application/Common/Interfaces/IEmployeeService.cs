@@ -52,4 +52,14 @@ public interface IEmployeeService
         Guid employeeId,
         UpdateEmployeeProfileRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-293: reveals the FULL decrypted national identity number for a tenant-scoped employee. The caller
+    /// must hold Employee.View.All (enforced at the controller). Writes an <c>Employee.NationalId.ViewSensitive</c>
+    /// audit row (naming the field only, never the value) on every authorized access. 404 when the employee is
+    /// not found in the current tenant; a null NationalId is returned as null (still audited).
+    /// </summary>
+    Task<Result<NationalIdRevealDto>> RevealNationalIdAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default);
 }

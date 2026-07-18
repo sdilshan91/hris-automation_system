@@ -22,6 +22,7 @@ import {
   IDirectReport,
   IBulkAssignManagerRequest,
   IBulkAssignManagerResponse,
+  IRevealNationalIdResponse,
 } from '../models/employee.models';
 
 /**
@@ -209,6 +210,20 @@ export class EmployeeService {
     return this.http.patch<IUpdateSectionResponse>(
       `${this.baseUrl}/${employeeId}/sections/${section}`,
       request,
+      { withCredentials: true }
+    );
+  }
+
+  /**
+   * ISSUE-293: Reveal the full (decrypted) National ID for an employee.
+   * Backend contract: GET /api/v1/tenant/employees/:id/national-id
+   * Gated by the `Employee.View.All` permission and audited server-side on
+   * every call. Response is ApiResponse<{ nationalId }> — the `apiEnvelopeInterceptor`
+   * unwraps the envelope, so this stream emits the inner `{ nationalId }` shape.
+   */
+  revealNationalId(employeeId: string): Observable<IRevealNationalIdResponse> {
+    return this.http.get<IRevealNationalIdResponse>(
+      `${this.baseUrl}/${employeeId}/national-id`,
       { withCredentials: true }
     );
   }
