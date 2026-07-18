@@ -6,7 +6,7 @@ implementing. Format: **ID (module)** — the choice · *my recommendation*. Pic
 then implement the chosen ones in a follow-up batch.
 
 ## A. Formula / value / strictness choices
-- **ISSUE-034 (Leave)** — pro-rata uses day-count ratio (10.08) vs spec month-fraction (10.00). · *rec: adopt the spec's month-fraction formula.*
+- ✅ **DONE (#378, month-fraction)** **ISSUE-034 (Leave)** — pro-rata uses day-count ratio (10.08) vs spec month-fraction (10.00). · *rec: adopt the spec's month-fraction formula.*
 - **ISSUE-152 JSON-string half (Payroll)** — `annualCtc` still accepts quoted-string numerics (`"600000"`) because ASP.NET `NumberHandling=AllowReadingFromString` is global. The >2-decimal half is FIXED (#363). · *rec: leave global NumberHandling as-is (platform-wide + FE impact); accept the LOW residue. Only tighten if you want strict numeric-token typing platform-wide.*
 - **ISSUE-192 (Notifications)** — audit-log pageSize cap is 200; docs say 100. · *rec: update the docs to 200 (already WONTFIX'd; noted for completeness).*
 

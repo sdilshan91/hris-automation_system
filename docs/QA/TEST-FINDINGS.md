@@ -1024,7 +1024,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Add a max-days bound, a unique index / pre-insert check on the active rule-dimension combination per leave type, and either FK-validate `job_level_id` or reject it until the job-level dimension is implemented.)
 
 ### ISSUE-034 — Pro-rata uses an exact day-count ratio (remainingDays/daysInYear), not the month-fraction the TCs assume; a July-1 joiner gets 10.08 days, not the spec's 10.00
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #378, merged 2026-07-19 — engine changed to month-fraction pro-rata per user decision (join month full); July-1/20 now 10.00 matching TC-LV-029 + the US-LV-002 hint; fiscal-year-aware; +fiscal exact-value TC. TC-LV-029 already specified month-fraction — impl now matches)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-002 · TC-LV-029 (pro-rata), TC-LV-033 (boundary), FR-3/AC-4
 - **Title:** TC-LV-029 expresses expected pro-rata as month fractions (e.g. "2026-07-01 → 10.00 = 20×6/12", "2026-04-01 → 15.00 = 20×9/12"). The implementation (`LeaveEntitlementEngine.CalculateProRata`) computes `remainingDays/totalDaysInYear` where `remainingDays = (yearEnd − effectiveStart).Days + 1`. For a July-1 joiner that is 184/365 = 0.5041 → 20×0.5041 = **10.08**, not 10.00; an April-1 joiner is 275/365 = 0.7534 → 20×0.7534 = **15.07**, not 15.00. The implemented day-count method is arguably MORE accurate than the TC's month approximation, but it diverges from the documented expected values, so a strict reading of TC-LV-029 fails on the exact figures.
