@@ -22,7 +22,12 @@ public sealed class AssignSalaryStructureValidator : AbstractValidator<AssignSal
             .NotEqual(default(DateOnly)).WithMessage("An effective-from date is required.");
 
         RuleFor(x => x.AnnualCtc)
-            .GreaterThan(0).WithMessage("Annual CTC must be greater than zero.");
+            .GreaterThan(0).WithMessage("Annual CTC must be greater than zero.")
+            // ISSUE-152: enforce the numeric(18,2) money contract — reject (do NOT silently round) a declared
+            // CTC carrying more than 2 decimal places (e.g. 600000.555). ignoreTrailingZeros so 50000.50 is fine.
+            .PrecisionScale(18, 2, ignoreTrailingZeros: true)
+                .WithMessage("Annual CTC cannot have more than 2 decimal places.")
+                .WithErrorCode("invalid_ctc_scale");
 
         RuleForEach(x => x.Overrides).ChildRules(o =>
         {

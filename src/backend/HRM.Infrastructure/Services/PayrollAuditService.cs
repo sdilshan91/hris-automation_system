@@ -71,9 +71,16 @@ public sealed class PayrollAuditService : IPayrollAuditService
             query = query.Where(r => r.PayYear == year);
         if (filter.Month is { } month)
             query = query.Where(r => r.PayMonth == month);
-        if (!string.IsNullOrWhiteSpace(filter.Status)
-            && Enum.TryParse<HRM.Domain.Enums.PayrollRunStatus>(filter.Status, ignoreCase: true, out var st))
+        // ISSUE-184: an unparseable status must be rejected (400), NOT silently ignored — silently dropping the
+        // filter returns the FULL unfiltered list, which a caller filtering on a typo'd/legacy status reads as
+        // "everything matched". A blank/absent status is unchanged (returns all).
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+        {
+            if (!Enum.TryParse<HRM.Domain.Enums.PayrollRunStatus>(filter.Status, ignoreCase: true, out var st))
+                return Result<PayrollRunHistoryPageDto>.Failure(
+                    $"Unknown payroll run status '{filter.Status}'.", 400, "invalid_status");
             query = query.Where(r => r.Status == st);
+        }
 
         var totalCount = await query.CountAsync(cancellationToken);
 

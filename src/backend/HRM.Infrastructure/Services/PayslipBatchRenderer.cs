@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Payroll;
@@ -123,7 +124,8 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             .ToDictionaryAsync(
                 e => e.Id,
                 e => new PayslipEmployeeSnapshot(
-                    e.FirstName, e.LastName, e.EmployeeNo, e.DepartmentId, e.JobTitleId, e.DateOfJoining),
+                    e.FirstName, e.LastName, e.EmployeeNo, e.DepartmentId, e.JobTitleId, e.DateOfJoining,
+                    e.BankAccountNumber), // ISSUE-161: masked to last-4 in BuildModel.
                 cancellationToken);
 
         var departments = await _dbContext.Departments.AsNoTracking()
@@ -304,7 +306,9 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
         return result;
     }
 
-    private static PayslipDocumentModel BuildModel(
+    // internal (not private) so the employee→model mapping — including the ISSUE-161 masked bank account — is
+    // directly unit-testable via InternalsVisibleTo("HRM.Tests") without spinning up the whole render pipeline.
+    internal static PayslipDocumentModel BuildModel(
         PayslipSlipSnapshot slip,
         PayslipEmployeeSnapshot? employee,
         IReadOnlyList<PayslipDetailSnapshot> details,
@@ -349,6 +353,10 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
             Designation = slip.DesignationSnapshot
                 ?? (employee is not null ? jobTitles.GetValueOrDefault(employee.JobTitleId) : null),
             DateOfJoining = employee?.DateOfJoining,
+            // ISSUE-161/FR-2: masked (last-4) bank account in the employee section. Null when none on file → "-".
+            MaskedBankAccount = string.IsNullOrWhiteSpace(employee?.BankAccountNumber)
+                ? null
+                : AccountMasking.MaskLast4(employee!.BankAccountNumber),
             Earnings = earnings,
             Deductions = deductions,
             GrossEarnings = slip.GrossEarnings,

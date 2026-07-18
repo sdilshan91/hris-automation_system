@@ -79,6 +79,8 @@ public static class PayslipPdfRenderer
                             c.Item().Text(t => { t.Span("Employee: ").SemiBold(); t.Span(model.EmployeeName); });
                             c.Item().Text(t => { t.Span("Employee No: ").SemiBold(); t.Span(model.EmployeeNo); });
                             c.Item().Text(t => { t.Span("Department: ").SemiBold(); t.Span(model.Department ?? "-"); });
+                            // FR-2/ISSUE-161: masked (last-4) bank account — full number is never rendered.
+                            c.Item().Text(t => { t.Span("Bank A/C: ").SemiBold(); t.Span(model.MaskedBankAccount ?? "-"); });
                         });
                         row.RelativeItem().Column(c =>
                         {

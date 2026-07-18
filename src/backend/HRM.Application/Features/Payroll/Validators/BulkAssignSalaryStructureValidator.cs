@@ -26,7 +26,11 @@ public sealed class BulkAssignSalaryStructureValidator : AbstractValidator<BulkA
             e.RuleFor(c => c.EmployeeId)
                 .NotEmpty().WithMessage("Each entry must reference an employee.");
             e.RuleFor(c => c.AnnualCtc)
-                .GreaterThan(0).WithMessage("Annual CTC must be greater than zero for every employee.");
+                .GreaterThan(0).WithMessage("Annual CTC must be greater than zero for every employee.")
+                // ISSUE-152: same numeric(18,2) money contract as the single-assign path.
+                .PrecisionScale(18, 2, ignoreTrailingZeros: true)
+                    .WithMessage("Annual CTC cannot have more than 2 decimal places.")
+                    .WithErrorCode("invalid_ctc_scale");
         });
     }
 }
