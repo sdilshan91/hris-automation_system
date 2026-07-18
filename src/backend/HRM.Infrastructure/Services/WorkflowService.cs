@@ -225,7 +225,10 @@ public sealed class WorkflowService : IWorkflowService
 
         var stepValidation = await ValidateStepsAsync(request.Steps, cancellationToken);
         if (stepValidation.IsFailure)
-            return Result<WorkflowDetailDto>.Failure(stepValidation.Error!, stepValidation.StatusCode ?? 400);
+            // ISSUE-266: propagate the machine-readable ErrorCode (e.g. invalid_approver) set by
+            // ValidateStepsAsync, not just the message + status, so a FE can branch on the code.
+            return Result<WorkflowDetailDto>.Failure(
+                stepValidation.Error!, stepValidation.StatusCode ?? 400, stepValidation.ErrorCode);
 
         var activate = request.Activate;
 
@@ -297,7 +300,9 @@ public sealed class WorkflowService : IWorkflowService
 
         var stepValidation = await ValidateStepsAsync(request.Steps, cancellationToken);
         if (stepValidation.IsFailure)
-            return Result<WorkflowDetailDto>.Failure(stepValidation.Error!, stepValidation.StatusCode ?? 400);
+            // ISSUE-266: propagate the machine-readable ErrorCode (see CreateAsync).
+            return Result<WorkflowDetailDto>.Failure(
+                stepValidation.Error!, stepValidation.StatusCode ?? 400, stepValidation.ErrorCode);
 
         var tenantId = _tenantContext.TenantId;
         var currentSteps = await _db.WorkflowSteps
@@ -624,9 +629,16 @@ public sealed class WorkflowService : IWorkflowService
 
         foreach (var active in actives)
         {
+            var before = ToAuditSnapshot(active);
             active.IsActive = false;
             active.Status = WorkflowStatus.Archived;
             active.UpdatedAt = DateTime.UtcNow;
+
+            // ISSUE-010 / NFR-4: the BR-2 auto-archive of a prior active workflow is itself an audited
+            // transition. Previously only the NEW/restored workflow got an audit row, so the implicit
+            // retirement of the sibling was invisible in the trail. Emit a workflow.archived row (added to
+            // the SAME change set — the caller's PersistAsync/SaveChanges commits it in the same save).
+            AddAuditLog("workflow.archived", before, ToAuditSnapshot(active), active.Id);
         }
     }
 
@@ -679,9 +691,9 @@ public sealed class WorkflowService : IWorkflowService
             })
             .ToList();
 
-    /// <summary>Saves the change set + writes a before/after audit row (NFR-4).</summary>
-    private async Task PersistAsync(
-        string eventType, object? before, object? after, Guid workflowId, CancellationToken cancellationToken)
+    /// <summary>Adds a before/after audit row to the change set WITHOUT saving (NFR-4). The caller's
+    /// PersistAsync/SaveChanges commits it in the same save.</summary>
+    private void AddAuditLog(string eventType, object? before, object? after, Guid workflowId)
     {
         _db.AuditLogs.Add(new AuditLog
         {
@@ -696,6 +708,13 @@ public sealed class WorkflowService : IWorkflowService
             After = after is null ? null : JsonSerializer.Serialize(after),
             CreatedAt = DateTime.UtcNow,
         });
+    }
+
+    /// <summary>Saves the change set + writes a before/after audit row (NFR-4).</summary>
+    private async Task PersistAsync(
+        string eventType, object? before, object? after, Guid workflowId, CancellationToken cancellationToken)
+    {
+        AddAuditLog(eventType, before, after, workflowId);
 
         await _db.SaveChangesAsync(cancellationToken);
         _logger.LogInformation(

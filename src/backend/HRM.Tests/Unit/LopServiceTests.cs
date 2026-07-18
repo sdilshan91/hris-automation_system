@@ -54,6 +54,7 @@ public sealed class LopServiceTests : IDisposable
         _currentUser = Substitute.For<ICurrentUser>();
         _currentUser.Email.Returns("hr@test.com");
         _currentUser.UserId.Returns(_userId);
+        _currentUser.IsAuthenticated.Returns(true);
 
         _attendanceProvider = new NoOpAttendanceProvider();
         _notificationService = Substitute.For<ILeaveNotificationService>();
@@ -69,7 +70,7 @@ public sealed class LopServiceTests : IDisposable
 
     private LopService CreateService()
         => new(
-            CreateDbContext(), _tenantContext, CreateLeaveTypeService(),
+            CreateDbContext(), _tenantContext, _currentUser, CreateLeaveTypeService(),
             _attendanceProvider, _notificationService,
             Substitute.For<ILogger<LopService>>(),
             new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
@@ -219,6 +220,37 @@ public sealed class LopServiceTests : IDisposable
         rows.Should().OnlyContain(lr => lr.LopSource == LopSource.HrAssigned);
         rows.Should().OnlyContain(lr => lr.LeaveTypeId == result.Value!.LeaveTypeId);
         rows.Select(lr => lr.StartDate).Should().BeEquivalentTo(new[] { Day1, Day2 });
+    }
+
+    // ── ISSUE-046 (NFR-4): LOP assignment writes a DISTINCT LOP-semantic audit action ──
+
+    [Fact]
+    [Trait("TC", "TC-LV-223")]
+    public async Task AssignLop_WritesDistinctLeaveLopAssignedAuditAction_ISSUE046()
+    {
+        var svc = CreateService();
+
+        var result = await svc.AssignLopAsync(new AssignLopRequest
+        {
+            EmployeeId = _employeeId,
+            Dates = [Day1, Day2],
+            Reason = "Unauthorised absence",
+        });
+        result.IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var audit = db.AuditLogs
+            .Where(a => a.Action == "Leave.LopAssigned" && a.ResourceId == _employeeId.ToString())
+            .ToList();
+
+        audit.Should().ContainSingle("an LOP assignment must be queryable by the Leave.LopAssigned action (NFR-4)");
+        var row = audit[0];
+        row.EventType.Should().Be("Leave.LopAssigned");
+        row.ResourceType.Should().Be("LeaveRequest");
+        row.UserId.Should().Be(_userId);
+        row.TenantId.Should().Be(_tenantId);
+        row.After.Should().Contain("HrAssigned", "the LOP source is captured in the audit detail");
+        row.After.Should().Contain("Unauthorised absence", "the reason is captured");
     }
 
     [Fact]

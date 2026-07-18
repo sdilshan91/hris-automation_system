@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Departments.DTOs;
@@ -224,6 +225,25 @@ public sealed class DepartmentService : IDepartmentService
                 400);
 
         department.IsActive = false;
+
+        // ISSUE-020 / NFR-5: emit a DISTINCT semantic audit action for the deactivate transition so the
+        // trail is queryable by action (the generic AuditCaptureInterceptor separately records the
+        // Department.Update field diff). Mirrors the explicit *.Deactivated rows written by
+        // LocationService / LeaveTypeService / HolidayService. Added to the same change set so it commits
+        // in the same SaveChanges. IP/UserAgent are enriched onto this AuditLog row by AuditInterceptor.
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Department.Deactivated",
+            Action = "Department.Deactivated",
+            ResourceType = "Department",
+            ResourceId = department.Id.ToString(),
+            Before = JsonSerializer.Serialize(new { department.Id, department.Name, IsActive = true }),
+            After = JsonSerializer.Serialize(new { department.Id, department.Name, IsActive = false }),
+            CreatedAt = DateTime.UtcNow,
+        });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

@@ -44,6 +44,7 @@ public sealed class LeaveRequestServiceTests
 
         _currentUser = Substitute.For<ICurrentUser>();
         _currentUser.UserId.Returns(_userId);
+        _currentUser.IsAuthenticated.Returns(true);
 
         _holidayProvider = new NoOpHolidayProvider();
         _notificationService = Substitute.For<ILeaveNotificationService>();
@@ -647,5 +648,114 @@ public sealed class LeaveRequestServiceTests
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
         result.Error.Should().Contain("invalid_date_range");
+    }
+
+    // ── ISSUE-037 (FR-7): approve/reject emit DISTINCT semantic audit actions ──
+
+    /// <summary>
+    /// Seeds a requester employee reporting to the seeded manager (_employeeId ← _userId) and a Pending leave
+    /// request for that requester, so the current user can approve/reject it via the legacy direct-manager path.
+    /// </summary>
+    private async Task<Guid> SeedPendingRequestForApprovalAsync(Guid leaveTypeId, decimal balance)
+    {
+        using var db = CreateDbContext();
+        var monday = NextMonday();
+
+        var requesterId = Guid.NewGuid();
+        db.Employees.Add(new Employee
+        {
+            Id = requesterId,
+            TenantId = _tenantId,
+            EmployeeNo = "EMP-0002",
+            FirstName = "Reggie",
+            LastName = "Report",
+            Email = "reggie@test.com",
+            Gender = Gender.Male,
+            DateOfJoining = new DateTime(2021, 1, 1),
+            DepartmentId = Guid.NewGuid(),
+            JobTitleId = Guid.NewGuid(),
+            EmploymentType = EmploymentType.FullTime,
+            Status = EmployeeStatus.Active,
+            IsActive = true,
+            ReportsToEmployeeId = _employeeId, // the seeded manager is linked to _userId (the current user)
+        });
+
+        var requestId = Guid.NewGuid();
+        db.LeaveRequests.Add(new LeaveRequest
+        {
+            Id = requestId,
+            TenantId = _tenantId,
+            EmployeeId = requesterId,
+            LeaveTypeId = leaveTypeId,
+            StartDate = monday,
+            EndDate = monday.AddDays(1),
+            TotalDays = 2m,
+            Status = LeaveRequestStatus.Pending,
+            Reason = "Test",
+        });
+
+        db.LeaveLedgerEntries.Add(new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            EntryType = LedgerEntryType.Accrual,
+            EmployeeId = requesterId,
+            LeaveTypeId = leaveTypeId,
+            LeaveYear = monday.Year,
+            Amount = balance,
+            BalanceAfter = balance,
+            OccurredAt = DateTime.UtcNow,
+        });
+
+        await db.SaveChangesAsync();
+        return requestId;
+    }
+
+    [Fact]
+    [Trait("TC", "TC-LV-105")]
+    public async Task Approve_WritesDistinctLeaveApprovedAuditAction_ISSUE037()
+    {
+        var requestId = await SeedPendingRequestForApprovalAsync(_annualLeaveTypeId, 14m);
+
+        var result = await CreateService().ApproveAsync(requestId, "looks good");
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+        var audit = db.AuditLogs
+            .Where(a => a.Action == "Leave.Approved" && a.ResourceId == requestId.ToString())
+            .ToList();
+
+        audit.Should().ContainSingle("approve must write a distinct Leave.Approved audit row (FR-7)");
+        var row = audit[0];
+        row.EventType.Should().Be("Leave.Approved");
+        row.ResourceType.Should().Be("LeaveRequest");
+        row.UserId.Should().Be(_userId);
+        row.TenantId.Should().Be(_tenantId);
+        row.Before.Should().Contain("Pending", "the before-snapshot records the pre-decision status");
+        row.After.Should().Contain("Approved", "the after-snapshot records the labeled transition");
+        row.After.Should().Contain("looks good", "the decision comment is captured");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-LV-105")]
+    public async Task Reject_WritesDistinctLeaveRejectedAuditAction_ISSUE037()
+    {
+        var requestId = await SeedPendingRequestForApprovalAsync(_annualLeaveTypeId, 14m);
+
+        var result = await CreateService().RejectAsync(requestId, "insufficient cover");
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+        var audit = db.AuditLogs
+            .Where(a => a.Action == "Leave.Rejected" && a.ResourceId == requestId.ToString())
+            .ToList();
+
+        audit.Should().ContainSingle("reject must write a distinct Leave.Rejected audit row (FR-7)");
+        var row = audit[0];
+        row.EventType.Should().Be("Leave.Rejected");
+        row.UserId.Should().Be(_userId);
+        row.Before.Should().Contain("Pending");
+        row.After.Should().Contain("Rejected");
+        row.After.Should().Contain("insufficient cover", "the rejection reason is captured");
     }
 }

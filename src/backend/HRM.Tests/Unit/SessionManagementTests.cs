@@ -145,11 +145,13 @@ public sealed class SessionManagementTests
         result.StatusCode.Should().Be(401);
         result.Error.Should().Contain("inactivity");
 
-        // Verify audit event
+        // Verify audit event + ISSUE-059: the session audit row carries session metadata in its detail.
         using var db = CreateDbContext();
-        db.AuditLogs.IgnoreQueryFilters()
-            .Any(a => a.EventType == "session_expired_idle" && a.UserId == _userId)
-            .Should().BeTrue();
+        var idleAudit = db.AuditLogs.IgnoreQueryFilters()
+            .FirstOrDefault(a => a.EventType == "session_expired_idle" && a.UserId == _userId);
+        idleAudit.Should().NotBeNull();
+        idleAudit!.Detail.Should().NotBeNullOrEmpty();
+        idleAudit.Detail.Should().Contain("revokedSessionId").And.Contain("idleDurationMinutes");
     }
 
     [Fact]
@@ -190,11 +192,13 @@ public sealed class SessionManagementTests
         result.StatusCode.Should().Be(401);
         result.Error.Should().Contain("expired");
 
-        // Verify audit event
+        // Verify audit event + ISSUE-059: the session audit row carries session metadata in its detail.
         using var db = CreateDbContext();
-        db.AuditLogs.IgnoreQueryFilters()
-            .Any(a => a.EventType == "session_expired_absolute" && a.UserId == _userId)
-            .Should().BeTrue();
+        var absAudit = db.AuditLogs.IgnoreQueryFilters()
+            .FirstOrDefault(a => a.EventType == "session_expired_absolute" && a.UserId == _userId);
+        absAudit.Should().NotBeNull();
+        absAudit!.Detail.Should().NotBeNullOrEmpty();
+        absAudit.Detail.Should().Contain("revokedSessionId").And.Contain("sessionDurationHours");
     }
 
     [Fact]

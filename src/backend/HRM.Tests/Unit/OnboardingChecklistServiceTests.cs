@@ -340,8 +340,9 @@ public sealed class OnboardingChecklistServiceTests
             .Where(c => c.EmployeeId == _employeeId).ToListAsync();
         instances.Should().HaveCount(1);
         // The interceptor DID overwrite created_by with the actor (proving it ran) — the key survived because
-        // it now lives in its own column.
-        instances[0].CreatedBy.Should().Be("hr@acme.com");
+        // it now lives in its own column. ISSUE-015: created_by now stores the actor's user UUID (not email)
+        // so it matches the rest of the audit envelope.
+        instances[0].CreatedBy.Should().Be(_hrUserId.ToString());
         instances[0].IdempotencyKey.Should().Be("retry-key-88");
     }
 

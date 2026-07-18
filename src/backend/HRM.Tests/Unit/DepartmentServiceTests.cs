@@ -35,6 +35,7 @@ public sealed class DepartmentServiceTests : IDisposable
         _currentUser = Substitute.For<ICurrentUser>();
         _currentUser.Email.Returns("admin@test.com");
         _currentUser.UserId.Returns(Guid.NewGuid());
+        _currentUser.IsAuthenticated.Returns(true);
 
         _logger = Substitute.For<ILogger<DepartmentService>>();
     }
@@ -420,6 +421,34 @@ public sealed class DepartmentServiceTests : IDisposable
         var dept = db.Departments.FirstOrDefault(d => d.Id == id);
         dept.Should().NotBeNull();
         dept!.IsActive.Should().BeFalse();
+    }
+
+    // ── ISSUE-020: deactivate emits a DISTINCT Department.Deactivated audit action ──
+
+    [Fact]
+    [Trait("TC", "TC-CHR-031")]
+    public async Task Deactivate_WritesDistinctDepartmentDeactivatedAuditAction_ISSUE020()
+    {
+        var id = await SeedDepartment("Marketing", "MKT");
+
+        var result = await CreateService().DeactivateAsync(id);
+        result.IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        // A DISTINCT semantic action must exist so the trail is queryable by "deactivated" — pre-fix the only
+        // row was the generic Department.Update field diff.
+        var audit = db.AuditLogs
+            .Where(a => a.Action == "Department.Deactivated" && a.ResourceId == id.ToString())
+            .ToList();
+
+        audit.Should().ContainSingle("deactivate must write a distinct Department.Deactivated audit row");
+        var row = audit[0];
+        row.EventType.Should().Be("Department.Deactivated");
+        row.ResourceType.Should().Be("Department");
+        row.UserId.Should().Be(_currentUser.UserId);
+        row.TenantId.Should().Be(_tenantId);
+        row.Before.Should().Contain("true", "the before-snapshot records IsActive:true");
+        row.After.Should().Contain("false", "the after-snapshot records IsActive:false");
     }
 
     [Fact]

@@ -443,7 +443,16 @@ public sealed class AuthService : IAuthService
             {
                 storedToken.RevokedAt = DateTime.UtcNow;
                 await _dbContext.SaveChangesAsync(cancellationToken);
-                await WriteAuditLogAsync(storedToken.UserId, "session_expired_idle", ipAddress, userAgent, cancellationToken, storedToken.TenantId);
+                // ISSUE-059: record the session metadata (revoked session, idle duration) in the audit detail.
+                await WriteAuditLogWithDetailAsync(
+                    storedToken.UserId, "session_expired_idle", ipAddress, userAgent,
+                    new
+                    {
+                        revokedSessionId = storedToken.Id,
+                        idleDurationMinutes = Math.Round(idleMinutes, 2),
+                        idleTimeoutMinutes = tenant.IdleTimeoutMinutes,
+                    },
+                    cancellationToken, storedToken.TenantId);
                 return Result<RefreshTokenResponse>.Failure("Session expired due to inactivity.", 401);
             }
         }
@@ -454,7 +463,16 @@ public sealed class AuthService : IAuthService
         {
             storedToken.RevokedAt = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
-            await WriteAuditLogAsync(storedToken.UserId, "session_expired_absolute", ipAddress, userAgent, cancellationToken, storedToken.TenantId);
+            // ISSUE-059: record the session metadata (revoked session, absolute duration) in the audit detail.
+            await WriteAuditLogWithDetailAsync(
+                storedToken.UserId, "session_expired_absolute", ipAddress, userAgent,
+                new
+                {
+                    revokedSessionId = storedToken.Id,
+                    sessionDurationHours = Math.Round(absoluteHours, 2),
+                    absoluteTimeoutHours = tenant.AbsoluteTimeoutHours,
+                },
+                cancellationToken, storedToken.TenantId);
             return Result<RefreshTokenResponse>.Failure("Session expired. Please log in again.", 401);
         }
 
@@ -520,7 +538,11 @@ public sealed class AuthService : IAuthService
             // BUG-039 (US-AUTH-003 FR-4/AC-1/NFR-4): audit the logout as a security event. The token row is
             // authoritative for the subject + tenant (logout may run without a resolved tenant context); no
             // ip/userAgent is threaded into this seam, so pass null as the existing session_revoked_* audits do.
-            await WriteAuditLogAsync(storedToken.UserId, "logout", null, null, cancellationToken, storedToken.TenantId);
+            // ISSUE-059: record which session was self-revoked in the audit detail.
+            await WriteAuditLogWithDetailAsync(
+                storedToken.UserId, "logout", null, null,
+                new { revokedSessionId = storedToken.Id },
+                cancellationToken, storedToken.TenantId);
 
             _logger.LogInformation("User {UserId} logged out from tenant {TenantId}", storedToken.UserId, storedToken.TenantId);
         }
@@ -838,7 +860,15 @@ public sealed class AuthService : IAuthService
         if (tokens.Count > 0)
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
-            await WriteAuditLogAsync(userId, "session_revoked_by_admin", null, null, cancellationToken, tenantId);
+            // ISSUE-059: record which sessions were revoked (count + ids) in the audit detail.
+            await WriteAuditLogWithDetailAsync(
+                userId, "session_revoked_by_admin", null, null,
+                new
+                {
+                    revokedSessionCount = tokens.Count,
+                    revokedSessionIds = tokens.Select(t => t.Id).ToList(),
+                },
+                cancellationToken, tenantId);
         }
 
         _logger.LogInformation("All sessions revoked ({Count}) for user {UserId} in tenant {TenantId}", tokens.Count, userId, tenantId);
@@ -1969,7 +1999,16 @@ public sealed class AuthService : IAuthService
             if (tenant.ConcurrentSessionStrategy == "deny_new")
             {
                 // US-AUTH-009 AC-1: Audit concurrent_session_denied
-                await WriteAuditLogAsync(user.Id, "concurrent_session_denied", ipAddress, userAgent, cancellationToken, tenant.Id);
+                // ISSUE-059: record the active-session count + strategy in the audit detail.
+                await WriteAuditLogWithDetailAsync(
+                    user.Id, "concurrent_session_denied", ipAddress, userAgent,
+                    new
+                    {
+                        activeSessionCount = activeSessions,
+                        strategy = tenant.ConcurrentSessionStrategy,
+                        maxConcurrentSessions = tenant.MaxConcurrentSessions,
+                    },
+                    cancellationToken, tenant.Id);
                 return Result<LoginResponse>.Failure(
                     "Maximum concurrent sessions reached. Please log out from another device.", 403);
             }
@@ -1987,7 +2026,16 @@ public sealed class AuthService : IAuthService
             if (oldestSession is not null)
             {
                 oldestSession.RevokedAt = DateTime.UtcNow;
-                await WriteAuditLogAsync(user.Id, "concurrent_session_oldest_revoked", ipAddress, userAgent, cancellationToken, tenant.Id);
+                // ISSUE-059: record which session was evicted + the strategy in the audit detail.
+                await WriteAuditLogWithDetailAsync(
+                    user.Id, "concurrent_session_oldest_revoked", ipAddress, userAgent,
+                    new
+                    {
+                        revokedSessionId = oldestSession.Id,
+                        strategy = tenant.ConcurrentSessionStrategy,
+                        activeSessionCount = activeSessions,
+                    },
+                    cancellationToken, tenant.Id);
             }
         }
 

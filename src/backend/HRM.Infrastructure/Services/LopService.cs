@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveRequests;
@@ -19,6 +20,7 @@ public sealed class LopService : ILopService
 {
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
+    private readonly ICurrentUser _currentUser;
     private readonly ILeaveTypeService _leaveTypeService;
     private readonly IAttendanceProvider _attendanceProvider;
     private readonly ILeaveNotificationService _notificationService;
@@ -39,6 +41,7 @@ public sealed class LopService : ILopService
     public LopService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         ILeaveTypeService leaveTypeService,
         IAttendanceProvider attendanceProvider,
         ILeaveNotificationService notificationService,
@@ -48,6 +51,7 @@ public sealed class LopService : ILopService
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
+        _currentUser = currentUser;
         _leaveTypeService = leaveTypeService;
         _attendanceProvider = attendanceProvider;
         _notificationService = notificationService;
@@ -119,7 +123,18 @@ public sealed class LopService : ILopService
         }
 
         if (created.Count > 0)
+        {
+            // ISSUE-046 / NFR-4: emit a DISTINCT LOP-semantic audit action so the trail is queryable by
+            // "LOP assigned" rather than only the generic LeaveRequest.Create rows the interceptor stamps.
+            AddLopAudit("Leave.LopAssigned", request.EmployeeId, new
+            {
+                request.EmployeeId,
+                Count = created.Count,
+                Source = Domain.Enums.LopSource.HrAssigned.ToString(),
+                request.Reason,
+            });
             await _dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         _logger.LogInformation(
             "HR assigned {Count} LOP day(s) to employee {EmployeeId} ({Skipped} skipped) in tenant {TenantId}. Action {AuditAction}.",
@@ -332,6 +347,21 @@ public sealed class LopService : ILopService
             page++;
         }
 
+        if (assignedCount > 0)
+        {
+            // ISSUE-046 / NFR-4: distinct semantic action for the compulsory-leave bulk assignment.
+            AddLopAudit("Leave.CompulsoryAssigned", request.LeaveTypeId, new
+            {
+                request.LeaveTypeId,
+                Dates = distinctDates.Count,
+                Employees = employeesProcessed,
+                Assigned = assignedCount,
+                Lop = lopCount,
+                request.Reason,
+            });
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         _logger.LogInformation(
             "Compulsory leave assigned: type {LeaveTypeId}, {Dates} date(s), {Employees} employee(s), " +
             "{Assigned} row(s) ({Lop} LOP) in tenant {TenantId}. Action {AuditAction}.",
@@ -401,6 +431,15 @@ public sealed class LopService : ILopService
 
         if (created > 0)
         {
+            // ISSUE-046 / NFR-4: the AUTO (absenteeism) LOP path is also an assignment that must be
+            // queryable by the LOP-semantic action, not just the generic LeaveRequest.Create rows.
+            AddLopAudit("Leave.LopAssigned", employeeId, new
+            {
+                EmployeeId = employeeId,
+                Count = created,
+                Source = Domain.Enums.LopSource.SystemGenerated.ToString(),
+                Reason = "Unaccounted absence",
+            });
             await _dbContext.SaveChangesAsync(cancellationToken);
             await _notificationService.NotifyLopAssignedAsync(
                 employeeId, Domain.Enums.LopSource.SystemGenerated.ToString(),
@@ -500,6 +539,16 @@ public sealed class LopService : ILopService
             ActionedAt = DateTime.UtcNow,
         });
 
+        // ISSUE-046 / NFR-4: distinct semantic action for the HR override (remove/convert) of an LOP entry.
+        AddLopAudit("Leave.LopOverridden", lopRequest.Id, new
+        {
+            LeaveRequestId = lopRequest.Id,
+            lopRequest.EmployeeId,
+            Mode = request.TargetLeaveTypeId is null ? "removed" : "converted",
+            request.TargetLeaveTypeId,
+            request.Reason,
+        });
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -576,5 +625,28 @@ public sealed class LopService : ILopService
             .FirstOrDefaultAsync(cancellationToken);
 
         return lastEntry?.BalanceAfter ?? 0m;
+    }
+
+    /// <summary>
+    /// ISSUE-046 / NFR-4: adds a DISTINCT LOP-semantic audit row (Leave.LopAssigned /
+    /// Leave.CompulsoryAssigned / Leave.LopOverridden) to the change set WITHOUT saving — the caller's
+    /// SaveChanges commits it in the same save. The generic AuditCaptureInterceptor still stamps the
+    /// per-row LeaveRequest.Create/Update entries; this adds the queryable business-action trail on top.
+    /// IP/UserAgent are enriched onto this AuditLog row by AuditInterceptor.
+    /// </summary>
+    private void AddLopAudit(string action, Guid resourceId, object detail)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = "LeaveRequest",
+            ResourceId = resourceId.ToString(),
+            After = JsonSerializer.Serialize(detail),
+            CreatedAt = DateTime.UtcNow,
+        });
     }
 }
