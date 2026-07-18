@@ -469,10 +469,12 @@ public sealed class ApplicantService : IApplicantService
 
         // US-REC-006 BR-6: Offer-gate input — does the applicant have ≥1 scorecard?
         var hasScorecard = await HasAnyScorecardAsync(applicant.Id, cancellationToken);
+        // ISSUE-108 / BR-1: Interview-gate input — does the applicant have ≥1 interview on record?
+        var hasScheduledInterview = await HasAnyInterviewAsync(applicant.Id, cancellationToken);
 
         var ruleCheck = ApplyStageMove(
             applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount, hasScorecard,
-            out var historyRow, out var warnings);
+            hasScheduledInterview, out var historyRow, out var warnings);
         if (ruleCheck.IsFailure)
             return Result<MoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
 
@@ -530,6 +532,8 @@ public sealed class ApplicantService : IApplicantService
 
         // US-REC-006 BR-6: Offer-gate input per applicant — which applicants have ≥1 scorecard?
         var applicantIdsWithScorecards = await ApplicantIdsWithScorecardsAsync(distinctIds, cancellationToken);
+        // ISSUE-108 / BR-1: Interview-gate input per applicant — which applicants have ≥1 interview?
+        var applicantIdsWithInterviews = await ApplicantIdsWithInterviewsAsync(distinctIds, cancellationToken);
 
         // All-or-nothing: validate every move first, collect (history row + warnings), then persist
         // together so the caller never gets a partial move.
@@ -540,10 +544,11 @@ public sealed class ApplicantService : IApplicantService
             hiredCounts.TryGetValue(applicant.VacancyId, out var hiredCount);
 
             var hasScorecard = applicantIdsWithScorecards.Contains(applicant.Id);
+            var hasScheduledInterview = applicantIdsWithInterviews.Contains(applicant.Id);
 
             var ruleCheck = ApplyStageMove(
                 applicant, toStage, reason, notes, rejectionReason, vacancy, hiredCount, hasScorecard,
-                out var historyRow, out var warnings);
+                hasScheduledInterview, out var historyRow, out var warnings);
             if (ruleCheck.IsFailure)
                 return Result<BulkMoveApplicantStageResultDto>.Failure(ruleCheck.Error!, ruleCheck.StatusCode ?? 400, ruleCheck.ErrorCode);
 
@@ -587,6 +592,20 @@ public sealed class ApplicantService : IApplicantService
         return await _dbContext.InterviewScorecards
             .AnyAsync(s => interviewIds.Contains(s.InterviewId), cancellationToken);
     }
+
+    // ISSUE-108 / BR-1: does the applicant have ≥1 interview on record (the Interview soft-gate input)?
+    private Task<bool> HasAnyInterviewAsync(Guid applicantId, CancellationToken cancellationToken)
+        => _dbContext.Interviews.AnyAsync(i => i.ApplicantId == applicantId, cancellationToken);
+
+    // ISSUE-108 / BR-1: bulk-move counterpart — which of these applicants have ≥1 interview (one query, no N+1)?
+    private async Task<HashSet<Guid>> ApplicantIdsWithInterviewsAsync(
+        IReadOnlyList<Guid> applicantIds, CancellationToken cancellationToken)
+        => (await _dbContext.Interviews
+            .Where(i => applicantIds.Contains(i.ApplicantId))
+            .Select(i => i.ApplicantId)
+            .Distinct()
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
 
     /// <summary>
     /// US-REC-006 BR-6: of the supplied applicants, the subset that have ≥1 interview scorecard (the
@@ -659,8 +678,9 @@ public sealed class ApplicantService : IApplicantService
     /// vacancy is Closed or Cancelled. Rejection is always allowed.</item>
     /// </list>
     /// Soft, overridable warnings (success, never blocking) are returned for: BR-4 headcount-filled when
-    /// moving to Offer/Hired at/over capacity, and the FR-1/BR-1 interview/scorecard gates (stubbed —
-    /// always passes, pending US-REC-005/006). Moving INTO Hired is allowed but is terminal thereafter
+    /// moving to Offer/Hired at/over capacity, the BR-1 Interview gate (ISSUE-108: moving to Interview with
+    /// no interview on record), and the BR-6 Offer gate (moving to Offer with no scorecard). Moving INTO
+    /// Hired is allowed but is terminal thereafter
     /// (convert-to-employee is US-REC-010, out of scope). Backward/forward permission (BR-2) is enforced at
     /// the API layer (the endpoint requires
     /// Recruitment.Manage), so any caller here already holds Manage.
@@ -668,6 +688,7 @@ public sealed class ApplicantService : IApplicantService
     private Result ApplyStageMove(
         Applicant applicant, ApplicantStage toStage, string? reason, string? notes,
         RejectionReason? rejectionReason, Vacancy? vacancy, int hiredCount, bool hasScorecard,
+        bool hasScheduledInterview,
         out ApplicantStageHistory? historyRow, out IReadOnlyList<string> warnings)
     {
         historyRow = null;
@@ -732,6 +753,17 @@ public sealed class ApplicantService : IApplicantService
             warn.Add(
                 $"The vacancy headcount ({vacancy.Headcount}) is already filled ({hiredCount} hired); " +
                 "advancing more applicants to Offer/Hired may exceed the planned headcount.");
+        }
+
+        // ISSUE-108 / BR-1 (the Interview gate, FR-1): advancing to Interview expects ≥1 interview on
+        // record for the applicant. Like the Offer gate below it is SOFT (advisory, never blocking) —
+        // the recruiter may advance a candidate before the interview is booked and override. Completes
+        // the BR-1 default-gate set (Screening→notes, Interview→≥1 interview, Offer→≥1 scorecard).
+        if (toStage == ApplicantStage.Interview && !hasScheduledInterview)
+        {
+            warn.Add(
+                "No interview has been scheduled for this applicant; " +
+                "advancing to the Interview stage without a scheduled interview is not recommended.");
         }
 
         // US-REC-006 BR-6 (the Offer gate, FR-1): advancing to Offer requires ≥1 scorecard for the

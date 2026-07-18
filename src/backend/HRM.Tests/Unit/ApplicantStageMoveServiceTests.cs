@@ -412,6 +412,52 @@ public sealed class ApplicantStageMoveServiceTests
         result.Value!.Warnings.Should().Contain(w => w.Contains("scorecard"));
     }
 
+    // ── US-REC-004 FR-1/BR-1 Interview gate (ISSUE-108): soft warning, never blocking ─
+
+    [Fact]
+    public async Task MoveStage_ToInterviewWithoutScheduledInterview_SurfacesGateWarning()
+    {
+        // ISSUE-108: advancing to the Interview stage with no interview on record surfaces a soft
+        // (non-blocking) warning — the move still succeeds.
+        var id = SeedApplicant(ApplicantStage.Screening);
+
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Interview, reason: null, notes: null);
+
+        result.IsSuccess.Should().BeTrue("the Interview gate is SOFT — it warns but never blocks");
+        result.Value!.ToStage.Should().Be(ApplicantStage.Interview);
+        result.Value.Warnings.Should().Contain(w => w.Contains("interview") && w.Contains("scheduled"));
+    }
+
+    [Fact]
+    public async Task MoveStage_ToInterviewWithScheduledInterview_HasNoInterviewWarning()
+    {
+        var id = SeedApplicant(ApplicantStage.Screening);
+        SeedInterview(id); // ≥1 interview on record → the Interview gate is satisfied (no warning)
+
+        var result = await CreateService().MoveStageAsync(id, ApplicantStage.Interview, reason: null, notes: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Warnings.Should().NotContain(w => w.Contains("interview") && w.Contains("scheduled"));
+    }
+
+    private void SeedInterview(Guid applicantId)
+    {
+        using var db = CreateDbContext();
+        db.Interviews.Add(new Interview
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantId,
+            ApplicantId = applicantId,
+            VacancyId = _vacancyId,
+            ScheduledDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1),
+            StartTime = new TimeOnly(10, 0),
+            InterviewType = InterviewType.Video,
+            VideoLink = "https://meet.example.test/x",
+            Status = InterviewStatus.Scheduled,
+        });
+        db.SaveChanges();
+    }
+
     // ── US-REC-004 BR-2: reactivation out of Rejected requires a reason ─
 
     [Fact]
