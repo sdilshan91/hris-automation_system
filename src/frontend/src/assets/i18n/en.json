@@ -644,6 +644,7 @@
     "title": "Audit Log",
     "subtitle": "A tamper-proof record of every significant action in your workspace.",
     "retention": "Records retained for {{days}} days per your plan.",
+    "tableCaption": "Audit records: timestamp, user, action, resource, IP address and summary.",
     "col": {
       "timestamp": "Timestamp",
       "user": "User",

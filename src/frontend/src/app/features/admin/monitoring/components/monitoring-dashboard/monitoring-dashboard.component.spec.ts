@@ -206,6 +206,22 @@ describe('MonitoringDashboardComponent', () => {
     expect(httpMock.match(() => true).length).toBe(0);
   }));
 
+  it('names each employee usage gauge for screen readers (BUG-105 / WCAG 4.1.2)', () => {
+    fixture.detectChanges();
+    flushCycle();
+    fixture.detectChanges();
+
+    const gauges = Array.from(
+      fixture.nativeElement.querySelectorAll('[role="progressbar"]'),
+    ) as HTMLElement[];
+    expect(gauges.length).toBeGreaterThan(0);
+    // Every gauge has a non-empty accessible name including the metric + tenant.
+    expect(gauges.every((g) => (g.getAttribute('aria-label') ?? '').length > 0)).toBeTrue();
+    const first = gauges[0].getAttribute('aria-label') ?? '';
+    expect(first).toContain('Acme');
+    expect(first).toContain('Employees: 5 of 10');
+  });
+
   it('maps gauge band to the correct colour class', () => {
     expect(component.bandClass('Green')).toContain('green');
     expect(component.bandClass('Amber')).toContain('amber');

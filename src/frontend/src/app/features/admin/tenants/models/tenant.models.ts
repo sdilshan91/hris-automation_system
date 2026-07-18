@@ -40,7 +40,8 @@ export interface ISubscriptionPlan {
   code: string;
   priceMonthly: number;
   trialDays: number;
-  maxEmployees: number;
+  /** Employee cap for the plan; null/0 = unlimited (e.g. Enterprise). */
+  maxEmployees: number | null;
 }
 
 /** Request body for POST /api/admin/tenants. */

@@ -343,7 +343,9 @@ export class UserListComponent implements OnInit {
   }
 
   statusClass(status: string): string {
-    switch (status) {
+    // BE may serialize the status PascalCase ("Active"); normalize so the badge
+    // colour resolves regardless of casing (ISSUE-211).
+    switch ((status || '').toLowerCase()) {
       case 'active':
         return 'bg-emerald-50 text-emerald-700';
       case 'invited':

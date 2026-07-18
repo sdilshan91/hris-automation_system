@@ -15,6 +15,7 @@ import { AuthService } from '../../../../../core/auth/auth.service';
 import {
   ITenantMonitoringDetail,
   bandClass,
+  employeeGaugeLabel,
 } from '../../models/monitoring.models';
 import { ImpersonateDialogComponent } from '../../../impersonation/components/impersonate-dialog/impersonate-dialog.component';
 import { IStartImpersonationResponse } from '../../../impersonation/models/impersonation.models';
@@ -107,6 +108,7 @@ export class TenantMonitoringDetailComponent implements OnInit {
   readonly historyLoading = signal(true);
 
   readonly bandClass = bandClass;
+  readonly employeeGaugeLabel = employeeGaugeLabel;
   readonly lifecycleStatusClass = lifecycleStatusClass;
 
   /**

@@ -291,6 +291,19 @@ describe('TenantMonitoringDetailComponent', () => {
     expect(exportBtn.disabled).toBeTrue();
   });
 
+  it('names the employee usage gauge for screen readers (BUG-105 / WCAG 4.1.2)', () => {
+    const { fixture } = setup('System Admin');
+    fixture.detectChanges();
+    flushLoad();
+    fixture.detectChanges();
+
+    const gauge: HTMLElement | null = fixture.nativeElement.querySelector(
+      '[role="progressbar"]',
+    );
+    expect(gauge).not.toBeNull();
+    expect(gauge!.getAttribute('aria-label')).toBe('Employees: 5 of 10 (50%)');
+  });
+
   it('shows "Not available" placeholders for null SLA / trends', () => {
     const { fixture } = setup('System Admin');
     fixture.detectChanges();

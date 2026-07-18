@@ -353,6 +353,7 @@
                   <td class="px-5 py-3.5">
                     <div class="flex items-center gap-2">
                       <div class="flex-1 h-2 rounded-full bg-neutral-100 overflow-hidden" role="progressbar"
+                           [attr.aria-label]="employeeGaugeLabel(t.activeEmployees, t.employeeLimit, t.usagePercent, t.name)"
                            [attr.aria-valuenow]="t.usagePercent" aria-valuemin="0" aria-valuemax="100">
                         <div
                           class="h-full rounded-full transition-all duration-300"

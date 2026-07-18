@@ -21,6 +21,7 @@ import {
   IUsageGauge,
   DEFAULT_REFRESH_INTERVAL_MS,
   bandClass,
+  employeeGaugeLabel,
   needsAttention,
   requiresObservability,
 } from '../../models/monitoring.models';
@@ -124,6 +125,7 @@ export class MonitoringDashboardComponent implements OnInit, OnDestroy {
 
   // Expose helpers to the template.
   readonly bandClass = bandClass;
+  readonly employeeGaugeLabel = employeeGaugeLabel;
   readonly requiresObservability = requiresObservability;
 
   ngOnInit(): void {

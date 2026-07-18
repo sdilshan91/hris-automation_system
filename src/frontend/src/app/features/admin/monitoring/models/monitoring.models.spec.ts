@@ -1,6 +1,7 @@
 import {
   bandClass,
   bandFromPercent,
+  employeeGaugeLabel,
   needsAttention,
   requiresObservability,
   REQUIRES_OBSERVABILITY,
@@ -53,6 +54,26 @@ describe('monitoring model helpers', () => {
       expect(requiresObservability(REQUIRES_OBSERVABILITY)).toBeTrue();
       expect(requiresObservability('Healthy')).toBeFalse();
       expect(requiresObservability(null)).toBeFalse();
+    });
+  });
+
+  describe('employeeGaugeLabel (BUG-105 / WCAG 4.1.2)', () => {
+    it('names the metric, counts and percentage', () => {
+      expect(employeeGaugeLabel(28, 200, 14)).toBe('Employees: 28 of 200 (14%)');
+    });
+
+    it('renders ∞ for an unlimited (null) limit', () => {
+      expect(employeeGaugeLabel(5, null, null)).toBe('Employees: 5 of ∞');
+    });
+
+    it('rounds the percentage and prefixes the tenant name when given', () => {
+      expect(employeeGaugeLabel(3, 10, 33.4, 'Acme Corp')).toBe(
+        'Acme Corp — Employees: 3 of 10 (33%)',
+      );
+    });
+
+    it('defaults a null used count to 0', () => {
+      expect(employeeGaugeLabel(null, 50, null)).toBe('Employees: 0 of 50');
     });
   });
 

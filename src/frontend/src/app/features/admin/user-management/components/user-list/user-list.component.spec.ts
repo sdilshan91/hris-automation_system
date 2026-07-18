@@ -94,6 +94,14 @@ describe('UserListComponent', () => {
     expect(component.total()).toBe(45);
   });
 
+  it('normalizes a PascalCase BE status for the badge colour (ISSUE-211)', () => {
+    flushInit();
+    // The BE may serialize the status PascalCase; the colour must resolve either way.
+    expect(component.statusClass('Active')).toBe(component.statusClass('active'));
+    expect(component.statusClass('Active')).toContain('emerald');
+    expect(component.statusClass('Invited')).toContain('amber');
+  });
+
   it('renders a row per user', () => {
     flushInit();
     fixture.detectChanges();
@@ -323,5 +331,78 @@ describe('UserListComponent — BUG-103 pagination footer regression (BE totalCo
     expect(text).not.toContain('NaN'); // pre-fix symptom
     expect(text).not.toContain('{{total}}'); // un-interpolated literal
     expect(fixture.componentInstance.total()).toBe(42);
+  });
+});
+
+/**
+ * ISSUE-211 regression (US-ADM-005).
+ *
+ * The BE serializes the membership status PascalCase ("Active" / "Disabled"), but
+ * the i18n keys are lowercase (`userManagement.status.active` …). The status cell
+ * lowercases the value before building the key, so the human label resolves. This
+ * block loads the REAL status translations and flushes a PascalCase status.
+ */
+describe('UserListComponent — ISSUE-211 status label (BE PascalCase status)', () => {
+  let fixture: ComponentFixture<UserListComponent>;
+  let httpMock: HttpTestingController;
+
+  const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [UserListComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideAnimationsAsync(),
+        provideToastr(),
+        provideTranslateService(),
+      ],
+    }).compileComponents();
+
+    httpMock = TestBed.inject(HttpTestingController);
+
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('en', {
+      userManagement: {
+        status: { active: 'Active', invited: 'Invited', disabled: 'Disabled' },
+      },
+    });
+    translate.use('en');
+
+    fixture = TestBed.createComponent(UserListComponent);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('resolves the human status label for a PascalCase BE status (not the raw key)', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush([]);
+    httpMock.expectOne((r) => r.url === usersUrl && r.method === 'GET').flush({
+      items: [
+        {
+          userTenantId: 'ut-9',
+          userId: 'u-9',
+          displayName: 'Casey Case',
+          email: 'casey@acme.com',
+          roles: [],
+          status: 'Active',
+          lastLoginAt: null,
+        },
+      ],
+      totalCount: 1,
+      page: 1,
+      pageSize: 20,
+    } as unknown as IUserListResponse);
+    fixture.detectChanges();
+
+    const row: HTMLElement | null = fixture.nativeElement.querySelector(
+      '[data-testid="user-row"]',
+    );
+    expect(row).toBeTruthy();
+    const text = row!.textContent ?? '';
+    expect(text).toContain('Active');
+    expect(text).not.toContain('userManagement.status');
   });
 });
