@@ -83,6 +83,22 @@ public sealed class BrandingFileValidatorTests
         result.Error.Should().Contain("2 MB");
     }
 
+    // ISSUE-008: a logo whose BODY is EXACTLY at the 2 MB cap must be ACCEPTED by the friendly validator
+    // (it caps with `>`, so == is allowed). The companion fix raises TenantSettingsController's
+    // [RequestSizeLimit] a margin ABOVE LogoMaxBytes so this boundary file reaches the validator instead of
+    // being rejected by Kestrel with an opaque 400 (the whole-multipart-request cap previously == LogoMaxBytes).
+    [Fact]
+    public void Logo_ExactlyTwoMegabytes_Accepted()
+    {
+        var atCap = new byte[BrandingFileValidator.LogoMaxBytes];
+        Array.Copy(PngHeader, atCap, PngHeader.Length);
+
+        var result = BrandingFileValidator.Validate(BrandingAssetKind.Logo, atCap);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentType.Should().Be("image/png");
+    }
+
     [Fact]
     public void Favicon_OverFiveHundredKilobytes_Rejected()
     {

@@ -82,6 +82,11 @@ public sealed class AdminImpersonationController : ControllerBase
     public async Task<IActionResult> ListTargets(
         [FromQuery] Guid tenantId, CancellationToken cancellationToken)
     {
+        // ISSUE-001: a missing (or empty) required tenantId binds to Guid.Empty. That is a malformed request →
+        // 400, not 404: 404 (tenant_not_found) is reserved for a SUPPLIED-but-unknown tenant id below.
+        if (tenantId == Guid.Empty)
+            return BadRequest(ApiResponse.Fail("The 'tenantId' query parameter is required.", "missing_required_parameter"));
+
         var result = await _mediator.Send(new ListImpersonationTargetsQuery(tenantId), cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));

@@ -134,9 +134,14 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         // Tenant rows (cross-tenant, system context). FR-4 filters: status / plan / search / created-date range.
         var query = _db.Tenants.IgnoreQueryFilters().Where(t => !t.IsDeleted);
 
-        if (!string.IsNullOrWhiteSpace(filter.Status)
-            && Enum.TryParse<TenantStatus>(filter.Status, ignoreCase: true, out var status))
+        // ISSUE-003: an unparseable status must be rejected (400), NOT silently ignored — silently dropping the
+        // filter returns the FULL unfiltered tenant list, which a caller filtering on a typo'd status reads as
+        // "everything matched". A blank/absent status is unchanged (returns all). Same class as ISSUE-184.
+        if (!string.IsNullOrWhiteSpace(filter.Status))
         {
+            if (!Enum.TryParse<TenantStatus>(filter.Status, ignoreCase: true, out var status))
+                return Result.Failure<TenantUsageDashboardDto>(
+                    $"Unknown tenant status '{filter.Status}'.", 400, "invalid_status");
             query = query.Where(t => t.Status == status);
         }
 
