@@ -88,7 +88,7 @@
 - **ID:** ISSUE-317
 - **Type:** ISSUE (FE robustness / UX)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #369, merged 2026-07-18 — FE enum badge/label maps widened with an `Unknown` key + amber badge across pipeline.models.ts / payroll-run.models.ts; pipeline stageBadge() uses `?? Unknown` fallback; specs pipeline.models.spec.ts + payroll-run.models.spec.ts. Verified present in base a18cb5f6)
 - **Layer:** FE
 - **Module / US / TC:** Recruitment / Payroll / US-REC-003, US-REC-009, US-PAY-011 / (new Karma TC needed) · register [[DEFERRED-FOLLOWUPS]] DF-12
 - **Title:** After PR #348 the BE tolerates a corrupt enum row (maps it to the `Unknown` sentinel), but the FE enum unions + label/badge maps have no `Unknown` key — `applicant.models.ts` (`ApplicantStage`/`ApplicantSource`), `pipeline.models.ts` (`STAGE_BADGE`), `payroll-run.models.ts` (`RUN_STATUS_BADGE`/`RUN_STATUS_LABELS`). So a tolerated row surfaces as a **blank** badge/label (undefined key lookup) on the payroll-run list and the applicant list/detail — graceful (no crash) but silent, with no visible "unknown/corrupt row" affordance for someone to go fix the data.

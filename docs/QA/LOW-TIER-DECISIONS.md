@@ -50,8 +50,8 @@ then implement the chosen ones in a follow-up batch.
 ## G. FE work (deferred to a FE pass)
 - **ISSUE-289 (Performance/FE)** — sign-off UI collapses structured BE fields into one Body. · *rec: FE pass (P6).*
 - **ISSUE-271 (Training/FE)** — manager eligible-plans endpoint has no FE consumer. · *rec: FE pass (P6).*
-- **ISSUE-317 (Recruitment/FE)** — no `Unknown` badge for a tolerated corrupt enum row (DF-12). · *rec: add the badge.*
-- **DF-24 / DF-26 / DF-27** — bulk-assign message field, vacancy headcount, auth FE (tenant_required / regenerate prompt / change-password form). · *rec: one FE follow-up batch.*
+- ✅ **DONE (#369)** **ISSUE-317 (Recruitment/FE)** — no `Unknown` badge for a tolerated corrupt enum row (DF-12). · *rec: add the badge.*
+- ✅ **DONE (#369)** **DF-24 / DF-26 / DF-27** — bulk-assign message field, vacancy headcount, auth FE (tenant_required / regenerate prompt / change-password form). · *rec: one FE follow-up batch.*
 
 ## H. Code-quality (reuse, from the sweep)
 - ✅ **DONE (#371, FileNameSanitizer helper)** **SanitizeFileName ×4** — 4 copies differ on fallback string. · *rec: unify with a shared `SanitizeFileName(fileName, fallback)` helper.*
