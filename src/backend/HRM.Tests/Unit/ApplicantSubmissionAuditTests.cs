@@ -53,6 +53,7 @@ public sealed class ApplicantSubmissionAuditTests
         new InMemoryFileStorage(),
         new AllowWithLogVirusScanner(Substitute.For<ILogger<AllowWithLogVirusScanner>>()),
         new LogOnlyRecruitmentNotificationService(Substitute.For<ILogger<LogOnlyRecruitmentNotificationService>>()),
+        new GanssHtmlSanitizer(),
         Substitute.For<ILogger<ApplicantService>>());
 
     private ICurrentUser AnonymousUser()
@@ -126,6 +127,46 @@ public sealed class ApplicantSubmissionAuditTests
 
     private static bool ActionContains(AuditLog a, string s)
         => (a.Action?.Contains(s) ?? false) || (a.EventType?.Contains(s) ?? false);
+
+    // ── ISSUE-103: applicant free-text (name, cover letter) must be server-side sanitized ──
+    // The sibling vacancy Description path already runs the HTML sanitizer; the applicant path did not,
+    // so an injected <script>/onerror payload was stored verbatim (stored-XSS). The fix applies the same
+    // GanssHtmlSanitizer to FirstName/LastName/CoverLetter on write.
+
+    private static SubmitApplicationInput ApplyRaw(
+        Guid vacancyId, string firstName, string lastName, string? coverLetter)
+        => new(
+            vacancyId, firstName, lastName, "xss@example.com", "+1-555-0100", coverLetter,
+            new MemoryStream(HRM.Tests.Unit.Helpers.UploadTestBytes.Pdf), "resume.pdf", "application/pdf",
+            HRM.Tests.Unit.Helpers.UploadTestBytes.Pdf.Length, ApplicationSource.Public, null);
+
+    [Fact]
+    public async Task SubmitApplication_StripsScriptFromName_And_CoverLetter_ISSUE103()
+    {
+        SeedOpenVacancy();
+
+        var result = await Service(AnonymousUser()).SubmitAsync(ApplyRaw(
+            _vacancyId,
+            firstName: "Ada<script>alert(1)</script>",
+            lastName: "Lovelace",
+            coverLetter: "Hello<img src=x onerror=alert(1)> <script>steal()</script>world"));
+        result.IsSuccess.Should().BeTrue();
+
+        using var db = Db();
+        var applicant = await db.Applicants.AsNoTracking()
+            .SingleAsync(a => a.Email == "xss@example.com");
+
+        // The script/handler payloads are stripped on write; the safe text survives.
+        applicant.FirstName.Should().NotContain("script");
+        applicant.FirstName.Should().NotContain("alert");
+        applicant.FirstName.Should().Contain("Ada");
+
+        applicant.CoverLetter.Should().NotContain("script");
+        applicant.CoverLetter.Should().NotContain("onerror");
+        applicant.CoverLetter.Should().NotContain("steal");
+        applicant.CoverLetter.Should().Contain("Hello");
+        applicant.CoverLetter.Should().Contain("world");
+    }
 
     // ── Public/anonymous submission: audit row present, tenant-scoped, actor NULL ──
 

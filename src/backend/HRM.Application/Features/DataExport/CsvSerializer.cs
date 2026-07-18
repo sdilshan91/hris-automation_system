@@ -58,14 +58,17 @@ public static class CsvSerializer
     }
 
     /// <summary>
-    /// The PUBLIC INSTANCE scalar properties of <paramref name="type"/> that are safe to export: not on the
-    /// auth-secret deny-list, and a scalar/primitive type (collections + complex navigations are skipped).
+    /// The PUBLIC INSTANCE scalar properties of <paramref name="type"/> that are safe to export: a
+    /// scalar/primitive type (collections + complex navigations are skipped), not on the auth-secret deny-list
+    /// (BR-7), and not an internal persistence/audit column (ISSUE-014 — <see cref="ExportInternalFields"/>),
+    /// so the header matches the business schema rather than leaking `TenantId`/`CreatedBy`/`RowVersion`/etc.
     /// </summary>
     public static IReadOnlyList<PropertyInfo> ExportableProperties(Type type)
         => type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
             .Where(p => IsScalar(p.PropertyType))
             .Where(p => !ExportSensitiveFields.IsDenied(p.Name))
+            .Where(p => !ExportInternalFields.IsInternal(p.Name))
             .OrderBy(p => p.MetadataToken)
             .ToList();
 

@@ -143,7 +143,8 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
         var service = new ApplicantService(read,
             new MutableTenantContext { TenantId = _tenantId }, Substitute.For<ICurrentUser>(),
             Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
-            Substitute.For<IRecruitmentNotificationService>(), NullLogger<ApplicantService>.Instance);
+            Substitute.For<IRecruitmentNotificationService>(), new GanssHtmlSanitizer(),
+            NullLogger<ApplicantService>.Instance);
 
         var result = await service.GetPipelineBoardAsync(vacancyId, new PipelineFilter());
 
@@ -252,7 +253,8 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
         var service = new ApplicantService(read,
             new MutableTenantContext { TenantId = _tenantId }, Substitute.For<ICurrentUser>(),
             Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
-            Substitute.For<IRecruitmentNotificationService>(), NullLogger<ApplicantService>.Instance);
+            Substitute.For<IRecruitmentNotificationService>(), new GanssHtmlSanitizer(),
+            NullLogger<ApplicantService>.Instance);
 
         var result = await service.GetPipelineBoardAsync(vacancyId, new PipelineFilter());
 

@@ -29,6 +29,7 @@ public sealed class ApplicantService : IApplicantService
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
     private readonly IRecruitmentNotificationService _notifications;
+    private readonly IHtmlSanitizer _sanitizer;
     private readonly ILogger<ApplicantService> _logger;
 
     private const int MaxPageSize = 100;
@@ -40,6 +41,7 @@ public sealed class ApplicantService : IApplicantService
         IFileStorage fileStorage,
         IVirusScanner virusScanner,
         IRecruitmentNotificationService notifications,
+        IHtmlSanitizer sanitizer,
         ILogger<ApplicantService> logger)
     {
         _dbContext = dbContext;
@@ -48,6 +50,7 @@ public sealed class ApplicantService : IApplicantService
         _fileStorage = fileStorage;
         _virusScanner = virusScanner;
         _notifications = notifications;
+        _sanitizer = sanitizer;
         _logger = logger;
     }
 
@@ -167,11 +170,14 @@ public sealed class ApplicantService : IApplicantService
             TenantId = _tenantContext.TenantId,
             VacancyId = input.VacancyId,
             ApplicationReferenceNumber = reference,
-            FirstName = input.FirstName.Trim(),
-            LastName = input.LastName.Trim(),
+            // ISSUE-103: sanitize applicant free-text (name, cover letter) server-side, matching the sibling
+            // VacancyService.Description path — an injected <script>/<img onerror> payload is stripped on write
+            // so it can never be stored to be rendered later in a recruiter UI, email, or exported PDF/CSV.
+            FirstName = _sanitizer.Sanitize(input.FirstName.Trim()) ?? string.Empty,
+            LastName = _sanitizer.Sanitize(input.LastName.Trim()) ?? string.Empty,
             Email = normalizedEmail,
             Phone = string.IsNullOrWhiteSpace(input.Phone) ? null : input.Phone.Trim(),
-            CoverLetter = string.IsNullOrWhiteSpace(input.CoverLetter) ? null : input.CoverLetter.Trim(),
+            CoverLetter = string.IsNullOrWhiteSpace(input.CoverLetter) ? null : _sanitizer.Sanitize(input.CoverLetter.Trim()),
             ResumeStorageKey = relativePath,
             ResumeFileName = input.ResumeFileName,
             Stage = ApplicantStage.Applied,

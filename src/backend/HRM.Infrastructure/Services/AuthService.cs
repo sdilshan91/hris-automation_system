@@ -1028,16 +1028,9 @@ public sealed class AuthService : IAuthService
                 403);
         }
 
-        if (targetTenant.Status is not (TenantStatus.Active or TenantStatus.Trial))
-        {
-            // ISSUE-055 (US-AUTH-008): audit the denial (target tenant not in an accessible state).
-            await WriteTenantSwitchDeniedAuditAsync(
-                userId, sourceTenantId, targetTenantId, $"target_tenant_{targetTenant.Status}", ipAddress, userAgent, cancellationToken);
-            return Result<SwitchTenantResponse>.Failure(
-                $"The target organization is unavailable ({targetTenant.Status}).",
-                403);
-        }
-
+        // ISSUE-057 (US-AUTH-008): resolve membership BEFORE inspecting the target tenant's lifecycle status,
+        // so a NON-member can never learn that tenant's state. A non-member gets the same generic membership
+        // error regardless of whether the target is active, suspended, or terminating.
         var userTenant = await _dbContext.UserTenants
             .IgnoreQueryFilters()
             .Include(ut => ut.UserTenantRoles)
@@ -1054,6 +1047,18 @@ public sealed class AuthService : IAuthService
                 userId, sourceTenantId, targetTenantId, "not_a_member", ipAddress, userAgent, cancellationToken);
             return Result<SwitchTenantResponse>.Failure(
                 "You do not have an active membership in this organization.",
+                403);
+        }
+
+        if (targetTenant.Status is not (TenantStatus.Active or TenantStatus.Trial))
+        {
+            // ISSUE-055 (US-AUTH-008): audit the denial (target tenant not in an accessible state). The audit
+            // reason retains the precise status for forensics; ISSUE-057: the CALLER-facing message stays
+            // generic and never discloses the exact TenantStatus enum value.
+            await WriteTenantSwitchDeniedAuditAsync(
+                userId, sourceTenantId, targetTenantId, $"target_tenant_{targetTenant.Status}", ipAddress, userAgent, cancellationToken);
+            return Result<SwitchTenantResponse>.Failure(
+                "The target organization is currently unavailable.",
                 403);
         }
 
@@ -1735,6 +1740,18 @@ public sealed class AuthService : IAuthService
             return Result.Failure("User not found.", 404);
         }
 
+        // ISSUE-064: only a real unlock should leave an audit trail. If the account was not actually locked
+        // (no lockout timestamp and no accumulated failed attempts), clearing the already-clear fields is a
+        // no-op — writing account_unlocked_by_admin here would record a phantom "unlocked" event for an
+        // account that was never locked. Capture the pre-state before clearing.
+        var wasLocked = user.LockedUntil is not null || user.FailedLoginCount > 0;
+
+        if (!wasLocked)
+        {
+            // Idempotent no-op: nothing to unlock, so no state change and no misleading audit event.
+            return Result.Success();
+        }
+
         // Clear lockout state (AC-5)
         user.LockedUntil = null;
         user.FailedLoginCount = 0;
@@ -1742,7 +1759,7 @@ public sealed class AuthService : IAuthService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // Audit: account_unlocked_by_admin
+        // Audit: account_unlocked_by_admin (only written when an actual unlock occurred — ISSUE-064).
         await WriteAuditLogWithDetailAsync(userId, "account_unlocked_by_admin", null, null,
             new { adminUserId },
             cancellationToken, tenantId);

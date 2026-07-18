@@ -32,3 +32,16 @@ public sealed class GetTeamGoalsDashboardQueryHandler
     public Task<Result<TeamGoalsDashboardDto>> Handle(GetTeamGoalsDashboardQuery request, CancellationToken cancellationToken)
         => _service.GetTeamDashboardAsync(request.CycleId, cancellationToken);
 }
+
+/// <summary>ISSUE-099: gets a single goal by id (tenant-scoped; 404 for an unknown/foreign-tenant id).</summary>
+public sealed record GetGoalByIdQuery(Guid GoalId) : IRequest<Result<GoalDto>>;
+
+public sealed class GetGoalByIdQueryHandler
+    : IRequestHandler<GetGoalByIdQuery, Result<GoalDto>>
+{
+    private readonly IGoalService _service;
+    public GetGoalByIdQueryHandler(IGoalService service) => _service = service;
+
+    public Task<Result<GoalDto>> Handle(GetGoalByIdQuery request, CancellationToken cancellationToken)
+        => _service.GetByIdAsync(request.GoalId, cancellationToken);
+}

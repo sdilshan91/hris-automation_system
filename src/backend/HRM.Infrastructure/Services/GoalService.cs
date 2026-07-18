@@ -390,6 +390,23 @@ public sealed class GoalService : IGoalService
         });
     }
 
+    public async Task<Result<GoalDto>> GetByIdAsync(Guid goalId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<GoalDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant-scoped: the EF global query filter excludes other tenants' rows, so a foreign-tenant goal
+        // is invisible here and resolves to 404 (never leaks). ISSUE-099: this replaces the stub that 200'd
+        // for any id.
+        var goal = await _dbContext.Goals
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == goalId, cancellationToken);
+        if (goal is null)
+            return Result<GoalDto>.Failure("Goal not found.", 404, "goal_not_found");
+
+        return Result<GoalDto>.Success(ToDto(goal));
+    }
+
     public async Task<Result<TeamGoalsDashboardDto>> GetTeamDashboardAsync(
         Guid cycleId, CancellationToken cancellationToken = default)
     {

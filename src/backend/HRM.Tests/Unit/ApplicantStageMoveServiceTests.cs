@@ -65,6 +65,7 @@ public sealed class ApplicantStageMoveServiceTests
             Substitute.For<IFileStorage>(),
             Substitute.For<IVirusScanner>(),
             notifications,
+            new GanssHtmlSanitizer(),
             Substitute.For<ILogger<ApplicantService>>());
     }
 

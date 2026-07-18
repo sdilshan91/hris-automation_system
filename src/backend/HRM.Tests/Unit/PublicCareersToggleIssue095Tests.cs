@@ -58,6 +58,7 @@ public sealed class PublicCareersToggleIssue095Tests
         new InMemoryFileStorage(),
         new AllowWithLogVirusScanner(Substitute.For<ILogger<AllowWithLogVirusScanner>>()),
         new LogOnlyRecruitmentNotificationService(Substitute.For<ILogger<LogOnlyRecruitmentNotificationService>>()),
+        new GanssHtmlSanitizer(),
         Substitute.For<ILogger<ApplicantService>>());
 
     private ICurrentUser AnonymousUser()

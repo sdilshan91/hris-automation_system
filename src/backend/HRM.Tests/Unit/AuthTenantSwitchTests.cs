@@ -164,18 +164,53 @@ public sealed class AuthTenantSwitchTests
             "the audited denial should record which target tenant was attempted");
     }
 
+    /// <summary>
+    /// ISSUE-057 (US-AUTH-008): a MEMBER of a suspended target is correctly denied, but the caller-facing
+    /// message must stay generic and NOT disclose the precise <see cref="TenantStatus"/> enum value. (Updated
+    /// from the pre-fix assertion, which asserted the leaking "(Suspended)" message — the very disclosure this
+    /// fix removes; the audit reason retains the status for forensics, verified separately.)
+    /// </summary>
     [Fact]
-    public async Task SwitchTenantAsync_SuspendedTargetTenant_ReturnsUnavailableForbidden()
+    public async Task SwitchTenantAsync_SuspendedTargetTenant_MemberGetsGenericMessage_NoStatusLeak_ISSUE057()
     {
-        await SeedUserWithTenantsAsync(TenantStatus.Suspended);
+        await SeedUserWithTenantsAsync(TenantStatus.Suspended); // member of the suspended target
         var service = CreateService();
 
         var result = await service.SwitchTenantAsync(_userId, _sourceTenantId, _targetTenantId, null, null);
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(403);
-        result.Error.Should().Contain("target organization is unavailable");
-        result.Error.Should().Contain(nameof(TenantStatus.Suspended));
+        result.Error.Should().Be("The target organization is currently unavailable.");
+        result.Error.Should().NotContain(nameof(TenantStatus.Suspended));
+        result.Error.Should().NotContain(nameof(TenantStatus.Terminated));
+    }
+
+    /// <summary>
+    /// ISSUE-057 (US-AUTH-008): the CORE info-disclosure case. A NON-member of a suspended target must get the
+    /// same generic membership error an active non-member gets — never the status-bearing message — so a
+    /// caller cannot enumerate other tenants' lifecycle states. Pre-fix the status check ran BEFORE the
+    /// membership check and leaked "(Suspended)" to a non-member; post-fix the membership check runs first.
+    /// </summary>
+    [Fact]
+    public async Task SwitchTenantAsync_NonMemberOfSuspendedTenant_GenericMembershipError_NoStatusLeak_ISSUE057()
+    {
+        await SeedUserWithTenantsAsync(TenantStatus.Suspended, includeTargetMembership: false);
+        var service = CreateService();
+
+        var result = await service.SwitchTenantAsync(_userId, _sourceTenantId, _targetTenantId, null, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+        result.Error.Should().Be("You do not have an active membership in this organization.");
+        result.Error.Should().NotContain(nameof(TenantStatus.Suspended));
+
+        // The denial is audited as a membership failure (not a status-based one).
+        using var db = CreateDbContext();
+        var denial = db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.EventType.Contains("tenant_switch_denied") && a.UserId == _userId)
+            .ToList();
+        denial.Should().ContainSingle("a denied switch must leave exactly one security-audit row");
+        denial[0].Detail!.Should().Contain("not_a_member");
     }
 
     private AuthService CreateService()
