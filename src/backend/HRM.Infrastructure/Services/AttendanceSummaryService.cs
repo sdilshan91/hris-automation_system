@@ -190,6 +190,47 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         });
     }
 
+    public async Task<Result<EmployeeMonthlySummaryDto?>> ComputeForEmployeeUpToAsync(
+        Guid employeeId, int year, int month, DateOnly cutoff, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<EmployeeMonthlySummaryDto?>.Failure("Tenant context is not resolved.", 400);
+        if (month is < 1 or > 12)
+            return Result<EmployeeMonthlySummaryDto?>.Failure("Month must be between 1 and 12.", 400, "invalid_month");
+
+        var employee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+        if (employee is null)
+            return Result<EmployeeMonthlySummaryDto?>.Success(null);
+
+        var tenantZone = await ResolveTenantZoneAsync(cancellationToken);
+        var (monthStart, monthEnd, lastIncluded) = MonthBounds(year, month, tenantZone);
+        // BR-7: never count days after the last working day, nor after the month's last-included day.
+        var lastDay = cutoff < lastIncluded ? cutoff : lastIncluded;
+        if (lastDay < monthStart)
+            return Result<EmployeeMonthlySummaryDto?>.Success(null);   // cutoff precedes the month — no data.
+
+        var agg = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, tenantZone, cancellationToken);
+
+        return Result<EmployeeMonthlySummaryDto?>.Success(new EmployeeMonthlySummaryDto
+        {
+            EmployeeId = employee.Id,
+            EmployeeName = FullName(employee),
+            EmployeeNumber = employee.EmployeeNo,
+            PresentDays = agg.PresentDays,
+            AbsentDays = agg.AbsentDays,
+            LateCount = agg.LateCount,
+            EarlyDepartureCount = agg.EarlyDepartureCount,
+            WorkMinutes = agg.WorkMinutes,
+            OvertimeMinutes = agg.OvertimeMinutes,
+            LeaveDays = agg.LeaveDays,
+            Holidays = agg.Holidays,
+            WeeklyOffs = agg.WeeklyOffs,
+            LopDays = agg.LopDays,
+            GeneratedAt = DateTime.UtcNow,
+        });
+    }
+
     public async Task<Result<SummaryGenerationStatusDto>> GenerateAsync(
         int year, int month, CancellationToken cancellationToken = default)
     {

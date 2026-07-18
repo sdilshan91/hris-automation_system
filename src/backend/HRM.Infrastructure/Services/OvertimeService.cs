@@ -353,6 +353,8 @@ public sealed class OvertimeService : IOvertimeService
             Reason = x.o.Reason,
             ManagerComment = x.o.ManagerComment,
             CreatedAt = x.o.CreatedAt,
+            DailyCapApplied = x.o.DailyCapApplied,        // FR-8 / ISSUE-079
+            WeeklyCapExceeded = x.o.WeeklyCapExceeded,     // FR-8 / ISSUE-079
             EmployeeName = $"{x.e.FirstName} {x.e.LastName}".Trim(),
             EmployeePhoto = x.e.ProfilePhotoUrl,
             SubmittedOn = x.o.CreatedAt,
@@ -645,6 +647,10 @@ public sealed class OvertimeService : IOvertimeService
                                   .Sum(x => x.OvertimeMinutes),
                 RejectedMinutes = g.Where(x => x.Status == OvertimeStatus.Rejected)
                                    .Sum(x => x.OvertimeMinutes),
+                // BR-6 / ISSUE-080: surface UNAPPROVED minutes (pre-approval required, none matched) that
+                // were counted in RecordCount but previously omitted from every minute column.
+                UnapprovedMinutes = g.Where(x => x.Status == OvertimeStatus.Unapproved)
+                                     .Sum(x => x.OvertimeMinutes),
                 RecordCount = g.Count(),
             })
             .OrderBy(r => r.EmployeeName)
@@ -655,6 +661,7 @@ public sealed class OvertimeService : IOvertimeService
             ApprovedMinutes = items.Sum(i => i.ApprovedMinutes),
             PendingMinutes = items.Sum(i => i.PendingMinutes),
             RejectedMinutes = items.Sum(i => i.RejectedMinutes),
+            UnapprovedMinutes = items.Sum(i => i.UnapprovedMinutes),
             RecordCount = items.Sum(i => i.RecordCount),
         };
 
@@ -919,6 +926,8 @@ public sealed class OvertimeService : IOvertimeService
         Reason = o.Reason,
         ManagerComment = o.ManagerComment,
         CreatedAt = o.CreatedAt,
+        DailyCapApplied = o.DailyCapApplied,        // FR-8 / ISSUE-079
+        WeeklyCapExceeded = o.WeeklyCapExceeded,     // FR-8 / ISSUE-079
     };
 
     private sealed class DecisionContext

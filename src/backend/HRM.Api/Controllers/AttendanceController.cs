@@ -438,10 +438,12 @@ public sealed class AttendanceController : ControllerBase
     /// GET /api/v1/attendance/employees/{employeeId}/shift?date=yyyy-MM-dd
     /// Resolves the shift effective for an employee on the given date (defaults to today), resolving
     /// rotation and falling back to the tenant default when no assignment exists (US-ATT-005 FR-5/FR-7).
-    /// Gated by Attendance.Shift.Manage.
+    /// ISSUE-076: HR (Attendance.Shift.Manage) may resolve any employee's shift; an employee holding
+    /// Attendance.View.Own may resolve ONLY their own — the handler enforces the self-scope and returns
+    /// 403 if a non-manager requests another employee's shift.
     /// </summary>
     [HttpGet("employees/{employeeId:guid}/shift")]
-    [RequirePermission("Attendance.Shift.Manage")]
+    [RequirePermission("Attendance.Shift.Manage", "Attendance.View.Own")]
     [ProducesResponseType(typeof(ApiResponse<ResolvedShiftDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]

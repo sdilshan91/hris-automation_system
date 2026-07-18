@@ -160,11 +160,8 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
                 PayrollCalendarResolver.For(holidaysByLocation, emp.LocationId));
 
             // Core rollup from the summary (non-terminated). Terminated employees have no summary row
-            // (they were excluded) — compute their minimal rollup from the overtime + a zeroed base;
-            // present/absent/lop for terminated employees up to the cutoff are not re-derived here
-            // (the summary is the source of truth for active staff; terminated-employee LOP is a
-            // payroll edge handled when the cutoff applies). Document: terminated rows carry overtime
-            // and working-days; present/absent/lop default to 0 absent the summary row.
+            // (they were excluded), so their present/absent/lop are re-derived below up to the BR-7 cutoff
+            // (ISSUE-091) using the same day-by-day engine as active staff — not zeroed.
             var ot = overtimeByEmp.GetValueOrDefault(emp.Id);
             int approvedOtMinutes = ot?.TotalMinutes ?? 0;
             var multiplierDetails = ot?.ByMultiplier ?? new Dictionary<string, int>();
@@ -187,17 +184,24 @@ public sealed class AttendancePayrollService : IAttendancePayrollService
             }
             else if (emp.Status == EmployeeStatus.Terminated)
             {
+                // BR-7 / ISSUE-091: re-derive present/absent/LOP up to the last working day (effectiveEnd)
+                // instead of hard-zeroing them, so a terminated employee's pre-termination LOP still feeds
+                // payroll. Reuses the summary engine (same rules as active staff).
+                var termResult = await _summaryService.ComputeForEmployeeUpToAsync(
+                    emp.Id, year, month, effectiveEnd, cancellationToken);
+                var term = termResult.IsSuccess ? termResult.Value : null;
+
                 rows.Add(new AttendancePayrollRowDto
                 {
                     EmployeeId = emp.Id,
                     Period = period,
                     TotalWorkingDays = workingDays,
-                    TotalPresentDays = 0m,
-                    TotalAbsentDays = 0m,
-                    LopDays = 0m,
-                    LateDeductionDays = 0m,
+                    TotalPresentDays = term?.PresentDays ?? 0m,
+                    TotalAbsentDays = term?.AbsentDays ?? 0m,
+                    LopDays = term?.LopDays ?? 0m,
+                    LateDeductionDays = term is null ? 0m : LateDeductionPortion(term),
                     ApprovedOvertimeMinutes = approvedOtMinutes,
-                    TotalWorkMinutes = 0,
+                    TotalWorkMinutes = term?.WorkMinutes ?? 0,
                     OvertimeMultiplierDetails = multiplierDetails,
                 });
             }
