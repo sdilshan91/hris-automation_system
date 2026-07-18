@@ -4856,7 +4856,7 @@ MCP `lighthouse_audit` for the a11y score). **Two new findings (BUG-096, ISSUE-2
 - **ID:** BUG-096
 - **Type:** BUG (accessibility defect — WCAG 2.1 AA 1.4.3 Contrast (Minimum) failure on a primary public page)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #368, 2026-07-18)
 - **Layer:** FE
 - **Module / US / TC:** Authentication / US-AUTH-010 / TC-AUTH-109 (login-area WCAG 2.1 AA accessibility)
 - **Title:** Two normal-size text elements on the login screen use foreground `#a3a3a3` (Tailwind `neutral-400`) on a near-white background, giving contrast ratios of **2.52:1** ("or" divider span over `#ffffff`) and **2.41:1** (copyright `<p>` over `#fafafa`) — both well under the WCAG 2.1 AA **4.5:1** minimum for text < 18pt.
@@ -4870,7 +4870,7 @@ MCP `lighthouse_audit` for the a11y score). **Two new findings (BUG-096, ISSUE-2
 - **ID:** ISSUE-204
 - **Type:** ISSUE (broken asset reference / missing route — degrades branding + console hygiene; not a functional blocker)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** PARTIALLY RESOLVED (FE fallback PR #368; BE emits a dead relative logo URL → needs-BE) 2026-07-18
 - **Layer:** FE
 - **Module / US / TC:** Admin Console (tenant branding) / US-ADM-006 (tenant settings/branding) / TC-ADM-006-17 (settings UI) — also visible on dashboard render (US-RPT-005 / TC-RPT-005-12)
 - **Title:** The tenant logo is rendered from a URL of the form `http://<subdomain>:4200/{tenantId}/branding/logo.png` (acme: `/019ef3ba-ffb7-7eec-b24f-7ad806ca1cb9/branding/logo.png`). No asset exists at that path and nothing serves the route, so the browser gets a **404** for the brand `<img>` on the login page AND **twice** on the dashboard (sidebar + topbar tenant marks). The accessibility tree shows `image "Acme"` with a broken `src`, i.e. the alt text saves the a11y tree but the actual logo never displays.
@@ -4883,7 +4883,7 @@ MCP `lighthouse_audit` for the a11y score). **Two new findings (BUG-096, ISSUE-2
 - **ID:** ISSUE-205
 - **Type:** ISSUE (accessibility defect — WCAG 2.1 AA 2.5.3 Label in Name failure)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #368, 2026-07-18)
 - **Layer:** FE
 - **Module / US / TC:** Reports & Analytics (dashboard) / US-RPT-005 / TC-RPT-005-12 (dashboard ARIA / a11y)
 - **Title:** Several interactive dashboard elements have an `aria-label`/accessible name that does not include their **visible** text. The sidebar `button.tenant-trigger` and the topbar `button.mobile-tenant-trigger` display "Acme Corp" but expose accessible name "Switch organization"; the `section.card-notion` KPI cards (clickable) carry a generic accessible name that omits the visible card title. WCAG 2.5.3 requires the accessible name to contain the visible label text (so "click Acme Corp" voice commands work).
@@ -5041,7 +5041,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Severity rationale:** MED — the list itself renders and is usable, but two contained features are broken on a primary admin screen: pagination is non-functional/misleading (would break navigation once the tenant exceeds one page) and the role filter is dead. Not HIGH because the core list + per-row actions work and the tenant currently fits one page.
 
 ### ISSUE-211 — Admin → Users page renders raw i18n keys `userManagement.status.Active` / `userManagement.status.Disabled` instead of translated status labels
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (FE normalized, PR #368; FE↔BE status-casing pin = needs-decision) 2026-07-18
 - **Layer:** FE (i18n)
 - **Module / US / TC:** Admin Console / US-ADM-005 / Users list UI
 - **Title:** Every user row's Status cell (and the corresponding aria text) shows the literal translation key `userManagement.status.Active` / `userManagement.status.Disabled` rather than "Active" / "Disabled".
@@ -5075,7 +5075,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-213 — Audit-log table is missing `scope` on `<th>` and a `<caption>`/`aria-label` (WCAG 1.3.1 best-practice nit)
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #368, 2026-07-18)
 - **Layer:** FE
 - **Module / US / TC:** Notifications & Audit / US-NTF-005 / TC-NTF-005-11
 - **Title:** The `/admin/audit-log` data table renders semantically (thead + th + tbody) and all filter controls are labeled, but the `<th>` header cells carry no `scope="col"` and the table has no `<caption>`/`aria-label`, so a screen-reader cannot reliably associate data cells with their column header on a 6-column grid.
@@ -5103,7 +5103,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-215 — Onboarding pages: muted helper/meta text fails WCAG 1.4.3 contrast (`text-neutral-400` #a3a3a3 on white = 2.52:1)
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #368, 2026-07-18)
 - **Layer:** FE
 - **Module / US / TC:** Onboarding / Offboarding · US-ONB-001 · TC-ONB-001-12 (template-list + template-builder a11y)
 - **Title:** On the onboarding **template list** (`/onboarding/templates`) and **template builder** (`/onboarding/templates/new`), the muted helper / meta text rendered with `text-neutral-400` (`#a3a3a3` on `#ffffff`) measures a 2.52:1 contrast ratio — below the WCAG 2.1 AA 4.5:1 minimum for normal-size text. Affected: the per-card task-count line ("1 task" / "8 tasks", `p.mt-3.text-xs.text-neutral-400`) on the list, and the builder's field `.hint` paragraphs ("Leave empty to apply to all (universal).") plus the `text-neutral-400` inline helper.
@@ -5122,7 +5122,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-105
 - **Type:** BUG (accessibility defect — WCAG 2.1 AA 4.1.2 Name, Role, Value failure on the monitoring usage gauges)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #368, 2026-07-18)
 - **Layer:** FE
 - **Module / US / TC:** Admin Console / US-ADM-002 / **TC-ADM-002-13** (Monitoring WCAG 2.1 AA — step 3: gauges must announce their percentage and warning/breach state to a screen reader)
 - **Title:** On `/admin/monitoring`, every per-tenant employee usage gauge is a `<div role="progressbar" aria-valuemin="0" aria-valuemax="100">` with **no** `aria-label` / `aria-labelledby`, so its accessible name is empty. A screen-reader user reaches the gauge and hears only "progressbar" — not which tenant, which metric (employees), nor the value (`28 / 200`). The visible "28 / 200" text sits in a sibling `<generic>` that is not wired to the progressbar's name. This is exactly the TC-ADM-002-13 step-3 requirement (gauges announce their percentage / warning / breach state) and it fails.
@@ -5135,7 +5135,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-216
 - **Type:** ISSUE (UI/data-rendering nit — empty interpolation for a null limit)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #368, 2026-07-18)
 - **Layer:** FE
 - **Module / US / TC:** Admin Console / US-ADM-001 / **TC-ADM-001-11** (Create Tenant form — observed during the a11y render pass)
 - **Title:** On the Create Tenant form (`/admin/tenants/create`) the subscription-plan radio for **Enterprise** ($199.00/mo) shows the entitlement line as "**Up to  employees**" — the employee-limit number is blank. Starter ("Up to 25 employees") and Professional ("Up to 200 employees") render correctly. The Enterprise plan has an unlimited / `null` `max_employees` (the monitoring usage table renders the same plan's tenants as `0 / ∞`), so the form's `Up to {{limit}} employees` template interpolates an empty value instead of "∞" / "Unlimited".
