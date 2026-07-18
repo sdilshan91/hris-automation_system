@@ -1697,7 +1697,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-063 — Lockout notification is a stub: the Hangfire job fires but `LockoutNotificationService` only logs a `[LOCKOUT-EMAIL-STUB]` line (no real SMTP send), and the spec'd email content/data (subject, instructions, tenant name, lockout duration text, support-contact link) is a TODO not built; the service isn't even passed tenant name or support link (FR-8 / NFR-3 partial)
-- **Type / Severity / Status:** ISSUE · LOW · PARTIALLY RESOLVED (content built PR #367; real SMTP delivery + tenant-name → US-NTF-006) 2026-07-18
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #374, merged 2026-07-19 — login-time tenant name now threaded through the lockout seam into BuildContent; +3 TCs incl. an AuthService-path plumbing assert. Real SMTP delivery remains the ops/SMTP-config step) 2026-07-18
 - **Layer:** BE
 - **Module / US / TC:** Authentication · US-AUTH-010 · TC-AUTH-100 (steps 5-7), TC-AUTH-026 (step 10), FR-8
 - **Title:** FR-8 / TC-100 require a lockout email within 60 s containing the user's name, lockout duration, wait/contact instructions, tenant name, and a support-contact link. The dispatch *seam* is correct (lockout enqueues `ILockoutNotificationService.SendLockoutNotificationAsync` via `_backgroundJobClient.Enqueue`), but the implementation, when `Smtp:Host` is unset (the dev/QA default), only logs a stub and sends nothing; even with SMTP configured the body is an explicit `// TODO: Send real SMTP email`. The method signature receives only `(email, displayName, lockedUntilUtc, durationMinutes)` — tenant name and support link (both required by Data Requirements) are never passed in.
@@ -2077,7 +2077,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** report only — when the day has an approved half-day leave, derive the effective half-day window (per the leave's AM/PM half) and pass that to `LateEarlyCalculator.Evaluate` instead of the full shift.
 
 ### ISSUE-087 — FR-5 (per-late notification with MTD count) and FR-7 (chronic-lateness HR escalation) have NO dispatch seam at all — only TODO comments — so TC-ATT-109's "dispatch seam verified" cannot be satisfied
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · PARTIALLY RESOLVED (2026-07-19 — per-late notification is WIRED: AttendanceService clock-in calls NotifyLateAsync→attendance_late event, verified in #374 recon; the finding TODO comment was stale. CHRONIC-lateness escalation deferred → new story, DEFERRED-FOLLOWUPS DF-33)
 - **Layer:** BE
 - **Module / US / TC:** Attendance · US-ATT-008 · TC-ATT-108 (chronic escalation), TC-ATT-109 (late notification seam)
 - **Title:** The late/early path never calls `INotificationDispatcher` (or any seam). FR-5/FR-7 are left as inline TODO comments. The chronic FLAG (`isChronic`) and the deduction FLAG are implemented, but the *notification* half is wholly absent — not even a no-op seam — so a test asserting "the dispatch seam fired with the MTD count" has nothing to observe.
@@ -2533,7 +2533,7 @@ number per type and sets `Status: OPEN`. It never edits an existing finding's fi
 - **Suggested direction (NOT applied):** none -- report only.
 
 ### ISSUE-110 -- Stage-transition notifications are synchronous log-only (not queued via Hangfire/outbox, NFR-5) and perform no BR-5 template variable substitution
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED-BY-VERIFICATION (2026-07-19 — STALE finding: RealRecruitmentNotificationService is the DI default and NotifyStageChangedAsync dispatches application_stage_changed with BR-5 substitution; LogOnly impl retained for tests only. Verified in #374 recon)
 - **Layer:** BE
 - **Module / US / TC:** Recruitment · US-REC-004 · TC-REC-004-10 (FR-6/NFR-5/BR-5) -- TC PASS-conditional
 - **Title:** Each stage transition fires IRecruitmentNotificationService.NotifyStageChangedAsync, but the only implementation is LogOnlyRecruitmentNotificationService, which writes a single _logger.LogInformation line inside the request (fire-and-forget, non-blocking) -- there is NO outbox/notification row and NO Hangfire job enqueued (NFR-5 "queued via Hangfire for async delivery"), and NO BR-5 template variable substitution (the log carries only stage names + applicant email; {applicantName}/{vacancyTitle}/{companyName} are never resolved or rendered).
@@ -5648,7 +5648,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-229
 - **Type:** ISSUE (behavioral/spec gap — documented deferral, defense-in-depth)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #374, merged 2026-07-19 — Tenant.PayrollFromEmail configurable sender + migration; ResolveFromAddressAsync returns it or null→system default; round-trips through GET, 400-on-invalid; +4 TCs)
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-011 / TC-PAY-011-08 (step 4), TC-PAY-ISO-044 (step 2). FR-8, BR-4.
 - **Title:** BR-4 requires each tenant's payslip email "From" to use the tenant's configured sender domain (e.g. `payroll@acme.yourhrm.com`), else the system default. `PayslipDistributionRunner.ResolveFromAddress()` (`src/backend/HRM.Infrastructure/Services/PayslipDistributionRunner.cs:314`) is hard-coded `=> null` with the comment "No tenant sender-domain config surface exists yet, so this returns null (the sender uses the system default)." There is no tenant payroll-settings entity/column for a sender address, so the "tenant configured sender domain" half of BR-4 is unimplementable through any surface — every tenant falls back to the system default From. (Cross-tenant sender BLEED is NOT possible — since the value is always the constant default, no tenant's configured domain can leak into another's mail; the isolation guarantee of TC-PAY-ISO-044 step 2 still holds trivially.)

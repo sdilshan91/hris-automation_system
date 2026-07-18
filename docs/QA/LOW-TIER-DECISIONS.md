@@ -27,11 +27,11 @@ then implement the chosen ones in a follow-up batch.
 - **ISSUE-248-style change-password (done #367)** — no decision; noted resolved.
 
 ## D. Delivery / notification-dependent (US-NTF-006 family)
-- **ISSUE-087 (Attendance)** — late/chronic-lateness notification dispatch seam absent. · *rec: fold into US-NTF-006.*
-- **ISSUE-110 (Recruitment)** — stage-transition notifications sync log-only + no BR-5 template substitution. · *rec: US-NTF-006.*
-- **ISSUE-229 (Payroll)** — payslip tenant sender-domain not implementable (ResolveFromAddress null). · *rec: US-NTF-006 delivery wiring.*
+- ✅ **per-late DONE (#374 verify); chronic→DF-33** **ISSUE-087 (Attendance)** — late/chronic-lateness notification dispatch seam absent. · *rec: fold into US-NTF-006.*
+- ✅ **DONE (#374, already-wired verified)** **ISSUE-110 (Recruitment)** — stage-transition notifications sync log-only + no BR-5 template substitution. · *rec: US-NTF-006.*
+- ✅ **DONE (#374)** **ISSUE-229 (Payroll)** — payslip tenant sender-domain not implementable (ResolveFromAddress null). · *rec: US-NTF-006 delivery wiring.*
 - **ISSUE-108 (Recruitment)** — interview-stage soft-gate warning seam absent. · *rec: product call (warn vs block on stage move w/o interview).*
-- **ISSUE-063 lockout tenant-name (Auth)** — content built (#367); tenant-name enrichment needs the seam signature. · *rec: fold into US-NTF-006 delivery.*
+- ✅ **DONE (#374)** **ISSUE-063 lockout tenant-name (Auth)** — content built (#367); tenant-name enrichment needs the seam signature. · *rec: fold into US-NTF-006 delivery.*
 
 ## E. Data-model / BA-gated
 - **ISSUE-293 (Core-HR)** — National ID not modeled on Employee → PII-read audit can't cover it. · *rec: needs-BA (model the field?).*
