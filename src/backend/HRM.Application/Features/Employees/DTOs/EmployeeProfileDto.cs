@@ -40,6 +40,11 @@ public sealed record EmployeeProfileDto
     public bool IsActive { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+    /// <summary>
+    /// ISSUE-293: national identity number, PII — MASKED (last-4, e.g. <c>******7890</c>). Null when not captured.
+    /// The full plaintext is served only via the audited reveal endpoint (Employee.View.All-gated).
+    /// </summary>
+    public string? NationalId { get; init; }
 
     /// <summary>
     /// Optimistic concurrency token (PostgreSQL xmin). Clients must send this

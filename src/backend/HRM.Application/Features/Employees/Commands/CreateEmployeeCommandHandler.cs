@@ -37,6 +37,7 @@ public sealed class CreateEmployeeCommandHandler
             UserId = request.UserId,
             Fte = request.Fte,
             WorkArrangement = request.WorkArrangement,
+            NationalId = request.NationalId,
         };
 
         return _employeeService.CreateAsync(createRequest, cancellationToken);

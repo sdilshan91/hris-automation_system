@@ -70,6 +70,16 @@
 
 ## Findings
 
+### ISSUE-319 — FE `updateProfileSection` PATCHes `{id}/sections/{section}`, a route the BE does not expose → every employee-profile section edit 404s
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** FE↔BE contract (URL mismatch)
+- **Module / US / TC:** Core HR / US-CHR-002 (profile edit) / (new TC needed)
+- **Title:** The Angular `EmployeeService.updateProfileSection` (`employee.service.ts:~211`) sends `PATCH /api/v1/tenant/employees/{id}/sections/{section}` with `{ xmin, data }`, but `EmployeesController` exposes **only** `PATCH {id}/profile` taking a full `UpdateEmployeeProfileRequest { RowVersion, PersonalInfo, ContactInfo, … }` — there is NO `sections/{section}` route anywhere in the backend. Every inline per-section profile edit (personal-info, contact-info, etc.) therefore hits a non-existent route and 404s.
+- **Root cause (~99%, code + confirmed by `@integration-enforcer`):** the FE was built against an assumed per-section endpoint (`employee.service.ts` comment literally says "Endpoint assumption") that was never implemented on the BE. Discovered while wiring ISSUE-293 (National ID edit rides this same broken path). Karma specs mock HTTP so never caught the wrong URL; there is no E2E covering it.
+- **Reproduction steps:** open an employee profile → edit any section (e.g. Personal Info) → Save → the PATCH to `.../sections/personal-info` returns 404; no field persists.
+- **Severity rationale:** HIGH — inline profile-section editing (a core US-CHR-002 flow) does not persist at all; affects ALL personal/contact-info edits, not just National ID. Not a data-corruption or security issue, so not Critical.
+- **Suggested direction (needs-decision, NOT applied):** align the FE `updateProfileSection` to call `PATCH {id}/profile` with the section wrapped into `UpdateEmployeeProfileRequest` (map `personal-info`→`PersonalInfo`, `contact-info`→`ContactInfo`, …, carry `RowVersion` from xmin) — OR add a `PATCH {id}/sections/{section}` endpoint on the BE. A dedicated fix with its own verification across every section (deferred from ISSUE-293 to keep that PR surgical → DF-36). Report only.
+
 ### ISSUE-316 — `RejectionReason` enum columns stay strict, so a corrupt `rejection_reason` still 500s the applicant board/detail (ISSUE-231 residual)
 - **ID:** ISSUE-316
 - **Type:** ISSUE (robustness / defense-in-depth)

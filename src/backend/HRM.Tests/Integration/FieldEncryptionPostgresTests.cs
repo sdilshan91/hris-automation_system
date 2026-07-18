@@ -107,6 +107,7 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
             FirstName = "Ada", LastName = "Lovelace", Email = suffix + "@t.com",
             Status = EmployeeStatus.Active, DepartmentId = deptId, JobTitleId = jobTitleId,
             DateOfJoining = new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            NationalId = "SL-CIPHER-001", // ISSUE-293: PII encrypted at rest — asserted ciphertext below
         });
         db.AppraisalCycles.Add(new AppraisalCycle
         {
@@ -160,6 +161,13 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
             var rawBonus = await RawScalarAsync(db, "recommendation", "bonus_amount", recId);
             rawBonus.Should().StartWith("enc:v1:");
             rawBonus.Should().NotContain("7500");
+
+            // ISSUE-293: Employee.NationalId is ciphertext at rest — this is the WIRING proof (if
+            // EmployeeConfiguration.ApplyEncryption were NOT invoked in AppDbContext, this column would be
+            // plaintext and both assertions would fail). InMemory round-trip can't catch that; this can.
+            var rawNationalId = await RawScalarAsync(db, "employees", "national_id", empId);
+            rawNationalId.Should().StartWith("enc:v1:");
+            rawNationalId.Should().NotContain("CIPHER");
         }
 
         // A fresh EF read decrypts back to the originals.
@@ -171,6 +179,9 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
 
             var rec = await db.Recommendations.SingleAsync(r => r.Id == recId);
             rec.BonusAmount.Should().Be(7500.25m);
+
+            var emp = await db.Employees.SingleAsync(e => e.Id == empId);
+            emp.NationalId.Should().Be("SL-CIPHER-001"); // decrypts back on read
         }
     }
 

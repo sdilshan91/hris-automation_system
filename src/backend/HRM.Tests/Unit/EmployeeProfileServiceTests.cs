@@ -29,6 +29,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     private readonly IFileStorage _fileStorage;
     private readonly IVirusScanner _virusScanner;
     private readonly ICustomFieldService _customFieldService;
+    private readonly IPayrollAuditLogger _auditLogger;
     private readonly ILogger<EmployeeService> _logger;
 
     public EmployeeProfileServiceTests()
@@ -56,13 +57,15 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         _customFieldService.ValidateCustomFieldValuesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Application.Common.Models.Result.Success());
 
+        _auditLogger = Substitute.For<IPayrollAuditLogger>();
+
         _logger = Substitute.For<ILogger<EmployeeService>>();
     }
 
     private EmployeeService CreateService(ICurrentUser? currentUser = null)
     {
         var dbContext = TestDbContextFactory.Create(_tenantContext, _dbName);
-        return new EmployeeService(dbContext, _tenantContext, currentUser ?? _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        return new EmployeeService(dbContext, _tenantContext, currentUser ?? _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
     }
 
     private HRM.Infrastructure.Persistence.AppDbContext CreateDbContext()
@@ -317,6 +320,33 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         auditLogs[0].BeforeSnapshot.Should().Contain("John");
         auditLogs[0].AfterSnapshot.Should().Contain("Jane");
         auditLogs[0].ChangedBy.Should().Be("hr@test.com");
+    }
+
+    // ── ISSUE-293: updating the National ID persists the new value AND audits it MASKED (never raw PII) ──
+    [Fact]
+    public async Task UpdateProfile_NationalId_PersistsValue_AndAuditsMaskedNotRaw_ISSUE293()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var result = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            PersonalInfo = new PersonalInfoUpdate { NationalId = "SL-777-6789" },
+        });
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+        // The new value is persisted (decrypts back on read).
+        var emp = await db.Employees.IgnoreQueryFilters().SingleAsync(e => e.Id == empId);
+        emp.NationalId.Should().Be("SL-777-6789");
+
+        // The field-audit snapshot records the MASKED value only — the raw National ID must never appear.
+        var audit = await db.EmployeeFieldAuditLogs
+            .SingleAsync(a => a.EmployeeId == empId && a.Section == "PersonalInfo");
+        audit.AfterSnapshot.Should().Contain("6789").And.NotContain("SL-777-6789",
+            "the audit trail masks the National ID, it does not store the raw PII value");
     }
 
     [Fact]
@@ -791,7 +821,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         await SeedTenant(tenantA);
 
         var dbA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+        var serviceA = new EmployeeService(dbA, ctxA, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
         var createResult = await serviceA.CreateAsync(new CreateEmployeeRequest
         {
             FirstName = "Secret", LastName = "Employee", Email = "secret@test.com",
@@ -805,7 +835,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         ctxB.TenantId.Returns(tenantB);
         ctxB.IsResolved.Returns(true);
         var serviceB = new EmployeeService(
-            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _logger);
+            TestDbContextFactory.Create(ctxB, _dbName), ctxB, _currentUser, _fileStorage, _virusScanner, _customFieldService, _auditLogger, _logger);
 
         var result = await serviceB.GetProfileAsync(createResult.Value!.Id);
 

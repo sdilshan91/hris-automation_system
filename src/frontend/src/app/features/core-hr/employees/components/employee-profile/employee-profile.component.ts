@@ -318,6 +318,17 @@ import { ILocation } from '../../../locations/models/location.models';
                         }
                       </select>
                     </div>
+                    <!-- ISSUE-293: National ID — blank means "keep current" -->
+                    <div class="form-field">
+                      <label class="label-notion" for="pi-nationalId">National ID</label>
+                      <input id="pi-nationalId" type="text" formControlName="nationalId" class="input-notion"
+                        maxlength="50" autocomplete="off"
+                        [placeholder]="profile()!.nationalId ? 'Leave blank to keep current' : 'Not set'"
+                        aria-describedby="pi-nationalId-hint" />
+                      <p id="pi-nationalId-hint" class="field-hint">
+                        Stored securely and masked by default. Leave blank to keep the current value.
+                      </p>
+                    </div>
                   </div>
                   <div class="form-actions">
                     <button type="button" class="btn-secondary" (click)="cancelEdit()">Cancel</button>
@@ -343,6 +354,32 @@ import { ILocation } from '../../../locations/models/location.models';
                   <div class="data-field">
                     <dt class="data-label">Gender</dt>
                     <dd class="data-value">{{ profile()!.gender ? genderLabel(profile()!.gender) : 'Not specified' }}</dd>
+                  </div>
+                  <!-- ISSUE-293: National ID — masked by default; audited reveal for Employee.View.All -->
+                  <div class="data-field">
+                    <dt class="data-label">National ID</dt>
+                    <dd class="data-value">
+                      @if (profile()!.nationalId) {
+                        <span class="inline-flex items-center gap-2">
+                          <span class="font-mono">{{ revealedNationalId() ?? profile()!.nationalId }}</span>
+                          @if (canRevealNationalId()) {
+                            @if (revealedNationalId()) {
+                              <button type="button" class="reveal-btn" (click)="hideNationalId()"
+                                aria-label="Hide National ID">
+                                Hide
+                              </button>
+                            } @else {
+                              <button type="button" class="reveal-btn" (click)="revealNationalId()"
+                                [disabled]="isRevealing()" aria-label="Reveal full National ID">
+                                @if (isRevealing()) { Revealing... } @else { Reveal }
+                              </button>
+                            }
+                          }
+                        </span>
+                      } @else {
+                        Not specified
+                      }
+                    </dd>
                   </div>
                 </div>
               }
@@ -1649,6 +1686,14 @@ import { ILocation } from '../../../locations/models/location.models';
         px-2.5 py-1.5 rounded-lg hover:bg-brand-50;
     }
 
+    /* ISSUE-293: compact reveal/hide affordance for the masked National ID */
+    .reveal-btn {
+      @apply inline-flex items-center text-xs font-medium
+        text-brand-600 hover:text-brand-700 transition-colors duration-150
+        px-2 py-0.5 rounded-md hover:bg-brand-50
+        disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
     /* ─── Data display grid ────────────────── */
     .data-grid {
       @apply grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4;
@@ -1817,6 +1862,10 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
 
   // US-CHR-012: Custom fields
   readonly activeCustomFields = signal<ICustomFieldDefinition[]>([]);
+
+  // ISSUE-293: National ID reveal (audited server-side, gated by Employee.View.All)
+  readonly revealedNationalId = signal<string | null>(null);
+  readonly isRevealing = signal(false);
 
   // BUG-113: active work locations for the employment-section Location select
   readonly locations = signal<ILocation[]>([]);
@@ -2263,6 +2312,48 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     return isSectionEditable(section, this.viewerRole());
   }
 
+  // ─── ISSUE-293: National ID reveal ─────────────────────────
+
+  /**
+   * Whether the current user may reveal the full National ID. Gated by the same
+   * `Employee.View.All` permission the backend enforces on the reveal endpoint
+   * (reuses AuthService.hasPermission — the app's single permission-check API).
+   */
+  canRevealNationalId(): boolean {
+    return this.authService.hasPermission('Employee.View.All');
+  }
+
+  /**
+   * Call the audited reveal endpoint and swap the masked display for the full
+   * (decrypted) National ID. Every call is logged server-side.
+   */
+  revealNationalId(): void {
+    if (this.isRevealing() || this.revealedNationalId()) return;
+    this.isRevealing.set(true);
+    this.employeeService
+      .revealNationalId(this.employeeId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.isRevealing.set(false);
+          this.revealedNationalId.set(res.nationalId);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.isRevealing.set(false);
+          this.toastr.error(
+            err.status === 403
+              ? 'You do not have permission to reveal this National ID.'
+              : 'Failed to reveal National ID.'
+          );
+        },
+      });
+  }
+
+  /** Re-mask the National ID in the UI (does not re-fetch). */
+  hideNationalId(): void {
+    this.revealedNationalId.set(null);
+  }
+
   toggleEdit(section: ProfileSection): void {
     if (this.editingSection() === section) {
       this.cancelEdit();
@@ -2295,6 +2386,12 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     if (section === 'employment' && data['locationId'] === '') {
       data['locationId'] = null;
     }
+    // ISSUE-293: the edit field is blank unless the user typed a new ID. Drop an
+    // empty nationalId so an unchanged personal-info save never overwrites the
+    // stored (encrypted) National ID with the masked value shown in the UI.
+    if (section === 'personal-info' && !String(data['nationalId'] ?? '').trim()) {
+      delete data['nationalId'];
+    }
 
     const request: IUpdateSectionRequest = {
       xmin: p.xmin,
@@ -2309,6 +2406,9 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           this.isSaving.set(false);
           this.profile.set(response.profile);
           this.editingSection.set(null);
+          // ISSUE-293: profile (and its masked National ID) changed — drop any
+          // previously revealed value so the UI re-masks until re-revealed.
+          this.revealedNationalId.set(null);
           this.toastr.success('Changes saved successfully.');
         },
         error: (err: HttpErrorResponse) => {
@@ -2374,6 +2474,10 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       lastName: ['', [Validators.required, Validators.maxLength(100)]],
       dateOfBirth: [null],
       gender: [null as EmployeeGender | null],
+      // ISSUE-293: National ID — optional free-text PII. Left blank on edit-open
+      // (never pre-filled with the masked value) so an unchanged save can't
+      // overwrite the stored ID with its own mask.
+      nationalId: ['', [Validators.maxLength(50)]],
     });
 
     this.contactForm = this.fb.group({
@@ -2431,6 +2535,9 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           lastName: p.lastName,
           dateOfBirth: p.dateOfBirth,
           gender: p.gender,
+          // ISSUE-293: always blank — a blank submit means "keep the current ID"
+          // (see saveSection, which strips an empty nationalId from the payload).
+          nationalId: '',
         });
         break;
 

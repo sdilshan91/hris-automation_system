@@ -166,6 +166,15 @@ public sealed class Employee : BaseEntity, IAuditExempt
     public string? BankAccountNumber { get; set; }
 
     /// <summary>
+    /// National / government identity number (ISSUE-293). Free-text (formats vary by country), nullable, max 50.
+    /// PII — ENCRYPTED AT REST via the AES-256-GCM field encryptor (see <c>EmployeeConfiguration.ApplyEncryption</c>);
+    /// MASKED (last-4) by default in DTOs; the full plaintext is served only via the audited
+    /// <c>Employee.NationalId.ViewSensitive</c> reveal path (Employee.View.All-gated). NOT unique — random-nonce
+    /// ciphertext cannot be DB-unique-indexed. Nullable until captured.
+    /// </summary>
+    public string? NationalId { get; set; }
+
+    /// <summary>
     /// PostgreSQL xmin system column, used as an optimistic concurrency token (US-CHR-002 FR-4).
     /// EF Core maps this via UseXminAsConcurrencyToken(). The property is populated on read
     /// and checked on SaveChanges to detect concurrent modifications.

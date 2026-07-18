@@ -101,6 +101,12 @@ export interface IEmployee {
   employmentType: EmploymentType;
   status: EmployeeStatus;
   profilePhotoUrl: string | null;
+  /**
+   * ISSUE-293: National ID — encrypted PII on the backend. Normal GET/list/profile
+   * responses return the MASKED value (last-4 only). Display only; use the reveal
+   * endpoint (Employee.View.All) to obtain the full value.
+   */
+  nationalId?: string | null;
   customFields: Record<string, unknown> | null;
   isActive: boolean;
   createdAt: string;
@@ -124,6 +130,8 @@ export interface ICreateEmployeeRequest {
   locationId?: string | null;
   employmentType: EmploymentType;
   status?: EmployeeStatus;
+  /** ISSUE-293: optional National ID (PII). Sent as free-text; encrypted server-side. */
+  nationalId?: string | null;
   customFields?: Record<string, unknown> | null;
   // Contact info (step 2)
   address?: string | null;
@@ -135,6 +143,16 @@ export interface ICreateEmployeeRequest {
   emergencyContactName?: string | null;
   emergencyContactRelationship?: string | null;
   emergencyContactPhone?: string | null;
+}
+
+/**
+ * ISSUE-293: Response payload from the audited National ID reveal endpoint.
+ * GET /api/v1/tenant/employees/:id/national-id → ApiResponse<{ nationalId }>.
+ * The `nationalId` here is the FULL (decrypted) value; every call is audited
+ * server-side and gated by the `Employee.View.All` permission.
+ */
+export interface IRevealNationalIdResponse {
+  nationalId: string;
 }
 
 /** Draft save payload — partial data for any step */

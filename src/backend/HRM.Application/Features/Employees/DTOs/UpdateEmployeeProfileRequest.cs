@@ -56,6 +56,13 @@ public sealed record PersonalInfoUpdate
     public string? LastName { get; init; }
     public DateTime? DateOfBirth { get; init; }
     public Gender? Gender { get; init; }
+    /// <summary>
+    /// ISSUE-293: national identity number (free-text, max 50). PII, HR-writable only (same field-level
+    /// permission as the rest of PersonalInfo — read-only for Employee role per AC-4). Null leaves the current
+    /// value unchanged. Stored encrypted at rest; the audit interceptor redacts <c>national_id</c> via
+    /// SensitiveFieldMasker, so the before/after audit JSON never carries the plaintext.
+    /// </summary>
+    public string? NationalId { get; init; }
 }
 
 /// <summary>

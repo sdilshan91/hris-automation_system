@@ -233,6 +233,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // ApplyConfigurationsFromAssembly scan above is unaffected).
         Configurations.PipConfiguration.ApplyEncryption(modelBuilder.Entity<Pip>(), _fieldEncryptor);
         Configurations.RecommendationConfiguration.ApplyEncryption(modelBuilder.Entity<Recommendation>(), _fieldEncryptor);
+        // ISSUE-293: Employee.NationalId PII encrypted at rest (same wiring rule — a converter in the
+        // parameterless EmployeeConfiguration.Configure alone would silently store PLAINTEXT).
+        Configurations.EmployeeConfiguration.ApplyEncryption(modelBuilder.Entity<Employee>(), _fieldEncryptor);
 
         // Global query filters for tenant isolation
         modelBuilder.Entity<UserTenant>()

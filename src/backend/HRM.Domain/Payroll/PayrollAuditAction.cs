@@ -57,6 +57,10 @@ public static class PayrollAuditAction
     // is queryable together. The After JSON NAMES the accessed fields but stores NO values.
     public const string PayslipViewSensitive = "Payslip.ViewSensitive";
     public const string RecommendationViewSensitive = "Recommendation.ViewSensitive";
+    // ISSUE-293 (Core-HR PII reveal): an authorized (Employee.View.All) unmask of an employee's national ID.
+    // Same ".ViewSensitive" suffix so every PII-access audit is queryable together. The After JSON NAMES the
+    // accessed field ("nationalId") but stores NO value.
+    public const string EmployeeNationalIdViewSensitive = "Employee.NationalId.ViewSensitive";
 
     /// <summary>The set of resource-type strings used by payroll audit entries (§7 resource_type).</summary>
     public static class ResourceType
@@ -73,6 +77,8 @@ public static class PayrollAuditAction
         // BUG-083 sensitive-reveal resource types.
         public const string Payslip = "Payslip";
         public const string Recommendation = "Recommendation";
+        // ISSUE-293 sensitive-reveal resource type (Core-HR employee PII).
+        public const string Employee = "Employee";
     }
 
     /// <summary>

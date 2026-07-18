@@ -61,7 +61,7 @@ public sealed class EmployeeProfileViewAuditWriteTests
 
     private EmployeeService CreateService() =>
         new(TestDbContextFactory.Create(_tenantContext, _dbName), _tenantContext, _currentUser,
-            _fileStorage, _virusScanner, _customFieldService, _logger);
+            _fileStorage, _virusScanner, _customFieldService, Substitute.For<IPayrollAuditLogger>(), _logger);
 
     private async Task<Guid> SeedEmployee()
     {

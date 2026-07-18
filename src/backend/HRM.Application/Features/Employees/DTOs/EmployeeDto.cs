@@ -45,6 +45,22 @@ public sealed record EmployeeDto
     public bool IsActive { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+    /// <summary>
+    /// ISSUE-293: national identity number, PII — MASKED (last-4, e.g. <c>******7890</c>) in this DTO. Null when
+    /// not captured. The full plaintext is served only via the audited reveal endpoint
+    /// (GET .../employees/{id}/national-id, Employee.View.All-gated).
+    /// </summary>
+    public string? NationalId { get; init; }
+}
+
+/// <summary>
+/// ISSUE-293: result of the audited national-ID reveal endpoint. Carries the FULL decrypted plaintext (or null
+/// when not captured). Served only to Employee.View.All holders and always writes an
+/// <c>Employee.NationalId.ViewSensitive</c> audit row (naming the field, never the value).
+/// </summary>
+public sealed record NationalIdRevealDto
+{
+    public string? NationalId { get; init; }
 }
 
 /// <summary>
@@ -90,4 +106,8 @@ public sealed record CreateEmployeeRequest
     public Guid? LocationId { get; init; }
     public string? CustomFields { get; init; }
     public Guid? UserId { get; init; }
+    /// <summary>
+    /// ISSUE-293: national identity number (free-text, max 50, PII). Stored encrypted at rest. Optional at create.
+    /// </summary>
+    public string? NationalId { get; init; }
 }

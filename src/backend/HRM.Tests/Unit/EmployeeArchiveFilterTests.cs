@@ -48,7 +48,8 @@ public sealed class EmployeeArchiveFilterTests
         cf.ValidateCustomFieldValuesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(HRM.Application.Common.Models.Result.Success());
         return new EmployeeService(Db(), _tenantContext, hr,
-            Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(), cf, NullLogger<EmployeeService>.Instance);
+            Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(), cf,
+            Substitute.For<IPayrollAuditLogger>(), NullLogger<EmployeeService>.Instance);
     }
 
     private async Task SeedMasterDataAsync()

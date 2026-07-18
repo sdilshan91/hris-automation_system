@@ -110,7 +110,7 @@ public sealed class ApplicantConversionRetryStrategyTests : IAsyncLifetime
 
         var employeeService = new EmployeeService(
             db, tenantContext, currentUser, fileStorage, virusScanner, customFields,
-            NullLogger<EmployeeService>.Instance);
+            Substitute.For<IPayrollAuditLogger>(), NullLogger<EmployeeService>.Instance);
 
         return new ApplicantConversionService(
             db, tenantContext, currentUser, employeeService,

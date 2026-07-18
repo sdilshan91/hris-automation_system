@@ -69,6 +69,27 @@ public sealed class EmployeesController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/tenant/employees/{id}/national-id
+    /// ISSUE-293: reveals the FULL decrypted national ID for an employee (PII un-mask). Gated by
+    /// Employee.View.All and writes an Employee.NationalId.ViewSensitive audit row on every authorized access.
+    /// The normal EmployeeDto/profile only expose the MASKED (last-4) value. Returns { nationalId: "..." }.
+    /// </summary>
+    [HttpGet("{id:guid}/national-id")]
+    [RequirePermission("Employee.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<NationalIdRevealDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevealNationalId(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RevealNationalIdQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<NationalIdRevealDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/tenant/employees/{id}/profile
     /// Gets a comprehensive employee profile with all sections (US-CHR-002 AC-1).
     /// Includes emergency contacts, employment history, and concurrency token.
@@ -133,7 +154,7 @@ public sealed class EmployeesController : ControllerBase
             request.DateOfJoining, request.DepartmentId, request.JobTitleId,
             request.EmploymentType, request.Status, request.Location,
             request.LocationId, request.CustomFields, request.UserId,
-            request.Fte, request.WorkArrangement);
+            request.Fte, request.WorkArrangement, request.NationalId);
 
         var result = await _mediator.Send(command, cancellationToken);
 
