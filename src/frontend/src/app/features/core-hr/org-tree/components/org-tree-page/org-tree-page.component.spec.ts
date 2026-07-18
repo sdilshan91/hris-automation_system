@@ -198,11 +198,17 @@ describe('OrgTreePageComponent', () => {
     httpMock.verify();
   });
 
+  // ISSUE-207: the org-tree GET endpoint returns { nodes, view, reportingViewAvailable },
+  // not a bare array — the service projects `.nodes`. Flush the real envelope shape.
+  function orgResult(nodes: IOrgTreeNode[]) {
+    return { nodes, view: 'department', reportingViewAvailable: false };
+  }
+
   function flushInitialLoad(nodes: IOrgTreeNode[] = mockNodes): void {
     const req = httpMock.expectOne(
       (r) => r.url === baseUrl && r.params.get('view') === 'department'
     );
-    req.flush(nodes);
+    req.flush(orgResult(nodes));
     fixture.detectChanges();
   }
 
@@ -222,7 +228,7 @@ describe('OrgTreePageComponent', () => {
         r.params.get('depth') === '2'
     );
     expect(req.request.method).toBe('GET');
-    req.flush(mockNodes);
+    req.flush(orgResult(mockNodes));
     fixture.detectChanges();
 
     expect(component.treeRoots().length).toBe(1);
@@ -279,7 +285,7 @@ describe('OrgTreePageComponent', () => {
         r.params.get('view') === 'reporting' &&
         r.params.get('depth') === '2'
     );
-    req.flush([]);
+    req.flush(orgResult([]));
     fixture.detectChanges();
   });
 
@@ -298,7 +304,7 @@ describe('OrgTreePageComponent', () => {
 
     component.switchView('reporting');
     const req = httpMock.expectOne((r) => r.url === baseUrl);
-    req.flush([]);
+    req.flush(orgResult([]));
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
@@ -326,7 +332,7 @@ describe('OrgTreePageComponent', () => {
         r.params.get('parentId') === 'dept-3' &&
         r.params.get('depth') === '1'
     );
-    req.flush([
+    req.flush(orgResult([
       {
         nodeId: 'dept-5',
         nodeType: 'department',
@@ -337,7 +343,7 @@ describe('OrgTreePageComponent', () => {
         childrenCount: 0,
         parentId: 'dept-3',
       },
-    ]);
+    ]));
     tick();
     fixture.detectChanges();
 
@@ -509,7 +515,7 @@ describe('OrgTreePageComponent', () => {
     expect(component.selectedNode()).toBeNull();
 
     const req = httpMock.expectOne((r) => r.url === baseUrl);
-    req.flush([]);
+    req.flush(orgResult([]));
   });
 
   it('should show 404-specific message when endpoint not found', () => {
