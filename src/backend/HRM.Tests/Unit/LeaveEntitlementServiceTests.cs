@@ -364,8 +364,8 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
         var result = await svc.ComputeEffectiveEntitlementAsync(_employeeId, _leaveTypeId, 2026);
 
         result.IsSuccess.Should().BeTrue();
-        // Default 14, pro-rated: 184/365 * 14 = 7.06
-        result.Value!.ProratedEntitlementDays.Should().Be(7.06m);
+        // ISSUE-034 month-fraction: July joiner → Jul–Dec = 6 months, 14 × 6/12 = 7.00
+        result.Value!.ProratedEntitlementDays.Should().Be(7.00m);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -474,7 +474,7 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
 
         // Explicit anchors so proration is demonstrably exercised (not all pairs full-year):
         batch[(_employeeId, _leaveTypeId)].Should().Be(30m);   // John: override 30, full year
-        batch[(janeId, _leaveTypeId)].Should().Be(10.08m);     // Jane: rule 20 * 184/365 = 10.08 (half-up)
+        batch[(janeId, _leaveTypeId)].Should().Be(10.00m);     // Jane (Jul-1): ISSUE-034 month-fraction 20 × 6/12 = 10.00
     }
 
     // ══════════════════════════════════════════════════════════════

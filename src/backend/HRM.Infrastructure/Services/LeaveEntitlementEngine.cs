@@ -126,10 +126,16 @@ internal static class LeaveEntitlementEngine
             return 0m;
         }
 
-        int totalDaysInYear = (yearEnd - yearStart).Days + 1; // 365 or 366
-        int remainingDays = (yearEnd - effectiveStart).Days + 1;
+        // ISSUE-034 (US-LV-002 FR-3/AC-4, TC-LV-029): pro-rate by MONTH FRACTION, not an exact day-count ratio.
+        // The join month is counted as a FULL month (user decision 2026-07-19), and "months" are measured
+        // relative to the (calendar-OR-fiscal) LEAVE YEAR — so an Apr–Mar tenant pro-rates over its own months.
+        // A July-1 joiner in a Jan–Dec year → base × 6/12 (Jul–Dec inclusive), matching the spec's 10.00 for a
+        // 20-day annual (the day-count ratio gave 10.08). monthsElapsed is the whole months from the leave-year
+        // start to the join month; remainingMonths counts the join month through year-end inclusive.
+        int monthsElapsed = (effectiveStart.Year - yearStart.Year) * 12 + (effectiveStart.Month - yearStart.Month);
+        int remainingMonths = 12 - monthsElapsed;
 
-        decimal ratio = (decimal)remainingDays / totalDaysInYear;
+        decimal ratio = (decimal)remainingMonths / 12m;
         decimal prorated = fullYearEntitlement * ratio * fte;
 
         // Round to 2 decimal places, half-up (MidpointRounding.AwayFromZero).

@@ -196,7 +196,7 @@ public sealed class LeaveEntitlementEngineTests
             fiscalYearStartMonth: LeaveYear.CalendarStartMonth,
             fte: 1.0m);
 
-        result.Should().Be(10.08m); // 184/365 * 20 = 10.0822 -> 10.08 (half-up 2dp)
+        result.Should().Be(10m); // ISSUE-034: month-fraction — Jul–Dec = 6 months, 20 × 6/12 = 10.00 (matches the US-LV-002 hint)
     }
 
     [Fact]
@@ -232,8 +232,8 @@ public sealed class LeaveEntitlementEngineTests
             leaveYear: 2026,
             fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
-        // 1/365 * 20 = 0.0548 -> 0.05
-        result.Should().Be(0.05m);
+        // ISSUE-034: month-fraction counts the join month as full — Dec = 1 month, 20 × 1/12 = 1.6667 -> 1.67.
+        result.Should().Be(1.67m);
     }
 
     [Fact]
@@ -276,16 +276,32 @@ public sealed class LeaveEntitlementEngineTests
     }
 
     [Fact]
-    public void ProRata_Rounds_HalfUp()
+    public void ProRata_Rounds_To2dp()
     {
-        // 15 days, join April 1 -> 275/365 * 15 = 11.30137 -> 11.30
+        // ISSUE-034: month-fraction (denominator 12) produces repeating decimals; verify rounding to 2dp.
+        // 10 days, join Feb 1 -> Feb–Dec = 11 months, 10 × 11/12 = 9.16667 -> 9.17.
         var result = LeaveEntitlementEngine.CalculateProRata(
-            fullYearEntitlement: 15,
-            dateOfJoining: new DateTime(2026, 4, 1),
+            fullYearEntitlement: 10,
+            dateOfJoining: new DateTime(2026, 2, 1),
             leaveYear: 2026,
             fiscalYearStartMonth: LeaveYear.CalendarStartMonth);
 
-        result.Should().Be(11.30m);
+        result.Should().Be(9.17m);
+    }
+
+    [Fact]
+    public void ProRata_FiscalYear_OctoberJoiner_ExactMonthFraction_ISSUE034()
+    {
+        // ISSUE-034 + ISSUE-305: months are relative to the tenant's FISCAL leave year, not the calendar.
+        // Apr-start leave year (2026 = Apr 2026 – Mar 2027); an Oct-1 joiner is present Oct–Mar = 6 months,
+        // so 12 × 6/12 = 6.00 exactly (a calendar-basis calc would wrongly give Oct–Dec = 3 months → 3.00).
+        var result = LeaveEntitlementEngine.CalculateProRata(
+            fullYearEntitlement: 12,
+            dateOfJoining: new DateTime(2026, 10, 1),
+            leaveYear: 2026,
+            fiscalYearStartMonth: 4); // April
+
+        result.Should().Be(6.00m);
     }
 
     // ══════════════════════════════════════════════════════════════
