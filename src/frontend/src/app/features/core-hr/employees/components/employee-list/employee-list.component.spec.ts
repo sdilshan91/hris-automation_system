@@ -766,6 +766,41 @@ describe('EmployeeListComponent', () => {
     );
   }));
 
+  // DF-24 (ISSUE-027): the status text now arrives in a distinct `message` field
+  // (was previously mislabelled into employeeName). The results row must render the
+  // employee name AND the status message from their correct fields.
+  it('should render the employee name and the message status text in the results (DF-24)', fakeAsync(() => {
+    fixture.detectChanges();
+    flushInitialLoad([mockEmployee], 1);
+
+    component.selectedEmployeeIds.set(['emp-1']);
+    component.openBulkAssignModal();
+    component.bulkSelectedManagerId.set('mgr-1');
+    component.confirmBulkAssign();
+
+    httpMock.expectOne(`${baseUrl}/bulk-assign-manager`).flush({
+      results: [
+        {
+          employeeId: 'emp-1',
+          employeeName: 'John Doe',
+          success: true,
+          error: null,
+          message: 'Manager assigned successfully. John Doe now reports to Alice Boss.',
+        },
+      ],
+      totalSuccess: 1,
+      totalFailed: 0,
+    });
+    tick();
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('John Doe');
+    expect(text).toContain(
+      'Manager assigned successfully. John Doe now reports to Alice Boss.'
+    );
+  }));
+
   it('should show warning toast for partial bulk assignment failure', fakeAsync(() => {
     fixture.detectChanges();
     flushInitialLoad([mockEmployee], 1);

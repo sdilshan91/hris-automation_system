@@ -810,7 +810,9 @@ export class ApplicantPipelineComponent implements OnInit {
   }
 
   stageBadge(stage: ApplicantStage): string {
-    return STAGE_BADGE[stage] ?? STAGE_BADGE.Applied;
+    // ISSUE-317 / DF-12: a backend-tolerated corrupt row arrives as 'Unknown';
+    // fall back to the visible Unknown badge rather than masking it as Applied.
+    return STAGE_BADGE[stage] ?? STAGE_BADGE.Unknown;
   }
 
   sourceBadge(source: ApplicantSource): string {

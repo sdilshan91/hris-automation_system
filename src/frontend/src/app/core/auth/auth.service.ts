@@ -13,6 +13,7 @@ import {
   ICurrentUserResponse,
   IForgotPasswordRequest,
   IResetPasswordRequest,
+  IChangePasswordRequest,
   IMessageResponse,
   IUser,
   ITenantInfo,
@@ -263,6 +264,21 @@ export class AuthService {
     return this.http.post<IMessageResponse>(
       `${this.apiUrl}/auth/reset-password`,
       request
+    );
+  }
+
+  // ─── Change Password (DF-27(c), US-AUTH-004) ─────────────
+
+  /**
+   * Authenticated self-service change password. The backend ([Authorize]) takes
+   * the acting user from the JWT, verifies `currentPassword`, and enforces the
+   * tenant password policy + history rules (same path as the reset flow).
+   */
+  changePassword(request: IChangePasswordRequest): Observable<IMessageResponse> {
+    return this.http.post<IMessageResponse>(
+      `${this.apiUrl}/auth/change-password`,
+      request,
+      { withCredentials: true }
     );
   }
 

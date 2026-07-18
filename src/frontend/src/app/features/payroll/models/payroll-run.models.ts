@@ -47,8 +47,15 @@ export type PayrollRunStatus =
   | 'Rejected'
   | 'Cancelled';
 
-/** Tailwind badge classes per status (§8 color-coded badge). Single source of truth. */
-export const RUN_STATUS_BADGE: Record<PayrollRunStatus, string> = {
+/**
+ * Tailwind badge classes per status (§8 color-coded badge). Single source of truth.
+ *
+ * ISSUE-317 / DF-12: the backend tolerates a corrupt enum row by returning the
+ * `Unknown` sentinel (see the tolerant enum-read converter). The `Unknown` entry
+ * gives a corrupt row a visible amber badge instead of rendering blank. The key is
+ * widened with `| 'Unknown'` without polluting the `PayrollRunStatus` union.
+ */
+export const RUN_STATUS_BADGE: Record<PayrollRunStatus | 'Unknown', string> = {
   Queued: 'bg-neutral-100 text-neutral-600 ring-neutral-500/20',
   Processing: 'bg-blue-50 text-blue-700 ring-blue-600/20',
   ReviewPending: 'bg-amber-50 text-amber-700 ring-amber-600/20',
@@ -57,10 +64,11 @@ export const RUN_STATUS_BADGE: Record<PayrollRunStatus, string> = {
   Finalized: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   Rejected: 'bg-rose-50 text-rose-700 ring-rose-600/20',
   Cancelled: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  Unknown: 'bg-amber-100 text-amber-800 ring-amber-600/20',
 };
 
 /** Human-readable status labels (wire value is PascalCase, BR-6). */
-export const RUN_STATUS_LABELS: Record<PayrollRunStatus, string> = {
+export const RUN_STATUS_LABELS: Record<PayrollRunStatus | 'Unknown', string> = {
   Queued: 'Queued',
   Processing: 'Processing',
   ReviewPending: 'Review pending',
@@ -69,6 +77,8 @@ export const RUN_STATUS_LABELS: Record<PayrollRunStatus, string> = {
   Finalized: 'Finalized',
   Rejected: 'Rejected',
   Cancelled: 'Cancelled',
+  // ISSUE-317 / DF-12: label for a backend-tolerated corrupt row.
+  Unknown: 'Unknown',
 };
 
 /**

@@ -179,6 +179,15 @@ export const appRoutes: Routes = [
             './features/auth/mfa/mfa-settings/mfa-settings.component'
           ).then((m) => m.MfaSettingsComponent),
       },
+      // Change password (DF-27(c) / US-AUTH-004) — self-service; parent authGuard
+      // satisfies the endpoint's [Authorize].
+      {
+        path: 'auth/change-password',
+        loadComponent: () =>
+          import(
+            './features/auth/change-password/change-password.component'
+          ).then((m) => m.ChangePasswordComponent),
+      },
       // Tenant admin auth settings
       {
         path: 'admin/tenant/auth-settings',

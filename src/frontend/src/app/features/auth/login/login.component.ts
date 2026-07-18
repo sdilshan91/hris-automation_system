@@ -80,7 +80,13 @@ export class LoginComponent implements OnInit {
 
     // US-AUTH-015: surface the SSO entry result if the backend redirected back here.
     const ssoError = this.route.snapshot.queryParamMap.get('sso_error');
-    if (ssoError === 'not_configured') {
+    if (ssoError === 'tenant_required') {
+      // DF-27(a): distinct from not_configured — the challenge arrived without a
+      // workspace/tenant, so no SSO config could even be looked up.
+      this.errorMessage.set(
+        'No organization was specified for sign-in. Please open your workspace URL (e.g. your-company.yourhrm.com) and try again.'
+      );
+    } else if (ssoError === 'not_configured') {
       this.errorMessage.set(
         "Microsoft sign-in isn't set up for this workspace yet. Please sign in with your email and password, or contact your administrator."
       );

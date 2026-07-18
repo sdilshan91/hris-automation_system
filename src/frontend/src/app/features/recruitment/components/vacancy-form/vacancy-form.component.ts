@@ -230,7 +230,7 @@ import {
                   class="form-input"
                 />
                 @if (showError('headcount')) {
-                  <p class="form-error">Headcount must be at least 1.</p>
+                  <p class="form-error">Headcount is required and must be at least 1.</p>
                 }
               </div>
             </div>
@@ -456,7 +456,7 @@ export class VacancyFormComponent implements OnInit {
       employmentType: [null as VacancyEmploymentType | null],
       locationId: [null as string | null],
       hiringManagerId: [null as string | null],
-      headcount: [null as number | null, [Validators.min(1)]],
+      headcount: [1 as number | null, [Validators.required, Validators.min(1)]],
       salaryMin: [null as number | null, [Validators.min(0)]],
       salaryMax: [null as number | null, [Validators.min(0)]],
       currency: [null as string | null],
@@ -479,7 +479,9 @@ export class VacancyFormComponent implements OnInit {
           employmentType: v.employmentType,
           locationId: v.locationId,
           hiringManagerId: v.hiringManagerId,
-          headcount: v.headcount,
+          // DF-26: headcount is now required (backend rejects an omitted value with
+          // 400); default a legacy null to 1 so the form can never submit it empty.
+          headcount: v.headcount ?? 1,
           salaryMin: v.salaryMin,
           salaryMax: v.salaryMax,
           currency: v.currency,
@@ -541,9 +543,14 @@ export class VacancyFormComponent implements OnInit {
   // ─── Save / Publish ──────────────────────────────────────
 
   save(publish: boolean): void {
-    // Title is always required (Draft floor). Publishing additionally requires the
-    // BR-2 set; surface those before hitting the network.
-    if (this.form.get('title')?.invalid || this.form.errors?.['salaryRange']) {
+    // Title is always required (Draft floor). Headcount is required on every save
+    // (DF-26: the backend 400s an omitted headcount). Publishing additionally
+    // requires the BR-2 set; surface all of these before hitting the network.
+    if (
+      this.form.get('title')?.invalid ||
+      this.form.get('headcount')?.invalid ||
+      this.form.errors?.['salaryRange']
+    ) {
       this.form.markAllAsTouched();
       this.toastr.error('Please fix the highlighted fields.');
       return;

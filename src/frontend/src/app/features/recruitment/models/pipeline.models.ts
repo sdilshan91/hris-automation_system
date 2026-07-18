@@ -44,14 +44,23 @@ export const PIPELINE_STAGES: readonly ApplicantStage[] = [
 /** Stages that are "terminal" — moving here is a strong action (BR-6). */
 export const TERMINAL_STAGES: readonly ApplicantStage[] = ['Hired', 'Rejected'];
 
-/** Tailwind ring/text classes per stage column header chip (§8). */
-export const STAGE_BADGE: Record<ApplicantStage, string> = {
+/**
+ * Tailwind ring/text classes per stage column header chip (§8).
+ *
+ * ISSUE-317 / DF-12: the backend tolerates a corrupt enum row by returning the
+ * `Unknown` sentinel (see the tolerant enum-read converter). Without an `Unknown`
+ * entry the badge renders blank; the amber entry makes a corrupt row visibly
+ * flagged instead. The key is widened with `| 'Unknown'` so callers can index it
+ * with the sentinel without polluting the `ApplicantStage` union.
+ */
+export const STAGE_BADGE: Record<ApplicantStage | 'Unknown', string> = {
   Applied: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
   Screening: 'bg-blue-50 text-blue-700 ring-blue-200',
   Interview: 'bg-violet-50 text-violet-700 ring-violet-200',
   Offer: 'bg-amber-50 text-amber-700 ring-amber-200',
   Hired: 'bg-green-50 text-green-700 ring-green-200',
   Rejected: 'bg-red-50 text-red-700 ring-red-200',
+  Unknown: 'bg-amber-100 text-amber-800 ring-amber-300',
 };
 
 /** Source pill colors (FR-2 — public/internal/referral). */

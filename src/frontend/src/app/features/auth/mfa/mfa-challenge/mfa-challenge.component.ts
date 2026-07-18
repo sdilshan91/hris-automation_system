@@ -321,9 +321,31 @@ export class MfaChallengeComponent implements OnInit, OnDestroy {
 
     const email = this.authService.loginEmail();
 
+    const usedRecoveryCode = this.useRecoveryCode();
+
     this.authService.verifyMfaLogin(email, code).subscribe({
-      next: () => {
+      next: (response) => {
         this.isSubmitting.set(false);
+        // DF-27(b): a recovery-code login returns how many codes remain and a hint
+        // to regenerate. Nudge the user (the toast persists across the navigation)
+        // to regenerate them from the two-factor settings page.
+        if (
+          usedRecoveryCode &&
+          (response.shouldRegenerateRecoveryCodes ||
+            (response.recoveryCodesRemaining != null &&
+              response.recoveryCodesRemaining <= 3))
+        ) {
+          const remaining = response.recoveryCodesRemaining;
+          const count =
+            remaining != null
+              ? `You have ${remaining} recovery code${remaining === 1 ? '' : 's'} left. `
+              : '';
+          this.toastr.warning(
+            `${count}Regenerate your recovery codes from Security settings (Two-factor authentication).`,
+            'Recovery codes running low',
+            { timeOut: 10000 }
+          );
+        }
         this.router.navigate(['/dashboard']);
       },
       error: (err: HttpErrorResponse) => {

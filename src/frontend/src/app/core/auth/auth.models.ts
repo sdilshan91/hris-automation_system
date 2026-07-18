@@ -14,6 +14,22 @@ export interface ILoginResponse {
   mfaChallenge?: boolean;
   mfaMethod?: 'totp';
   mfaEnrollmentRequired?: boolean;
+  /**
+   * DF-27(b): recovery codes left after a recovery-code login. Present when the
+   * login consumed a recovery code so the UI can warn when the pool runs low.
+   */
+  recoveryCodesRemaining?: number;
+  /**
+   * DF-27(b): backend hint that the user should regenerate their recovery codes
+   * (e.g. the pool is nearly exhausted). Drives the regenerate prompt.
+   */
+  shouldRegenerateRecoveryCodes?: boolean;
+}
+
+/** Authenticated self-service change-password request (DF-27(c), US-AUTH-004). */
+export interface IChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 /** Authenticated user profile */
