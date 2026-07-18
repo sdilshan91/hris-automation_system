@@ -320,6 +320,37 @@ public sealed class AccountLockoutTests
         result.Value!.AccessToken.Should().NotBeNullOrWhiteSpace();
     }
 
+    /// <summary>
+    /// ISSUE-064 (TC-AUTH-112): unlocking a NOT-currently-locked account is an idempotent no-op that must NOT
+    /// write a misleading <c>account_unlocked_by_admin</c> audit row. Pre-fix the audit was written
+    /// unconditionally, polluting the forensic trail with phantom "unlocked" events for accounts that were
+    /// never locked. Post-fix the audit (and state change) fire only when the account was actually locked.
+    /// The locked-branch counterpart is <see cref="UnlockUserAsync_AdminUnlocksLockedAccount_Success"/>.
+    /// </summary>
+    [Fact]
+    public async Task UnlockUserAsync_AccountNotLocked_NoOp_WritesNoAudit_ISSUE064()
+    {
+        // Arrange: a user who was NEVER locked (FailedLoginCount=0, LockedUntil=null). No LockUserAsync().
+        await SeedUserAndTenantAsync(maxFailedAttempts: 3);
+        var service = CreateService();
+
+        // Act: admin "unlocks" the already-unlocked account.
+        var result = await service.UnlockUserAsync(_userId, _tenantId, _adminUserId, default);
+
+        // Assert: idempotent success, state stays clear ...
+        result.IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == _userId);
+        user.LockedUntil.Should().BeNull();
+        user.FailedLoginCount.Should().Be(0);
+
+        // ... and NO account_unlocked_by_admin audit row was written (the crux of ISSUE-064).
+        db.AuditLogs.IgnoreQueryFilters()
+            .Any(a => a.EventType == "account_unlocked_by_admin" && a.UserId == _userId)
+            .Should().BeFalse("a no-op unlock must not claim an unlock happened");
+    }
+
     #endregion
 
     #region BR-3: Cross-Tenant Admin Unlock Block

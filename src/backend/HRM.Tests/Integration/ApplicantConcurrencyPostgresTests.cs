@@ -106,7 +106,8 @@ public sealed class ApplicantConcurrencyPostgresTests : IAsyncLifetime
 
     private ApplicantService Service(AppDbContext db) => new(db, _tc, _cu,
         Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
-        Substitute.For<IRecruitmentNotificationService>(), NullLogger<ApplicantService>.Instance);
+        Substitute.For<IRecruitmentNotificationService>(), new GanssHtmlSanitizer(),
+        NullLogger<ApplicantService>.Instance);
 
     // Reads the applicant's current xmin concurrency token.
     private async Task<uint> ReadTokenAsync()

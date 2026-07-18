@@ -59,16 +59,20 @@ public sealed class GoalsController : ControllerBase
 
     /// <summary>
     /// GET /api/v1/tenant/performance/goals/{id}
-    /// Resolves a single goal via the employee/cycle scope (used by CreatedAtAction).
+    /// Returns a single goal by id (ISSUE-099). Tenant-scoped via the EF global query filter, so an unknown
+    /// or foreign-tenant id resolves to 404 rather than a misleading empty 200.
     /// </summary>
     [HttpGet("goals/{id:guid}", Name = "GetGoalById")]
     [RequirePermission("Performance.SetGoal.Team", "Performance.SetGoal.All")]
     [ProducesResponseType(typeof(ApiResponse<GoalDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public IActionResult GetGoalById(Guid id)
-        // Single-goal read is served via the employee-goals endpoint; this named route exists only so
-        // CreatedAtAction can produce a Location header. Clients fetch the full set via GetEmployeeGoals.
-        => Ok(ApiResponse.Ok());
+    public async Task<IActionResult> GetGoalById(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetGoalByIdQuery(id), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<GoalDto>.Ok(result.Value!));
+    }
 
     /// <summary>
     /// POST /api/v1/tenant/performance/goals

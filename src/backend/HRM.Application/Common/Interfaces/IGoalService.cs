@@ -50,6 +50,13 @@ public interface IGoalService
         Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// ISSUE-099: returns a single goal by id, tenant-scoped via the EF global query filter. A goal that
+    /// does not exist — or belongs to another tenant (invisible through the filter) — yields a 404
+    /// (<c>goal_not_found</c>), so the named route can no longer 200 for an unknown/foreign id.
+    /// </summary>
+    Task<Result<GoalDto>> GetByIdAsync(Guid goalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the team goals dashboard for the calling manager + cycle: each direct report with their
     /// goal count, total weight, and aggregate status (AC-4).
     /// </summary>

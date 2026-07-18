@@ -1058,7 +1058,8 @@ public sealed class AttendanceController : ControllerBase
         if (!ResolveMonth(month, out var year, out var mon, out var error))
             return error!;
 
-        IReadOnlyList<Guid>? ids = ParseEmployeeIds(employeeIds);
+        if (!TryParseEmployeeIds(employeeIds, out var ids, out var idError))
+            return idError!;
 
         var result = await _mediator.Send(new GetPayrollDataQuery(year, mon, ids), cancellationToken);
 
@@ -1424,18 +1425,42 @@ public sealed class AttendanceController : ControllerBase
     }
 
     /// <summary>
-    /// Parses the optional comma-separated employeeIds query param into a list of GUIDs (ignoring
-    /// blanks/invalid entries). Returns null when none are supplied (= all employees).
+    /// Parses the optional comma-separated employeeIds query param into a list of GUIDs. When the param is
+    /// absent/blank, <paramref name="ids"/> is null (= all employees) and returns true. ISSUE-092: a param
+    /// that IS supplied but contains any malformed/non-GUID token (or resolves to no ids) is a client error —
+    /// sets <paramref name="error"/> to a 400 <c>invalid_employee_ids</c> result and returns false, rather
+    /// than silently dropping the bad values and widening the scope to the whole tenant.
     /// </summary>
-    private static IReadOnlyList<Guid>? ParseEmployeeIds(string? csv)
+    private bool TryParseEmployeeIds(string? csv, out IReadOnlyList<Guid>? ids, out IActionResult? error)
     {
-        if (string.IsNullOrWhiteSpace(csv)) return null;
-        var ids = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
-            .Where(g => g.HasValue)
-            .Select(g => g!.Value)
-            .ToList();
-        return ids.Count > 0 ? ids : null;
+        ids = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(csv))
+            return true; // no filter supplied → all employees (documented default).
+
+        var tokens = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parsed = new List<Guid>(tokens.Length);
+        foreach (var token in tokens)
+        {
+            if (!Guid.TryParse(token, out var g))
+            {
+                error = StatusCode(400, ApiResponse.Fail(
+                    "employeeIds must be a comma-separated list of valid GUIDs.", "invalid_employee_ids"));
+                return false;
+            }
+            parsed.Add(g);
+        }
+
+        if (parsed.Count == 0)
+        {
+            error = StatusCode(400, ApiResponse.Fail(
+                "employeeIds must be a comma-separated list of valid GUIDs.", "invalid_employee_ids"));
+            return false;
+        }
+
+        ids = parsed;
+        return true;
     }
 
     /// <summary>
