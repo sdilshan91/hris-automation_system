@@ -4870,7 +4870,7 @@ MCP `lighthouse_audit` for the a11y score). **Two new findings (BUG-096, ISSUE-2
 - **ID:** ISSUE-204
 - **Type:** ISSUE (broken asset reference / missing route — degrades branding + console hygiene; not a functional blocker)
 - **Severity:** LOW
-- **Status:** PARTIALLY RESOLVED (FE fallback PR #368; BE emits a dead relative logo URL → needs-BE) 2026-07-18
+- **Status:** RESOLVED (logo/email-logo served via [AllowAnonymous] endpoint, PR #370; FE fallback #368). Residuals → DF-29 (favicon + tenant-switcher list still raw path) / DF-30 (LocalFileStorage path-guard) — 2026-07-18
 - **Layer:** FE
 - **Module / US / TC:** Admin Console (tenant branding) / US-ADM-006 (tenant settings/branding) / TC-ADM-006-17 (settings UI) — also visible on dashboard render (US-RPT-005 / TC-RPT-005-12)
 - **Title:** The tenant logo is rendered from a URL of the form `http://<subdomain>:4200/{tenantId}/branding/logo.png` (acme: `/019ef3ba-ffb7-7eec-b24f-7ad806ca1cb9/branding/logo.png`). No asset exists at that path and nothing serves the route, so the browser gets a **404** for the brand `<img>` on the login page AND **twice** on the dashboard (sidebar + topbar tenant marks). The accessibility tree shows `image "Acme"` with a broken `src`, i.e. the alt text saves the a11y tree but the actual logo never displays.
