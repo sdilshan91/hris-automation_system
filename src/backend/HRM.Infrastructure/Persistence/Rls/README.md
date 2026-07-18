@@ -10,12 +10,14 @@ first layer; RLS is the backstop. Full spec: `docs/BA/platform/US-PLT-002.md`.
 - **`Rls:Enabled` flag** (`appsettings.json`, default **false**) — the master switch.
 - **`ConnectionStrings:PrivilegedConnection`** (blank by default) — placeholder for the
   `hrm_owner` (BYPASSRLS) connection used by migrations / seeding / system + admin paths.
-- **`TenantTransactionBehavior`** (`HRM.Infrastructure/Behaviors`) — a MediatR pipeline
-  behavior that opens a per-request transaction and runs
-  `set_config('app.current_tenant', <tenantId>, is_local => true)` (the parameterised,
-  pooling-safe equivalent of `SET LOCAL`). It is a **no-op** unless `Rls:Enabled` is true,
-  a non-system tenant is resolved, and the provider is relational — so it does nothing
-  today and never runs in the EF-InMemory test suite.
+- **`TenantGucConnectionInterceptor`** (`HRM.Infrastructure/Persistence/Interceptors`) — sets the tenant
+  GUC via `set_config('app.current_tenant', <tenantId>, false)` on **ConnectionOpened** (session scope),
+  NOT a request-wide transaction. It is a **no-op** unless `Rls:Enabled` is true, a non-system tenant is
+  resolved, and the provider is relational — so it does nothing today and never runs in the EF-InMemory
+  test suite. (⚠ This REPLACED the original per-request `TenantTransactionBehavior`, which was **deleted**
+  after ISSUE-277: its request-wide tx broke every request under prod `EnableRetryOnFailure` and nested
+  with the ~5 own-transaction handlers. Job-path GUC is set via `ITenantJobRunner` in its own retry-safe
+  tx. See the RE-VALIDATED GO note below + `FLIP-VALIDATION-2026-07-11.md`.)
 - **`roles.sql`** — ops bootstrap for the `hrm_app` (NOBYPASSRLS) and `hrm_owner`
   (BYPASSRLS) roles. Run once by a DBA; not executed by the app.
 
