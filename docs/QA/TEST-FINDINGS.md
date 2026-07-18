@@ -1003,7 +1003,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Fix at the source: BUG-003 — reject any request whose validated `tenant_id` claim ≠ subdomain-resolved tenant id, for non-system principals. RLS — ISSUE-033 below — would be the backstop.)
 
 ### ISSUE-033 — Entitlement-rule validation is incomplete vs TC-LV-038: `entitlement_days` has no upper bound (999.99 accepted), duplicate identical rules are accepted (no uniqueness on the dimension combo), and `job_level_id` is accepted unvalidated
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-002 · TC-LV-038 (steps 4, 7, 11), TC-LV-033 (boundary)
 - **Title:** Three validation gaps relative to TC-LV-038's expected matrix: (1) **No max-days cap** — `POST /rules {entitlementDays: 999.99}` returns 201 (TC expects "cannot exceed 365"). (2) **No duplicate-rule guard** — creating the identical (leaveType + department + jobTitle) combo twice both return 201 (TC step 11 expects 409/400 "already exists"); overlapping identical rules pile up and are silently tolerated by the engine's priority/createdAt tiebreak. (3) **`job_level_id` accepted unvalidated** — `POST /rules {jobLevelId: <random UUID>}` returns 201 (TC step 4 expects "Job level not found"); the field is persisted but never FK-checked and never used by the resolution engine. The well-formed validation cases DO work: missing/non-existent leaveType → "Leave type not found", non-existent department → "Department not found", non-existent jobTitle → "Job title not found", negative days → 400, effectiveTo<effectiveFrom → 400, invalid employmentType → 400, override negative/empty-reason/leaveYear-out-of-range → 400, delete non-existent → 404.
@@ -1031,7 +1031,7 @@
 - **Suggested direction (NOT applied):** add an authorized `POST /leave-entitlements/recalculate` (and/or enqueue a recalculation from `UpdateRuleAsync`/bulk) that runs `ProcessAccrualsAsync` for the tenant (optionally scoped to a rule/leave type), writing accrual/adjustment ledger entries and (per BUG-028) audit rows. This both fulfils AC-5 and makes the accrual-effect TCs executable.
 
 ### ISSUE-035 — Gender-restricted (BR-4) and probation-ineligible (BR-5) leave types are NOT filtered out of the balance/type list shown to the apply form; the hard apply-gate blocks them correctly, but the list (FR-1 dropdown) leaks ineligible types
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-003 · TC-LV-058 (steps 1-2, 4 — "dropdown does NOT list the restricted type"), TC-LV-059 (steps 1-2 — "dropdown shows Sick but NOT Annual"). FR-1, BR-4, BR-5.
 - **Title:** AC/FR-1 + BR-4 ("gender-restricted leave types are only **shown** to eligible employees") and BR-5 ("employees on probation can only **see**/apply for probation-eligible types") require the leave-type list that populates the apply-form dropdown to be filtered by the caller's gender and probation status. The enforcement at **submission** is correct and fail-closed (a Female employee POSTing a Male-only type → 400 "This leave type is not available for your profile."; a probation employee POSTing a non-probation type → 400 "This leave type is not available during probation."). But the list the form would read — `GET /api/v1/leaves/my-balance` — returns **every active leave type regardless of gender/probation**, so the "only shown to eligible" half of BR-4/BR-5 is unmet. There is also no dedicated eligible-types-for-apply endpoint (`GET /leaves/eligible-types` and `GET /tenant/leave-types/eligible` both 404).
@@ -1094,7 +1094,7 @@
 - **Severity note:** if the intended design is "entitlement column = engine value, balance = engine-based projection (NOT the ledger running total)", then the spec's TC-110/112/115 reconciliation expectation is itself wrong — but even under that reading the result (a negative Annual balance for an employee with +12.5 ledger days) is indefensible to show an employee. Either way the displayed balance is incorrect. (Reported, not fixed.)
 
 ### ISSUE-038 — FR-6 leave-history list has no server-side filtering: `GET /api/v1/leaves/mine` (the only own-history endpoint) silently ignores any `?status=`/`?leaveTypeId=`/`?year=` query param and always returns the full all-status list
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-006 · TC-LV-120 (steps 2-3 — "filter by status = Rejected → only the rejected request remains"; "filter by leave type/year narrows the list"). FR-6.
 - **Title:** FR-6 requires a "filterable list of past leave requests (approved, rejected, cancelled)". The only employee-facing own-history endpoint, `GET /api/v1/leaves/mine`, accepts **no query parameters at all** (`GetMine(CancellationToken)` → `GetMyLeaveRequestsQuery()` with no filter args), so any filter supplied by a client is silently ignored server-side; filtering would have to be done entirely in the browser. The endpoint's **scope is correct** (own employee only, all statuses), so TC-120 step 4 (own-only) passes — only the filterability (steps 2-3) is unmet at the API layer.
@@ -1161,7 +1161,7 @@
 - **Severity rationale:** CRIT — full cross-tenant write into the holiday calendar by a user with no membership in the target tenant; holidays drive leave day-count/pay calculations, so a planted/altered foreign holiday has downstream effect. Same blast radius as the canonical BUG-003. Not re-filed as a new number per policy (systemic, referenced as EXTENDED).
 
 ### ISSUE-040 — Holiday LIST default (no `activeOnly` param) returns deactivated holidays: the default calendar/list view includes `isActive=false` rows because the handler filters only when `activeOnly==true`, so a deactivated holiday still appears in the default view
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-007 · TC-LV-143 (step 3 — "deactivated holiday no longer appears in the default (active-only) list"). FR-1, BR-4, §8.
 - **Title:** TC-143 step 3 expects the default holiday list to be active-only, so a deactivated holiday drops out of the default calendar/list view. In practice `GetAllAsync` applies the active filter ONLY when `activeOnly==true` is explicitly passed; with no `activeOnly` param (the default the calendar page would use) the query returns ALL rows including `isActive=false`. So a deactivated holiday still shows in the default view (with `isActive:false`), and the deactivated leave-exclusion behaviour is correct (the *provider* filters `IsActive`), but the *calendar default* is not active-only as the spec assumes.
@@ -1241,7 +1241,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev should gate the Manager branch on `Leave.View.Team` — i.e. require the permission AND direct reports before granting Manager scope — and consider adding `[RequirePermission]` or an explicit scope-resolution that consults the permission catalog rather than the reporting graph alone.)
 
 ### ISSUE-042 — Team-calendar accepts an unbounded/degenerate date range: omitting `from`/`to` silently returns a `0001-01-01..0001-01-01` empty calendar, and a 10-year span runs unbounded — neither the "sane default range" nor the "reject excessive span" behavior of FR-1/TC-LV-182 is implemented
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-009 · TC-LV-182 (FR-1 date-range boundary; step 4 "applies a sane default range or rejects an excessive span — no unbounded query")
 - **Title:** `from`/`to` are non-nullable `DateOnly` query params with no validation beyond `to >= from`. (1) Omitting them binds both to `DateOnly.MinValue` → the API returns **HTTP 200** with `from/to = "0001-01-01"` and an empty calendar instead of applying a sensible default window (e.g. current month) or rejecting with 400. (2) A deliberately huge span (`from=2020-01-01&to=2030-01-01`) is accepted and the leave query runs across the full 10-year range (returned all 11 acme entries, HTTP 200) with **no max-span cap** — TC-LV-182 step 4 expects an excessive span to be rejected to prevent an unbounded scan.
@@ -1369,7 +1369,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev: read the threshold from tenant config when it exists; and compute absenteeism per calendar month — flag when any month's unplanned count ≥ threshold, per BR-4 "3+ unplanned/month" — rather than averaging across the whole range. Also consider `>=` to honor the "3+" wording.)
 
 ### ISSUE-047 — Report/analytics/export route segments require the PascalCase enum name (`BalanceSummary`, `LopSummary`), but every US-LV-012 test case and the controller's own XML-doc examples use kebab-case (`balance-summary`, `lop-summary`); kebab-case returns 400 "Unknown report type"
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-012 · TC-LV-232/234/236/238/239/244 (all use kebab-case paths), FR-6/FR-7
 - **Title:** `GET /api/v1/leaves/reports/{reportType}` parses `{reportType}` with `Enum.TryParse(ignoreCase:true)` against the `LeaveReportType` enum names. It accepts `BalanceSummary`, `balancesummary`, etc., but **rejects** the kebab-case form documented everywhere in the story/TCs (`balance-summary`, `carry-forward-summary`, `lop-summary`, `department-calendar-coverage`) with `400 {"message":"Unknown report type 'balance-summary'."}`. Same for analytics (`utilization-by-department` etc.) and export. The FE export filenames are generated in kebab-case (`leave-balance-summary-…csv`), so the wire-in vs wire-out casing is inconsistent. This is a contract/usability mismatch, not a functional break (PascalCase works), but any client (or test) coding to the documented kebab paths gets a 400.
@@ -5480,7 +5480,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-117
 - **Type:** BUG (data loss on partial update)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** RESOLVED (PR #359, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Leave Management / US-LV-011 / TC-LV-218
 - **Title:** `PUT /api/v1/tenant/leave-types/{id}` is a full-replace update (`UpdateLeaveTypeRequest`), so any field omitted by the caller is reset to null/default. Renaming the LOP type (TC-LV-218 "can be renamed") with a minimal body `{name,code,annualEntitlement,accrualFrequency}` silently cleared the seeded system `Color=#B71C1C` and `Description` to null. There is no PATCH/merge semantics and no protection preserving the system type's presentation fields.

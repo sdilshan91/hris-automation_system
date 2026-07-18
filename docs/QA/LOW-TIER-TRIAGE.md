@@ -16,6 +16,8 @@ Status legend: ☐ pending · ▶ in progress · ✅ done (PR#) · ⛔ WONTFIX �
 
 ## A. REAL-FIX — value-first queue (71)
 
+> **PROGRESS:** A1 security (7) ✅ #358. Leave module (7) ✅ #359 (+ extracted shared `EnumParsing` helper — user reusability rule). Next: Attendance batch.
+
 ### A1. Security / authz / info-disclosure (do first)
 - ☐ ISSUE-049 (Auth/BE) refresh token accepted on ANY subdomain → cross-tenant replay · TC-AUTH-ISO-001
 - ☐ ISSUE-099 (Perf/BE) `goals/{id}` stub returns 200 for any/foreign-tenant id (IDOR) · TC-PRF-ISO-002

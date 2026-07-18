@@ -129,6 +129,12 @@ src/backend/
 - All endpoints return consistent `ApiResponse<T>` wrapper
 - Use cancellation tokens on all async methods
 - Connection strings must never be hardcoded
+- **Reuse over duplication (user rule).** A generic helper (tolerant enum parse, mask/format,
+  normalize, small validation snippet) must be a **shared static helper in
+  `HRM.Application/Common/Helpers/`** (e.g. `EnumParsing.TryParseTolerant<T>`, `TenantClock`,
+  `UserAgentParser`), NOT a private method re-declared per controller/service. Before writing a
+  private `TryParse*`/`Mask*`/`Format*`/`Normalize*`, grep for the pattern and reuse/extract the
+  shared one. When you touch code that duplicates such a helper, migrate it (flag if out-of-lane).
 - Sensitive data (PII) must be encrypted at rest using `pgcrypto`
 - All queries must be tenant-scoped (no raw SQL without WHERE tenant_id)
 
