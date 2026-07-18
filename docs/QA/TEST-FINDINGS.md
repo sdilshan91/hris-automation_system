@@ -130,7 +130,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev should verify against a fresh build, add a service-level test that asserts a SystemSupport-initiated session yields `is_read_only=true`, and confirm `_currentUser.Roles` is populated at start time.)
 
 ### ISSUE-001 — `impersonation/targets` returns 404 instead of 400 on missing `tenantId`
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #364, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-003 · (US-ADM-003 impersonation smoke, 2026-06-23 pilot)
 - **Root cause (hypothesis, ~80%):** `GET /api/v1/system/impersonation/targets` requires a `tenantId`
@@ -165,7 +165,7 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-003 — `tenant-usage` silently ignores an unparseable `status=` value and returns all tenants
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #364, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-002 · TC-ADM-002-02 (FR-4 filters)
 - **Title:** Invalid `status` filter on the monitoring usage table is treated as "no filter" instead of being rejected.
@@ -321,7 +321,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Validate `timeZone` against `TimeZoneInfo.TryFindSystemTimeZoneById`/IANA, `currency` against an ISO-4217 set, and `dateFormat` against an allow-list of supported tokens; mirror the existing language allow-list pattern.)
 
 ### ISSUE-008 — Branding logo at/near the 2 MB cap is rejected at the Kestrel request-size limit with an opaque 400, before the friendly validator runs — at-limit boundary (TC-05 step 2 "accept") fails
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #364, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-006 · TC-ADM-006-05 (step 2 — "~2MB PNG logo → 200 accepted at boundary")
 - **Title:** `[RequestSizeLimit(MaxUploadBytes)]` on the upload actions equals the validator's `LogoMaxBytes` (exactly 2,097,152 bytes) and caps the **whole multipart request**, while `BrandingFileValidator` caps the **file body** with `content.Length > maxBytes` (i.e. a file *equal* to 2 MB is meant to be accepted). Because the multipart envelope (boundary + part headers) adds ~150-200 bytes, a logo whose body is at/just under 2 MB pushes the total request over the Kestrel limit and is rejected with a generic `400 "Failed to read the request..."` (RFC9110 problem-details) before the friendly "Logo exceeds the maximum size of 2 MB" path can run.
@@ -335,7 +335,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Set `[RequestSizeLimit]` slightly above the validator cap to leave room for multipart overhead, or align the validator to `>=` and document the effective cap, so the friendly validator message is what users see at the boundary.)
 
 ### ISSUE-009 — Session-policy update has no cross-field idle ≤ absolute invariant: idle 1440 min (24 h) with absolute 1 h is accepted — TC-13 step 5 "reject idle > absolute" unmet (also: minutes-vs-hours unit mismatch)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #364, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-006 · TC-ADM-006-13 (step 5 — "PUT idle 600 > absolute 480 → reject; idle must be ≤ absolute")
 - **Title:** `UpdateSessionPolicyValidator` enforces each field's range independently but has **no** cross-field rule that idle ≤ absolute, so a nonsensical policy where the idle timeout exceeds the absolute timeout is accepted (HTTP 200). Compounding it, `idleTimeoutMinutes` is in MINUTES while `absoluteTimeoutHours` is in HOURS, so the TC's literal data (idle 600, absolute 480) is not even a real conflict (600 min = 10 h < 480 h) — but a genuine conflict (idle 1440 min = 24 h, absolute 1 h) is still accepted.
@@ -412,7 +412,7 @@
 - **Suggested direction (NOT applied):** none — report only. (A dev should make the search jsonb-aware — cast `before::text`/`after::text` for the `LIKE`, or use a jsonb text-search operator — keep the `detail` varchar branch, and add a **real-Postgres** (Testcontainers) integration test asserting `search=<term>` returns 200 with the matching subset, since InMemory cannot reproduce the failure.)
 
 ### ISSUE-012 — Audit-log inverted date range (`startDate > endDate`) returns HTTP 200 with 0 rows instead of 400 — TC-03 step 5 "invalid range" unmet
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #364, 2026-07-18)
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-008 · TC-ADM-008-03 (step 5 — "GET with start_date > end_date → 400 validation error")
 - **Title:** `GET /api/v1/tenant/audit-logs?startDate={later}&endDate={earlier}` is accepted as a valid request and returns **HTTP 200** with an empty result set, rather than the **400** the TC requires for an invalid (inverted) range. The two bounds are applied as independent `>=`/`<=` predicates with no cross-field check, so a reversed range simply matches nothing.
