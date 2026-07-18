@@ -5941,7 +5941,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction (NOT applied):** triage the 5 failing classes; fix or (with justification) repair the stale specs. Report only.
 
 ### ISSUE-246 — EXIF stripping (PR #187) does not cover WebP images (ImageSharp 2.1.x limited WebP encode)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (PR #376, merged 2026-07-19 — WebP dropped from the employee-photo allow-list; refused 400 since ImageSharp 2.1.x can't strip WebP EXIF; +1 TC)
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-001/008 · (follow-up to PR #187)
 - **Title:** `ImageMetadataStripper` (#187) strips Exif/Iptc/Xmp from JPEG/PNG but **passes WebP through un-stripped** — ImageSharp is pinned to 2.1.x (Apache-2.0) whose WebP encode support is limited. A WebP profile photo therefore retains GPS/camera metadata. Contained: the magic-byte validator (BUG-058) still gates WebP, and most uploads are JPEG/PNG.
@@ -6282,7 +6282,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-286 — Legacy free-text `Employee.Location` string is superseded by the structured `LocationId` FK; bulk-import still sets only the free-text field
 - **Type:** ISSUE (tech-debt / data consistency)
 - **Severity:** LOW
-- **Status:** OPEN (deferred — needs-decision)
+- **Status:** RESOLVED-BY-VERIFICATION (2026-07-19 — STALE: BulkEmployeeImportService already resolves LocationId by name (locByName→Employee.LocationId) and single CreateAsync sets it too; free-text Location retained alongside. Verified in #376, no code change)
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-007 / (auto-healed from BUG-113 OUT-OF-LANE)
 - **Title:** After BUG-113 wired the structured `Employee.LocationId` FK into create/edit, the legacy free-text `Employee.Location` string (`Employee.cs:~107`) is largely redundant. `BulkEmployeeImportService` still populates only the free-text field, so imported employees carry no `LocationId` → they don't count toward a Location's `EmployeeCount` and don't trip the deactivation guard.
