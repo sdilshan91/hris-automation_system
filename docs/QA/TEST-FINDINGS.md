@@ -6365,7 +6365,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested action (enhancement):** if the audit UI needs human-readable labels, add explicit semantic-action emits (or an action-name mapping layer) across the onboarding/offboarding services. Otherwise WONTFIX.
 
 ### ISSUE-293 — National ID is not modeled on the Employee entity, so PII-read audit (BUG-083) cannot cover national-ID reads
-- **Type / Severity / Status:** ISSUE (data-model / BA gap) · LOW · OPEN (needs-BA)
+- **Type / Severity / Status:** ISSUE (data-model / BA gap) · LOW · RESOLVED (PR #377, merged 2026-07-19 — National ID modeled as an AES-256-GCM-encrypted PII field; masked in all DTOs; audited permission-gated reveal; +6 TCs incl. a real-Postgres ciphertext proof. FE create+reveal+masked-display shipped; FE edit blocked by pre-existing ISSUE-319/DF-36; uniqueness omitted by design per encryption)
 - **Layer:** BE · (auto-healed from BUG-083, #280)
 - **Module / US / TC:** Core HR / US-NTF-004 (AC-2)
 - **Title:** BUG-083's AC lists "national ID" as a sensitive field whose reads must be audited, but the `Employee` entity has **no `NationalId` property** — the string only appears in tests and the `SensitiveFieldMasker` key list. There is no production read site to instrument, so national-ID PII-read audit cannot be implemented until the field is modeled.

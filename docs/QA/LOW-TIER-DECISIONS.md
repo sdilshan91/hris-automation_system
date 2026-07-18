@@ -34,7 +34,7 @@ then implement the chosen ones in a follow-up batch.
 - ✅ **DONE (#374)** **ISSUE-063 lockout tenant-name (Auth)** — content built (#367); tenant-name enrichment needs the seam signature. · *rec: fold into US-NTF-006 delivery.*
 
 ## E. Data-model / BA-gated
-- **ISSUE-293 (Core-HR)** — National ID not modeled on Employee → PII-read audit can't cover it. · *rec: needs-BA (model the field?).*
+- ✅ **DONE (#377, encrypted PII + audited reveal)** **ISSUE-293 (Core-HR)** — National ID not modeled on Employee → PII-read audit can't cover it. · *rec: needs-BA (model the field?).*
 - ✅ **DONE (#376, verified already-resolved)** **ISSUE-286 (Core-HR)** — legacy free-text `Employee.Location` vs structured `LocationId`; import sets only free-text. · *rec: migrate import to LocationId; data-migration call.*
 - ✅ **DONE (#376, reject WebP)** **ISSUE-246 (Core-HR)** — EXIF stripping doesn't cover WebP (ImageSharp limit). · *rec: reject WebP upload OR accept the gap; product call.*
 - **ISSUE-021 / BUG-056 / ISSUE-285** (parked pre-campaign) — SalaryGrade entity / goal-finalize seam / dashboard-SLA birthday-index. · *rec: separate scoping.*
