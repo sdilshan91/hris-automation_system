@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.DTOs;
 using HRM.Application.Features.LeaveReports.DTOs;
 using HRM.Application.Features.LeaveReports.Queries;
@@ -43,7 +44,7 @@ public sealed class LeaveReportsController : ControllerBase
         [FromQuery] LeaveReportQueryParams queryParams,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<LeaveReportType>(reportType, ignoreCase: true, out var parsed))
+        if (!EnumParsing.TryParseTolerant<LeaveReportType>(reportType, out var parsed))
             return StatusCode(400, ApiResponse.Fail($"Unknown report type '{reportType}'."));
 
         var result = await _mediator.Send(new GetLeaveReportQuery(parsed, queryParams), cancellationToken);
@@ -68,7 +69,7 @@ public sealed class LeaveReportsController : ControllerBase
         [FromQuery] LeaveReportQueryParams queryParams,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<LeaveAnalyticsChartType>(chartType, ignoreCase: true, out var parsed))
+        if (!EnumParsing.TryParseTolerant<LeaveAnalyticsChartType>(chartType, out var parsed))
             return StatusCode(400, ApiResponse.Fail($"Unknown chart type '{chartType}'."));
 
         var result = await _mediator.Send(new GetLeaveAnalyticsQuery(parsed, queryParams), cancellationToken);
@@ -96,9 +97,9 @@ public sealed class LeaveReportsController : ControllerBase
         [FromQuery] LeaveReportQueryParams queryParams,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<LeaveReportType>(reportType, ignoreCase: true, out var parsedType))
+        if (!EnumParsing.TryParseTolerant<LeaveReportType>(reportType, out var parsedType))
             return StatusCode(400, ApiResponse.Fail($"Unknown report type '{reportType}'."));
-        if (!Enum.TryParse<ReportExportFormat>(format, ignoreCase: true, out var parsedFormat))
+        if (!EnumParsing.TryParseTolerant<ReportExportFormat>(format, out var parsedFormat))
             return StatusCode(400, ApiResponse.Fail($"Unknown export format '{format}'. Use 'csv' or 'xlsx'."));
 
         var result = await _mediator.Send(
@@ -117,4 +118,5 @@ public sealed class LeaveReportsController : ControllerBase
         // Synchronous: stream the file.
         return File(export.FileContent!, export.ContentType!, export.FileName!);
     }
+
 }

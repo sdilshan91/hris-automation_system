@@ -299,6 +299,38 @@ public sealed class HolidayServiceTests
         result.Value!.Should().ContainSingle(h => h.Id == keep.Value!.Id);
     }
 
+    // ── ISSUE-040 (TC-LV-143 step 3): the DEFAULT list (no activeOnly param) is active-only ──
+
+    [Fact]
+    public async Task GetAll_DefaultNoParam_ExcludesDeactivated_ISSUE040()
+    {
+        var keep = await CreateService().CreateAsync(Req(new DateOnly(2026, 1, 1), "Keep"));
+        var drop = await CreateService().CreateAsync(Req(new DateOnly(2026, 1, 2), "Drop"));
+        await CreateService().DeactivateAsync(drop.Value!.Id);
+
+        // No activeOnly param (null) → default is active-only, so the deactivated holiday drops out.
+        var result = await CreateService().GetAllAsync(null, null, 2026, null, null, default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().ContainSingle(h => h.Id == keep.Value!.Id);
+        result.Value!.Should().NotContain(h => h.Id == drop.Value!.Id);
+    }
+
+    [Fact]
+    public async Task GetAll_ExplicitActiveOnlyFalse_IncludesDeactivated_ISSUE040()
+    {
+        var keep = await CreateService().CreateAsync(Req(new DateOnly(2026, 1, 1), "Keep"));
+        var drop = await CreateService().CreateAsync(Req(new DateOnly(2026, 1, 2), "Drop"));
+        await CreateService().DeactivateAsync(drop.Value!.Id);
+
+        // Explicit activeOnly=false → the caller opts in to seeing deactivated holidays too.
+        var result = await CreateService().GetAllAsync(null, null, 2026, null, false, default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().Contain(h => h.Id == keep.Value!.Id);
+        result.Value!.Should().Contain(h => h.Id == drop.Value!.Id);
+    }
+
     // ── BUG-032 (US-LV-007, AC-1): a location filter must ALSO return tenant-wide holidays ──
 
     [Fact]

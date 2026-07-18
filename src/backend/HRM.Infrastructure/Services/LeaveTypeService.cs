@@ -143,8 +143,20 @@ public sealed class LeaveTypeService : ILeaveTypeService
 
         leaveType.Name = request.Name.Trim();
         leaveType.Code = request.Code?.Trim();
-        leaveType.Color = request.Color?.Trim();
-        leaveType.Description = request.Description?.Trim();
+
+        // BUG-117 (US-LV-011, TC-LV-218): PUT is a full replace, so an omitted Color/Description would
+        // null the seeded presentation of a SYSTEM leave type (e.g. LOP's #B71C1C). For system types,
+        // preserve the existing Color/Description when the request omits them (null/blank); non-system
+        // types keep full-replace semantics.
+        bool isSystemType = leaveType.SystemCategory != LeaveTypeSystemCategory.None;
+        var trimmedColor = request.Color?.Trim();
+        var trimmedDescription = request.Description?.Trim();
+        leaveType.Color = isSystemType && string.IsNullOrWhiteSpace(trimmedColor)
+            ? leaveType.Color
+            : trimmedColor;
+        leaveType.Description = isSystemType && string.IsNullOrWhiteSpace(trimmedDescription)
+            ? leaveType.Description
+            : trimmedDescription;
         leaveType.AnnualEntitlement = request.AnnualEntitlement;
         leaveType.AccrualFrequency = accrualFrequency;
         leaveType.CarryForwardLimit = request.CarryForwardLimit;

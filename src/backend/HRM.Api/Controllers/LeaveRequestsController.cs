@@ -2,6 +2,7 @@ using HRM.Application.DTOs;
 using HRM.Application.Features.LeaveRequests.Commands;
 using HRM.Application.Features.LeaveRequests.DTOs;
 using HRM.Application.Features.LeaveRequests.Queries;
+using HRM.Application.Features.LeaveTypes.DTOs;
 using HRM.Infrastructure.Identity;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -58,20 +59,46 @@ public sealed class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/v1/leaves/mine
-    /// Lists the current employee's own leave requests, newest first.
+    /// GET /api/v1/leaves/mine?status={status}&amp;leaveTypeId={id}&amp;year={year}
+    /// Lists the current employee's own leave requests, newest first. Supports optional server-side
+    /// history filters (US-LV-006 FR-6): status (case-insensitive), leave type, and year of the leave's
+    /// start date. Omitted filters return the full list (ISSUE-038).
     /// </summary>
     [HttpGet("mine")]
     [RequirePermission("Leave.View.Own")]
     [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<LeaveRequestDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetMine(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetMine(
+        [FromQuery] string? status,
+        [FromQuery] Guid? leaveTypeId,
+        [FromQuery] int? year,
+        CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetMyLeaveRequestsQuery(), cancellationToken);
+        var result = await _mediator.Send(
+            new GetMyLeaveRequestsQuery(status, leaveTypeId, year), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
 
         return Ok(ApiResponse<IReadOnlyList<LeaveRequestDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/leaves/eligible-types
+    /// Returns the active leave types the current employee is eligible to apply for (FR-1, BR-4/BR-5).
+    /// Gender-restricted and probation-ineligible types are filtered out so the apply-form dropdown
+    /// matches the apply-submit gate (ISSUE-035). Distinct from my-balance, which lists all held balances.
+    /// </summary>
+    [HttpGet("eligible-types")]
+    [RequirePermission("Leave.View.Own")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<LeaveTypeDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEligibleTypes(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetEligibleLeaveTypesQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<IReadOnlyList<LeaveTypeDto>>.Ok(result.Value!));
     }
 
     /// <summary>

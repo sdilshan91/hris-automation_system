@@ -555,6 +555,85 @@ public sealed class LeaveTypeServiceTests : IDisposable
         result.Value.AccrualFrequency.Should().Be("Yearly");
     }
 
+    // ── BUG-117 (TC-LV-218): a system leave type keeps its seeded Color/Description on a rename ──
+
+    private async Task<Guid> SeedLeaveTypeWith(
+        string name, LeaveTypeSystemCategory systemCategory, string? color, string? description)
+    {
+        using var db = CreateDbContext();
+        var lt = new LeaveType
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            Name = name,
+            Code = "LOP",
+            Color = color,
+            Description = description,
+            AnnualEntitlement = 0,
+            AccrualFrequency = AccrualFrequency.Upfront,
+            Gender = LeaveTypeGender.All,
+            SystemCategory = systemCategory,
+            IsActive = true,
+            IsDeleted = false,
+        };
+        db.LeaveTypes.Add(lt);
+        await db.SaveChangesAsync();
+        return lt.Id;
+    }
+
+    [Fact]
+    public async Task Update_SystemType_OmittedColorDescription_ArePreserved_BUG117()
+    {
+        var id = await SeedLeaveTypeWith(
+            "Loss of Pay", LeaveTypeSystemCategory.LossOfPay, color: "#B71C1C", description: "System LOP");
+
+        // Full-replace PUT that OMITS Color/Description (the TC-LV-218 minimal rename body).
+        var result = await CreateService().UpdateAsync(id, new UpdateLeaveTypeRequest
+        {
+            Name = "Loss of Pay (Renamed)",
+            Code = "LOP",
+            AnnualEntitlement = 0,
+            AccrualFrequency = "Upfront",
+            Gender = "All",
+            Color = null,
+            Description = null,
+        });
+
+        result.IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var lt = db.LeaveTypes.Find(id)!;
+        lt.Name.Should().Be("Loss of Pay (Renamed)");     // rename still applied
+        lt.Color.Should().Be("#B71C1C");                  // system presentation preserved
+        lt.Description.Should().Be("System LOP");
+    }
+
+    [Fact]
+    public async Task Update_NonSystemType_OmittedColorDescription_AreNulled_BUG117()
+    {
+        var id = await SeedLeaveTypeWith(
+            "Annual Leave", LeaveTypeSystemCategory.None, color: "#4CAF50", description: "Ordinary");
+
+        var result = await CreateService().UpdateAsync(id, new UpdateLeaveTypeRequest
+        {
+            Name = "Annual Leave",
+            Code = "AL",
+            AnnualEntitlement = 14,
+            AccrualFrequency = "Upfront",
+            Gender = "All",
+            Color = null,
+            Description = null,
+        });
+
+        result.IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var lt = db.LeaveTypes.Find(id)!;
+        // Non-system types keep full-replace semantics: omitted fields are cleared.
+        lt.Color.Should().BeNull();
+        lt.Description.Should().BeNull();
+    }
+
     [Fact]
     public async Task Update_SameNameAsSelf_ShouldSucceed()
     {

@@ -206,10 +206,12 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
     public async Task BulkCreateRules_CreatesMultiple()
     {
         var svc = CreateService();
+        // ISSUE-033: the two rules must target DIFFERENT dimensions — the duplicate-rule guard now rejects
+        // a second rule for the same (leaveType + department + jobTitle + ...) combination.
         var requests = new List<UpsertLeaveEntitlementRuleRequest>
         {
-            MakeRuleRequest() with { EntitlementDays = 15 },
-            MakeRuleRequest() with { EntitlementDays = 20 },
+            MakeRuleRequest() with { EntitlementDays = 15, EmploymentType = "FullTime" },
+            MakeRuleRequest() with { EntitlementDays = 20, EmploymentType = "PartTime" },
         };
 
         var result = await svc.BulkCreateRulesAsync(requests);
@@ -877,6 +879,64 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
         db.Employees.Add(emp);
         await db.SaveChangesAsync();
         return emp.Id;
+    }
+
+    // ── ISSUE-033: entitlement-rule validation gaps (TC-LV-038 steps 4, 7, 11) ──
+
+    [Fact]
+    public async Task CreateRule_MaxDays_AtBoundary_Succeeds_ISSUE033()
+    {
+        var svc = CreateService();
+        var result = await svc.CreateRuleAsync(MakeRuleRequest() with { EntitlementDays = 365 });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.EntitlementDays.Should().Be(365);
+    }
+
+    [Fact]
+    public async Task CreateRule_ExceedsMaxDays_Fails_ISSUE033()
+    {
+        var svc = CreateService();
+        var result = await svc.CreateRuleAsync(MakeRuleRequest() with { EntitlementDays = 999.99m });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("cannot exceed 365");
+
+        using var db = CreateDbContext();
+        db.LeaveEntitlementRules.Any().Should().BeFalse("an over-cap rule must not be persisted");
+    }
+
+    [Fact]
+    public async Task CreateRule_DuplicateDimensions_Fails_ISSUE033()
+    {
+        var svc = CreateService();
+        (await svc.CreateRuleAsync(MakeRuleRequest() with { EntitlementDays = 20 }))
+            .IsSuccess.Should().BeTrue();
+
+        // Same (leaveType + department + jobTitle + ...) combination, different days — a duplicate.
+        var second = await svc.CreateRuleAsync(MakeRuleRequest() with { EntitlementDays = 25 });
+
+        second.IsFailure.Should().BeTrue();
+        second.StatusCode.Should().Be(400);
+        second.Error.Should().Contain("already exists");
+
+        using var db = CreateDbContext();
+        db.LeaveEntitlementRules.Count().Should().Be(1, "the duplicate rule must not be persisted");
+    }
+
+    [Fact]
+    public async Task CreateRule_UnknownJobLevel_Fails_ISSUE033()
+    {
+        var svc = CreateService();
+        var result = await svc.CreateRuleAsync(MakeRuleRequest() with { JobLevelId = Guid.NewGuid() });
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("Job level not found");
+
+        using var db = CreateDbContext();
+        db.LeaveEntitlementRules.Any().Should().BeFalse("a rule with an unknown job level must not be persisted");
     }
 
     private UpsertLeaveEntitlementRuleRequest MakeRuleRequest(

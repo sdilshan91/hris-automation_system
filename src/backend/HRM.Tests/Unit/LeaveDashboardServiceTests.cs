@@ -498,4 +498,34 @@ public sealed class LeaveDashboardServiceTests
         annual.LeaveYear.Should().Be(2028, "a January tenant's default leave year is the calendar year of 'now'");
         annual.Balance.Should().Be(9m);
     }
+
+    // ── ISSUE-035 boundary: my-balance is UNCHANGED — it still shows all held balances ──
+
+    [Fact]
+    public async Task GetMyBalances_IncludesGenderRestrictedType_Unchanged_ISSUE035()
+    {
+        // The gender/probation eligibility filter added by ISSUE-035 lives ONLY in eligible-types.
+        // my-balance must keep listing every held balance — including a type the (Male) employee could
+        // not actually apply for — so a leaked filter here would be a regression.
+        Guid femaleOnlyId;
+        using (var db = CreateDbContext())
+        {
+            db.LeaveTypes.Add(new LeaveType
+            {
+                Id = femaleOnlyId = Guid.NewGuid(), TenantId = _tenantId,
+                Name = "Maternity Leave", Color = "#E91E63", AnnualEntitlement = 84,
+                AccrualFrequency = AccrualFrequency.Upfront, Gender = LeaveTypeGender.Female,
+                DisplayOrder = 4, IsActive = true,
+            });
+            db.SaveChanges();
+        }
+        StubEntitlement(femaleOnlyId, 84m);
+        AddLedger(femaleOnlyId, LedgerEntryType.Accrual, 10m, 10m); // a real held balance
+
+        var result = await CreateService().GetMyBalancesAsync(Year);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().Contain(b => b.LeaveTypeId == femaleOnlyId,
+            "my-balance shows all held balances regardless of gender eligibility");
+    }
 }
