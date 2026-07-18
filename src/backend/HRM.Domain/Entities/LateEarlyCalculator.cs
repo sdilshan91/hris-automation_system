@@ -5,7 +5,7 @@ namespace HRM.Domain.Entities;
 /// FR-1/FR-2/FR-3, BR-1/BR-2/BR-3/BR-6).
 /// </summary>
 /// <param name="IsLate">True when the clock-in is past shift start + grace (BR-1).</param>
-/// <param name="LateMinutes">Whole minutes past the shift START (AC-1: "late_minutes = 20"); 0 when on time or no shift start.</param>
+/// <param name="LateMinutes">Whole minutes past the shift START (AC-1: "late_minutes = 20"); 0 when not late (on time, within grace, or no shift start) per FR-3.</param>
 /// <param name="LateByMinutes">Whole minutes past the grace threshold (AC-1: "late_by = 5"); 0 when not late.</param>
 /// <param name="IsEarlyDeparture">True when the clock-out is before shift end and minimum hours are unmet (BR-2).</param>
 /// <param name="EarlyDepartureMinutes">Whole minutes before shift END (AC-3: "early_departure_minutes = 30"); 0 when none.</param>
@@ -64,10 +64,16 @@ public static class LateEarlyCalculator
             var pastStart = (int)Math.Floor((clockInTime.ToTimeSpan() - start.ToTimeSpan()).TotalMinutes);
             if (pastStart > 0)
             {
-                lateMinutes = pastStart;
                 isLate = pastStart > Math.Max(0, gracePeriodMinutes);   // BR-1: past start + grace.
+                // FR-3 / ISSUE-085: late_minutes is 0 unless the punch is actually late. A within-grace
+                // punch (past start but inside grace) is on-time — carrying the past-start magnitude here
+                // let a FE badge ("Late by N min") render on an on-time row. Only a late punch keeps the
+                // minutes-past-start magnitude (AC-1: 09:20 vs 09:00 grace 15 → late_minutes=20, late_by=5).
                 if (isLate)
+                {
+                    lateMinutes = pastStart;
                     lateBy = pastStart - Math.Max(0, gracePeriodMinutes);
+                }
             }
         }
 

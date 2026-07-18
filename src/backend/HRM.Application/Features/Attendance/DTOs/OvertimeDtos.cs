@@ -72,6 +72,15 @@ public sealed record OvertimeDto
     public string Reason { get; init; } = string.Empty;
     public string? ManagerComment { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// FR-8 / ISSUE-079: true when the daily overtime cap truncated this record's minutes (so HR sees
+    /// the shown minutes were capped, not the raw detected amount).
+    /// </summary>
+    public bool DailyCapApplied { get; init; }
+
+    /// <summary>FR-8 / ISSUE-079: true when this record's date crossed the tenant weekly overtime cap.</summary>
+    public bool WeeklyCapExceeded { get; init; }
 }
 
 /// <summary>
@@ -92,6 +101,12 @@ public sealed record OvertimeQueueItemDto
     public string Reason { get; init; } = string.Empty;
     public string? ManagerComment { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    /// <summary>FR-8 / ISSUE-079: true when the daily overtime cap truncated this record's minutes.</summary>
+    public bool DailyCapApplied { get; init; }
+
+    /// <summary>FR-8 / ISSUE-079: true when this record's date crossed the tenant weekly overtime cap.</summary>
+    public bool WeeklyCapExceeded { get; init; }
 
     // ── queue presentation ──
     public string EmployeeName { get; init; } = string.Empty;
@@ -141,6 +156,14 @@ public sealed record OvertimeReportRowDto
     /// <summary>Sum of overtime_minutes for REJECTED records in the month.</summary>
     public int RejectedMinutes { get; init; }
 
+    /// <summary>
+    /// BR-6 / ISSUE-080: sum of overtime_minutes for UNAPPROVED records in the month (pre-approval
+    /// required but none matched). These are excluded from payroll until HR reviews; previously they
+    /// were counted in <see cref="RecordCount"/> but absent from every minute column, making the
+    /// needs-review population invisible.
+    /// </summary>
+    public int UnapprovedMinutes { get; init; }
+
     /// <summary>Total overtime records for the employee in the month (all statuses).</summary>
     public int RecordCount { get; init; }
 }
@@ -167,5 +190,9 @@ public sealed record OvertimeReportTotals
     public int ApprovedMinutes { get; init; }
     public int PendingMinutes { get; init; }
     public int RejectedMinutes { get; init; }
+
+    /// <summary>BR-6 / ISSUE-080: tenant-wide sum of UNAPPROVED overtime minutes for the month.</summary>
+    public int UnapprovedMinutes { get; init; }
+
     public int RecordCount { get; init; }
 }

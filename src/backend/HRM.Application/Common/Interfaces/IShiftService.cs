@@ -30,4 +30,13 @@ public interface IShiftService
 
     Task<Result<ResolvedShiftDto>> ResolveForEmployeeAsync(
         Guid employeeId, DateOnly date, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-076: resolves a shift with SELF-SCOPE authorization. A caller holding
+    /// <c>Attendance.Shift.Manage</c> (HR) may resolve any employee's shift; any other caller may resolve
+    /// ONLY their own (the employee linked to the current user). A non-manager requesting another
+    /// employee's shift is denied 403; a caller with no linked employee record is denied 403.
+    /// </summary>
+    Task<Result<ResolvedShiftDto>> ResolveForEmployeeWithSelfScopeAsync(
+        Guid employeeId, DateOnly date, CancellationToken cancellationToken = default);
 }

@@ -50,8 +50,36 @@ public sealed class LateEarlyCalculatorTests
             minimumMinutes: 0);
 
         result.IsLate.Should().BeFalse();
-        result.LateMinutes.Should().Be(10);   // still recorded as past-start, but not flagged late
+        result.LateMinutes.Should().Be(0);    // FR-3 / ISSUE-085: 0 when not late (was: past-start magnitude)
         result.LateByMinutes.Should().Be(0);
+    }
+
+    // FR-3 / ISSUE-085: an on-time (within-grace) punch must carry late_minutes = 0 so a "Late by N min"
+    // badge cannot render on it; a genuinely late punch keeps the real minutes-past-start magnitude.
+    [Fact]
+    public void Evaluate_WithinGrace_LateMinutesIsZero_ButLatePunchKeepsMagnitude()
+    {
+        // On-time: 09:15 vs 09:00 start, grace 20 → within grace → late_minutes must be 0.
+        var onTime = LateEarlyCalculator.Evaluate(
+            clockInTime: new TimeOnly(9, 15),
+            clockOutTime: FivePm,
+            shiftStart: NineAm, shiftEnd: FivePm,
+            gracePeriodMinutes: 20, workedMinutes: 465, minimumMinutes: 0);
+
+        onTime.IsLate.Should().BeFalse();
+        onTime.LateMinutes.Should().Be(0);
+        onTime.LateByMinutes.Should().Be(0);
+
+        // Late: 09:30 vs 09:00 start, grace 10 → late → late_minutes keeps the full 30 past start.
+        var late = LateEarlyCalculator.Evaluate(
+            clockInTime: new TimeOnly(9, 30),
+            clockOutTime: FivePm,
+            shiftStart: NineAm, shiftEnd: FivePm,
+            gracePeriodMinutes: 10, workedMinutes: 450, minimumMinutes: 0);
+
+        late.IsLate.Should().BeTrue();
+        late.LateMinutes.Should().Be(30);
+        late.LateByMinutes.Should().Be(20);
     }
 
     // BR-1: exactly at start + grace boundary is NOT late (09:15 vs 09:00 + 15)

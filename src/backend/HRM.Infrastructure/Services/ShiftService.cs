@@ -2,6 +2,7 @@ using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Attendance.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -476,6 +477,31 @@ public sealed class ShiftService : IShiftService
             EffectiveTo = effectiveTo,
             ResolvedForDate = date,
         });
+    }
+
+    public async Task<Result<ResolvedShiftDto>> ResolveForEmployeeWithSelfScopeAsync(
+        Guid employeeId, DateOnly date, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ResolvedShiftDto>.Failure("Tenant context is not resolved.", 400);
+
+        // HR (Attendance.Shift.Manage) may resolve any employee's shift; everyone else is self-scoped.
+        var canManage = _currentUser.Permissions.Contains(PermissionCatalog.Attendance.ManageShift);
+        if (!canManage)
+        {
+            var ownEmployeeId = await _dbContext.Employees.AsNoTracking()
+                .Where(e => e.UserId == _currentUser.UserId)
+                .Select(e => (Guid?)e.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (ownEmployeeId is null)
+                return Result<ResolvedShiftDto>.Failure(
+                    "No employee record is linked to the current user.", 403);
+            if (ownEmployeeId.Value != employeeId)
+                return Result<ResolvedShiftDto>.Failure(
+                    "You are not authorized to resolve this employee's shift.", 403);
+        }
+
+        return await ResolveForEmployeeAsync(employeeId, date, cancellationToken);
     }
 
     // ── Rotation resolution (FR-7/AC-5) ────────────────────────────────

@@ -21,5 +21,7 @@ public sealed class GetEmployeeShiftQueryHandler
 
     public Task<Result<ResolvedShiftDto>> Handle(
         GetEmployeeShiftQuery request, CancellationToken cancellationToken)
-        => _shiftService.ResolveForEmployeeAsync(request.EmployeeId, request.Date, cancellationToken);
+        // ISSUE-076: self-scope — an employee may resolve their OWN shift; HR (Attendance.Shift.Manage)
+        // may resolve anyone's; a non-manager requesting another employee's shift is denied 403.
+        => _shiftService.ResolveForEmployeeWithSelfScopeAsync(request.EmployeeId, request.Date, cancellationToken);
 }

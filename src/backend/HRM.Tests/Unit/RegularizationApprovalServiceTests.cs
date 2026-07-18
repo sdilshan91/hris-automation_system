@@ -209,6 +209,59 @@ public sealed class RegularizationApprovalServiceTests
         db.AttendanceLogs.Should().ContainSingle();
     }
 
+    // ── FR-3 / ISSUE-085: an on-time (within-grace) regularized punch persists late_minutes = 0 ──
+
+    private Guid SeedDefaultShift(int graceMinutes)
+    {
+        using var db = Db();
+        var shiftId = BaseEntity.NewUuidV7();
+        db.Shifts.Add(new Shift
+        {
+            Id = shiftId, TenantId = _tenantId, Name = "General Shift",
+            Type = ShiftType.Single, StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+            GracePeriodMinutes = graceMinutes, WorkingDays = [1, 2, 3, 4, 5],
+            IsDefault = true, IsActive = true,
+        });
+        db.SaveChanges();
+        return shiftId;
+    }
+
+    [Fact]
+    public async Task Approve_OnTimeWithinGrace_PersistsLateMinutesZero()
+    {
+        SeedDefaultShift(graceMinutes: 20);
+        var date = Yesterday;
+        // Clock-in 09:15 vs 09:00 start with 20-min grace → within grace → on time.
+        var regId = SeedPending(
+            _reportId, RegularizationType.MissedBoth, date, At(date, 9, 15), At(date, 17));
+
+        (await Service().ApproveAsync(regId, "Verified")).IsSuccess.Should().BeTrue();
+
+        using var db = Db();
+        var log = db.AttendanceLogs.Single();
+        log.IsLate.Should().BeFalse();
+        log.LateMinutes.Should().Be(0);       // FR-3: 0 when not late (no leftover past-start magnitude).
+        log.LateByMinutes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Approve_LatePunch_PersistsRealLateMinutes()
+    {
+        SeedDefaultShift(graceMinutes: 10);
+        var date = Yesterday;
+        // Clock-in 09:30 vs 09:00 start with 10-min grace → 30 past start, 20 past grace → late.
+        var regId = SeedPending(
+            _reportId, RegularizationType.MissedBoth, date, At(date, 9, 30), At(date, 17));
+
+        (await Service().ApproveAsync(regId, "Verified")).IsSuccess.Should().BeTrue();
+
+        using var db = Db();
+        var log = db.AttendanceLogs.Single();
+        log.IsLate.Should().BeTrue();
+        log.LateMinutes.Should().Be(30);      // real minutes-past-start retained on a genuinely late row.
+        log.LateByMinutes.Should().Be(20);
+    }
+
     // ── AC-2 / FR-3 / BR-1: reject stores the reason, leaves the log untouched ──
 
     [Fact]

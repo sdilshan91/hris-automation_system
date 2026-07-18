@@ -37,6 +37,16 @@ public interface IAttendanceSummaryService
         int year, int month, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// BR-7 (US-ATT-009 ISSUE-091): computes ONE employee's present/absent/LOP/work rollup for a month up
+    /// to a last-working-day <paramref name="cutoff"/> (inclusive), using the same day-by-day engine as the
+    /// materialized summary. The materialized monthly summary EXCLUDES terminated employees, so the payroll
+    /// feed uses this to include a terminated employee's pre-termination attendance (incl. LOP) instead of
+    /// zeroing it. Returns null when the employee does not exist or the cutoff precedes the month start.
+    /// </summary>
+    Task<Result<EmployeeMonthlySummaryDto?>> ComputeForEmployeeUpToAsync(
+        Guid employeeId, int year, int month, DateOnly cutoff, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// AC-4/FR-6: exports the monthly summary in CSV / XLSX / PDF. Small datasets render synchronously;
     /// &gt; 1,000 employees route to a Hangfire background job (FR-7 — notification deferred, US-NTF).
     /// </summary>

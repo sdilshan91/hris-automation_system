@@ -378,6 +378,66 @@ public sealed class ShiftServiceTests
         resolved.Value.EffectiveFrom.Should().BeNull();
     }
 
+    // ── ISSUE-076: self-scope shift resolve ────────────────────────────
+
+    // The current user is linked to _employeeId (EMP-1 has UserId = _userId).
+    [Fact]
+    public async Task ResolveSelfScope_OwnShift_WithViewOwnOnly_Succeeds()
+    {
+        _currentUser.Permissions.Returns(new[] { "Attendance.View.Own" });
+        SeedShift(isDefault: true);
+
+        var resolved = await CreateService().ResolveForEmployeeWithSelfScopeAsync(
+            _employeeId, DateOnly.FromDateTime(DateTime.UtcNow));
+
+        resolved.IsSuccess.Should().BeTrue();
+        resolved.Value!.Name.Should().Be("General Shift");
+    }
+
+    [Fact]
+    public async Task ResolveSelfScope_OthersShift_WithViewOwnOnly_IsForbidden()
+    {
+        _currentUser.Permissions.Returns(new[] { "Attendance.View.Own" });
+        SeedShift(isDefault: true);
+
+        // _employeeId2 (EMP-2) is a DIFFERENT employee than the caller → must be denied.
+        var resolved = await CreateService().ResolveForEmployeeWithSelfScopeAsync(
+            _employeeId2, DateOnly.FromDateTime(DateTime.UtcNow));
+
+        resolved.IsFailure.Should().BeTrue();
+        resolved.StatusCode.Should().Be(403);
+        resolved.Error.Should().Be("You are not authorized to resolve this employee's shift.");
+    }
+
+    [Fact]
+    public async Task ResolveSelfScope_OthersShift_WithManagePermission_Succeeds()
+    {
+        _currentUser.Permissions.Returns(new[] { "Attendance.Shift.Manage" });
+        SeedShift(isDefault: true);
+
+        // HR (Attendance.Shift.Manage) may resolve ANY employee's shift.
+        var resolved = await CreateService().ResolveForEmployeeWithSelfScopeAsync(
+            _employeeId2, DateOnly.FromDateTime(DateTime.UtcNow));
+
+        resolved.IsSuccess.Should().BeTrue();
+        resolved.Value!.Name.Should().Be("General Shift");
+    }
+
+    [Fact]
+    public async Task ResolveSelfScope_NoLinkedEmployee_IsForbidden()
+    {
+        _currentUser.Permissions.Returns(new[] { "Attendance.View.Own" });
+        _currentUser.UserId.Returns(Guid.NewGuid());   // a user with no linked employee record.
+        SeedShift(isDefault: true);
+
+        var resolved = await CreateService().ResolveForEmployeeWithSelfScopeAsync(
+            _employeeId, DateOnly.FromDateTime(DateTime.UtcNow));
+
+        resolved.IsFailure.Should().BeTrue();
+        resolved.StatusCode.Should().Be(403);
+        resolved.Error.Should().Be("No employee record is linked to the current user.");
+    }
+
     // ── Rotating resolution (AC-5/FR-7) ────────────────────────────────
 
     [Fact]
