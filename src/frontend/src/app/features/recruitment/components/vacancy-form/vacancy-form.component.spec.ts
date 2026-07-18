@@ -164,6 +164,25 @@ describe('VacancyFormComponent', () => {
     expect(toastrSpy.error).toHaveBeenCalled();
   });
 
+  // DF-26: the backend now rejects an omitted headcount with 400. The form must
+  // default headcount to 1 and never submit it empty.
+  it('defaults headcount to 1 and sends it on a draft save (DF-26)', () => {
+    expect(component.form.get('headcount')!.value).toBe(1);
+    component.form.get('title')!.setValue('Draft role');
+    component.save(false);
+    expect(serviceSpy.createVacancy).toHaveBeenCalled();
+    const request = serviceSpy.createVacancy.calls.mostRecent().args[0];
+    expect(request.headcount).toBe(1);
+  });
+
+  it('blocks save when headcount is cleared (DF-26)', () => {
+    component.form.get('title')!.setValue('Role');
+    component.form.get('headcount')!.setValue(null);
+    component.save(false);
+    expect(serviceSpy.createVacancy).not.toHaveBeenCalled();
+    expect(toastrSpy.error).toHaveBeenCalled();
+  });
+
   it('attemptClose emits closed', () => {
     const closedSpy = jasmine.createSpy('closed');
     component.closed.subscribe(closedSpy);

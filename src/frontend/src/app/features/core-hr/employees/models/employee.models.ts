@@ -509,9 +509,17 @@ export interface IBulkAssignManagerRequest {
  */
 export interface IBulkAssignResult {
   employeeId: string;
+  /** The assigned employee's real display name (ISSUE-027 / DF-24). */
   employeeName: string;
   success: boolean;
   error: string | null;
+  /**
+   * ISSUE-027 / DF-24: the human-readable status sentence for this row (e.g.
+   * "Manager assigned successfully…"). Previously the status text was mislabelled
+   * into `employeeName`; the backend now returns it here. Optional so older
+   * responses still deserialize.
+   */
+  message?: string | null;
 }
 
 /**

@@ -7,6 +7,7 @@ import { provideToastr } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 import { Router } from '@angular/router';
 import { signal } from '@angular/core';
+import { ToastrService } from 'ngx-toastr';
 
 import { MfaChallengeComponent } from './mfa-challenge.component';
 import { AuthService } from '../../../../core/auth/auth.service';
@@ -128,6 +129,42 @@ describe('MfaChallengeComponent', () => {
     component.totpForm.patchValue({ code: '000000' });
     component.onTotpSubmit();
     expect(component.errorMessage()).toContain('temporarily locked');
+  });
+
+  // DF-27(b): a recovery-code login that returns shouldRegenerateRecoveryCodes
+  // (or a low remaining count) must warn the user to regenerate their codes.
+  it('should warn to regenerate recovery codes when the backend flags it (DF-27b)', () => {
+    const toastr = TestBed.inject(ToastrService);
+    const warnSpy = spyOn(toastr, 'warning');
+    authServiceSpy.verifyMfaLogin.and.returnValue(
+      of({
+        ...mockLoginResponse,
+        recoveryCodesRemaining: 2,
+        shouldRegenerateRecoveryCodes: true,
+      })
+    );
+    spyOn(router, 'navigate');
+
+    component.switchToRecovery();
+    component.recoveryForm.patchValue({ code: 'code-1111-aa' });
+    component.onRecoverySubmit();
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(warnSpy.calls.mostRecent().args[0]).toContain('2 recovery codes left');
+  });
+
+  it('should NOT warn on a normal TOTP login (DF-27b)', () => {
+    const toastr = TestBed.inject(ToastrService);
+    const warnSpy = spyOn(toastr, 'warning');
+    authServiceSpy.verifyMfaLogin.and.returnValue(
+      of({ ...mockLoginResponse, shouldRegenerateRecoveryCodes: true })
+    );
+    spyOn(router, 'navigate');
+
+    component.totpForm.patchValue({ code: '123456' });
+    component.onTotpSubmit();
+
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('should call cancelMfaChallenge and navigate back to login', () => {

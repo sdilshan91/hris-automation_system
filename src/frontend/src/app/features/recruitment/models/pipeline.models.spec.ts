@@ -8,9 +8,21 @@ import {
   stageIndex,
   timeInStageLabel,
   PIPELINE_STAGES,
+  STAGE_BADGE,
 } from './pipeline.models';
 
 describe('pipeline.models helpers', () => {
+  // ISSUE-317 / DF-12: a backend-tolerated corrupt row arrives as 'Unknown'; the
+  // badge map must carry a non-empty entry so it renders a visible affordance
+  // rather than a blank chip.
+  describe('STAGE_BADGE Unknown (DF-12)', () => {
+    it('has a non-empty Unknown entry distinct from Applied', () => {
+      expect(STAGE_BADGE.Unknown).toBeTruthy();
+      expect(STAGE_BADGE.Unknown.length).toBeGreaterThan(0);
+      expect(STAGE_BADGE.Unknown).not.toBe(STAGE_BADGE.Applied);
+    });
+  });
+
   describe('stageIndex', () => {
     it('returns the canonical order index', () => {
       expect(stageIndex('Applied')).toBe(0);

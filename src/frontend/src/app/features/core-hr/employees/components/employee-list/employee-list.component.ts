@@ -729,9 +729,11 @@ import {
                         {{ result.employeeName }}
                       </span>
                       @if (result.success) {
-                        <span class="text-xs text-green-600 font-medium">Assigned</span>
+                        <span class="text-xs text-green-600 font-medium" [title]="result.message || 'Assigned'">
+                          {{ result.message || 'Assigned' }}
+                        </span>
                       } @else {
-                        <span class="text-xs text-red-600">{{ result.error }}</span>
+                        <span class="text-xs text-red-600">{{ result.error || result.message }}</span>
                       }
                     </div>
                   }
