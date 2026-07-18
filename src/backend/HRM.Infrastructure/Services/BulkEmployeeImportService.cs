@@ -1050,11 +1050,14 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
     }
 
     /// <summary>
-    /// US-NTF-006 Phase 8 (US-CHR-010): emails the import initiator a <c>bulk_import_completed</c> summary once the
-    /// async job finishes (email-only — <see cref="BulkImportJob.InitiatedBy"/> is a raw email string, and the job
-    /// runs in a Hangfire background context with no live user session). Skipped when the initiator is unknown /
-    /// empty / <c>"system"</c> (an unauthenticated / system-driven import). <b>Never throws</b> — a delivery failure
-    /// must not fail the committed import. Tenant is the resolved job tenant (set by the ITenantJobRunner).
+    /// US-NTF-006 Phase 8 (US-CHR-010): notifies the import initiator with a <c>bulk_import_completed</c> summary once
+    /// the async job finishes. ISSUE-224: when the initiator (<see cref="BulkImportJob.InitiatedBy"/>, a raw email) can
+    /// be resolved to a provisioned user in the job's tenant, an <b>in-app</b> notification row is created for their
+    /// feed (the async job runs in a Hangfire background context with no live user session, so the recipient user is
+    /// resolved by email rather than taken from <c>ICurrentUser</c>); the email leg is always attempted against the
+    /// raw address. Skipped when the initiator is unknown / empty / <c>"system"</c> (an unauthenticated / system-driven
+    /// import). <b>Never throws</b> — a delivery failure must not fail the committed import. Tenant is the resolved job
+    /// tenant (set by the ITenantJobRunner).
     /// </summary>
     internal async Task DispatchImportCompletedAsync(BulkImportJob job, CancellationToken cancellationToken)
     {
@@ -1081,12 +1084,22 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                 },
             });
 
+            // ISSUE-224: resolve the initiating user in the job's tenant so the completion lands in their in-app feed
+            // (not just email). Falls back to email-only when the initiator has no User row (nothing to push in-app to).
+            var recipientUserId = await ResolveInitiatorUserIdAsync(initiator, cancellationToken);
+
             var request = new NotificationRequest(
                 TenantId: _tenantContext.TenantId,
                 EventKey: "bulk_import_completed",
                 PayloadJson: payload,
+                RecipientUserId: recipientUserId,
                 RecipientEmail: initiator,
                 NotificationType: "bulk_import_completed");
+
+            if (recipientUserId is not null)
+            {
+                await _dispatcher.SendInAppAsync(request, cancellationToken);
+            }
 
             await _dispatcher.SendEmailAsync(request, cancellationToken);
         }
@@ -1096,6 +1109,25 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                 "BulkEmployeeImportService: failed to dispatch bulk_import_completed for job {JobId} (tenant {TenantId}).",
                 job.Id, _tenantContext.TenantId);
         }
+    }
+
+    /// <summary>
+    /// ISSUE-224: resolves the import initiator's user id from their email within the job's tenant (an active
+    /// membership), so the completion notification can be pushed to their in-app feed. Returns null when no active
+    /// user in this tenant matches — in-app is skipped and the email leg still fires.
+    /// </summary>
+    private async Task<Guid?> ResolveInitiatorUserIdAsync(string initiatorEmail, CancellationToken cancellationToken)
+    {
+        var normalized = initiatorEmail.Trim().ToLowerInvariant();
+
+        return await (
+            from ut in _dbContext.UserTenants.IgnoreQueryFilters()
+            join u in _dbContext.Users.IgnoreQueryFilters() on ut.UserId equals u.Id
+            where ut.TenantId == _tenantContext.TenantId
+                && ut.Status == UserTenantStatus.Active
+                && u.Email.ToLower() == normalized
+            select (Guid?)ut.UserId)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     /// <summary>

@@ -709,9 +709,67 @@ public sealed class AuthService : IAuthService
             return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
         }
 
+        // Single-use: consume the token so it cannot be replayed. Mutated in-memory only here — it is persisted
+        // together with the new hash by the shared apply helper's SaveChanges, and ONLY on success. If policy /
+        // history validation inside the helper fails, nothing is saved, so the stored token stays valid and the
+        // user can retry with the same link (BUG-004 / ISSUE-053 behavior preserved).
+        user.PasswordResetTokenHash = null;
+        user.PasswordResetTokenExpiresAt = null;
+
+        return await ChangeUserPasswordAsync(user, newPassword, "password_reset_completed", null, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// US-AUTH-004 (ISSUE-248): authenticated self-service change-password. The caller must have proven identity
+    /// (a valid JWT) and supply the CURRENT password; both the tenant password policy and the history rules (FR-5)
+    /// are enforced via the same shared apply path as the token-based reset, so history can never be bypassed here.
+    /// </summary>
+    public async Task<Result> ChangePasswordAsync(
+        Guid userId,
+        string currentPassword,
+        string newPassword,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _dbContext.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            return Result.Failure("User not found.", 404);
+        }
+
+        // Verify the current password before allowing a change (generic message — no oracle on which field failed).
+        if (string.IsNullOrEmpty(user.PasswordHash)
+            || !BCrypt.Net.BCrypt.Verify(currentPassword, user.PasswordHash))
+        {
+            await WriteAuditLogAsync(user.Id, "password_change_failed", ipAddress, userAgent, cancellationToken);
+            return Result.Failure("Your current password is incorrect.", 400, "invalid_current_password");
+        }
+
+        return await ChangeUserPasswordAsync(user, newPassword, "password_changed", ipAddress, userAgent, cancellationToken);
+    }
+
+    /// <summary>
+    /// US-AUTH-004 FR-5 (ISSUE-053 / ISSUE-248): applies a NEW password to an ALREADY-AUTHORIZED user (the caller has
+    /// proven identity — a valid reset token, or the current password). Enforces the tenant password policy + history
+    /// (reject reuse of the last N), sets the new hash, clears lockout state (BR-2), revokes all refresh tokens across
+    /// tenants, records + prunes history, and audits <paramref name="auditEvent"/>. On a policy/history failure it
+    /// returns WITHOUT saving, so any in-memory mutation the caller made first (e.g. a consumed reset token) is never
+    /// persisted and the user can retry. Shared by the reset and self-service change paths so FR-5 can't be bypassed.
+    /// </summary>
+    private async Task<Result> ChangeUserPasswordAsync(
+        User user,
+        string newPassword,
+        string auditEvent,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken)
+    {
         // BUG-004: enforce the TENANT's configured password policy (min length, complexity), not just the
-        // hardcoded validator defaults. Validated BEFORE the token is consumed so a policy failure lets the
-        // user retry with the same link.
+        // hardcoded validator defaults. Validated BEFORE anything is saved so a policy failure is retriable.
         var policyTenant = await _dbContext.Tenants
             .AsNoTracking()
             .Where(t => t.Id == _tenantContext.TenantId)
@@ -733,8 +791,7 @@ public sealed class AuthService : IAuthService
         }
 
         // US-AUTH-004 FR-5 (ISSUE-053): password-history enforcement — reject reuse of the last N passwords.
-        // Runs after policy validation and BEFORE the token is consumed, so a rejection lets the user retry
-        // with the same link. historyCount <= 0 (disabled) skips the check entirely.
+        // Runs after policy validation and BEFORE any save, so a rejection is retriable. historyCount <= 0 skips it.
         var historyCount = policyTenant?.PasswordHistoryCount ?? 0;
         if (historyCount > 0)
         {
@@ -754,11 +811,7 @@ public sealed class AuthService : IAuthService
                 return Result.Failure("You cannot reuse a recent password.", 400, "password_reused");
         }
 
-        // Single-use: consume the token so it cannot be replayed.
-        user.PasswordResetTokenHash = null;
-        user.PasswordResetTokenExpiresAt = null;
-
-        // Hash and set new password (BR-2: password reset clears lockout)
+        // Hash and set new password (BR-2: a password change/reset clears lockout state).
         var previousHash = user.PasswordHash;
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
         user.PasswordChangedAt = DateTime.UtcNow;
@@ -829,12 +882,11 @@ public sealed class AuthService : IAuthService
             }
         }
 
-        // ISSUE-051 (US-AUTH-004 FR-8): audit the successful reset completion. Reached only after the reset
-        // token is validated, so the user id is a real, authorized subject; no ip/userAgent is threaded into
-        // this seam, so pass null as the other credential-management audits do.
-        await WriteAuditLogAsync(user.Id, "password_reset_completed", null, null, cancellationToken);
+        // ISSUE-051 (US-AUTH-004 FR-8): audit the successful password change/reset. Reached only after the caller's
+        // identity is validated (reset token or current password), so the user id is a real, authorized subject.
+        await WriteAuditLogAsync(user.Id, auditEvent, ipAddress, userAgent, cancellationToken);
 
-        _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
+        _logger.LogInformation("Password updated for user {UserId} ({AuditEvent})", user.Id, auditEvent);
 
         return Result.Success();
     }
@@ -1310,6 +1362,9 @@ public sealed class AuthService : IAuthService
         }
 
         var codeIsValid = false;
+        // ISSUE-241 (US-AUTH-005 AC-7): remember when THIS login burned a recovery code so the success response can
+        // report the remaining count and prompt the user to regenerate their codes once they run low.
+        var usedRecoveryCode = false;
 
         // Try TOTP validation first
         if (!string.IsNullOrEmpty(user.MfaSecret) && _totpService.ValidateCode(_mfaSecretProtector.Unprotect(user.MfaSecret), code))
@@ -1334,6 +1389,7 @@ public sealed class AuthService : IAuthService
                     {
                         rc.UsedAt = DateTime.UtcNow;
                         codeIsValid = true;
+                        usedRecoveryCode = true;
                         await WriteAuditLogAsync(user.Id, "mfa_recovery_code_used", ipAddress, userAgent, cancellationToken);
                         _logger.LogInformation("Recovery code used for user {UserId}", user.Id);
                         break;
@@ -1435,7 +1491,16 @@ public sealed class AuthService : IAuthService
                 "You do not have an active membership in this organization.", 403);
         }
 
-        return await IssueTokensAsync(user, currentTenant, userTenant, ipAddress, userAgent, cancellationToken);
+        // ISSUE-241: if this login consumed a recovery code, count the codes still unused (the just-used one is
+        // already persisted with UsedAt set above) so the response can nudge the user to regenerate when low.
+        int? recoveryCodesRemaining = usedRecoveryCode
+            ? await _dbContext.MfaRecoveryCodes
+                .IgnoreQueryFilters()
+                .CountAsync(rc => rc.UserId == user.Id && rc.UsedAt == null, cancellationToken)
+            : null;
+
+        return await IssueTokensAsync(
+            user, currentTenant, userTenant, ipAddress, userAgent, cancellationToken, recoveryCodesRemaining);
     }
 
     public async Task<Result> DisableMfaAsync(
@@ -1956,13 +2021,17 @@ public sealed class AuthService : IAuthService
     /// Shared helper for issuing access + refresh tokens after successful authentication.
     /// Called from both LoginAsync and VerifyMfaLoginAsync to avoid duplicating token issuance logic.
     /// </summary>
+    /// <summary>Below this many unused recovery codes, the login response nudges the user to regenerate (ISSUE-241).</summary>
+    private const int LowRecoveryCodeThreshold = 3;
+
     private async Task<Result<LoginResponse>> IssueTokensAsync(
         User user,
         Tenant tenant,
         UserTenant userTenant,
         string? ipAddress,
         string? userAgent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? recoveryCodesRemaining = null)
     {
         // Reset failed login count on success
         user.FailedLoginCount = 0;
@@ -2070,6 +2139,11 @@ public sealed class AuthService : IAuthService
             User = new UserDto(user.Id, user.Email, user.DisplayName),
             Tenant = new TenantDto(tenant.Id, tenant.Subdomain, tenant.Name),
             Permissions = permissions,
+            // ISSUE-241: surfaced only when this login burned a recovery code (else null); flag turns on once the
+            // remaining count drops to the low-water mark so the SPA can prompt a regenerate.
+            RecoveryCodesRemaining = recoveryCodesRemaining,
+            ShouldRegenerateRecoveryCodes =
+                recoveryCodesRemaining is not null && recoveryCodesRemaining <= LowRecoveryCodeThreshold,
         });
     }
 

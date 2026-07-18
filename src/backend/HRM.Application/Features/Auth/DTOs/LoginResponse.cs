@@ -14,6 +14,12 @@ public sealed record LoginResponse
     public string? MfaMethod { get; init; }
     public bool MfaEnrollmentRequired { get; init; }
 
+    // US-AUTH-005 AC-7 (ISSUE-241): when a login consumed an MFA recovery code, surface how many unused codes
+    // remain and prompt the user to regenerate them once they run low. Null when the login did not burn a
+    // recovery code (e.g. password-only or TOTP login).
+    public int? RecoveryCodesRemaining { get; init; }
+    public bool ShouldRegenerateRecoveryCodes { get; init; }
+
     // Refresh token is set via cookie, but kept here for internal use
     public string? RefreshToken { get; init; }
 }

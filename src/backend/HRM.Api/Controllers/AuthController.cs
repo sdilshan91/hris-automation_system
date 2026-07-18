@@ -177,6 +177,34 @@ public sealed class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/v1/auth/change-password
+    /// Authenticated self-service change password (US-AUTH-004, ISSUE-248). Verifies the current password and
+    /// enforces the same tenant password policy + history rules as the reset path.
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        var command = new ChangePasswordCommand(
+            _currentUser.UserId,
+            request.CurrentPassword,
+            request.NewPassword,
+            GetIpAddress(),
+            GetUserAgent());
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse.Ok("Password updated successfully."));
+    }
+
+    /// <summary>
     /// GET /api/v1/auth/me
     /// Returns the current authenticated user's profile and tenant context.
     /// </summary>

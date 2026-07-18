@@ -1,3 +1,4 @@
+using System.Globalization;
 using HRM.Application.Common.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -6,7 +7,12 @@ namespace HRM.Infrastructure.Services;
 
 /// <summary>
 /// Lockout notification email service (US-AUTH-010 FR-8, NFR-3).
-/// Sends via SMTP when configured; logs a stub otherwise.
+///
+/// <para>ISSUE-063: the message CONTENT (subject + body: recipient name, lockout duration, when access is restored,
+/// wait/contact instructions, and a support-contact link) is fully assembled here via <see cref="BuildContent"/>, so
+/// enabling real delivery later is a one-class swap. Real SMTP delivery itself is deferred platform-wide to
+/// US-NTF-006 — when <c>Smtp:Host</c> is unset (the dev/QA default) the fully-rendered content is logged instead of
+/// sent; the tenant-name enrichment on the seam signature is tracked with that same delivery follow-up.</para>
 /// </summary>
 public sealed class LockoutNotificationService : ILockoutNotificationService
 {
@@ -28,25 +34,63 @@ public sealed class LockoutNotificationService : ILockoutNotificationService
         int lockoutDurationMinutes,
         CancellationToken cancellationToken = default)
     {
-        var smtpHost = _configuration["Smtp:Host"];
+        // Support-contact link/address comes from configuration (no per-call plumbing); falls back to a sensible
+        // default so the assembled body always carries a "contact support" affordance.
+        var supportContact = _configuration["Support:ContactEmail"]
+            ?? _configuration["Support:ContactUrl"];
 
+        var content = BuildContent(userEmail, displayName, lockedUntilUtc, lockoutDurationMinutes, supportContact);
+
+        var smtpHost = _configuration["Smtp:Host"];
         if (string.IsNullOrWhiteSpace(smtpHost))
         {
-            // SMTP not configured -- log the notification that would be sent
+            // US-NTF-006: real delivery deferred. The COMPLETE content is assembled and logged (not a bare TODO), so
+            // wiring an IEmailSender later is a one-line swap.
             _logger.LogWarning(
-                "[LOCKOUT-EMAIL-STUB] Would send lockout notification to {Email} ({DisplayName}). " +
-                "Account locked until {LockedUntil:u} ({Duration} min). Configure Smtp:Host to enable.",
-                userEmail, displayName ?? "N/A", lockedUntilUtc, lockoutDurationMinutes);
+                "[LOCKOUT-EMAIL-STUB] Would send lockout notification to {Email}. Subject='{Subject}'. Body: {Body} " +
+                "(Configure Smtp:Host to enable delivery.)",
+                userEmail, content.Subject, content.BodyText);
             return Task.CompletedTask;
         }
 
-        // TODO: Send real SMTP email when SMTP is configured
-        // Subject: "Your account has been temporarily locked"
-        // Body: Instructions to wait {lockoutDurationMinutes} minutes or contact administrator
+        // TODO (US-NTF-006): hand `content` to the real IEmailSender. The content is already fully built above.
         _logger.LogInformation(
-            "Sending lockout notification email to {Email}. Locked until {LockedUntil:u}.",
-            userEmail, lockedUntilUtc);
+            "Sending lockout notification email to {Email}. Subject='{Subject}'. Locked until {LockedUntil:u}.",
+            userEmail, content.Subject, lockedUntilUtc);
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// ISSUE-063: assembles the complete lockout-notification content (subject + plain-text body) from the seam
+    /// payload. Pure + deterministic so the FR-8 Data-Requirements fields (recipient name, lockout duration, restore
+    /// time, wait/contact instructions, support link) are unit-testable without touching SMTP.
+    /// </summary>
+    internal static LockoutEmailContent BuildContent(
+        string userEmail,
+        string? displayName,
+        DateTime lockedUntilUtc,
+        int lockoutDurationMinutes,
+        string? supportContact)
+    {
+        var greetingName = string.IsNullOrWhiteSpace(displayName) ? userEmail : displayName!;
+        var restoreUtc = lockedUntilUtc.ToUniversalTime().ToString("f", CultureInfo.InvariantCulture) + " UTC";
+        var support = string.IsNullOrWhiteSpace(supportContact) ? "your system administrator" : supportContact!;
+
+        const string subject = "Your account has been temporarily locked";
+
+        var body =
+            $"Hello {greetingName},\n\n" +
+            "Your account has been temporarily locked following several unsuccessful sign-in attempts.\n\n" +
+            $"For your security, access is suspended for {lockoutDurationMinutes} minute(s). " +
+            $"You can try signing in again after {restoreUtc}.\n\n" +
+            "If this wasn't you, or you need to regain access sooner, please reset your password or " +
+            $"contact {support} for assistance.\n\n" +
+            "Regards,\nThe HRM Team";
+
+        return new LockoutEmailContent(subject, body);
+    }
 }
+
+/// <summary>ISSUE-063: rendered lockout-notification content (subject + plain-text body) built from the seam payload.</summary>
+public sealed record LockoutEmailContent(string Subject, string BodyText);

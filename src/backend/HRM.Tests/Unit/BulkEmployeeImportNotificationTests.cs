@@ -117,6 +117,49 @@ public sealed class BulkEmployeeImportNotificationTests
         import.GetProperty("jobId").GetString().Should().Be(job.Id.ToString());
     }
 
+    [Fact]
+    public async Task Completion_DispatchesInAppToInitiator_WhenInitiatorIsAProvisionedUser_ISSUE224()
+    {
+        // ISSUE-224: the initiator email resolves to a provisioned user in the job's tenant, so the completion
+        // lands in their IN-APP feed (RecipientUserId set) — not email-only.
+        var initiatorUserId = Guid.NewGuid();
+        var dbName = _dbName;
+        using (var db = TestDbContextFactory.Create(_tenantContext, dbName))
+        {
+            db.Users.Add(new User
+            {
+                Id = initiatorUserId, Email = "initiator@test.com", IsActive = true,
+                PasswordHash = "x",
+            });
+            db.UserTenants.Add(new UserTenant
+            {
+                Id = BaseEntity.NewUuidV7(), UserId = initiatorUserId, TenantId = _tenantId,
+                Status = UserTenantStatus.Active,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var dispatcher = new RecordingDispatcher();
+        var job = CompletedJob("initiator@test.com");
+
+        await Service(dispatcher).DispatchImportCompletedAsync(job, CancellationToken.None);
+
+        dispatcher.InApp.Should().ContainSingle("the initiator is a provisioned user — an in-app row must be created");
+        var inApp = dispatcher.InApp[0];
+        inApp.EventKey.Should().Be("bulk_import_completed");
+        inApp.TenantId.Should().Be(_tenantId);
+        inApp.RecipientUserId.Should().Be(initiatorUserId);
+
+        using var doc = JsonDocument.Parse(inApp.PayloadJson);
+        var import = doc.RootElement.GetProperty("import");
+        import.GetProperty("total").GetInt32().Should().Be(10);
+        import.GetProperty("success").GetInt32().Should().Be(8);
+        import.GetProperty("failed").GetInt32().Should().Be(2);
+
+        // The email leg still fires alongside the in-app one.
+        dispatcher.Emails.Should().ContainSingle();
+    }
+
     [Theory]
     [InlineData("system")]
     [InlineData("System")]   // case-insensitive
