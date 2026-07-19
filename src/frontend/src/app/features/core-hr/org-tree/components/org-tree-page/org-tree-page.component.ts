@@ -22,7 +22,7 @@ import {
   IOrgTreeNode,
   IOrgTreeNodeState,
   OrgTreeView,
-  buildTreeFromFlat,
+  buildTreeFromNested,
   createNodeState,
   findNodeInTree,
   findPathToNode,
@@ -779,7 +779,9 @@ export class OrgTreePageComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((nodes) => {
-        const tree = buildTreeFromFlat(nodes, 0);
+        // DF-17: consume the nested `children` the API already delivered (depth 2) instead
+        // of round-tripping per expand — the whole delivered subtree is built up front.
+        const tree = buildTreeFromNested(nodes, 0);
         // Auto-expand root nodes
         for (const root of tree) {
           root.expanded = true;
@@ -802,8 +804,15 @@ export class OrgTreePageComponent implements OnInit {
       return;
     }
 
-    // Expand — lazy load children if not yet fetched
-    if (!nodeState.childrenLoaded && nodeState.node.childrenCount > 0) {
+    // DF-17: the initial depth-2 payload already carries nested `children`, so most
+    // expands are pure in-place toggles with NO HTTP. Fall back to a lazy round-trip only
+    // when this node's subtree was truncated beyond the delivered depth — i.e. it
+    // advertises children (childrenCount > 0) but none were delivered inline
+    // (children.length === 0). Otherwise just expand.
+    const needsLazyFetch =
+      nodeState.node.childrenCount > 0 && nodeState.children.length === 0;
+
+    if (needsLazyFetch) {
       this.updateNodeInTree(nodeState.node.nodeId, (n) => ({
         ...n,
         loadingChildren: true,

@@ -141,6 +141,10 @@ describe('OrgTreePageComponent', () => {
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/org-tree`;
 
+  // DF-17: the API delivers each ROOT with its `children` nested inline down to the
+  // requested depth (2). Engineering(root) → [Frontend, Backend]; Frontend carries its own
+  // children (delivered), while Backend advertises children (childrenCount=3) but none were
+  // delivered inline — it was truncated at the depth limit and must be lazy-fetched.
   const mockNodes: IOrgTreeNode[] = [
     {
       nodeId: 'dept-1',
@@ -151,26 +155,50 @@ describe('OrgTreePageComponent', () => {
       employeeCount: 15,
       childrenCount: 2,
       parentId: null,
-    },
-    {
-      nodeId: 'dept-2',
-      nodeType: 'department',
-      name: 'Frontend',
-      title: null,
-      avatarUrl: null,
-      employeeCount: 5,
-      childrenCount: 0,
-      parentId: 'dept-1',
-    },
-    {
-      nodeId: 'dept-3',
-      nodeType: 'department',
-      name: 'Backend',
-      title: null,
-      avatarUrl: null,
-      employeeCount: 10,
-      childrenCount: 3,
-      parentId: 'dept-1',
+      children: [
+        {
+          nodeId: 'dept-2',
+          nodeType: 'department',
+          name: 'Frontend',
+          title: null,
+          avatarUrl: null,
+          employeeCount: 5,
+          childrenCount: 2,
+          parentId: 'dept-1',
+          children: [
+            {
+              nodeId: 'dept-6',
+              nodeType: 'department',
+              name: 'Web',
+              title: null,
+              avatarUrl: null,
+              employeeCount: 3,
+              childrenCount: 0,
+              parentId: 'dept-2',
+            },
+            {
+              nodeId: 'dept-7',
+              nodeType: 'department',
+              name: 'Mobile',
+              title: null,
+              avatarUrl: null,
+              employeeCount: 2,
+              childrenCount: 0,
+              parentId: 'dept-2',
+            },
+          ],
+        },
+        {
+          nodeId: 'dept-3',
+          nodeType: 'department',
+          name: 'Backend',
+          title: null,
+          avatarUrl: null,
+          employeeCount: 10,
+          childrenCount: 3,
+          parentId: 'dept-1',
+        },
+      ],
     },
   ];
 
@@ -234,6 +262,52 @@ describe('OrgTreePageComponent', () => {
     expect(component.treeRoots().length).toBe(1);
     expect(component.treeRoots()[0].node.name).toBe('Engineering');
     expect(component.treeRoots()[0].children.length).toBe(2);
+  });
+
+  it('should build the whole delivered subtree from nested children (DF-17)', () => {
+    // The depth-2 payload nests children inline; the page must build them up front so
+    // no per-expand round-trip is needed within the delivered depth.
+    fixture.detectChanges();
+    flushInitialLoad();
+
+    const eng = component.treeRoots()[0];
+    const frontend = eng.children[0];
+    // Depth-1 node (Frontend) already has its depth-2 children populated.
+    expect(frontend.node.name).toBe('Frontend');
+    expect(frontend.childrenLoaded).toBeTrue();
+    expect(frontend.children.length).toBe(2);
+    expect(frontend.children[0].node.name).toBe('Web');
+    expect(frontend.children[1].node.name).toBe('Mobile');
+    expect(frontend.children[0].level).toBe(2);
+    // Leaf children (childrenCount=0) are marked loaded.
+    expect(frontend.children[0].childrenLoaded).toBeTrue();
+
+    // Backend was truncated at the depth limit: childrenCount>0 but no inline children.
+    const backend = eng.children[1];
+    expect(backend.node.childrenCount).toBe(3);
+    expect(backend.children.length).toBe(0);
+    expect(backend.childrenLoaded).toBeFalse();
+
+    // Only the single initial GET should have been issued — no per-expand fetches.
+    httpMock.verify();
+  });
+
+  it('should NOT issue any HTTP call when expanding a node whose children were delivered (DF-17)', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+
+    // Frontend's children arrived inline with the initial depth-2 payload.
+    const frontend = component.treeRoots()[0].children[0];
+    expect(frontend.childrenLoaded).toBeTrue();
+    expect(frontend.expanded).toBeFalse();
+
+    const mockEvent = new MouseEvent('click');
+    spyOn(mockEvent, 'stopPropagation');
+    component.toggleNode(mockEvent, frontend);
+
+    // Expanding it must be a pure in-place toggle — zero org-tree requests.
+    httpMock.expectNone((r) => r.url === baseUrl);
+    expect(component.treeRoots()[0].children[0].expanded).toBeTrue();
   });
 
   it('should show loading state initially', () => {
@@ -311,13 +385,15 @@ describe('OrgTreePageComponent', () => {
     expect(compiled.textContent).toContain('No reporting structure available yet');
   });
 
-  it('should lazy-load children on expand', fakeAsync(() => {
+  it('should fall back to a lazy fetch when expanding a truncated node (DF-17)', fakeAsync(() => {
     fixture.detectChanges();
     flushInitialLoad();
 
-    // Backend node has childrenCount=3, so clicking expand should trigger lazy load
+    // Backend was truncated at the depth limit (childrenCount=3 but no inline children),
+    // so expanding it is the ONLY case that still fires the parentId&depth=1 round-trip.
     const backendNode = component.treeRoots()[0].children[1]; // Backend
     expect(backendNode.node.childrenCount).toBe(3);
+    expect(backendNode.children.length).toBe(0);
     expect(backendNode.childrenLoaded).toBeFalse();
 
     // Simulate expand click
