@@ -64,6 +64,19 @@ export const GOAL_STATUS_LABEL: Record<GoalSettingStatus, string> = {
   Acknowledged: 'Acknowledged',
 };
 
+/**
+ * BUG-056: lifecycle status of a SINGLE persisted goal (distinct from the
+ * cycle-level `GoalSettingStatus` above). `Finalized` is the new locked terminal
+ * value — once a manager/HR finalizes an employee's goal set for a cycle (weights
+ * summing to exactly 100%), the backend stamps every goal `Finalized` and the set
+ * becomes read-only. Tolerant of unknown/future values (US-PLT-003): only the exact
+ * `Finalized` string locks the UI; any other value is treated as still-editable.
+ */
+export type GoalRecordStatus = 'Draft' | 'Active' | 'Finalized' | (string & {});
+
+/** The one status value that locks a goal set (BUG-056). Single source of truth. */
+export const GOAL_FINALIZED_STATUS = 'Finalized';
+
 // ─── DTOs ─────────────────────────────────────────────────────
 
 /** A single persisted goal (§7 output). */
@@ -80,6 +93,11 @@ export interface IGoal {
   dueDate: string;
   /** Optional parent goal for cascading (FR-4). Not edited in this story's core UI. */
   parentGoalId?: string | null;
+  /**
+   * BUG-056: lifecycle status of the goal. When `Finalized`, the whole set is locked
+   * (read-only) in the UI. May be absent on payloads predating the finalize feature.
+   */
+  status?: GoalRecordStatus;
 }
 
 /** One goal row sent to the server on save (no id for new rows). */
@@ -149,6 +167,16 @@ export function weightsTotalCorrect(weights: number[]): boolean {
   }
   const sum = weights.reduce((acc, w) => acc + (Number(w) || 0), 0);
   return Math.abs(sum - GOAL_WEIGHT_TOTAL) < 0.001;
+}
+
+/**
+ * BUG-056: a goal set is locked when it has been finalized. The backend marks every
+ * goal in a finalized set with status === 'Finalized'; the FE treats the set as
+ * read-only when ANY goal carries that status (a finalized set locks all rows). An
+ * empty set is never locked.
+ */
+export function isGoalSetLocked(goals: IGoal[]): boolean {
+  return goals.some((g) => g?.status === GOAL_FINALIZED_STATUS);
 }
 
 /** Stacked-bar segment colors cycled per goal (§8 weight distribution bar). */

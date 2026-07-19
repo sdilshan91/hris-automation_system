@@ -193,4 +193,19 @@ describe('PerformanceGoalService', () => {
 
     expect(result).toEqual([]);
   });
+
+  // ─── BUG-056: finalize / lock ────────────────────────────────
+
+  it('finalizeGoals POSTs { employeeId, cycleId } to the finalize endpoint', () => {
+    let completed = false;
+    service.finalizeGoals('e-1', 'cyc-1').subscribe(() => (completed = true));
+
+    const req = httpMock.expectOne(`${baseUrl}/goals/finalize`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    expect(req.request.body).toEqual({ employeeId: 'e-1', cycleId: 'cyc-1' });
+    req.flush(null);
+
+    expect(completed).toBeTrue();
+  });
 });

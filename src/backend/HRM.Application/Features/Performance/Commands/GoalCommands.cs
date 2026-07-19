@@ -89,6 +89,27 @@ public sealed class SaveGoalsCommandHandler : IRequestHandler<SaveGoalsCommand, 
         => _service.SaveGoalsAsync(request.EmployeeId, request.CycleId, request.Goals, cancellationToken);
 }
 
+// ── Finalize / lock (BUG-056) ─────────────────────────────────────────────
+
+/// <summary>
+/// BUG-056: finalizes (locks) an employee's goal set for a cycle after sign-off. The set's weights must
+/// sum to exactly 100% (else 422 <c>weight_not_100</c>); an already-locked set yields 409
+/// <c>goals_finalized</c>. On success every goal transitions to <c>Finalized</c> and further edits are
+/// rejected until the set is re-opened (re-open flow out of scope).
+/// </summary>
+public sealed record FinalizeGoalsCommand(Guid EmployeeId, Guid CycleId)
+    : IRequest<Result<EmployeeGoalsDto>>;
+
+public sealed class FinalizeGoalsCommandHandler
+    : IRequestHandler<FinalizeGoalsCommand, Result<EmployeeGoalsDto>>
+{
+    private readonly IGoalService _service;
+    public FinalizeGoalsCommandHandler(IGoalService service) => _service = service;
+
+    public Task<Result<EmployeeGoalsDto>> Handle(FinalizeGoalsCommand request, CancellationToken cancellationToken)
+        => _service.FinalizeGoalsAsync(request.EmployeeId, request.CycleId, cancellationToken);
+}
+
 // ── Delete ───────────────────────────────────────────────────────────────
 
 /// <summary>Soft-deletes a goal (US-PRF-001 FR-1).</summary>
