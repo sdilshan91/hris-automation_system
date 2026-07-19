@@ -23,6 +23,10 @@ describe('OrgProfileSectionComponent', () => {
     industry: 'Tech',
     companySize: '11-50',
     fiscalYearStartMonth: 4,
+    defaultCountryCode: 'LK',
+    probationPeriodDays: 60,
+    payslipFooterDisclaimer: 'Confidential payslip',
+    payrollFromEmail: 'payroll@acme.test',
   };
 
   beforeEach(() => {
@@ -49,6 +53,16 @@ describe('OrgProfileSectionComponent', () => {
     expect(component.form.get('name')?.value).toBe('Acme');
     expect(component.form.get('fiscalYearStartMonth')?.value).toBe('4');
     expect(component.form.dirty).toBeFalse();
+  });
+
+  // ISSUE-322 regression guard: all 4 formerly-unmapped fields must LOAD from
+  // the GET value so they round-trip instead of resetting to BE defaults.
+  it('loads all 4 previously-unmapped fields from the input value', () => {
+    httpMock = TestBed.inject(HttpTestingController);
+    expect(component.form.get('defaultCountryCode')?.value).toBe('LK');
+    expect(component.form.get('probationPeriodDays')?.value).toBe(60);
+    expect(component.form.get('payslipFooterDisclaimer')?.value).toBe('Confidential payslip');
+    expect(component.form.get('payrollFromEmail')?.value).toBe('payroll@acme.test');
   });
 
   it('keeps Save disabled until the form is dirty, then enables it', () => {
@@ -85,5 +99,23 @@ describe('OrgProfileSectionComponent', () => {
     expect(typeof req.request.body.fiscalYearStartMonth).toBe('number');
     req.flush(null);
     expect(component.form.dirty).toBeFalse();
+  });
+
+  // ISSUE-322 regression guard: the full-replace PUT must RESEND all 4 fields —
+  // dropping any wipes the stored value to a BE default (data-loss).
+  it('sends all 4 previously-unmapped fields in the save payload', () => {
+    httpMock = TestBed.inject(HttpTestingController);
+    component.form.patchValue({ name: 'Acme Corp' });
+    component.form.markAsDirty();
+    component.onSave();
+
+    const req = httpMock.expectOne(orgUrl);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body.defaultCountryCode).toBe('LK');
+    expect(req.request.body.probationPeriodDays).toBe(60);
+    expect(typeof req.request.body.probationPeriodDays).toBe('number');
+    expect(req.request.body.payslipFooterDisclaimer).toBe('Confidential payslip');
+    expect(req.request.body.payrollFromEmail).toBe('payroll@acme.test');
+    req.flush(null);
   });
 });

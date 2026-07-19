@@ -29,6 +29,10 @@ describe('CompanySettingsService', () => {
       industry: 'Tech',
       companySize: '11-50',
       fiscalYearStartMonth: 1,
+      defaultCountryCode: 'LK',
+      probationPeriodDays: 90,
+      payslipFooterDisclaimer: null,
+      payrollFromEmail: null,
     },
     branding: {
       logoUrl: 'https://cdn/logo.png',

@@ -96,6 +96,46 @@ import {
             </select>
             <p class="cs-hint">{{ 'admin.companySettings.org.fiscalHint' | translate }}</p>
           </div>
+
+          <div class="cs-field">
+            <label class="cs-label" for="org-probation">Probation Period (days)</label>
+            <input
+              id="org-probation"
+              type="number"
+              min="0"
+              formControlName="probationPeriodDays"
+              class="cs-input"
+            />
+            @if (form.get('probationPeriodDays')?.invalid && form.get('probationPeriodDays')?.touched) {
+              <p class="cs-error">Probation period cannot be negative.</p>
+            }
+          </div>
+
+          <div class="cs-field">
+            <label class="cs-label" for="org-country">Default Country Code</label>
+            <input
+              id="org-country"
+              type="text"
+              maxlength="2"
+              placeholder="e.g. LK"
+              formControlName="defaultCountryCode"
+              class="cs-input"
+            />
+            <p class="cs-hint">2-letter ISO code; stored upper-cased.</p>
+          </div>
+
+          <div class="cs-field">
+            <label class="cs-label" for="org-payroll-email">Payroll Sender Email</label>
+            <input
+              id="org-payroll-email"
+              type="email"
+              formControlName="payrollFromEmail"
+              class="cs-input"
+            />
+            @if (form.get('payrollFromEmail')?.invalid && form.get('payrollFromEmail')?.touched) {
+              <p class="cs-error">Enter a valid email address.</p>
+            }
+          </div>
         </div>
 
         <div class="cs-field cs-span">
@@ -103,6 +143,17 @@ import {
             {{ 'admin.companySettings.org.address' | translate }}
           </label>
           <textarea id="org-address" rows="3" formControlName="address" class="cs-input"></textarea>
+        </div>
+
+        <div class="cs-field cs-span">
+          <label class="cs-label" for="org-disclaimer">Payslip Footer Disclaimer</label>
+          <textarea
+            id="org-disclaimer"
+            rows="3"
+            formControlName="payslipFooterDisclaimer"
+            class="cs-input"
+          ></textarea>
+          <p class="cs-hint">Shown at the foot of every payslip; leave blank to clear.</p>
         </div>
 
         <div class="cs-actions">
@@ -142,6 +193,11 @@ export class OrgProfileSectionComponent {
     companySize: [''],
     fiscalYearStartMonth: ['1'],
     address: [''],
+    // ISSUE-322: these 4 were previously unmapped + being wiped on every save.
+    probationPeriodDays: [90, [Validators.min(0)]],
+    defaultCountryCode: [''],
+    payslipFooterDisclaimer: [''],
+    payrollFromEmail: ['', [Validators.email]],
   });
 
   constructor() {
@@ -158,6 +214,10 @@ export class OrgProfileSectionComponent {
           companySize: v.companySize ?? '',
           fiscalYearStartMonth: String(v.fiscalYearStartMonth ?? 1),
           address: v.address ?? '',
+          probationPeriodDays: v.probationPeriodDays ?? 90,
+          defaultCountryCode: v.defaultCountryCode ?? '',
+          payslipFooterDisclaimer: v.payslipFooterDisclaimer ?? '',
+          payrollFromEmail: v.payrollFromEmail ?? '',
         });
         this.form.markAsPristine();
       }
@@ -178,6 +238,12 @@ export class OrgProfileSectionComponent {
       companySize: raw.companySize,
       fiscalYearStartMonth: Number(raw.fiscalYearStartMonth),
       address: raw.address,
+      // ISSUE-322: full-replace PUT — resend these 4 so they are preserved,
+      // never silently reset to BE defaults. Blank clears the nullable ones.
+      probationPeriodDays: Number(raw.probationPeriodDays),
+      defaultCountryCode: raw.defaultCountryCode?.trim() || null,
+      payslipFooterDisclaimer: raw.payslipFooterDisclaimer?.trim() || null,
+      payrollFromEmail: raw.payrollFromEmail?.trim() || null,
     };
     this.service.updateOrgProfile(body).subscribe({
       next: () => {
