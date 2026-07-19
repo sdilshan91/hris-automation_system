@@ -509,6 +509,9 @@ public static class DbInitializer
                 PriceMonthly = price,
                 TrialDays = trialDays,
                 MaxEmployees = maxEmployees,
+                // DF-5/BR-6: seed the historical default of 2 template language variants so existing behaviour
+                // is preserved for freshly-seeded plans. The consuming service also falls back to 2 when unset.
+                MaxTemplateLanguageVariants = 2,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
             });

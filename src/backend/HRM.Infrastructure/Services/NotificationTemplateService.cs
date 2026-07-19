@@ -1,6 +1,7 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.NotificationTemplates.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Notifications;
 using HRM.Infrastructure.Persistence;
@@ -99,18 +100,20 @@ public sealed class NotificationTemplateService : INotificationTemplateService
 
         if (existing is null)
         {
-            // BR-6: at most 2 language variants per (tenant, eventKey). Adding a NEW language beyond the cap is
-            // rejected (an update to an existing language, or reactivating a reset one, is the `else` branch and
-            // never trips this). Soft-deleted (reset) variants do not count.
-            const int MaxLanguageVariants = 2;
+            // BR-6/DF-5: at most N language variants per (tenant, eventKey), where N is plan-configurable
+            // (was a hardcoded 2). Adding a NEW language beyond the cap is rejected (an update to an existing
+            // language, or reactivating a reset one, is the `else` branch and never trips this). Soft-deleted
+            // (reset) variants do not count. The cap resolves with precedence override > plan > tenant snapshot,
+            // defaulting to 2 when nothing is configured so existing behaviour is preserved.
+            var maxLanguageVariants = await ResolveMaxLanguageVariantsAsync(cancellationToken);
             var variantCount = await _db.NotificationTemplates
                 .Where(t => t.EventKey == def.EventKey && !t.IsDeleted)
                 .Select(t => t.Language)
                 .Distinct()
                 .CountAsync(cancellationToken);
-            if (variantCount >= MaxLanguageVariants)
+            if (variantCount >= maxLanguageVariants)
                 return Result<TemplateDetailDto>.Failure(
-                    $"This template already has the maximum of {MaxLanguageVariants} language variants.",
+                    $"This template already has the maximum of {maxLanguageVariants} language variants.",
                     422, "variant_limit_reached");
 
             // First override for this event+language → version 1.
@@ -143,6 +146,45 @@ public sealed class NotificationTemplateService : INotificationTemplateService
 
         // Return the now-effective template (the override we just saved).
         return await GetAsync(def.EventKey, lang, cancellationToken);
+    }
+
+    /// <summary>
+    /// DF-5/BR-6: resolves the effective per-(tenant, event) language-variant cap. Mirrors the
+    /// <c>WorkflowService.MaxWorkflows</c> pattern — precedence override &gt; plan &gt; tenant snapshot — but
+    /// defaults to the historical <c>2</c> when nothing is configured (an unresolved/unlimited value keeps
+    /// today's behaviour rather than becoming truly unlimited).
+    /// </summary>
+    private async Task<long> ResolveMaxLanguageVariantsAsync(CancellationToken cancellationToken)
+    {
+        const long DefaultCap = 2;
+
+        var tenantId = _tenantContext.TenantId;
+        var tenant = await _db.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.PlanId, t.MaxTemplateLanguageVariants })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (tenant is null)
+            return DefaultCap;
+
+        var planValue = await _db.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxTemplateLanguageVariants)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _db.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxTemplateLanguageVariants, planValue, overrides, DateTime.UtcNow);
+        long? overrideValue = resolved.Source == PlanLimitResolver.LimitSource.Override
+            ? resolved.Value
+            : null;
+
+        return overrideValue ?? planValue ?? tenant.MaxTemplateLanguageVariants ?? DefaultCap;
     }
 
     public async Task<Result<TemplateDetailDto>> ResetAsync(

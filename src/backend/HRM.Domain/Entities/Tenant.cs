@@ -158,6 +158,13 @@ public sealed class Tenant
     public int? MaxWorkflows { get; set; }
 
     /// <summary>
+    /// Maximum number of notification-template language variants per (tenant, event) for this tenant's plan
+    /// (DF-5/BR-6). Null means "use the plan value, else the historical default of 2". A dedicated column,
+    /// mirroring <see cref="MaxWorkflows"/>, because it caps a different resource.
+    /// </summary>
+    public int? MaxTemplateLanguageVariants { get; set; }
+
+    /// <summary>
     /// Number of days a goal may go without a progress update before the daily stale-goal sweep nudges the
     /// employee and flags the goal "Needs Attention" for the manager (US-PRF-009 AC-5/FR-6/BR-4). Default 14.
     /// Setting it to 0 DISABLES nudge notifications for the tenant (BR-4). TODO(admin-console): surface this in

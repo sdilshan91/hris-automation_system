@@ -57,7 +57,7 @@ acceptance_criteria_count: 5
 - BR-3: Templates must include both HTML and plain-text versions for email client compatibility.
 - BR-4: Custom sender domains require DNS verification (SPF/DKIM); until verified, the platform default sender is used.
 - BR-5: Template placeholders that cannot be resolved at send time are replaced with empty strings (not raw placeholder text).
-- BR-6: A maximum of 2 language variants per template per tenant (configurable based on plan).
+- BR-6: A maximum of 2 language variants per template per tenant, **configurable per plan/tenant** (DF-5). The cap resolves via `PlanLimitResolver` (key `max_template_language_variants`): per-tenant override > `SubscriptionPlan` value > per-tenant snapshot > default **2**; exceeding it → 422 `variant_limit_reached`. Shipped; covered by TC-NTF-002-14.
 
 ## 7. Data Requirements
 **Template record:**

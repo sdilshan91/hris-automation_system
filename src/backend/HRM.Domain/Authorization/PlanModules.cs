@@ -47,12 +47,13 @@ public static class PlanLimitKeys
     public const string MaxCustomRoles = "max_custom_roles";
     public const string MaxCustomFieldsPerEntity = "max_custom_fields_per_entity";
     public const string MaxWorkflows = "max_workflows";
+    public const string MaxTemplateLanguageVariants = "max_template_language_variants";
 
     /// <summary>All recognized limit keys.</summary>
     public static IReadOnlyList<string> All { get; } = new[]
     {
         MaxEmployees, MaxStorageGb, MaxApiCallsPerMonth, MaxEmailSendsPerMonth,
-        MaxCustomRoles, MaxCustomFieldsPerEntity, MaxWorkflows,
+        MaxCustomRoles, MaxCustomFieldsPerEntity, MaxWorkflows, MaxTemplateLanguageVariants,
     };
 
     private static readonly HashSet<string> Set = new(All, StringComparer.Ordinal);

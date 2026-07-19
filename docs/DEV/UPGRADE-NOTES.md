@@ -16,6 +16,25 @@ entries below.
 
 ---
 
+## 2026-07-20 — DF-5: notification-template language-variant cap is now plan-configurable
+
+**What changed.** The per-(tenant, event) email-template **language-variant cap** — previously a hardcoded `2` — is now
+resolved through the plan-limit system (key `max_template_language_variants`), so it can be set per plan tier or
+per tenant. Precedence: a per-tenant `PlanLimitOverride` > the tenant's `SubscriptionPlan` value > a per-tenant
+snapshot value > the historical default of **2**.
+
+**What the platform does automatically.** Migration `Plan_MaxTemplateLanguageVariants` adds two nullable
+`integer` columns (`subscription_plans.max_template_language_variants`, `tenants.max_template_language_variants`).
+`DbInitializer` seeds `2` on newly-seeded plans. Existing plan/tenant rows stay `NULL` and the service falls back
+to `2`, so **behaviour is unchanged** until you configure a value.
+
+**Action for admins.** None required. To raise/lower the cap for a plan, set `max_template_language_variants` on
+the `SubscriptionPlan` (or add a per-tenant `PlanLimitOverride` for that key). Note: an *unlimited* (null-valued)
+override for this key is **not** honored as unlimited — it falls back to the plan/default (unbounded language
+variants is intentionally disallowed).
+
+---
+
 ## 2026-07-19 — ISSUE-285a / #390: dashboard upcoming-birthdays now index-backed (`Employee.BirthMonthDay`)
 
 **What changed.** The dashboard "upcoming birthdays" widget previously loaded every active/probation
