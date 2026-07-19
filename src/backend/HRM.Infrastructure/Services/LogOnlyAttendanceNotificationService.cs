@@ -77,4 +77,16 @@ public sealed class LogOnlyAttendanceNotificationService : IAttendanceNotificati
             approved ? "approved" : "rejected", employeeId, hours, date);
         return Task.CompletedTask;
     }
+
+    public Task NotifyChronicLatenessAsync(
+        Guid employeeId, int lateCount, int threshold, DateOnly asOfLocalDate,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[Attendance notification SEAM] chronic-lateness: employee {EmployeeId} has {LateCount} late day(s) " +
+            "for {Month} (threshold {Threshold}); line manager + attendance-admin pool notified. Real in-app/email " +
+            "delivery deferred (US-NTF).",
+            employeeId, lateCount, asOfLocalDate.ToString("yyyy-MM"), threshold);
+        return Task.CompletedTask;
+    }
 }

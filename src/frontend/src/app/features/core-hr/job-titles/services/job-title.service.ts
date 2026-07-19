@@ -1,11 +1,14 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IJobTitle,
   ICreateJobTitleRequest,
   IUpdateJobTitleRequest,
+  IEmploymentTypeDto,
+  IEmploymentTypeOption,
 } from '../models/job-title.models';
 
 /**
@@ -40,6 +43,26 @@ export class JobTitleService {
     return this.http.get<IJobTitle>(`${this.baseUrl}/${jobTitleId}`, {
       withCredentials: true,
     });
+  }
+
+  /**
+   * DF-38: enumerate the employment-type options (exact enum member names + labels)
+   * for the profile employment-type select. Sending an exact enum name avoids the
+   * free-text 400 that System.Text.Json throws on an unrecognised value.
+   */
+  getEmploymentTypes(): Observable<IEmploymentTypeOption[]> {
+    // The BE emits EmploymentTypeDto { id, name, displayName } (camelCase). Map to
+    // the consumer's { value, label } contract, where `value` is the exact enum
+    // member name (`name`) the BE binds on save and `label` is the display text.
+    return this.http
+      .get<IEmploymentTypeDto[]>(`${this.baseUrl}/employment-types`, {
+        withCredentials: true,
+      })
+      .pipe(
+        map((rows) =>
+          rows.map((r) => ({ value: r.name, label: r.displayName }))
+        )
+      );
   }
 
   // --- Write -------------------------------------------------

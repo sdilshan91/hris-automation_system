@@ -185,8 +185,10 @@ public sealed class AuthService : IAuthService
             {
                 // ISSUE-063: enrich with the login-time tenant name (the tenant is not yet loaded on this path).
                 lockoutEmail = lockoutEmail with { TenantName = await ResolveTenantNameAsync(cancellationToken) };
+                // DF-40: capture the tenant id as a local so Hangfire serializes a value, not a service closure.
+                var lockoutTenantId = _tenantContext.TenantId;
                 _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, default));
+                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, lockoutTenantId, default));
             }
 
             _logger.LogWarning("Login failed: invalid password for user {UserId}, attempt {Attempt}",
@@ -336,8 +338,10 @@ public sealed class AuthService : IAuthService
                 {
                     // ISSUE-063: reuse the already-loaded login-time tenant for the email branding (no extra query).
                     lockoutEmail = lockoutEmail with { TenantName = currentTenant.Name };
+                    // DF-40: reuse the already-loaded tenant id (a value, so Hangfire serializes it cleanly).
+                    var lockoutTenantId = currentTenant.Id;
                     _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                        svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, default));
+                        svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, lockoutTenantId, default));
                 }
 
                 return Result<LoginResponse>.Failure("Invalid verification code.", 401);
@@ -1449,8 +1453,10 @@ public sealed class AuthService : IAuthService
             {
                 // ISSUE-063: enrich with the login-time tenant name (the tenant is loaded later on this path).
                 lockoutEmail = lockoutEmail with { TenantName = await ResolveTenantNameAsync(cancellationToken) };
+                // DF-40: capture the tenant id as a local so Hangfire serializes a value, not a service closure.
+                var lockoutTenantId = _tenantContext.TenantId;
                 _backgroundJobClient.Enqueue<ILockoutNotificationService>(
-                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, default));
+                    svc => svc.SendLockoutNotificationAsync(lockoutEmail.Email, lockoutEmail.DisplayName, lockoutEmail.LockedUntil, lockoutEmail.Minutes, lockoutEmail.TenantName, lockoutTenantId, default));
             }
 
             return Result<LoginResponse>.Failure("Invalid verification code.", 401);

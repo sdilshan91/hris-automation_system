@@ -16,6 +16,7 @@
 // the EmailMessage) + a hand FakeFileStorage (returns bytes / null / throws) + a substituted IEmailTemplateService.
 // ============================================================================
 
+using System.Text.Json;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
@@ -25,6 +26,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -59,10 +61,18 @@ public sealed class RealRecruitmentNotificationServiceTests
     private readonly string _dbName = Guid.NewGuid().ToString();
     private readonly ITenantContext _tenantContext;
 
+    // DF-42: a fixed magic-link token the offer email embeds; extracted from the payload to assert the /portal link.
+    private const string PortalToken = "unit-test-portal-token-abc123";
+
+    private readonly IConfiguration _config = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?> { ["Platform:BaseDomain"] = "yourhrm.com" })
+        .Build();
+
     public RealRecruitmentNotificationServiceTests()
     {
         _tenantContext = Substitute.For<ITenantContext>();
         _tenantContext.TenantId.Returns(_tenantId);
+        _tenantContext.Subdomain.Returns("acme");
         _tenantContext.IsResolved.Returns(true);
         _tenantContext.IsSystemContext.Returns(false);
     }
@@ -73,13 +83,16 @@ public sealed class RealRecruitmentNotificationServiceTests
         INotificationDispatcher dispatcher,
         IEmailSender? emailSender = null,
         IFileStorage? fileStorage = null,
-        IEmailTemplateService? templateService = null) =>
+        IEmailTemplateService? templateService = null,
+        IApplicantPortalTokenService? portalTokenService = null) =>
         new(
             Db(),
             dispatcher,
             emailSender ?? new FakeEmailSender(),
             fileStorage ?? new FakeFileStorage(),
             templateService ?? ResolvingTemplateService(),
+            portalTokenService ?? new FakePortalTokenService(PortalToken),
+            _config,
             _tenantContext,
             NullLogger<RealRecruitmentNotificationService>.Instance);
 
@@ -145,6 +158,33 @@ public sealed class RealRecruitmentNotificationServiceTests
         public string GetSignedUrl(Guid tenantId, string relativePath, TimeSpan? expiresIn = null)
             => throw new NotImplementedException();
         public Task DeleteAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// A portal-token service that issues a fixed token (DF-42), or fails issuance when constructed with a null token
+    /// — to drive the "issuance fails ⇒ offer still sent, without the link" arm. Records the emails it was asked for.
+    /// </summary>
+    private sealed class FakePortalTokenService : IApplicantPortalTokenService
+    {
+        private readonly string? _token;
+        public List<string> IssuedFor { get; } = new();
+        public FakePortalTokenService(string? token) => _token = token;
+
+        public Task<Result<IssuedPortalToken>> IssueAsync(string applicantEmail, CancellationToken cancellationToken = default)
+        {
+            IssuedFor.Add(applicantEmail);
+            return Task.FromResult(_token is null
+                ? Result<IssuedPortalToken>.Failure("issuance failed", 500)
+                : Result<IssuedPortalToken>.Success(new IssuedPortalToken
+                {
+                    Token = _token, ExpiresAt = DateTime.UtcNow.AddDays(30),
+                }));
+        }
+
+        public Task<Result<bool>> RequestLinkAsync(string email, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+        public Task<Result<ValidatedPortalToken>> ValidateAsync(string token, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
     }
 
@@ -458,6 +498,58 @@ public sealed class RealRecruitmentNotificationServiceTests
         emailSender.Sent.Should().BeEmpty();
         dispatcher.Email.Should().ContainSingle();
         dispatcher.Email.Single().EventKey.Should().Be("offer_sent");
+    }
+
+    // ── DF-42: offer_sent embeds a candidate magic-link (offer.portalUrl) into the offer email payload. ──
+
+    [Fact]
+    public async Task NotifyOfferAsync_OfferSent_IssuesPortalToken_AndEmbedsMagicLinkInPayload()
+    {
+        await SeedRecruitmentDataAsync();
+        var dispatcher = new RecordingDispatcher();
+        var emailSender = new FakeEmailSender();
+        var fileStorage = new FakeFileStorage(bytes: null); // no PDF → fall back to the dispatcher email (payload visible).
+        var portalTokens = new FakePortalTokenService(PortalToken);
+
+        await Service(dispatcher, emailSender, fileStorage, portalTokenService: portalTokens)
+            .NotifyOfferAsync("offer-sent", _offerId, _applicantId, _vacancyId, CandidateEmail);
+
+        // A portal token was minted for the candidate…
+        portalTokens.IssuedFor.Should().ContainSingle().Which.Should().Be(CandidateEmail);
+
+        // …and the offer email payload embeds the /portal?token= magic link with THAT token.
+        dispatcher.Email.Should().ContainSingle();
+        var sent = dispatcher.Email.Single();
+        sent.EventKey.Should().Be("offer_sent");
+        var portalUrl = JsonDocument.Parse(sent.PayloadJson)
+            .RootElement.GetProperty("offer").GetProperty("portalUrl").GetString();
+        portalUrl.Should().Be($"https://acme.yourhrm.com/portal?token={PortalToken}");
+    }
+
+    [Fact]
+    public async Task NotifyOfferAsync_OfferSent_TokenIssuanceFails_StillSendsOffer_WithoutTheLink()
+    {
+        await SeedRecruitmentDataAsync();
+        var dispatcher = new RecordingDispatcher();
+        var emailSender = new FakeEmailSender();
+        var fileStorage = new FakeFileStorage(bytes: null); // no PDF → dispatcher fallback so we can inspect the payload.
+        var portalTokens = new FakePortalTokenService(token: null); // issuance FAILS.
+
+        var act = () => Service(dispatcher, emailSender, fileStorage, portalTokenService: portalTokens)
+            .NotifyOfferAsync("offer-sent", _offerId, _applicantId, _vacancyId, CandidateEmail);
+
+        await act.Should().NotThrowAsync();
+
+        // The offer email is STILL sent (the magic-link leg must never break offer delivery)…
+        dispatcher.Email.Should().ContainSingle();
+        var sent = dispatcher.Email.Single();
+        sent.EventKey.Should().Be("offer_sent");
+        sent.RecipientEmail.Should().Be(CandidateEmail);
+        // …but it carries no magic link (portalUrl is blank).
+        sent.PayloadJson.Should().NotContain("/portal?token=");
+        var portalUrl = JsonDocument.Parse(sent.PayloadJson)
+            .RootElement.GetProperty("offer").GetProperty("portalUrl").GetString();
+        portalUrl.Should().BeEmpty();
     }
 
     [Fact]

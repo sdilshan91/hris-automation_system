@@ -15,6 +15,14 @@ public sealed record EmployeeProfileDto
     public string? PersonalEmail { get; init; }
     public string? Phone { get; init; }
     public string? Address { get; init; }
+    /// <summary>DF-38: city component of the address. Null when not captured.</summary>
+    public string? City { get; init; }
+    /// <summary>DF-38: state/province component of the address. Null when not captured.</summary>
+    public string? State { get; init; }
+    /// <summary>DF-38: postal/ZIP code component of the address. Null when not captured.</summary>
+    public string? PostalCode { get; init; }
+    /// <summary>DF-38: country component of the address. Null when not captured.</summary>
+    public string? Country { get; init; }
     public DateTime? DateOfBirth { get; init; }
     public string? Gender { get; init; }
     public DateTime DateOfJoining { get; init; }
@@ -61,6 +69,58 @@ public sealed record EmployeeProfileDto
     /// Employment history timeline entries, ordered by effective date descending.
     /// </summary>
     public IReadOnlyList<EmploymentHistoryDto> EmploymentHistory { get; init; } = [];
+
+    /// <summary>
+    /// Education history entries (DF-39).
+    /// </summary>
+    public IReadOnlyList<EducationDto> Education { get; init; } = [];
+
+    /// <summary>
+    /// Prior work-history entries (DF-39).
+    /// </summary>
+    public IReadOnlyList<WorkHistoryDto> WorkHistory { get; init; } = [];
+
+    /// <summary>
+    /// Dependents / family members (DF-39).
+    /// </summary>
+    public IReadOnlyList<DependentDto> Dependents { get; init; } = [];
+}
+
+/// <summary>
+/// DTO for an education history entry (DF-39).
+/// </summary>
+public sealed record EducationDto
+{
+    public Guid Id { get; init; }
+    public string Institution { get; init; } = string.Empty;
+    public string Degree { get; init; } = string.Empty;
+    public string? FieldOfStudy { get; init; }
+    public string? StartYear { get; init; }
+    public string? EndYear { get; init; }
+}
+
+/// <summary>
+/// DTO for a work-history entry (DF-39).
+/// </summary>
+public sealed record WorkHistoryDto
+{
+    public Guid Id { get; init; }
+    public string Company { get; init; } = string.Empty;
+    public string Position { get; init; } = string.Empty;
+    public DateOnly? FromDate { get; init; }
+    public DateOnly? ToDate { get; init; }
+    public string? Description { get; init; }
+}
+
+/// <summary>
+/// DTO for a dependent entry (DF-39).
+/// </summary>
+public sealed record DependentDto
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Relationship { get; init; } = string.Empty;
+    public DateOnly? DateOfBirth { get; init; }
 }
 
 /// <summary>

@@ -32,6 +32,7 @@ public sealed class AttendanceService : IAttendanceService
     private readonly IShiftService _shiftService;
     private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly IAttendanceNotificationService? _notifications;
+    private readonly ILateEarlyService? _lateEarly;
     private readonly ILogger<AttendanceService> _logger;
 
     public AttendanceService(
@@ -42,7 +43,8 @@ public sealed class AttendanceService : IAttendanceService
         IShiftService shiftService,
         ILogger<AttendanceService> logger,
         IWorkflowRuntime? workflowRuntime = null,
-        IAttendanceNotificationService? notifications = null)
+        IAttendanceNotificationService? notifications = null,
+        ILateEarlyService? lateEarly = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -55,6 +57,9 @@ public sealed class AttendanceService : IAttendanceService
         _workflowRuntime = workflowRuntime;
         // US-NTF-006 Phase 6: optional so existing US-ATT unit tests keep compiling; DI always supplies the Real impl.
         _notifications = notifications;
+        // US-ATT-008 FR-7: optional so existing US-ATT unit tests keep compiling; DI always supplies it. Used to
+        // count distinct late days in the current calendar month for the chronic-lateness escalation crossing.
+        _lateEarly = lateEarly;
         _logger = logger;
     }
 
@@ -231,6 +236,36 @@ public sealed class AttendanceService : IAttendanceService
                 TenantClock.LocalTimeOfDay(log.ClockIn, tenantZone),
                 expectedShiftStart,
                 cancellationToken);
+        }
+
+        // US-ATT-008 FR-7: escalate chronic lateness to the line manager + HR, ONCE, on the punch that first
+        // pushes the employee's distinct late-day count for the calendar month ABOVE the tenant chronic threshold.
+        if (log.IsLate && _notifications is not null && _lateEarly is not null)
+        {
+            var latePolicy = await _dbContext.LatePolicies.AsNoTracking()
+                .FirstOrDefaultAsync(cancellationToken);
+            var chronicThreshold = latePolicy?.ChronicThreshold ?? 0;
+
+            if (chronicThreshold > 0)
+            {
+                var asOfLocalDate = TenantClock.LocalDateOf(log.ClockIn, tenantZone);
+
+                // Month-to-date distinct late days INCLUDING this now-committed punch (shared CountLateEarly def).
+                var mtdLateDays = await _lateEarly.CountLateDaysInMonthAsync(
+                    employee.Id, asOfLocalDate, cancellationToken);
+
+                // (b) fire only on the FIRST late day-record of this local day: a second late punch the same day
+                // leaves the distinct-day count unchanged (still threshold+1), so without this guard it would
+                // re-fire. Together with (a) mtdLateDays == threshold+1 this fires on exactly one punch per month.
+                var firstLateOfDay = !await HasOtherLateLogOnLocalDateAsync(
+                    employee.Id, log.Id, asOfLocalDate, tenantZone, cancellationToken);
+
+                if (mtdLateDays == chronicThreshold + 1 && firstLateOfDay)
+                {
+                    await _notifications.NotifyChronicLatenessAsync(
+                        employee.Id, mtdLateDays, chronicThreshold, asOfLocalDate, cancellationToken);
+                }
+            }
         }
 
         var dto = MapToDto(log);
@@ -754,6 +789,28 @@ public sealed class AttendanceService : IAttendanceService
             .FirstOrDefaultAsync(cancellationToken);
 
         return TenantClock.ResolveTimeZone(tzId, _logger);
+    }
+
+    /// <summary>
+    /// US-ATT-008 FR-7 guard (b): true when the employee already has ANOTHER late attendance log whose
+    /// tenant-local date equals <paramref name="localDate"/>, besides <paramref name="excludeLogId"/> (the punch
+    /// just committed). Loads late logs in a UTC window wide enough to cover any zone offset (±1 day) and compares
+    /// on the LOCAL date. Used to fire the chronic escalation only on the FIRST late punch of the crossing day.
+    /// </summary>
+    private async Task<bool> HasOtherLateLogOnLocalDateAsync(
+        Guid employeeId, Guid excludeLogId, DateOnly localDate, TimeZoneInfo zone, CancellationToken cancellationToken)
+    {
+        var windowStart = localDate.AddDays(-1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var windowEnd = localDate.AddDays(2).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var candidates = await _dbContext.AttendanceLogs.AsNoTracking()
+            .Where(a => a.EmployeeId == employeeId && a.IsLate
+                && a.Id != excludeLogId
+                && a.ClockIn >= windowStart && a.ClockIn < windowEnd)
+            .Select(a => a.ClockIn)
+            .ToListAsync(cancellationToken);
+
+        return candidates.Any(clockIn => TenantClock.LocalDateOf(clockIn, zone) == localDate);
     }
 
     private async Task TryRecordIdempotencyAsync(
