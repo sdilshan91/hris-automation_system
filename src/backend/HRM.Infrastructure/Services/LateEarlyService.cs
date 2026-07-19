@@ -263,6 +263,32 @@ public sealed class LateEarlyService : ILateEarlyService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Chronic-lateness count (FR-7)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// FR-7: distinct late-day count for <paramref name="employeeId"/> in the calendar month containing
+    /// <paramref name="asOfLocalDate"/>. Mirrors the month-range construction in <see cref="GetMyScoreAsync"/>
+    /// and reuses the shared <see cref="CountLateEarly"/> distinct-day definition (DRY) — so the chronic-lateness
+    /// escalation, the report and the self-score never disagree for the same employee/period.
+    /// </summary>
+    public async Task<int> CountLateDaysInMonthAsync(
+        Guid employeeId, DateOnly asOfLocalDate, CancellationToken cancellationToken = default)
+    {
+        var monthStart = new DateOnly(asOfLocalDate.Year, asOfLocalDate.Month, 1);
+        var rangeStart = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var rangeEnd = monthStart.AddMonths(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var logs = await _dbContext.AttendanceLogs.AsNoTracking()
+            .Where(a => a.EmployeeId == employeeId && a.ClockIn >= rangeStart && a.ClockIn < rangeEnd)
+            .Select(a => new { a.ClockIn, a.IsLate, a.LateMinutes, a.IsEarlyDeparture, a.EarlyDepartureMinutes })
+            .ToListAsync(cancellationToken);
+
+        return CountLateEarly(logs.Select(l => new LateEarlyLogRow(
+            l.ClockIn, l.IsLate, l.LateMinutes, l.IsEarlyDeparture, l.EarlyDepartureMinutes))).LateCount;
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════
 

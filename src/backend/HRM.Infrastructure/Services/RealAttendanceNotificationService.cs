@@ -210,6 +210,49 @@ public sealed class RealAttendanceNotificationService : IAttendanceNotificationS
         }
     }
 
+    public async Task NotifyChronicLatenessAsync(
+        Guid employeeId, int lateCount, int threshold, DateOnly asOfLocalDate,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = _tenantContext.TenantId;
+            var employee = await LoadEmployeeAsync(tenantId, employeeId, cancellationToken);
+            var manager = await LoadManagerAsync(tenantId, employeeId, cancellationToken);
+
+            var monthLabel = asOfLocalDate.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+            var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["title"] = "Chronic lateness alert",
+                ["message"] =
+                    $"{FullName(employee)} has {lateCount} late day(s) in {monthLabel}, which exceeds the " +
+                    $"chronic-lateness threshold of {threshold}.",
+                ["employee"] = EmployeeNode(employee),
+                ["attendance"] = new Dictionary<string, object?>
+                {
+                    ["lateCount"] = lateCount,
+                    ["threshold"] = threshold,
+                    ["month"] = monthLabel,
+                },
+            });
+
+            // FR-7 recipients: the line manager (if they have a linked user) ∪ the attendance-admin/HR pool,
+            // de-duplicated so a manager who is also in the admin pool is not notified twice (DispatchToUsersAsync
+            // applies Distinct()).
+            var admins = await ResolveAttendanceAdminUserIdsAsync(tenantId, cancellationToken);
+            var recipients = new List<Guid>(admins);
+            if (manager?.UserId is { } managerUserId)
+                recipients.Add(managerUserId);
+
+            await DispatchToUsersAsync(
+                tenantId, "attendance_chronic_lateness", payload, recipients, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            LogFailure(ex, "attendance_chronic_lateness", employeeId);
+        }
+    }
+
     // ── Recipient resolution ────────────────────────────────────────────────────────────────────────
 
     private async Task<EmployeeLite?> LoadEmployeeAsync(

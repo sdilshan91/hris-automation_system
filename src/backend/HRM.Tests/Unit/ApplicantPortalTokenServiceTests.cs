@@ -6,8 +6,10 @@
 // ============================================================================
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
@@ -29,19 +31,34 @@ public sealed class ApplicantPortalTokenServiceTests
     {
         _tenantContext = Substitute.For<ITenantContext>();
         _tenantContext.TenantId.Returns(_tenantId);
+        _tenantContext.Subdomain.Returns("acme");
         _tenantContext.IsResolved.Returns(true);
 
         _config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Recruitment:PortalTokenSecret"] = "unit-test-portal-secret-0123456789abcdef",
+                ["Platform:BaseDomain"] = "yourhrm.com",
             })
             .Build();
     }
 
+    /// <summary>Records the email legs dispatched via the canonical templated path (DF-41 magic-link send).</summary>
+    private sealed class RecordingDispatcher : INotificationDispatcher
+    {
+        public List<NotificationRequest> Email { get; } = new();
+        public Task SendInAppAsync(NotificationRequest request, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+        public Task SendEmailAsync(NotificationRequest request, CancellationToken cancellationToken = default)
+        {
+            Email.Add(request);
+            return Task.CompletedTask;
+        }
+    }
+
     private AppDbContext Db() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
-    private ApplicantPortalTokenService Service(string? ip)
+    private ApplicantPortalTokenService Service(string? ip, INotificationDispatcher? dispatcher = null)
     {
         IHttpContextAccessor? accessor = null;
         if (ip is not null)
@@ -52,7 +69,19 @@ public sealed class ApplicantPortalTokenServiceTests
             accessor.HttpContext.Returns(ctx);
         }
         return new ApplicantPortalTokenService(
-            Db(), _tenantContext, _config, NullLogger<ApplicantPortalTokenService>.Instance, accessor);
+            Db(), _tenantContext, _config, dispatcher ?? new RecordingDispatcher(),
+            NullLogger<ApplicantPortalTokenService>.Instance, accessor);
+    }
+
+    private async Task SeedApplicantAsync(string email)
+    {
+        using var db = Db();
+        db.Applicants.Add(new Applicant
+        {
+            Id = Guid.NewGuid(), TenantId = _tenantId, FirstName = "Jordan", LastName = "Rivera",
+            Email = email, ApplicationReferenceNumber = "APP-2026-000123",
+        });
+        await db.SaveChangesAsync();
     }
 
     [Fact]
@@ -90,5 +119,52 @@ public sealed class ApplicantPortalTokenServiceTests
         // No HttpContext (e.g. a background path) → the per-IP throttle is skipped; distinct-email issues all pass.
         for (int i = 0; i < 11; i++)
             (await Service(null).IssueAsync($"cand{i}@x.test")).IsSuccess.Should().BeTrue();
+    }
+
+    // ── DF-41: RequestLinkAsync now EMAILS the magic link (was a log-only seam). ──
+
+    [Fact]
+    public async Task RequestLink_WithApplication_DispatchesExactlyOneMagicLinkEmail_ContainingIssuedToken()
+    {
+        const string email = "jordan.rivera@example.com";
+        await SeedApplicantAsync(email);
+        var dispatcher = new RecordingDispatcher();
+
+        var result = await Service(null, dispatcher).RequestLinkAsync(email);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+
+        // Exactly one email, to the applicant, on the new catalog event, carrying the portal magic link.
+        dispatcher.Email.Should().ContainSingle();
+        var sent = dispatcher.Email.Single();
+        sent.EventKey.Should().Be("applicant_portal_link");
+        sent.RecipientEmail.Should().Be(email);
+        sent.TenantId.Should().Be(_tenantId);
+
+        // The payload embeds the /portal?token= link with a GENUINE, working token (round-trips through ValidateAsync).
+        var portalUrl = JsonDocument.Parse(sent.PayloadJson)
+            .RootElement.GetProperty("portal").GetProperty("url").GetString();
+        portalUrl.Should().StartWith("https://acme.yourhrm.com/portal?token=");
+
+        var token = portalUrl!.Substring(portalUrl.IndexOf("token=", StringComparison.Ordinal) + "token=".Length);
+        token.Should().NotBeNullOrWhiteSpace();
+        var validated = await Service(null).ValidateAsync(token);
+        validated.IsSuccess.Should().BeTrue("the emailed token must be the issued, valid magic-link token");
+        validated.Value!.ApplicantEmail.Should().Be(email);
+    }
+
+    [Fact]
+    public async Task RequestLink_WithoutApplication_DoesNotDispatch_ButStillReturnsSuccess_BR5()
+    {
+        // BR-5 anti-enumeration: no application for this email → no token, NO email, yet the caller still sees success
+        // (so it cannot infer whether the email exists).
+        var dispatcher = new RecordingDispatcher();
+
+        var result = await Service(null, dispatcher).RequestLinkAsync("nobody@nowhere.test");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
+        dispatcher.Email.Should().BeEmpty("no application exists → the magic-link email must not be sent (BR-5)");
     }
 }

@@ -1,9 +1,11 @@
 using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Services;
@@ -42,6 +44,8 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
     private readonly IEmailSender _emailSender;
     private readonly IFileStorage _fileStorage;
     private readonly IEmailTemplateService _templateService;
+    private readonly IApplicantPortalTokenService _portalTokenService;
+    private readonly IConfiguration _configuration;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<RealRecruitmentNotificationService> _logger;
 
@@ -51,6 +55,8 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
         IEmailSender emailSender,
         IFileStorage fileStorage,
         IEmailTemplateService templateService,
+        IApplicantPortalTokenService portalTokenService,
+        IConfiguration configuration,
         ITenantContext tenantContext,
         ILogger<RealRecruitmentNotificationService> logger)
     {
@@ -59,6 +65,8 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
         _emailSender = emailSender;
         _fileStorage = fileStorage;
         _templateService = templateService;
+        _portalTokenService = portalTokenService;
+        _configuration = configuration;
         _tenantContext = tenantContext;
         _logger = logger;
     }
@@ -293,6 +301,13 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
 
             var candidateEmail = FirstNonEmpty(applicantEmail, applicant?.Email);
             var candidateName = $"{applicant?.FirstName} {applicant?.LastName}".Trim();
+
+            // DF-42: the offer email embeds a candidate magic link into the portal (US-REC-008 FR-7). Only offer_sent
+            // carries it. Token issuance must NEVER break offer delivery — on failure we log and send WITHOUT the link.
+            string? offerPortalUrl = null;
+            if (eventKey == "offer_sent")
+                offerPortalUrl = await TryBuildOfferPortalUrlAsync(candidateEmail, offerId, cancellationToken);
+
             var (inAppTitle, inAppMessage) = eventKey switch
             {
                 "offer_expiry_reminder" => (
@@ -319,6 +334,7 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                     ["position"] = offer?.OfferedPosition ?? vacancyTitle,
                     ["startDate"] = offer?.StartDate.ToString("yyyy-MM-dd") ?? string.Empty,
                     ["expiryDate"] = offer?.ExpiryDate.ToString("yyyy-MM-dd") ?? string.Empty,
+                    ["portalUrl"] = offerPortalUrl ?? string.Empty,
                 },
             };
             var payload = JsonSerializer.Serialize(payloadData);
@@ -415,6 +431,52 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             Attachments: [new EmailAttachment(fileName, pdfBytes, "application/pdf")]);
 
         await _emailSender.SendAsync(message, cancellationToken);
+    }
+
+    /// <summary>
+    /// DF-42: mints a candidate-portal magic-link token for the offer email and builds its URL
+    /// (<c>https://{subdomain}.{baseDomain}/portal?token=...</c>). Never throws and never breaks offer delivery — on
+    /// any failure (issuance error/exception) it logs and returns <c>null</c> so the offer email still goes out
+    /// WITHOUT the link. Prefers the request-scoped subdomain; falls back to a tenant-scoped <c>Tenant.Subdomain</c>
+    /// read for job contexts (IgnoreQueryFilters).
+    /// </summary>
+    private async Task<string?> TryBuildOfferPortalUrlAsync(
+        string candidateEmail, Guid offerId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(candidateEmail))
+            return null;
+
+        try
+        {
+            var issued = await _portalTokenService.IssueAsync(candidateEmail, cancellationToken);
+            if (issued.IsFailure || issued.Value is null)
+            {
+                _logger.LogWarning(
+                    "RealRecruitmentNotificationService: portal token issuance failed for offer {OfferId} ({Error}); " +
+                    "sending the offer email WITHOUT the magic link.", offerId, issued.Error);
+                return null;
+            }
+
+            var subdomain = _tenantContext.Subdomain;
+            if (string.IsNullOrWhiteSpace(subdomain))
+            {
+                var tenantId = _tenantContext.TenantId;
+                subdomain = await _db.Tenants.IgnoreQueryFilters().AsNoTracking()
+                    .Where(t => t.Id == tenantId)
+                    .Select(t => t.Subdomain)
+                    .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+            }
+
+            var baseDomain = PortalLinkBuilder.NormalizeBaseDomain(_configuration["Platform:BaseDomain"]);
+            return PortalLinkBuilder.Build(subdomain, baseDomain, issued.Value.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "RealRecruitmentNotificationService: could not build the offer portal link for offer {OfferId}; " +
+                "sending the offer email WITHOUT the magic link.", offerId);
+            return null;
+        }
     }
 
     // ── Recipient resolution ────────────────────────────────────────────────────────────────────────
