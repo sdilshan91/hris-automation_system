@@ -62,4 +62,14 @@ public interface IGoalService
     /// </summary>
     Task<Result<TeamGoalsDashboardDto>> GetTeamDashboardAsync(
         Guid cycleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-056: finalizes (locks) an employee's goal set for a cycle after sign-off. Requires HR
+    /// (SetGoal.All) or the employee's direct manager (SetGoal.Team) per BR-4. The set's weights must sum
+    /// to EXACTLY 100% (else 422 <c>weight_not_100</c>). On success every goal in the set transitions to
+    /// <see cref="HRM.Domain.Enums.GoalStatus.Finalized"/>; thereafter create/update/delete/bulk-save are
+    /// rejected (409 <c>goals_finalized</c>) until the set is re-opened (re-open flow out of scope).
+    /// </summary>
+    Task<Result<EmployeeGoalsDto>> FinalizeGoalsAsync(
+        Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default);
 }

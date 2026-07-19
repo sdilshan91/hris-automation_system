@@ -97,6 +97,24 @@ export class PerformanceGoalService {
       );
   }
 
+  /**
+   * BUG-056: finalize (lock) an employee's goal set for a cycle. The backend
+   * re-validates that the goals sum to exactly 100% (422 `weight_not_100`), rejects a
+   * set that is already finalized (409 `goals_finalized`), and enforces authz
+   * (403/404). On success every goal comes back with status === 'Finalized'.
+   *
+   * URL: POST /api/v1/tenant/performance/goals/finalize — the tenant-scoped route
+   * confirmed by the backend, matching every sibling goal endpoint. Built from the
+   * shared `baseUrl` (`${apiBaseUrl}/tenant/performance`) + `/goals/finalize`.
+   */
+  finalizeGoals(employeeId: string, cycleId: string): Observable<void> {
+    return this.http.post<void>(
+      `${this.baseUrl}/goals/finalize`,
+      { employeeId, cycleId },
+      { withCredentials: true },
+    );
+  }
+
   /** Accept either a bare array or a `{ data }` page; default to []. */
   private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
     if (Array.isArray(res)) {

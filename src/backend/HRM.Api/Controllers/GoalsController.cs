@@ -151,6 +151,30 @@ public sealed class GoalsController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/v1/tenant/performance/goals/finalize
+    /// Finalizes (locks) an employee's goal set for a cycle after sign-off (BUG-056). The set's weights must
+    /// sum to exactly 100% (else 422 <c>weight_not_100</c>); an already-locked set yields 409
+    /// <c>goals_finalized</c>. On success every goal transitions to <c>Finalized</c> and further edits are
+    /// rejected until the set is re-opened (out of scope). Authz per BR-4 (403/404 via the service).
+    /// </summary>
+    [HttpPost("goals/finalize")]
+    [RequirePermission("Performance.SetGoal.Team", "Performance.SetGoal.All")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeGoalsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Finalize(
+        [FromBody] FinalizeGoalsRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new FinalizeGoalsCommand(request.EmployeeId, request.CycleId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<EmployeeGoalsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// DELETE /api/v1/tenant/performance/goals/{id}
     /// Soft-deletes a goal (FR-1).
     /// </summary>

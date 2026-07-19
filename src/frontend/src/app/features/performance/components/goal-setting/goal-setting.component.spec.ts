@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, ActivatedRoute } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError } from 'rxjs';
 
@@ -48,13 +49,19 @@ describe('GoalSettingComponent', () => {
     },
   ];
 
+  // BUG-056: a finalized set — every goal carries status 'Finalized' → locked.
+  const finalizedGoals: IGoal[] = existingGoals.map((g) => ({
+    ...g,
+    status: 'Finalized',
+  }));
+
   async function setup(
     cycle: IAppraisalCycle = openCycle,
     goals: IGoal[] = [],
   ): Promise<void> {
     goalService = jasmine.createSpyObj<PerformanceGoalService>(
       'PerformanceGoalService',
-      ['getActiveCycle', 'getEmployeeGoals', 'saveGoals'],
+      ['getActiveCycle', 'getEmployeeGoals', 'saveGoals', 'finalizeGoals'],
     );
     toastr = jasmine.createSpyObj<ToastrService>('ToastrService', [
       'success',
@@ -63,6 +70,7 @@ describe('GoalSettingComponent', () => {
     goalService.getActiveCycle.and.returnValue(of(cycle));
     goalService.getEmployeeGoals.and.returnValue(of(goals));
     goalService.saveGoals.and.returnValue(of(goals));
+    goalService.finalizeGoals.and.returnValue(of(void 0));
 
     await TestBed.configureTestingModule({
       imports: [GoalSettingComponent],
@@ -223,5 +231,96 @@ describe('GoalSettingComponent', () => {
 
     expect(component.loadError()).toBeTruthy();
     expect(component.loading()).toBeFalse();
+  });
+
+  // ─── BUG-056: finalize / lock ────────────────────────────────
+
+  it('the "Finalize goals" button calls finalizeGoals with the employee + cycle', async () => {
+    await setup(openCycle, existingGoals);
+    const buttons = Array.from(
+      fixture.nativeElement.querySelectorAll('button'),
+    ) as HTMLButtonElement[];
+    const finalizeBtn = buttons.find((b) =>
+      (b.textContent ?? '').includes('Finalize goals'),
+    );
+    expect(finalizeBtn).withContext('finalize button should render').toBeTruthy();
+    finalizeBtn!.click();
+    expect(goalService.finalizeGoals).toHaveBeenCalledWith('e-1', 'cyc-1');
+  });
+
+  it('finalize() shows a success toast and reloads goals on success', async () => {
+    await setup(openCycle, existingGoals);
+    goalService.getEmployeeGoals.calls.reset();
+    component.finalize();
+    expect(goalService.finalizeGoals).toHaveBeenCalledWith('e-1', 'cyc-1');
+    expect(toastr.success).toHaveBeenCalled();
+    // reload to pick up the now-Finalized status
+    expect(goalService.getEmployeeGoals).toHaveBeenCalledWith('cyc-1', 'e-1');
+    expect(component.finalizing()).toBeFalse();
+  });
+
+  it('renders the locked/read-only state for a Finalized goal set (BUG-056)', async () => {
+    await setup(openCycle, finalizedGoals);
+    expect(component.locked()).toBeTrue();
+    expect(component.editable()).toBeFalse();
+    // form (all edit controls) is disabled
+    expect(component.form.disabled).toBeTrue();
+    // finalized banner is shown
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Finalized');
+    expect(text).toContain('locked and can no longer be edited');
+    // no Save / Finalize / Add goal affordances while locked
+    const buttons = Array.from(
+      fixture.nativeElement.querySelectorAll('button'),
+    ) as HTMLButtonElement[];
+    const labels = buttons.map((b) => (b.textContent ?? '').trim());
+    expect(labels.some((l) => l.includes('Save Goals'))).toBeFalse();
+    expect(labels.some((l) => l.includes('Finalize goals'))).toBeFalse();
+    expect(labels.some((l) => l.includes('Add goal'))).toBeFalse();
+    expect(labels.some((l) => l.includes('Remove'))).toBeFalse();
+  });
+
+  it('addGoal / removeGoal are no-ops on a finalized (locked) set', async () => {
+    await setup(openCycle, finalizedGoals);
+    const before = component.goals.length;
+    component.addGoal();
+    expect(component.goals.length).toBe(before);
+    component.removeGoal(0);
+    expect(component.goals.length).toBe(before);
+  });
+
+  it('surfaces the weight message on a 422 weight_not_100 finalize error', async () => {
+    await setup(openCycle, existingGoals);
+    goalService.finalizeGoals.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 422,
+            error: { code: 'weight_not_100' },
+          }),
+      ),
+    );
+    component.finalize();
+    expect(toastr.error).toHaveBeenCalledWith(
+      'Goals must total exactly 100% before finalizing.',
+    );
+    expect(component.finalizing()).toBeFalse();
+  });
+
+  it('surfaces the already-finalized message on a 409 goals_finalized error', async () => {
+    await setup(openCycle, existingGoals);
+    goalService.finalizeGoals.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { code: 'goals_finalized' },
+          }),
+      ),
+    );
+    component.finalize();
+    expect(toastr.error).toHaveBeenCalledWith(
+      'These goals are already finalized.',
+    );
   });
 });
