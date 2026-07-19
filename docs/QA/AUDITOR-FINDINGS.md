@@ -1,0 +1,54 @@
+# Auditor Findings Log
+
+**Purpose.** A single, durable log of every finding raised by the read-only review agents —
+`@integration-enforcer` (wiring `OUT-OF-LANE` / GAPS) and `@test-authenticator`
+(`MISSING (should exist, don't)` coverage arms + weak/theatrical arms) — together with its
+**resolution status**.
+
+These findings are auto-healed piecemeal: **fixed inline** in the same PR before merge, or **filed as a
+`DF-##` row** in [`DEFERRED-FOLLOWUPS.md`](DEFERRED-FOLLOWUPS.md). That works, but it scatters them, and a
+LOW-severity item judged "acceptable for now" can silently fall through. This log makes the full set
+visible in one place so **nothing is lost** — including the deliberately-accepted ones.
+
+**Convention (how this stays useful).**
+- Log a row for **every** `@integration-enforcer` OUT-OF-LANE/GAP and **every** `@test-authenticator`
+  MISSING/weak-arm finding, **at the time it is raised** (during the gate for a cluster/PR).
+- **Status vocabulary:**
+  - `FIXED-INLINE (#PR)` — resolved in the same PR before merge (the orchestrator adds the material arm / the dev fixes the code).
+  - `FILED (DF-##)` — deferred; tracked as a `DF-##` row in `DEFERRED-FOLLOWUPS.md` (one hop to full context).
+  - `ACCEPTED` — judged not worth acting on, **with a reason** (this is the class that used to fall through).
+  - `OPEN` — raised, not yet triaged/resolved.
+  - `RESOLVED (#PR)` — a previously-`FILED`/`OPEN` item later fixed; update the row.
+- When a `FILED` item's DF row is later picked up, flip both this row (`RESOLVED`) and the DF row.
+- Skim this before trusting a "green" cluster or when planning a coverage/hardening batch.
+
+Finding types: **OOL** = enforcer OUT-OF-LANE/GAP · **MISS** = authenticator "MISSING (should exist, don't)" · **WEAK** = authenticator weak/theatrical arm.
+
+---
+
+## Findings
+
+| Date | PR / cluster | Auditor · type | Finding | Sev | Status |
+|------|--------------|----------------|---------|-----|--------|
+| 2026-07-19 | #384 · DF-41/42 | authenticator · MISS | No arm proves the offer magic-link renders on the primary PDF path (only the dispatcher-fallback payload was inspected). | MED | **FIXED-INLINE (#384)** — added a catalog presence arm asserting `offer_sent` renders `{{offer.portalUrl}}`. |
+| 2026-07-19 | #385 · DF-33 | authenticator · WEAK | The `ChronicThreshold == 0` disable-guard arm seeded `prior:6` → the `==threshold+1` arithmetic masked the guard (a guard-removal mutant survived). | MED | **FIXED-INLINE (#385)** — reseeded to `threshold:0, prior:0` so only the `>0` guard suppresses the fire. |
+| 2026-07-19 | #385 · DF-33 | backend/authenticator · OOL | `AttendanceService.ClockInAsync` stamps `DateTime.UtcNow` — no `TimeProvider` clock seam (test-determinism; ~1s/month month-end window). | LOW | **FILED (DF-43)** |
+| 2026-07-19 | #385 · DF-33 | enforcer/authenticator · MISS | No real-Postgres arm for the crossing count/local-date guard + no composition-root assert that DI injects a non-null `ILateEarlyService`. | LOW | **FILED (DF-44)** |
+| 2026-07-19 | #386 · DF-38/39 | enforcer · OOL | **GAP-A:** `getEmploymentTypes` returned `{id,name,displayName}` typed as `{value,label}` with no `map()` → the Employment Type dropdown was **blank/undefined in prod**, masked by a wrong-shape spec mock. | HIGH | **FIXED-INLINE (#386)** — added the `map()` + corrected the masking mock. |
+| 2026-07-19 | #386 · DF-38/39 | enforcer/authenticator · OOL | **GAP-B:** FE sub-section send-mapping dropped the row `id` (churned PKs) + `fieldOfStudy`/`startYear`/`description` (data loss on edit). | MED | **FIXED-INLINE (#386)** |
+| 2026-07-19 | #386 · DF-38/39 | authenticator · MISS | WorkHistory/Dependents full-replace arms didn't prove removal-of-omitted (+ vacuous `OnlyContain`); no cross-tenant isolation arm on the 3 new sub-tables. | MED | **FIXED-INLINE (#386)** — orchestrator added the removal + isolation arms. |
+| 2026-07-19 | #386 · DF-38/39 | authenticator · MISS | Real-Postgres arm for the 3 new sub-tables (delete-then-reinsert-same-PK, `DateOnly`→`date`). | MED | **FILED (DF-45)** |
+| 2026-07-19 | #387 · BUG-056 | enforcer · OOL | Finalize moves goals `Acknowledged→Finalized`, but 3 "active = Submitted‖Acknowledged" filters (`GoalProgressService` ×2, `StaleGoalNudgeService`) omitted Finalized → a finalized set **silently vanished from progress tracking + stale nudges**. | MED | **FIXED-INLINE (#387)** — added `Finalized` to the 3 filters + a regression arm. |
+| 2026-07-19 | #387 · BUG-056 | backend · OOL | `AggregateStatus` mapped a finalized set to the `"Draft"` team-dashboard bucket. | LOW | **FIXED-INLINE (#387)** — added a `Finalized` branch + test. |
+| 2026-07-19 | #387 · BUG-056 | authenticator · MISS | Empty-set→422 boundary; `Update`/`Delete` write-guard arms (only Save+Create were proven). | LOW | **FIXED-INLINE (#387)** — orchestrator added the arms. |
+| 2026-07-19 | #387 · BUG-056 | enforcer/backend · OOL | A finalized goal set has **no re-open/unlock path** (a mistaken finalize is unrecoverable). | MED | **FILED (DF-46)** — ⚖ decision-gated. |
+| 2026-07-19 | #387 · BUG-056 | authenticator/enforcer · MISS | Real-Postgres/HTTP finalize round-trip arm + `Goal.Finalized` audit-row assertion. | LOW | **FILED (DF-47)** |
+| 2026-07-19 | #388 · DF-17 | authenticator · MISS | No explicit zero-HTTP arm on a delivered depth-2 **leaf**; no fallback arm for a truncated node **inside** the delivered depth. | LOW | **ACCEPTED** — the core "zero-HTTP on in-depth expand" crux is mutation-proof; the fallback is proven at the depth-1 boundary. Noted in the #388 PR. |
+| 2026-07-19 | #389 · ISSUE-021 | enforcer · OOL | `JobTitleDto` had no `GradeName` → the job-title list rendered "—" for every grade. | MED | **FIXED-INLINE (#389)** — added `GradeName` + a batched (no-N+1) `SalaryGrade` join in the read paths. |
+| 2026-07-19 | #389 · ISSUE-021 | enforcer · OOL | The `salary-grades` route guard omitted `'Tenant Owner'` (present on sibling admin routes). | LOW | **FIXED-INLINE (#389)** — added `'Tenant Owner'` + a nav item. |
+| 2026-07-19 | #389 · ISSUE-021 | authenticator · MISS | No cross-tenant grade-link rejection arm (a tenant-B grade must be rejected for a tenant-A JobTitle — BUG-003 class). | MED | **FIXED-INLINE (#389)** — orchestrator added the arm. |
+| 2026-07-19 | #389 · ISSUE-021 | authenticator · MISS | Real-Postgres arm for `salary_grades` `decimal(18,2)` precision + `Code` uniqueness collation. | MED | **FILED (DF-48)** |
+| 2026-07-19 | #390 · ISSUE-285a | enforcer/authenticator · MISS | The index-backed SQL, the migration **backfill SQL**, and the anniversary `.Month`/`.Day` translation are InMemory-only; a post-query re-filter means deleting the SQL `Where` keeps InMemory tests green (the optimization isn't pinned). | MED | **FILED (DF-49)** |
+| 2026-07-19 | #390 · ISSUE-285 | (deferred by design) · — | (b) parallelize the ~8 sequential dashboard widgets via `IDbContextFactory` (concurrency + cross-tenant-in-factory risk). | MED | **FILED (DF-50)** |
+| 2026-07-19 | #390 · ISSUE-285 | (deferred by design) · — | (c) k6 dashboard-at-scale SLA scenario (env-gated: 50k seed + running stack). | LOW | **FILED (DF-51)** |
+| 2026-07-19 | #390 · ISSUE-285a | enforcer · OOL | Anniversary arm is a seq-scan (no denormalized `JoinMonthDay` column/index) — functional but unindexed. | LOW | **ACCEPTED** — birthday index (the ISSUE-285a target) is done; anniversary index folded into DF-49 as an optional follow-up. |
