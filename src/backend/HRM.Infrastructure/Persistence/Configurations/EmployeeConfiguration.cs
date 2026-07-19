@@ -213,6 +213,13 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.HasIndex(e => new { e.TenantId, e.DateOfJoining })
             .HasDatabaseName("ix_employees_tenant_id_date_of_joining");
 
+        // ISSUE-285(a): recurring-birthday index. The upcoming-birthdays dashboard widget filters the next-N-days
+        // window as a set of month*100+day keys (Employee.BirthMonthDay), which this index serves instead of
+        // scanning every active employee into memory (dashboard SLA). BirthMonthDay is app-maintained by
+        // EmployeeBirthMonthDayInterceptor.
+        builder.HasIndex(e => new { e.TenantId, e.BirthMonthDay })
+            .HasDatabaseName("ix_employees_tenant_id_birth_month_day");
+
         builder.HasIndex(e => new { e.TenantId, e.Location })
             .HasDatabaseName("ix_employees_tenant_id_location");
 

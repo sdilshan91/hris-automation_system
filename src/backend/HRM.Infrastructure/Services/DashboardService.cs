@@ -65,6 +65,10 @@ public sealed class DashboardService : IDashboardService
     private readonly IAppraisalCycleService? _appraisalCycles;
     private readonly IMyPayslipService? _payslips;
     private readonly IDistributedCache? _cache;
+    // ISSUE-285(a): clock seam so the recurring birthday/anniversary window (which depends on "today") is
+    // deterministically testable — including the year-end wrap — without waiting for Dec 31. Trailing-optional
+    // and defaults to TimeProvider.System, so production/DI behaviour is unchanged.
+    private readonly TimeProvider _timeProvider;
 
     public DashboardService(
         AppDbContext db,
@@ -80,7 +84,8 @@ public sealed class DashboardService : IDashboardService
         IHolidayService? holidays = null,
         IAppraisalCycleService? appraisalCycles = null,
         IMyPayslipService? payslips = null,
-        IDistributedCache? cache = null)
+        IDistributedCache? cache = null,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _tenantContext = tenantContext;
@@ -96,6 +101,7 @@ public sealed class DashboardService : IDashboardService
         _appraisalCycles = appraisalCycles;
         _payslips = payslips;
         _cache = cache;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<Result<DashboardResponse>> GetWidgetsAsync(
@@ -390,30 +396,56 @@ public sealed class DashboardService : IDashboardService
         };
     }
 
+    private const int UpcomingWindowDays = 7;
+
     private async Task<DashboardWidget?> UpcomingBirthdaysWidgetAsync(Guid? teamManagerId, CancellationToken ct)
     {
-        // BR-4: birthdays + work anniversaries within the next 7 days. Direct tenant-scoped Employee read
-        // (DateOfBirth / DateOfJoining); pulled into memory because the month/day window doesn't translate.
-        var query = _db.Employees.AsNoTracking()
+        // BR-4: birthdays + work anniversaries within the next 7 days. ISSUE-285(a): the recurring month/day
+        // window is projected to a small set of month*100+day KEYS and pushed into SQL, so the birthday arm rides
+        // the (tenant_id, birth_month_day) index and neither query materializes every active employee (the old
+        // ToListAsync blew the dashboard p95<800ms SLA at 50k employees). Two index-friendly queries beat one OR
+        // (an OR across an indexed column and an unindexed expression forces a seq scan).
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        var today = DateOnly.FromDateTime(nowUtc);
+        var windowKeys = BuildRecurringWindowKeys(today, UpcomingWindowDays);
+
+        IQueryable<Employee> baseQuery = _db.Employees.AsNoTracking()
             .Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation);
         if (teamManagerId is { } mgr)
-            query = query.Where(e => e.ReportsToEmployeeId == mgr);
+            baseQuery = baseQuery.Where(e => e.ReportsToEmployeeId == mgr);
 
-        var employees = await query
-            .Select(e => new { e.FirstName, e.LastName, e.DateOfBirth, e.DateOfJoining })
+        // Birthdays — index-backed on (tenant_id, birth_month_day). BirthMonthDay is null when DOB is unset.
+        var birthdayRows = await baseQuery
+            .Where(e => e.BirthMonthDay != null && windowKeys.Contains(e.BirthMonthDay.Value))
+            .Select(e => new { e.FirstName, e.LastName, e.DateOfBirth })
             .ToListAsync(ct);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Work anniversaries — the DateOfJoining month/day window, filtered in SQL (returns only the few matches
+        // instead of the whole table). Scope note (ISSUE-285(a)): no denormalized join-key column is in scope, so
+        // this arm is a filtered scan, not an index seek; it still avoids the full in-memory materialization.
+        var todayStart = nowUtc.Date;
+        var anniversaryRows = await baseQuery
+            .Where(e => e.DateOfJoining < todayStart
+                        && windowKeys.Contains(e.DateOfJoining.Month * 100 + e.DateOfJoining.Day))
+            .Select(e => new { e.FirstName, e.LastName, e.DateOfJoining })
+            .ToListAsync(ct);
+
         var items = new List<DashboardListItem>();
 
-        foreach (var e in employees)
+        foreach (var e in birthdayRows)
         {
             var name = $"{e.FirstName} {e.LastName}".Trim();
-            if (e.DateOfBirth is { } dob && IsWithinNextDays(DateOnly.FromDateTime(dob), today, 7, out var bDay))
+            // IsWithinNextDays recomputes the exact occurrence for display (and clamps Feb-29 → Feb-28); it is
+            // always true here because the row already matched the same window keys.
+            if (e.DateOfBirth is { } dob && IsWithinNextDays(DateOnly.FromDateTime(dob), today, UpcomingWindowDays, out var bDay))
                 items.Add(new DashboardListItem { Label = $"{name} — Birthday", Value = bDay.ToString("MMM d", CultureInfo.InvariantCulture) });
+        }
 
+        foreach (var e in anniversaryRows)
+        {
+            var name = $"{e.FirstName} {e.LastName}".Trim();
             var doj = DateOnly.FromDateTime(e.DateOfJoining);
-            if (doj < today && IsWithinNextDays(doj, today, 7, out var aDay))
+            if (IsWithinNextDays(doj, today, UpcomingWindowDays, out var aDay))
                 items.Add(new DashboardListItem { Label = $"{name} — Work Anniversary", Value = aDay.ToString("MMM d", CultureInfo.InvariantCulture) });
         }
 
@@ -427,6 +459,26 @@ public sealed class DashboardService : IDashboardService
             Items = items,
             LinkUrl = "/employees",
         };
+    }
+
+    /// <summary>
+    /// ISSUE-285(a): the set of month*100+day keys covering [today, today + <paramref name="days"/>] inclusive —
+    /// the SQL-translatable form of the recurring birthday/anniversary window. Naturally wraps the year boundary
+    /// (Dec 30 + 7d → 1230,1231,0101…0106) because it walks <see cref="DateOnly.AddDays(int)"/>. When the window
+    /// spans Feb-28 in a NON-leap year it also emits 229 so a Feb-29 birthday still surfaces (projected onto
+    /// Feb-28), matching <see cref="IsWithinNextDays"/>.
+    /// </summary>
+    internal static List<int> BuildRecurringWindowKeys(DateOnly today, int days)
+    {
+        var keys = new List<int>(days + 2);
+        for (int i = 0; i <= days; i++)
+        {
+            var d = today.AddDays(i);
+            keys.Add(d.Month * 100 + d.Day);
+            if (d is { Month: 2, Day: 28 } && !DateTime.IsLeapYear(d.Year))
+                keys.Add(229); // Feb-29 birthday projects onto Feb-28 in a non-leap year.
+        }
+        return keys;
     }
 
     private async Task<DashboardWidget?> RecentJoinersWidgetAsync(CancellationToken ct)
