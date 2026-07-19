@@ -11,6 +11,8 @@ public sealed record JobTitleDto
     public string TitleName { get; init; } = string.Empty;
     public string? Description { get; init; }
     public Guid? GradeId { get; init; }
+    /// <summary>ISSUE-021: the linked salary grade's name (null when no grade is linked), for list/detail display.</summary>
+    public string? GradeName { get; init; }
     /// <summary>
     /// Count of active employees assigned to this job title.
     /// TODO(US-CHR-001): Wire to real employee count when Employee entity exists.

@@ -17,6 +17,8 @@ import {
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { JobTitleService } from '../../services/job-title.service';
+import { SalaryGradeService } from '../../../salary-grades/services/salary-grade.service';
+import { ISalaryGrade } from '../../../salary-grades/models/salary-grade.models';
 import {
   IJobTitle,
   ICreateJobTitleRequest,
@@ -28,12 +30,8 @@ import {
  * US-CHR-005 AC-2: Job title create/edit form as a slide-over panel.
  *
  * Fields: Title Name (required, max 150, unique within tenant),
- * Description (optional textarea), Grade (disabled placeholder),
- * Active status toggle.
- *
- * The Grade field is intentionally rendered as a disabled placeholder until
- * the Grade entity is implemented.
- * TODO(US-CHR-005): Add grade dropdown/picker once Grade entity exists.
+ * Description (optional textarea), Salary Grade (ISSUE-021: select fed by the
+ * active salary grades, null = no grade), Active status toggle.
  */
 @Component({
   selector: 'app-job-title-form',
@@ -103,27 +101,24 @@ import {
           ></textarea>
         </div>
 
-        <!-- Grade (disabled placeholder) -->
+        <!-- Salary Grade (ISSUE-021: select fed by active grades; null = none) -->
         <div class="form-section">
-          <label class="label-notion">
-            Salary Grade
-          </label>
+          <label class="label-notion" for="jt-grade">Salary Grade</label>
+          <select
+            id="jt-grade"
+            formControlName="gradeId"
+            class="input-notion"
+          >
+            <option [ngValue]="null">No grade</option>
+            @for (grade of grades(); track grade.id) {
+              <option [ngValue]="grade.id">
+                {{ grade.code }} — {{ grade.name }}
+              </option>
+            }
+          </select>
           <p class="field-hint">
-            <!-- TODO(US-CHR-005): Replace with grade dropdown once Grade entity is available -->
-            Grade linking will be available once salary grade management is implemented.
+            Link this job title to a salary grade, or leave as "No grade".
           </p>
-          <div class="grade-placeholder">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-neutral-300" aria-hidden="true">
-              <path fill-rule="evenodd" d="M10 2a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5A.75.75 0 0 1 10 2ZM5.404 4.343a.75.75 0 0 1 0 1.06 6.5 6.5 0 1 0 9.192 0 .75.75 0 1 1 1.06-1.06 8 8 0 1 1-11.313 0 .75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
-            </svg>
-            <span class="text-sm text-neutral-400">
-              @if (jobTitle()?.gradeName) {
-                {{ jobTitle()!.gradeName }}
-              } @else {
-                Not linked
-              }
-            </span>
-          </div>
         </div>
 
         <!-- Active Toggle -->
@@ -218,11 +213,6 @@ import {
       @apply resize-y min-h-[5rem];
     }
 
-    .grade-placeholder {
-      @apply flex items-center gap-2 rounded-lg border border-dashed border-neutral-200
-        bg-neutral-50 px-3.5 py-2.5;
-    }
-
     /* --- Toggle switch ---------------------- */
 
     .toggle-row {
@@ -289,6 +279,7 @@ import {
 export class JobTitleFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly jobTitleService = inject(JobTitleService);
+  private readonly salaryGradeService = inject(SalaryGradeService);
   private readonly toastr = inject(ToastrService);
 
   /** Job title to edit. null = create mode. */
@@ -303,6 +294,9 @@ export class JobTitleFormComponent implements OnInit {
   readonly isSaving = signal(false);
   readonly duplicateNameError = signal('');
 
+  /** ISSUE-021: active salary grades feeding the grade picker */
+  readonly grades = signal<ISalaryGrade[]>([]);
+
   form!: FormGroup;
 
   ngOnInit(): void {
@@ -314,7 +308,20 @@ export class JobTitleFormComponent implements OnInit {
         [Validators.required, Validators.maxLength(150)],
       ],
       description: [jt?.description ?? ''],
+      gradeId: [jt?.gradeId ?? null],
       isActive: [jt?.isActive ?? true],
+    });
+
+    this.loadGrades();
+  }
+
+  /** Load active salary grades for the picker (ISSUE-021). */
+  private loadGrades(): void {
+    this.salaryGradeService.list().subscribe({
+      next: (grades) => this.grades.set(grades),
+      // A grade-load failure must not block editing the job title; the picker
+      // simply falls back to "No grade" only.
+      error: () => this.grades.set([]),
     });
   }
 
@@ -332,6 +339,7 @@ export class JobTitleFormComponent implements OnInit {
       const request: IUpdateJobTitleRequest = {
         titleName: formValue.titleName.trim(),
         description: formValue.description?.trim() || null,
+        gradeId: formValue.gradeId ?? null,
         isActive: formValue.isActive,
       };
 
@@ -353,6 +361,7 @@ export class JobTitleFormComponent implements OnInit {
       const request: ICreateJobTitleRequest = {
         titleName: formValue.titleName.trim(),
         description: formValue.description?.trim() || null,
+        gradeId: formValue.gradeId ?? null,
         isActive: formValue.isActive,
       };
 

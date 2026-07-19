@@ -18,10 +18,10 @@ public sealed class JobTitle : BaseEntity
     public string? Description { get; set; }
 
     /// <summary>
-    /// Optional salary grade link. Stored as a nullable UUID column
-    /// WITHOUT a hard FK constraint because the Grade entity does not
-    /// exist yet (it belongs to the Payroll module).
-    /// TODO(payroll): wire grade_id FK to Grade entity once it exists.
+    /// Optional link to a <c>SalaryGrade</c> (ISSUE-021). Stored as a nullable UUID column
+    /// WITHOUT a hard DB FK constraint on purpose — legacy rows may hold arbitrary free-form
+    /// GUIDs, so the link is validated service-side on write (<c>JobTitleService.ValidateGradeAsync</c>:
+    /// the grade must resolve to an active, in-tenant SalaryGrade) rather than by a schema constraint.
     /// </summary>
     public Guid? GradeId { get; set; }
 

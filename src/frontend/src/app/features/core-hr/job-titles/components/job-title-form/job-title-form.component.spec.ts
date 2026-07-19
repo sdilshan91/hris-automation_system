@@ -9,6 +9,8 @@ import { ComponentRef } from '@angular/core';
 
 import { JobTitleFormComponent } from './job-title-form.component';
 import { JobTitleService } from '../../services/job-title.service';
+import { SalaryGradeService } from '../../../salary-grades/services/salary-grade.service';
+import { ISalaryGrade } from '../../../salary-grades/models/salary-grade.models';
 import { IJobTitle } from '../../models/job-title.models';
 
 describe('JobTitleFormComponent', () => {
@@ -16,15 +18,41 @@ describe('JobTitleFormComponent', () => {
   let componentRef: ComponentRef<JobTitleFormComponent>;
   let fixture: ComponentFixture<JobTitleFormComponent>;
   let jobTitleServiceSpy: jasmine.SpyObj<JobTitleService>;
+  let gradeServiceSpy: jasmine.SpyObj<SalaryGradeService>;
   let toastrSpy: jasmine.SpyObj<ToastrService>;
+
+  const mockGrades: ISalaryGrade[] = [
+    {
+      id: 'sg-1',
+      code: 'G1',
+      name: 'Grade 1',
+      minAmount: 30000,
+      midAmount: 40000,
+      maxAmount: 50000,
+      currency: 'USD',
+      description: null,
+      isActive: true,
+    },
+    {
+      id: 'sg-2',
+      code: 'G2',
+      name: 'Grade 2',
+      minAmount: 50000,
+      midAmount: null,
+      maxAmount: 70000,
+      currency: 'USD',
+      description: null,
+      isActive: true,
+    },
+  ];
 
   const mockJobTitle: IJobTitle = {
     jobTitleId: 'jt-1',
     tenantId: 'tenant-1',
     titleName: 'Software Engineer',
     description: 'Develops software applications',
-    gradeId: null,
-    gradeName: null,
+    gradeId: 'sg-2',
+    gradeName: 'Grade 2',
     isActive: true,
     employeeCount: 10,
     createdAt: '2026-01-01T00:00:00Z',
@@ -38,6 +66,9 @@ describe('JobTitleFormComponent', () => {
     ]);
     jobTitleServiceSpy.createJobTitle.and.returnValue(of(mockJobTitle));
     jobTitleServiceSpy.updateJobTitle.and.returnValue(of(mockJobTitle));
+
+    gradeServiceSpy = jasmine.createSpyObj('SalaryGradeService', ['list']);
+    gradeServiceSpy.list.and.returnValue(of(mockGrades));
 
     toastrSpy = jasmine.createSpyObj('ToastrService', [
       'success',
@@ -53,6 +84,7 @@ describe('JobTitleFormComponent', () => {
         provideAnimationsAsync(),
         provideToastr(),
         { provide: JobTitleService, useValue: jobTitleServiceSpy },
+        { provide: SalaryGradeService, useValue: gradeServiceSpy },
         { provide: ToastrService, useValue: toastrSpy },
       ],
     }).compileComponents();
@@ -77,7 +109,14 @@ describe('JobTitleFormComponent', () => {
     it('should initialize with empty form', () => {
       expect(component.form.value.titleName).toBe('');
       expect(component.form.value.description).toBe('');
+      expect(component.form.value.gradeId).toBeNull();
       expect(component.form.value.isActive).toBeTrue();
+    });
+
+    it('should load active salary grades for the picker', () => {
+      expect(gradeServiceSpy.list).toHaveBeenCalled();
+      expect(component.grades().length).toBe(2);
+      expect(component.grades()[0].code).toBe('G1');
     });
 
     it('should validate required titleName field', () => {
@@ -110,9 +149,40 @@ describe('JobTitleFormComponent', () => {
       expect(jobTitleServiceSpy.createJobTitle).toHaveBeenCalledWith({
         titleName: 'UX Designer',
         description: 'User experience design',
+        gradeId: null,
         isActive: true,
       });
       expect(toastrSpy.success).toHaveBeenCalled();
+    });
+
+    it('should send the selected gradeId (id, not name) on create', () => {
+      component.form.patchValue({
+        titleName: 'Backend Engineer',
+        gradeId: 'sg-1',
+        isActive: true,
+      });
+      component.form.markAsDirty();
+
+      component.onSubmit();
+
+      expect(jobTitleServiceSpy.createJobTitle).toHaveBeenCalledWith(
+        jasmine.objectContaining({ gradeId: 'sg-1' })
+      );
+    });
+
+    it('should send gradeId null when "no grade" is selected', () => {
+      component.form.patchValue({
+        titleName: 'Intern',
+        gradeId: null,
+        isActive: true,
+      });
+      component.form.markAsDirty();
+
+      component.onSubmit();
+
+      expect(jobTitleServiceSpy.createJobTitle).toHaveBeenCalledWith(
+        jasmine.objectContaining({ gradeId: null })
+      );
     });
 
     it('should not submit when form is invalid', () => {
@@ -189,6 +259,22 @@ describe('JobTitleFormComponent', () => {
         'Develops software applications'
       );
       expect(component.form.value.isActive).toBeTrue();
+    });
+
+    it('should preselect the current gradeId on edit', () => {
+      expect(component.form.value.gradeId).toBe('sg-2');
+    });
+
+    it('should send the updated gradeId on submit', () => {
+      component.form.patchValue({ gradeId: 'sg-1' });
+      component.form.markAsDirty();
+
+      component.onSubmit();
+
+      expect(jobTitleServiceSpy.updateJobTitle).toHaveBeenCalledWith(
+        'jt-1',
+        jasmine.objectContaining({ gradeId: 'sg-1' })
+      );
     });
 
     it('should call updateJobTitle on submit', () => {

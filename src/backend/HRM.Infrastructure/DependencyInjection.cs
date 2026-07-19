@@ -146,6 +146,9 @@ public static class DependencyInjection
         // Job title service (US-CHR-005)
         services.AddScoped<IJobTitleService, JobTitleService>();
 
+        // Salary grade service (Payroll domain, ISSUE-021)
+        services.AddScoped<ISalaryGradeService, SalaryGradeService>();
+
         // Employee service (US-CHR-001)
         services.AddScoped<IEmployeeService, EmployeeService>();
 

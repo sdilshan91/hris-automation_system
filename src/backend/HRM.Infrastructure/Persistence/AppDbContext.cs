@@ -62,6 +62,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<ImpersonationSession> ImpersonationSessions => Set<ImpersonationSession>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<JobTitle> JobTitles => Set<JobTitle>();
+    public DbSet<SalaryGrade> SalaryGrades => Set<SalaryGrade>();
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
     public DbSet<EmployeeEducation> EmployeeEducation => Set<EmployeeEducation>();
@@ -264,6 +265,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // US-CHR-005: JobTitle tenant isolation + soft-delete filter
         modelBuilder.Entity<JobTitle>()
             .HasQueryFilter(j => !j.IsDeleted && (!_tenantContext.IsResolved || j.TenantId == _tenantContext.TenantId));
+
+        // ISSUE-021: SalaryGrade tenant isolation + soft-delete filter
+        modelBuilder.Entity<SalaryGrade>()
+            .HasQueryFilter(g => !g.IsDeleted && (!_tenantContext.IsResolved || g.TenantId == _tenantContext.TenantId));
 
         // US-CHR-001: Employee tenant isolation + soft-delete filter
         modelBuilder.Entity<Employee>()

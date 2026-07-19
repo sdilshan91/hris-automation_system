@@ -34,8 +34,8 @@ export interface IJobTitle {
 export interface ICreateJobTitleRequest {
   titleName: string;
   description?: string | null;
-  /** TODO(US-CHR-005): Omitted until Grade entity exists */
-  // gradeId?: string | null;
+  /** ISSUE-021: SalaryGrade id (null = no grade). Validated server-side. */
+  gradeId: string | null;
   isActive: boolean;
 }
 
@@ -43,8 +43,8 @@ export interface ICreateJobTitleRequest {
 export interface IUpdateJobTitleRequest {
   titleName: string;
   description?: string | null;
-  /** TODO(US-CHR-005): Omitted until Grade entity exists */
-  // gradeId?: string | null;
+  /** ISSUE-021: SalaryGrade id (null = no grade). Validated server-side. */
+  gradeId: string | null;
   isActive: boolean;
 }
 
