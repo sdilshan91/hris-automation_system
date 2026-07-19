@@ -208,4 +208,25 @@ describe('PerformanceGoalService', () => {
 
     expect(completed).toBeTrue();
   });
+
+  // ─── DF-46: re-open / unlock ─────────────────────────────────
+
+  it('reopenGoals POSTs { employeeId, cycleId, reason } to the reopen endpoint', () => {
+    let completed = false;
+    service
+      .reopenGoals('e-1', 'cyc-1', 'Correcting a mis-weighted goal')
+      .subscribe(() => (completed = true));
+
+    const req = httpMock.expectOne(`${baseUrl}/goals/reopen`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    expect(req.request.body).toEqual({
+      employeeId: 'e-1',
+      cycleId: 'cyc-1',
+      reason: 'Correcting a mis-weighted goal',
+    });
+    req.flush(null);
+
+    expect(completed).toBeTrue();
+  });
 });

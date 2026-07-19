@@ -493,6 +493,60 @@ public sealed class GoalService : IGoalService
         });
     }
 
+    public async Task<Result<EmployeeGoalsDto>> ReopenGoalsAsync(
+        Guid employeeId, Guid cycleId, string reason, CancellationToken ct = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<EmployeeGoalsDto>.Failure("Tenant context is not resolved.", 400);
+
+        // DF-46/BR-4: only HR (SetGoal.All) or the employee's direct manager (SetGoal.Team) may re-open —
+        // same gate as finalize. AuthorizeForEmployeeAsync returns 403 forbidden/not_direct_report.
+        var authz = await AuthorizeForEmployeeAsync(employeeId, ct);
+        if (authz.IsFailure)
+            return Result<EmployeeGoalsDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        // The per-employee-per-cycle goal set. The global query filter already excludes other tenants +
+        // soft-deleted rows.
+        var goals = await _dbContext.Goals
+            .Where(g => g.EmployeeId == employeeId && g.CycleId == cycleId)
+            .ToListAsync(ct);
+
+        // DF-46: nothing to re-open unless the set is actually finalized (mirror of the finalize 409 guard).
+        if (!goals.Any(g => g.Status == GoalStatus.Finalized))
+            return Result<EmployeeGoalsDto>.Failure(
+                "The goal set is not finalized, so there is nothing to re-open.", 409, "goals_not_finalized");
+
+        // Transition every finalized goal back to Acknowledged. This alone restores writability — the
+        // Create/Update/Delete/SaveGoals guards only reject a Finalized set. IsSetFinalizedAsync is untouched.
+        foreach (var goal in goals.Where(g => g.Status == GoalStatus.Finalized))
+        {
+            var before = SnapshotGoal(goal);
+            goal.Status = GoalStatus.Acknowledged;
+            AddGoalAudit("Goal.Reopened", goal.Id, before: before, after: SnapshotGoal(goal),
+                $"Goal '{goal.Title}' re-opened (goal set unlocked)." +
+                (string.IsNullOrWhiteSpace(reason) ? string.Empty : $" Reason: {reason.Trim()}"));
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Goals re-opened. EmployeeId={EmployeeId}, CycleId={CycleId}, TenantId={TenantId}, By={User}",
+            employeeId, cycleId, _tenantContext.TenantId, _currentUser.Email);
+
+        var cycle = await _dbContext.AppraisalCycles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == cycleId, ct);
+
+        return Result<EmployeeGoalsDto>.Success(new EmployeeGoalsDto
+        {
+            EmployeeId = employeeId,
+            CycleId = cycleId,
+            TotalWeight = goals.Sum(g => g.Weight),
+            IsGoalSettingOpen = cycle?.IsGoalSettingOpen(DateTime.UtcNow) ?? false,
+            Goals = goals.OrderBy(g => g.CreatedAt).Select(ToDto).ToList(),
+        });
+    }
+
     public async Task<Result<TeamGoalsDashboardDto>> GetTeamDashboardAsync(
         Guid cycleId, CancellationToken cancellationToken = default)
     {

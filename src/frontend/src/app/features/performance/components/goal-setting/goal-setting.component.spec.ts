@@ -61,7 +61,13 @@ describe('GoalSettingComponent', () => {
   ): Promise<void> {
     goalService = jasmine.createSpyObj<PerformanceGoalService>(
       'PerformanceGoalService',
-      ['getActiveCycle', 'getEmployeeGoals', 'saveGoals', 'finalizeGoals'],
+      [
+        'getActiveCycle',
+        'getEmployeeGoals',
+        'saveGoals',
+        'finalizeGoals',
+        'reopenGoals',
+      ],
     );
     toastr = jasmine.createSpyObj<ToastrService>('ToastrService', [
       'success',
@@ -71,6 +77,7 @@ describe('GoalSettingComponent', () => {
     goalService.getEmployeeGoals.and.returnValue(of(goals));
     goalService.saveGoals.and.returnValue(of(goals));
     goalService.finalizeGoals.and.returnValue(of(void 0));
+    goalService.reopenGoals.and.returnValue(of(void 0));
 
     await TestBed.configureTestingModule({
       imports: [GoalSettingComponent],
@@ -321,6 +328,95 @@ describe('GoalSettingComponent', () => {
     component.finalize();
     expect(toastr.error).toHaveBeenCalledWith(
       'These goals are already finalized.',
+    );
+  });
+
+  // ─── DF-46: re-open / unlock ─────────────────────────────────
+
+  it('renders the "Re-open goals" button only when the set is locked', async () => {
+    await setup(openCycle, finalizedGoals);
+    const labels = (
+      Array.from(
+        fixture.nativeElement.querySelectorAll('button'),
+      ) as HTMLButtonElement[]
+    ).map((b) => (b.textContent ?? '').trim());
+    expect(labels.some((l) => l.includes('Re-open goals'))).toBeTrue();
+  });
+
+  it('does NOT render the "Re-open goals" button on an editable (unlocked) set', async () => {
+    await setup(openCycle, existingGoals);
+    const labels = (
+      Array.from(
+        fixture.nativeElement.querySelectorAll('button'),
+      ) as HTMLButtonElement[]
+    ).map((b) => (b.textContent ?? '').trim());
+    expect(labels.some((l) => l.includes('Re-open goals'))).toBeFalse();
+  });
+
+  it('reopen() blocks the call and flags the reason when it is empty/whitespace', async () => {
+    await setup(openCycle, finalizedGoals);
+    component.reopenReason.set('   ');
+    component.reopen();
+    expect(goalService.reopenGoals).not.toHaveBeenCalled();
+    expect(component.reopenReasonInvalid()).toBeTrue();
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('A reason is required to re-open finalized goals.');
+  });
+
+  it('reopen() calls the service with the captured reason and reloads on success', async () => {
+    await setup(openCycle, finalizedGoals);
+    goalService.getEmployeeGoals.calls.reset();
+    component.reopenReason.set('Correcting a mis-weighted goal');
+    component.reopen();
+    expect(goalService.reopenGoals).toHaveBeenCalledWith(
+      'e-1',
+      'cyc-1',
+      'Correcting a mis-weighted goal',
+    );
+    expect(toastr.success).toHaveBeenCalled();
+    // reload to pick up the now-editable status
+    expect(goalService.getEmployeeGoals).toHaveBeenCalledWith('cyc-1', 'e-1');
+    expect(component.reopening()).toBeFalse();
+  });
+
+  it('reopen() trims surrounding whitespace from the captured reason', async () => {
+    await setup(openCycle, finalizedGoals);
+    component.reopenReason.set('  Manager error  ');
+    component.reopen();
+    expect(goalService.reopenGoals).toHaveBeenCalledWith(
+      'e-1',
+      'cyc-1',
+      'Manager error',
+    );
+  });
+
+  it('surfaces the not-finalized message on a 409 goals_not_finalized error', async () => {
+    await setup(openCycle, finalizedGoals);
+    goalService.reopenGoals.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { code: 'goals_not_finalized' },
+          }),
+      ),
+    );
+    component.reopenReason.set('Attempting re-open');
+    component.reopen();
+    expect(toastr.error).toHaveBeenCalledWith('These goals are not finalized.');
+    expect(component.reopening()).toBeFalse();
+  });
+
+  it('surfaces an authorization message on a 403 forbidden reopen error', async () => {
+    await setup(openCycle, finalizedGoals);
+    goalService.reopenGoals.and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 403 })),
+    );
+    component.reopenReason.set('Attempting re-open');
+    component.reopen();
+    expect(toastr.error).toHaveBeenCalledWith(
+      'You are not authorized to re-open these goals.',
     );
   });
 });

@@ -72,4 +72,15 @@ public interface IGoalService
     /// </summary>
     Task<Result<EmployeeGoalsDto>> FinalizeGoalsAsync(
         Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// DF-46 (BUG-056 follow-up): re-opens (unlocks) a finalized goal set for a cycle. Requires HR
+    /// (SetGoal.All) or the employee's direct manager (SetGoal.Team) per BR-4 — same authz as finalize.
+    /// A MANDATORY <paramref name="reason"/> is recorded in the audit trail. If the set has no
+    /// <see cref="HRM.Domain.Enums.GoalStatus.Finalized"/> goal there is nothing to re-open (409
+    /// <c>goals_not_finalized</c>). On success every finalized goal transitions back to
+    /// <see cref="HRM.Domain.Enums.GoalStatus.Acknowledged"/>, which automatically restores writability
+    /// (the create/update/delete/bulk-save guards only reject a <c>Finalized</c> set).
+    /// </summary>
+    Task<Result<EmployeeGoalsDto>> ReopenGoalsAsync(Guid employeeId, Guid cycleId, string reason, CancellationToken ct = default);
 }

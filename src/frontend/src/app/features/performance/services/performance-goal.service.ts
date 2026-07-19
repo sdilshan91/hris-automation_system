@@ -115,6 +115,29 @@ export class PerformanceGoalService {
     );
   }
 
+  /**
+   * DF-46: re-open (unlock) a finalized goal set so it can be edited again. The
+   * backend requires a MANDATORY `reason` (recorded for audit), enforces authz
+   * (403 — HR or the direct manager only), and rejects a set that is not finalized
+   * (409 `goals_not_finalized`). On success (204/void) the set returns to its
+   * editable state; the caller reloads the goals to reflect it.
+   *
+   * URL: POST /api/v1/tenant/performance/goals/reopen — the tenant-scoped route
+   * confirmed by the backend, mirroring the sibling `goals/finalize` endpoint. Built
+   * from the shared `baseUrl` (`${apiBaseUrl}/tenant/performance`) + `/goals/reopen`.
+   */
+  reopenGoals(
+    employeeId: string,
+    cycleId: string,
+    reason: string,
+  ): Observable<void> {
+    return this.http.post<void>(
+      `${this.baseUrl}/goals/reopen`,
+      { employeeId, cycleId, reason },
+      { withCredentials: true },
+    );
+  }
+
   /** Accept either a bare array or a `{ data }` page; default to []. */
   private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
     if (Array.isArray(res)) {

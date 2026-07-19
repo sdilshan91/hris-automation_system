@@ -175,6 +175,31 @@ public sealed class GoalsController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/v1/tenant/performance/goals/reopen
+    /// Re-opens (unlocks) an employee's finalized goal set for a cycle (DF-46, BUG-056 follow-up). Requires
+    /// HR (SetGoal.All) or the employee's direct manager (SetGoal.Team) per BR-4 — same authz as finalize.
+    /// A mandatory <c>Reason</c> is recorded in the audit trail. A set that is not finalized yields 409
+    /// <c>goals_not_finalized</c>. On success every goal transitions back to <c>Acknowledged</c>, restoring
+    /// writability. Authz per BR-4 (403/404 via the service).
+    /// </summary>
+    [HttpPost("goals/reopen")]
+    [RequirePermission("Performance.SetGoal.Team", "Performance.SetGoal.All")]
+    [ProducesResponseType(typeof(ApiResponse<EmployeeGoalsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Reopen(
+        [FromBody] ReopenGoalsRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ReopenGoalsCommand(request.EmployeeId, request.CycleId, request.Reason), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<EmployeeGoalsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// DELETE /api/v1/tenant/performance/goals/{id}
     /// Soft-deletes a goal (FR-1).
     /// </summary>
