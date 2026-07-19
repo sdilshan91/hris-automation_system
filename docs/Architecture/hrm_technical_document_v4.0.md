@@ -1869,7 +1869,37 @@ These tables live outside per-tenant RLS — they describe the tenants themselve
 | job_title_id | uuid (PK) | |
 | tenant_id | uuid (FK) | |
 | title_name | varchar(150) | Unique per tenant |
-| grade_id | uuid (FK) | Nullable |
+| grade_id | uuid (FK) | Nullable → **salary_grade** (ISSUE-021/#389). No hard DB FK (legacy free-form GUIDs); validated service-side on write — a non-null value must resolve to an active in-tenant salary_grade. |
+
+**employee_education** *(ISSUE-321/#386 — profile sub-entity)*
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid (PK) | |
+| tenant_id | uuid (FK) | RLS `tenant_isolation` |
+| employee_id | uuid (FK) | Index `(tenant_id, employee_id)` |
+| institution / degree | varchar | required |
+| field_of_study / start_year / end_year | varchar | nullable |
+
+**employee_work_history** *(ISSUE-321/#386)*
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid (PK) | |
+| tenant_id | uuid (FK) | RLS `tenant_isolation` |
+| employee_id | uuid (FK) | Index `(tenant_id, employee_id)` |
+| company / position | varchar | required |
+| from_date / to_date | date | `DateOnly` (not timestamptz) |
+| description | varchar | nullable |
+
+**employee_dependent** *(ISSUE-321/#386)*
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid (PK) | |
+| tenant_id | uuid (FK) | RLS `tenant_isolation` |
+| employee_id | uuid (FK) | Index `(tenant_id, employee_id)` |
+| name / relationship | varchar | required |
+| date_of_birth | date | `DateOnly`, nullable |
+
+> `employee` also gains `city/state/postal_code/country` (address components, #386) and `birth_month_day int` (`month*100+day`, indexed `(tenant_id, birth_month_day)`, interceptor-maintained — dashboard birthday widget, ISSUE-285a/#390).
 
 ### 19.6 Leave Tables (Per Tenant)
 
@@ -1880,6 +1910,21 @@ These tables live outside per-tenant RLS — they describe the tenants themselve
 
 ### 19.8 Payroll Tables (Per Tenant)
 **salary_component**, **employee_salary_component**, **payroll_run**, **payroll_slip**, **payroll_slip_detail** — all carry `tenant_id` with RLS.
+
+**salary_grade** *(ISSUE-021/#389 — compensation bands)*
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid (PK) | |
+| tenant_id | uuid (FK) | RLS `tenant_isolation` |
+| code | varchar(20) | Unique per tenant `(tenant_id, code)`, case-insensitive |
+| name | varchar(100) | required |
+| min_amount / mid_amount / max_amount | numeric(18,2) | mid nullable; `min ≤ mid ≤ max` |
+| currency | varchar(3) | ISO code |
+| is_active | boolean | soft-delete/deactivate |
+
+Referenced (service-validated, not a hard FK) by `job_title.grade_id`. CRUD at `/api/v1/tenant/salary-grades`.
+
+> **Performance goal state machine (BUG-056/#387):** `Draft → Submitted → Acknowledged → Finalized`. `POST /tenant/performance/goals/finalize` requires the set's weights to sum to exactly 100%, then locks it (`Finalized`); further writes return `409 goals_finalized`. Re-open (DF-46, decided: HR or the finalizing manager, audit reason, → `Acknowledged`) is not yet built.
 
 ### 19.9 Audit & Notification Tables (Per Tenant)
 

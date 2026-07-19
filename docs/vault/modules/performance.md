@@ -21,7 +21,8 @@ goal-setting form (`/performance/goals/:employeeId`).
   shows the exact string **"Goal weights must total 100%"** (AC-3 — QA asserts it).
 - 1-10 goals per employee per cycle (BR-2).
 - category enum: `KPI` | `Competency` | `Project` (PascalCase strings, US-PLT-003).
-- goal-setting status enum: `NotStarted` | `Draft` | `Submitted` | `Acknowledged`.
+- goal-setting status enum: `Draft`(0) | `Submitted`(1) | `Acknowledged`(2) | `Finalized`(3)
+  (there is **no** `NotStarted` value — `GoalStatus.cs`). `Finalized` = the locked/signed-off state (BUG-056, #387).
 
 ### FE↔BE contract the FE service ASSUMES (backend agent must confirm/reconcile)
 `apiBaseUrl` already includes `/api/v1`. All under `/performance`:
@@ -34,6 +35,13 @@ goal-setting form (`/performance/goals/:employeeId`).
 - `PUT  /cycles/:cycleId/employees/:employeeId/goals` with `{ goals: IGoalInput[] }`
   → returns the persisted `IGoal[]`. This is a **full replace** of the goal set, not
   a per-goal CRUD. Server re-validates 100%/count and notifies the employee (FR-7).
+- **Finalize/lock (BUG-056, #387):** `POST /performance/goals/finalize` with `{ employeeId, cycleId }`
+  requires the set to sum to **exactly 100%** (else `422 weight_not_100`), then transitions every goal to
+  `Finalized`. Thereafter Create/Update/Delete/SaveGoals reject writes to that set with `409 goals_finalized`
+  (immutable). **Re-open decision (DF-46):** HR (`SetGoal.All`) OR the finalizing manager may re-open with a
+  mandatory audit reason, resetting the set to `Acknowledged` — endpoint not yet built (tracked DF-46).
+- **Goal-read authz (#387/DF-18):** `GET goals/{id}` is report-scoped — allowed for HR (`SetGoal.All`),
+  the goal's **owner** (self-read), or the direct manager; other in-tenant managers are denied.
 
 If the backend lands per-goal CRUD instead of a bulk replace, the FE
 `PerformanceGoalService` is the single-file change point.

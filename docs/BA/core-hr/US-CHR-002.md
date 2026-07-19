@@ -104,3 +104,8 @@ acceptance_criteria_count: 6
 - **Employment history:** Change department twice; verify two timeline entries appear with correct dates.
 - **Responsive:** Check profile layout at 360px, 768px, 1440px.
 - **Accessibility:** Verify all edit buttons have accessible labels; screen reader announces section headings.
+
+---
+## Follow-up ACs (reconciliation 2026-07-19, #386)
+> Attached here rather than as a net-new epic. Track in STATUS.md, matching how US-PRF-001/US-PAY-001 track their follow-up ACs.
+- **AC-F1 — Profile sub-entity backend CRUD (#386).** The Education, Work History, and Dependents profile sections are now backed by net-new tenant-scoped entities and tables — `EmployeeEducation`, `EmployeeWorkHistory`, `EmployeeDependent` (plus employee address columns) — with backend CRUD and the profile-edit save path (`PATCH {id}/profile`). These sections are no longer read-only placeholders; the FE edit path was re-enabled off the earlier read-only state. **Status: shipped (#386).**

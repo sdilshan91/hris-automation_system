@@ -221,14 +221,14 @@
 
 | Story | Deferred AC / FR (unbuilt) | Why / Theme | Unblocked by |
 |---|---|---|---|
-| US-AUTH-001 | **lockout email still LogOnly** — `LockoutNotificationService` stub never migrated onto the NTF-006 dispatcher (DF-40); login **not** rate-limited. *(password-reset email now real-delivered ✅ NTF-006)* | LogOnly lockout (B, DF-40); rate-limit absent (D) | DF-40 |
+| US-AUTH-001 | **lockout email now real-delivered ✅ (#384)** — `LockoutNotificationService` migrated onto the NTF-006 dispatcher (DF-40 DONE); login **still not** rate-limited. *(password-reset email also real-delivered ✅ NTF-006)* | rate-limit absent (D) | — |
 | US-AUTH-002 | AC-7 JWT key rotation/overlap — single static signing key | no rotation (D) | — |
 | US-AUTH-004 | password-history configured-but-**unenforced**. *(reset-email now real-delivered ✅ NTF-006)* | D | — |
 | US-AUTH-005 | challenge **not** rate-limited; MFA secret stored **plaintext**. *(MFA is TOTP — no server-side code to deliver; the "delivery" gap was moot)* | D; A/D | US-PLT-005 |
 | US-AUTH-007 | FR-9 subdomain cache **not** invalidated on tenant status change (suspended tenant resolves Active for TTL) | D | — |
 | US-AUTH-015 | per-tenant SSO gating + `sso_only` UX deferred | lands with US-AUTH-012/016 | US-AUTH-012/016 |
 | US-CHR-001 | BUG-113 `LocationId` not wired (employee↔location link impossible). *(probation-ending notification now real-delivered ✅ NTF-006)* | E functional gap | — |
-| US-CHR-002 | **Education / Work-History / Dependents sections have NO backend** — FE-only forms, made read-only after #380 (ISSUE-321); Employment (dept/title/type/status) + address edit fields silently no-op / risk invalid enum writes, need id/enum selectors (ISSUE-320). Profile-edit **route** 404 fixed #380 (ISSUE-319 RESOLVED). | E functional gap | DF-39, DF-38 |
+| US-CHR-002 | **Education / Work-History / Dependents backend now EXISTS ✅ (#386)** — net-new `EmployeeEducation` / `EmployeeWorkHistory` / `EmployeeDependent` entities+tables + address columns + CRUD + `PATCH {id}/profile` save path; FE edit re-enabled off the #380 read-only state (DF-38/DF-39 DONE). Employment (dept/title/type/status) + address edit fields wired (ISSUE-320 addressed). Profile-edit **route** 404 fixed #380 (ISSUE-319 RESOLVED). | E functional gap | — |
 | US-CHR-008 | EXIF not stripped from photos; magic-byte sniff (BUG-058). *(doc-expiry notification now real-delivered ✅ NTF-006)* | D | — |
 | US-CHR-010 | **custom-field columns in import (FR-11)** — see story AC-K1. *(import-completion notification now real-delivered ✅ NTF-006)* | K | — |
 | US-CHR-011 | reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218). *(manager-reassignment notification now real-delivered ✅ NTF-006)* | E | — |
@@ -240,15 +240,15 @@
 | US-LV-012 | **FR-1 Dept Leave-Coverage report returns empty** — see story AC-K1 | K | — |
 | US-ATT-003 | UTC-only day-boundary/late detection (wrong for non-UTC tenants). *(regularization request-notification now real-delivered ✅ NTF-006)* | J (ISSUE-065) | — |
 | US-ATT-004 | **AC-4 multi-level regularization approval inert**. *(approval/reject notification now real-delivered ✅ NTF-006)* | C | US-ADM-011 |
-| US-ATT-008 | UTC-only late/early detection (ISSUE-065). *(late-arrival alert now real-delivered ✅ NTF-006)* | J | — |
+| US-ATT-008 | UTC-only late/early detection (ISSUE-065). **FR-7 chronic-lateness escalation shipped ✅ (#385).** *(late-arrival alert now real-delivered ✅ NTF-006)* | J | — |
 | US-REC-002 | resume magic-byte sniff (BUG-058). *(application-confirmation email now real-delivered ✅ NTF-006)* | D | — |
 | US-REC-005 | **interview-guide attachment (FR-8)** — see story AC-K1. *(interview-schedule notification now real-delivered ✅ NTF-006)* | K | — |
 | US-REC-006 | **scorecard versioning** — see story AC-K1. *(scorecard-submitted email now real-delivered ✅ NTF-006)* | K | — |
-| US-REC-007 | **offer magic-link not embedded** — email+PDF now real-delivered ✅, but no portal token is issued/embedded at offer-send (DF-42); **FR-10 offer-approval routing inert** | B (DF-42); C/E | DF-42, US-ADM-011 |
-| US-REC-008 | **status-tracking magic-link email still LogOnly** — token is minted+persisted but the delivering email is a documented log-only seam, no real sender reachable (DF-41) | B (DF-41) | DF-41 |
+| US-REC-007 | **offer magic-link now embedded ✅ (#384)** — email+PDF real-delivered and a portal token is now issued/embedded at offer-send via `PortalLinkBuilder` (DF-42 DONE); **FR-10 offer-approval routing** still inert | C/E | US-ADM-011 |
+| US-REC-008 | **status-tracking magic-link email now delivered ✅ (#384)** — applicant-portal token minted+persisted and the delivering email now fires through the real dispatcher (`applicant_portal_link` event / `PortalLinkBuilder`); DF-41 DONE | — | — |
 | US-REC-010 | **AC-3 no user-account creation** *(partially shipped — FR-5 provisioning #355)*, **AC-2 no salary persistence, AC-4 no "Converted" badge (ISSUE-232)**; **FR-9 welcome-email + FR-8 onboarding trigger still deferred/log-only** (ISSUE-140 residual — only the generic "Converted" stage-change email fires) | E; B (ISSUE-140) | ISSUE-140 |
 | US-PAY-009 | **year-end tax-statement PDF (ISSUE-177)** + report PDF export | F | — |
-| US-PRF-001 | **goal-set finalize == 100% (BUG-056)** — see story AC-K1. *(goals-set notification now real-delivered ✅ NTF-006)* | K | — |
+| US-PRF-001 | **goal-set finalize == 100% shipped ✅ (#387, BUG-056)** — `POST /tenant/performance/goals/finalize` locks the set to `GoalStatus.Finalized` (409 `goals_finalized` thereafter); goal-**read** authz self-scoped (#387/DF-18); re-open endpoint = DF-46. See story AC-K1/K2. *(goals-set notification also real-delivered ✅ NTF-006)* | K (DONE) | — |
 | US-PRF-002 | **AC-B1 self-assessment attachment DELETE missing (BUG-243)**. *(self-rating notification now real-delivered ✅ NTF-006)* | F/BUG-243 | — |
 | US-PRF-004 | **AC-B1 cycle rating-scales endpoint missing**; **AC-B2 low-privilege "resolve active cycle" resolver missing — cross-cutting BUG-243 enabler** | F/BUG-243 | — |
 | US-PRF-005 | **360 report PDF**; **AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment missing (BUG-243)**. *(360 reviewer-assigned notifications now real-delivered ✅ NTF-006)* | F; F/BUG-243 | — |
@@ -263,8 +263,8 @@
 ### Theme-K follow-up ACs attached to existing stories (see each story's "Follow-up ACs" section)
 | Existing story | Attached follow-up | Finding |
 |---|---|---|
-| US-PAY-001 | AC-K1 SalaryGrade entity | ISSUE-021 |
-| US-PRF-001 | AC-K1 goal-set finalize (==100%) | BUG-056 |
+| US-PAY-001 | ~~AC-K1 SalaryGrade entity~~ **DELIVERED #389** (entity + CRUD `/api/v1/tenant/salary-grades` + FE + JobTitle FK-validation) | ISSUE-021 |
+| US-PRF-001 | ~~AC-K1 goal-set finalize (==100%)~~ **DELIVERED #387** (`POST goals/finalize` → `Finalized`/409; re-open = DF-46) | BUG-056 |
 | US-LV-002 | AC-K1 FTE proration · AC-K2 accrual-frequency scheduling | LV-002 BR-2/FR-5 |
 | US-CHR-010 | AC-K1 custom-field columns in bulk import (spans US-CHR-012) | CHR-010/012 FR-11 |
 | US-LV-012 | AC-K1 Dept Leave-Coverage report (empty stub) | LV-012 FR-1 |

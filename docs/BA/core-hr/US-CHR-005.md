@@ -26,13 +26,13 @@ acceptance_criteria_count: 5
 | AC-1 | A Tenant Admin navigates to the Job Titles management page | The page loads | A list/table of existing job titles is displayed with columns: Title Name, Grade (if linked), Employee Count, Status, and action buttons. |
 | AC-2 | The admin clicks "Add Job Title" and fills in a unique title name | They submit the form | A new job_title record is created with `tenant_id` from session context and `title_name` unique within the tenant. |
 | AC-3 | The admin enters a title name that already exists in the tenant | They submit | The system rejects with: "A job title with this name already exists." |
-| AC-4 | The admin links a job title to a salary grade | They save | The `grade_id` FK is set; when this job title is assigned to an employee, the associated grade is displayed on the employee profile. |
+| AC-4 | The admin links a job title to a salary grade | They save | The `grade_id` FK is set and **FK-validated against a real `SalaryGrade` (#389)** — a non-null value must resolve to an active in-tenant grade, else the save is rejected; `grade_id` may still be left null. When this job title is assigned to an employee, the associated grade is displayed on the employee profile. |
 | AC-5 | The admin attempts to deactivate a job title assigned to active employees | They click "Deactivate" | The system warns: "This job title is assigned to X active employees. Reassign them before deactivating." and blocks the action. |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
 - FR-1: The system SHALL support CRUD operations on job titles scoped to the current tenant.
 - FR-2: The system SHALL enforce unique `title_name` within a tenant.
-- FR-3: The system SHALL optionally link a job title to a salary grade (`grade_id` FK, nullable).
+- FR-3: The system SHALL optionally link a job title to a salary grade (`grade_id` FK, nullable). A non-null `grade_id` SHALL be FK-validated against a real, active, in-tenant `SalaryGrade` record (#389); an unresolvable grade reference SHALL be rejected.
 - FR-4: The system SHALL display the count of employees assigned to each job title.
 - FR-5: The system SHALL use soft delete for job titles; deactivated titles are hidden from assignment dropdowns but visible in admin views.
 - FR-6: The system SHALL support employment types (Full-Time, Part-Time, Contract, Intern) as a separate reference entity usable alongside job titles.
@@ -81,7 +81,7 @@ acceptance_criteria_count: 5
 - Payroll module (future): Salary grades linked to job titles feed into compensation structures.
 
 ## 10. Assumptions & Constraints
-- Salary grades are a separate entity that may be implemented alongside or after job titles; the `grade_id` FK is nullable to allow phased delivery.
+- Salary grades are a real tenant-scoped `SalaryGrade` entity (delivered #389, US-PAY-001 AC-K1); the `grade_id` FK is nullable (a job title need not carry a grade), but any non-null value FK-validates against an active in-tenant grade.
 - Employment types (Full-Time, Part-Time, etc.) are stored as a reference/enum rather than a full entity in Phase 1.
 - Only free/open-source libraries are used.
 
