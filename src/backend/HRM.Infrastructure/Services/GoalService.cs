@@ -53,6 +53,10 @@ public sealed class GoalService : IGoalService
         if (authz.IsFailure)
             return Result<GoalDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
 
+        // BUG-056: a finalized (locked) goal set is immutable — reject writes until re-opened (out of scope).
+        if (await IsSetFinalizedAsync(input.EmployeeId, input.CycleId, cancellationToken))
+            return Result<GoalDto>.Failure("Goals are finalized and locked.", 409, "goals_finalized");
+
         var cycleResult = await GetOpenCycleAsync(input.CycleId, cancellationToken);
         if (cycleResult.IsFailure)
             return Result<GoalDto>.Failure(cycleResult.Error!, cycleResult.StatusCode ?? 400, cycleResult.ErrorCode);
@@ -126,6 +130,10 @@ public sealed class GoalService : IGoalService
         if (authz.IsFailure)
             return Result<GoalDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
 
+        // BUG-056: a finalized (locked) goal set is immutable — reject writes until re-opened (out of scope).
+        if (await IsSetFinalizedAsync(goal.EmployeeId, goal.CycleId, cancellationToken))
+            return Result<GoalDto>.Failure("Goals are finalized and locked.", 409, "goals_finalized");
+
         var cycleResult = await GetOpenCycleAsync(goal.CycleId, cancellationToken);
         if (cycleResult.IsFailure)
             return Result<GoalDto>.Failure(cycleResult.Error!, cycleResult.StatusCode ?? 400, cycleResult.ErrorCode);
@@ -198,6 +206,10 @@ public sealed class GoalService : IGoalService
         if (authz.IsFailure)
             return Result.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
 
+        // BUG-056: a finalized (locked) goal set is immutable — reject writes until re-opened (out of scope).
+        if (await IsSetFinalizedAsync(goal.EmployeeId, goal.CycleId, cancellationToken))
+            return Result.Failure("Goals are finalized and locked.", 409, "goals_finalized");
+
         var cycleResult = await GetOpenCycleAsync(goal.CycleId, cancellationToken);
         if (cycleResult.IsFailure)
             return Result.Failure(cycleResult.Error!, cycleResult.StatusCode ?? 400, cycleResult.ErrorCode);
@@ -230,6 +242,10 @@ public sealed class GoalService : IGoalService
         var authz = await AuthorizeForEmployeeAsync(employeeId, cancellationToken);
         if (authz.IsFailure)
             return Result<EmployeeGoalsDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        // BUG-056: a finalized (locked) goal set is immutable — reject writes until re-opened (out of scope).
+        if (await IsSetFinalizedAsync(employeeId, cycleId, cancellationToken))
+            return Result<EmployeeGoalsDto>.Failure("Goals are finalized and locked.", 409, "goals_finalized");
 
         // BR-1/AC-5: the cycle's goal-setting window must be open.
         var cycleResult = await GetOpenCycleAsync(cycleId, cancellationToken);
@@ -404,7 +420,77 @@ public sealed class GoalService : IGoalService
         if (goal is null)
             return Result<GoalDto>.Failure("Goal not found.", 404, "goal_not_found");
 
+        // DF-18/ISSUE-099: within-tenant read authorization. Without this, any Performance.SetGoal.Team
+        // manager could read ANY in-tenant goal, not just their reports'. BR-4 is enforced via
+        // AuthorizeForEmployeeAsync (HR SetGoal.All ⇒ allow; else require SetGoal.Team AND the target is a
+        // direct report). Self-read branch FIRST so the goal's OWNER is never locked out of their own goal:
+        // "self" here is the employee whose Employee.UserId matches the caller's UserId — the same identity
+        // GetCurrentEmployeeAsync resolves and the BUG-119 employee-profile ownership check uses. When the
+        // caller IS the goal's own employee we allow unconditionally; otherwise the manager/HR helper runs.
+        var self = await GetCurrentEmployeeAsync(cancellationToken);
+        if (self is null || self.Id != goal.EmployeeId)
+        {
+            var authz = await AuthorizeForEmployeeAsync(goal.EmployeeId, cancellationToken);
+            if (authz.IsFailure)
+                return Result<GoalDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+        }
+
         return Result<GoalDto>.Success(ToDto(goal));
+    }
+
+    public async Task<Result<EmployeeGoalsDto>> FinalizeGoalsAsync(
+        Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<EmployeeGoalsDto>.Failure("Tenant context is not resolved.", 400);
+
+        // BUG-056: only HR (SetGoal.All) or the employee's direct manager (SetGoal.Team) may finalize (BR-4).
+        var authz = await AuthorizeForEmployeeAsync(employeeId, cancellationToken);
+        if (authz.IsFailure)
+            return Result<EmployeeGoalsDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        // The per-employee-per-cycle goal set (CycleId is the cycle identifier on Goal). The global query
+        // filter already excludes other tenants + soft-deleted rows.
+        var goals = await _dbContext.Goals
+            .Where(g => g.EmployeeId == employeeId && g.CycleId == cycleId)
+            .ToListAsync(cancellationToken);
+
+        // BUG-056: re-finalizing an already-locked set is a conflict (idempotency guard).
+        if (goals.Any(g => g.Status == GoalStatus.Finalized))
+            return Result<EmployeeGoalsDto>.Failure("Goals are finalized and locked.", 409, "goals_finalized");
+
+        // BUG-056: the set must sum to EXACTLY 100% before it can be locked. This is the ==100 gate that
+        // SaveGoals/Create only enforce as ≤100. An empty set (0%) also fails here.
+        var totalWeight = goals.Sum(g => g.Weight);
+        if (totalWeight != RequiredTotalWeight)
+            return Result<EmployeeGoalsDto>.Failure(
+                $"Goal weights must total exactly 100% to finalize (currently {totalWeight}%).",
+                422, "weight_not_100");
+
+        // Transition every goal in the set to Finalized (locked). The write-guards on
+        // Create/Update/Delete/SaveGoals then reject further edits (409 goals_finalized) until re-opened.
+        foreach (var goal in goals)
+        {
+            var before = SnapshotGoal(goal);
+            goal.Status = GoalStatus.Finalized;
+            AddGoalAudit("Goal.Finalized", goal.Id, before: before, after: SnapshotGoal(goal),
+                $"Goal '{goal.Title}' finalized (goal set locked).");
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Goals finalized. EmployeeId={EmployeeId}, CycleId={CycleId}, Count={Count}, TenantId={TenantId}, By={User}",
+            employeeId, cycleId, goals.Count, _tenantContext.TenantId, _currentUser.Email);
+
+        return Result<EmployeeGoalsDto>.Success(new EmployeeGoalsDto
+        {
+            EmployeeId = employeeId,
+            CycleId = cycleId,
+            TotalWeight = totalWeight,
+            IsGoalSettingOpen = false,
+            Goals = goals.OrderBy(g => g.CreatedAt).Select(ToDto).ToList(),
+        });
     }
 
     public async Task<Result<TeamGoalsDashboardDto>> GetTeamDashboardAsync(
@@ -500,6 +586,18 @@ public sealed class GoalService : IGoalService
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
 
+    // ── Finalize / lock (BUG-056) ─────────────────────────────────────
+
+    /// <summary>
+    /// BUG-056: true when the employee's goal set for the cycle has been finalized (any goal in Finalized
+    /// status ⇒ the whole set is locked, since <see cref="FinalizeGoalsAsync"/> transitions all of them
+    /// together). The global query filter scopes this to the current tenant + non-deleted rows.
+    /// </summary>
+    private Task<bool> IsSetFinalizedAsync(Guid employeeId, Guid cycleId, CancellationToken cancellationToken)
+        => _dbContext.Goals.AnyAsync(
+            g => g.EmployeeId == employeeId && g.CycleId == cycleId && g.Status == GoalStatus.Finalized,
+            cancellationToken);
+
     // ── Goal-setting window (BR-1/AC-5) ──────────────────────────────
 
     private async Task<Result> GetOpenCycleAsync(Guid cycleId, CancellationToken cancellationToken)
@@ -530,6 +628,9 @@ public sealed class GoalService : IGoalService
     private static string AggregateStatus(IReadOnlyList<Goal> goals)
     {
         if (goals.Count == 0) return "NotStarted";
+        // BUG-056: FinalizeGoalsAsync transitions the whole set together, so an all-Finalized set is a locked
+        // set — surface it as "Finalized" rather than letting it fall through to the "Draft" bucket.
+        if (goals.All(g => g.Status == GoalStatus.Finalized)) return "Finalized";
         if (goals.All(g => g.Status == GoalStatus.Acknowledged)) return "Acknowledged";
         if (goals.All(g => g.Status is GoalStatus.Submitted or GoalStatus.Acknowledged)) return "Submitted";
         return "Draft";

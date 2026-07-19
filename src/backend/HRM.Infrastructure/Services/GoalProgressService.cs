@@ -227,7 +227,8 @@ public sealed class GoalProgressService : IGoalProgressService
         // Active goals for the in-scope employees.
         var goals = await _dbContext.Goals.AsNoTracking()
             .Where(g => empIds.Contains(g.EmployeeId)
-                && (g.Status == GoalStatus.Submitted || g.Status == GoalStatus.Acknowledged))
+                && (g.Status == GoalStatus.Submitted || g.Status == GoalStatus.Acknowledged
+                    || g.Status == GoalStatus.Finalized))
             .ToListAsync(cancellationToken);
 
         var goalIds = goals.Select(g => g.Id).ToList();
@@ -378,10 +379,12 @@ public sealed class GoalProgressService : IGoalProgressService
 
     private async Task<IReadOnlyList<MyGoalProgressDto>> BuildGoalProgressRowsAsync(Guid employeeId, CancellationToken cancellationToken)
     {
-        // Active goals = Submitted/Acknowledged (tracking happens after goal-setting closes).
+        // Active goals = Submitted/Acknowledged/Finalized (tracking happens after goal-setting closes;
+        // BUG-056: a finalized/locked set is still tracked — finalize is the sign-off, not the end of tracking).
         var goals = await _dbContext.Goals.AsNoTracking()
             .Where(g => g.EmployeeId == employeeId
-                && (g.Status == GoalStatus.Submitted || g.Status == GoalStatus.Acknowledged))
+                && (g.Status == GoalStatus.Submitted || g.Status == GoalStatus.Acknowledged
+                    || g.Status == GoalStatus.Finalized))
             .ToListAsync(cancellationToken);
 
         if (goals.Count == 0)

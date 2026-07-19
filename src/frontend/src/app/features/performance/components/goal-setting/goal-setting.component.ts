@@ -7,6 +7,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink, ActivatedRoute } from '@angular/router';
 import {
   FormArray,
@@ -29,6 +30,7 @@ import {
   IAppraisalCycle,
   IGoal,
   IGoalInput,
+  isGoalSetLocked,
   WEIGHT_BAR_COLORS,
   weightsTotalCorrect,
 } from '../../models/goal.models';
@@ -91,6 +93,20 @@ import {
           </button>
         </div>
       } @else {
+        <!-- BUG-056: finalized / locked read-only banner -->
+        @if (locked()) {
+          <div
+            class="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+            role="status"
+          >
+            <span aria-hidden="true">🔒</span>
+            <span>
+              <span class="font-semibold">Finalized</span> — these goals are locked
+              and can no longer be edited.
+            </span>
+          </div>
+        }
+
         <!-- AC-5: closed-window read-only banner -->
         @if (!windowOpen()) {
           <div
@@ -158,7 +174,7 @@ import {
                       Goal {{ i + 1 }}
                     </span>
                   </div>
-                  @if (windowOpen()) {
+                  @if (editable()) {
                     <button
                       type="button"
                       class="rounded-md px-2 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
@@ -324,7 +340,7 @@ import {
           </div>
 
           <!-- Add goal -->
-          @if (windowOpen()) {
+          @if (editable()) {
             <button
               type="button"
               class="mt-4 w-full rounded-xl border border-dashed border-neutral-300 px-4 py-3 text-sm font-medium text-neutral-600 transition hover:border-neutral-400 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -338,8 +354,8 @@ import {
             </button>
           }
 
-          <!-- Actions (AC-2 / AC-3) -->
-          @if (windowOpen()) {
+          <!-- Actions (AC-2 / AC-3 / BUG-056) -->
+          @if (editable()) {
             <div
               class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end"
             >
@@ -349,6 +365,24 @@ import {
               >
                 Cancel
               </a>
+              <!-- BUG-056: finalize locks the set (backend enforces the 100% rule) -->
+              <button
+                type="button"
+                class="rounded-lg px-5 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-300 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                (click)="finalize()"
+                [disabled]="!canFinalize()"
+              >
+                @if (finalizing()) {
+                  <span class="inline-flex items-center gap-2">
+                    <span
+                      class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-emerald-600"
+                    ></span>
+                    Finalizing…
+                  </span>
+                } @else {
+                  Finalize goals
+                }
+              </button>
               <button
                 type="submit"
                 class="rounded-lg px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -389,6 +423,9 @@ export class GoalSettingComponent implements OnInit {
   readonly loadError = signal<string | null>(null);
   readonly saving = signal(false);
   readonly cycle = signal<IAppraisalCycle | null>(null);
+  /** BUG-056: true once the goal set has been finalized (status === 'Finalized'). */
+  readonly locked = signal(false);
+  readonly finalizing = signal(false);
 
   private employeeId = '';
 
@@ -404,6 +441,13 @@ export class GoalSettingComponent implements OnInit {
 
   /** AC-5 gate: editing only when the backend reports the window open. */
   readonly windowOpen = computed(() => this.cycle()?.goalSettingOpen ?? false);
+
+  /**
+   * BUG-056: the set is editable only when the window is open AND it has not been
+   * finalized. Every add/edit/delete/save affordance keys off this; a finalized set
+   * is fully read-only.
+   */
+  readonly editable = computed(() => this.windowOpen() && !this.locked());
 
   /** Sum of all goal weights (AC-3). */
   readonly totalWeight = computed(() =>
@@ -435,7 +479,7 @@ export class GoalSettingComponent implements OnInit {
   /** AC-2/AC-3: enabled only when the form is valid AND weights total 100%. */
   readonly canSave = computed(
     () =>
-      this.windowOpen() &&
+      this.editable() &&
       !this.saving() &&
       this.totalIs100() &&
       this.form.valid &&
@@ -481,14 +525,20 @@ export class GoalSettingComponent implements OnInit {
 
   private hydrate(goals: IGoal[]): void {
     this.goals.clear();
-    if (goals.length === 0 && this.windowOpen()) {
+    // BUG-056: detect the locked (finalized) state BEFORE seeding, so editable()
+    // reflects it and no empty edit row is added to a finalized set.
+    this.locked.set(isGoalSetLocked(goals));
+    if (goals.length === 0 && this.editable()) {
       // Start managers with one empty row to fill in (AC-1).
       this.goals.push(this.newGoalGroup());
     } else {
       goals.forEach((g) => this.goals.push(this.newGoalGroup(g)));
     }
-    if (!this.windowOpen()) {
+    // Read-only when the window is closed (AC-5) OR the set is finalized (BUG-056).
+    if (!this.windowOpen() || this.locked()) {
       this.form.disable({ emitEvent: false });
+    } else {
+      this.form.enable({ emitEvent: false });
     }
   }
 
@@ -532,14 +582,15 @@ export class GoalSettingComponent implements OnInit {
   };
 
   addGoal(): void {
-    if (!this.windowOpen() || this.goals.length >= this.maxGoals) {
+    // Blocked when the window is closed (AC-5) or the set is finalized (BUG-056).
+    if (!this.editable() || this.goals.length >= this.maxGoals) {
       return;
     }
     this.goals.push(this.newGoalGroup());
   }
 
   removeGoal(index: number): void {
-    if (!this.windowOpen()) {
+    if (!this.editable()) {
       return;
     }
     this.goals.removeAt(index);
@@ -585,5 +636,61 @@ export class GoalSettingComponent implements OnInit {
           this.toastr.error('Could not save goals. Please try again.');
         },
       });
+  }
+
+  /** BUG-056: the Finalize action is offered while editable and there are goals. */
+  canFinalize(): boolean {
+    return this.editable() && !this.finalizing() && this.goals.length > 0;
+  }
+
+  /**
+   * BUG-056: finalize (lock) the goal set for this employee + cycle. The backend is
+   * the authority on the 100% rule, so we let it validate and surface the coded
+   * errors: 422 `weight_not_100` and 409 `goals_finalized`. On success we reload the
+   * goals so the now-`Finalized` status renders the locked, read-only state.
+   */
+  finalize(): void {
+    const cycle = this.cycle();
+    if (!cycle || this.locked() || this.finalizing() || this.goals.length === 0) {
+      return;
+    }
+    this.finalizing.set(true);
+    this.goalService.finalizeGoals(this.employeeId, cycle.id).subscribe({
+      next: () => {
+        this.finalizing.set(false);
+        this.toastr.success('Goals finalized and locked.');
+        this.loadGoals(cycle.id);
+      },
+      error: (err: unknown) => {
+        this.finalizing.set(false);
+        if (this.isWeightNot100Error(err)) {
+          this.toastr.error(
+            'Goals must total exactly 100% before finalizing.',
+          );
+        } else if (this.isAlreadyFinalizedError(err)) {
+          this.toastr.error('These goals are already finalized.');
+        } else {
+          this.toastr.error('Could not finalize goals. Please try again.');
+        }
+      },
+    });
+  }
+
+  /** 422 carrying the backend `weight_not_100` code (goals don't sum to 100%). */
+  private isWeightNot100Error(err: unknown): boolean {
+    return (
+      err instanceof HttpErrorResponse &&
+      err.status === 422 &&
+      (err.error as { code?: string } | null)?.code === 'weight_not_100'
+    );
+  }
+
+  /** 409 carrying the backend `goals_finalized` code (already locked). */
+  private isAlreadyFinalizedError(err: unknown): boolean {
+    return (
+      err instanceof HttpErrorResponse &&
+      err.status === 409 &&
+      (err.error as { code?: string } | null)?.code === 'goals_finalized'
+    );
   }
 }

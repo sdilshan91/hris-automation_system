@@ -14,6 +14,8 @@ describe('OrgTreeService', () => {
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/org-tree`;
 
+  // DF-17: the API nests direct children inline inside each ROOT node down to the
+  // requested depth. `mockNodes` is a single root (Engineering) carrying its children.
   const mockNodes: IOrgTreeNode[] = [
     {
       nodeId: 'dept-1',
@@ -24,26 +26,28 @@ describe('OrgTreeService', () => {
       employeeCount: 15,
       childrenCount: 2,
       parentId: null,
-    },
-    {
-      nodeId: 'dept-2',
-      nodeType: 'department',
-      name: 'Frontend',
-      title: null,
-      avatarUrl: null,
-      employeeCount: 5,
-      childrenCount: 0,
-      parentId: 'dept-1',
-    },
-    {
-      nodeId: 'dept-3',
-      nodeType: 'department',
-      name: 'Backend',
-      title: null,
-      avatarUrl: null,
-      employeeCount: 10,
-      childrenCount: 3,
-      parentId: 'dept-1',
+      children: [
+        {
+          nodeId: 'dept-2',
+          nodeType: 'department',
+          name: 'Frontend',
+          title: null,
+          avatarUrl: null,
+          employeeCount: 5,
+          childrenCount: 0,
+          parentId: 'dept-1',
+        },
+        {
+          nodeId: 'dept-3',
+          nodeType: 'department',
+          name: 'Backend',
+          title: null,
+          avatarUrl: null,
+          employeeCount: 10,
+          childrenCount: 3,
+          parentId: 'dept-1',
+        },
+      ],
     },
   ];
 
@@ -73,7 +77,8 @@ describe('OrgTreeService', () => {
       service
         .getOrgTree({ view: 'department', depth: 2 })
         .subscribe((nodes) => {
-          expect(nodes.length).toBe(3);
+          // DF-17: the service returns the ROOT nodes (one root here), NOT a flattened list.
+          expect(nodes.length).toBe(1);
           expect(nodes[0].name).toBe('Engineering');
         });
 
@@ -91,7 +96,40 @@ describe('OrgTreeService', () => {
       req.flush({ nodes: mockNodes, view: 'department', reportingViewAvailable: false });
     });
 
-    it('should send parentId param for lazy-loading children', () => {
+    it('should preserve the nested children delivered inside each root (DF-17)', () => {
+      service
+        .getOrgTree({ view: 'department', depth: 2 })
+        .subscribe((nodes) => {
+          // The nested `children` the API delivered must survive intact — the service no
+          // longer flattens the payload down to roots-only.
+          expect(nodes[0].children?.length).toBe(2);
+          expect(nodes[0].children?.[0].name).toBe('Frontend');
+          expect(nodes[0].children?.[1].name).toBe('Backend');
+          // Backend advertises children (childrenCount=3) but none were delivered inline —
+          // it was truncated at the depth limit and must be lazy-fetched on expand.
+          expect(nodes[0].children?.[1].childrenCount).toBe(3);
+          expect(nodes[0].children?.[1].children).toBeUndefined();
+        });
+
+      const req = httpMock.expectOne(
+        (r) => r.url === baseUrl && r.params.get('depth') === '2'
+      );
+      req.flush({ nodes: mockNodes, view: 'department', reportingViewAvailable: false });
+    });
+
+    it('should send parentId param for lazy-loading a truncated subtree (DF-17 fallback)', () => {
+      // The lazy round-trip is still the fallback for subtrees truncated beyond the
+      // delivered depth (e.g. expanding Backend/dept-3, which had no inline children).
+      const leaf: IOrgTreeNode = {
+        nodeId: 'dept-4',
+        nodeType: 'department',
+        name: 'DevOps',
+        title: null,
+        avatarUrl: null,
+        employeeCount: 3,
+        childrenCount: 0,
+        parentId: 'dept-3',
+      };
       service
         .getOrgTree({ view: 'department', parentId: 'dept-3', depth: 1 })
         .subscribe((nodes) => {
@@ -108,8 +146,8 @@ describe('OrgTreeService', () => {
       expect(req.request.method).toBe('GET');
       req.flush({
         nodes: [
-          { ...mockNodes[1], parentId: 'dept-3', nodeId: 'dept-4', name: 'DevOps' },
-          { ...mockNodes[1], parentId: 'dept-3', nodeId: 'dept-5', name: 'QA' },
+          { ...leaf, nodeId: 'dept-4', name: 'DevOps' },
+          { ...leaf, nodeId: 'dept-5', name: 'QA' },
         ],
         view: 'department',
         reportingViewAvailable: false,

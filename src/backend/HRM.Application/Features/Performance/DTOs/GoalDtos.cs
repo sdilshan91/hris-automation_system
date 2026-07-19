@@ -114,6 +114,12 @@ public sealed record SaveGoalItem(
 /// </summary>
 public sealed record SaveGoalsRequest(List<SaveGoalItem> Goals);
 
+/// <summary>
+/// API request body for the finalize/lock endpoint (BUG-056). Locks the goal set for (EmployeeId, CycleId)
+/// once its weights sum to exactly 100%.
+/// </summary>
+public sealed record FinalizeGoalsRequest(Guid EmployeeId, Guid CycleId);
+
 /// <summary>Service-layer input for create/update of a single goal (decouples handler records from the service).</summary>
 public sealed record GoalInput(
     Guid CycleId,
