@@ -76,4 +76,18 @@ public interface IAttendanceNotificationService
         decimal hours,
         string? reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Escalates chronic lateness (US-ATT-008 FR-7): fired once, on the punch that first pushes the employee's
+    /// distinct late-day count for the calendar month above the tenant chronic threshold. Recipients: BOTH the
+    /// employee's line manager AND the attendance-admin/HR pool (de-duplicated). <paramref name="lateCount"/> is
+    /// the month-to-date distinct late-day count, <paramref name="threshold"/> the tenant chronic threshold, and
+    /// <paramref name="asOfLocalDate"/> the punch's tenant-local date (used for the month label).
+    /// </summary>
+    Task NotifyChronicLatenessAsync(
+        Guid employeeId,
+        int lateCount,
+        int threshold,
+        DateOnly asOfLocalDate,
+        CancellationToken cancellationToken = default);
 }

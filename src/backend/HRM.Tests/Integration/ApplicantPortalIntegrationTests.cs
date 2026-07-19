@@ -111,6 +111,9 @@ public sealed class ApplicantPortalIntegrationTests
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
         services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>(); // ISSUE-226 XSS sanitizer (OfferService dep).
         services.AddScoped<IOfferService, OfferService>();
+        // DF-41: ApplicantPortalTokenService now dispatches the magic-link email; a no-op dispatcher satisfies the
+        // ctor dep for these token-lifecycle integration tests (they don't assert on delivery).
+        services.AddScoped<INotificationDispatcher>(_ => Substitute.For<INotificationDispatcher>());
         services.AddScoped<IApplicantPortalTokenService, ApplicantPortalTokenService>();
         services.AddScoped<IApplicantPortalService, ApplicantPortalService>();
 

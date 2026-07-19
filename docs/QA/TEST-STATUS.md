@@ -46,6 +46,11 @@
 >   US-CHR-001) · TC-CHR-334 (DF-30, US-CHR-001).
 > - **PR #369 FE batch:** TC-ADM-006-23 (ISSUE-322, US-ADM-006) · TC-CHR-333 (ISSUE-319/DF-36, US-CHR-002) —
 >   bound to Angular Karma specs (no xUnit `[Trait]`).
+> - **DF-33 chronic-lateness escalation batch:** TC-ATT-161 (DF-33 / ISSUE-087, US-ATT-008 FR-7) — binds the
+>   chronic-lateness crossing + recipient/de-dup/never-throw + log-only-no-op + catalog arms
+>   (`AttendanceChronicLatenessTriggerTests`, `RealAttendanceNotificationServiceTests` chronic arms,
+>   `LogOnlyAttendanceNotificationServiceTests`, `NotificationEventCatalogPhase6Tests`) via `[Trait("TC", "TC-ATT-161")]`.
+>   Closes the ISSUE-087 "notify seam is a no-op TODO" gap that blocked TC-ATT-108/109; does not flip US-ATT-008's state.
 
 ---
 

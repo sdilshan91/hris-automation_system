@@ -121,6 +121,8 @@ public static class NotificationEventCatalog
     [
         "applicant.firstName", "applicant.lastName", "applicant.email", "vacancy.title",
         "offer.reference", "offer.position", "offer.startDate", "offer.expiryDate",
+        // DF-42: candidate magic-link to the offer in the portal (only rendered by offer_sent).
+        "offer.portalUrl",
     ];
 
     // ── Shared placeholders for the performance events (US-NTF-006 Phase 5b, US-PRF-001..009). ALL performance
@@ -194,6 +196,14 @@ public static class NotificationEventCatalog
         "attendance.date", "attendance.checkIn", "attendance.expected",
     ];
 
+    // US-ATT-008 FR-7: chronic-lateness escalation. The Real service loads the subject employee for the name
+    // fields; the trigger site supplies the month-to-date late-day count, the tenant threshold and the month label.
+    private static readonly string[] AttendanceChronicLatenessPlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "attendance.lateCount", "attendance.threshold", "attendance.month",
+    ];
+
     private static readonly string[] RegularizationPlaceholders =
     [
         "employee.firstName", "employee.lastName",
@@ -254,6 +264,14 @@ public static class NotificationEventCatalog
     private static readonly string[] LeaveReportPlaceholders =
     [
         "report.type", "report.downloadUrl",
+    ];
+
+    // applicant_portal_link (US-REC-008 FR-7, DF-41): the candidate's status-tracking magic link. Email-only — the
+    // recipient is a raw applicant address (no User row). MUST be declared before _byKey (Phase 2a NRE lesson).
+    private static readonly string[] ApplicantPortalLinkPlaceholders =
+    [
+        "applicant.firstName", "portal.url", "portal.expiresAt",
+        .. TenantPlaceholders,
     ];
 
     private static readonly Dictionary<string, NotificationEventDefinition> _byKey =
@@ -1146,12 +1164,14 @@ public static class NotificationEventCatalog
                 "<p>Congratulations! We're delighted to offer you the <strong>{{offer.position}}</strong> position " +
                 "(reference {{offer.reference}}), starting {{offer.startDate}}. Your offer letter is attached.</p>" +
                 "<p>Please review and respond by <strong>{{offer.expiryDate}}</strong>.</p>" +
+                "<p>Track or respond to your offer: <a href=\"{{offer.portalUrl}}\">{{offer.portalUrl}}</a></p>" +
                 "<p>Regards,<br/>{{tenant.companyName}}</p>",
             DefaultBodyText:
                 "Hi {{applicant.firstName}},\n\n" +
                 "Congratulations! We're delighted to offer you the {{offer.position}} position (reference " +
                 "{{offer.reference}}), starting {{offer.startDate}}. Your offer letter is attached.\n\n" +
-                "Please review and respond by {{offer.expiryDate}}.\n\nRegards,\n{{tenant.companyName}}",
+                "Please review and respond by {{offer.expiryDate}}.\n\n" +
+                "Track or respond to your offer: {{offer.portalUrl}}\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.RecruitmentUpdates,
             IsMandatory: false);
 
@@ -1211,6 +1231,30 @@ public static class NotificationEventCatalog
                 "Your offer for the {{offer.position}} position (reference {{offer.reference}}) has expired as we did " +
                 "not receive a response by {{offer.expiryDate}}. Please contact us if you're still interested.\n\n" +
                 "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.RecruitmentUpdates,
+            IsMandatory: false);
+
+        // ── US-REC-008 FR-7 (DF-41) — applicant status-tracking magic link. The candidate enters their email and,
+        // when an application exists (BR-5), is emailed a self-contained magic link to the anonymous /portal route.
+        // Email-only (external candidate, no User row); the raw token is embedded in {{portal.url}}. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "applicant_portal_link",
+            EventName: "Applicant Portal Link",
+            Placeholders: [.. ApplicantPortalLinkPlaceholders],
+            SampleData: ApplicantPortalLinkSample(),
+            DefaultSubject: "Your application tracking link",
+            DefaultBodyHtml:
+                "<p>Hi {{applicant.firstName}},</p>" +
+                "<p>Use the link below to track and manage your application. It expires on " +
+                "<strong>{{portal.expiresAt}}</strong>.</p>" +
+                "<p><a href=\"{{portal.url}}\">{{portal.url}}</a></p>" +
+                "<p>If you didn't request this, you can safely ignore this email.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{applicant.firstName}},\n\n" +
+                "Use the link below to track and manage your application. It expires on {{portal.expiresAt}}.\n\n" +
+                "{{portal.url}}\n\n" +
+                "If you didn't request this, you can safely ignore this email.\n\nRegards,\n{{tenant.companyName}}",
             Category: NotificationCategory.RecruitmentUpdates,
             IsMandatory: false);
 
@@ -1772,6 +1816,29 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.AttendanceAlerts,
             IsMandatory: false);
 
+        // US-ATT-008 FR-7: chronic-lateness HR escalation. Recipients are the line manager + the attendance-admin
+        // pool (resolved in the Real service); fired once, on the punch that crosses the tenant chronic threshold.
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_chronic_lateness",
+            EventName: "Chronic Lateness Alert",
+            Placeholders: [.. AttendanceChronicLatenessPlaceholders, .. TenantPlaceholders],
+            SampleData: AttendanceChronicLatenessSample(),
+            DefaultSubject:
+                "Chronic lateness alert: {{employee.firstName}} {{employee.lastName}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has been late " +
+                "<strong>{{attendance.lateCount}}</strong> day(s) in {{attendance.month}}, which exceeds the " +
+                "chronic-lateness threshold of <strong>{{attendance.threshold}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has been late {{attendance.lateCount}} day(s) in " +
+                "{{attendance.month}}, which exceeds the chronic-lateness threshold of {{attendance.threshold}}.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
         yield return new NotificationEventDefinition(
             EventKey: "attendance_regularization_requested",
             EventName: "Attendance Regularization Requested",
@@ -2140,6 +2207,16 @@ public static class NotificationEventCatalog
         ["tenant"] = SampleTenant(),
     };
 
+    private static Dictionary<string, object?> AttendanceChronicLatenessSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["attendance"] = new Dictionary<string, object?>
+        {
+            ["lateCount"] = 6, ["threshold"] = 5, ["month"] = "July 2026",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
     private static Dictionary<string, object?> RegularizationSample(string? reason = null) => new()
     {
         ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
@@ -2301,6 +2378,18 @@ public static class NotificationEventCatalog
         };
     }
 
+    // ── Sample-data for the applicant status-tracking magic link (US-REC-008 FR-7, DF-41). ──
+    private static Dictionary<string, object?> ApplicantPortalLinkSample() => new()
+    {
+        ["applicant"] = new Dictionary<string, object?> { ["firstName"] = "Jordan" },
+        ["portal"] = new Dictionary<string, object?>
+        {
+            ["url"] = "https://acme.yourhrm.com/portal?token=sample-token",
+            ["expiresAt"] = "2026-08-18",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
     // ── Sample-data for the recruitment interview events (US-NTF-006 Phase 5a). ──
     private static Dictionary<string, object?> InterviewSample() => new()
     {
@@ -2326,6 +2415,7 @@ public static class NotificationEventCatalog
         {
             ["reference"] = "OFR-2026-000045", ["position"] = "Senior Software Engineer",
             ["startDate"] = "2026-08-01", ["expiryDate"] = "2026-07-25",
+            ["portalUrl"] = "https://acme.yourhrm.com/portal?token=sample-token",
         },
         ["tenant"] = SampleTenant(),
     };
