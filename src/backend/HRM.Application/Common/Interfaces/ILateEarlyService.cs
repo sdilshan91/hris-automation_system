@@ -42,4 +42,14 @@ public interface ILateEarlyService
     /// </summary>
     Task<Result<LatenessScoreDto>> GetMyScoreAsync(
         int year, int month, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-7: the number of DISTINCT late days for <paramref name="employeeId"/> in the calendar month that
+    /// contains <paramref name="asOfLocalDate"/> (the punch's tenant-local date). Reuses the single canonical
+    /// distinct-day count definition shared by the manager/HR report (AC-5/FR-6) and the self-score (§8), so
+    /// the chronic-lateness escalation reconciles with every other US-ATT-008 surface. Not gated on the acting
+    /// user — callable for any employee (the chronic-lateness trigger site).
+    /// </summary>
+    Task<int> CountLateDaysInMonthAsync(
+        Guid employeeId, DateOnly asOfLocalDate, CancellationToken cancellationToken = default);
 }
