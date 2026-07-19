@@ -325,25 +325,32 @@ export interface IPersonalInfoUpdate {
 }
 
 /**
- * Contact fields (BE ContactInfoUpdate). NOTE: the backend only accepts
- * phone / personalEmail / address — the city/state/postalCode/country inputs on
- * the contact form have no backend field yet (see DF-36 finding).
+ * Contact fields (BE ContactInfoUpdate). DF-38: the backend now accepts the full
+ * address detail (city / state / postalCode / country) alongside
+ * phone / personalEmail / address.
  */
 export interface IContactInfoUpdate {
   phone?: string | null;
   personalEmail?: string | null;
   address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
 }
 
 /**
- * Employment fields (BE EmploymentInfoUpdate). NOTE: the backend keys
- * department/job-title on Guid IDs and has no date-of-joining field, so only
- * locationId / employmentType / status from the form map here (see DF-36 finding).
+ * Employment fields (BE EmploymentInfoUpdate). DF-38: the backend keys
+ * department/job-title on Guid IDs, so the form now sends departmentId/jobTitleId
+ * (from id-selects) plus locationId / employmentType. Status is NOT edited here
+ * (the dedicated Change-Status flow owns transition validation) and dateOfJoining
+ * is read-only on the backend.
  */
 export interface IEmploymentInfoUpdate {
+  departmentId?: string;
+  jobTitleId?: string;
   locationId?: string | null;
   employmentType?: EmploymentType | string;
-  status?: EmployeeStatus | string;
 }
 
 /** One emergency contact (BE EmergencyContactInput — note the `contactName` key). */
@@ -357,6 +364,12 @@ export interface IEmergencyContactInput {
 /**
  * Whole-profile update payload (BE UpdateEmployeeProfileRequest). The response
  * is the envelope-unwrapped updated `IEmployeeProfile` (same as the GET).
+ *
+ * DF-39: education / work-history / dependents are now backed. Each list is a
+ * full-replace paired with an `update*` sentinel (mirrors `updateCustomFields`):
+ * the list is applied only when its flag is true, so unedited sections stay
+ * untouched. The sub-record shapes reuse the read models verbatim (BE
+ * EducationInput / WorkHistoryInput / DependentInput match them).
  */
 export interface IUpdateEmployeeProfileRequest {
   rowVersion: number;
@@ -364,6 +377,15 @@ export interface IUpdateEmployeeProfileRequest {
   contactInfo?: IContactInfoUpdate;
   employmentInfo?: IEmploymentInfoUpdate;
   emergencyContacts?: IEmergencyContactInput[];
+  /** DF-39: full-replace education list; applied only when `updateEducation` is true. */
+  education?: IEducationRecord[];
+  updateEducation?: boolean;
+  /** DF-39: full-replace work-history list; applied only when `updateWorkHistory` is true. */
+  workHistory?: IWorkHistoryRecord[];
+  updateWorkHistory?: boolean;
+  /** DF-39: full-replace dependents list; applied only when `updateDependents` is true. */
+  dependents?: IDependentRecord[];
+  updateDependents?: boolean;
   /** JSON string of the custom-field values (BE CustomFields is a JSONB string). */
   customFields?: string;
   /** Sentinel: true = apply `customFields`; false/absent = leave custom fields untouched. */

@@ -50,6 +50,16 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.Address)
             .HasMaxLength(500);
 
+        // DF-38: structured address components, editable with the contact section
+        builder.Property(e => e.City)
+            .HasMaxLength(100);
+        builder.Property(e => e.State)
+            .HasMaxLength(100);
+        builder.Property(e => e.PostalCode)
+            .HasMaxLength(20);
+        builder.Property(e => e.Country)
+            .HasMaxLength(100);
+
         builder.Property(e => e.DateOfBirth)
             .HasColumnType("date");
 
