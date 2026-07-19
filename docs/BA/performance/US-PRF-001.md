@@ -28,7 +28,7 @@ acceptance_criteria_count: 5
 | AC-1 | An active appraisal cycle exists and the goal-setting window is open | The manager navigates to Performance > Goals for a team member | The system displays a goal-setting form with fields: title, description, category (KPI/competency/project), weight (%), target value, measurement unit, and due date |
 | AC-2 | The manager has entered valid goal details with weights summing to 100% | The manager clicks "Save Goals" | The system persists all goals scoped to the tenant, links them to the employee and cycle, and sends an in-app notification to the employee |
 | AC-3 | The manager attempts to save goals where weights do not sum to 100% | The manager clicks "Save Goals" | The system displays a validation error: "Goal weights must total 100%" and prevents submission |
-| AC-4 | Goals have been saved for an employee | The manager views the team goals dashboard | The system displays all team members with goal-setting status (draft, submitted, acknowledged) with progress indicators |
+| AC-4 | Goals have been saved for an employee | The manager views the team goals dashboard | The system displays all team members with goal-setting status (draft, submitted, acknowledged, **finalized**) with progress indicators. The `Finalized` state (reached only when weights sum to exactly 100% via `POST /tenant/performance/goals/finalize`, #387) is immutable — subsequent create/update/delete/save is rejected with HTTP 409 `goals_finalized`. |
 | AC-5 | The goal-setting window has closed for the cycle | The manager attempts to add or edit goals | The system displays a read-only view with a message: "The goal-setting window for this cycle has closed" and prevents modifications |
 
 ## 4. Functional Requirements (IEEE 830 S3.2)
@@ -52,6 +52,9 @@ acceptance_criteria_count: 5
 - BR-3: Goal weights must be in increments of 5%.
 - BR-4: Only the direct reporting manager (or HR with `Performance.SetGoal.All`) can set goals for an employee.
 - BR-5: Once an employee acknowledges their goals, the manager can only modify them with HR approval.
+- BR-6: A goal set can be **finalized/locked** (BUG-056, #387) only when its weights sum to exactly 100%. Finalizing transitions the set to `GoalStatus.Finalized`, after which it is immutable — any create/update/delete/save is rejected with HTTP 409 `goals_finalized`.
+- BR-7: A finalized set may be **re-opened/unlocked** (DF-46 — decision made) by HR (`Performance.SetGoal.All`) OR by the manager who finalized it; an audit reason is required and re-opening resets the set back to `Acknowledged`. (Endpoint not yet built — tracked as DF-46.)
+- BR-8: **Goal-read authz** (#387/DF-18): a single goal read (`GetById`) is report-scoped + self-read — it is visible only to a user with the HR override (`Performance.*.All`), the goal's own owner (the employee), or that employee's direct manager. All other users are denied.
 
 ## 7. Data Requirements
 - **Input:** goal title, description, category, weight, target value, measurement unit, due date, parent goal ID (optional for cascading), cycle ID, employee ID.
@@ -91,4 +94,5 @@ acceptance_criteria_count: 5
 ---
 ## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)
 > Attached here rather than as a net-new epic. Track in STATUS.md.
-- **AC-K1 — Goal-set finalize/submit (BUG-056).** Add a finalize/submit endpoint that enforces `sum(weights) == 100%` at finalize time. The running `≤ 100%` cap already exists; the exact-100% gate at submission does not. **Status: not built.**
+- **AC-K1 — Goal-set finalize/submit (BUG-056).** Add a finalize/submit endpoint that enforces `sum(weights) == 100%` at finalize time. The running `≤ 100%` cap already exists; the exact-100% gate at submission does not. **Status: shipped (#387).** Delivered as `POST /tenant/performance/goals/finalize`, which requires the employee/cycle goal-set weights to sum to exactly 100% and then transitions the set to the immutable `GoalStatus.Finalized` state; subsequent create/update/delete/save attempts are rejected with HTTP 409 `goals_finalized`.
+- **AC-K2 — Goal re-open/unlock (DF-46).** Decision made: a finalized set may be re-opened by HR (`Performance.SetGoal.All`) OR by the manager who finalized it; an audit reason is required, and re-opening resets the set back to `Acknowledged`. **Status: endpoint not yet built — tracked as DF-46.**

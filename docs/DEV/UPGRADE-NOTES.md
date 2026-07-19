@@ -16,6 +16,23 @@ entries below.
 
 ---
 
+## 2026-07-19 — ISSUE-285a / #390: dashboard upcoming-birthdays now index-backed (`Employee.BirthMonthDay`)
+
+**What changed.** The dashboard "upcoming birthdays" widget previously loaded every active/probation
+employee into memory and scanned month/day (the `DateOfBirth` window doesn't translate to SQL). It now
+filters in SQL against a new indexed `employees.birth_month_day` column (`month*100 + day`), maintained
+automatically on every write by a `SaveChanges` interceptor.
+
+**What the platform does automatically.** Migration `20260719162127_AddEmployeeBirthMonthDayIndex` adds
+the column + a `(tenant_id, birth_month_day)` index AND **backfills every existing employee row** on
+startup (`UPDATE employees SET birth_month_day = EXTRACT(MONTH FROM date_of_birth)*100 + EXTRACT(DAY FROM
+date_of_birth)` where DOB is set). Idempotent; the interceptor keeps it correct on all subsequent
+create/update/import.
+
+**Action for admins.** None — informational. The backfill is automatic and needs no manual step.
+
+---
+
 ## 2026-07-13 — DEC-1 / ISSUE-291: report row-scope now uses explicit `Reports.View.Team` / `Reports.View.All`
 
 **What changed.** The cross-module reports (HR / leave / attendance report surfaces) decide which
