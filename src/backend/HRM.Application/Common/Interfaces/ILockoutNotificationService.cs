@@ -17,5 +17,8 @@ public interface ILockoutNotificationService
         // ISSUE-063: the login-time resolved tenant name, threaded through for email branding/sign-off. Null when
         // the tenant could not be resolved (content degrades gracefully). Trailing data param, BEFORE the token.
         string? tenantName,
+        // DF-40: the login-time resolved tenant id, needed to stamp the outgoing EmailMessage (branding/logging;
+        // works from the Hangfire job path with no resolved ITenantContext). Null/Guid.Empty when unresolved.
+        Guid? tenantId,
         CancellationToken cancellationToken = default);
 }
