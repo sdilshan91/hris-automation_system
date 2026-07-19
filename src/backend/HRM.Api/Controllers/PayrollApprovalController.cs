@@ -126,6 +126,23 @@ public sealed class PayrollApprovalController : ControllerBase
             : Ok(ApiResponse<IReadOnlyList<PayrollApprovalStepConfigDto>>.Ok(result.Value!));
     }
 
+    /// <summary>
+    /// GET — DF-14: the AwaitingApproval runs the CURRENT caller can approve right now (the approver's
+    /// "pending approvals" queue). Gated by <c>Payroll.Approve</c>. The service returns only runs whose approve
+    /// call would not 403 — mirrors the ApproveAsync eligibility predicates (step-role, maker-checker,
+    /// distinct-approver). Newest-first.
+    /// </summary>
+    [HttpGet("approval/pending")]
+    [RequirePermission("Payroll.Approve")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<PendingApprovalDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPending(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetPendingApprovalsQuery(), cancellationToken);
+        return result.IsFailure
+            ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))
+            : Ok(ApiResponse<IReadOnlyList<PendingApprovalDto>>.Ok(result.Value!));
+    }
+
     /// <summary>GET — FR-7: the run's approval timeline, newest-first.</summary>
     [HttpGet("runs/{runId:guid}/approval-history")]
     [RequirePermission("Payroll.Run")]

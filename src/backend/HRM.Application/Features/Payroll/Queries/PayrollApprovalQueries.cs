@@ -31,6 +31,19 @@ public sealed class GetPayrollApprovalStepConfigQueryHandler
         => _service.GetApprovalStepConfigAsync(cancellationToken);
 }
 
+/// <summary>DF-14: the AwaitingApproval runs the current caller can approve right now (approver queue).</summary>
+public sealed record GetPendingApprovalsQuery() : IRequest<Result<IReadOnlyList<PendingApprovalDto>>>;
+
+public sealed class GetPendingApprovalsQueryHandler
+    : IRequestHandler<GetPendingApprovalsQuery, Result<IReadOnlyList<PendingApprovalDto>>>
+{
+    private readonly IPayrollApprovalService _service;
+    public GetPendingApprovalsQueryHandler(IPayrollApprovalService service) => _service = service;
+
+    public Task<Result<IReadOnlyList<PendingApprovalDto>>> Handle(GetPendingApprovalsQuery request, CancellationToken cancellationToken)
+        => _service.GetPendingApprovalsAsync(cancellationToken);
+}
+
 /// <summary>FR-4: the approval-review summary (totals + previous-month variance + exceptions).</summary>
 public sealed record GetPayrollApprovalSummaryQuery(Guid RunId) : IRequest<Result<PayrollApprovalSummaryDto>>;
 

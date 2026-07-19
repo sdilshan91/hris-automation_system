@@ -80,6 +80,43 @@ public sealed record SetPayrollApprovalStepConfigRequest
     public IReadOnlyList<PayrollApprovalStepConfigItem> Steps { get; init; } = [];
 }
 
+/// <summary>
+/// DF-14: one AwaitingApproval run that the CURRENT caller can approve RIGHT NOW — a row in the approver's
+/// "pending approvals" queue (US-PAY-008). The queue mirrors the eligibility predicates in
+/// <c>PayrollApprovalService.ApproveAsync</c> exactly: a run appears here iff calling approve on it would not
+/// 403 (step-role match, maker-checker, distinct-approver). Field shape matches the FE <c>IPayrollRun</c>
+/// fields the queue renders.
+/// </summary>
+public sealed record PendingApprovalDto
+{
+    public Guid RunId { get; init; }
+    public int PayMonth { get; init; }
+    public int PayYear { get; init; }
+
+    /// <summary>Run status string — always <c>AwaitingApproval</c> for this queue.</summary>
+    public string Status { get; init; } = string.Empty;
+
+    public int ProcessedEmployees { get; init; }
+    public int TotalEmployees { get; init; }
+    public decimal TotalGross { get; init; }
+    public decimal TotalNet { get; init; }
+
+    /// <summary>The user who submitted the run for approval (maker, BR-5). <see cref="Guid.Empty"/> if unset.</summary>
+    public Guid SubmittedBy { get; init; }
+
+    /// <summary>Submitter display name, resolved via a batched keyed Employees/Users lookup (no N+1).</summary>
+    public string InitiatedByName { get; init; } = string.Empty;
+
+    /// <summary>When the run was initiated (FR-1).</summary>
+    public DateTime InitiatedAt { get; init; }
+
+    /// <summary>Current 1-based step awaiting decision (AC-4); null when not multi-step.</summary>
+    public int? CurrentApprovalStep { get; init; }
+
+    /// <summary>Total configured approval steps for the active instance (AC-4).</summary>
+    public int? TotalApprovalSteps { get; init; }
+}
+
 /// <summary>A single row of a run's approval timeline (US-PAY-008 FR-7, §8 timeline view).</summary>
 public sealed record PayrollApprovalHistoryDto
 {

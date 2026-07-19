@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
-import { IPayrollRun } from '../models/payroll-run.models';
+import { IPayrollRun, PayrollRunStatus } from '../models/payroll-run.models';
 import {
   IApprovalCommentRequest,
   IApprovalHistoryEntry,
@@ -35,12 +35,13 @@ import {
  *   POST /payroll/runs/:id/finalize          - HR Approved -> Finalized (AC-5)
  *   GET  /payroll/runs/:id/approval-summary   - review summary (FR-4)
  *   GET  /payroll/runs/:id/approval-history   - audit-trail timeline (FR-7)
- *   GET  /payroll/runs?status=AwaitingApproval - pending-approvals queue (§8)
+ *   GET  /payroll/approval/pending            - pending-approvals queue (§8, DF-14)
  */
 @Injectable({ providedIn: 'root' })
 export class PayrollApprovalService {
   private readonly http = inject(HttpClient);
   private readonly runsUrl = `${environment.apiBaseUrl}/payroll/runs`;
+  private readonly pendingUrl = `${environment.apiBaseUrl}/payroll/approval/pending`;
 
   /**
    * Submit a ReviewPending run for approval (AC-1). Creates the workflow instance
@@ -136,17 +137,23 @@ export class PayrollApprovalService {
   }
 
   /**
-   * Runs currently Awaiting Approval — the approver's "Pending Approvals" queue
-   * (§8). Server-filtered by status so the FE only sees runs it can act on.
-   * Tolerates either a bare array or a `{ data }`-style page.
+   * The approver's "Pending Approvals" queue (§8, DF-14). Hits the dedicated
+   * `GET /payroll/approval/pending` endpoint, which returns ONLY the runs the
+   * current approver can actually act on (scoped server-side by the approval
+   * workflow — not every AwaitingApproval run, as the old `runs?status=` call did).
+   *
+   * The endpoint returns `PendingApprovalDto[]` (a slimmer shape than a full run):
+   * note `runId` maps to `IPayrollRun.id`, and `initiatedByName` is now populated.
+   * Tolerates either a bare array or a `{ data }`-style envelope, then maps each
+   * DTO to the `IPayrollRun` the pending-approvals card renders.
    */
   listPendingApprovals(): Observable<IPayrollRun[]> {
     return this.http
-      .get<IPayrollRun[] | { data: IPayrollRun[] }>(this.runsUrl, {
-        params: { status: 'AwaitingApproval' },
-        withCredentials: true,
-      })
-      .pipe(map((res) => this.toArray(res)));
+      .get<IPendingApprovalDto[] | { data: IPendingApprovalDto[] }>(
+        this.pendingUrl,
+        { withCredentials: true },
+      )
+      .pipe(map((res) => this.toArray(res).map((d) => toPayrollRun(d))));
   }
 
   /** Accept either a bare array or a `{ data }` page; default to []. */
@@ -159,4 +166,52 @@ export class PayrollApprovalService {
     }
     return [];
   }
+}
+
+/**
+ * DF-14: the shape returned by `GET /payroll/approval/pending`. A slimmer view of
+ * a run than `IPayrollRun` — the primary key is `runId` (not `id`), and it omits
+ * `skippedEmployees`/`totalDeductions`/`completedAt`. Adds the approval-step
+ * position (`currentApprovalStep` / `totalApprovalSteps`) for future display.
+ */
+interface IPendingApprovalDto {
+  runId: string;
+  payMonth: number;
+  payYear: number;
+  status: PayrollRunStatus;
+  processedEmployees: number;
+  totalEmployees: number;
+  totalGross: number;
+  totalNet: number;
+  submittedBy: string;
+  initiatedByName: string | null;
+  initiatedAt: string;
+  currentApprovalStep: number | null;
+  totalApprovalSteps: number | null;
+}
+
+/**
+ * Map a `PendingApprovalDto` to the `IPayrollRun` the pending-approvals card binds
+ * (id, payMonth, payYear, status, processedEmployees, totalGross, totalNet,
+ * initiatedByName, initiatedAt). `runId -> id`. The fields the endpoint doesn't
+ * carry are derived where exact (`totalDeductions = gross - net`,
+ * `skippedEmployees = total - processed`) or defaulted (`completedAt = null`) —
+ * none of these are rendered by the queue card.
+ */
+function toPayrollRun(d: IPendingApprovalDto): IPayrollRun {
+  return {
+    id: d.runId,
+    payMonth: d.payMonth,
+    payYear: d.payYear,
+    status: d.status,
+    totalEmployees: d.totalEmployees,
+    processedEmployees: d.processedEmployees,
+    skippedEmployees: d.totalEmployees - d.processedEmployees,
+    totalGross: d.totalGross,
+    totalDeductions: d.totalGross - d.totalNet,
+    totalNet: d.totalNet,
+    initiatedByName: d.initiatedByName,
+    initiatedAt: d.initiatedAt,
+    completedAt: null,
+  };
 }

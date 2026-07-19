@@ -72,6 +72,14 @@
 >   two auditor-driven arms**: direct-manager `SetGoal.Team` allow-path and cross-tenant isolation) via
 >   `[Trait("TC","TC-PRF-001-15")]`, plus the `goal-setting` Karma specs (re-open button + mandatory-reason
 >   block + reload + 409/403 toasts). Both auditors green (enforcer WIRED, authenticator ~93%→ HIGH gaps healed).
+> - **DF-14 payroll pending-approvals read-endpoint (2026-07-20):** TC-PAY-008-14 (DF-14, US-PAY-008 AC-4 / BR-5)
+>   — the approver-scoped `GET /payroll/approval/pending` (the FE previously called an ignored `?status=` param
+>   and saw every run). Binds 12 xUnit arms (`PayrollApprovalServiceTests`: step-role include/exclude,
+>   maker-checker ≥2-exclude + <2 small-team include, distinct-approver exclude + not-yet-approved include,
+>   only-AwaitingApproval, newest-first ordering, submitter-name from-Employee / User-fallback / Employee-precedence,
+>   cross-tenant isolation) via `[Trait("TC","TC-PAY-008-14")]` + the payroll-approval Karma specs (repointed URL +
+>   `runId→id` + `initiatedByName`). Enforcer WIRED (shared predicate == ApproveAsync, tenant-safe, batched);
+>   authenticator 100% on shipped arms (3 MISS healed inline, real-PG/HTTP arm filed DF-52).
 
 ---
 

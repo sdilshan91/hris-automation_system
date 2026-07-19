@@ -41,6 +41,7 @@ acceptance_criteria_count: 5
 - FR-7: The system SHALL maintain a complete audit trail of all approval actions: who approved/rejected, when, comments/reasons, IP address.
 - FR-8: Upon finalization, the system SHALL lock all payslip records for the run, making them immutable.
 - FR-9: The system SHALL support a "Return to HR" action where the approver sends the run back with specific comments without formally rejecting it.
+- FR-10: The system SHALL expose a **per-approver "pending approvals" queue** listing only the runs the current user can act on right now — i.e. `AwaitingApproval` runs where the current step's configured role is held by the caller (or the step has no role config), excluding the caller's own submission (except in the small-team <2-approver case), and excluding multi-step runs the caller has already approved at an earlier step. **Shipped (DF-14):** `GET /api/v1/payroll/approval/pending` (`Payroll.Approve`); the queue mirrors the `ApproveAsync` eligibility gates exactly via one shared predicate, so it never surfaces a run the caller cannot approve nor hides one they can. Covered by TC-PAY-008-14.
 
 ## 5. Non-Functional Requirements (IEEE 830 S3.3)
 - NFR-1: Approval notifications SHALL be delivered within 30 seconds of submission (in-app via SignalR, email via notification service).

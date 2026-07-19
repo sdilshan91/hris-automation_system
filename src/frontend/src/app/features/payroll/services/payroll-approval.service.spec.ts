@@ -197,32 +197,75 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
     expect(result).toEqual([]);
   });
 
-  // ─── listPendingApprovals (§8 queue) ──────────────────────
+  // ─── listPendingApprovals (§8 queue, DF-14) ───────────────
 
-  it('listPendingApprovals() GETs runs filtered by AwaitingApproval', () => {
+  const pendingUrl = `${environment.apiBaseUrl}/payroll/approval/pending`;
+
+  // The PendingApprovalDto returned by GET /payroll/approval/pending — note the
+  // primary key is `runId` (not `id`) and it carries the approval-step position.
+  const mockPendingDto = {
+    runId: 'r-1',
+    payMonth: 5,
+    payYear: 2026,
+    status: 'AwaitingApproval' as const,
+    processedEmployees: 247,
+    totalEmployees: 250,
+    totalGross: 1000000,
+    totalNet: 800000,
+    submittedBy: '11111111-1111-1111-1111-111111111111',
+    initiatedByName: 'Alex HR',
+    initiatedAt: '2026-05-31T10:00:00Z',
+    currentApprovalStep: 1,
+    totalApprovalSteps: 2,
+  };
+
+  it('listPendingApprovals() GETs /payroll/approval/pending and maps runId->id', () => {
     let result: IPayrollRun[] | undefined;
     service.listPendingApprovals().subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(
-      (r) => r.url === runsUrl && r.params.get('status') === 'AwaitingApproval',
-    );
+    const req = httpMock.expectOne(pendingUrl);
     expect(req.request.method).toBe('GET');
-    req.flush([mockRun]);
+    expect(req.request.withCredentials).toBeTrue();
+    // No status query param on the dedicated endpoint.
+    expect(req.request.params.get('status')).toBeNull();
+    req.flush([mockPendingDto]);
 
-    expect(result).toEqual([mockRun]);
+    expect(result?.length).toBe(1);
+    const mapped = result![0];
+    // runId -> id, and initiatedByName surfaces for the "Submitted by" column.
+    expect(mapped.id).toBe('r-1');
+    expect(mapped.initiatedByName).toBe('Alex HR');
+    // Fields the card binds carry through unchanged.
+    expect(mapped.payMonth).toBe(5);
+    expect(mapped.payYear).toBe(2026);
+    expect(mapped.status).toBe('AwaitingApproval');
+    expect(mapped.processedEmployees).toBe(247);
+    expect(mapped.totalGross).toBe(1000000);
+    expect(mapped.totalNet).toBe(800000);
+    expect(mapped.initiatedAt).toBe('2026-05-31T10:00:00Z');
+    // Derived fields (not rendered) stay consistent.
+    expect(mapped.totalDeductions).toBe(200000);
+    expect(mapped.skippedEmployees).toBe(3);
+    expect(mapped.completedAt).toBeNull();
   });
 
   it('listPendingApprovals() unwraps a { data } envelope', () => {
     let result: IPayrollRun[] | undefined;
     service.listPendingApprovals().subscribe((r) => (result = r));
 
-    httpMock
-      .expectOne(
-        (r) =>
-          r.url === runsUrl && r.params.get('status') === 'AwaitingApproval',
-      )
-      .flush({ data: [mockRun] });
+    httpMock.expectOne(pendingUrl).flush({ data: [mockPendingDto] });
 
-    expect(result).toEqual([mockRun]);
+    expect(result?.length).toBe(1);
+    expect(result![0].id).toBe('r-1');
+    expect(result![0].initiatedByName).toBe('Alex HR');
+  });
+
+  it('listPendingApprovals() defaults to [] for an unexpected shape', () => {
+    let result: IPayrollRun[] | undefined;
+    service.listPendingApprovals().subscribe((r) => (result = r));
+
+    httpMock.expectOne(pendingUrl).flush(null);
+
+    expect(result).toEqual([]);
   });
 });
