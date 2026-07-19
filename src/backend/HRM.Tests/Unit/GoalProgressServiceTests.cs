@@ -144,6 +144,27 @@ public sealed class GoalProgressServiceTests
         goalB.LastUpdatedAt.Should().BeNull();
     }
 
+    // ── BUG-056: a finalized (locked) goal set stays in progress tracking ──
+    // Regression for the enforcer-caught filter gap: FinalizeGoalsAsync moves goals Acknowledged→Finalized,
+    // and the old "Submitted||Acknowledged"-only filter would have silently dropped a finalized set from
+    // tracking. Finalize is the sign-off, not the end of tracking.
+    [Fact]
+    public async Task GetMyGoals_includes_finalized_goals()
+    {
+        await SeedAsync();
+        using (var db = Db())
+        {
+            var goals = await db.Goals.Where(g => g.EmployeeId == _employeeEmpId).ToListAsync();
+            foreach (var g in goals) g.Status = GoalStatus.Finalized;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(EmployeeUser()).GetMyGoalsAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().HaveCount(2, "a finalized/locked set must still appear in progress tracking");
+    }
+
     // ── AC-2/BR-1: window gate ──────────────────────────────────────────
 
     [Fact]

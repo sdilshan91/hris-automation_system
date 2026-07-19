@@ -11,7 +11,8 @@ namespace HRM.Infrastructure.Services;
 /// Stale-goal nudge sweep (US-PRF-009 AC-5/FR-6/BR-4/NFR-5). Invoked once per active tenant by the daily Hangfire
 /// recurring job (which sets the tenant context first). For the CURRENT tenant it reads the configurable stale
 /// interval (<c>Tenant.StaleGoalNudgeDays</c>, default 14; 0 DISABLES the sweep, BR-4), then over the tenant's
-/// active goals (Submitted/Acknowledged in an Active cycle) flags any goal whose latest update is older than the
+/// active goals (Submitted/Acknowledged/Finalized in an Active cycle; BUG-056: a finalized/locked set is still
+/// nudge-eligible) flags any goal whose latest update is older than the
 /// interval — or that has no update yet, measured from goal-setting close — and nudges the employee via the
 /// log-only performance notification seam (real-time/SignalR deferred, US-NTF-001). The goal's "Needs Attention"
 /// state is derived LIVE from this same staleness rule on the read side (no extra column). All queries ride the EF
@@ -59,7 +60,8 @@ public sealed class StaleGoalNudgeService : IStaleGoalNudgeService
 
         var goals = await _dbContext.Goals.AsNoTracking()
             .Where(g => activeCycleIds.Contains(g.CycleId)
-                && (g.Status == GoalStatus.Submitted || g.Status == GoalStatus.Acknowledged))
+                && (g.Status == GoalStatus.Submitted || g.Status == GoalStatus.Acknowledged
+                    || g.Status == GoalStatus.Finalized))
             .ToListAsync(cancellationToken);
         if (goals.Count == 0)
             return 0;

@@ -16,4 +16,12 @@ public enum GoalStatus
     /// (BR-5 — the HR-approval flow itself is deferred to a later story; see the module note).
     /// </summary>
     Acknowledged = 2,
+
+    /// <summary>
+    /// BUG-056: the per-employee-per-cycle goal set has been finalized / locked after sign-off. A finalized
+    /// set is immutable — create/update/delete/bulk-save are rejected (409 goals_finalized) until it is
+    /// re-opened (re-open flow deferred / out of scope). Reached only when the set's weights sum to exactly
+    /// 100%. Serialized as the string "Finalized" (fits the 20-char string status column — no migration).
+    /// </summary>
+    Finalized = 3,
 }
