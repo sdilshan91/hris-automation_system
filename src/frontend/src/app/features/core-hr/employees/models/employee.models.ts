@@ -291,8 +291,10 @@ export interface IEmployeeProfile extends IEmployee {
 }
 
 /**
- * Section keys for per-section PATCH updates.
- * Maps to the backend PATCH /employees/:id/sections/:section endpoint.
+ * Section keys used only for the profile UI's per-section edit state (which
+ * card is in edit mode). These are a FRONTEND concept — the backend exposes a
+ * single PATCH /employees/:id/profile endpoint, not per-section routes
+ * (DF-36/ISSUE-319: the old `sections/:section` route never existed on the API).
  */
 export type ProfileSection =
   | 'personal-info'
@@ -304,21 +306,68 @@ export type ProfileSection =
   | 'dependents'
   | 'custom-fields';
 
-/**
- * Generic section update request payload.
- * Carries the xmin token for optimistic concurrency (AC-3).
- */
-export interface IUpdateSectionRequest {
-  xmin: string;
-  data: Record<string, unknown>;
+// ─── DF-36 / ISSUE-319: Profile update request ───────────────
+//
+// Mirrors the backend `UpdateEmployeeProfileRequest` consumed by
+// PATCH /api/v1/tenant/employees/:id/profile. Only the section(s) being edited
+// are set; null/omitted sections are left untouched. `rowVersion` is the
+// numeric (uint xmin) optimistic-concurrency token — the FE profile carries it
+// as a string in `xmin`, so callers convert with `Number(profile.xmin)`.
+
+/** Personal-info fields (BE PersonalInfoUpdate). */
+export interface IPersonalInfoUpdate {
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string | null;
+  gender?: EmployeeGender | null;
+  /** ISSUE-293: only sent when the user typed a new value; blank keeps the stored ID. */
+  nationalId?: string;
 }
 
 /**
- * Section update response — returns the updated profile and new xmin.
+ * Contact fields (BE ContactInfoUpdate). NOTE: the backend only accepts
+ * phone / personalEmail / address — the city/state/postalCode/country inputs on
+ * the contact form have no backend field yet (see DF-36 finding).
  */
-export interface IUpdateSectionResponse {
-  xmin: string;
-  profile: IEmployeeProfile;
+export interface IContactInfoUpdate {
+  phone?: string | null;
+  personalEmail?: string | null;
+  address?: string | null;
+}
+
+/**
+ * Employment fields (BE EmploymentInfoUpdate). NOTE: the backend keys
+ * department/job-title on Guid IDs and has no date-of-joining field, so only
+ * locationId / employmentType / status from the form map here (see DF-36 finding).
+ */
+export interface IEmploymentInfoUpdate {
+  locationId?: string | null;
+  employmentType?: EmploymentType | string;
+  status?: EmployeeStatus | string;
+}
+
+/** One emergency contact (BE EmergencyContactInput — note the `contactName` key). */
+export interface IEmergencyContactInput {
+  id?: string;
+  contactName: string;
+  relationship: string;
+  phone: string;
+}
+
+/**
+ * Whole-profile update payload (BE UpdateEmployeeProfileRequest). The response
+ * is the envelope-unwrapped updated `IEmployeeProfile` (same as the GET).
+ */
+export interface IUpdateEmployeeProfileRequest {
+  rowVersion: number;
+  personalInfo?: IPersonalInfoUpdate;
+  contactInfo?: IContactInfoUpdate;
+  employmentInfo?: IEmploymentInfoUpdate;
+  emergencyContacts?: IEmergencyContactInput[];
+  /** JSON string of the custom-field values (BE CustomFields is a JSONB string). */
+  customFields?: string;
+  /** Sentinel: true = apply `customFields`; false/absent = leave custom fields untouched. */
+  updateCustomFields?: boolean;
 }
 
 /**

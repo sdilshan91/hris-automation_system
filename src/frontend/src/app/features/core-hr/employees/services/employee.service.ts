@@ -8,9 +8,7 @@ import {
   IEmployeeProfile,
   ICreateEmployeeRequest,
   IEmployeeErrorResponse,
-  IUpdateSectionRequest,
-  IUpdateSectionResponse,
-  ProfileSection,
+  IUpdateEmployeeProfileRequest,
   IEmployeeDirectoryParams,
   IPaginatedResponse,
   ExportFormat,
@@ -38,9 +36,10 @@ import {
  *   PUT    /api/v1/employees/:id       - update employee
  *   DELETE /api/v1/employees/:id       - soft-delete employee
  *
- * US-CHR-002 additions (assumed contract — backend agent building in parallel):
- *   GET    /api/v1/employees/:id/profile          - full profile with sub-entities
- *   PATCH  /api/v1/employees/:id/sections/:section - per-section update with xmin concurrency
+ * US-CHR-002 additions:
+ *   GET    /api/v1/employees/:id/profile - full profile with sub-entities
+ *   PATCH  /api/v1/employees/:id/profile - update profile fields with xmin concurrency
+ *     (DF-36/ISSUE-319: there is NO per-section `sections/:section` route)
  */
 @Injectable({ providedIn: 'root' })
 export class EmployeeService {
@@ -195,20 +194,27 @@ export class EmployeeService {
   }
 
   /**
-   * Update a specific profile section (AC-2, AC-3, FR-2).
-   * Sends xmin token for optimistic concurrency.
-   * Backend returns 409 on stale xmin (AC-3).
-   * Backend returns 403 if Employee role attempts restricted field edits (AC-5).
+   * Update editable profile fields (AC-2, AC-3, FR-2).
    *
-   * Endpoint assumption: PATCH /api/v1/employees/:id/sections/:section
+   * Backend contract: PATCH /api/v1/tenant/employees/:id/profile with an
+   * `UpdateEmployeeProfileRequest` body. Only the section(s) present in the
+   * request are applied. The `rowVersion` (numeric xmin) drives optimistic
+   * concurrency — the backend returns 409 on a stale token (AC-3) and 403 when
+   * an Employee-role user edits restricted fields (AC-5).
+   *
+   * DF-36/ISSUE-319: this replaces the old `updateProfileSection` which PATCHed a
+   * non-existent `sections/:section` route (every inline save 404'd).
+   *
+   * Response is `ApiResponse<EmployeeProfileDto>`; the `apiEnvelopeInterceptor`
+   * unwraps the envelope, so this stream emits the updated `IEmployeeProfile`
+   * (mirrors `getEmployeeProfile`).
    */
-  updateProfileSection(
+  updateEmployeeProfile(
     employeeId: string,
-    section: ProfileSection,
-    request: IUpdateSectionRequest
-  ): Observable<IUpdateSectionResponse> {
-    return this.http.patch<IUpdateSectionResponse>(
-      `${this.baseUrl}/${employeeId}/sections/${section}`,
+    request: IUpdateEmployeeProfileRequest
+  ): Observable<IEmployeeProfile> {
+    return this.http.patch<IEmployeeProfile>(
+      `${this.baseUrl}/${employeeId}/profile`,
       request,
       { withCredentials: true }
     );

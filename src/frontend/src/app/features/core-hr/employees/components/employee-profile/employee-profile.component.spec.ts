@@ -356,11 +356,11 @@ describe('EmployeeProfileComponent', () => {
       component.saveSection('personal-info');
       tick();
 
-      const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/personal-info`
-      );
+      // DF-36: inline saves now PATCH {id}/profile with a numeric rowVersion.
+      const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.method).toBe('PATCH');
-      expect(patchReq.request.body.xmin).toBe('12345');
+      expect(patchReq.request.body.rowVersion).toBe(12345);
+      expect(patchReq.request.body.personalInfo).toBeTruthy();
 
       // Simulate 409 conflict
       patchReq.flush(
@@ -383,9 +383,8 @@ describe('EmployeeProfileComponent', () => {
       component.saveSection('personal-info');
       tick();
 
-      const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/personal-info`
-      );
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.method).toBe('PATCH');
       patchReq.flush(
         { message: 'Forbidden' },
         { status: 403, statusText: 'Forbidden' }
@@ -421,13 +420,15 @@ describe('EmployeeProfileComponent', () => {
       component.saveSection('contact');
       tick();
 
-      const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/contact`
-      );
+      // DF-36: contact edits PATCH {id}/profile with a `contactInfo` payload —
+      // only phone/personalEmail/address are backend-supported.
+      const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.method).toBe('PATCH');
+      expect(patchReq.request.body.contactInfo.phone).toBe('+94779999999');
+      expect(patchReq.request.body.rowVersion).toBe(12345);
 
       const updatedProfile = { ...mockProfile, phone: '+94779999999', xmin: '12346' };
-      patchReq.flush({ xmin: '12346', profile: updatedProfile });
+      patchReq.flush(updatedProfile);
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith('Changes saved successfully.');
@@ -435,7 +436,7 @@ describe('EmployeeProfileComponent', () => {
       expect(component.editingSection()).toBeNull();
     }));
 
-    it('should send xmin token in the request body', fakeAsync(() => {
+    it('should send a numeric rowVersion in the request body', fakeAsync(() => {
       fixture.detectChanges();
       httpMock.expectOne(profileUrl).flush(mockProfile);
       tick();
@@ -444,11 +445,101 @@ describe('EmployeeProfileComponent', () => {
       component.saveSection('personal-info');
       tick();
 
-      const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/personal-info`
-      );
-      expect(patchReq.request.body.xmin).toBe('12345');
-      patchReq.flush({ xmin: '12346', profile: { ...mockProfile, xmin: '12346' } });
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.method).toBe('PATCH');
+      // BE rowVersion is a uint; the FE xmin string is converted with Number(...).
+      expect(patchReq.request.body.rowVersion).toBe(12345);
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+    }));
+
+    it('personal-info: omits nationalId when left blank (ISSUE-293)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('personal-info');
+      // populateForm leaves nationalId blank ("keep current")
+      component.saveSection('personal-info');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.personalInfo.firstName).toBe('John');
+      expect('nationalId' in patchReq.request.body.personalInfo).toBeFalse();
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+    }));
+
+    it('emergency-contacts: maps the form `name` to the BE `contactName` key', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('emergency-contacts');
+      component.saveSection('emergency-contacts');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.method).toBe('PATCH');
+      expect(patchReq.request.body.emergencyContacts.length).toBe(1);
+      expect(patchReq.request.body.emergencyContacts[0].contactName).toBe('Jane Doe');
+      expect(patchReq.request.body.emergencyContacts[0].phone).toBe('+94779876543');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+    }));
+  });
+
+  // ─── DF-36 / ISSUE-319: custom fields + unbacked sections ──
+  describe('DF-36: custom fields serialization + unbacked sections', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('custom-fields: sends a JSON string + updateCustomFields=true', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      // Custom-field definitions drive the custom-fields form.
+      httpMock.expectOne(customFieldsUrl).flush([
+        { id: 'cf-1', fieldKey: 'tshirt_size', fieldName: 'T-Shirt Size', fieldType: 'text', entityType: 'employee', isRequired: false, isActive: true, displayOrder: 1, options: [] },
+      ]);
+      httpMock.match(locationsUrl).forEach(r => r.flush(mockLocations));
+      tick();
+
+      component.toggleEdit('custom-fields');
+      component.customFieldsForm.patchValue({ tshirt_size: 'L' });
+      component.saveSection('custom-fields');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.method).toBe('PATCH');
+      expect(patchReq.request.body.updateCustomFields).toBeTrue();
+      expect(typeof patchReq.request.body.customFields).toBe('string');
+      expect(JSON.parse(patchReq.request.body.customFields).tshirt_size).toBe('L');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+    }));
+
+    it('marks education/work-history/dependents as non-persistable', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.isSectionPersistable('education')).toBeFalse();
+      expect(component.isSectionPersistable('work-history')).toBeFalse();
+      expect(component.isSectionPersistable('dependents')).toBeFalse();
+      expect(component.isSectionPersistable('contact')).toBeTrue();
+      expect(component.isSectionPersistable('personal-info')).toBeTrue();
+    }));
+
+    it('does NOT fire any PATCH for the unbacked sections', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      for (const section of ['education', 'work-history', 'dependents'] as const) {
+        component.toggleEdit(section);
+        component.saveSection(section);
+        tick();
+        // No HTTP request to the profile endpoint — nothing to persist.
+        httpMock.expectNone(profileUrl);
+        expect(component.editingSection()).toBeNull();
+      }
     }));
   });
 
@@ -1101,13 +1192,12 @@ describe('EmployeeProfileComponent', () => {
       component.saveSection('employment');
       tick();
 
-      const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/employment`
-      );
+      // DF-36: employment edits PATCH {id}/profile with an `employmentInfo` payload.
+      const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.method).toBe('PATCH');
-      expect(patchReq.request.body.data.locationId).toBe('loc-1');
+      expect(patchReq.request.body.employmentInfo.locationId).toBe('loc-1');
 
-      patchReq.flush({ xmin: '12346', profile: { ...mockProfile, xmin: '12346' } });
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
       tick();
     }));
 
@@ -1122,12 +1212,10 @@ describe('EmployeeProfileComponent', () => {
       component.saveSection('employment');
       tick();
 
-      const patchReq = httpMock.expectOne(
-        `${environment.apiBaseUrl}/tenant/employees/emp-1/sections/employment`
-      );
-      expect(patchReq.request.body.data.locationId).toBeNull();
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.employmentInfo.locationId).toBeNull();
 
-      patchReq.flush({ xmin: '12346', profile: { ...mockProfile, xmin: '12346' } });
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
       tick();
     }));
   });

@@ -10,7 +10,7 @@ import {
   IEmployee,
   IEmployeeProfile,
   ICreateEmployeeRequest,
-  IUpdateSectionRequest,
+  IUpdateEmployeeProfileRequest,
   IEmployeeDirectoryParams,
   IBulkAssignManagerResponse,
   IDirectReport,
@@ -647,39 +647,66 @@ describe('EmployeeService', () => {
     });
   });
 
-  describe('updateProfileSection (US-CHR-002)', () => {
-    it('should PATCH a section with xmin concurrency token', () => {
-      const request: IUpdateSectionRequest = {
-        xmin: '12345',
-        data: { phone: '+94779999999' },
+  // DF-36/ISSUE-319: the old per-section PATCH `sections/:section` route never
+  // existed on the backend (every inline save 404'd). Profile edits now PATCH the
+  // single `{id}/profile` endpoint with an UpdateEmployeeProfileRequest body and
+  // read back the (envelope-unwrapped) updated profile.
+  describe('updateEmployeeProfile (US-CHR-002 / DF-36)', () => {
+    const mockProfile: IEmployeeProfile = {
+      ...mockEmployee,
+      xmin: '12346',
+      personalEmail: null,
+      address: null,
+      city: null,
+      state: null,
+      postalCode: null,
+      country: null,
+      reportingManagerId: null,
+      reportingManagerName: null,
+      reportingManagerJobTitle: null,
+      reportingManagerPhotoUrl: null,
+      reportingChain: [],
+      emergencyContacts: [],
+      education: [],
+      workHistory: [],
+      dependents: [],
+      employmentHistory: [],
+    };
+
+    it('should PATCH {id}/profile with a numeric rowVersion and return the updated profile', () => {
+      const request: IUpdateEmployeeProfileRequest = {
+        rowVersion: 12345,
+        contactInfo: { phone: '+94779999999', personalEmail: null, address: null },
       };
 
+      let received: IEmployeeProfile | undefined;
       service
-        .updateProfileSection('emp-1', 'contact', request)
-        .subscribe((response) => {
-          expect(response.xmin).toBe('12346');
-        });
+        .updateEmployeeProfile('emp-1', request)
+        .subscribe((profile) => (received = profile));
 
-      const req = httpMock.expectOne(`${baseUrl}/emp-1/sections/contact`);
+      const req = httpMock.expectOne(`${baseUrl}/emp-1/profile`);
       expect(req.request.method).toBe('PATCH');
-      expect(req.request.body.xmin).toBe('12345');
+      expect(req.request.url).not.toContain('/sections/');
+      expect(req.request.body.rowVersion).toBe(12345);
+      expect(req.request.body.contactInfo.phone).toBe('+94779999999');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ xmin: '12346', profile: {} });
+      req.flush(mockProfile);
+
+      expect(received!.xmin).toBe('12346');
     });
 
-    it('should call the correct section URL', () => {
-      const request: IUpdateSectionRequest = {
-        xmin: '100',
-        data: { firstName: 'Jane' },
+    it('should call the {id}/profile URL (never sections/:section)', () => {
+      const request: IUpdateEmployeeProfileRequest = {
+        rowVersion: 100,
+        personalInfo: { firstName: 'Jane' },
       };
 
-      service
-        .updateProfileSection('emp-2', 'personal-info', request)
-        .subscribe();
+      service.updateEmployeeProfile('emp-2', request).subscribe();
 
-      const req = httpMock.expectOne(`${baseUrl}/emp-2/sections/personal-info`);
+      const req = httpMock.expectOne(`${baseUrl}/emp-2/profile`);
       expect(req.request.method).toBe('PATCH');
-      req.flush({ xmin: '101', profile: {} });
+      expect(req.request.body.personalInfo.firstName).toBe('Jane');
+      req.flush(mockProfile);
     });
   });
 });
