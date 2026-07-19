@@ -341,4 +341,95 @@ public sealed class RealAttendanceNotificationServiceTests
 
         await act.Should().NotThrowAsync();
     }
+
+    // ── CHRONIC LATENESS (US-ATT-008 FR-7, DF-33/ISSUE-087) — line manager ∪ attendance-admin pool ──
+
+    /// <summary>Adds the reporting-line manager (_managerUserId) into the Attendance.Edit admin pool.</summary>
+    private async Task SeedManagerInAdminPoolAsync()
+    {
+        using var db = Db();
+        var roleId = Guid.NewGuid();
+        db.Roles.Add(new Role { Id = roleId, TenantId = _tenantId, Name = "Attendance Admin (manager)" });
+        db.RolePermissions.Add(new RolePermission { RoleId = roleId, Permission = PermissionCatalog.Attendance.Edit });
+        var utId = Guid.NewGuid();
+        db.UserTenants.Add(new UserTenant { Id = utId, UserId = _managerUserId, TenantId = _tenantId, Status = UserTenantStatus.Active });
+        db.UserTenantRoles.Add(new UserTenantRole { UserTenantId = utId, RoleId = roleId });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-161")]
+    public async Task NotifyChronicLatenessAsync_DispatchesToBothManagerAndAdminPool_BothLegs()
+    {
+        await SeedAdminPoolAsync();
+        await SeedEmployeesAsync();
+        var dispatcher = new RecordingDispatcher();
+
+        await Service(dispatcher).NotifyChronicLatenessAsync(
+            _employeeEmpId, lateCount: 6, threshold: 5, new DateOnly(2026, 7, 15));
+
+        // Recipients are exactly the two admin-pool holders PLUS the line manager — both legs, correct key.
+        var expected = new Guid?[] { _admin1, _admin2, _managerUserId };
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().BeEquivalentTo(expected);
+        dispatcher.InApp.Select(r => r.RecipientUserId).Should().BeEquivalentTo(expected);
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().NotContain(_nonAdmin);
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().NotContain(_employeeUserId);
+        dispatcher.Email.Should().OnlyContain(r => r.EventKey == "attendance_chronic_lateness");
+
+        // Payload-completeness: the template renders attendance.lateCount/threshold/month + employee name.
+        var payload = dispatcher.Email.First().PayloadJson;
+        PayloadStr(payload, "attendance.lateCount").Should().Be("6");
+        PayloadStr(payload, "attendance.threshold").Should().Be("5");
+        PayloadStr(payload, "attendance.month").Should().Be("July 2026");
+        PayloadStr(payload, "employee.firstName").Should().Be("Jordan");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-161")]
+    public async Task NotifyChronicLatenessAsync_ManagerAlsoInAdminPool_IsNotNotifiedTwice()
+    {
+        await SeedAdminPoolAsync();
+        await SeedEmployeesAsync();
+        await SeedManagerInAdminPoolAsync();   // the manager now ALSO holds Attendance.Edit
+        var dispatcher = new RecordingDispatcher();
+
+        await Service(dispatcher).NotifyChronicLatenessAsync(
+            _employeeEmpId, lateCount: 6, threshold: 5, new DateOnly(2026, 7, 15));
+
+        // De-dup: exactly three distinct recipients, and the manager appears exactly once (not twice).
+        dispatcher.Email.Should().HaveCount(3);
+        dispatcher.Email.Select(r => r.RecipientUserId)
+            .Should().BeEquivalentTo(new Guid?[] { _admin1, _admin2, _managerUserId });
+        dispatcher.Email.Count(r => r.RecipientUserId == _managerUserId).Should().Be(1);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-161")]
+    public async Task NotifyChronicLatenessAsync_NoManagerAndNoAdminPool_DoesNotThrow_AndSendsNothing()
+    {
+        // _emailOnlyEmpId has no ReportsToEmployeeId (no manager) and no admin pool is seeded → empty recipients.
+        await SeedEmployeesAsync();
+        var dispatcher = new RecordingDispatcher();
+
+        var act = () => Service(dispatcher).NotifyChronicLatenessAsync(
+            _emailOnlyEmpId, lateCount: 6, threshold: 5, new DateOnly(2026, 7, 15));
+
+        await act.Should().NotThrowAsync();
+        dispatcher.Email.Should().BeEmpty();
+        dispatcher.InApp.Should().BeEmpty();
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-161")]
+    public async Task NotifyChronicLatenessAsync_DispatcherThrows_DoesNotThrow()
+    {
+        await SeedAdminPoolAsync();
+        await SeedEmployeesAsync();
+        var dispatcher = new RecordingDispatcher(throwOnDispatch: true);
+
+        var act = () => Service(dispatcher).NotifyChronicLatenessAsync(
+            _employeeEmpId, lateCount: 6, threshold: 5, new DateOnly(2026, 7, 15));
+
+        await act.Should().NotThrowAsync();
+    }
 }
