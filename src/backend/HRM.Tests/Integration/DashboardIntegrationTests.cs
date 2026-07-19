@@ -399,6 +399,7 @@ public sealed class DashboardIntegrationTests
             .ToList();
 
     [Fact]
+    [Trait("TC", "TC-RPT-005-13")]
     public async Task UpcomingBirthdays_IncludesInsideWindow_ExcludesOutside()
     {
         var dept = await SeedDepartment(_tenantA, "Engineering");
@@ -420,6 +421,7 @@ public sealed class DashboardIntegrationTests
     }
 
     [Fact]
+    [Trait("TC", "TC-RPT-005-13")]
     public async Task UpcomingBirthdays_WrapsYearEnd_IncludesEarlyJanuaryBirthday()
     {
         var dept = await SeedDepartment(_tenantA, "Engineering");
@@ -440,6 +442,7 @@ public sealed class DashboardIntegrationTests
     }
 
     [Fact]
+    [Trait("TC", "TC-RPT-005-13")]
     public async Task UpcomingBirthdays_ExcludesTerminatedAndInactive_IncludesProbation()
     {
         var dept = await SeedDepartment(_tenantA, "Engineering");
@@ -458,6 +461,7 @@ public sealed class DashboardIntegrationTests
     }
 
     [Fact]
+    [Trait("TC", "TC-RPT-005-13")]
     public async Task BirthMonthDayInterceptor_SetsKeyOnCreate_AndUpdatesWhenDobChanges()
     {
         var dept = await SeedDepartment(_tenantA, "Engineering");

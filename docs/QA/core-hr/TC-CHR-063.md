@@ -4,11 +4,11 @@ user_story: US-CHR-005
 module: Core HR
 priority: high
 type: functional
-status: blocked
-exec_note: "2026-07-01 (API, fntest): BLOCKED — Grade entity is deferred (Payroll module). Employee profile DTO exposes NO grade field at all (only jobTitleName); job-titles carry a gradeId column but it is always null and there is no Grade resolution/display. Feature not built; cannot verify grade-on-profile."
+status: ready
+exec_note: "2026-07-20: UNBLOCKED by #389 (ISSUE-021) — the `SalaryGrade` entity now exists (tenant-scoped, real CRUD) and `JobTitle.GradeId` is FK-validated against an active in-tenant grade, with the linked grade NAME populated on the JobTitle read DTO. The grade-entity-deferred blocker no longer applies; SalaryGrade CRUD + grade-link validation are covered by TC-CHR-337. This TC's remaining scope (the grade surfacing on the EMPLOYEE PROFILE DTO and re-resolving after a job-title grade change) is now executable and should be re-run. Prior blocker (2026-07-01, API, fntest): Grade entity deferred; employee profile DTO exposed no grade field."
 created: 2026-06-12
-updated: 2026-06-12
-unblocked_by: US-CHR-001
+updated: 2026-07-20
+unblocked_by: US-CHR-001, US-CHR-005 (#389 SalaryGrade — see TC-CHR-337)
 ---
 
 # TC-CHR-063: Grade linked to job title displayed on employee profile

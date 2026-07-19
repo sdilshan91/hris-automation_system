@@ -503,6 +503,7 @@ public sealed class RealRecruitmentNotificationServiceTests
     // ── DF-42: offer_sent embeds a candidate magic-link (offer.portalUrl) into the offer email payload. ──
 
     [Fact]
+    [Trait("TC", "TC-REC-007-15")]
     public async Task NotifyOfferAsync_OfferSent_IssuesPortalToken_AndEmbedsMagicLinkInPayload()
     {
         await SeedRecruitmentDataAsync();
@@ -527,6 +528,7 @@ public sealed class RealRecruitmentNotificationServiceTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-007-15")]
     public async Task NotifyOfferAsync_OfferSent_TokenIssuanceFails_StillSendsOffer_WithoutTheLink()
     {
         await SeedRecruitmentDataAsync();

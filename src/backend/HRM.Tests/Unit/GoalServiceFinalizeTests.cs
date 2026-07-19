@@ -111,6 +111,7 @@ public sealed class GoalServiceFinalizeTests
     // ── Finalize at exactly 100% succeeds and flips every goal to Finalized ──
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task Finalize_AtExactly100_Succeeds_AndFlipsStatusToFinalized()
     {
         Seed();
@@ -134,6 +135,7 @@ public sealed class GoalServiceFinalizeTests
     // ── Finalize below 100% (95%) → 422 weight_not_100 ────────────────
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task Finalize_At95Percent_Returns422_WeightNot100()
     {
         Seed();
@@ -155,6 +157,7 @@ public sealed class GoalServiceFinalizeTests
     // ── A write to a finalized set → 409 goals_finalized ──────────────
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task Write_ToFinalizedSet_Returns409_GoalsFinalized()
     {
         Seed();
@@ -185,6 +188,7 @@ public sealed class GoalServiceFinalizeTests
     // ── Re-finalizing an already-locked set → 409 goals_finalized ─────
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task Finalize_AlreadyFinalizedSet_Returns409_GoalsFinalized()
     {
         Seed();
@@ -203,6 +207,7 @@ public sealed class GoalServiceFinalizeTests
     // ── A non-manager finalizing → denied (403) ───────────────────────
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task Finalize_NonManager_Returns403()
     {
         Seed();
@@ -230,6 +235,7 @@ public sealed class GoalServiceFinalizeTests
 
     // ── BUG-056: finalizing an empty set (0% total) → 422 weight_not_100 (boundary) ──
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task Finalize_EmptySet_Returns422_WeightNot100()
     {
         Seed();
@@ -243,6 +249,7 @@ public sealed class GoalServiceFinalizeTests
 
     // ── BUG-056: Update and Delete against a finalized set are also blocked (the other two write-guards) ──
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task UpdateAndDelete_ToFinalizedSet_Returns409_GoalsFinalized()
     {
         Seed();
@@ -266,6 +273,7 @@ public sealed class GoalServiceFinalizeTests
 
     // ── BUG-056: a finalized set surfaces as "Finalized" on the manager team dashboard (not "Draft") ──
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task TeamDashboard_FinalizedSet_AggregatesAsFinalized()
     {
         Seed();

@@ -124,6 +124,7 @@ public sealed class ApplicantPortalTokenServiceTests
     // ── DF-41: RequestLinkAsync now EMAILS the magic link (was a log-only seam). ──
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public async Task RequestLink_WithApplication_DispatchesExactlyOneMagicLinkEmail_ContainingIssuedToken()
     {
         const string email = "jordan.rivera@example.com";
@@ -155,6 +156,7 @@ public sealed class ApplicantPortalTokenServiceTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public async Task RequestLink_WithoutApplication_DoesNotDispatch_ButStillReturnsSuccess_BR5()
     {
         // BR-5 anti-enumeration: no application for this email → no token, NO email, yet the caller still sees success

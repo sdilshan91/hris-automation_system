@@ -1000,6 +1000,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     // ── DF-38: structured address components ──────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_AddressComponents_ShouldPersistAndReadBack_DF38()
     {
         var deptId = await SeedDepartment();
@@ -1043,6 +1044,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     // ── DF-39: Education / WorkHistory / Dependents full-replace ───
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_Education_FullReplace_AddUpdateRemove_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1089,6 +1091,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_Education_EmptyList_ClearsAll_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1114,6 +1117,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_Education_NullWithoutFlag_LeavesUntouched_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1139,6 +1143,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_WorkHistory_FullReplace_WithDateOnly_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1177,6 +1182,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_Dependents_FullReplace_WithDateOnly_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1208,6 +1214,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     // Removal-of-omitted for WorkHistory (the WithDateOnly arm above only proves add) — a full replace that
     // seeds two rows, keeps one by Id, drops the other, adds a new one, and asserts the dropped row is gone.
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_WorkHistory_FullReplace_RemovesOmitted_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1251,6 +1258,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
 
     // Removal-of-omitted for Dependents (the WithDateOnly arm above only proves add).
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task UpdateProfile_Dependents_FullReplace_RemovesOmitted_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1296,6 +1304,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     // untested. Seed rows under tenant A, then read each sub-table through a DIFFERENT tenant's context and
     // assert nothing leaks (the EF query filter is provider-agnostic, so InMemory genuinely exercises it).
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task SubCollections_AreTenantIsolated_DF39()
     {
         var deptId = await SeedDepartment();
@@ -1324,6 +1333,7 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-335")]
     public async Task GetProfile_ReturnsAllNewSubCollections_DF39()
     {
         var deptId = await SeedDepartment();

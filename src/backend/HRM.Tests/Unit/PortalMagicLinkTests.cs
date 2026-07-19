@@ -13,6 +13,7 @@ public sealed class PortalMagicLinkTests
     private readonly Guid _tenant = Guid.NewGuid();
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public void Issue_ThenVerify_Roundtrips_TenantEmailExpiry()
     {
         var expiry = DateTime.UtcNow.AddDays(30);
@@ -28,6 +29,7 @@ public sealed class PortalMagicLinkTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public void Verify_ExposesExpiry_SoCallerCanRejectExpiredToken()
     {
         var expiry = DateTime.UtcNow.AddMinutes(-5); // already past
@@ -42,6 +44,7 @@ public sealed class PortalMagicLinkTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public void Verify_TamperedPayload_IsRejected()
     {
         var token = PortalMagicLink.Issue(_tenant, "ada@example.com", DateTime.UtcNow.AddDays(30), Secret);
@@ -56,6 +59,7 @@ public sealed class PortalMagicLinkTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public void Verify_TamperedSignature_IsRejected()
     {
         var token = PortalMagicLink.Issue(_tenant, "ada@example.com", DateTime.UtcNow.AddDays(30), Secret);
@@ -73,6 +77,7 @@ public sealed class PortalMagicLinkTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public void Verify_WithWrongSecret_IsRejected()
     {
         var token = PortalMagicLink.Issue(_tenant, "ada@example.com", DateTime.UtcNow.AddDays(30), Secret);
@@ -83,6 +88,7 @@ public sealed class PortalMagicLinkTests
     }
 
     [Theory]
+    [Trait("TC", "TC-REC-008-14")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("no-dot-here")]
@@ -95,6 +101,7 @@ public sealed class PortalMagicLinkTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public void HashToken_IsDeterministic_AndHidesRawToken()
     {
         var token = PortalMagicLink.Issue(_tenant, "ada@example.com", DateTime.UtcNow.AddDays(30), Secret);

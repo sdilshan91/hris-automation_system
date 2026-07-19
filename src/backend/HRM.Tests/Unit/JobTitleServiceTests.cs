@@ -127,6 +127,7 @@ public sealed class JobTitleServiceTests : IDisposable
     // ── ISSUE-021: GradeId is now FK-validated against SalaryGrade (service-level) ─────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_WithNonExistentGradeId_ShouldFail_Issue021()
     {
         // Pre-fix this arbitrary GUID SUCCEEDED (asserting the ISSUE-021 bug). Post-fix an unknown
@@ -147,6 +148,7 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_WithValidSeededGradeId_ShouldSucceed_Issue021()
     {
         // Positive arm: a real, active, in-tenant SalaryGrade id is accepted.
@@ -161,6 +163,7 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_WithInactiveGradeId_ShouldFail_Issue021()
     {
         // An existing but DEACTIVATED grade cannot be linked.
@@ -175,6 +178,7 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_WithNullGradeId_ShouldSucceed()
     {
         // BR-2: A job title can exist without a linked grade.
@@ -190,6 +194,7 @@ public sealed class JobTitleServiceTests : IDisposable
     // ISSUE-021 / NFR-2 (BUG-003 class): a grade owned by ANOTHER tenant must NOT satisfy the link.
     // ValidateGradeAsync relies on the tenant global query filter, so tenant A cannot borrow tenant B's grade.
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_WithCrossTenantGradeId_ShouldFail_Issue021()
     {
         var otherTenant = Guid.NewGuid();
@@ -220,6 +225,7 @@ public sealed class JobTitleServiceTests : IDisposable
 
     // ISSUE-021: the linked grade's NAME is populated on the read DTO (detail + list) for display.
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task GetById_And_GetAll_PopulateGradeName_Issue021()
     {
         var gradeId = await SeedSalaryGrade("G1"); // Name = "Grade G1"
@@ -428,6 +434,7 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_ChangeGradeId_ToValidSeededGrade_ShouldSucceed_Issue021()
     {
         // Post-fix: linking to a real, active, in-tenant SalaryGrade succeeds.
@@ -443,6 +450,7 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_ChangeGradeId_ToNonExistentGrade_ShouldFail_Issue021()
     {
         // Pre-fix this arbitrary GUID SUCCEEDED (the ISSUE-021 bug). Post-fix it is rejected.
@@ -459,6 +467,7 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_RemoveGradeId_ShouldSucceed()
     {
         var gradeId = Guid.NewGuid();
