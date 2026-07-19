@@ -27,7 +27,7 @@ import { EmployeeService } from '../../services/employee.service';
 import {
   IEmployeeProfile,
   IEmployee,
-  IUpdateSectionRequest,
+  IUpdateEmployeeProfileRequest,
   ProfileSection,
   ProfileViewerRole,
   isSectionEditable,
@@ -773,23 +773,10 @@ import { ILocation } from '../../../locations/models/location.models';
             >
               <div class="section-header">
                 <h3 class="section-title">Education</h3>
+                <!-- DF-36/ISSUE-319: no backend entity/endpoint — surface as read-only
+                     instead of an Edit button that would 404 on save. -->
                 @if (canEditSection('education')) {
-                  <button
-                    type="button"
-                    class="edit-btn"
-                    [attr.aria-label]="editingSection() === 'education' ? 'Cancel editing education' : 'Edit education'"
-                    (click)="toggleEdit('education')"
-                  >
-                    @if (editingSection() === 'education') {
-                      Cancel
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
-                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
-                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
-                      </svg>
-                      Edit
-                    }
-                  </button>
+                  <span class="read-only-pill">Read-only &middot; editing not yet available</span>
                 }
               </div>
               @if (editingSection() === 'education') {
@@ -859,23 +846,10 @@ import { ILocation } from '../../../locations/models/location.models';
             >
               <div class="section-header">
                 <h3 class="section-title">Work History</h3>
+                <!-- DF-36/ISSUE-319: no backend entity/endpoint — surface as read-only
+                     instead of an Edit button that would 404 on save. -->
                 @if (canEditSection('work-history')) {
-                  <button
-                    type="button"
-                    class="edit-btn"
-                    [attr.aria-label]="editingSection() === 'work-history' ? 'Cancel editing work history' : 'Edit work history'"
-                    (click)="toggleEdit('work-history')"
-                  >
-                    @if (editingSection() === 'work-history') {
-                      Cancel
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
-                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
-                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
-                      </svg>
-                      Edit
-                    }
-                  </button>
+                  <span class="read-only-pill">Read-only &middot; editing not yet available</span>
                 }
               </div>
               @if (editingSection() === 'work-history') {
@@ -951,23 +925,10 @@ import { ILocation } from '../../../locations/models/location.models';
             >
               <div class="section-header">
                 <h3 class="section-title">Dependents</h3>
+                <!-- DF-36/ISSUE-319: no backend entity/endpoint — surface as read-only
+                     instead of an Edit button that would 404 on save. -->
                 @if (canEditSection('dependents')) {
-                  <button
-                    type="button"
-                    class="edit-btn"
-                    [attr.aria-label]="editingSection() === 'dependents' ? 'Cancel editing dependents' : 'Edit dependents'"
-                    (click)="toggleEdit('dependents')"
-                  >
-                    @if (editingSection() === 'dependents') {
-                      Cancel
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
-                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
-                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
-                      </svg>
-                      Edit
-                    }
-                  </button>
+                  <span class="read-only-pill">Read-only &middot; editing not yet available</span>
                 }
               </div>
               @if (editingSection() === 'dependents') {
@@ -1686,6 +1647,12 @@ import { ILocation } from '../../../locations/models/location.models';
         px-2.5 py-1.5 rounded-lg hover:bg-brand-50;
     }
 
+    /* DF-36/ISSUE-319: read-only marker for sections with no backend endpoint */
+    .read-only-pill {
+      @apply inline-flex items-center text-xs font-medium text-neutral-400
+        bg-neutral-100 px-2.5 py-1 rounded-full;
+    }
+
     /* ISSUE-293: compact reveal/hide affordance for the masked National ID */
     .reveal-btn {
       @apply inline-flex items-center text-xs font-medium
@@ -2367,7 +2334,21 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     this.editingSection.set(null);
   }
 
-  /** Save a section via PATCH with xmin concurrency (AC-2, AC-3) */
+  /**
+   * DF-36/ISSUE-319: sections that have NO backend entity/endpoint and can never
+   * persist. Education, work history and dependents have no columns/tables and no
+   * field on `UpdateEmployeeProfileRequest`, so their inline edit affordance is
+   * suppressed (see template) and any save is a no-op guarded here. A separate
+   * backend finding is being filed to build these.
+   */
+  readonly UNBACKED_SECTIONS: ProfileSection[] = ['education', 'work-history', 'dependents'];
+
+  /** True when the section can actually be persisted by the backend (DF-36). */
+  isSectionPersistable(section: ProfileSection): boolean {
+    return !this.UNBACKED_SECTIONS.includes(section);
+  }
+
+  /** Save the edited fields via PATCH /profile with xmin concurrency (AC-2, AC-3). */
   saveSection(section: ProfileSection): void {
     const p = this.profile();
     if (!p) return;
@@ -2378,33 +2359,23 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const request = this.buildProfileUpdateRequest(section, p);
+    // DF-36/ISSUE-319: education/work-history/dependents have no backend — nothing
+    // to persist, so bail out instead of firing a request the API can't honour.
+    if (!request) {
+      this.editingSection.set(null);
+      return;
+    }
+
     this.isSaving.set(true);
 
-    const data: Record<string, unknown> = { ...form.value };
-    // BUG-113: send an unset optional location as null (not '') so the BE
-    // can bind/clear the Guid FK rather than reject an empty string.
-    if (section === 'employment' && data['locationId'] === '') {
-      data['locationId'] = null;
-    }
-    // ISSUE-293: the edit field is blank unless the user typed a new ID. Drop an
-    // empty nationalId so an unchanged personal-info save never overwrites the
-    // stored (encrypted) National ID with the masked value shown in the UI.
-    if (section === 'personal-info' && !String(data['nationalId'] ?? '').trim()) {
-      delete data['nationalId'];
-    }
-
-    const request: IUpdateSectionRequest = {
-      xmin: p.xmin,
-      data,
-    };
-
     this.employeeService
-      .updateProfileSection(this.employeeId, section, request)
+      .updateEmployeeProfile(this.employeeId, request)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
+        next: (updated) => {
           this.isSaving.set(false);
-          this.profile.set(response.profile);
+          this.profile.set(updated);
           this.editingSection.set(null);
           // ISSUE-293: profile (and its masked National ID) changed — drop any
           // previously revealed value so the UI re-masks until re-revealed.
@@ -2416,6 +2387,102 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           this.handleSaveError(err);
         },
       });
+  }
+
+  /**
+   * Build the `UpdateEmployeeProfileRequest` body for the edited section, mapping
+   * form controls onto the real backend contract. Returns null for the unbacked
+   * sections (education/work-history/dependents) which have no request fields.
+   */
+  private buildProfileUpdateRequest(
+    section: ProfileSection,
+    p: IEmployeeProfile
+  ): IUpdateEmployeeProfileRequest | null {
+    // The BE rowVersion is a numeric (uint) xmin; the FE carries it as a string.
+    const rowVersion = Number(p.xmin);
+
+    switch (section) {
+      case 'personal-info': {
+        const v = this.personalInfoForm.value;
+        const personalInfo: IUpdateEmployeeProfileRequest['personalInfo'] = {
+          firstName: v.firstName,
+          lastName: v.lastName,
+          dateOfBirth: v.dateOfBirth,
+          gender: v.gender,
+        };
+        // ISSUE-293: only send nationalId when the user typed one; a blank submit
+        // keeps the stored (encrypted) value rather than overwriting it with the mask.
+        const nationalId = String(v.nationalId ?? '').trim();
+        if (nationalId) personalInfo.nationalId = nationalId;
+        return { rowVersion, personalInfo };
+      }
+
+      case 'contact': {
+        const v = this.contactForm.value;
+        // DF-36: the BE ContactInfoUpdate only accepts phone/personalEmail/address.
+        // city/state/postalCode/country have no backend field (finding filed) and
+        // are intentionally not sent.
+        return {
+          rowVersion,
+          contactInfo: {
+            phone: v.phone,
+            personalEmail: v.personalEmail,
+            address: v.address,
+          },
+        };
+      }
+
+      case 'employment': {
+        const v = this.employmentForm.value;
+        // BUG-113: an unset optional location is sent as null (not '') so the BE
+        // can bind/clear the Guid FK rather than reject an empty string.
+        const locationId = v.locationId === '' ? null : v.locationId;
+        // DF-36: EmploymentInfoUpdate keys on DepartmentId/JobTitleId (Guids) and
+        // has no date-of-joining field, so the free-text departmentName/jobTitleName/
+        // dateOfJoining inputs have no mapping (finding filed) and are not sent.
+        return {
+          rowVersion,
+          employmentInfo: {
+            locationId,
+            employmentType: v.employmentType,
+            status: v.status,
+          },
+        };
+      }
+
+      case 'emergency-contacts': {
+        const rows = this.emergencyContactControls.value as {
+          name: string;
+          relationship: string;
+          phone: string;
+        }[];
+        // The BE EmergencyContactInput keys the name as `contactName` (full replace).
+        return {
+          rowVersion,
+          emergencyContacts: rows.map((c) => ({
+            contactName: c.name,
+            relationship: c.relationship,
+            phone: c.phone,
+          })),
+        };
+      }
+
+      case 'custom-fields': {
+        // The BE CustomFields is a JSONB string; serialize the field values.
+        return {
+          rowVersion,
+          customFields: JSON.stringify(this.customFieldsForm.value),
+          updateCustomFields: true,
+        };
+      }
+
+      // DF-36/ISSUE-319: no backend entity/endpoint — never persisted.
+      case 'education':
+      case 'work-history':
+      case 'dependents':
+      default:
+        return null;
+    }
   }
 
   // ─── Emergency contact repeater ────────────────────────────

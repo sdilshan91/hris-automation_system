@@ -70,8 +70,28 @@
 
 ## Findings
 
+### ISSUE-321 — Employee profile has NO backend for the Education / Work-History / Dependents sections (FE-only forms, can never persist)
+- **Type / Severity / Status:** ISSUE (missing feature) · MED · OPEN
+- **Layer:** BE (absent) + FE
+- **Module / US / TC:** Core HR / US-CHR-002 / (new TCs needed)
+- **Title:** The employee-profile page has editable Education, Work-History, and Dependents forms, but there is **no backend entity, migration, DTO field, or endpoint** for any of them — `UpdateEmployeeProfileRequest` has no such sections and `EmployeesController` has no routes. They could never save (masked until now by the ISSUE-319 universal 404).
+- **Root cause (~99%, confirmed):** FE built ahead of BE; grep for `EmployeeEducation`/`EmployeeWorkHistory`/`EmployeeDependent` entities returns nothing. Surfaced fixing DF-36/ISSUE-319.
+- **Reproduction steps:** open an employee profile → the Education/Work-History/Dependents sections offer editing but there is nowhere to persist to.
+- **Severity rationale:** MED — three profile sections are non-functional; net-new BE work (entities + migrations + endpoints + DTO fields). FE now shows them read-only (DF-36 / #380) so users aren't misled.
+- **Suggested direction (needs-decision, NOT applied):** build Education/WorkHistory/Dependent entities + endpoints (→ DF-39), then re-enable the FE editing. Report only.
+
+### ISSUE-320 — Employee profile-edit: several fields within the (now-working) sections still don't persist or risk invalid enum writes
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** FE↔BE contract
+- **Module / US / TC:** Core HR / US-CHR-002 / (new TCs)
+- **Title:** After DF-36/#380 rewired the profile save onto `PATCH {id}/profile`, three field-level gaps remain: (a) the Contact form edits **city/state/postalCode/country** but `ContactInfoUpdate` only has phone/personalEmail/address → those 4 silently drop; (b) the Employment form edits **Department/Job Title as free text** + a **dateOfJoining**, but `EmploymentInfoUpdate` keys on DepartmentId/JobTitleId (Guids) and has no joining-date → those don't map/persist, and **employmentType/status are free-text inputs** that can POST invalid enum values (→ 400); (c) the profile GET returns `customFields` as a JSON **string** while the FE model types it as an object + indexes by key → custom-field values render "Not set" on the read view.
+- **Root cause (~95%, `@frontend-dev` audit):** FE forms carry fields the BE DTO doesn't model + a read-side type mismatch on customFields.
+- **Reproduction steps:** edit Contact city/state → save → the value doesn't persist; edit Employment department (free text) → doesn't persist; type a non-enum employment type → 400.
+- **Severity rationale:** MED — visible fields silently no-op (data-loss surprise) + a free-text enum can 400. Not data corruption; the mapped fields (name/dob/phone/email/address/location/emergency-contacts/custom-fields) DO persist after #380.
+- **Suggested direction (needs-decision, NOT applied):** convert Employment dept/title/type/status to id/enum-backed `<select>`s; add address-detail fields to `ContactInfoUpdate`+`Employee` (or drop them from the FE); decide if dateOfJoining is editable; parse the customFields JSON on the read view (→ DF-38). Report only.
+
 ### ISSUE-319 — FE `updateProfileSection` PATCHes `{id}/sections/{section}`, a route the BE does not expose → every employee-profile section edit 404s
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #380, merged 2026-07-19 — FE rewired to the real PATCH {id}/profile with section→request-property mapping + rowVersion; 5 backed sections now persist, 3 unbacked (education/work-history/dependents) made read-only. Field-level residuals → ISSUE-320/321, DF-38/39)
 - **Layer:** FE↔BE contract (URL mismatch)
 - **Module / US / TC:** Core HR / US-CHR-002 (profile edit) / (new TC needed)
 - **Title:** The Angular `EmployeeService.updateProfileSection` (`employee.service.ts:~211`) sends `PATCH /api/v1/tenant/employees/{id}/sections/{section}` with `{ xmin, data }`, but `EmployeesController` exposes **only** `PATCH {id}/profile` taking a full `UpdateEmployeeProfileRequest { RowVersion, PersonalInfo, ContactInfo, … }` — there is NO `sections/{section}` route anywhere in the backend. Every inline per-section profile edit (personal-info, contact-info, etc.) therefore hits a non-existent route and 404s.
