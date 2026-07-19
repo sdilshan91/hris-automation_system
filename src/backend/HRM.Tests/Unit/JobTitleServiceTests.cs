@@ -83,6 +83,29 @@ public sealed class JobTitleServiceTests : IDisposable
         return jobTitle.Id;
     }
 
+    // ISSUE-021: seed an active (or inactive) SalaryGrade in the current tenant so JobTitle.GradeId
+    // validation can resolve it.
+    private async Task<Guid> SeedSalaryGrade(string code = "G1", bool isActive = true)
+    {
+        using var db = TestDbContextFactory.Create(_tenantContext, _dbName);
+        var grade = new SalaryGrade
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            Code = code,
+            Name = $"Grade {code}",
+            MinAmount = 1000m,
+            MidAmount = 1500m,
+            MaxAmount = 2000m,
+            Currency = "USD",
+            IsActive = isActive,
+            IsDeleted = false,
+        };
+        db.SalaryGrades.Add(grade);
+        await db.SaveChangesAsync();
+        return grade.Id;
+    }
+
     // ── AC-2: Create job title ──────────────────────────────────────
 
     [Fact]
@@ -101,17 +124,54 @@ public sealed class JobTitleServiceTests : IDisposable
         result.Value.EmployeeCount.Should().Be(0); // Stubbed until US-CHR-001
     }
 
+    // ── ISSUE-021: GradeId is now FK-validated against SalaryGrade (service-level) ─────────
+
     [Fact]
-    public async Task Create_WithGradeId_ShouldSucceed()
+    public async Task Create_WithNonExistentGradeId_ShouldFail_Issue021()
     {
+        // Pre-fix this arbitrary GUID SUCCEEDED (asserting the ISSUE-021 bug). Post-fix an unknown
+        // grade is rejected because it does not resolve to an active, in-tenant SalaryGrade.
         var service = CreateService();
-        var gradeId = Guid.NewGuid(); // No FK constraint (deferred to Payroll module)
+        var gradeId = Guid.NewGuid(); // not seeded → no matching SalaryGrade
+
+        var result = await service.CreateAsync(
+            "Senior Engineer", "Senior-level engineer", gradeId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("invalid_grade");
+
+        // And no job title row persisted.
+        using var db = CreateDbContext();
+        db.JobTitles.Count().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Create_WithValidSeededGradeId_ShouldSucceed_Issue021()
+    {
+        // Positive arm: a real, active, in-tenant SalaryGrade id is accepted.
+        var gradeId = await SeedSalaryGrade("G1");
+        var service = CreateService();
 
         var result = await service.CreateAsync(
             "Senior Engineer", "Senior-level engineer", gradeId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.GradeId.Should().Be(gradeId);
+    }
+
+    [Fact]
+    public async Task Create_WithInactiveGradeId_ShouldFail_Issue021()
+    {
+        // An existing but DEACTIVATED grade cannot be linked.
+        var gradeId = await SeedSalaryGrade("G9", isActive: false);
+        var service = CreateService();
+
+        var result = await service.CreateAsync("Analyst", null, gradeId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("invalid_grade");
     }
 
     [Fact]
@@ -125,6 +185,52 @@ public sealed class JobTitleServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.GradeId.Should().BeNull();
+    }
+
+    // ISSUE-021 / NFR-2 (BUG-003 class): a grade owned by ANOTHER tenant must NOT satisfy the link.
+    // ValidateGradeAsync relies on the tenant global query filter, so tenant A cannot borrow tenant B's grade.
+    [Fact]
+    public async Task Create_WithCrossTenantGradeId_ShouldFail_Issue021()
+    {
+        var otherTenant = Guid.NewGuid();
+        var ctxB = Substitute.For<ITenantContext>();
+        ctxB.TenantId.Returns(otherTenant);
+        ctxB.IsResolved.Returns(true);
+
+        Guid otherGradeId;
+        using (var dbB = TestDbContextFactory.Create(ctxB, _dbName))
+        {
+            var grade = new SalaryGrade
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = otherTenant, Code = "GB", Name = "Grade B",
+                MinAmount = 1000m, MaxAmount = 2000m, Currency = "USD", IsActive = true, IsDeleted = false,
+            };
+            dbB.SalaryGrades.Add(grade);
+            await dbB.SaveChangesAsync();
+            otherGradeId = grade.Id;
+        }
+
+        // Tenant A (the default context) tries to link tenant B's grade → rejected as invalid.
+        var result = await CreateService().CreateAsync("Engineer", null, otherGradeId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("invalid_grade");
+    }
+
+    // ISSUE-021: the linked grade's NAME is populated on the read DTO (detail + list) for display.
+    [Fact]
+    public async Task GetById_And_GetAll_PopulateGradeName_Issue021()
+    {
+        var gradeId = await SeedSalaryGrade("G1"); // Name = "Grade G1"
+        var created = await CreateService().CreateAsync("Engineer", null, gradeId);
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        var byId = await CreateService().GetByIdAsync(created.Value!.Id);
+        byId.Value!.GradeName.Should().Be("Grade G1");
+
+        var all = await CreateService().GetAllAsync();
+        all.Value!.Single(j => j.Id == created.Value.Id).GradeName.Should().Be("Grade G1");
     }
 
     // ── AC-3: Duplicate name rejection ──────────────────────────────
@@ -322,17 +428,34 @@ public sealed class JobTitleServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_ChangeGradeId_ShouldSucceed()
+    public async Task Update_ChangeGradeId_ToValidSeededGrade_ShouldSucceed_Issue021()
     {
+        // Post-fix: linking to a real, active, in-tenant SalaryGrade succeeds.
         var id = await SeedJobTitle("Engineer", gradeId: null);
+        var newGradeId = await SeedSalaryGrade("G2");
         var service = CreateService();
-        var newGradeId = Guid.NewGuid();
 
         var result = await service.UpdateAsync(
             id, "Engineer", null, newGradeId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.GradeId.Should().Be(newGradeId);
+    }
+
+    [Fact]
+    public async Task Update_ChangeGradeId_ToNonExistentGrade_ShouldFail_Issue021()
+    {
+        // Pre-fix this arbitrary GUID SUCCEEDED (the ISSUE-021 bug). Post-fix it is rejected.
+        var id = await SeedJobTitle("Engineer", gradeId: null);
+        var service = CreateService();
+        var newGradeId = Guid.NewGuid(); // not seeded
+
+        var result = await service.UpdateAsync(
+            id, "Engineer", null, newGradeId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("invalid_grade");
     }
 
     [Fact]

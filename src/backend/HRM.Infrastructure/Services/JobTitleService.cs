@@ -52,6 +52,11 @@ public sealed class JobTitleService : IJobTitleService
         if (nameExists)
             return Result<JobTitleDto>.Failure("A job title with this name already exists.", 400);
 
+        // ISSUE-021: when a grade is linked, it must resolve to an active, in-tenant SalaryGrade.
+        var gradeError = await ValidateGradeAsync(gradeId, cancellationToken);
+        if (gradeError is not null)
+            return Result<JobTitleDto>.Failure(gradeError, 422, "invalid_grade");
+
         var jobTitle = new JobTitle
         {
             Id = BaseEntity.NewUuidV7(),
@@ -98,6 +103,11 @@ public sealed class JobTitleService : IJobTitleService
 
         if (nameExists)
             return Result<JobTitleDto>.Failure("A job title with this name already exists.", 400);
+
+        // ISSUE-021: when a grade is linked, it must resolve to an active, in-tenant SalaryGrade.
+        var gradeError = await ValidateGradeAsync(gradeId, cancellationToken);
+        if (gradeError is not null)
+            return Result<JobTitleDto>.Failure(gradeError, 422, "invalid_grade");
 
         jobTitle.TitleName = titleName;
         jobTitle.Description = description;
@@ -170,7 +180,15 @@ public sealed class JobTitleService : IJobTitleService
         var employeeCount = await _dbContext.Employees
             .CountAsync(e => e.JobTitleId == jobTitleId && e.IsActive, cancellationToken);
 
-        return Result<JobTitleDto>.Success(ToDto(jobTitle, employeeCount));
+        // ISSUE-021: resolve the linked grade's name for display (by id — a since-deactivated grade still labels).
+        string? gradeName = null;
+        if (jobTitle.GradeId.HasValue)
+            gradeName = await _dbContext.SalaryGrades.AsNoTracking()
+                .Where(g => g.Id == jobTitle.GradeId.Value)
+                .Select(g => g.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+
+        return Result<JobTitleDto>.Success(ToDto(jobTitle, employeeCount, gradeName));
     }
 
     public async Task<Result<IReadOnlyList<JobTitleDto>>> GetAllAsync(
@@ -197,19 +215,50 @@ public sealed class JobTitleService : IJobTitleService
             .Select(g => new { JobTitleId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.JobTitleId, g => g.Count, cancellationToken);
 
+        // ISSUE-021: batch-load linked grade names in one query (no N+1), same pattern as employee counts.
+        var gradeIds = jobTitles.Where(j => j.GradeId.HasValue).Select(j => j.GradeId!.Value).Distinct().ToList();
+        var gradeNames = gradeIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _dbContext.SalaryGrades.AsNoTracking()
+                .Where(g => gradeIds.Contains(g.Id))
+                .Select(g => new { g.Id, g.Name })
+                .ToDictionaryAsync(g => g.Id, g => g.Name, cancellationToken);
+
         var dtos = jobTitles.Select(j =>
-            ToDto(j, employeeCounts.GetValueOrDefault(j.Id, 0))).ToList();
+            ToDto(j, employeeCounts.GetValueOrDefault(j.Id, 0),
+                j.GradeId.HasValue ? gradeNames.GetValueOrDefault(j.GradeId.Value) : null)).ToList();
         return Result<IReadOnlyList<JobTitleDto>>.Success(dtos);
     }
 
     // ── Private helpers ──────────────────────────────────────────────
 
-    private JobTitleDto ToDto(JobTitle j, int? employeeCount = null) => new()
+    /// <summary>
+    /// ISSUE-021: validates the optional GradeId link. A null grade is always allowed (a job title can
+    /// exist without a linked grade). When a grade is provided, it must resolve to an ACTIVE, in-tenant
+    /// SalaryGrade (tenant scoping via the EF global query filter). Returns an error message, or null if
+    /// the link is valid. No hard DB FK constraint is used — existing rows may hold arbitrary free-form
+    /// GUIDs — so the check is enforced service-side on write only.
+    /// </summary>
+    private async Task<string?> ValidateGradeAsync(Guid? gradeId, CancellationToken cancellationToken)
+    {
+        if (!gradeId.HasValue)
+            return null;
+
+        var gradeExists = await _dbContext.SalaryGrades
+            .AnyAsync(g => g.Id == gradeId.Value && g.IsActive, cancellationToken);
+
+        return gradeExists
+            ? null
+            : "The selected salary grade does not exist or is not active.";
+    }
+
+    private JobTitleDto ToDto(JobTitle j, int? employeeCount = null, string? gradeName = null) => new()
     {
         Id = j.Id,
         TitleName = j.TitleName,
         Description = j.Description,
         GradeId = j.GradeId,
+        GradeName = gradeName,
         EmployeeCount = employeeCount ?? 0,
         IsActive = j.IsActive,
         CreatedAt = j.CreatedAt,

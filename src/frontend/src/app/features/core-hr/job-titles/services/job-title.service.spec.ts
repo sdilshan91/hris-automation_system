@@ -108,6 +108,7 @@ describe('JobTitleService', () => {
       const request: ICreateJobTitleRequest = {
         titleName: 'UX Designer',
         description: 'User experience design',
+        gradeId: null,
         isActive: true,
       };
 
@@ -130,6 +131,7 @@ describe('JobTitleService', () => {
     it('should create a job title without description', () => {
       const request: ICreateJobTitleRequest = {
         titleName: 'QA Engineer',
+        gradeId: null,
         isActive: true,
       };
 
@@ -148,6 +150,7 @@ describe('JobTitleService', () => {
       const request: IUpdateJobTitleRequest = {
         titleName: 'Senior Software Engineer',
         description: 'Updated description',
+        gradeId: null,
         isActive: true,
       };
 

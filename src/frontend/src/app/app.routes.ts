@@ -348,6 +348,17 @@ export const appRoutes: Routes = [
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
+      // ─── Core HR / Salary Grades (ISSUE-021) ────────────────
+      {
+        path: 'salary-grades',
+        loadChildren: () =>
+          import('./features/core-hr/salary-grades/salary-grades.routes').then(
+            (m) => m.SALARY_GRADE_ROUTES
+          ),
+        canActivate: [
+          roleGuard(['Tenant Owner', 'Tenant Admin', 'HR Officer']),
+        ],
+      },
       // ─── Core HR / Locations (US-CHR-007) ───────────────────
       {
         path: 'locations',
