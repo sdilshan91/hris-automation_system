@@ -96,14 +96,60 @@ import {
         <!-- BUG-056: finalized / locked read-only banner -->
         @if (locked()) {
           <div
-            class="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+            class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
             role="status"
           >
-            <span aria-hidden="true">🔒</span>
-            <span>
-              <span class="font-semibold">Finalized</span> — these goals are locked
-              and can no longer be edited.
-            </span>
+            <div class="flex items-start gap-3">
+              <span aria-hidden="true">🔒</span>
+              <span>
+                <span class="font-semibold">Finalized</span> — these goals are
+                locked and can no longer be edited.
+              </span>
+            </div>
+
+            <!-- DF-46: re-open (unlock) with a mandatory reason. The server enforces
+                 authz (403 for non-HR/non-manager); the FE relies on that 403. -->
+            <div class="mt-3 border-t border-emerald-200 pt-3">
+              <label
+                for="reopen-reason"
+                class="mb-1 block text-xs font-medium text-emerald-900"
+              >
+                Reason for re-opening (required)
+              </label>
+              <textarea
+                id="reopen-reason"
+                rows="2"
+                [value]="reopenReason()"
+                (input)="reopenReason.set($any($event.target).value)"
+                [disabled]="reopening()"
+                class="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-neutral-800 outline-none transition focus:border-emerald-400 focus:ring-1 disabled:opacity-50"
+                placeholder="Why are these goals being re-opened?"
+              ></textarea>
+              @if (reopenReasonInvalid()) {
+                <p class="mt-1 text-xs text-rose-600" role="alert">
+                  A reason is required to re-open finalized goals.
+                </p>
+              }
+              <div class="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  class="rounded-lg px-4 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-300 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  (click)="reopen()"
+                  [disabled]="reopening()"
+                >
+                  @if (reopening()) {
+                    <span class="inline-flex items-center gap-2">
+                      <span
+                        class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-emerald-600"
+                      ></span>
+                      Re-opening…
+                    </span>
+                  } @else {
+                    Re-open goals
+                  }
+                </button>
+              </div>
+            </div>
           </div>
         }
 
@@ -427,6 +473,19 @@ export class GoalSettingComponent implements OnInit {
   readonly locked = signal(false);
   readonly finalizing = signal(false);
 
+  /** DF-46: re-open (unlock) — the mandatory reason and in-flight/attempt state. */
+  readonly reopenReason = signal('');
+  readonly reopening = signal(false);
+  private readonly reopenAttempted = signal(false);
+
+  /**
+   * DF-46: show the "reason required" validation message only after a re-open
+   * attempt was made with an empty/whitespace reason.
+   */
+  readonly reopenReasonInvalid = computed(
+    () => this.reopenAttempted() && this.reopenReason().trim().length === 0,
+  );
+
   private employeeId = '';
 
   readonly form: FormGroup = this.fb.group({
@@ -692,5 +751,60 @@ export class GoalSettingComponent implements OnInit {
       err.status === 409 &&
       (err.error as { code?: string } | null)?.code === 'goals_finalized'
     );
+  }
+
+  /**
+   * DF-46: re-open (unlock) a finalized goal set. A reason is MANDATORY — an
+   * empty/whitespace reason blocks the call and surfaces an inline validation
+   * message. The backend is the security authority (it 403s a non-HR/non-manager);
+   * we surface its coded errors: 409 `goals_not_finalized` and 403 forbidden. On
+   * success we reload the goals so the now-editable state renders.
+   */
+  reopen(): void {
+    const cycle = this.cycle();
+    if (!cycle || !this.locked() || this.reopening()) {
+      return;
+    }
+    const reason = this.reopenReason().trim();
+    if (reason.length === 0) {
+      this.reopenAttempted.set(true);
+      return;
+    }
+    this.reopening.set(true);
+    this.goalService.reopenGoals(this.employeeId, cycle.id, reason).subscribe({
+      next: () => {
+        this.reopening.set(false);
+        this.reopenAttempted.set(false);
+        this.reopenReason.set('');
+        this.toastr.success('Goals re-opened for editing.');
+        this.loadGoals(cycle.id);
+      },
+      error: (err: unknown) => {
+        this.reopening.set(false);
+        if (this.isNotFinalizedError(err)) {
+          this.toastr.error('These goals are not finalized.');
+        } else if (this.isForbiddenError(err)) {
+          this.toastr.error(
+            'You are not authorized to re-open these goals.',
+          );
+        } else {
+          this.toastr.error('Could not re-open goals. Please try again.');
+        }
+      },
+    });
+  }
+
+  /** 409 carrying the backend `goals_not_finalized` code (set is not locked). */
+  private isNotFinalizedError(err: unknown): boolean {
+    return (
+      err instanceof HttpErrorResponse &&
+      err.status === 409 &&
+      (err.error as { code?: string } | null)?.code === 'goals_not_finalized'
+    );
+  }
+
+  /** 403 forbidden — the user is not HR or the direct manager (server-enforced). */
+  private isForbiddenError(err: unknown): boolean {
+    return err instanceof HttpErrorResponse && err.status === 403;
   }
 }

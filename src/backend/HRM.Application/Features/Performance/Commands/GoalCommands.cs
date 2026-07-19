@@ -110,6 +110,27 @@ public sealed class FinalizeGoalsCommandHandler
         => _service.FinalizeGoalsAsync(request.EmployeeId, request.CycleId, cancellationToken);
 }
 
+// ── Re-open / unlock (DF-46, BUG-056 follow-up) ────────────────────────────
+
+/// <summary>
+/// DF-46: re-opens (unlocks) a finalized goal set for a cycle. Requires HR (SetGoal.All) or the employee's
+/// direct manager (SetGoal.Team) per BR-4 — same authz as finalize. A mandatory <see cref="Reason"/> is
+/// recorded in the audit trail. A set that is not finalized yields 409 <c>goals_not_finalized</c>. On
+/// success every finalized goal transitions back to <c>Acknowledged</c>, restoring writability.
+/// </summary>
+public sealed record ReopenGoalsCommand(Guid EmployeeId, Guid CycleId, string Reason)
+    : IRequest<Result<EmployeeGoalsDto>>;
+
+public sealed class ReopenGoalsCommandHandler
+    : IRequestHandler<ReopenGoalsCommand, Result<EmployeeGoalsDto>>
+{
+    private readonly IGoalService _service;
+    public ReopenGoalsCommandHandler(IGoalService service) => _service = service;
+
+    public Task<Result<EmployeeGoalsDto>> Handle(ReopenGoalsCommand request, CancellationToken cancellationToken)
+        => _service.ReopenGoalsAsync(request.EmployeeId, request.CycleId, request.Reason, cancellationToken);
+}
+
 // ── Delete ───────────────────────────────────────────────────────────────
 
 /// <summary>Soft-deletes a goal (US-PRF-001 FR-1).</summary>

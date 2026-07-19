@@ -120,6 +120,13 @@ public sealed record SaveGoalsRequest(List<SaveGoalItem> Goals);
 /// </summary>
 public sealed record FinalizeGoalsRequest(Guid EmployeeId, Guid CycleId);
 
+/// <summary>
+/// API request body for the re-open/unlock endpoint (DF-46, BUG-056 follow-up). Re-opens the finalized
+/// goal set for (EmployeeId, CycleId), transitioning its goals back to Acknowledged. <see cref="Reason"/>
+/// is mandatory and recorded in the audit trail.
+/// </summary>
+public sealed record ReopenGoalsRequest(Guid EmployeeId, Guid CycleId, string Reason);
+
 /// <summary>Service-layer input for create/update of a single goal (decouples handler records from the service).</summary>
 public sealed record GoalInput(
     Guid CycleId,

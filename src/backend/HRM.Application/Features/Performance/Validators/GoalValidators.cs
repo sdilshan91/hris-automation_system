@@ -102,3 +102,20 @@ public sealed class SaveGoalsValidator : AbstractValidator<SaveGoalsCommand>
         RuleForEach(x => x.Goals).SetValidator(new SaveGoalItemValidator());
     }
 }
+
+/// <summary>
+/// Validates <see cref="ReopenGoalsCommand"/> — the re-open/unlock of a finalized goal set (DF-46,
+/// BUG-056 follow-up). The re-open <c>Reason</c> is MANDATORY (recorded in the audit trail); the
+/// not-finalized state (409 <c>goals_not_finalized</c>) is a cross-row rule enforced in GoalService.
+/// </summary>
+public sealed class ReopenGoalsValidator : AbstractValidator<ReopenGoalsCommand>
+{
+    public ReopenGoalsValidator()
+    {
+        RuleFor(x => x.EmployeeId).NotEmpty().WithMessage("An employee is required.");
+        RuleFor(x => x.CycleId).NotEmpty().WithMessage("A cycle is required.");
+        RuleFor(x => x.Reason)
+            .NotEmpty().WithMessage("A reason is required to re-open a finalized goal set.")
+            .MaximumLength(1000).WithMessage("The re-open reason cannot exceed 1000 characters.");
+    }
+}

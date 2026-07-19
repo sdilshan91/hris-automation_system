@@ -65,6 +65,13 @@
 >   - TC-RPT-005-13 (ISSUE-285a, US-RPT-005) — index-backed upcoming-birthdays (`DashboardServiceTests`, `DashboardIntegrationTests`).
 >   - TC-CHR-336 (DF-17, US-CHR-006) — org-tree zero-extra-HTTP expand (FE-only; org-tree Karma specs).
 >   All backend arms bound via `[Trait("TC", "…")]`; TC-CHR-063 unblocked (`unblocked_by #389`, status `ready`).
+> - **DF-46 goal-set re-open (2026-07-20):** TC-PRF-001-15 (DF-46 / BUG-056, US-PRF-001 AC-4 / BR-4) — the
+>   undo for the finalize/lock. Binds 9 xUnit arms (`GoalServiceReopenTests`: writability-restore with
+>   before/after 409 contrast, Finalized-only selectivity, 409 `goals_not_finalized` guard, 403 non-manager
+>   with set-stays-locked, `Goal.Reopened` audit-reason-trimmed row, validator empty/whitespace/valid, **+ the
+>   two auditor-driven arms**: direct-manager `SetGoal.Team` allow-path and cross-tenant isolation) via
+>   `[Trait("TC","TC-PRF-001-15")]`, plus the `goal-setting` Karma specs (re-open button + mandatory-reason
+>   block + reload + 409/403 toasts). Both auditors green (enforcer WIRED, authenticator ~93%→ HIGH gaps healed).
 
 ---
 
