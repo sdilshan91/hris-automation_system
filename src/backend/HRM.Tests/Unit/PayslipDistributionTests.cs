@@ -191,6 +191,7 @@ public sealed class PayslipDistributionTests
     // ── ISSUE-229 (BR-4): payslip "From" uses the tenant's configured sender, else the system default ──
 
     [Fact]
+    [Trait("TC", "TC-PAY-019")]
     public async Task Runner_UsesTenantConfiguredFromAddress_WhenSet()
     {
         var storage = new FakeFileStorage();
@@ -204,6 +205,7 @@ public sealed class PayslipDistributionTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PAY-019")]
     public async Task Runner_FromAddressIsNull_WhenTenantHasNoConfiguredSender()
     {
         var storage = new FakeFileStorage();

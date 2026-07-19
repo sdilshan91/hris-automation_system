@@ -3,7 +3,7 @@ title: Requirements Traceability Matrix
 project: HRM SaaS Platform
 created: 2026-05-11
 status: draft
-last_updated: 2026-07-17
+last_updated: 2026-07-19
 ---
 
 # Requirements Traceability Matrix
@@ -25,7 +25,7 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021, TC-AUTH-051, TC-AUTH-052, TC-AUTH-053, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057, TC-AUTH-058 | 11 | 6/6 AC covered (deep) |
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-069, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-074, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078, TC-AUTH-079, TC-AUTH-080, TC-AUTH-081, TC-AUTH-082 | 20 | 6/6 AC covered (deep) |
-| US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112 | 33 | 6/6 AC covered (deep) |
+| US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112, TC-AUTH-114 | 34 | 6/6 AC covered (deep) |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004 | 4 | -- |
 | **TOTAL** | | | **116 test cases** | **116** | **61/61 AC** |
 
@@ -50,6 +50,7 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-ISO-002 | JWT claims include correct tenant_id | Security | Critical | US-AUTH-002, US-AUTH-006 | -- |
 | TC-AUTH-ISO-003 | API rejects requests with mismatched tenant context | Security | Critical | US-AUTH-002, US-AUTH-007 | -- |
 | TC-AUTH-ISO-004 | RBAC cross-tenant isolation -- roles, permissions, and cache keys are tenant-scoped | Security | Critical | US-AUTH-006 | FR-2, FR-10, NFR-2, BR-1 |
+| TC-AUTH-114 | Lockout email branded with resolved tenant name; degrades gracefully when tenant null; AuthService plumbs login-time tenant name into the enqueued job -- ISSUE-063 | Integration | High | US-AUTH-010 | FR-8; PR #371 |
 
 ### US-AUTH-010 Detailed Requirements Traceability
 
@@ -94,8 +95,8 @@ This document links user stories to their corresponding test cases across all mo
 
 | User Story ID | User Story Title | Priority | Test Cases | TC Count | Coverage |
 |---------------|-----------------|----------|------------|----------|----------|
-| US-CHR-001 | Add New Employee with Personal Information | Must Have | TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-067, TC-CHR-068, TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-075, TC-CHR-076, TC-CHR-077, TC-CHR-078, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-095, TC-CHR-096, TC-CHR-097, TC-CHR-098, TC-CHR-099, TC-CHR-100, TC-CHR-101, TC-CHR-102, TC-CHR-103 | 40 | 6/6 AC covered |
-| US-CHR-002 | View and Edit Employee Profile | Must Have | TC-CHR-104, TC-CHR-105, TC-CHR-106, TC-CHR-107, TC-CHR-108, TC-CHR-109, TC-CHR-110, TC-CHR-111, TC-CHR-112, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-119, TC-CHR-120, TC-CHR-121, TC-CHR-122, TC-CHR-123, TC-CHR-124, TC-CHR-125, TC-CHR-126 | 23 | 6/6 AC covered |
+| US-CHR-001 | Add New Employee with Personal Information | Must Have | TC-CHR-064, TC-CHR-065, TC-CHR-066, TC-CHR-067, TC-CHR-068, TC-CHR-069, TC-CHR-070, TC-CHR-071, TC-CHR-072, TC-CHR-073, TC-CHR-074, TC-CHR-075, TC-CHR-076, TC-CHR-077, TC-CHR-078, TC-CHR-079, TC-CHR-080, TC-CHR-081, TC-CHR-082, TC-CHR-083, TC-CHR-084, TC-CHR-085, TC-CHR-086, TC-CHR-087, TC-CHR-088, TC-CHR-089, TC-CHR-090, TC-CHR-091, TC-CHR-092, TC-CHR-093, TC-CHR-094, TC-CHR-095, TC-CHR-096, TC-CHR-097, TC-CHR-098, TC-CHR-099, TC-CHR-100, TC-CHR-101, TC-CHR-102, TC-CHR-103, TC-CHR-331, TC-CHR-332, TC-CHR-334 | 43 | 6/6 AC covered |
+| US-CHR-002 | View and Edit Employee Profile | Must Have | TC-CHR-104, TC-CHR-105, TC-CHR-106, TC-CHR-107, TC-CHR-108, TC-CHR-109, TC-CHR-110, TC-CHR-111, TC-CHR-112, TC-CHR-113, TC-CHR-114, TC-CHR-115, TC-CHR-116, TC-CHR-117, TC-CHR-118, TC-CHR-119, TC-CHR-120, TC-CHR-121, TC-CHR-122, TC-CHR-123, TC-CHR-124, TC-CHR-125, TC-CHR-126, TC-CHR-333 | 24 | 6/6 AC covered |
 | US-CHR-003 | Employee Directory with Search and Filters | Must Have | TC-CHR-127, TC-CHR-128, TC-CHR-129, TC-CHR-130, TC-CHR-131, TC-CHR-132, TC-CHR-133, TC-CHR-134, TC-CHR-135, TC-CHR-136, TC-CHR-137, TC-CHR-138, TC-CHR-139, TC-CHR-140, TC-CHR-141, TC-CHR-142, TC-CHR-143, TC-CHR-144, TC-CHR-145, TC-CHR-146, TC-CHR-147, TC-CHR-148, TC-CHR-149, TC-CHR-150 | 24 | 5/5 AC covered |
 | US-CHR-004 | Create and Manage Departments | Must Have | TC-CHR-001 through TC-CHR-034 | 34 | 5/5 AC covered (all unblocked) |
 | US-CHR-005 | Create and Manage Job Titles and Positions | Must Have | TC-CHR-035 through TC-CHR-063 | 29 | 5/5 AC covered (all unblocked) |
@@ -136,6 +137,10 @@ This document links user stories to their corresponding test cases across all mo
 | TC-CHR-010 | Deactivate department blocked when active employees assigned | Functional | Critical | US-CHR-004 | AC-5, FR-6, BR-5 |
 | TC-CHR-011 | Deactivate department with no active employees (success) | Functional | High | US-CHR-004 | AC-5, FR-6, FR-7, NFR-5, BR-5 |
 | TC-CHR-012 through TC-CHR-150 | (See previous version -- all unchanged) | | | | |
+| TC-CHR-331 | Profile photo upload rejects WebP (un-strippable EXIF on pinned ImageSharp) -- ISSUE-246 | Functional | High | US-CHR-001 | AC/photo, PII/EXIF; PR #371 |
+| TC-CHR-332 | National ID is encrypted PII -- masked in DTOs, ciphertext at rest (enc:v1:), full value only via an audited reveal; 404 no-audit -- ISSUE-293 | Security | High | US-CHR-001 | PII-at-rest, audited reveal; PR #371 |
+| TC-CHR-333 | Profile-section edits PATCH the single {id}/profile endpoint (never sections/:section); unbacked sections fire no request (FE Karma) -- ISSUE-319/DF-36 | Functional | High | US-CHR-002 | profile edit route; PR #369 |
+| TC-CHR-334 | LocalFileStorage rejects any relativePath escaping the tenant base dir (traversal + sibling-prefix); legit paths round-trip -- DF-30 | Security | High | US-CHR-001 | path-traversal defense-in-depth; PR #371 |
 | TC-CHR-151 | Department hierarchy tree renders with correct parent-child and employee counts | Functional | Critical | US-CHR-006 | AC-1, FR-1, FR-2, FR-5, FR-8, BR-1, BR-2 |
 | TC-CHR-152 | Click department node opens detail panel with manager, employees, sub-departments | Functional | Critical | US-CHR-006 | AC-2, FR-1, FR-2, BR-5 |
 | TC-CHR-153 | Toggle to reporting structure view shows manager-to-direct-report relationships | Functional | Critical | US-CHR-006 | AC-3, FR-1, FR-2, BR-3 |
@@ -754,7 +759,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 |---------------|-----------------|----------|------------|----------|----------|
 | US-LV-001 | Configure Leave Types Per Tenant | Must Have | TC-LV-001, TC-LV-002, TC-LV-003, TC-LV-004, TC-LV-005, TC-LV-006, TC-LV-007, TC-LV-008, TC-LV-009, TC-LV-010, TC-LV-011, TC-LV-012, TC-LV-013, TC-LV-014, TC-LV-015, TC-LV-016, TC-LV-017, TC-LV-018, TC-LV-019, TC-LV-020, TC-LV-021, TC-LV-022, TC-LV-023, TC-LV-024, TC-LV-025 | 25 | 5/5 AC covered |
 | Cross-cutting (LV-001) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-001, TC-LV-ISO-002, TC-LV-ISO-003, TC-LV-ISO-004 | 4 | -- |
-| US-LV-002 | Set Yearly Leave Entitlements by Job Level/Department | Must Have | TC-LV-026, TC-LV-027, TC-LV-028, TC-LV-029, TC-LV-030, TC-LV-031, TC-LV-032, TC-LV-033, TC-LV-034, TC-LV-035, TC-LV-036, TC-LV-037, TC-LV-038, TC-LV-039, TC-LV-040, TC-LV-041, TC-LV-042, TC-LV-043, TC-LV-044, TC-LV-045, TC-LV-046, TC-LV-047 | 22 | 5/5 AC covered |
+| US-LV-002 | Set Yearly Leave Entitlements by Job Level/Department | Must Have | TC-LV-026, TC-LV-027, TC-LV-028, TC-LV-029, TC-LV-030, TC-LV-031, TC-LV-032, TC-LV-033, TC-LV-034, TC-LV-035, TC-LV-036, TC-LV-037, TC-LV-038, TC-LV-039, TC-LV-040, TC-LV-041, TC-LV-042, TC-LV-043, TC-LV-044, TC-LV-045, TC-LV-046, TC-LV-047, TC-LV-266 | 23 | 5/5 AC covered |
 | Cross-cutting (LV-002) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-005, TC-LV-ISO-006, TC-LV-ISO-007, TC-LV-ISO-008 | 4 | -- |
 | US-LV-003 | Employee Applies for Leave | Must Have | TC-LV-048, TC-LV-049, TC-LV-050, TC-LV-051, TC-LV-052, TC-LV-053, TC-LV-054, TC-LV-055, TC-LV-056, TC-LV-057, TC-LV-058, TC-LV-059, TC-LV-060, TC-LV-061, TC-LV-062, TC-LV-063, TC-LV-064, TC-LV-065 | 18 | 6/6 AC covered |
 | Cross-cutting (LV-003) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-009, TC-LV-ISO-010, TC-LV-ISO-011, TC-LV-ISO-012 | 4 | -- |
@@ -772,7 +777,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (LV-009) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-033, TC-LV-ISO-034, TC-LV-ISO-035, TC-LV-ISO-036 | 4 | -- |
 | US-LV-010 | Leave Cancellation by Employee | Must Have | TC-LV-189, TC-LV-190, TC-LV-191, TC-LV-192, TC-LV-193, TC-LV-194, TC-LV-195, TC-LV-196, TC-LV-197, TC-LV-198, TC-LV-199, TC-LV-200, TC-LV-201, TC-LV-202, TC-LV-203, TC-LV-204, TC-LV-205, TC-LV-206, TC-LV-207, TC-LV-208, TC-LV-209 | 21 | 4/4 AC covered |
 | Cross-cutting (LV-010) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-037, TC-LV-ISO-038, TC-LV-ISO-039, TC-LV-ISO-040 | 4 | -- |
-| US-LV-011 | Compulsory Leave / Loss of Pay (LOP) Handling | Should Have | TC-LV-210, TC-LV-211, TC-LV-212, TC-LV-213, TC-LV-214, TC-LV-215, TC-LV-216, TC-LV-217, TC-LV-218, TC-LV-219, TC-LV-220, TC-LV-221, TC-LV-222, TC-LV-223, TC-LV-224, TC-LV-225, TC-LV-226, TC-LV-227, TC-LV-228, TC-LV-229, TC-LV-230, TC-LV-231 | 22 | 4/4 AC covered |
+| US-LV-011 | Compulsory Leave / Loss of Pay (LOP) Handling | Should Have | TC-LV-210, TC-LV-211, TC-LV-212, TC-LV-213, TC-LV-214, TC-LV-215, TC-LV-216, TC-LV-217, TC-LV-218, TC-LV-219, TC-LV-220, TC-LV-221, TC-LV-222, TC-LV-223, TC-LV-224, TC-LV-225, TC-LV-226, TC-LV-227, TC-LV-228, TC-LV-229, TC-LV-230, TC-LV-231, TC-LV-265 | 23 | 4/4 AC covered |
 | Cross-cutting (LV-011) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-041, TC-LV-ISO-042, TC-LV-ISO-043, TC-LV-ISO-044 | 4 | -- |
 | **TOTAL** | | | **275 test cases** | **275** | **52/52 AC** |
 
@@ -827,6 +832,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-LV-045 | Cross-browser compatibility for entitlement configuration page | Functional | Medium | US-LV-002 | Section 8 |
 | TC-LV-046 | Job-level dimension in entitlement rules (DEFERRED) | Functional | High | US-LV-002 | FR-1, Section 7 |
 | TC-LV-047 | Input sanitization -- XSS in entitlement rule and override fields | Security | High | US-LV-002 | NFR-2 |
+| TC-LV-266 | Pro-rata uses month-fraction (denominator 12), rounds to 2dp, join month counts full, relative to the fiscal leave year -- ISSUE-034 | Functional | High | US-LV-002 | AC-4, FR-3, BR-2; PR #371 |
 | TC-LV-ISO-001 | Tenant A cannot see Tenant B's leave types | Security | Critical | US-LV-001 | NFR-2, BR-1 |
 | TC-LV-ISO-002 | API rejects leave type requests without valid tenant context | Security | Critical | US-LV-001 | NFR-2 |
 | TC-LV-ISO-003 | RLS blocks direct DB queries across tenants for leave types | Security | Critical | US-LV-001 | NFR-2, Section 7 |
@@ -1055,6 +1061,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-LV-ISO-042 | API rejects LOP requests without a valid tenant context | Security | Critical | US-LV-011 | NFR-2 |
 | TC-LV-ISO-043 | EF global query filters block cross-tenant leave_request/leave_ledger during LOP ops | Security | Critical | US-LV-011 | NFR-2, §7 |
 | TC-LV-ISO-044 | LOP/balance cache keys are tenant- and employee-scoped (Redis DEFERRED -- partial) | Security | Critical | US-LV-011 | NFR-2 |
+| TC-LV-265 | LOP system leave type seeded AT tenant provisioning (not lazily on first assign); code LOP, LossOfPay, zero entitlement -- ISSUE-222 | Integration | High | US-LV-011 | FR-1, BR-1; PR #371 |
 | TC-LV-232 | Balance Summary report -- per-employee balance per leave type, filterable by dept/job level/employment type, CSV/Excel exportable | Functional | Critical | US-LV-012 | AC-1, FR-1, FR-2, FR-4, FR-6 |
 | TC-LV-233 | Balance Summary values reconcile with the individual employee dashboard (US-LV-006) | Integration | Critical | US-LV-012 | AC-1, BR-3 |
 | TC-LV-234 | Utilization report -- totals by type, average utilization %, department breakdown with bar/pie charts | Functional | Critical | US-LV-012 | AC-2, FR-1, FR-7, NFR-4 |
@@ -1543,13 +1550,13 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (ATT-001) | Multi-tenant isolation (mandatory) | Critical | TC-ATT-ISO-001, TC-ATT-ISO-002, TC-ATT-ISO-003, TC-ATT-ISO-004 | 4 | -- |
 | US-ATT-002 | Employee Clock-Out with Work Hours Auto-Calculation | Must Have | TC-ATT-013, TC-ATT-014, TC-ATT-015, TC-ATT-016, TC-ATT-017, TC-ATT-018, TC-ATT-019, TC-ATT-020, TC-ATT-021, TC-ATT-022, TC-ATT-023, TC-ATT-024 | 12 | 5/5 AC covered |
 | Cross-cutting (ATT-002) | Multi-tenant isolation (clock-out write path) | Critical | TC-ATT-ISO-005 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
-| US-ATT-003 | Attendance Regularization Request (Forgot Clock-In/Out) | Must Have | TC-ATT-025, TC-ATT-026, TC-ATT-027, TC-ATT-028, TC-ATT-029, TC-ATT-030, TC-ATT-031, TC-ATT-032, TC-ATT-033, TC-ATT-034, TC-ATT-035, TC-ATT-036 | 12 | 5/5 AC covered |
+| US-ATT-003 | Attendance Regularization Request (Forgot Clock-In/Out) | Must Have | TC-ATT-025, TC-ATT-026, TC-ATT-027, TC-ATT-028, TC-ATT-029, TC-ATT-030, TC-ATT-031, TC-ATT-032, TC-ATT-033, TC-ATT-034, TC-ATT-035, TC-ATT-036, TC-ATT-160 | 13 | 5/5 AC covered |
 | Cross-cutting (ATT-003) | Multi-tenant isolation (regularization read + submit path) | Critical | TC-ATT-ISO-006 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
 | US-ATT-004 | Manager Approves/Rejects Regularization Requests | Must Have | TC-ATT-037, TC-ATT-038, TC-ATT-039, TC-ATT-040, TC-ATT-041, TC-ATT-042, TC-ATT-043, TC-ATT-044, TC-ATT-045, TC-ATT-046, TC-ATT-047, TC-ATT-048, TC-ATT-049, TC-ATT-050 | 14 | 5/5 AC covered |
 | Cross-cutting (ATT-004) | Multi-tenant isolation (approve/reject mutation path) | Critical | TC-ATT-ISO-007 (+ reuses TC-ATT-ISO-001..004, TC-ATT-ISO-006) | 1 | -- |
-| US-ATT-005 | Shift Management and Assignment per Employee | Must Have | TC-ATT-051, TC-ATT-052, TC-ATT-053, TC-ATT-054, TC-ATT-055, TC-ATT-056, TC-ATT-057, TC-ATT-058, TC-ATT-059, TC-ATT-060, TC-ATT-061, TC-ATT-062, TC-ATT-063, TC-ATT-064, TC-ATT-065, TC-ATT-066 | 16 | 5/5 AC covered |
+| US-ATT-005 | Shift Management and Assignment per Employee | Must Have | TC-ATT-051, TC-ATT-052, TC-ATT-053, TC-ATT-054, TC-ATT-055, TC-ATT-056, TC-ATT-057, TC-ATT-058, TC-ATT-059, TC-ATT-060, TC-ATT-061, TC-ATT-062, TC-ATT-063, TC-ATT-064, TC-ATT-065, TC-ATT-066, TC-ATT-158 | 17 | 5/5 AC covered |
 | Cross-cutting (ATT-005) | Multi-tenant isolation (shift + employee_shift tables) | Critical | TC-ATT-ISO-008 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
-| US-ATT-006 | Overtime Tracking and Approval | Should Have | TC-ATT-067, TC-ATT-068, TC-ATT-069, TC-ATT-070, TC-ATT-071, TC-ATT-072, TC-ATT-073, TC-ATT-074, TC-ATT-075, TC-ATT-076, TC-ATT-077, TC-ATT-078, TC-ATT-079, TC-ATT-080, TC-ATT-081, TC-ATT-082, TC-ATT-083 | 17 | 5/5 AC covered |
+| US-ATT-006 | Overtime Tracking and Approval | Should Have | TC-ATT-067, TC-ATT-068, TC-ATT-069, TC-ATT-070, TC-ATT-071, TC-ATT-072, TC-ATT-073, TC-ATT-074, TC-ATT-075, TC-ATT-076, TC-ATT-077, TC-ATT-078, TC-ATT-079, TC-ATT-080, TC-ATT-081, TC-ATT-082, TC-ATT-083, TC-ATT-159 | 18 | 5/5 AC covered |
 | Cross-cutting (ATT-006) | Multi-tenant isolation (overtime_record table) | Critical | TC-ATT-ISO-009 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
 | US-ATT-007 | Monthly Attendance Summary per Employee | Must Have | TC-ATT-084, TC-ATT-085, TC-ATT-086, TC-ATT-087, TC-ATT-088, TC-ATT-089, TC-ATT-090, TC-ATT-091, TC-ATT-092, TC-ATT-093, TC-ATT-094, TC-ATT-095, TC-ATT-096, TC-ATT-097, TC-ATT-098, TC-ATT-099 | 16 | 5/5 AC covered |
 | Cross-cutting (ATT-007) | Multi-tenant isolation (attendance_monthly_summary table) | Critical | TC-ATT-ISO-010 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
@@ -2183,7 +2190,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (REC-002) | Multi-tenant isolation (applicant) | Critical | TC-REC-ISO-005, TC-REC-ISO-006, TC-REC-ISO-007, TC-REC-ISO-008 | 4 | -- |
 | US-REC-003 | Recruiter Views Applicant Pipeline with Stage Management | Must Have | TC-REC-003-01, TC-REC-003-02, TC-REC-003-03, TC-REC-003-04, TC-REC-003-05, TC-REC-003-06, TC-REC-003-07, TC-REC-003-08, TC-REC-003-09, TC-REC-003-10, TC-REC-003-11, TC-REC-003-12, TC-REC-003-13, TC-REC-003-14, TC-REC-003-15, TC-REC-003-16 | 16 | 5/5 AC covered |
 | Cross-cutting (REC-003) | Multi-tenant isolation (pipeline / stage move / stage history) | Critical | TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011, TC-REC-ISO-012 | 4 | -- |
-| US-REC-004 | Move Applicant Through Pipeline Stages with Gates | Must Have | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12 | 12 | 5/5 AC covered |
+| US-REC-004 | Move Applicant Through Pipeline Stages with Gates | Must Have | TC-REC-004-01, TC-REC-004-02, TC-REC-004-03, TC-REC-004-04, TC-REC-004-05, TC-REC-004-06, TC-REC-004-07, TC-REC-004-08, TC-REC-004-09, TC-REC-004-10, TC-REC-004-11, TC-REC-004-12, TC-REC-004-13, TC-REC-004-14, TC-REC-004-15 | 15 | 5/5 AC covered |
 | Cross-cutting (REC-004) | Multi-tenant isolation (stage-history / transition / rejection trail) | Critical | TC-REC-ISO-013 (+ reuses TC-REC-ISO-009, TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
 | US-REC-005 | Schedule Interviews and Notify Participants | Must Have | TC-REC-005-01, TC-REC-005-02, TC-REC-005-03, TC-REC-005-04, TC-REC-005-05, TC-REC-005-06, TC-REC-005-07, TC-REC-005-08, TC-REC-005-09, TC-REC-005-10, TC-REC-005-11, TC-REC-005-12, TC-REC-005-13 | 13 | 5/5 AC covered |
 | Cross-cutting (REC-005) | Multi-tenant isolation (interview / interviewer / reminder job) | Critical | TC-REC-ISO-014 (+ reuses TC-REC-ISO-010, TC-REC-ISO-011) | 1 | -- |
@@ -2268,6 +2275,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-REC-004-10 | Stage-transition emails queued async (Hangfire/outbox), non-blocking, tenant template substitution | Integration | Medium | US-REC-004 | FR-6, NFR-5, BR-5 |
 | TC-REC-004-11 | Concurrent moves on same applicant -> optimistic concurrency conflict (no lost update, single history row) | Functional | High | US-REC-004 | NFR-3, FR-2, FR-4 |
 | TC-REC-004-12 | Transition <=800ms P95 incl. audit; stage + history write atomic (single transaction) | Performance | High | US-REC-004 | NFR-1, NFR-3, FR-4 |
+| TC-REC-004-15 | Advancing to Interview with no scheduled interview surfaces a SOFT (non-blocking) warning; a scheduled interview clears it -- ISSUE-108 | Functional | High | US-REC-004 | FR-1, BR-1; PR #371 |
 | TC-REC-ISO-013 | Tenant B cannot read/write Tenant A's stage-history/transitions/rejection reasons; rows session-stamped | Security | Critical | US-REC-004 | AC-5, NFR-2, FR-3, FR-4, FR-5 |
 | TC-REC-005-01 | Schedule interview (interviewers + date/time + type + link) -> saved, all participants notified, reminder job scheduled (happy path) | E2E | Critical | US-REC-005 | AC-1, FR-1, FR-3, FR-4, NFR-3 |
 | TC-REC-005-02 | Hangfire reminder fires ~24h before to all participants; idempotent + tenant-aware | Integration | Critical | US-REC-005 | AC-2, FR-4, NFR-3, NFR-4, BR-5, BR-7 |
@@ -2718,7 +2726,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-002) | Multi-tenant isolation (employee_salary_component / salary_revision_history) | Critical | TC-PAY-ISO-005, TC-PAY-ISO-006, TC-PAY-ISO-007, TC-PAY-ISO-008 | 4 | -- |
 | US-PAY-003 | Run Monthly Payroll for All Employees | Must Have | TC-PAY-003-01, TC-PAY-003-02, TC-PAY-003-03, TC-PAY-003-04, TC-PAY-003-05, TC-PAY-003-06, TC-PAY-003-07, TC-PAY-003-08, TC-PAY-003-09, TC-PAY-003-10, TC-PAY-003-11, TC-PAY-003-12 | 12 | 7/7 AC covered |
 | Cross-cutting (PAY-003) | Multi-tenant isolation (payroll_run / payroll_slip / payroll_slip_detail + compute pipeline) | Critical | TC-PAY-ISO-009, TC-PAY-ISO-010, TC-PAY-ISO-011, TC-PAY-ISO-012 | 4 | -- |
-| US-PAY-004 | Generate Individual Payslips | Must Have | TC-PAY-004-01, TC-PAY-004-02, TC-PAY-004-03, TC-PAY-004-04, TC-PAY-004-05, TC-PAY-004-06, TC-PAY-004-07, TC-PAY-004-08, TC-PAY-004-09, TC-PAY-004-10, TC-PAY-004-11, TC-PAY-004-12 | 12 | 5/5 AC covered |
+| US-PAY-004 | Generate Individual Payslips | Must Have | TC-PAY-004-01, TC-PAY-004-02, TC-PAY-004-03, TC-PAY-004-04, TC-PAY-004-05, TC-PAY-004-06, TC-PAY-004-07, TC-PAY-004-08, TC-PAY-004-09, TC-PAY-004-10, TC-PAY-004-11, TC-PAY-004-12, TC-PAY-018 | 13 | 5/5 AC covered |
 | Cross-cutting (PAY-004) | Multi-tenant isolation (payslip blob storage / download / preview) | Critical | TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-015, TC-PAY-ISO-016 | 4 | -- |
 | US-PAY-005 | Employee Views and Downloads Payslips | Must Have | TC-PAY-005-01, TC-PAY-005-02, TC-PAY-005-03, TC-PAY-005-04, TC-PAY-005-05, TC-PAY-005-06, TC-PAY-005-07, TC-PAY-005-08, TC-PAY-005-09, TC-PAY-005-10, TC-PAY-005-11, TC-PAY-005-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-005) | Multi-tenant isolation (employee payslip read surface: list / detail / download / cache) | Critical | TC-PAY-ISO-017, TC-PAY-ISO-018, TC-PAY-ISO-019, TC-PAY-ISO-020 | 4 | -- |
@@ -2732,7 +2740,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-009) | Multi-tenant isolation (report/export/bank-advice/tax-statement surface + pre-aggregated dashboard table + caches) | Critical | TC-PAY-ISO-033, TC-PAY-ISO-034, TC-PAY-ISO-035, TC-PAY-ISO-036 | 4 | -- |
 | US-PAY-010 | Attendance and Leave Data Integration into Payroll | Must Have | TC-PAY-010-01, TC-PAY-010-02, TC-PAY-010-03, TC-PAY-010-04, TC-PAY-010-05, TC-PAY-010-06, TC-PAY-010-07, TC-PAY-010-08, TC-PAY-010-09, TC-PAY-010-10, TC-PAY-010-11, TC-PAY-010-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-010) | Multi-tenant isolation (attendance/leave fetch + reconciliation + encashment + advisory-lock + caches) | Critical | TC-PAY-ISO-037, TC-PAY-ISO-038, TC-PAY-ISO-039, TC-PAY-ISO-040 | 4 | -- |
-| US-PAY-011 | Bulk Payslip Email Distribution | Should Have | TC-PAY-011-01, TC-PAY-011-02, TC-PAY-011-03, TC-PAY-011-04, TC-PAY-011-05, TC-PAY-011-06, TC-PAY-011-07, TC-PAY-011-08, TC-PAY-011-09, TC-PAY-011-10, TC-PAY-011-11, TC-PAY-011-12, TC-PAY-017 | 13 | 5/5 AC covered |
+| US-PAY-011 | Bulk Payslip Email Distribution | Should Have | TC-PAY-011-01, TC-PAY-011-02, TC-PAY-011-03, TC-PAY-011-04, TC-PAY-011-05, TC-PAY-011-06, TC-PAY-011-07, TC-PAY-011-08, TC-PAY-011-09, TC-PAY-011-10, TC-PAY-011-11, TC-PAY-011-12, TC-PAY-017, TC-PAY-019 | 14 | 5/5 AC covered |
 | Cross-cutting (PAY-011) | Multi-tenant isolation (payslip_email_log + distribution job send/re-send + SMTP rate-limiter/sender/cache/SignalR) | Critical | TC-PAY-ISO-041, TC-PAY-ISO-042, TC-PAY-ISO-043, TC-PAY-ISO-044 | 4 | -- |
 | US-PAY-012 | Payroll History and Audit Trail | Must Have | TC-PAY-012-01, TC-PAY-012-02, TC-PAY-012-03, TC-PAY-012-04, TC-PAY-012-05, TC-PAY-012-06, TC-PAY-012-07, TC-PAY-012-08, TC-PAY-012-09, TC-PAY-012-10, TC-PAY-012-11, TC-PAY-012-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-012) | Multi-tenant isolation (payroll history + audit_log read/context-IDOR/write-stamp + history/audit cache + audit-export store) | Critical | TC-PAY-ISO-045, TC-PAY-ISO-046, TC-PAY-ISO-047, TC-PAY-ISO-048 | 4 | -- |
@@ -2918,6 +2926,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-011-11 | Template variables render + subject exact; header/HTML injection neutralized; terminated employee w/ email gets final payslip | Security | High | US-PAY-011 | AC-2, FR-2, FR-3, BR-7, NFR-5 |
 | TC-PAY-011-12 | Send button + confirm dialog + progress bar + summary card w/ expandable Sent/Failed/Skipped lists + Re-send WCAG 2.1 AA; 360-1920 | Accessibility | High | US-PAY-011 | AC-1, AC-3, AC-4, FR-4, FR-5, FR-7 |
 | TC-PAY-017 | Unmapped payroll-run status string reads as Unknown sentinel, not a 500 — ENH-021 | Integration | Medium | US-PAY-011 | run list robustness; PR #348 |
+| TC-PAY-018 | Tenant payslip footer disclaimer round-trips through save -> GET (ToOrgProfileDto read-path gap) -- ISSUE-159 | Integration | High | US-PAY-004 | BR-3, FR-3; PR #371 |
+| TC-PAY-019 | Bulk payslip email uses tenant-configured From; invalid sender rejected 400 and not persisted -- ISSUE-229 | Integration | High | US-PAY-011 | BR-4; PR #371 |
 | TC-PAY-ISO-041 | Cross-tenant READ -- B cannot see A's email logs/summaries/status; A's distribution consumes zero B employees/payslips (name-collision probe) | Security | Critical | US-PAY-011 | AC-5, FR-2, FR-5, FR-8 |
 | TC-PAY-ISO-042 | Distribution APIs reject missing/invalid/mismatched tenant context; no cross-tenant send/re-send/status IDOR via foreign run/log/employee id | Security | Critical | US-PAY-011 | AC-5, FR-1, FR-4, FR-5, FR-8 |
 | TC-PAY-ISO-043 | Cross-tenant write/send block -- job runs under job-arg tenant, log rows server-stamped, injected tenant_id ignored, foreign run/slip/employee rejected; A never emails B's payslip | Security | Critical | US-PAY-011 | AC-5, FR-1, FR-2, FR-5, FR-8 |
@@ -4118,7 +4128,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (ADM-004) | Multi-tenant isolation in lifecycle (Tenant A deletion leaves Tenant B untouched; lifecycle endpoints require system context, cross-tenant injection -> 404) | Critical | TC-ADM-ISO-008, TC-ADM-ISO-009 | 2 | -- |
 | US-ADM-005 | Tenant Admin Manages Users and Role Assignments | Must Have | TC-ADM-005-01, TC-ADM-005-02, TC-ADM-005-03, TC-ADM-005-04, TC-ADM-005-05, TC-ADM-005-06, TC-ADM-005-07, TC-ADM-005-08, TC-ADM-005-09, TC-ADM-005-10, TC-ADM-005-11, TC-ADM-005-12, TC-ADM-005-13, TC-ADM-005-14, TC-ADM-005-15, TC-ADM-005-16, TC-ADM-005-17, TC-ADM-005-18, TC-ADM-005-19, TC-ADM-005-20, TC-ADM-005-21 | 21 | 6/6 AC + 7/7 BR + 6/6 FR covered (3 TCs DEFERRED) |
 | Cross-cutting (ADM-005) | Multi-tenant isolation in user management (tenant-scoped list/detail, cross-tenant param injection -> 404, tenant-context+authz required, token-revocation scoping correct) | Critical | TC-ADM-ISO-010, TC-ADM-ISO-011, TC-ADM-ISO-012, TC-ADM-ISO-013 | 4 | -- |
-| US-ADM-006 | Tenant Admin Configures Company Settings (Logo, Colors, Policies) | Must Have | TC-ADM-006-01 .. TC-ADM-006-21 | 21 | 5/5 AC + 6/6 BR + 7/7 FR covered (4 TCs DEFERRED) |
+| US-ADM-006 | Tenant Admin Configures Company Settings (Logo, Colors, Policies) | Must Have | TC-ADM-006-01 .. TC-ADM-006-23 | 23 | 5/5 AC + 6/6 BR + 7/7 FR covered (4 TCs DEFERRED) |
 | Cross-cutting (ADM-006) | Multi-tenant isolation in settings (ITenantContext-only ops, cross-tenant -> 404/empty, tenant-scoped branding paths; RLS deferred) | Critical | TC-ADM-ISO-014, TC-ADM-ISO-015, TC-ADM-ISO-016 | 3 | -- |
 | US-ADM-007 | Tenant Admin Manages Approval Workflows | Must Have | TC-ADM-007-01 .. TC-ADM-007-18 | 18 | 5/5 AC + 7/7 BR + 7/7 FR covered (4 TCs DEFERRED incl. runtime engine; definition+evaluator run-green) |
 | Cross-cutting (ADM-007) | Multi-tenant isolation in workflow definitions (tenant-scoped list/read, cross-tenant ID injection -> 404, tenant-context+TenantAdmin authz required + writes stamped; RLS deferred) | Critical | TC-ADM-ISO-017, TC-ADM-ISO-018, TC-ADM-ISO-019, TC-ADM-ISO-020 | 4 | -- |
@@ -4250,6 +4260,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ADM-006-19 | [DEFERRED] Redis config-cache invalidation + SignalR <60s propagation | Integration | Medium | US-ADM-006 | FR-7, NFR-3 (DEFERRED: Redis/SignalR) |
 | TC-ADM-006-20 | [DEFERRED] settings page load < 1.5s incl. logo preview | Performance | Low | US-ADM-006 | NFR-1 (DEFERRED: perf env) |
 | TC-ADM-006-21 | [DEFERRED] custom CSS / white-label / login-page customization | Functional | Low | US-ADM-006 | §10, BR-3 (DEFERRED: Phase 2) |
+| TC-ADM-006-23 | Org-profile save no longer wipes the 4 formerly-unmapped settings -- all 4 load from GET and are resent on save (FE Karma) -- ISSUE-322 | Functional | High | US-ADM-006 | AC-5, FR-1; PR #369 |
 | TC-ADM-ISO-014 | Settings tenant-scoped via ITenantContext; cross-tenant → 404/empty | Security | Critical | US-ADM-006 | AC-5, FR-1, BR-1/6, Test Hints |
 | TC-ADM-ISO-015 | Branding file storage tenant-scoped; B cannot reach A's path | Security | Critical | US-ADM-006 | AC-2/5, FR-2, BR-6, Test Hints |
 | TC-ADM-ISO-016 | [DEFERRED] PostgreSQL RLS DB-layer isolation for settings | Security | Medium | US-ADM-006 | AC-5 (DEFERRED: RLS) |
@@ -5311,6 +5322,9 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 | TC-ATT-155 | Tenant attendance-policy CRUD -- Tenant Admin reads/upserts the tenant-default policy | Integration | High | US-ATT-011 | AC-3, FR-4 |
 | TC-ATT-156 | Location attendance-policy override CRUD -- create/update/delete + fall back to tenant default | Integration | High | US-ATT-011 | AC-3, FR-4 |
 | TC-ATT-157 | Concurrent first clock-ins create exactly one tenant-default AttendanceSettings row (23505 race tolerated) -- ISSUE-308 | Integration | High | US-ATT-011 | AC-3, FR-4 (concurrency); PR #346 |
+| TC-ATT-158 | Set/transfer the tenant default shift keeps exactly one default; idempotent re-set writes no audit; unknown shift 404 -- ISSUE-077 | Functional | High | US-ATT-005 | FR-5, BR-1; PR #371 |
+| TC-ATT-159 | Monthly overtime report CSV export -- BOM-encoded file + totals row; blank format defaults to CSV; unsupported format 400 -- ISSUE-081 | Functional | High | US-ATT-006 | AC-5; PR #371 |
+| TC-ATT-160 | Regularization future-date guard is a coarse date-only validator frame; tenant-local rejection deferred to the service -- ISSUE-072 | Functional | High | US-ATT-003 | BR-4, FR-5; PR #371 |
 | TC-ATT-ISO-014 | Cross-tenant Location.DefaultShiftId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-1, BR-1, NFR-2 |
 | TC-ATT-ISO-015 | Cross-tenant AttendanceSettings override LocationId never resolves (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |
 | TC-ATT-ISO-016 | Cross-tenant locationId rejected by the settings CRUD; nothing persisted (Postgres) | Security | Critical | US-ATT-011 | AC-3, BR-1, NFR-2 |

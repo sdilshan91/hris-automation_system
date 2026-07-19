@@ -120,6 +120,7 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-332")]
     public async Task Persisted_values_are_ciphertext_in_the_raw_column_and_decrypt_on_read()
     {
         var (empId, cycleId) = await SeedFkChainAsync();

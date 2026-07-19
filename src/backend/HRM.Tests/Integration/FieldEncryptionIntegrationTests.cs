@@ -96,6 +96,7 @@ public sealed class FieldEncryptionIntegrationTests
     // at-rest ciphertext — a missing converter would still round-trip plaintext; the ciphertext + wiring
     // proof for the national_id column lives in FieldEncryptionPostgresTests.)
     [Fact]
+    [Trait("TC", "TC-CHR-332")]
     public async Task Employee_national_id_round_trips_through_the_encrypting_context()
     {
         var empId = Guid.NewGuid();

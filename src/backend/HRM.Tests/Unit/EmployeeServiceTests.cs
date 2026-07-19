@@ -171,6 +171,7 @@ public sealed class EmployeeServiceTests : IDisposable
     // ── ISSUE-293: National ID is encrypted PII — masked by default, full only via an audited reveal ──
 
     [Fact]
+    [Trait("TC", "TC-CHR-332")]
     public async Task Create_ThenGet_NationalId_IsMaskedInDto_ISSUE293()
     {
         var deptId = await SeedDepartment();
@@ -191,6 +192,7 @@ public sealed class EmployeeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-332")]
     public async Task RevealNationalId_ReturnsFullValue_AndWritesViewSensitiveAudit_ISSUE293()
     {
         var deptId = await SeedDepartment();
@@ -226,6 +228,7 @@ public sealed class EmployeeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-332")]
     public async Task RevealNationalId_UnknownEmployee_Is404_ISSUE293()
     {
         await SeedTenant(_tenantId);
@@ -588,6 +591,7 @@ public sealed class EmployeeServiceTests : IDisposable
     // ── ISSUE-246: WebP is rejected — ImageSharp 2.1.x can't strip WebP EXIF, so allowing it would
     //    store un-stripped GPS/PII metadata. WebP must be refused, not passed through. ──
     [Fact]
+    [Trait("TC", "TC-CHR-331")]
     public async Task UploadPhoto_WebP_IsRejected_ISSUE246()
     {
         var deptId = await SeedDepartment();

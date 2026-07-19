@@ -500,6 +500,7 @@ public sealed class ShiftServiceTests
     // and sets it on the target, so the resolver's IsDefault fallback stays unambiguous.
 
     [Fact]
+    [Trait("TC", "TC-ATT-158")]
     public async Task SetDefault_transfers_the_flag_and_keeps_exactly_one_default()
     {
         var oldDefaultId = SeedShift(isDefault: true);                 // "General Shift"
@@ -519,6 +520,7 @@ public sealed class ShiftServiceTests
     }
 
     [Fact]
+    [Trait("TC", "TC-ATT-158")]
     public async Task SetDefault_on_the_current_default_is_an_idempotent_noop()
     {
         var defaultId = SeedShift(isDefault: true);
@@ -535,6 +537,7 @@ public sealed class ShiftServiceTests
     }
 
     [Fact]
+    [Trait("TC", "TC-ATT-158")]
     public async Task SetDefault_unknown_shift_is_404()
     {
         var result = await CreateService().SetDefaultAsync(Guid.NewGuid());

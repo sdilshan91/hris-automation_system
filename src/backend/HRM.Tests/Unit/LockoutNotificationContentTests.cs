@@ -55,6 +55,7 @@ public sealed class LockoutNotificationContentTests
 
     // ── ISSUE-063 (FR-8): the lockout email is branded with the tenant name when it is known ──
     [Fact]
+    [Trait("TC", "TC-AUTH-114")]
     public void BuildContent_BrandsWithTenantName_WhenPresent()
     {
         var content = LockoutNotificationService.BuildContent(
@@ -69,6 +70,7 @@ public sealed class LockoutNotificationContentTests
     }
 
     [Fact]
+    [Trait("TC", "TC-AUTH-114")]
     public void BuildContent_DegradesGracefully_WhenTenantNameNull()
     {
         // A cross-tenant login whose tenant could not be resolved → null tenant name must not break the email.

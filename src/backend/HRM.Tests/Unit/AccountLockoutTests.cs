@@ -108,6 +108,7 @@ public sealed class AccountLockoutTests
     #region AC-2: Account Locked on Reaching Threshold
 
     [Fact]
+    [Trait("TC", "TC-AUTH-114")]
     public async Task LoginAsync_ReachesMaxFailedAttempts_LocksAccount()
     {
         // Arrange: tenant with maxFailedAttempts=3, lockoutDurationMinutes=10

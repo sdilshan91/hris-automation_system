@@ -32,6 +32,7 @@ public sealed class LocalFileStorageTests : IDisposable
     private static MemoryStream Bytes(string s) => new(Encoding.UTF8.GetBytes(s));
 
     [Fact]
+    [Trait("TC", "TC-CHR-334")]
     public async Task UploadAsync_LegitimatePath_WritesAndReadsBack()
     {
         var url = await _storage.UploadAsync(_tenant, "branding/logo.png", Bytes("PNGDATA"), "image/png");
@@ -47,6 +48,7 @@ public sealed class LocalFileStorageTests : IDisposable
     [InlineData("../../etc/passwd")]
     [InlineData("../" + "other-tenant/secret.png")]
     [InlineData("branding/../../escape.txt")]
+    [Trait("TC", "TC-CHR-334")]
     public async Task UploadAsync_TraversalRelativePath_IsRejected(string evil)
     {
         var act = async () => await _storage.UploadAsync(_tenant, evil, Bytes("x"), "text/plain");
@@ -56,6 +58,7 @@ public sealed class LocalFileStorageTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-334")]
     public async Task OpenReadAsync_TraversalRelativePath_IsRejected()
     {
         var act = async () => await _storage.OpenReadAsync(_tenant, "../../escape.txt");
@@ -63,6 +66,7 @@ public sealed class LocalFileStorageTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-334")]
     public async Task DeleteAsync_TraversalRelativePath_IsRejected()
     {
         var act = async () => await _storage.DeleteAsync(_tenant, "../../escape.txt");
@@ -70,6 +74,7 @@ public sealed class LocalFileStorageTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-334")]
     public async Task UploadAsync_SiblingTenantPrefix_IsNotTreatedAsInside()
     {
         // A tenant dir whose name is a PREFIX of another must not let "{tenant}X/.." style tricks in;

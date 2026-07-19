@@ -350,6 +350,7 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
     // ══════════════════════════════════════════════════════════════
 
     [Fact]
+    [Trait("TC", "TC-LV-266")]
     public async Task ComputeEffective_MidYearJoiner_ProRated_AC4()
     {
         // Create employee who joined July 1.
