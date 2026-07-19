@@ -110,4 +110,40 @@ public sealed class DashboardServiceTests
         DashboardService.IsWithinNextDays(dob, today, 7, out var occ).Should().BeTrue();
         occ.Should().Be(new DateOnly(2027, 2, 28));
     }
+
+    // ── ISSUE-285(a): the SQL-translatable recurring-window keys (month*100 + day) ───────────
+
+    [Fact]
+    public void BuildRecurringWindowKeys_CoversInclusiveWindow_MidYear()
+    {
+        // today = Jun 17, next 7 days inclusive → Jun 17 .. Jun 24 as 617..624.
+        DashboardService.BuildRecurringWindowKeys(new DateOnly(2026, 6, 17), 7)
+            .Should().Equal(617, 618, 619, 620, 621, 622, 623, 624);
+    }
+
+    [Fact]
+    public void BuildRecurringWindowKeys_WrapsYearBoundary()
+    {
+        // today = Dec 30, next 7 days → Dec 30, Dec 31, then Jan 1..Jan 6 (year wrap).
+        DashboardService.BuildRecurringWindowKeys(new DateOnly(2026, 12, 30), 7)
+            .Should().Equal(1230, 1231, 101, 102, 103, 104, 105, 106);
+    }
+
+    [Fact]
+    public void BuildRecurringWindowKeys_NonLeapYear_AlsoEmits229_WhenWindowSpansFeb28()
+    {
+        // 2027 is not a leap year; a window spanning Feb-28 must also emit 229 so a Feb-29 birthday
+        // (projected onto Feb-28) still matches the index key.
+        var keys = DashboardService.BuildRecurringWindowKeys(new DateOnly(2027, 2, 25), 7);
+        keys.Should().Contain(228).And.Contain(229);
+    }
+
+    [Fact]
+    public void BuildRecurringWindowKeys_LeapYear_Feb29IsNaturalKey_NoDuplicate()
+    {
+        // 2028 IS a leap year; Feb-29 is walked naturally (229) and the non-leap fallback is NOT added,
+        // so 229 appears exactly once.
+        var keys = DashboardService.BuildRecurringWindowKeys(new DateOnly(2028, 2, 25), 7);
+        keys.Count(k => k == 229).Should().Be(1);
+    }
 }

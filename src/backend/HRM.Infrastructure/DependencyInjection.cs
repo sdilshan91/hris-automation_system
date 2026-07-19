@@ -46,6 +46,9 @@ public static class DependencyInjection
         // US-NTF-004 / BUG-082: automatic generic INSERT/UPDATE/DELETE capture for all tenant BaseEntity
         // types EXCEPT those marked IAuditExempt (explicit-writer or high-volume — opt-OUT).
         services.AddScoped<AuditCaptureInterceptor>();
+        // ISSUE-285(a): keeps Employee.BirthMonthDay in sync with DateOfBirth so the upcoming-birthdays widget
+        // can filter the recurring window via the (tenant_id, birth_month_day) index. Dependency-free.
+        services.AddScoped<EmployeeBirthMonthDayInterceptor>();
 
         // P3/RLS increment 2b: routes the DB connection per operation (hrm_app runtime vs hrm_owner privileged)
         // via the AsyncLocal ambient tenant. Singleton — it holds only the two static connection strings. With a
@@ -84,6 +87,10 @@ public static class DependencyInjection
             var tenantInterceptor = serviceProvider.GetRequiredService<TenantInterceptor>();
             var auditInterceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
             var auditCaptureInterceptor = serviceProvider.GetRequiredService<AuditCaptureInterceptor>();
+            // ISSUE-285(a): stamps Employee.BirthMonthDay from DateOfBirth. Independent of tenant/audit stamping
+            // (only touches the Employee's own scalar), so its position among the SaveChanges interceptors is
+            // irrelevant; placed before audit CAPTURE for consistency with the other stampers.
+            var birthMonthDayInterceptor = serviceProvider.GetRequiredService<EmployeeBirthMonthDayInterceptor>();
             var secondLevelCacheInterceptor = serviceProvider.GetRequiredService<SecondLevelCacheInterceptor>();
             // ConnectionRoutingInterceptor is a CONNECTION interceptor (routes hrm_app vs hrm_owner at open),
             // independent of the SaveChanges/command interceptors above — ordering among them is irrelevant.
@@ -93,8 +100,8 @@ public static class DependencyInjection
             // interceptor (which hooks pre-open) is irrelevant. Inert while Rls:Enabled is false.
             var tenantGucConnectionInterceptor = serviceProvider.GetRequiredService<TenantGucConnectionInterceptor>();
             options.AddInterceptors(
-                tenantInterceptor, auditInterceptor, auditCaptureInterceptor, secondLevelCacheInterceptor,
-                connectionRoutingInterceptor, tenantGucConnectionInterceptor);
+                tenantInterceptor, auditInterceptor, birthMonthDayInterceptor, auditCaptureInterceptor,
+                secondLevelCacheInterceptor, connectionRoutingInterceptor, tenantGucConnectionInterceptor);
         });
 
         // Register UnitOfWork
