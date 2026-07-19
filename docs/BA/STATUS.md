@@ -185,7 +185,7 @@
 - [x] US-NTF-003 — Notification preferences per user *(PR #103)*
 - [x] US-NTF-004 — Audit trail for all data changes *(PR #104)*
 - [x] US-NTF-005 — Audit log viewer with filters *(PR #105)*
-- [ ] US-NTF-006 — Notification delivery layer (SMTP email + SignalR/in-app dispatch) *(**net-new, reconciliation 2026-07-06, Theme B** — real delivery replacing ~30 `LogOnly*` seams; unblocks the deferred delivery ACs on ~25 done stories. FULL story authored.)*
+- [x] US-NTF-006 — Notification delivery layer (SMTP email + SignalR/in-app dispatch) *(**net-new, Theme B** — SHIPPED across 8 phases: #216-#220 payroll/recruitment/performance, #265-#268 attendance/core-hr/report+import. `RealNotificationDispatcher` (Program.cs) + all feature services registered as `Real*` (DependencyInjection.cs); in-app SignalR always real, email real via `SmtpEmailSender` when `Smtp:Host` set (else graceful `LogOnlyEmailSender`). Verified 2026-07-19: 24 of 27 dependent delivery triggers WIRED at the call-site; 3 residuals → DF-40/41/42, 1 moot (TOTP).)*
 
 ## 11. Reports & Analytics (5 stories)
 - [x] US-RPT-001 — Pre-built HR reports
@@ -221,45 +221,40 @@
 
 | Story | Deferred AC / FR (unbuilt) | Why / Theme | Unblocked by |
 |---|---|---|---|
-| US-AUTH-001 | password-reset + lockout email delivery; login **not** rate-limited | LogOnly delivery (B); rate-limit absent (D) | US-NTF-006 |
+| US-AUTH-001 | **lockout email still LogOnly** — `LockoutNotificationService` stub never migrated onto the NTF-006 dispatcher (DF-40); login **not** rate-limited. *(password-reset email now real-delivered ✅ NTF-006)* | LogOnly lockout (B, DF-40); rate-limit absent (D) | DF-40 |
 | US-AUTH-002 | AC-7 JWT key rotation/overlap — single static signing key | no rotation (D) | — |
-| US-AUTH-004 | reset-email delivery; password-history configured-but-**unenforced** | B; D | US-NTF-006 |
-| US-AUTH-005 | MFA-challenge delivery; challenge **not** rate-limited; MFA secret stored **plaintext** | B; D; A/D | US-NTF-006, US-PLT-005 |
+| US-AUTH-004 | password-history configured-but-**unenforced**. *(reset-email now real-delivered ✅ NTF-006)* | D | — |
+| US-AUTH-005 | challenge **not** rate-limited; MFA secret stored **plaintext**. *(MFA is TOTP — no server-side code to deliver; the "delivery" gap was moot)* | D; A/D | US-PLT-005 |
 | US-AUTH-007 | FR-9 subdomain cache **not** invalidated on tenant status change (suspended tenant resolves Active for TTL) | D | — |
 | US-AUTH-015 | per-tenant SSO gating + `sso_only` UX deferred | lands with US-AUTH-012/016 | US-AUTH-012/016 |
-| US-CHR-001 | BUG-113 `LocationId` not wired (employee↔location link impossible); probation-notification delivery | E functional gap; B | US-NTF-006 |
+| US-CHR-001 | BUG-113 `LocationId` not wired (employee↔location link impossible). *(probation-ending notification now real-delivered ✅ NTF-006)* | E functional gap | — |
 | US-CHR-002 | **Education / Work-History / Dependents sections have NO backend** — FE-only forms, made read-only after #380 (ISSUE-321); Employment (dept/title/type/status) + address edit fields silently no-op / risk invalid enum writes, need id/enum selectors (ISSUE-320). Profile-edit **route** 404 fixed #380 (ISSUE-319 RESOLVED). | E functional gap | DF-39, DF-38 |
-| US-CHR-008 | doc-expiry notification delivery; EXIF not stripped from photos; magic-byte sniff (BUG-058) | B; D | US-NTF-006 |
-| US-CHR-009 | status-change / manager-reassignment reminder delivery | B | US-NTF-006 |
-| US-CHR-010 | import-completion notification; **custom-field columns in import (FR-11)** — see story AC-K1 | B; K | US-NTF-006 |
-| US-CHR-011 | manager-reassignment notification delivery; reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218) | B; E | US-NTF-006 |
+| US-CHR-008 | EXIF not stripped from photos; magic-byte sniff (BUG-058). *(doc-expiry notification now real-delivered ✅ NTF-006)* | D | — |
+| US-CHR-010 | **custom-field columns in import (FR-11)** — see story AC-K1. *(import-completion notification now real-delivered ✅ NTF-006)* | K | — |
+| US-CHR-011 | reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218). *(manager-reassignment notification now real-delivered ✅ NTF-006)* | E | — |
 | US-CHR-012 | custom-field **cap not enforced**; custom-fields absent from bulk import | H; K | US-ADM-012 |
 | US-LV-002 | **FTE proration (BR-2)** + **accrual-frequency scheduling (FR-5)** — see story AC-K1/K2 | K | — |
-| US-LV-005 | **AC-4 multi-level routing inert** (`WorkflowInstanceId` null); **BR-4 payroll-lock hardcoded false**; approval-email delivery | C/E; E; B | US-ADM-011, US-NTF-006 |
+| US-LV-005 | **AC-4 multi-level routing inert** (`WorkflowInstanceId` null); **BR-4 payroll-lock hardcoded false**. *(approval/reject email now real-delivered ✅ NTF-006)* | C/E; E | US-ADM-011 |
 | US-LV-010 | AC-4 cancellation ignores payroll lock (always "not locked") | E | US-ADM-011 |
 | US-LV-011 | **AC-2 auto-LOP inert** — behind `NoOpAttendanceProvider` | E | (attendance provider wiring) |
 | US-LV-012 | **FR-1 Dept Leave-Coverage report returns empty** — see story AC-K1 | K | — |
-| US-ATT-003 | UTC-only day-boundary/late detection (wrong for non-UTC tenants); request-notification delivery | J (ISSUE-065); B | US-NTF-006 |
-| US-ATT-004 | **AC-4 multi-level regularization approval inert**; approval-notification delivery | C; B | US-ADM-011, US-NTF-006 |
-| US-ATT-008 | UTC-only late/early detection (ISSUE-065); late-arrival alert delivery | J; B | US-NTF-006 |
-| US-ATT-010 | scheduled-report + alert delivery | B | US-NTF-006 |
-| US-REC-002 | application-confirmation email; resume magic-byte sniff (BUG-058) | B; D | US-NTF-006 |
-| US-REC-004 | stage-change email delivery | B | US-NTF-006 |
-| US-REC-005 | interview-schedule notify delivery; **interview-guide attachment (FR-8)** | B; K | US-NTF-006 |
-| US-REC-006 | scorecard email delivery; **scorecard versioning** — see story AC-K1 | B; K | US-NTF-006 |
-| US-REC-007 | offer email-with-PDF + magic-link delivery; **FR-10 offer-approval routing inert** | B; C/E | US-NTF-006, US-ADM-011 |
-| US-REC-008 | status-tracking magic-link email delivery | B | US-NTF-006 |
-| US-REC-010 | **AC-3 no user-account creation, AC-2 no salary persistence, AC-4 no "Converted" badge (ISSUE-232)**; welcome-email/onboarding trigger (ISSUE-140) | E | US-NTF-006 |
+| US-ATT-003 | UTC-only day-boundary/late detection (wrong for non-UTC tenants). *(regularization request-notification now real-delivered ✅ NTF-006)* | J (ISSUE-065) | — |
+| US-ATT-004 | **AC-4 multi-level regularization approval inert**. *(approval/reject notification now real-delivered ✅ NTF-006)* | C | US-ADM-011 |
+| US-ATT-008 | UTC-only late/early detection (ISSUE-065). *(late-arrival alert now real-delivered ✅ NTF-006)* | J | — |
+| US-REC-002 | resume magic-byte sniff (BUG-058). *(application-confirmation email now real-delivered ✅ NTF-006)* | D | — |
+| US-REC-005 | **interview-guide attachment (FR-8)** — see story AC-K1. *(interview-schedule notification now real-delivered ✅ NTF-006)* | K | — |
+| US-REC-006 | **scorecard versioning** — see story AC-K1. *(scorecard-submitted email now real-delivered ✅ NTF-006)* | K | — |
+| US-REC-007 | **offer magic-link not embedded** — email+PDF now real-delivered ✅, but no portal token is issued/embedded at offer-send (DF-42); **FR-10 offer-approval routing inert** | B (DF-42); C/E | DF-42, US-ADM-011 |
+| US-REC-008 | **status-tracking magic-link email still LogOnly** — token is minted+persisted but the delivering email is a documented log-only seam, no real sender reachable (DF-41) | B (DF-41) | DF-41 |
+| US-REC-010 | **AC-3 no user-account creation** *(partially shipped — FR-5 provisioning #355)*, **AC-2 no salary persistence, AC-4 no "Converted" badge (ISSUE-232)**; **FR-9 welcome-email + FR-8 onboarding trigger still deferred/log-only** (ISSUE-140 residual — only the generic "Converted" stage-change email fires) | E; B (ISSUE-140) | ISSUE-140 |
 | US-PAY-009 | **year-end tax-statement PDF (ISSUE-177)** + report PDF export | F | — |
-| US-PAY-011 | **entire story purpose unbuilt** — bulk payslip email is LogOnly, nothing delivered | B | US-NTF-006 |
-| US-PRF-001 | goals-set notification delivery; **goal-set finalize == 100% (BUG-056)** — see story AC-K1 | B; K | US-NTF-006 |
-| US-PRF-002 | self-rating notification delivery; **AC-B1 self-assessment attachment DELETE missing (BUG-243)** | B; F/BUG-243 | US-NTF-006 |
-| US-PRF-003 | rating notification delivery | B | US-NTF-006 |
+| US-PRF-001 | **goal-set finalize == 100% (BUG-056)** — see story AC-K1. *(goals-set notification now real-delivered ✅ NTF-006)* | K | — |
+| US-PRF-002 | **AC-B1 self-assessment attachment DELETE missing (BUG-243)**. *(self-rating notification now real-delivered ✅ NTF-006)* | F/BUG-243 | — |
 | US-PRF-004 | **AC-B1 cycle rating-scales endpoint missing**; **AC-B2 low-privilege "resolve active cycle" resolver missing — cross-cutting BUG-243 enabler** | F/BUG-243 | — |
-| US-PRF-005 | **360 report PDF**; 360 notifications delivery; **AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment missing (BUG-243)** | F; B; F/BUG-243 | US-NTF-006 |
+| US-PRF-005 | **360 report PDF**; **AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment missing (BUG-243)**. *(360 reviewer-assigned notifications now real-delivered ✅ NTF-006)* | F; F/BUG-243 | — |
 | US-PRF-006 | **review meeting PDF** | F | — |
 | US-PRF-007 | **dashboard PDF export** | F | — |
-| US-PRF-008 | **PIP PDF**; PIP notification delivery; **AC-B1 PIP draft/pre-fill endpoint missing (BUG-243)** | F; B; F/BUG-243 | US-NTF-006 |
+| US-PRF-008 | **PIP PDF**; **AC-B1 PIP draft/pre-fill endpoint missing (BUG-243)**. *(PIP-initiated notification now real-delivered ✅ NTF-006)* | F; F/BUG-243 | — |
 | US-PRF-010 | **recommendation PDF**; **calibration dead-end trap** (permanent lockout); **AC-B1 completed-cycles picker missing (BUG-243)**; **AC-B2 team-recs = workspace reshape (BUG-243, not a gap)** | F; E; F/BUG-243 | US-PRF-011 |
 | US-ADM-002 | monitoring KPIs (error-rate/latency/SLA/usage) **hardcoded null** | I | US-PLT-004 |
 | US-ADM-006 | plan-gated enterprise-only settings absent (#17) | H | US-ADM-012 |

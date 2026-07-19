@@ -356,8 +356,9 @@ public static class DependencyInjection
         // duplicate-send guard) takes an OPTIONAL IPayslipDistributionJobScheduler (Hangfire-backed impl in
         // Program.cs) so it never requires real Hangfire storage in tests/dev. The runner does the per-employee
         // send loop with Polly retry (NFR-2) + writes a PayslipEmailLog per employee; it reuses the existing
-        // IFileStorage abstraction to load each PDF and the log-only IPayslipEmailSender seam to dispatch (real
-        // SMTP deferred, TODO US-NTF).
+        // IFileStorage abstraction to load each PDF and the IPayslipEmailSender seam to dispatch. As of US-NTF-006
+        // Phase 4 this is RealPayslipEmailSender (real SMTP via IEmailSender), which degrades to a log-only send
+        // only when Smtp:Host is unconfigured (see the IEmailSender registration below).
         services.AddScoped<IPayslipDistributionService, PayslipDistributionService>();
         services.AddScoped<IPayslipDistributionRunner, PayslipDistributionRunner>();
         services.AddScoped<IPayslipEmailSender, RealPayslipEmailSender>();  // US-NTF-006 Phase 4
@@ -588,8 +589,8 @@ public static class DependencyInjection
         // Tenant Owner role, seeds default master data (built-in roles, Annual/Sick/Casual leave types, a
         // default shift), writes the lifecycle event + structured audit, and dispatches the welcome email.
         // Idempotent on subdomain (NFR-2). Tenant isolation for the new tenant is the existing EF global
-        // query filter + TenantInterceptor (no RLS — deferred platform work). The welcome-email send is a
-        // log-only seam (mirrors IPayslipEmailSender; real SMTP deferred, TODO US-NTF).
+        // query filter + TenantInterceptor (no RLS — deferred platform work). The welcome-email send goes through
+        // ITenantWelcomeEmailService, wired to RealTenantWelcomeEmailService as of US-NTF-006 Phase 2b (see below).
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         // US-NTF-006 Phase 2b: real (informational) welcome-email delivery via INotificationDispatcher
         // (tenant_welcome_trial / tenant_welcome_active, SystemAnnouncements). No set-password token — a new owner
