@@ -228,6 +228,7 @@
 | US-AUTH-007 | FR-9 subdomain cache **not** invalidated on tenant status change (suspended tenant resolves Active for TTL) | D | — |
 | US-AUTH-015 | per-tenant SSO gating + `sso_only` UX deferred | lands with US-AUTH-012/016 | US-AUTH-012/016 |
 | US-CHR-001 | BUG-113 `LocationId` not wired (employee↔location link impossible); probation-notification delivery | E functional gap; B | US-NTF-006 |
+| US-CHR-002 | **Education / Work-History / Dependents sections have NO backend** — FE-only forms, made read-only after #380 (ISSUE-321); Employment (dept/title/type/status) + address edit fields silently no-op / risk invalid enum writes, need id/enum selectors (ISSUE-320). Profile-edit **route** 404 fixed #380 (ISSUE-319 RESOLVED). | E functional gap | DF-39, DF-38 |
 | US-CHR-008 | doc-expiry notification delivery; EXIF not stripped from photos; magic-byte sniff (BUG-058) | B; D | US-NTF-006 |
 | US-CHR-009 | status-change / manager-reassignment reminder delivery | B | US-NTF-006 |
 | US-CHR-010 | import-completion notification; **custom-field columns in import (FR-11)** — see story AC-K1 | B; K | US-NTF-006 |
