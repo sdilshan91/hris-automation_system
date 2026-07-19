@@ -149,18 +149,10 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         // BUG-076 AC-4 (separation of duties): the CORE fix. Whenever a run needs more than one approval, a
         // user who already recorded an Approved decision for THIS workflow instance cannot approve another step.
         // Applies regardless of whether a step→role config exists (a numeric multi-step run is also protected).
-        if (total > 1)
-        {
-            var alreadyApproved = await _dbContext.PayrollApprovalHistories.AsNoTracking().AnyAsync(
-                h => h.WorkflowInstanceId == instanceId
-                    && h.Action == PayrollApprovalAction.Approved
-                    && h.ActorUserId == _currentUser.UserId,
-                cancellationToken);
-            if (alreadyApproved)
-                return Result<PayrollApprovalResultDto>.Failure(
-                    "Each approval step must be completed by a different person (separation of duties).",
-                    403, "distinct_approver_required");
-        }
+        if (total > 1 && await HasCallerAlreadyApprovedAsync(instanceId, cancellationToken))
+            return Result<PayrollApprovalResultDto>.Failure(
+                "Each approval step must be completed by a different person (separation of duties).",
+                403, "distinct_approver_required");
 
         // BUG-076 FR-2 (step-role binding): when this step has a configured approver role, the acting user must
         // hold that tenant Role (the same UserTenant→UserTenantRole join used for eligibility). No config row for
@@ -430,6 +422,141 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Pending approvals for the current approver (DF-14)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// DF-14: the AwaitingApproval runs the CURRENT caller can approve right now. The include rule mirrors
+    /// <see cref="ApproveAsync"/> exactly so the queue and the approve action never drift — a run appears here
+    /// iff calling approve on it would NOT 403:
+    /// <list type="number">
+    /// <item>Step-role (AC-4/FR-2): if the run's current step has a configured role, include only when the caller
+    /// holds it (<see cref="UserHoldsRoleAsync"/>); no config row = no per-step restriction.</item>
+    /// <item>Maker-checker (BR-5): exclude the caller's own submissions unless the tenant has fewer than 2
+    /// eligible approvers (<see cref="CountEligibleApproversAsync"/>, small-team exception).</item>
+    /// <item>Distinct-approver (AC-4): for multi-step runs, exclude if the caller already recorded an Approved
+    /// decision for this workflow instance (<see cref="HasCallerAlreadyApprovedAsync"/>).</item>
+    /// </list>
+    /// Tenant-scoped by the EF global query filter (BR-8); ordered newest-first.
+    /// </summary>
+    public async Task<Result<IReadOnlyList<PendingApprovalDto>>> GetPendingApprovalsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<PendingApprovalDto>>.Failure("Tenant context is not resolved.", 400);
+
+        var callerId = _currentUser.UserId;
+
+        // All AwaitingApproval runs for the tenant (global filter → tenant-scoped, BR-8), newest period first.
+        var runs = await _dbContext.PayrollRuns.AsNoTracking()
+            .Where(r => r.Status == PayrollRunStatus.AwaitingApproval)
+            .OrderByDescending(r => r.PayYear).ThenByDescending(r => r.PayMonth)
+            .ToListAsync(cancellationToken);
+
+        if (runs.Count == 0)
+            return Result<IReadOnlyList<PendingApprovalDto>>.Success([]);
+
+        // Step → role config keyed by step number (mirrors ApproveAsync's per-step role gate, :168-172).
+        var stepRoleByStep = await _dbContext.PayrollApprovalStepConfigs.AsNoTracking()
+            .ToDictionaryAsync(c => c.StepNumber, c => c.RoleId, cancellationToken);
+
+        // BR-5 small-team exception (computed once; :137-142). Fewer than 2 eligible approvers relaxes maker-checker.
+        bool smallTeam = await CountEligibleApproversAsync(cancellationToken) < 2;
+
+        // Reuse UserHoldsRoleAsync per distinct step role, cached so N runs at the same step cost one query.
+        var roleHeld = new Dictionary<Guid, bool>();
+        async Task<bool> HoldsRoleAsync(Guid roleId)
+        {
+            if (!roleHeld.TryGetValue(roleId, out var held))
+            {
+                held = await UserHoldsRoleAsync(roleId, cancellationToken);
+                roleHeld[roleId] = held;
+            }
+            return held;
+        }
+
+        var included = new List<PayrollRun>(runs.Count);
+        foreach (var run in runs)
+        {
+            // (1) Step-role: a configured step role must be held by the caller (:168-172).
+            int step = run.CurrentApprovalStep ?? 1;
+            if (stepRoleByStep.TryGetValue(step, out var roleId) && !await HoldsRoleAsync(roleId))
+                continue;
+
+            // (2) Maker-checker: exclude own submissions unless the small-team exception applies (:135-143).
+            if (run.SubmittedBy == callerId && !smallTeam)
+                continue;
+
+            // (3) Distinct-approver: multi-step runs the caller already approved are excluded (:152-163).
+            int total = run.TotalApprovalSteps ?? 1;
+            if (total > 1 && run.CurrentWorkflowInstanceId is { } instanceId
+                && await HasCallerAlreadyApprovedAsync(instanceId, cancellationToken))
+                continue;
+
+            included.Add(run);
+        }
+
+        // Resolve submitter display names via a batched keyed lookup — NO N+1 (mirrors the role-name lookup style
+        // in GetApprovalStepConfigAsync :444-458).
+        var submitterIds = included.Where(r => r.SubmittedBy is not null)
+            .Select(r => r.SubmittedBy!.Value).Distinct().ToList();
+        var nameByUserId = await ResolveSubmitterNamesAsync(submitterIds, cancellationToken);
+
+        var rows = included.Select(r => new PendingApprovalDto
+        {
+            RunId = r.Id,
+            PayMonth = r.PayMonth,
+            PayYear = r.PayYear,
+            Status = r.Status.ToString(),
+            ProcessedEmployees = r.ProcessedEmployees,
+            TotalEmployees = r.TotalEmployees,
+            TotalGross = r.TotalGross,
+            TotalNet = r.TotalNet,
+            SubmittedBy = r.SubmittedBy ?? Guid.Empty,
+            InitiatedByName = r.SubmittedBy is { } sid && nameByUserId.TryGetValue(sid, out var name)
+                ? name : string.Empty,
+            InitiatedAt = r.InitiatedAt,
+            CurrentApprovalStep = r.CurrentApprovalStep,
+            TotalApprovalSteps = r.TotalApprovalSteps,
+        }).ToList();
+
+        return Result<IReadOnlyList<PendingApprovalDto>>.Success(rows);
+    }
+
+    /// <summary>
+    /// DF-14: batched keyed lookup of submitter display names (no N+1). Prefers the tenant Employee linked to the
+    /// user (First Last); falls back to the global <see cref="User.DisplayName"/>, then email, for submitters with
+    /// no linked employee. Employees are tenant-scoped by the global filter; Users are keyed by explicit ids.
+    /// </summary>
+    private async Task<Dictionary<Guid, string>> ResolveSubmitterNamesAsync(
+        IReadOnlyList<Guid> userIds, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<Guid, string>();
+        if (userIds.Count == 0) return result;
+
+        var employees = await _dbContext.Employees.AsNoTracking()
+            .Where(e => e.UserId != null && userIds.Contains(e.UserId!.Value))
+            .Select(e => new { e.UserId, e.FirstName, e.LastName })
+            .ToListAsync(cancellationToken);
+        foreach (var e in employees)
+            if (e.UserId is { } uid && !result.ContainsKey(uid))
+                result[uid] = $"{e.FirstName} {e.LastName}".Trim();
+
+        var missing = userIds.Where(id => !result.ContainsKey(id)).ToList();
+        if (missing.Count > 0)
+        {
+            var users = await _dbContext.Users.AsNoTracking()
+                .Where(u => missing.Contains(u.Id))
+                .Select(u => new { u.Id, u.DisplayName, u.Email })
+                .ToListAsync(cancellationToken);
+            foreach (var u in users)
+                result[u.Id] = !string.IsNullOrWhiteSpace(u.DisplayName) ? u.DisplayName! : u.Email;
+        }
+
+        return result;
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Configurable step → role approval config (AC-4/FR-2, BUG-076)
     // ══════════════════════════════════════════════════════════════
 
@@ -573,6 +700,18 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             select ut.Id
         ).AnyAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// BUG-076 AC-4 (separation of duties): has the acting user already recorded an Approved decision for this
+    /// workflow instance? Shared by <see cref="ApproveAsync"/> (the enforcing check) and
+    /// <see cref="GetPendingApprovalsAsync"/> (the queue's distinct-approver filter) so the two can never drift.
+    /// </summary>
+    private Task<bool> HasCallerAlreadyApprovedAsync(Guid workflowInstanceId, CancellationToken cancellationToken) =>
+        _dbContext.PayrollApprovalHistories.AsNoTracking().AnyAsync(
+            h => h.WorkflowInstanceId == workflowInstanceId
+                && h.Action == PayrollApprovalAction.Approved
+                && h.ActorUserId == _currentUser.UserId,
+            cancellationToken);
 
     private async Task<(PayrollRun? Run, Result<PayrollApprovalResultDto>? Failure)> LoadRunAsync(
         Guid runId, CancellationToken cancellationToken)

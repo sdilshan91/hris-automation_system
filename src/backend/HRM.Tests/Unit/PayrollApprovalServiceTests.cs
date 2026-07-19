@@ -60,13 +60,14 @@ public sealed class PayrollApprovalServiceTests
     }
 
     private async Task<Guid> SeedRunAsync(PayrollRunStatus status, Guid? submittedBy = null,
-        int? step = null, int? totalSteps = null, Guid? instanceId = null)
+        int? step = null, int? totalSteps = null, Guid? instanceId = null,
+        int payMonth = 5, int payYear = 2026)
     {
         using var db = Db();
         var runId = BaseEntity.NewUuidV7();
         db.PayrollRuns.Add(new PayrollRun
         {
-            Id = runId, TenantId = _tenantId, PayMonth = 5, PayYear = 2026,
+            Id = runId, TenantId = _tenantId, PayMonth = payMonth, PayYear = payYear,
             Status = status, InitiatedBy = _hrUserId, InitiatedAt = DateTime.UtcNow,
             TotalEmployees = 2, ProcessedEmployees = 2, TotalGross = 80_000m, TotalNet = 80_000m,
             SubmittedBy = submittedBy,
@@ -520,5 +521,236 @@ public sealed class PayrollApprovalServiceTests
         result.Value!.Status.Should().Be(nameof(PayrollRunStatus.AwaitingApproval));
         result.Value.WorkflowInstanceId.Should().NotBe(originalInstance);
         result.Value.WorkflowInstanceId.Should().NotBeNull();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  DF-14 — "pending approvals for the current approver" queue.
+    //  The queue must mirror ApproveAsync's eligibility exactly: a run appears iff approving it would NOT 403.
+    // ══════════════════════════════════════════════════════════════
+
+    // ── Step-role: the queue INCLUDES a run whose current step role the caller holds. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_IncludesRun_WhenCallerHoldsCurrentStepRole()
+    {
+        var roleX = await SeedApproverRoleAsync("Finance", _financeUserId);
+        await SeedStepConfigAsync((1, roleX));
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId, step: 1, totalSteps: 1);
+
+        var result = await Service(_financeUserId).GetPendingApprovalsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Select(r => r.RunId).Should().Contain(runId);
+    }
+
+    // ── Step-role EXCLUSION (the crux): a Payroll.Approve holder who does NOT hold the step's role is excluded. ──
+    // Kills a mutant that ignores the per-step role gate and lists every AwaitingApproval run to every approver.
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_ExcludesRun_WhenCallerLacksCurrentStepRole()
+    {
+        var stepRole = await SeedApproverRoleAsync("Finance", Guid.NewGuid());   // held by SOMEONE ELSE
+        await SeedApproverRoleAsync("HRApprover", _financeUserId);               // caller holds a DIFFERENT approve role
+        await SeedStepConfigAsync((1, stepRole));
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId, step: 1, totalSteps: 1);
+
+        var result = await Service(_financeUserId).GetPendingApprovalsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Select(r => r.RunId).Should().NotContain(runId);
+    }
+
+    // ── Maker-checker: the caller's OWN submission is excluded when the tenant has >=2 eligible approvers. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_ExcludesOwnSubmission_WhenTwoOrMoreEligibleApprovers()
+    {
+        var roleX = await SeedApproverRoleAsync("Finance", _financeUserId, Guid.NewGuid()); // 2 eligible approvers
+        await SeedStepConfigAsync((1, roleX));
+        // The caller (_financeUserId) submitted this run themselves.
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _financeUserId, step: 1, totalSteps: 1);
+
+        var result = await Service(_financeUserId).GetPendingApprovalsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Select(r => r.RunId).Should().NotContain(runId);
+    }
+
+    // ── Maker-checker small-team exception: with <2 eligible approvers, the caller's own submission IS listed. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_IncludesOwnSubmission_WhenSmallTeam()
+    {
+        var roleX = await SeedApproverRoleAsync("Finance", _financeUserId); // ONLY the caller is eligible (<2)
+        await SeedStepConfigAsync((1, roleX));
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _financeUserId, step: 1, totalSteps: 1);
+
+        var result = await Service(_financeUserId).GetPendingApprovalsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Select(r => r.RunId).Should().Contain(runId);
+    }
+
+    // ── Distinct-approver: a multi-step run the caller already approved (earlier step) is excluded from their queue. ──
+    // Uses the REAL ApproveAsync to record the Approved history row (shared HasCallerAlreadyApprovedAsync predicate).
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_ExcludesRun_CallerAlreadyApprovedEarlierStep()
+    {
+        var instanceId = Guid.NewGuid();
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
+            step: 1, totalSteps: 2, instanceId: instanceId);
+
+        // Caller approves step 1 → run advances to step 2, still AwaitingApproval, caller now has an Approved row.
+        (await Service(_financeUserId).ApproveAsync(runId, null, null)).IsSuccess.Should().BeTrue();
+
+        var result = await Service(_financeUserId).GetPendingApprovalsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Select(r => r.RunId).Should().NotContain(runId); // they can't approve step 2 as well
+    }
+
+    // ── Only AwaitingApproval runs surface; ReviewPending / Approved are not a pending-approval action. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_OnlyAwaitingApproval_ExcludesOtherStatuses()
+    {
+        var awaiting = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId, step: 1, totalSteps: 1);
+        var review = await SeedRunAsync(PayrollRunStatus.ReviewPending, submittedBy: _hrUserId);
+        var approved = await SeedRunAsync(PayrollRunStatus.Approved, submittedBy: _hrUserId);
+
+        var ids = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Select(r => r.RunId).ToList();
+
+        ids.Should().Contain(awaiting);
+        ids.Should().NotContain(review);
+        ids.Should().NotContain(approved);
+    }
+
+    // ── The submitter display name is resolved from the tenant Employee linked to the submitter user (batched). ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_ResolvesSubmitterName_FromLinkedEmployee()
+    {
+        var submitter = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Employees.Add(new Employee
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, UserId = submitter,
+                EmployeeNo = "EMP-9001", FirstName = "Ada", LastName = "Lovelace",
+                Email = "ada@acme.com", Status = EmployeeStatus.Active, IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: submitter, step: 1, totalSteps: 1);
+
+        var row = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Single(r => r.RunId == runId);
+
+        row.SubmittedBy.Should().Be(submitter);
+        row.InitiatedByName.Should().Be("Ada Lovelace");
+    }
+
+    // ── Isolation (BUG-003 class): a run in another tenant is invisible to this tenant's approver. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_IsTenantScoped_ForeignRunInvisible()
+    {
+        // Seed an AwaitingApproval run under a DIFFERENT tenant context, same physical store.
+        var otherTenantId = Guid.NewGuid();
+        var otherTenant = Substitute.For<ITenantContext>();
+        otherTenant.TenantId.Returns(otherTenantId);
+        otherTenant.IsResolved.Returns(true);
+        var foreignRunId = BaseEntity.NewUuidV7();
+        using (var db = TestDbContextFactory.Create(otherTenant, _dbName))
+        {
+            db.PayrollRuns.Add(new PayrollRun
+            {
+                Id = foreignRunId, TenantId = otherTenantId, PayMonth = 5, PayYear = 2026,
+                Status = PayrollRunStatus.AwaitingApproval, InitiatedBy = Guid.NewGuid(), InitiatedAt = DateTime.UtcNow,
+                TotalEmployees = 1, ProcessedEmployees = 1, TotalGross = 10m, TotalNet = 10m,
+                SubmittedBy = Guid.NewGuid(), CurrentApprovalStep = 1, TotalApprovalSteps = 1,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(_financeUserId).GetPendingApprovalsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Select(r => r.RunId).Should().NotContain(foreignRunId);
+    }
+
+    // ── Ordering: the queue returns runs newest period first (PayYear desc, then PayMonth desc). ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_OrdersNewestPeriodFirst()
+    {
+        // Seeded out of order across two years + two months so both order keys matter.
+        var mar2026 = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId, payMonth: 3, payYear: 2026);
+        var jul2026 = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId, payMonth: 7, payYear: 2026);
+        var dec2025 = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId, payMonth: 12, payYear: 2025);
+
+        var ids = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Select(r => r.RunId).ToList();
+
+        // 2026-07, then 2026-03, then 2025-12.
+        ids.Should().ContainInOrder(jul2026, mar2026, dec2025);
+    }
+
+    // ── Name resolution: a submitter with NO linked Employee falls back to the global User display name. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_ResolvesSubmitterName_FallsBackToUserDisplayName()
+    {
+        var submitter = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Users.Add(new User { Id = submitter, Email = "sam@acme.com", DisplayName = "Sam Submitter" });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: submitter, step: 1, totalSteps: 1);
+
+        var row = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Single(r => r.RunId == runId);
+
+        row.InitiatedByName.Should().Be("Sam Submitter"); // no Employee row → User branch
+    }
+
+    // ── Name resolution precedence: the tenant Employee name WINS over a differently-named global User. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_ResolvesSubmitterName_PrefersEmployeeOverUser()
+    {
+        var submitter = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Users.Add(new User { Id = submitter, Email = "x@acme.com", DisplayName = "Global Name" });
+            db.Employees.Add(new Employee
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, UserId = submitter,
+                EmployeeNo = "EMP-9002", FirstName = "Tenant", LastName = "Person",
+                Email = "tenant@acme.com", Status = EmployeeStatus.Active, IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: submitter, step: 1, totalSteps: 1);
+
+        var row = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Single(r => r.RunId == runId);
+
+        row.InitiatedByName.Should().Be("Tenant Person"); // Employee wins, not "Global Name"
+    }
+
+    // ── Distinct-approver positive control: a multi-step run the caller has NOT approved IS shown to them. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-14")]
+    public async Task GetPending_IncludesMultiStepRun_CallerHasNotYetApproved()
+    {
+        var otherApprover = Guid.NewGuid();
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
+            step: 1, totalSteps: 2, instanceId: Guid.NewGuid());
+
+        // A DIFFERENT approver clears step 1 → run advances to step 2, still AwaitingApproval.
+        (await Service(otherApprover).ApproveAsync(runId, null, null)).IsSuccess.Should().BeTrue();
+
+        // The caller has not approved any step → the run IS in their queue (contrast with the exclude arm).
+        var ids = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Select(r => r.RunId).ToList();
+        ids.Should().Contain(runId);
     }
 }

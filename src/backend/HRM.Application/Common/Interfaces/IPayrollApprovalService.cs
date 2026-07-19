@@ -63,6 +63,14 @@ public interface IPayrollApprovalService
         Guid runId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// DF-14: the AwaitingApproval runs the CURRENT caller can approve right now — the approver's "pending
+    /// approvals" queue. Mirrors <see cref="ApproveAsync"/>'s eligibility predicates exactly (step-role match,
+    /// maker-checker, distinct-approver): a run appears iff calling approve on it would not 403. Newest-first.
+    /// </summary>
+    Task<Result<IReadOnlyList<PendingApprovalDto>>> GetPendingApprovalsAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// AC-4/FR-2 (BUG-076): the tenant's configured payroll-approval step → role bindings, ordered by step.
     /// Empty when the tenant has not configured a chain (legacy caller-supplied step count is then used).
     /// </summary>
