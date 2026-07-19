@@ -323,6 +323,7 @@ public sealed class ApplicantPortalIntegrationTests
     // ── AC-1: valid token -> correct sanitized dashboard ──────────────
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public async Task ValidToken_ReturnsCorrectApplicantDashboard()
     {
         var expiry = DateTime.UtcNow.AddDays(30);
@@ -363,6 +364,7 @@ public sealed class ApplicantPortalIntegrationTests
     // ── FR-8: expired token rejected ──────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public async Task ExpiredToken_IsRejected()
     {
         var expiry = DateTime.UtcNow.AddMinutes(-1);
@@ -380,6 +382,7 @@ public sealed class ApplicantPortalIntegrationTests
     // ── AC-4: cross-tenant token denied ───────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public async Task CrossTenantToken_IsDenied()
     {
         // Token minted for Tenant A, presented against Tenant B's subdomain pipeline.
@@ -477,6 +480,7 @@ public sealed class ApplicantPortalIntegrationTests
     // ── BR-5: request-link only issues when an application exists ──────
 
     [Fact]
+    [Trait("TC", "TC-REC-008-14")]
     public async Task RequestLink_ReturnsGenericMessage_RegardlessOfExistence()
     {
         var mediator = BuildPipeline(_tenantA);

@@ -51,6 +51,20 @@
 >   (`AttendanceChronicLatenessTriggerTests`, `RealAttendanceNotificationServiceTests` chronic arms,
 >   `LogOnlyAttendanceNotificationServiceTests`, `NotificationEventCatalogPhase6Tests`) via `[Trait("TC", "TC-ATT-161")]`.
 >   Closes the ISSUE-087 "notify seam is a no-op TODO" gap that blocked TC-ATT-108/109; does not flip US-ATT-008's state.
+> - **Arc #384–390 shipped-but-untracked TC backfill (2026-07-20):** binds IEEE-829 TCs to 6 features that shipped
+>   without a bound TC (the "code green + PR merged ≠ done" gap). All arms already green in the suite; each TC flips
+>   its US to a tracked/covered state — no re-execution needed, these document *existing* passing coverage:
+>   - TC-REC-008-14 (DF-41, US-REC-008) + TC-REC-007-15 (DF-42, US-REC-007) — applicant/offer magic-link EMAIL seams
+>     (`ApplicantPortalTokenServiceTests`, `PortalMagicLinkTests`, `ApplicantPortalIntegrationTests`,
+>     `RealRecruitmentNotificationServiceTests`).
+>   - TC-PRF-001-14 (BUG-056/DF-18, US-PRF-001) — goal read-authz + 100%-finalize-then-lock
+>     (`GoalService{GetById,Finalize}Tests`, `GoalProgressServiceTests`).
+>   - TC-CHR-337 (ISSUE-021, US-CHR-005) — SalaryGrade CRUD + JobTitle.GradeId FK-validation
+>     (`SalaryGradeServiceTests`, `JobTitleServiceTests`).
+>   - TC-CHR-335 (DF-38/39, US-CHR-002) — profile-edit sub-entity full-replace + isolation (`EmployeeProfileServiceTests`).
+>   - TC-RPT-005-13 (ISSUE-285a, US-RPT-005) — index-backed upcoming-birthdays (`DashboardServiceTests`, `DashboardIntegrationTests`).
+>   - TC-CHR-336 (DF-17, US-CHR-006) — org-tree zero-extra-HTTP expand (FE-only; org-tree Karma specs).
+>   All backend arms bound via `[Trait("TC", "…")]`; TC-CHR-063 unblocked (`unblocked_by #389`, status `ready`).
 
 ---
 

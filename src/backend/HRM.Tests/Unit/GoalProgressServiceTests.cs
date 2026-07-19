@@ -149,6 +149,7 @@ public sealed class GoalProgressServiceTests
     // and the old "Submitted||Acknowledged"-only filter would have silently dropped a finalized set from
     // tracking. Finalize is the sign-off, not the end of tracking.
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetMyGoals_includes_finalized_goals()
     {
         await SeedAsync();

@@ -120,6 +120,7 @@ public sealed class GoalServiceGetByIdTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_HrWithSetGoalAll_Returns200WithDto()
     {
         SeedTenant();
@@ -135,6 +136,7 @@ public sealed class GoalServiceGetByIdTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_UnknownId_Returns404GoalNotFound()
     {
         SeedTenant();
@@ -149,6 +151,7 @@ public sealed class GoalServiceGetByIdTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_ForeignTenantGoal_IsInvisible_Returns404()
     {
         // A goal owned by ANOTHER tenant is filtered out by the global query filter (keyed off the
@@ -167,6 +170,7 @@ public sealed class GoalServiceGetByIdTests
     // ── DF-18: within-tenant read authorization ───────────────────────
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_TeamManager_ReadingNonReportsGoal_Denied403()
     {
         SeedTenant();
@@ -184,6 +188,7 @@ public sealed class GoalServiceGetByIdTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_TeamManager_ReadingOwnReportsGoal_Allowed200()
     {
         SeedTenant();
@@ -200,6 +205,7 @@ public sealed class GoalServiceGetByIdTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_Hr_SetGoalAll_Allowed200()
     {
         SeedTenant();
@@ -214,6 +220,7 @@ public sealed class GoalServiceGetByIdTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PRF-001-14")]
     public async Task GetById_GoalOwner_ReadingOwnGoal_Allowed200_SelfBranch()
     {
         // The goal's OWNER (Employee.UserId == caller UserId) has NO SetGoal permissions at all, yet must

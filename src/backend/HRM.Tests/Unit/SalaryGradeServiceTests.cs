@@ -66,6 +66,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     // ── Create ──────────────────────────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_ValidGrade_PersistsAndReadsBack()
     {
         var service = CreateService();
@@ -89,6 +90,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_TrimsCode_AndUppercasesCurrency()
     {
         var service = CreateService();
@@ -101,6 +103,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_NullMidAmount_IsAllowed()
     {
         var service = CreateService();
@@ -112,6 +115,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_DuplicateCodeSameTenant_ShouldFail_409()
     {
         var service = CreateService();
@@ -125,6 +129,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_DuplicateCodeCaseVariant_ShouldFail_409()
     {
         var service = CreateService();
@@ -137,6 +142,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_MinGreaterThanMax_ShouldFail_422()
     {
         var service = CreateService();
@@ -149,6 +155,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_MidOutsideRange_ShouldFail_422()
     {
         var service = CreateService();
@@ -163,6 +170,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     // ── Update ──────────────────────────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_ValidChange_ShouldSucceed()
     {
         var service = CreateService();
@@ -187,6 +195,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_NonExistent_ShouldReturn404()
     {
         var service = CreateService();
@@ -201,6 +210,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_DuplicateCodeExcludingSelf_ShouldFail_409()
     {
         var service = CreateService();
@@ -217,6 +227,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_SameCodeAsSelf_ShouldSucceed()
     {
         var service = CreateService();
@@ -231,6 +242,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Update_MinGreaterThanMax_ShouldFail_422()
     {
         var service = CreateService();
@@ -248,6 +260,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     // ── Deactivate (soft-delete) ────────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Deactivate_HidesFromActiveList()
     {
         var service = CreateService();
@@ -265,6 +278,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Deactivate_AlreadyInactive_ShouldFail()
     {
         var service = CreateService();
@@ -278,6 +292,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Deactivate_NonExistent_ShouldReturn404()
     {
         var service = CreateService();
@@ -291,6 +306,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     // ── Read ────────────────────────────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task GetById_ReturnsGrade()
     {
         var service = CreateService();
@@ -303,6 +319,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task GetAll_DefaultExcludesInactive()
     {
         var service = CreateService();
@@ -320,6 +337,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     // ── Cross-tenant isolation ──────────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task GetAll_ShouldOnlyReturnCurrentTenantGrades()
     {
         var tenantB = Guid.NewGuid();
@@ -347,6 +365,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task GetById_CrossTenant_ShouldReturn404()
     {
         var serviceA = CreateService();
@@ -366,6 +385,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     }
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_SameCodeDifferentTenant_ShouldSucceed()
     {
         var serviceA = CreateService();
@@ -386,6 +406,7 @@ public sealed class SalaryGradeServiceTests : IDisposable
     // ── Tenant context not resolved ─────────────────────────────────
 
     [Fact]
+    [Trait("TC", "TC-CHR-337")]
     public async Task Create_TenantNotResolved_ShouldFail()
     {
         _tenantContext.IsResolved.Returns(false);

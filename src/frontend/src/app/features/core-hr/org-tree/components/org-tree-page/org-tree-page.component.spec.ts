@@ -18,6 +18,11 @@ import {
 } from '../../models/org-tree.models';
 import { environment } from '../../../../../../environments/environment';
 
+// @TC-CHR-336 (US-CHR-006) — org-tree page: nested-children consumption on load,
+// zero-HTTP on in-depth expand, and truncated-node fallback fetch. FE-only binding
+// (no xUnit Trait) — these Karma specs are TC-CHR-336's automated arms.
+// See docs/QA/core-hr/TC-CHR-336.md.
+
 // ─── Pure-function/utility tests (no httpMock.verify) ──────────
 
 describe('OrgTree model utilities', () => {

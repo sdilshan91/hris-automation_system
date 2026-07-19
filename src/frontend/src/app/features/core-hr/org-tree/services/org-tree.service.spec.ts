@@ -8,6 +8,10 @@ import { OrgTreeService } from './org-tree.service';
 import { IOrgTreeNode } from '../models/org-tree.models';
 import { environment } from '../../../../../environments/environment';
 
+// @TC-CHR-336 (US-CHR-006) — nested-children org-tree consumption + lazy-expand.
+// FE-only binding (no xUnit Trait): these Karma specs are the automated arms for
+// TC-CHR-336 — nested children consumed on load, zero-HTTP on in-depth expand, and
+// the truncated-node fallback fetch. See docs/QA/core-hr/TC-CHR-336.md.
 describe('OrgTreeService', () => {
   let service: OrgTreeService;
   let httpMock: HttpTestingController;
