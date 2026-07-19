@@ -194,6 +194,14 @@ public static class NotificationEventCatalog
         "attendance.date", "attendance.checkIn", "attendance.expected",
     ];
 
+    // US-ATT-008 FR-7: chronic-lateness escalation. The Real service loads the subject employee for the name
+    // fields; the trigger site supplies the month-to-date late-day count, the tenant threshold and the month label.
+    private static readonly string[] AttendanceChronicLatenessPlaceholders =
+    [
+        "employee.firstName", "employee.lastName",
+        "attendance.lateCount", "attendance.threshold", "attendance.month",
+    ];
+
     private static readonly string[] RegularizationPlaceholders =
     [
         "employee.firstName", "employee.lastName",
@@ -1772,6 +1780,29 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.AttendanceAlerts,
             IsMandatory: false);
 
+        // US-ATT-008 FR-7: chronic-lateness HR escalation. Recipients are the line manager + the attendance-admin
+        // pool (resolved in the Real service); fired once, on the punch that crosses the tenant chronic threshold.
+        yield return new NotificationEventDefinition(
+            EventKey: "attendance_chronic_lateness",
+            EventName: "Chronic Lateness Alert",
+            Placeholders: [.. AttendanceChronicLatenessPlaceholders, .. TenantPlaceholders],
+            SampleData: AttendanceChronicLatenessSample(),
+            DefaultSubject:
+                "Chronic lateness alert: {{employee.firstName}} {{employee.lastName}}",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p><strong>{{employee.firstName}} {{employee.lastName}}</strong> has been late " +
+                "<strong>{{attendance.lateCount}}</strong> day(s) in {{attendance.month}}, which exceeds the " +
+                "chronic-lateness threshold of <strong>{{attendance.threshold}}</strong>.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "{{employee.firstName}} {{employee.lastName}} has been late {{attendance.lateCount}} day(s) in " +
+                "{{attendance.month}}, which exceeds the chronic-lateness threshold of {{attendance.threshold}}.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.AttendanceAlerts,
+            IsMandatory: false);
+
         yield return new NotificationEventDefinition(
             EventKey: "attendance_regularization_requested",
             EventName: "Attendance Regularization Requested",
@@ -2136,6 +2167,16 @@ public static class NotificationEventCatalog
         ["attendance"] = new Dictionary<string, object?>
         {
             ["date"] = "2026-07-01", ["checkIn"] = "09:22", ["expected"] = "09:00",
+        },
+        ["tenant"] = SampleTenant(),
+    };
+
+    private static Dictionary<string, object?> AttendanceChronicLatenessSample() => new()
+    {
+        ["employee"] = new Dictionary<string, object?> { ["firstName"] = "Jane", ["lastName"] = "Doe" },
+        ["attendance"] = new Dictionary<string, object?>
+        {
+            ["lateCount"] = 6, ["threshold"] = 5, ["month"] = "July 2026",
         },
         ["tenant"] = SampleTenant(),
     };
