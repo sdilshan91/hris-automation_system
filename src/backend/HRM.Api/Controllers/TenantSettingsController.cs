@@ -282,6 +282,22 @@ public sealed class TenantSettingsController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
-        return Ok(ApiResponse<BrandingUploadResultDto>.Ok(result.Value!, "Branding asset uploaded."));
+        // ISSUE-204/DF-32: the service returns the raw internal storage path in Url, which no route serves and
+        // 404s if the FE renders it. Rewrite it to the same servable serve-endpoint URL the other branding
+        // surfaces expose (see ToServableBranding), built from the current request base.
+        var routePath = kind switch
+        {
+            BrandingAssetKind.Logo => BrandingAssetUrls.LogoRoutePath,
+            BrandingAssetKind.EmailLogo => BrandingAssetUrls.EmailLogoRoutePath,
+            BrandingAssetKind.Favicon => BrandingAssetUrls.FaviconRoutePath,
+            _ => BrandingAssetUrls.LogoRoutePath,
+        };
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var servable = result.Value! with
+        {
+            Url = BrandingAssetUrls.Servable(result.Value!.Url, baseUrl, routePath) ?? result.Value!.Url,
+        };
+
+        return Ok(ApiResponse<BrandingUploadResultDto>.Ok(servable, "Branding asset uploaded."));
     }
 }

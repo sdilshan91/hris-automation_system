@@ -185,6 +185,12 @@ try
 
     builder.Services.AddHttpContextAccessor();
 
+    // DF-25: IMemoryCache is NOT registered by default here — the EF second-level cache only provides it on
+    // its memory-provider branch, which is SKIPPED whenever ConnectionStrings:Redis is set (base appsettings).
+    // Register it unconditionally so SessionActivityMiddleware's per-tenant idle-timeout memoization resolves
+    // in every environment (a Redis-configured Docker/staging/prod would otherwise 500 every authed request).
+    builder.Services.AddMemoryCache();
+
     // ===== SignalR (US-NTF-001: real-time in-app notifications) =====
     // The notification hub is mapped at /hubs/notifications below. The Redis backplane (FR-10, multi-instance
     // scale-out) is OPTIONAL: it is only added when a Redis connection string is configured. Without it the
@@ -300,7 +306,6 @@ try
 
     // ===== Background Jobs =====
     builder.Services.AddScoped<HRM.Api.Jobs.TokenCleanupJob>();
-    builder.Services.AddScoped<HRM.Api.Jobs.SendLockoutNotificationJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ApplyFutureDatedStatusChangesJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.ProbationReminderJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.AuditLogPurgeJob>();
