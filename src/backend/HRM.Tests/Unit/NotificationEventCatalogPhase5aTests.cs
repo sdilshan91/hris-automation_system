@@ -110,6 +110,28 @@ public sealed class NotificationEventCatalogPhase5aTests
             $"every {{{{token}}}} in the '{eventKey}' templates must be a declared placeholder (no blank bodies)");
     }
 
+    // ── DF-42: the offer_sent email must embed the candidate self-service portal magic link ──
+    // Presence check (the REVERSE of guard (B), which only proves tokens→declared). The DF-42 payload-embed
+    // unit test proves the service populates offer.portalUrl; this proves the template actually *references*
+    // it, so a candidate on the primary PDF path receives the link. Without this, a mutation that drops
+    // {{offer.portalUrl}} from the offer_sent body would survive the whole suite.
+    [Fact]
+    public void OfferSent_Template_ReferencesTheCandidatePortalMagicLink()
+    {
+        var def = NotificationEventCatalog.Get("offer_sent")!;
+
+        def.Placeholders.Should().Contain("offer.portalUrl");
+
+        var referenced = TemplateTokens(def.DefaultSubject)
+            .Concat(TemplateTokens(def.DefaultBodyHtml))
+            .Concat(TemplateTokens(def.DefaultBodyText))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        referenced.Should().Contain(
+            "offer.portalUrl",
+            "DF-42: the offer_sent template body must render the candidate portal magic link (offer.portalUrl)");
+    }
+
     private static IEnumerable<string> TemplateTokens(string template) =>
         Regex.Matches(template, @"\{\{\s*([^}]+?)\s*\}\}").Select(m => m.Groups[1].Value.Trim());
 }

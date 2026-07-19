@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using HRM.Application.Common.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -9,30 +10,36 @@ namespace HRM.Infrastructure.Services;
 /// Lockout notification email service (US-AUTH-010 FR-8, NFR-3).
 ///
 /// <para>ISSUE-063: the message CONTENT (subject + body: recipient name, lockout duration, when access is restored,
-/// wait/contact instructions, and a support-contact link) is fully assembled here via <see cref="BuildContent"/>, so
-/// enabling real delivery later is a one-class swap. Real SMTP delivery itself is deferred platform-wide to
-/// US-NTF-006 — when <c>Smtp:Host</c> is unset (the dev/QA default) the fully-rendered content is logged instead of
-/// sent; the tenant-name enrichment on the seam signature is tracked with that same delivery follow-up.</para>
+/// wait/contact instructions, and a support-contact link) is fully assembled here via <see cref="BuildContent"/>.
+/// DF-40: the assembled content is now handed to the generic <see cref="IEmailSender"/> seam for real delivery.
+/// The injected sender owns the SMTP-vs-log-only decision (<c>LogOnlyEmailSender</c> when <c>Smtp:Host</c> is unset,
+/// <c>SmtpEmailSender</c> otherwise), so this service no longer inspects <c>Smtp:Host</c> itself. This method runs as
+/// a Hangfire job (<c>Enqueue&lt;ILockoutNotificationService&gt;</c>), so send failures are allowed to propagate to
+/// trigger a Hangfire retry.</para>
 /// </summary>
 public sealed class LockoutNotificationService : ILockoutNotificationService
 {
     private readonly IConfiguration _configuration;
+    private readonly IEmailSender _emailSender;
     private readonly ILogger<LockoutNotificationService> _logger;
 
     public LockoutNotificationService(
         IConfiguration configuration,
+        IEmailSender emailSender,
         ILogger<LockoutNotificationService> logger)
     {
         _configuration = configuration;
+        _emailSender = emailSender;
         _logger = logger;
     }
 
-    public Task SendLockoutNotificationAsync(
+    public async Task SendLockoutNotificationAsync(
         string userEmail,
         string? displayName,
         DateTime lockedUntilUtc,
         int lockoutDurationMinutes,
         string? tenantName,
+        Guid? tenantId,
         CancellationToken cancellationToken = default)
     {
         // Support-contact link/address comes from configuration (no per-call plumbing); falls back to a sensible
@@ -42,24 +49,31 @@ public sealed class LockoutNotificationService : ILockoutNotificationService
 
         var content = BuildContent(userEmail, displayName, lockedUntilUtc, lockoutDurationMinutes, supportContact, tenantName);
 
-        var smtpHost = _configuration["Smtp:Host"];
-        if (string.IsNullOrWhiteSpace(smtpHost))
-        {
-            // US-NTF-006: real delivery deferred. The COMPLETE content is assembled and logged (not a bare TODO), so
-            // wiring an IEmailSender later is a one-line swap.
-            _logger.LogWarning(
-                "[LOCKOUT-EMAIL-STUB] Would send lockout notification to {Email}. Subject='{Subject}'. Body: {Body} " +
-                "(Configure Smtp:Host to enable delivery.)",
-                userEmail, content.Subject, content.BodyText);
-            return Task.CompletedTask;
-        }
+        // DF-40: hand the fully-rendered content to the generic email seam. The injected sender decides SMTP vs
+        // log-only (never a hard dependency), so no Smtp:Host inspection here. Exceptions propagate on purpose —
+        // this runs as a Hangfire job, so a transient send failure becomes a retry (delivery durability).
+        var message = new EmailMessage(
+            TenantId: tenantId ?? Guid.Empty,
+            RecipientEmail: userEmail,
+            Subject: content.Subject,
+            BodyHtml: BuildHtmlBody(content.BodyText),
+            BodyText: content.BodyText);
 
-        // TODO (US-NTF-006): hand `content` to the real IEmailSender. The content is already fully built above.
+        await _emailSender.SendAsync(message, cancellationToken);
+
         _logger.LogInformation(
-            "Sending lockout notification email to {Email}. Subject='{Subject}'. Locked until {LockedUntil:u}.",
+            "Lockout notification dispatched to {Email}. Subject='{Subject}'. Locked until {LockedUntil:u}.",
             userEmail, content.Subject, lockedUntilUtc);
+    }
 
-        return Task.CompletedTask;
+    /// <summary>
+    /// DF-40: minimal HTML wrapper for the plain-text body — HTML-encodes the text and preserves paragraph breaks so
+    /// the same content renders in HTML-only mail clients. No new copy is introduced (subject/body stay in <see cref="BuildContent"/>).
+    /// </summary>
+    private static string BuildHtmlBody(string bodyText)
+    {
+        var encoded = WebUtility.HtmlEncode(bodyText).Replace("\n", "<br />\n");
+        return $"<html><body><p>{encoded}</p></body></html>";
     }
 
     /// <summary>
