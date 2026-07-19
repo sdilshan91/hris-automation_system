@@ -36,6 +36,9 @@ import {
   IStatusTransition,
   IChangeStatusRequest,
   IReportingChainNode,
+  IEducationRecord,
+  IWorkHistoryRecord,
+  IDependentRecord,
   getInitialsFromName,
   genderLabel,
   employmentTypeLabel,
@@ -51,6 +54,13 @@ import {
 } from '../../../custom-fields/models/custom-field.models';
 import { LocationService } from '../../../locations/services/location.service';
 import { ILocation } from '../../../locations/models/location.models';
+import { DepartmentService } from '../../../departments/services/department.service';
+import { IDepartment } from '../../../departments/models/department.models';
+import { JobTitleService } from '../../../job-titles/services/job-title.service';
+import {
+  IJobTitle,
+  IEmploymentTypeOption,
+} from '../../../job-titles/models/job-title.models';
 
 /**
  * US-CHR-002: Comprehensive Employee Profile view + edit component.
@@ -608,13 +618,25 @@ import { ILocation } from '../../../locations/models/location.models';
               @if (editingSection() === 'employment') {
                 <form [formGroup]="employmentForm" (ngSubmit)="saveSection('employment')" @sectionExpand>
                   <div class="form-grid">
+                    <!-- DF-38: Department id-select (active departments) -->
                     <div class="form-field">
                       <label class="label-notion" for="emp-department">Department</label>
-                      <input id="emp-department" type="text" formControlName="departmentName" class="input-notion" />
+                      <select id="emp-department" formControlName="departmentId" class="input-notion select-input">
+                        <option [ngValue]="''">Not assigned</option>
+                        @for (dept of departments(); track dept.departmentId) {
+                          <option [ngValue]="dept.departmentId">{{ dept.name }}</option>
+                        }
+                      </select>
                     </div>
+                    <!-- DF-38: Job Title id-select (active job titles) -->
                     <div class="form-field">
                       <label class="label-notion" for="emp-jobTitle">Job Title</label>
-                      <input id="emp-jobTitle" type="text" formControlName="jobTitleName" class="input-notion" />
+                      <select id="emp-jobTitle" formControlName="jobTitleId" class="input-notion select-input">
+                        <option [ngValue]="''">Not assigned</option>
+                        @for (jt of jobTitles(); track jt.jobTitleId) {
+                          <option [ngValue]="jt.jobTitleId">{{ jt.titleName }}</option>
+                        }
+                      </select>
                     </div>
                     <!-- BUG-113: work location (optional, active locations from US-CHR-007) -->
                     <div class="form-field">
@@ -626,17 +648,24 @@ import { ILocation } from '../../../locations/models/location.models';
                         }
                       </select>
                     </div>
+                    <!-- DF-38: Employment Type enum-select (exact enum member names) -->
                     <div class="form-field">
                       <label class="label-notion" for="emp-type">Employment Type</label>
-                      <input id="emp-type" type="text" formControlName="employmentType" class="input-notion" />
+                      <select id="emp-type" formControlName="employmentType" class="input-notion select-input">
+                        <option [ngValue]="''">Select...</option>
+                        @for (et of employmentTypes(); track et.value) {
+                          <option [ngValue]="et.value">{{ et.label }}</option>
+                        }
+                      </select>
                     </div>
-                    <div class="form-field">
-                      <label class="label-notion" for="emp-status">Status</label>
-                      <input id="emp-status" type="text" formControlName="status" class="input-notion" />
-                    </div>
+                    <!-- DF-38: Date of Joining is read-only (immutable on the backend).
+                         Status is edited via the dedicated Change-Status flow. -->
                     <div class="form-field">
                       <label class="label-notion" for="emp-dateOfJoining">Date of Joining</label>
-                      <input id="emp-dateOfJoining" type="date" formControlName="dateOfJoining" class="input-notion" />
+                      <input id="emp-dateOfJoining" type="text" class="input-notion"
+                        [value]="profile()!.dateOfJoining ? (profile()!.dateOfJoining | date:'mediumDate') : ''"
+                        disabled readonly aria-describedby="emp-doj-hint" />
+                      <p id="emp-doj-hint" class="field-hint">Date of joining cannot be changed here.</p>
                     </div>
                   </div>
                   <div class="form-actions">
@@ -773,10 +802,24 @@ import { ILocation } from '../../../locations/models/location.models';
             >
               <div class="section-header">
                 <h3 class="section-title">Education</h3>
-                <!-- DF-36/ISSUE-319: no backend entity/endpoint — surface as read-only
-                     instead of an Edit button that would 404 on save. -->
+                <!-- DF-39: education is now backend-persisted (see UNBACKED_SECTIONS). -->
                 @if (canEditSection('education')) {
-                  <span class="read-only-pill">Read-only &middot; editing not yet available</span>
+                  <button
+                    type="button"
+                    class="edit-btn"
+                    [attr.aria-label]="editingSection() === 'education' ? 'Cancel editing education' : 'Edit education'"
+                    (click)="toggleEdit('education')"
+                  >
+                    @if (editingSection() === 'education') {
+                      Cancel
+                    } @else {
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
+                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
+                      </svg>
+                      Edit
+                    }
+                  </button>
                 }
               </div>
               @if (editingSection() === 'education') {
@@ -802,7 +845,15 @@ import { ILocation } from '../../../locations/models/location.models';
                           <input [id]="'edu-deg-' + i" type="text" formControlName="degree" class="input-notion" />
                         </div>
                         <div class="form-field">
-                          <label class="label-notion" [for]="'edu-year-' + i">Year</label>
+                          <label class="label-notion" [for]="'edu-field-' + i">Field of Study</label>
+                          <input [id]="'edu-field-' + i" type="text" formControlName="fieldOfStudy" class="input-notion" />
+                        </div>
+                        <div class="form-field">
+                          <label class="label-notion" [for]="'edu-start-' + i">Start Year</label>
+                          <input [id]="'edu-start-' + i" type="text" formControlName="startYear" class="input-notion" />
+                        </div>
+                        <div class="form-field">
+                          <label class="label-notion" [for]="'edu-year-' + i">End Year</label>
                           <input [id]="'edu-year-' + i" type="text" formControlName="endYear" class="input-notion" />
                         </div>
                       </div>
@@ -846,10 +897,24 @@ import { ILocation } from '../../../locations/models/location.models';
             >
               <div class="section-header">
                 <h3 class="section-title">Work History</h3>
-                <!-- DF-36/ISSUE-319: no backend entity/endpoint — surface as read-only
-                     instead of an Edit button that would 404 on save. -->
+                <!-- DF-39: work history is now backend-persisted (see UNBACKED_SECTIONS). -->
                 @if (canEditSection('work-history')) {
-                  <span class="read-only-pill">Read-only &middot; editing not yet available</span>
+                  <button
+                    type="button"
+                    class="edit-btn"
+                    [attr.aria-label]="editingSection() === 'work-history' ? 'Cancel editing work history' : 'Edit work history'"
+                    (click)="toggleEdit('work-history')"
+                  >
+                    @if (editingSection() === 'work-history') {
+                      Cancel
+                    } @else {
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
+                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
+                      </svg>
+                      Edit
+                    }
+                  </button>
                 }
               </div>
               @if (editingSection() === 'work-history') {
@@ -881,6 +946,10 @@ import { ILocation } from '../../../locations/models/location.models';
                         <div class="form-field">
                           <label class="label-notion" [for]="'wh-to-' + i">To</label>
                           <input [id]="'wh-to-' + i" type="date" formControlName="toDate" class="input-notion" />
+                        </div>
+                        <div class="form-field col-span-full">
+                          <label class="label-notion" [for]="'wh-desc-' + i">Description</label>
+                          <textarea [id]="'wh-desc-' + i" formControlName="description" class="input-notion" rows="2"></textarea>
                         </div>
                       </div>
                     </div>
@@ -925,10 +994,24 @@ import { ILocation } from '../../../locations/models/location.models';
             >
               <div class="section-header">
                 <h3 class="section-title">Dependents</h3>
-                <!-- DF-36/ISSUE-319: no backend entity/endpoint — surface as read-only
-                     instead of an Edit button that would 404 on save. -->
+                <!-- DF-39: dependents are now backend-persisted (see UNBACKED_SECTIONS). -->
                 @if (canEditSection('dependents')) {
-                  <span class="read-only-pill">Read-only &middot; editing not yet available</span>
+                  <button
+                    type="button"
+                    class="edit-btn"
+                    [attr.aria-label]="editingSection() === 'dependents' ? 'Cancel editing dependents' : 'Edit dependents'"
+                    (click)="toggleEdit('dependents')"
+                  >
+                    @if (editingSection() === 'dependents') {
+                      Cancel
+                    } @else {
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
+                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z"/>
+                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z"/>
+                      </svg>
+                      Edit
+                    }
+                  </button>
                 }
               </div>
               @if (editingSection() === 'dependents') {
@@ -1647,12 +1730,6 @@ import { ILocation } from '../../../locations/models/location.models';
         px-2.5 py-1.5 rounded-lg hover:bg-brand-50;
     }
 
-    /* DF-36/ISSUE-319: read-only marker for sections with no backend endpoint */
-    .read-only-pill {
-      @apply inline-flex items-center text-xs font-medium text-neutral-400
-        bg-neutral-100 px-2.5 py-1 rounded-full;
-    }
-
     /* ISSUE-293: compact reveal/hide affordance for the masked National ID */
     .reveal-btn {
       @apply inline-flex items-center text-xs font-medium
@@ -1775,6 +1852,8 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   private readonly authService = inject(AuthService);
   private readonly customFieldService = inject(CustomFieldService);
   private readonly locationService = inject(LocationService);
+  private readonly departmentService = inject(DepartmentService);
+  private readonly jobTitleService = inject(JobTitleService);
 
   private readonly destroy$ = new Subject<void>();
 
@@ -1837,6 +1916,11 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   // BUG-113: active work locations for the employment-section Location select
   readonly locations = signal<ILocation[]>([]);
 
+  // DF-38: id-select option sources for the employment section
+  readonly departments = signal<IDepartment[]>([]);
+  readonly jobTitles = signal<IJobTitle[]>([]);
+  readonly employmentTypes = signal<IEmploymentTypeOption[]>([]);
+
   /** Computed reporting chain from profile data */
   readonly reportingChain = computed<IReportingChainNode[]>(() => {
     const p = this.profile();
@@ -1892,6 +1976,9 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     this.loadProfile();
     this.loadCustomFieldDefinitions();
     this.loadLocations();
+    this.loadDepartments();
+    this.loadJobTitles();
+    this.loadEmploymentTypes();
   }
 
   ngOnDestroy(): void {
@@ -1916,7 +2003,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (profile) => {
-          this.profile.set(profile);
+          this.profile.set(this.normalizeProfile(profile));
           this.isLoading.set(false);
         },
         error: (err: HttpErrorResponse) => {
@@ -2030,7 +2117,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (response) => {
           this.isSubmittingStatus.set(false);
-          this.profile.set(response.profile);
+          this.profile.set(this.normalizeProfile(response.profile));
           this.closeStatusModal();
           this.toastr.success(
             `Status changed to ${request.newStatus} successfully.`
@@ -2129,7 +2216,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (response) => {
           this.isAssigningManager.set(false);
-          this.profile.set(response.profile);
+          this.profile.set(this.normalizeProfile(response.profile));
           this.closeManagerSelector();
           if (managerId) {
             this.toastr.success('Reporting manager assigned successfully.');
@@ -2186,6 +2273,78 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           // Non-fatal: Location select will only offer "No location"
         },
       });
+  }
+
+  /**
+   * DF-38: load active departments for the employment-section Department select.
+   * Non-fatal — a failed/empty fetch just leaves the dropdown with the current
+   * assignment only.
+   */
+  private loadDepartments(): void {
+    this.departmentService
+      .getDepartments()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (departments) => {
+          this.departments.set(departments.filter((d) => d.isActive));
+        },
+        error: () => {
+          // Non-fatal
+        },
+      });
+  }
+
+  /** DF-38: load active job titles for the employment-section Job Title select. */
+  private loadJobTitles(): void {
+    this.jobTitleService
+      .getJobTitles()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (jobTitles) => {
+          this.jobTitles.set(jobTitles.filter((j) => j.isActive));
+        },
+        error: () => {
+          // Non-fatal
+        },
+      });
+  }
+
+  /**
+   * DF-38: load the employment-type enum options for the employment-section
+   * Employment Type select. Non-fatal — a failed fetch leaves an empty dropdown.
+   */
+  private loadEmploymentTypes(): void {
+    this.jobTitleService
+      .getEmploymentTypes()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (types) => {
+          this.employmentTypes.set(types);
+        },
+        error: () => {
+          // Non-fatal
+        },
+      });
+  }
+
+  /**
+   * DF-38: the backend returns `customFields` as a raw JSON string, but the
+   * template indexes it as an object (`customFields?.[key]`). Parse it into an
+   * object on ingest so values render/prefill. Guards against null, an already-
+   * parsed object, and invalid JSON.
+   */
+  private normalizeProfile(profile: IEmployeeProfile): IEmployeeProfile {
+    const cf = profile.customFields as unknown;
+    if (typeof cf === 'string') {
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        parsed = cf.trim() ? (JSON.parse(cf) as Record<string, unknown>) : null;
+      } catch {
+        parsed = null;
+      }
+      return { ...profile, customFields: parsed };
+    }
+    return profile;
   }
 
   private buildCustomFieldsForm(fields: ICustomFieldDefinition[]): void {
@@ -2335,15 +2494,14 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * DF-36/ISSUE-319: sections that have NO backend entity/endpoint and can never
-   * persist. Education, work history and dependents have no columns/tables and no
-   * field on `UpdateEmployeeProfileRequest`, so their inline edit affordance is
-   * suppressed (see template) and any save is a no-op guarded here. A separate
-   * backend finding is being filed to build these.
+   * DF-39: the backend now backs every profile section (education / work-history /
+   * dependents were the last unbacked ones and are now persisted via the
+   * `update*` list sentinels on `UpdateEmployeeProfileRequest`). No section is
+   * read-only-by-lack-of-backend anymore, so this list is empty.
    */
-  readonly UNBACKED_SECTIONS: ProfileSection[] = ['education', 'work-history', 'dependents'];
+  readonly UNBACKED_SECTIONS: ProfileSection[] = [];
 
-  /** True when the section can actually be persisted by the backend (DF-36). */
+  /** True when the section can actually be persisted by the backend (DF-39). */
   isSectionPersistable(section: ProfileSection): boolean {
     return !this.UNBACKED_SECTIONS.includes(section);
   }
@@ -2375,7 +2533,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (updated) => {
           this.isSaving.set(false);
-          this.profile.set(updated);
+          this.profile.set(this.normalizeProfile(updated));
           this.editingSection.set(null);
           // ISSUE-293: profile (and its masked National ID) changed — drop any
           // previously revealed value so the UI re-masks until re-revealed.
@@ -2419,15 +2577,17 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
 
       case 'contact': {
         const v = this.contactForm.value;
-        // DF-36: the BE ContactInfoUpdate only accepts phone/personalEmail/address.
-        // city/state/postalCode/country have no backend field (finding filed) and
-        // are intentionally not sent.
+        // DF-38: the BE ContactInfoUpdate now accepts the full address detail.
         return {
           rowVersion,
           contactInfo: {
             phone: v.phone,
             personalEmail: v.personalEmail,
             address: v.address,
+            city: v.city,
+            state: v.state,
+            postalCode: v.postalCode,
+            country: v.country,
           },
         };
       }
@@ -2437,15 +2597,16 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
         // BUG-113: an unset optional location is sent as null (not '') so the BE
         // can bind/clear the Guid FK rather than reject an empty string.
         const locationId = v.locationId === '' ? null : v.locationId;
-        // DF-36: EmploymentInfoUpdate keys on DepartmentId/JobTitleId (Guids) and
-        // has no date-of-joining field, so the free-text departmentName/jobTitleName/
-        // dateOfJoining inputs have no mapping (finding filed) and are not sent.
+        // DF-38: send the selected department/job-title Guids + employment-type
+        // enum. Status is edited via the Change-Status flow; dateOfJoining is
+        // read-only — neither is sent here.
         return {
           rowVersion,
           employmentInfo: {
+            departmentId: v.departmentId,
+            jobTitleId: v.jobTitleId,
             locationId,
             employmentType: v.employmentType,
-            status: v.status,
           },
         };
       }
@@ -2476,10 +2637,70 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
         };
       }
 
-      // DF-36/ISSUE-319: no backend entity/endpoint — never persisted.
-      case 'education':
-      case 'work-history':
-      case 'dependents':
+      // DF-39: education / work-history / dependents are now backed as
+      // full-replace lists paired with an `update*` sentinel.
+      case 'education': {
+        const rows = this.educationFormControls.value as Array<{
+          id?: string | null;
+          institution: string;
+          degree: string;
+          fieldOfStudy: string;
+          startYear: string;
+          endYear: string;
+        }>;
+        // Send the row `id` for existing rows so the BE updates in place (an
+        // omitted id churns a new PK every save); include fieldOfStudy/startYear
+        // so the full-replace write doesn't null those columns (DF-39 data loss).
+        const education: IEducationRecord[] = rows.map((r) => ({
+          ...(r.id ? { id: r.id } : {}),
+          institution: r.institution,
+          degree: r.degree,
+          fieldOfStudy: r.fieldOfStudy || null,
+          startYear: r.startYear || null,
+          endYear: r.endYear || null,
+        }));
+        return { rowVersion, education, updateEducation: true };
+      }
+
+      case 'work-history': {
+        const rows = this.workHistoryFormControls.value as Array<{
+          id?: string | null;
+          company: string;
+          position: string;
+          fromDate: string;
+          toDate: string;
+          description: string;
+        }>;
+        // Send the row `id` for existing rows (avoid PK churn) and `description`
+        // so the full-replace write doesn't null it (DF-39 data loss).
+        const workHistory: IWorkHistoryRecord[] = rows.map((r) => ({
+          ...(r.id ? { id: r.id } : {}),
+          company: r.company,
+          position: r.position,
+          fromDate: r.fromDate || null,
+          toDate: r.toDate || null,
+          description: r.description || null,
+        }));
+        return { rowVersion, workHistory, updateWorkHistory: true };
+      }
+
+      case 'dependents': {
+        const rows = this.dependentFormControls.value as Array<{
+          id?: string | null;
+          name: string;
+          relationship: string;
+          dateOfBirth: string;
+        }>;
+        // Send the row `id` for existing rows so the BE updates in place.
+        const dependents: IDependentRecord[] = rows.map((r) => ({
+          ...(r.id ? { id: r.id } : {}),
+          name: r.name,
+          relationship: r.relationship,
+          dateOfBirth: r.dateOfBirth || null,
+        }));
+        return { rowVersion, dependents, updateDependents: true };
+      }
+
       default:
         return null;
     }
@@ -2500,8 +2721,17 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   // ─── Education repeater ────────────────────────────────────
 
   addEducationRecord(): void {
+    // New row: no `id` (BE mints one). fieldOfStudy/startYear included so an edit
+    // that adds them round-trips.
     this.educationFormControls.push(
-      this.fb.group({ institution: [''], degree: [''], endYear: [''] })
+      this.fb.group({
+        id: [null as string | null],
+        institution: [''],
+        degree: [''],
+        fieldOfStudy: [''],
+        startYear: [''],
+        endYear: [''],
+      })
     );
   }
 
@@ -2512,8 +2742,16 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   // ─── Work history repeater ─────────────────────────────────
 
   addWorkHistoryRecord(): void {
+    // New row: no `id` (BE mints one). description included so an edit round-trips.
     this.workHistoryFormControls.push(
-      this.fb.group({ company: [''], position: [''], fromDate: [''], toDate: [''] })
+      this.fb.group({
+        id: [null as string | null],
+        company: [''],
+        position: [''],
+        fromDate: [''],
+        toDate: [''],
+        description: [''],
+      })
     );
   }
 
@@ -2524,8 +2762,14 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   // ─── Dependent repeater ────────────────────────────────────
 
   addDependentRecord(): void {
+    // New row: no `id` (BE mints one).
     this.dependentFormControls.push(
-      this.fb.group({ name: [''], relationship: [''], dateOfBirth: [''] })
+      this.fb.group({
+        id: [null as string | null],
+        name: [''],
+        relationship: [''],
+        dateOfBirth: [''],
+      })
     );
   }
 
@@ -2561,14 +2805,15 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       contacts: this.fb.array([]),
     });
 
+    // DF-38: department/job-title are id-selects (Guid FKs), employment-type is an
+    // enum select. Status is owned by the Change-Status flow and dateOfJoining is
+    // read-only on the backend, so neither is a form control here.
     this.employmentForm = this.fb.group({
-      departmentName: [''],
-      jobTitleName: [''],
+      departmentId: [''],
+      jobTitleId: [''],
       // BUG-113: optional structured work location FK (Guid)
       locationId: [''],
       employmentType: [''],
-      status: [''],
-      dateOfJoining: [''],
     });
 
     this.educationForm = this.fb.group({
@@ -2635,22 +2880,25 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
 
       case 'employment':
         this.employmentForm.patchValue({
-          departmentName: p.departmentName ?? '',
-          jobTitleName: p.jobTitleName ?? '',
+          departmentId: p.departmentId ?? '',
+          jobTitleId: p.jobTitleId ?? '',
           locationId: p.locationId ?? '',
           employmentType: p.employmentType,
-          status: p.status,
-          dateOfJoining: p.dateOfJoining,
         });
         break;
 
       case 'education':
         this.educationFormControls.clear();
         for (const edu of p.education) {
+          // Carry the row `id` + fieldOfStudy/startYear so an edit round-trips
+          // (DF-39: omitting them churned the PK and nulled the columns on save).
           this.educationFormControls.push(
             this.fb.group({
+              id: [edu.id ?? null],
               institution: [edu.institution],
               degree: [edu.degree],
+              fieldOfStudy: [edu.fieldOfStudy ?? ''],
+              startYear: [edu.startYear ?? ''],
               endYear: [edu.endYear ?? ''],
             })
           );
@@ -2660,12 +2908,15 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       case 'work-history':
         this.workHistoryFormControls.clear();
         for (const wh of p.workHistory) {
+          // Carry the row `id` + description so an edit round-trips (DF-39).
           this.workHistoryFormControls.push(
             this.fb.group({
+              id: [wh.id ?? null],
               company: [wh.company],
               position: [wh.position],
               fromDate: [wh.fromDate ?? ''],
               toDate: [wh.toDate ?? ''],
+              description: [wh.description ?? ''],
             })
           );
         }
@@ -2674,8 +2925,10 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       case 'dependents':
         this.dependentFormControls.clear();
         for (const dep of p.dependents) {
+          // Carry the row `id` so the BE updates in place instead of churning a PK.
           this.dependentFormControls.push(
             this.fb.group({
+              id: [dep.id ?? null],
               name: [dep.name],
               relationship: [dep.relationship],
               dateOfBirth: [dep.dateOfBirth ?? ''],

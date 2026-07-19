@@ -37,6 +37,28 @@ describe('EmployeeProfileComponent', () => {
   const profileUrl = `${environment.apiBaseUrl}/tenant/employees/emp-1/profile`;
   const customFieldsUrl = `${environment.apiBaseUrl}/tenant/custom-fields/active?entityType=employee`;
   const locationsUrl = `${environment.apiBaseUrl}/tenant/locations`;
+  // DF-38: id-select / enum option sources for the employment section
+  const departmentsUrl = `${environment.apiBaseUrl}/tenant/departments`;
+  const jobTitlesUrl = `${environment.apiBaseUrl}/tenant/job-titles`;
+  const employmentTypesUrl = `${environment.apiBaseUrl}/tenant/job-titles/employment-types`;
+
+  const mockDepartments = [
+    { departmentId: 'dept-1', tenantId: 'tenant-1', name: 'Engineering', code: 'ENG', description: null, parentDepartmentId: null, parentDepartmentName: null, managerEmployeeId: null, managerName: null, isActive: true, employeeCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    { departmentId: 'dept-2', tenantId: 'tenant-1', name: 'Finance', code: 'FIN', description: null, parentDepartmentId: null, parentDepartmentName: null, managerEmployeeId: null, managerName: null, isActive: true, employeeCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+  ];
+  const mockJobTitles = [
+    { jobTitleId: 'jt-1', tenantId: 'tenant-1', titleName: 'Software Engineer', description: null, gradeId: null, gradeName: null, isActive: true, employeeCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+    { jobTitleId: 'jt-2', tenantId: 'tenant-1', titleName: 'Accountant', description: null, gradeId: null, gradeName: null, isActive: true, employeeCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+  ];
+  // DF-38/GAP-A: the REAL BE shape (EmploymentTypeDto, camelCase). The service
+  // maps { id, name, displayName } → the consumer's { value, label } — mocking
+  // the mapped shape here (as the old fixture did) masked the missing map().
+  const mockEmploymentTypes = [
+    { id: '1', name: 'FullTime', displayName: 'Full-Time' },
+    { id: '2', name: 'PartTime', displayName: 'Part-Time' },
+    { id: '3', name: 'Contract', displayName: 'Contract' },
+    { id: '4', name: 'Intern', displayName: 'Intern' },
+  ];
 
   // BUG-113: active locations feeding the employment-section Location select
   const mockLocations = [
@@ -100,10 +122,10 @@ describe('EmployeeProfileComponent', () => {
       { id: 'ec-1', name: 'Jane Doe', relationship: 'Spouse', phone: '+94779876543' },
     ],
     education: [
-      { id: 'edu-1', institution: 'University of Colombo', degree: 'BSc CS', endYear: '2012' },
+      { id: 'edu-1', institution: 'University of Colombo', degree: 'BSc CS', fieldOfStudy: 'Computer Science', startYear: '2008', endYear: '2012' },
     ],
     workHistory: [
-      { id: 'wh-1', company: 'Google', position: 'Senior Engineer', fromDate: '2015-01-01', toDate: '2020-12-31' },
+      { id: 'wh-1', company: 'Google', position: 'Senior Engineer', fromDate: '2015-01-01', toDate: '2020-12-31', description: 'Led backend systems' },
     ],
     dependents: [
       { id: 'dep-1', name: 'Baby Doe', relationship: 'Child', dateOfBirth: '2022-05-20' },
@@ -179,6 +201,10 @@ describe('EmployeeProfileComponent', () => {
     // BUG-113: flush any outstanding locations requests before verify
     const locReqs = httpMock.match(locationsUrl);
     locReqs.forEach(r => { if (!r.cancelled) { r.flush(mockLocations); } });
+    // DF-38: flush any outstanding option-source requests before verify
+    httpMock.match(departmentsUrl).forEach(r => { if (!r.cancelled) { r.flush(mockDepartments); } });
+    httpMock.match(jobTitlesUrl).forEach(r => { if (!r.cancelled) { r.flush(mockJobTitles); } });
+    httpMock.match(employmentTypesUrl).forEach(r => { if (!r.cancelled) { r.flush(mockEmploymentTypes); } });
     httpMock.verify();
   });
 
@@ -486,8 +512,8 @@ describe('EmployeeProfileComponent', () => {
     }));
   });
 
-  // ─── DF-36 / ISSUE-319: custom fields + unbacked sections ──
-  describe('DF-36: custom fields serialization + unbacked sections', () => {
+  // ─── DF-38/39: custom fields + backed education/work-history/dependents ──
+  describe('DF-38/39: custom fields serialization + backed sections', () => {
     beforeEach(() => {
       setupTestBed('HR Officer');
     });
@@ -515,30 +541,41 @@ describe('EmployeeProfileComponent', () => {
       patchReq.flush({ ...mockProfile, xmin: '12346' });
     }));
 
-    it('marks education/work-history/dependents as non-persistable', fakeAsync(() => {
+    it('DF-39: marks education/work-history/dependents as persistable', fakeAsync(() => {
       fixture.detectChanges();
       httpMock.expectOne(profileUrl).flush(mockProfile);
       tick();
 
-      expect(component.isSectionPersistable('education')).toBeFalse();
-      expect(component.isSectionPersistable('work-history')).toBeFalse();
-      expect(component.isSectionPersistable('dependents')).toBeFalse();
+      // DF-39: the backend now backs these three sections.
+      expect(component.isSectionPersistable('education')).toBeTrue();
+      expect(component.isSectionPersistable('work-history')).toBeTrue();
+      expect(component.isSectionPersistable('dependents')).toBeTrue();
       expect(component.isSectionPersistable('contact')).toBeTrue();
       expect(component.isSectionPersistable('personal-info')).toBeTrue();
     }));
 
-    it('does NOT fire any PATCH for the unbacked sections', fakeAsync(() => {
+    it('DF-39: fires a PATCH with the update flag for each backed section', fakeAsync(() => {
       fixture.detectChanges();
       httpMock.expectOne(profileUrl).flush(mockProfile);
       tick();
 
-      for (const section of ['education', 'work-history', 'dependents'] as const) {
-        component.toggleEdit(section);
-        component.saveSection(section);
+      const cases: Array<{ section: 'education' | 'work-history' | 'dependents'; flag: string; list: string }> = [
+        { section: 'education', flag: 'updateEducation', list: 'education' },
+        { section: 'work-history', flag: 'updateWorkHistory', list: 'workHistory' },
+        { section: 'dependents', flag: 'updateDependents', list: 'dependents' },
+      ];
+
+      for (const c of cases) {
+        component.toggleEdit(c.section);
+        component.saveSection(c.section);
         tick();
-        // No HTTP request to the profile endpoint — nothing to persist.
-        httpMock.expectNone(profileUrl);
-        expect(component.editingSection()).toBeNull();
+
+        const patchReq = httpMock.expectOne(profileUrl);
+        expect(patchReq.request.method).toBe('PATCH');
+        expect(patchReq.request.body[c.flag]).toBeTrue();
+        expect(Array.isArray(patchReq.request.body[c.list])).toBeTrue();
+        patchReq.flush({ ...mockProfile, xmin: '12346' });
+        tick();
       }
     }));
   });
@@ -1215,6 +1252,344 @@ describe('EmployeeProfileComponent', () => {
       const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.body.employmentInfo.locationId).toBeNull();
 
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+  });
+
+  // ─── DF-38: employment id-selects + address detail + customFields parse ──
+  describe('DF-38: employment id-selects, address detail, customFields parse', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('loads department / job-title / employment-type options from their services', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(departmentsUrl).flush(mockDepartments);
+      httpMock.expectOne(jobTitlesUrl).flush(mockJobTitles);
+      httpMock.expectOne(employmentTypesUrl).flush(mockEmploymentTypes);
+      tick();
+
+      expect(component.departments().length).toBe(2);
+      expect(component.departments()[0].name).toBe('Engineering');
+      expect(component.jobTitles().length).toBe(2);
+      expect(component.jobTitles()[0].titleName).toBe('Software Engineer');
+      expect(component.employmentTypes().length).toBe(4);
+      expect(component.employmentTypes()[0].value).toBe('FullTime');
+    }));
+
+    it('filters out inactive departments and job titles', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(departmentsUrl).flush([
+        ...mockDepartments,
+        { ...mockDepartments[0], departmentId: 'dept-x', name: 'Archived', isActive: false },
+      ]);
+      httpMock.expectOne(jobTitlesUrl).flush([
+        ...mockJobTitles,
+        { ...mockJobTitles[0], jobTitleId: 'jt-x', titleName: 'Archived Title', isActive: false },
+      ]);
+      httpMock.expectOne(employmentTypesUrl).flush(mockEmploymentTypes);
+      tick();
+
+      expect(component.departments().every(d => d.isActive)).toBeTrue();
+      expect(component.jobTitles().every(j => j.isActive)).toBeTrue();
+    }));
+
+    it('populates the employment form with departmentId / jobTitleId / employmentType (not names)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(departmentsUrl).flush(mockDepartments);
+      httpMock.expectOne(jobTitlesUrl).flush(mockJobTitles);
+      httpMock.expectOne(employmentTypesUrl).flush(mockEmploymentTypes);
+      tick();
+
+      component.toggleEdit('employment');
+
+      expect(component.employmentForm.value.departmentId).toBe('dept-1');
+      expect(component.employmentForm.value.jobTitleId).toBe('jt-1');
+      expect(component.employmentForm.value.employmentType).toBe('FullTime');
+      // Status and dateOfJoining are no longer form controls (DF-38).
+      expect(component.employmentForm.get('status')).toBeNull();
+      expect(component.employmentForm.get('dateOfJoining')).toBeNull();
+    }));
+
+    it('sends the SELECTED departmentId / jobTitleId / employmentType enum in the PATCH body', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(departmentsUrl).flush(mockDepartments);
+      httpMock.expectOne(jobTitlesUrl).flush(mockJobTitles);
+      httpMock.expectOne(employmentTypesUrl).flush(mockEmploymentTypes);
+      tick();
+
+      component.toggleEdit('employment');
+      component.employmentForm.patchValue({
+        departmentId: 'dept-2',
+        jobTitleId: 'jt-2',
+        employmentType: 'Contract',
+      });
+      component.saveSection('employment');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.method).toBe('PATCH');
+      expect(patchReq.request.body.employmentInfo.departmentId).toBe('dept-2');
+      expect(patchReq.request.body.employmentInfo.jobTitleId).toBe('jt-2');
+      expect(patchReq.request.body.employmentInfo.employmentType).toBe('Contract');
+      // DF-38: status is never sent from the employment edit form.
+      expect('status' in patchReq.request.body.employmentInfo).toBeFalse();
+      // DF-38: dateOfJoining is read-only and never sent from the employment edit form.
+      expect('dateOfJoining' in patchReq.request.body.employmentInfo).toBeFalse();
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    // GAP-A: the employment-type select must render non-blank labels AND send the
+    // exact enum NAME (not the display text). This exercises the service map()
+    // over the real BE { id, name, displayName } shape — it would fail if the
+    // map() were removed (options would be undefined value/label).
+    it('maps BE employment-types { id, name, displayName } → { value, label } and sends the enum name', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      httpMock.expectOne(departmentsUrl).flush(mockDepartments);
+      httpMock.expectOne(jobTitlesUrl).flush(mockJobTitles);
+      httpMock.expectOne(employmentTypesUrl).flush(mockEmploymentTypes);
+      tick();
+
+      // Options are populated with a non-blank label and the enum name as value.
+      const opts = component.employmentTypes();
+      expect(opts.length).toBe(4);
+      expect(opts[0].value).toBe('FullTime');
+      expect(opts[0].label).toBe('Full-Time');
+      expect(opts.every(o => !!o.label && !!o.value)).toBeTrue();
+
+      component.toggleEdit('employment');
+      // Select the "Contract" option BY ITS MAPPED value (the enum name).
+      const contract = opts.find(o => o.label === 'Contract')!;
+      component.employmentForm.patchValue({ employmentType: contract.value });
+      component.saveSection('employment');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      // The BE binds the enum member NAME, so that is what must be sent.
+      expect(patchReq.request.body.employmentInfo.employmentType).toBe('Contract');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    it('includes city / state / postalCode / country in the contact PATCH body', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('contact');
+      component.contactForm.patchValue({
+        city: 'Kandy',
+        state: 'Central',
+        postalCode: '20000',
+        country: 'Sri Lanka',
+      });
+      component.saveSection('contact');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.contactInfo.city).toBe('Kandy');
+      expect(patchReq.request.body.contactInfo.state).toBe('Central');
+      expect(patchReq.request.body.contactInfo.postalCode).toBe('20000');
+      expect(patchReq.request.body.contactInfo.country).toBe('Sri Lanka');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    it('parses a raw JSON-string customFields from the read API into an object', fakeAsync(() => {
+      fixture.detectChanges();
+      // BE returns customFields as a raw JSON string.
+      httpMock.expectOne(profileUrl).flush({
+        ...mockProfile,
+        customFields: '{"tshirt_size":"XL","remote":true}',
+      });
+      tick();
+
+      const cf = component.profile()!.customFields as Record<string, unknown>;
+      expect(cf).toEqual(jasmine.objectContaining({ tshirt_size: 'XL', remote: true }));
+    }));
+
+    it('tolerates an invalid customFields JSON string (parses to null)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush({
+        ...mockProfile,
+        customFields: 'not-json{',
+      });
+      tick();
+
+      expect(component.profile()!.customFields).toBeNull();
+    }));
+
+    it('prefills a custom-field control from the parsed customFields object', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush({
+        ...mockProfile,
+        customFields: '{"tshirt_size":"XL"}',
+      });
+      httpMock.expectOne(customFieldsUrl).flush([
+        { id: 'cf-1', fieldKey: 'tshirt_size', fieldName: 'T-Shirt Size', fieldType: 'text', entityType: 'employee', isRequired: false, isActive: true, displayOrder: 1, options: [] },
+      ]);
+      tick();
+
+      component.toggleEdit('custom-fields');
+      expect(component.customFieldsForm.get('tshirt_size')!.value).toBe('XL');
+    }));
+  });
+
+  // ─── DF-39: education / work-history / dependents send-mappings ──
+  describe('DF-39: education / work-history / dependents send-mappings', () => {
+    beforeEach(() => {
+      setupTestBed('HR Officer');
+    });
+
+    it('is editable for all three sections (HR Officer)', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      expect(component.canEditSection('education')).toBeTrue();
+      expect(component.canEditSection('work-history')).toBeTrue();
+      expect(component.canEditSection('dependents')).toBeTrue();
+    }));
+
+    it('maps the education form-array + updateEducation flag into the PATCH body', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('education');
+      component.saveSection('education');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.updateEducation).toBeTrue();
+      expect(patchReq.request.body.education.length).toBe(1);
+      const eduRow = patchReq.request.body.education[0];
+      expect(eduRow.institution).toBe('University of Colombo');
+      expect(eduRow.degree).toBe('BSc CS');
+      expect(eduRow.endYear).toBe('2012');
+      // GAP-B: existing row must carry its id (else the BE churns a new PK) plus
+      // fieldOfStudy/startYear (else the full-replace write nulls those columns).
+      expect(eduRow.id).toBe('edu-1');
+      expect(eduRow.fieldOfStudy).toBe('Computer Science');
+      expect(eduRow.startYear).toBe('2008');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    it('maps the work-history form-array + updateWorkHistory flag into the PATCH body', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('work-history');
+      component.saveSection('work-history');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.updateWorkHistory).toBeTrue();
+      expect(patchReq.request.body.workHistory.length).toBe(1);
+      const whRow = patchReq.request.body.workHistory[0];
+      expect(whRow.company).toBe('Google');
+      expect(whRow.position).toBe('Senior Engineer');
+      expect(whRow.fromDate).toBe('2015-01-01');
+      // GAP-B: existing row must carry its id (avoid PK churn) + description (else
+      // the full-replace write nulls it).
+      expect(whRow.id).toBe('wh-1');
+      expect(whRow.description).toBe('Led backend systems');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    it('maps the dependents form-array + updateDependents flag into the PATCH body', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('dependents');
+      component.saveSection('dependents');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.updateDependents).toBeTrue();
+      expect(patchReq.request.body.dependents.length).toBe(1);
+      const depRow = patchReq.request.body.dependents[0];
+      expect(depRow.name).toBe('Baby Doe');
+      expect(depRow.relationship).toBe('Child');
+      expect(depRow.dateOfBirth).toBe('2022-05-20');
+      // GAP-B: existing row must carry its id so the BE updates in place.
+      expect(depRow.id).toBe('dep-1');
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    it('sends an added education row with a null endYear when left blank AND omits its id', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('education');
+      component.addEducationRecord();
+      component.educationFormControls.at(1).patchValue({ institution: 'MIT', degree: 'MSc' });
+      component.saveSection('education');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.education.length).toBe(2);
+      const newRow = patchReq.request.body.education[1];
+      expect(newRow.institution).toBe('MIT');
+      expect(newRow.endYear).toBeNull();
+      // GAP-B: a genuinely-new row must NOT carry an id (the BE mints one).
+      expect('id' in newRow).toBeFalse();
+      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      tick();
+    }));
+
+    // GAP-B: read-hydration must prefill the newly-added fields so an edit
+    // round-trips instead of dropping fieldOfStudy/startYear/description.
+    it('hydrates education fieldOfStudy/startYear and work-history description from the profile', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('education');
+      const eduRow = component.educationFormControls.at(0).value;
+      expect(eduRow.id).toBe('edu-1');
+      expect(eduRow.fieldOfStudy).toBe('Computer Science');
+      expect(eduRow.startYear).toBe('2008');
+      component.cancelEdit();
+
+      component.toggleEdit('work-history');
+      const whRow = component.workHistoryFormControls.at(0).value;
+      expect(whRow.id).toBe('wh-1');
+      expect(whRow.description).toBe('Led backend systems');
+    }));
+
+    it('sends an added work-history row without an id and preserves an edited description', fakeAsync(() => {
+      fixture.detectChanges();
+      httpMock.expectOne(profileUrl).flush(mockProfile);
+      tick();
+
+      component.toggleEdit('work-history');
+      // Edit the existing row's description...
+      component.workHistoryFormControls.at(0).patchValue({ description: 'Updated summary' });
+      // ...and add a brand-new row.
+      component.addWorkHistoryRecord();
+      component.workHistoryFormControls.at(1).patchValue({ company: 'Meta', position: 'Staff Eng' });
+      component.saveSection('work-history');
+      tick();
+
+      const patchReq = httpMock.expectOne(profileUrl);
+      expect(patchReq.request.body.workHistory.length).toBe(2);
+      expect(patchReq.request.body.workHistory[0].id).toBe('wh-1');
+      expect(patchReq.request.body.workHistory[0].description).toBe('Updated summary');
+      expect('id' in patchReq.request.body.workHistory[1]).toBeFalse();
       patchReq.flush({ ...mockProfile, xmin: '12346' });
       tick();
     }));

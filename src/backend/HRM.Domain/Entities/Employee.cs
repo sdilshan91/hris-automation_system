@@ -48,6 +48,26 @@ public sealed class Employee : BaseEntity, IAuditExempt
     public string? Address { get; set; }
 
     /// <summary>
+    /// City component of the address (DF-38). Editable with the rest of the contact section. Max 100.
+    /// </summary>
+    public string? City { get; set; }
+
+    /// <summary>
+    /// State / province component of the address (DF-38). Editable with the contact section. Max 100.
+    /// </summary>
+    public string? State { get; set; }
+
+    /// <summary>
+    /// Postal / ZIP code component of the address (DF-38). Editable with the contact section. Max 20.
+    /// </summary>
+    public string? PostalCode { get; set; }
+
+    /// <summary>
+    /// Country component of the address (DF-38). Editable with the contact section. Max 100.
+    /// </summary>
+    public string? Country { get; set; }
+
+    /// <summary>
     /// Date of birth, optional. Must be in the past, age >= 16.
     /// </summary>
     public DateTime? DateOfBirth { get; set; }
@@ -228,4 +248,19 @@ public sealed class Employee : BaseEntity, IAuditExempt
     /// Documents attached to this employee (US-CHR-008).
     /// </summary>
     public ICollection<EmployeeDocument> Documents { get; set; } = new List<EmployeeDocument>();
+
+    /// <summary>
+    /// Education history entries (DF-39).
+    /// </summary>
+    public ICollection<EmployeeEducation> Education { get; set; } = new List<EmployeeEducation>();
+
+    /// <summary>
+    /// Prior work-history entries (DF-39).
+    /// </summary>
+    public ICollection<EmployeeWorkHistory> WorkHistory { get; set; } = new List<EmployeeWorkHistory>();
+
+    /// <summary>
+    /// Dependents / family members (DF-39).
+    /// </summary>
+    public ICollection<EmployeeDependent> Dependents { get; set; } = new List<EmployeeDependent>();
 }

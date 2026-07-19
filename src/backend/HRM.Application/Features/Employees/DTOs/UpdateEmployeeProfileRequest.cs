@@ -35,6 +35,40 @@ public sealed record UpdateEmployeeProfileRequest
     public IReadOnlyList<EmergencyContactInput>? EmergencyContacts { get; init; }
 
     /// <summary>
+    /// Education history (full replace, DF-39). Null means not being updated; paired with
+    /// <see cref="UpdateEducation"/> so an explicit empty list clears all entries.
+    /// </summary>
+    public IReadOnlyList<EducationInput>? Education { get; init; }
+
+    /// <summary>
+    /// Sentinel to distinguish "don't touch education" from "replace education with the given list
+    /// (including an empty list = clear all)". Mirrors the UpdateCustomFields convention.
+    /// </summary>
+    public bool UpdateEducation { get; init; }
+
+    /// <summary>
+    /// Work history (full replace, DF-39). Null means not being updated; paired with
+    /// <see cref="UpdateWorkHistory"/> so an explicit empty list clears all entries.
+    /// </summary>
+    public IReadOnlyList<WorkHistoryInput>? WorkHistory { get; init; }
+
+    /// <summary>
+    /// Sentinel to distinguish "don't touch work history" from "replace work history with the given list".
+    /// </summary>
+    public bool UpdateWorkHistory { get; init; }
+
+    /// <summary>
+    /// Dependents (full replace, DF-39). Null means not being updated; paired with
+    /// <see cref="UpdateDependents"/> so an explicit empty list clears all entries.
+    /// </summary>
+    public IReadOnlyList<DependentInput>? Dependents { get; init; }
+
+    /// <summary>
+    /// Sentinel to distinguish "don't touch dependents" from "replace dependents with the given list".
+    /// </summary>
+    public bool UpdateDependents { get; init; }
+
+    /// <summary>
     /// Custom fields JSONB. Null means not being updated.
     /// </summary>
     public string? CustomFields { get; init; }
@@ -74,6 +108,14 @@ public sealed record ContactInfoUpdate
     public string? Phone { get; init; }
     public string? PersonalEmail { get; init; }
     public string? Address { get; init; }
+    /// <summary>DF-38: city component of the address. Null leaves the current value unchanged.</summary>
+    public string? City { get; init; }
+    /// <summary>DF-38: state/province component. Null leaves the current value unchanged.</summary>
+    public string? State { get; init; }
+    /// <summary>DF-38: postal/ZIP code component. Null leaves the current value unchanged.</summary>
+    public string? PostalCode { get; init; }
+    /// <summary>DF-38: country component. Null leaves the current value unchanged.</summary>
+    public string? Country { get; init; }
 }
 
 /// <summary>
@@ -127,4 +169,42 @@ public sealed record EmergencyContactInput
     public string? AlternatePhone { get; init; }
     public string? Email { get; init; }
     public bool IsPrimary { get; init; }
+}
+
+/// <summary>
+/// Input for an education entry (create or replace, DF-39).
+/// If <see cref="Id"/> is set it reuses that key; otherwise a new key is generated.
+/// </summary>
+public sealed record EducationInput
+{
+    public Guid? Id { get; init; }
+    public string Institution { get; init; } = string.Empty;
+    public string Degree { get; init; } = string.Empty;
+    public string? FieldOfStudy { get; init; }
+    public string? StartYear { get; init; }
+    public string? EndYear { get; init; }
+}
+
+/// <summary>
+/// Input for a work-history entry (create or replace, DF-39).
+/// </summary>
+public sealed record WorkHistoryInput
+{
+    public Guid? Id { get; init; }
+    public string Company { get; init; } = string.Empty;
+    public string Position { get; init; } = string.Empty;
+    public DateOnly? FromDate { get; init; }
+    public DateOnly? ToDate { get; init; }
+    public string? Description { get; init; }
+}
+
+/// <summary>
+/// Input for a dependent entry (create or replace, DF-39).
+/// </summary>
+public sealed record DependentInput
+{
+    public Guid? Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Relationship { get; init; } = string.Empty;
+    public DateOnly? DateOfBirth { get; init; }
 }
