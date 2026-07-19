@@ -1,3 +1,5 @@
+using System.Text.Json;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Domain.Entities;
@@ -23,6 +25,7 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
+    private readonly INotificationDispatcher _dispatcher;
     private readonly ILogger<ApplicantPortalTokenService> _logger;
     // ISSUE-130: optional (nullable) so isolated construction/tests compile; DI injects it in production.
     private readonly IHttpContextAccessor? _httpContextAccessor;
@@ -44,12 +47,14 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IConfiguration configuration,
+        INotificationDispatcher dispatcher,
         ILogger<ApplicantPortalTokenService> logger,
         IHttpContextAccessor? httpContextAccessor = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _configuration = configuration;
+        _dispatcher = dispatcher;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
     }
@@ -147,12 +152,15 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
             return Result<bool>.Failure("An email is required.", 400, "email_required");
 
         // BR-5 email verification: only (re)issue if an application exists for this email in the tenant. The
-        // global query filter scopes this to the current tenant (AC-4).
-        var hasApplication = await _dbContext.Applicants
+        // global query filter scopes this to the current tenant (AC-4). Load the applicant's first name too so the
+        // email can greet them; a null row means "no application" → anti-enumeration no-op.
+        var applicant = await _dbContext.Applicants
             .AsNoTracking()
-            .AnyAsync(a => a.Email.ToLower() == emailLower, cancellationToken);
+            .Where(a => a.Email.ToLower() == emailLower)
+            .Select(a => new { a.FirstName })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (!hasApplication)
+        if (applicant is null)
         {
             _logger.LogInformation(
                 "Portal link requested for {Email} but no application exists (BR-5) — no link issued.", emailLower);
@@ -168,11 +176,73 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
             return Result<bool>.Failure(issued.Error!, issued.StatusCode ?? 400, issued.ErrorCode);
         }
 
-        _logger.LogInformation(
-            "Portal link re-issued for {Email} (BR-5); link would be emailed (FR-7, log-only seam). Expires {ExpiresAt}.",
-            emailLower, issued.Value!.ExpiresAt);
+        // FR-7: email the candidate their magic link via the canonical templated dispatch path (DF-41). Never let a
+        // dispatch failure surface as "no application" — the token is already minted; log and still return success.
+        try
+        {
+            var portalUrl = await BuildPortalUrlAsync(issued.Value!.Token, cancellationToken);
+            var companyName = await ResolveCompanyNameAsync(cancellationToken);
+            var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["applicant"] = new Dictionary<string, object?> { ["firstName"] = applicant.FirstName },
+                ["portal"] = new Dictionary<string, object?>
+                {
+                    ["url"] = portalUrl,
+                    ["expiresAt"] = issued.Value.ExpiresAt.ToString("yyyy-MM-dd"),
+                },
+                ["tenant"] = new Dictionary<string, object?> { ["companyName"] = companyName },
+            });
+
+            var request = new NotificationRequest(
+                TenantId: _tenantContext.TenantId,
+                EventKey: "applicant_portal_link",
+                PayloadJson: payloadJson,
+                RecipientEmail: emailLower,
+                NotificationType: "applicant_portal_link");
+            await _dispatcher.SendEmailAsync(request, cancellationToken);
+
+            _logger.LogInformation(
+                "Portal link re-issued and emailed for {Email} (BR-5/FR-7). Expires {ExpiresAt}.",
+                emailLower, issued.Value.ExpiresAt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Portal link minted for {Email} but the magic-link email dispatch failed (FR-7).", emailLower);
+        }
 
         return Result<bool>.Success(true);
+    }
+
+    /// <summary>
+    /// Builds the candidate-portal magic-link URL (FR-7): <c>https://{subdomain}.{baseDomain}/portal?token=...</c>.
+    /// Prefers the request-scoped <see cref="ITenantContext.Subdomain"/>; a Hangfire/job context may not have it, so
+    /// it falls back to a tenant-scoped read of <c>Tenant.Subdomain</c> (IgnoreQueryFilters, by the resolved id).
+    /// </summary>
+    private async Task<string> BuildPortalUrlAsync(string rawToken, CancellationToken cancellationToken)
+    {
+        var subdomain = _tenantContext.Subdomain;
+        if (string.IsNullOrWhiteSpace(subdomain))
+        {
+            var tenantId = _tenantContext.TenantId;
+            subdomain = await _dbContext.Tenants.IgnoreQueryFilters().AsNoTracking()
+                .Where(t => t.Id == tenantId)
+                .Select(t => t.Subdomain)
+                .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+        }
+
+        var baseDomain = PortalLinkBuilder.NormalizeBaseDomain(_configuration["Platform:BaseDomain"]);
+        return PortalLinkBuilder.Build(subdomain, baseDomain, rawToken);
+    }
+
+    /// <summary>Resolves the tenant's company (display) name for the email branding placeholder (tenant-scoped).</summary>
+    private async Task<string?> ResolveCompanyNameAsync(CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _dbContext.Tenants.IgnoreQueryFilters().AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => t.Name)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<Result<ValidatedPortalToken>> ValidateAsync(
