@@ -1,6 +1,7 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using System.Collections.Concurrent;
 
 namespace HRM.Api.Middleware;
@@ -90,13 +91,23 @@ public sealed class SessionActivityMiddleware
         var debounceInterval = DefaultDebounceInterval;
         if (scopeTenantId is { } clampTenantId)
         {
-            var idleTimeoutMinutes = await context.RequestServices
-                .GetRequiredService<AppDbContext>().Tenants
-                .IgnoreQueryFilters()
-                .AsNoTracking()
-                .Where(t => t.Id == clampTenantId)
-                .Select(t => (int?)t.IdleTimeoutMinutes)
-                .FirstOrDefaultAsync(context.RequestAborted);
+            // DF-25: the idle timeout changes rarely but this runs on EVERY authenticated request, defeating the
+            // whole point of the activity debounce (minimize DB work). Memoize per-tenant with a short TTL so a
+            // settings change still takes effect within ~60s; no invalidation wiring by design (keep it simple).
+            var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
+            var idleTimeoutMinutes = await cache.GetOrCreateAsync(
+                $"session:idle-timeout:{clampTenantId}",
+                entry =>
+                {
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60);
+                    return context.RequestServices
+                        .GetRequiredService<AppDbContext>().Tenants
+                        .IgnoreQueryFilters()
+                        .AsNoTracking()
+                        .Where(t => t.Id == clampTenantId)
+                        .Select(t => (int?)t.IdleTimeoutMinutes)
+                        .FirstOrDefaultAsync(context.RequestAborted);
+                });
             if (idleTimeoutMinutes is { } idle)
                 debounceInterval = ClampDebounce(DefaultDebounceInterval, idle);
         }
