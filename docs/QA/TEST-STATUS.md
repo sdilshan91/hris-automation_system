@@ -35,6 +35,20 @@
 
 ---
 
+> **TC backfill for RESOLVED findings (2026-07-19, doc-only — no story state flipped).** 14 automated regression
+> TCs were authored + registered in `TRACEABILITY-MATRIX.md` to bind already-shipped green xUnit/Karma arms to
+> RESOLVED findings that had no TC docs (traceability gap, Critical Rule #4). These are `status: automated`
+> regression TCs — they do **not** change any story's report-only execution state below:
+> - **PR #371 batch:** TC-ATT-158 (ISSUE-077, US-ATT-005) · TC-ATT-159 (ISSUE-081, US-ATT-006) · TC-ATT-160
+>   (ISSUE-072, US-ATT-003) · TC-PAY-018 (ISSUE-159, US-PAY-004) · TC-PAY-019 (ISSUE-229, US-PAY-011) ·
+>   TC-LV-265 (ISSUE-222, US-LV-011) · TC-LV-266 (ISSUE-034, US-LV-002) · TC-AUTH-114 (ISSUE-063, US-AUTH-010) ·
+>   TC-REC-004-15 (ISSUE-108, US-REC-004) · TC-CHR-331 (ISSUE-246, US-CHR-001) · TC-CHR-332 (ISSUE-293,
+>   US-CHR-001) · TC-CHR-334 (DF-30, US-CHR-001).
+> - **PR #369 FE batch:** TC-ADM-006-23 (ISSUE-322, US-ADM-006) · TC-CHR-333 (ISSUE-319/DF-36, US-CHR-002) —
+>   bound to Angular Karma specs (no xUnit `[Trait]`).
+
+---
+
 ## 1. Authentication
 - [!] US-AUTH-001 — Admin login with username and password — findings: ISSUE-048, ISSUE-049 *(API pass 2026-06-25 debugger-free: 5 owned TCs **4 PASS / 1 FAIL / 0 BLOCKED**; route `POST /api/v1/auth/login`. Login SOLID: JWT claims (sub/email/tenant_id/roles/perms RS256 ~15min), refresh cookie httponly/secure/samesite=strict/path=/api/v1/auth ~7d, generic 401 no user-enum (dummy BCrypt verify defeats timing), 400 validation field-specific, BR-1 case-insensitive email, isolation 403 both-dir, unknown subdomain 404 static. **ISSUE-048 MED** — successful logins NOT audited (only login_failure; IssueTokensAsync AuthService.cs:1629 Serilog only) → FR-9 half-unmet. **ISSUE-049 LOW** — `/auth/refresh` accepts refresh cookie on any resolved subdomain (acme cookie@platform→200 vs ISO-001 step7 expects 401) BUT minted token carries own tenant_id → no escalation; refresh handler never checks tenantContext==storedToken.TenantId (AuthService.cs:289-292). PASS: TC-AUTH-001/002/003/004. FAIL: ISO-001 (step7 only, ISSUE-049). Non-owned draft: TC-AUTH-014(US-AUTH-005 MFA),020,021(US-AUTH-007). Credential handling solid; no shared-persona lockout incurred (≤4 bad attempts then valid-login reset); no residue. Detail in TEST-FINDINGS.md.)* **[REGRESSION 2026-06-27 — still [!]: login SOLID (JWT/refresh-cookie/generic-401-no-enum all unchanged); 4P/0F. No new findings; ISSUE-048/049 unchanged.]**
 - [!] US-AUTH-002 — JWT token issuance and refresh token flow — no NEW findings (BUG-003 + ISSUE-049 extended) *(API pass 2026-06-25 debugger-free: 5 owned TCs **4 PASS / 1 FAIL / 0 BLOCKED**. JWT impl SOLID. **Refresh rotation CORRECT** (old token revoked_at + replaced_by_token_id linked, new token each refresh, chain continues). **Refresh reuse/revocation CORRECT** (AC-3: reusing rotated token → 401 "Token reuse detected" + whole chain revoked → full re-auth, logged). **Token tamper CORRECT** (tampered sig + forged payload → 401, IDX10511/IDX14102). Claims: sub/email/tenant_id/user_tenant_id/is_impersonation/roles/perms, iss=hrm-api aud=hrm-client exp−nbf=900s; refresh cookie SHA-256-hashed in DB (not raw). PASS: TC-AUTH-005,006,007,ISO-002. FAIL: ISO-003 (token-tamper arm passes; FAILS step 2 acme JWT@z76 subdomain → /auth/me 200 = BUG-003 read-path extended bounded-no-leak; step 4 refresh@z76 → acme token = ISSUE-049 extended; step 8 no mismatch security-event). Non-owned draft: TC-AUTH-009(US-AUTH-003),021(US-AUTH-007). Residue: ~5 self-tenant refresh rows rotated/revoked, 0 cross-tenant writes, no lockouts. Detail in TEST-FINDINGS.md.)* **[REGRESSION 2026-06-27 — still [!]: refresh rotation + reuse-detection ("All sessions revoked" 401) both CORRECT/unchanged; 2P/0F. No new findings.]**

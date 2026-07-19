@@ -99,6 +99,7 @@ public sealed class TenantSettingsServiceTests
     // Regression for the write/read asymmetry: the value is persisted and consumed by the payslip
     // renderer, but ToOrgProfileDto originally dropped it, so the settings GET always returned null.
     [Fact]
+    [Trait("TC", "TC-PAY-018")]
     public async Task UpdateOrgProfile_PayslipFooterDisclaimer_RoundTripsThroughGet()
     {
         await SeedTenantAsync(_tenantId, name: "Acme");
@@ -340,6 +341,7 @@ public sealed class TenantSettingsServiceTests
 
     // ── ISSUE-229 (BR-4): tenant payslip "From" address round-trips + is validated ──
     [Fact]
+    [Trait("TC", "TC-PAY-019")]
     public async Task UpdateOrgProfile_PayrollFromEmail_RoundTripsThroughGet()
     {
         await SeedTenantAsync(_tenantId, name: "Acme");
@@ -361,6 +363,7 @@ public sealed class TenantSettingsServiceTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PAY-019")]
     public async Task UpdateOrgProfile_InvalidPayrollFromEmail_Is400_AndNotPersisted()
     {
         await SeedTenantAsync(_tenantId, name: "Acme");

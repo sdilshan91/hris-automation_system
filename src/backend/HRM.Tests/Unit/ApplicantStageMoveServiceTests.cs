@@ -415,6 +415,7 @@ public sealed class ApplicantStageMoveServiceTests
     // ── US-REC-004 FR-1/BR-1 Interview gate (ISSUE-108): soft warning, never blocking ─
 
     [Fact]
+    [Trait("TC", "TC-REC-004-15")]
     public async Task MoveStage_ToInterviewWithoutScheduledInterview_SurfacesGateWarning()
     {
         // ISSUE-108: advancing to the Interview stage with no interview on record surfaces a soft
@@ -429,6 +430,7 @@ public sealed class ApplicantStageMoveServiceTests
     }
 
     [Fact]
+    [Trait("TC", "TC-REC-004-15")]
     public async Task MoveStage_ToInterviewWithScheduledInterview_HasNoInterviewWarning()
     {
         var id = SeedApplicant(ApplicantStage.Screening);

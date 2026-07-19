@@ -44,6 +44,41 @@ public sealed class SubmitRegularizationValidatorTests
         _validator.TestValidate(Command()).ShouldNotHaveAnyValidationErrors();
     }
 
+    // ── ISSUE-072 (BR-4): the validator's future guard is a COARSE DATE-ONLY frame (Date <= UtcToday+1),
+    //    NOT the old wall-clock-combined-as-UTC rule that wrongly rejected valid local-past times for
+    //    tenants ahead of UTC. The authoritative tenant-local future_date rejection lives in the service. ──
+
+    private static SubmitRegularizationCommand CommandOn(DateOnly date, string clockIn = "09:00", string clockOut = "17:00")
+        => new(new SubmitRegularizationRequest
+        {
+            Date = date,
+            RegularizationType = RegularizationType.MissedBoth,
+            RequestedClockIn = clockIn,
+            RequestedClockOut = clockOut,
+            Reason = "Forgot to clock in and out",
+        });
+
+    [Fact]
+    [Trait("TC", "TC-ATT-160")]
+    public void FutureDate_BeyondOneDayTolerance_IsRejected_ISSUE072()
+    {
+        var beyond = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(2);
+        _validator.TestValidate(CommandOn(beyond)).ShouldHaveValidationErrorFor(x => x.Request);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-160")]
+    public void TodayAndTomorrowTolerance_NotRejectedOnAWallClockFrame_ISSUE072()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // A today request with a LATE corrected time no longer trips a future-date error — the old rule
+        // combined date+HH:mm as UTC and could reject this; the coarse date-only rule accepts it.
+        _validator.TestValidate(CommandOn(today, clockIn: "23:00", clockOut: "23:30"))
+            .ShouldNotHaveAnyValidationErrors();
+        // The +1-day tolerance boundary is also not a future-date rejection.
+        _validator.TestValidate(CommandOn(today.AddDays(1))).ShouldNotHaveValidationErrorFor(x => x.Request);
+    }
+
     // ── BR-7: reason minimum length ──────────────────────────────────────────
 
     [Fact]

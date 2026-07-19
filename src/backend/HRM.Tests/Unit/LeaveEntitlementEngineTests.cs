@@ -186,6 +186,7 @@ public sealed class LeaveEntitlementEngineTests
     // ══════════════════════════════════════════════════════════════
 
     [Fact]
+    [Trait("TC", "TC-LV-266")]
     public void ProRata_JoinJuly1_20DayAnnual_Returns10()
     {
         // Test hint from US-LV-002: join Jul 1, 20-day annual -> 10 days.
@@ -224,6 +225,7 @@ public sealed class LeaveEntitlementEngineTests
     }
 
     [Fact]
+    [Trait("TC", "TC-LV-266")]
     public void ProRata_JoinDec31_MinimalEntitlement()
     {
         var result = LeaveEntitlementEngine.CalculateProRata(
@@ -276,6 +278,7 @@ public sealed class LeaveEntitlementEngineTests
     }
 
     [Fact]
+    [Trait("TC", "TC-LV-266")]
     public void ProRata_Rounds_To2dp()
     {
         // ISSUE-034: month-fraction (denominator 12) produces repeating decimals; verify rounding to 2dp.
@@ -290,6 +293,7 @@ public sealed class LeaveEntitlementEngineTests
     }
 
     [Fact]
+    [Trait("TC", "TC-LV-266")]
     public void ProRata_FiscalYear_OctoberJoiner_ExactMonthFraction_ISSUE034()
     {
         // ISSUE-034 + ISSUE-305: months are relative to the tenant's FISCAL leave year, not the calendar.

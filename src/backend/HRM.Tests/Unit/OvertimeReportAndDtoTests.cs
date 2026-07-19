@@ -132,6 +132,7 @@ public sealed class OvertimeReportAndDtoTests
     // ── ISSUE-081: monthly overtime report CSV export (AC-5) ────────────
 
     [Fact]
+    [Trait("TC", "TC-ATT-159")]
     public async Task ExportMonthlyReport_Csv_ReturnsBomEncodedFile_WithTotalsRow()
     {
         SeedOvertime(new DateOnly(2026, 6, 5), OvertimeStatus.Approved, overtimeMinutes: 120, approvedMinutes: 100);
@@ -153,6 +154,7 @@ public sealed class OvertimeReportAndDtoTests
     }
 
     [Fact]
+    [Trait("TC", "TC-ATT-159")]
     public async Task ExportMonthlyReport_BlankFormat_DefaultsToCsv()
     {
         SeedOvertime(new DateOnly(2026, 6, 5), OvertimeStatus.Approved, overtimeMinutes: 120, approvedMinutes: 100);
@@ -164,6 +166,7 @@ public sealed class OvertimeReportAndDtoTests
     }
 
     [Fact]
+    [Trait("TC", "TC-ATT-159")]
     public async Task ExportMonthlyReport_UnsupportedFormat_Is400()
     {
         // A genuinely different, understood format is REJECTED — not silently downgraded to CSV.

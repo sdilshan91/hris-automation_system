@@ -344,6 +344,7 @@ public sealed class TenantProvisioningIntegrationTests
     // (not lazily on first assign). A brand-new tenant that has never issued an assign-lop/compulsory
     // request must already list "Loss of Pay" (code LOP, SystemCategory=LossOfPay, zero entitlement).
     [Fact]
+    [Trait("TC", "TC-LV-265")]
     public async Task ProvisionTenant_SeedsLopSystemLeaveType_WithoutAnyAssign_ISSUE222()
     {
         var planId = await SeedPlanAsync();
