@@ -70,6 +70,16 @@
 
 ## Findings
 
+### ISSUE-322 — Company org-profile save WIPES 4 tenant settings (defaultCountryCode, probationPeriodDays, payslipFooterDisclaimer, payrollFromEmail) — full-replace PUT vs a partial FE payload
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (PR #382, merged 2026-07-19 — FE org-profile form now round-trips ALL 11 OrgProfileDto fields + adds visible inputs for the 4 previously-omitted ones (defaultCountryCode, probationPeriodDays, payslipFooterDisclaimer, payrollFromEmail); +2 regression TCs asserting a save no longer drops them)
+- **Layer:** FE↔BE contract (data loss)
+- **Module / US / TC:** Admin Console / US-ADM-006 / (new TC needed)
+- **Title:** `TenantSettingsService.UpdateOrgProfileAsync` is a FULL-REPLACE PUT — it unconditionally sets `tenant.ProbationPeriodDays`, `DefaultCountryCode`, `PayslipFooterDisclaimer`, `PayrollFromEmail` from the request. But the Angular org-profile form (`admin/company-settings/.../org-profile-section`) only maps name/legalName/registrationNumber/industry/companySize/fiscalYearStartMonth/address — it OMITS those 4. So any org-profile save deserializes the 4 to defaults (ProbationPeriodDays→90, the others→null) and **overwrites the stored values**: probation reminders reset to 90 (ISSUE-304), multi-country tax fallback nulled, and the ISSUE-159/229 payslip footer + sender-from cleared.
+- **Root cause (~99%, confirmed):** BUG-117/ISSUE-310 full-replace-PUT class — the FE payload is a strict subset of the fields the BE overwrites. `ToOrgProfileDto` DOES return all 11 fields on GET, so the FE receives them; it just discards 4 and doesn't resend them.
+- **Reproduction steps:** as tenant admin, configure a probation period / default country / payslip footer; then edit the company name and Save → the 4 settings are wiped.
+- **Severity rationale:** HIGH — silent data loss of configured tenant settings on an unrelated edit; affects money (tax fallback), payroll branding, and HR (probation). Not a security/isolation issue.
+- **Suggested direction (applied in DF-34/#382):** make the FE org-profile form round-trip ALL OrgProfileDto fields (load + resend defaultCountryCode + probationPeriodDays + the 2 new ones) so a save preserves them; add visible inputs for the 4. (Alternative: a partial/PATCH BE update that only overwrites provided fields — larger.)
+
 ### ISSUE-321 — Employee profile has NO backend for the Education / Work-History / Dependents sections (FE-only forms, can never persist)
 - **Type / Severity / Status:** ISSUE (missing feature) · MED · OPEN
 - **Layer:** BE (absent) + FE

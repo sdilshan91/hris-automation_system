@@ -11,7 +11,14 @@
 
 // ─── Sub-objects (each is the body of its own PUT endpoint) ──────────────
 
-/** AC-1 / FR-1: organization profile (org.* settings keys). */
+/**
+ * AC-1 / FR-1: organization profile (org.* settings keys).
+ *
+ * The PUT /tenant/settings/org-profile endpoint is a FULL-REPLACE: every field
+ * below is round-tripped, so the FE MUST load AND resend all of them — omitting
+ * any wipes the stored value to its default (ISSUE-322 data-loss). These keys
+ * match exactly what the GET aggregate (`ToOrgProfileDto`) returns.
+ */
 export interface IOrgProfile {
   name: string;
   legalName: string;
@@ -21,6 +28,14 @@ export interface IOrgProfile {
   companySize: string;
   /** 1–12; affects leave accrual / payroll cycles / reporting (BR-4). */
   fiscalYearStartMonth: number;
+  /** 2-letter ISO country code (BE upper-cases it), e.g. 'LK'. */
+  defaultCountryCode: string | null;
+  /** Default probation length in days (BE default 90 when omitted). */
+  probationPeriodDays: number;
+  /** ISSUE-159 footer text on payslips; blank clears it. */
+  payslipFooterDisclaimer: string | null;
+  /** ISSUE-229 sender email for payroll notifications; BE validates format. */
+  payrollFromEmail: string | null;
 }
 
 /** AC-2 / FR-2 / FR-3: branding (branding.* settings keys). */
