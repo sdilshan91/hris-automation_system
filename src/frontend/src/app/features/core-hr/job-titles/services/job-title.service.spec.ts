@@ -163,6 +163,25 @@ describe('JobTitleService', () => {
     });
   });
 
+  describe('getEmploymentTypes', () => {
+    it('maps the BE { id, name, displayName } rows to { value, label } (GAP-A)', () => {
+      service.getEmploymentTypes().subscribe((opts) => {
+        expect(opts.length).toBe(2);
+        // value = enum member name (bound by the BE on save); label = display text.
+        expect(opts[0]).toEqual({ value: 'FullTime', label: 'Full-Time' });
+        expect(opts[1]).toEqual({ value: 'Contract', label: 'Contract' });
+      });
+
+      const req = httpMock.expectOne(`${baseUrl}/employment-types`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush([
+        { id: '1', name: 'FullTime', displayName: 'Full-Time' },
+        { id: '2', name: 'Contract', displayName: 'Contract' },
+      ]);
+    });
+  });
+
   describe('deactivateJobTitle', () => {
     it('should deactivate a job title (FR-5, FR-7)', () => {
       service.deactivateJobTitle('jt-1').subscribe();

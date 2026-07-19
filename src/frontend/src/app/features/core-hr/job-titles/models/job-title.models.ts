@@ -48,6 +48,29 @@ export interface IUpdateJobTitleRequest {
   isActive: boolean;
 }
 
+/**
+ * DF-38: the raw employment-type row emitted by
+ * GET /api/v1/tenant/job-titles/employment-types (EmploymentTypeDto, camelCase).
+ * `name` is the exact C# enum member name (e.g. 'FullTime'); `displayName` is the
+ * human-readable text (e.g. 'Full-Time'). The service maps this to
+ * IEmploymentTypeOption so the consumer's { value, label } contract holds.
+ */
+export interface IEmploymentTypeDto {
+  id: string;
+  name: string;
+  displayName: string;
+}
+
+/**
+ * DF-38: an employment-type option consumed by the profile employment-type select.
+ * `value` is the exact C# enum member name (e.g. 'FullTime') that must be sent back
+ * on save; `label` is the human-readable display text (e.g. 'Full-Time').
+ */
+export interface IEmploymentTypeOption {
+  value: string;
+  label: string;
+}
+
 /** Error response shape from the backend for job title operations */
 export interface IJobTitleErrorResponse {
   message: string;

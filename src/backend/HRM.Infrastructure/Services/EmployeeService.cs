@@ -373,6 +373,9 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.LocationEntity)
             .Include(e => e.Manager)
             .Include(e => e.EmergencyContacts)
+            .Include(e => e.Education)
+            .Include(e => e.WorkHistory)
+            .Include(e => e.Dependents)
             .Include(e => e.EmploymentHistories)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
@@ -428,6 +431,9 @@ public sealed class EmployeeService : IEmployeeService
             .Include(e => e.LocationEntity)
             .Include(e => e.Manager)
             .Include(e => e.EmergencyContacts)
+            .Include(e => e.Education)
+            .Include(e => e.WorkHistory)
+            .Include(e => e.Dependents)
             .Include(e => e.EmploymentHistories)
             .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
 
@@ -517,6 +523,31 @@ public sealed class EmployeeService : IEmployeeService
                 before["Address"] = employee.Address;
                 employee.Address = request.ContactInfo.Address;
                 after["Address"] = employee.Address;
+            }
+            // DF-38: structured address components, applied on the same conditional path as Address.
+            if (request.ContactInfo.City is not null && request.ContactInfo.City != employee.City)
+            {
+                before["City"] = employee.City;
+                employee.City = request.ContactInfo.City;
+                after["City"] = employee.City;
+            }
+            if (request.ContactInfo.State is not null && request.ContactInfo.State != employee.State)
+            {
+                before["State"] = employee.State;
+                employee.State = request.ContactInfo.State;
+                after["State"] = employee.State;
+            }
+            if (request.ContactInfo.PostalCode is not null && request.ContactInfo.PostalCode != employee.PostalCode)
+            {
+                before["PostalCode"] = employee.PostalCode;
+                employee.PostalCode = request.ContactInfo.PostalCode;
+                after["PostalCode"] = employee.PostalCode;
+            }
+            if (request.ContactInfo.Country is not null && request.ContactInfo.Country != employee.Country)
+            {
+                before["Country"] = employee.Country;
+                employee.Country = request.ContactInfo.Country;
+                after["Country"] = employee.Country;
             }
 
             if (before.Count > 0)
@@ -748,6 +779,101 @@ public sealed class EmployeeService : IEmployeeService
             afterSnapshots["EmergencyContacts"] = afterEc;
         }
 
+        // DF-39: Apply Education section (full replace). Gated by UpdateEducation so an explicit empty
+        // list clears all entries; a null list without the flag leaves them untouched.
+        if (request.UpdateEducation && request.Education is not null)
+        {
+            var beforeEd = employee.Education
+                .Select(ed => new { ed.Id, ed.Institution, ed.Degree, ed.FieldOfStudy, ed.StartYear, ed.EndYear })
+                .ToList();
+
+            _dbContext.EmployeeEducation.RemoveRange(employee.Education);
+
+            foreach (var input in request.Education)
+            {
+                _dbContext.EmployeeEducation.Add(new EmployeeEducation
+                {
+                    Id = input.Id ?? BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    Institution = input.Institution,
+                    Degree = input.Degree,
+                    FieldOfStudy = input.FieldOfStudy,
+                    StartYear = input.StartYear,
+                    EndYear = input.EndYear,
+                });
+            }
+
+            var afterEd = request.Education
+                .Select(ed => new { ed.Id, ed.Institution, ed.Degree, ed.FieldOfStudy, ed.StartYear, ed.EndYear })
+                .ToList();
+
+            beforeSnapshots["Education"] = beforeEd;
+            afterSnapshots["Education"] = afterEd;
+        }
+
+        // DF-39: Apply WorkHistory section (full replace).
+        if (request.UpdateWorkHistory && request.WorkHistory is not null)
+        {
+            var beforeWh = employee.WorkHistory
+                .Select(wh => new { wh.Id, wh.Company, wh.Position, wh.FromDate, wh.ToDate, wh.Description })
+                .ToList();
+
+            _dbContext.EmployeeWorkHistory.RemoveRange(employee.WorkHistory);
+
+            foreach (var input in request.WorkHistory)
+            {
+                _dbContext.EmployeeWorkHistory.Add(new EmployeeWorkHistory
+                {
+                    Id = input.Id ?? BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    Company = input.Company,
+                    Position = input.Position,
+                    FromDate = input.FromDate,
+                    ToDate = input.ToDate,
+                    Description = input.Description,
+                });
+            }
+
+            var afterWh = request.WorkHistory
+                .Select(wh => new { wh.Id, wh.Company, wh.Position, wh.FromDate, wh.ToDate, wh.Description })
+                .ToList();
+
+            beforeSnapshots["WorkHistory"] = beforeWh;
+            afterSnapshots["WorkHistory"] = afterWh;
+        }
+
+        // DF-39: Apply Dependents section (full replace).
+        if (request.UpdateDependents && request.Dependents is not null)
+        {
+            var beforeDp = employee.Dependents
+                .Select(dp => new { dp.Id, dp.Name, dp.Relationship, dp.DateOfBirth })
+                .ToList();
+
+            _dbContext.EmployeeDependents.RemoveRange(employee.Dependents);
+
+            foreach (var input in request.Dependents)
+            {
+                _dbContext.EmployeeDependents.Add(new EmployeeDependent
+                {
+                    Id = input.Id ?? BaseEntity.NewUuidV7(),
+                    TenantId = _tenantContext.TenantId,
+                    EmployeeId = employeeId,
+                    Name = input.Name,
+                    Relationship = input.Relationship,
+                    DateOfBirth = input.DateOfBirth,
+                });
+            }
+
+            var afterDp = request.Dependents
+                .Select(dp => new { dp.Id, dp.Name, dp.Relationship, dp.DateOfBirth })
+                .ToList();
+
+            beforeSnapshots["Dependents"] = beforeDp;
+            afterSnapshots["Dependents"] = afterDp;
+        }
+
         // Apply CustomFields
         if (request.UpdateCustomFields)
         {
@@ -882,6 +1008,10 @@ public sealed class EmployeeService : IEmployeeService
         PersonalEmail = e.PersonalEmail,
         Phone = e.Phone,
         Address = e.Address,
+        City = e.City,
+        State = e.State,
+        PostalCode = e.PostalCode,
+        Country = e.Country,
         DateOfBirth = e.DateOfBirth,
         Gender = e.Gender?.ToString(),
         DateOfJoining = e.DateOfJoining,
@@ -935,6 +1065,41 @@ public sealed class EmployeeService : IEmployeeService
                 Reason = eh.Reason,
                 ChangedBy = eh.ChangedBy,
                 CreatedAt = eh.CreatedAt,
+            })
+            .ToList(),
+        // DF-39: education / work-history / dependents sub-collections
+        Education = e.Education
+            .Where(ed => !ed.IsDeleted)
+            .Select(ed => new EducationDto
+            {
+                Id = ed.Id,
+                Institution = ed.Institution,
+                Degree = ed.Degree,
+                FieldOfStudy = ed.FieldOfStudy,
+                StartYear = ed.StartYear,
+                EndYear = ed.EndYear,
+            })
+            .ToList(),
+        WorkHistory = e.WorkHistory
+            .Where(wh => !wh.IsDeleted)
+            .Select(wh => new WorkHistoryDto
+            {
+                Id = wh.Id,
+                Company = wh.Company,
+                Position = wh.Position,
+                FromDate = wh.FromDate,
+                ToDate = wh.ToDate,
+                Description = wh.Description,
+            })
+            .ToList(),
+        Dependents = e.Dependents
+            .Where(dp => !dp.IsDeleted)
+            .Select(dp => new DependentDto
+            {
+                Id = dp.Id,
+                Name = dp.Name,
+                Relationship = dp.Relationship,
+                DateOfBirth = dp.DateOfBirth,
             })
             .ToList(),
     };

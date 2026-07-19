@@ -997,6 +997,358 @@ public sealed class EmployeeProfileServiceTests : IDisposable
         auditLogs.Should().BeEmpty();
     }
 
+    // ── DF-38: structured address components ──────────────────────
+
+    [Fact]
+    public async Task UpdateProfile_AddressComponents_ShouldPersistAndReadBack_DF38()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var service = CreateService();
+        var result = await service.UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            ContactInfo = new ContactInfoUpdate
+            {
+                Address = "123 Main St",
+                City = "Colombo",
+                State = "Western",
+                PostalCode = "00100",
+                Country = "Sri Lanka",
+            },
+        });
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.City.Should().Be("Colombo");
+        result.Value.State.Should().Be("Western");
+        result.Value.PostalCode.Should().Be("00100");
+        result.Value.Country.Should().Be("Sri Lanka");
+
+        // Persisted on the row
+        using var db = CreateDbContext();
+        var emp = await db.Employees.FirstAsync(e => e.Id == empId);
+        emp.City.Should().Be("Colombo");
+        emp.State.Should().Be("Western");
+        emp.PostalCode.Should().Be("00100");
+        emp.Country.Should().Be("Sri Lanka");
+
+        // Contact-section audit captures the new component
+        var audit = await db.EmployeeFieldAuditLogs
+            .SingleAsync(a => a.EmployeeId == empId && a.Section == "ContactInfo");
+        audit.AfterSnapshot.Should().Contain("Colombo");
+    }
+
+    // ── DF-39: Education / WorkHistory / Dependents full-replace ───
+
+    [Fact]
+    public async Task UpdateProfile_Education_FullReplace_AddUpdateRemove_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        // Seed two entries
+        var result1 = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput>
+            {
+                new() { Institution = "MIT", Degree = "BSc", FieldOfStudy = "CS", StartYear = "2010", EndYear = "2014" },
+                new() { Institution = "Harvard", Degree = "MBA" },
+            },
+        });
+        result1.IsSuccess.Should().BeTrue(result1.Error);
+        result1.Value!.Education.Should().HaveCount(2);
+        var keptId = result1.Value.Education.Single(e => e.Institution == "MIT").Id;
+
+        // Full replace: keep MIT (by Id, updated), drop Harvard, add a new one
+        var result2 = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput>
+            {
+                new() { Id = keptId, Institution = "MIT", Degree = "MSc", FieldOfStudy = "AI" },
+                new() { Institution = "Stanford", Degree = "PhD" },
+            },
+        });
+        result2.IsSuccess.Should().BeTrue(result2.Error);
+        result2.Value!.Education.Should().HaveCount(2);
+        result2.Value.Education.Should().Contain(e => e.Id == keptId && e.Degree == "MSc" && e.FieldOfStudy == "AI");
+        result2.Value.Education.Should().Contain(e => e.Institution == "Stanford");
+        result2.Value.Education.Should().NotContain(e => e.Institution == "Harvard");
+
+        // Rows are tenant-stamped
+        using var db = CreateDbContext();
+        var rows = await db.EmployeeEducation.Where(e => e.EmployeeId == empId).ToListAsync();
+        rows.Should().HaveCount(2);
+        rows.Should().OnlyContain(r => r.TenantId == _tenantId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_Education_EmptyList_ClearsAll_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput> { new() { Institution = "MIT", Degree = "BSc" } },
+        });
+
+        var cleared = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput>(),
+        });
+
+        cleared.IsSuccess.Should().BeTrue(cleared.Error);
+        cleared.Value!.Education.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_Education_NullWithoutFlag_LeavesUntouched_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput> { new() { Institution = "MIT", Degree = "BSc" } },
+        });
+
+        // A subsequent update that does not touch education (flag false, list null) must preserve it.
+        var untouched = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            ContactInfo = new ContactInfoUpdate { Phone = "+123" },
+        });
+
+        untouched.IsSuccess.Should().BeTrue(untouched.Error);
+        untouched.Value!.Education.Should().ContainSingle(e => e.Institution == "MIT");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WorkHistory_FullReplace_WithDateOnly_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var result = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateWorkHistory = true,
+            WorkHistory = new List<WorkHistoryInput>
+            {
+                new()
+                {
+                    Company = "Acme",
+                    Position = "Engineer",
+                    FromDate = new DateOnly(2018, 1, 1),
+                    ToDate = new DateOnly(2020, 6, 30),
+                    Description = "Built things",
+                },
+            },
+        });
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.WorkHistory.Should().ContainSingle();
+        var wh = result.Value.WorkHistory[0];
+        wh.Company.Should().Be("Acme");
+        wh.Position.Should().Be("Engineer");
+        wh.FromDate.Should().Be(new DateOnly(2018, 1, 1));
+        wh.ToDate.Should().Be(new DateOnly(2020, 6, 30));
+
+        using var db = CreateDbContext();
+        var rows = await db.EmployeeWorkHistory.Where(e => e.EmployeeId == empId).ToListAsync();
+        rows.Should().HaveCount(1);
+        rows.Should().OnlyContain(r => r.TenantId == _tenantId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_Dependents_FullReplace_WithDateOnly_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var result = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateDependents = true,
+            Dependents = new List<DependentInput>
+            {
+                new() { Name = "Kid One", Relationship = "Child", DateOfBirth = new DateOnly(2015, 5, 20) },
+                new() { Name = "Spouse", Relationship = "Spouse" },
+            },
+        });
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Dependents.Should().HaveCount(2);
+        result.Value.Dependents.Should().Contain(d => d.Name == "Kid One" && d.DateOfBirth == new DateOnly(2015, 5, 20));
+        result.Value.Dependents.Should().Contain(d => d.Name == "Spouse" && d.DateOfBirth == null);
+
+        using var db = CreateDbContext();
+        var rows = await db.EmployeeDependents.Where(e => e.EmployeeId == empId).ToListAsync();
+        rows.Should().HaveCount(2);
+        rows.Should().OnlyContain(r => r.TenantId == _tenantId);
+    }
+
+    // Removal-of-omitted for WorkHistory (the WithDateOnly arm above only proves add) — a full replace that
+    // seeds two rows, keeps one by Id, drops the other, adds a new one, and asserts the dropped row is gone.
+    [Fact]
+    public async Task UpdateProfile_WorkHistory_FullReplace_RemovesOmitted_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var seed = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateWorkHistory = true,
+            WorkHistory = new List<WorkHistoryInput>
+            {
+                new() { Company = "Acme", Position = "Engineer", FromDate = new DateOnly(2018, 1, 1) },
+                new() { Company = "Globex", Position = "Lead", FromDate = new DateOnly(2020, 2, 1) },
+            },
+        });
+        seed.IsSuccess.Should().BeTrue(seed.Error);
+        var keptId = seed.Value!.WorkHistory.Single(w => w.Company == "Acme").Id;
+
+        var replaced = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateWorkHistory = true,
+            WorkHistory = new List<WorkHistoryInput>
+            {
+                new() { Id = keptId, Company = "Acme", Position = "Principal", Description = "Promoted" },
+                new() { Company = "Initech", Position = "Architect" },
+            },
+        });
+        replaced.IsSuccess.Should().BeTrue(replaced.Error);
+        replaced.Value!.WorkHistory.Should().HaveCount(2);
+        replaced.Value.WorkHistory.Should().Contain(w => w.Id == keptId && w.Position == "Principal" && w.Description == "Promoted");
+        replaced.Value.WorkHistory.Should().Contain(w => w.Company == "Initech");
+        replaced.Value.WorkHistory.Should().NotContain(w => w.Company == "Globex");
+
+        using var db = CreateDbContext();
+        var rows = await db.EmployeeWorkHistory.Where(e => e.EmployeeId == empId).ToListAsync();
+        rows.Should().HaveCount(2);
+        rows.Should().OnlyContain(r => r.TenantId == _tenantId);
+    }
+
+    // Removal-of-omitted for Dependents (the WithDateOnly arm above only proves add).
+    [Fact]
+    public async Task UpdateProfile_Dependents_FullReplace_RemovesOmitted_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var seed = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateDependents = true,
+            Dependents = new List<DependentInput>
+            {
+                new() { Name = "Kid One", Relationship = "Child", DateOfBirth = new DateOnly(2015, 5, 20) },
+                new() { Name = "Kid Two", Relationship = "Child", DateOfBirth = new DateOnly(2018, 8, 10) },
+            },
+        });
+        seed.IsSuccess.Should().BeTrue(seed.Error);
+        var keptId = seed.Value!.Dependents.Single(d => d.Name == "Kid One").Id;
+
+        var replaced = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateDependents = true,
+            Dependents = new List<DependentInput>
+            {
+                new() { Id = keptId, Name = "Kid One", Relationship = "Daughter" },
+                new() { Name = "Spouse", Relationship = "Spouse" },
+            },
+        });
+        replaced.IsSuccess.Should().BeTrue(replaced.Error);
+        replaced.Value!.Dependents.Should().HaveCount(2);
+        replaced.Value.Dependents.Should().Contain(d => d.Id == keptId && d.Relationship == "Daughter");
+        replaced.Value.Dependents.Should().Contain(d => d.Name == "Spouse");
+        replaced.Value.Dependents.Should().NotContain(d => d.Name == "Kid Two");
+
+        using var db = CreateDbContext();
+        var rows = await db.EmployeeDependents.Where(e => e.EmployeeId == empId).ToListAsync();
+        rows.Should().HaveCount(2);
+        rows.Should().OnlyContain(r => r.TenantId == _tenantId);
+    }
+
+    // Cross-tenant isolation on the 3 new sub-tables: the global query filters were added but were previously
+    // untested. Seed rows under tenant A, then read each sub-table through a DIFFERENT tenant's context and
+    // assert nothing leaks (the EF query filter is provider-agnostic, so InMemory genuinely exercises it).
+    [Fact]
+    public async Task SubCollections_AreTenantIsolated_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput> { new() { Institution = "MIT", Degree = "BSc" } },
+            UpdateWorkHistory = true,
+            WorkHistory = new List<WorkHistoryInput> { new() { Company = "Acme", Position = "Engineer" } },
+            UpdateDependents = true,
+            Dependents = new List<DependentInput> { new() { Name = "Kid One", Relationship = "Child" } },
+        });
+
+        var otherCtx = Substitute.For<ITenantContext>();
+        otherCtx.TenantId.Returns(Guid.NewGuid());
+        otherCtx.IsResolved.Returns(true);
+        using var otherDb = TestDbContextFactory.Create(otherCtx, _dbName);
+
+        (await otherDb.EmployeeEducation.Where(e => e.EmployeeId == empId).ToListAsync()).Should().BeEmpty();
+        (await otherDb.EmployeeWorkHistory.Where(e => e.EmployeeId == empId).ToListAsync()).Should().BeEmpty();
+        (await otherDb.EmployeeDependents.Where(e => e.EmployeeId == empId).ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetProfile_ReturnsAllNewSubCollections_DF39()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            UpdateEducation = true,
+            Education = new List<EducationInput> { new() { Institution = "MIT", Degree = "BSc" } },
+            UpdateWorkHistory = true,
+            WorkHistory = new List<WorkHistoryInput> { new() { Company = "Acme", Position = "Eng" } },
+            UpdateDependents = true,
+            Dependents = new List<DependentInput> { new() { Name = "Kid", Relationship = "Child" } },
+        });
+
+        var profile = await CreateService().GetProfileAsync(empId);
+
+        profile.IsSuccess.Should().BeTrue(profile.Error);
+        profile.Value!.Education.Should().ContainSingle(e => e.Institution == "MIT");
+        profile.Value.WorkHistory.Should().ContainSingle(w => w.Company == "Acme");
+        profile.Value.Dependents.Should().ContainSingle(d => d.Name == "Kid");
+    }
+
     public void Dispose()
     {
         // InMemory databases are cleaned up when the last connection closes
