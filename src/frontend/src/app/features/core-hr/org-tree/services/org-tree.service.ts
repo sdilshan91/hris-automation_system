@@ -4,8 +4,8 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
+  IOrgTreeNode,
   IOrgTreeQueryParams,
-  IOrgTreeResponse,
   IOrgTreeResult,
   IOrgTreeSearchResult,
 } from '../models/org-tree.models';
@@ -35,7 +35,7 @@ export class OrgTreeService {
    * When parentId is null, returns the top-level roots.
    * depth controls how many levels deep to fetch (default 2).
    */
-  getOrgTree(params: IOrgTreeQueryParams): Observable<IOrgTreeResponse> {
+  getOrgTree(params: IOrgTreeQueryParams): Observable<IOrgTreeNode[]> {
     let httpParams = new HttpParams().set('view', params.view);
 
     if (params.parentId) {
@@ -46,7 +46,9 @@ export class OrgTreeService {
     }
 
     // ISSUE-207: the endpoint returns { nodes, view, reportingViewAvailable } — project the
-    // flat node list off it (a null/short payload degrades to []), never the raw object.
+    // root node list off it (a null/short payload degrades to []), never the raw object.
+    // DF-17: each root keeps its nested `children` intact so the page can build the whole
+    // delivered subtree without a per-expand round-trip.
     return this.http
       .get<IOrgTreeResult>(this.baseUrl, { params: httpParams, withCredentials: true })
       .pipe(map((result) => result?.nodes ?? []));

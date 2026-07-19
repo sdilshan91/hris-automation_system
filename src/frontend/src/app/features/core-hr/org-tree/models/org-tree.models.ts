@@ -31,6 +31,13 @@ export interface IOrgTreeNode {
   employeeCount: number;
   childrenCount: number;
   parentId: string | null;
+  /**
+   * DF-17: the API nests direct children inline down to the requested `depth`
+   * (default 2). `childrenCount` is always the true direct-child count even when
+   * `children` is truncated at the depth limit — so a node with `childrenCount > 0`
+   * but no `children` was cut off by depth and must be lazy-fetched on expand.
+   */
+  children?: IOrgTreeNode[];
 }
 
 // ─── Client-side tree node (adds UI state) ───────────────────
@@ -63,10 +70,11 @@ export interface IOrgTreeQueryParams {
 /**
  * The org-tree GET endpoint returns an OBJECT payload (after the global ApiResponse
  * envelope is stripped): `{ nodes, view, reportingViewAvailable }` — NOT a bare array.
- * ISSUE-207: the service consumed this object as an array, so `buildTreeFromFlat`'s
- * `for..of` threw a TypeError and the page showed the empty state. The service now
- * projects `.nodes` off this result. (Each node may also carry a nested `children`
- * array to the requested depth; the flat parentId links are what the tree is built from.)
+ * ISSUE-207: the service consumed this object as an array, so the tree builder threw a
+ * TypeError and the page showed the empty state. The service now projects `.nodes` off
+ * this result. `nodes` holds the ROOT nodes, each carrying its own nested `children`
+ * array down to the requested `depth` (DF-17) — the tree is built directly from that
+ * nesting via {@link buildTreeFromNested}, not re-derived from flat parentId links.
  */
 export interface IOrgTreeResult {
   nodes: IOrgTreeNode[];
@@ -115,8 +123,35 @@ export function createNodeState(
 }
 
 /**
+ * DF-17: Build a tree directly from the API's nested `children` payload.
+ *
+ * The org-tree endpoint delivers root nodes each carrying their own `children`
+ * recursively down to the requested `depth`, so we map that nesting straight into
+ * client tree state — no per-expand round-trip is needed within the delivered depth.
+ *
+ * `childrenLoaded` is true when children were delivered inline OR the node is a leaf
+ * (`childrenCount === 0`). A node with `childrenCount > 0` but no delivered `children`
+ * was truncated at the depth limit and stays `childrenLoaded === false` so the page can
+ * lazy-fetch that subtree on expand.
+ */
+export function buildTreeFromNested(
+  nodes: IOrgTreeNode[],
+  baseLevel: number = 0
+): IOrgTreeNodeState[] {
+  return nodes.map((n) => {
+    const nested = n.children ?? [];
+    const childStates = buildTreeFromNested(nested, baseLevel + 1);
+    const childrenLoaded = nested.length > 0 || n.childrenCount === 0;
+    return createNodeState(n, baseLevel, childStates, childrenLoaded);
+  });
+}
+
+/**
  * Build a tree from a flat node array using parentId references.
  * Assumes nodes are returned for contiguous levels (e.g., depth 0-1).
+ *
+ * Retained for callers that still receive a flat payload; the primary org-tree load
+ * path now consumes the API's nested `children` via {@link buildTreeFromNested}.
  */
 export function buildTreeFromFlat(
   nodes: IOrgTreeNode[],
