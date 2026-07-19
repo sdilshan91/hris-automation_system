@@ -18,6 +18,7 @@
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.NotificationTemplates.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Notifications;
 using HRM.Infrastructure.Persistence;
@@ -417,5 +418,61 @@ public sealed class NotificationTemplateTests
             new TemplateBodyRequest("fr", "<p>fr</p>", "fr"));
 
         tenantB.IsSuccess.Should().BeTrue();
+    }
+
+    // ── DF-5/BR-6: the variant cap is plan-CONFIGURABLE (not the old hardcoded const 2). ──
+
+    // A per-tenant PlanLimitOverride RAISES the cap → a 3rd variant that would be rejected at the default 2
+    // is now allowed. Kills a mutant that keeps the hardcoded `const int MaxLanguageVariants = 2`.
+    [Fact]
+    [Trait("TC", "TC-NTF-002-14")]
+    public async Task Save_variantCap_isRaised_byPlanLimitOverride_df5()
+    {
+        using (var seed = Db(Guid.Empty))
+        {
+            // The resolver early-returns the default cap unless a Tenant row exists, so seed one.
+            seed.Tenants.Add(new Tenant { Id = _tenantA, Subdomain = "acme", Name = "Acme", PlanId = "pro" });
+            seed.PlanLimitOverrides.Add(new PlanLimitOverride
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                LimitKey = PlanLimitKeys.MaxTemplateLanguageVariants, Value = 3,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        (await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "en", new TemplateBodyRequest("en", "<p>en</p>", "en"))).IsSuccess.Should().BeTrue();
+        (await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "es", new TemplateBodyRequest("es", "<p>es</p>", "es"))).IsSuccess.Should().BeTrue();
+
+        // The 3rd variant — rejected under the default cap of 2 — is now allowed under the override of 3.
+        var third = await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "fr", new TemplateBodyRequest("fr", "<p>fr</p>", "fr"));
+
+        third.IsSuccess.Should().BeTrue(third.Error);
+    }
+
+    // A plan value LOWERS the cap → a 2nd variant that would be allowed at the default 2 is rejected at 1.
+    // Kills a mutant that ignores the resolved plan value.
+    [Fact]
+    [Trait("TC", "TC-NTF-002-14")]
+    public async Task Save_variantCap_isLowered_byPlanValue_df5()
+    {
+        using (var seed = Db(Guid.Empty))
+        {
+            seed.Tenants.Add(new Tenant { Id = _tenantA, Subdomain = "acme", Name = "Acme", PlanId = "starter" });
+            seed.SubscriptionPlans.Add(new SubscriptionPlan
+            {
+                Id = BaseEntity.NewUuidV7(), Code = "starter", Name = "Starter",
+                MaxTemplateLanguageVariants = 1,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        (await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "en", new TemplateBodyRequest("en", "<p>en</p>", "en"))).IsSuccess.Should().BeTrue();
+
+        // The 2nd variant — allowed under the default cap of 2 — is rejected under the plan cap of 1.
+        var second = await MgmtSvc(_tenantA).SaveAsync(LeaveApproved, "es", new TemplateBodyRequest("es", "<p>es</p>", "es"));
+
+        second.IsFailure.Should().BeTrue();
+        second.StatusCode.Should().Be(422);
+        second.ErrorCode.Should().Be("variant_limit_reached");
     }
 }

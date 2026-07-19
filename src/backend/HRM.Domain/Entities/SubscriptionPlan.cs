@@ -73,6 +73,12 @@ public sealed class SubscriptionPlan
     /// <summary>Maximum active approval workflows. Null = unlimited.</summary>
     public int? MaxWorkflows { get; set; }
 
+    /// <summary>
+    /// Maximum notification-template language variants per (tenant, event) (DF-5/BR-6). Null = unlimited;
+    /// the consuming service treats an unresolved value as the historical default of 2.
+    /// </summary>
+    public int? MaxTemplateLanguageVariants { get; set; }
+
     /// <summary>Number of days audit-log rows are retained before purge (US-ADM-009 FR-2). Not a "limit" — a policy value.</summary>
     public int AuditLogRetentionDays { get; set; } = 90;
 
