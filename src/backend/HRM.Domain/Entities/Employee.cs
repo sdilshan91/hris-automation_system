@@ -73,6 +73,17 @@ public sealed class Employee : BaseEntity, IAuditExempt
     public DateTime? DateOfBirth { get; set; }
 
     /// <summary>
+    /// ISSUE-285(a): denormalized recurring birthday key = month*100 + day of <see cref="DateOfBirth"/>
+    /// (e.g. Mar 5 → 305), or <c>null</c> when <see cref="DateOfBirth"/> is unset. App-maintained (NOT a
+    /// Postgres GENERATED column, so it also populates on the EF InMemory provider): the
+    /// <c>EmployeeBirthMonthDayInterceptor</c> recomputes it from <see cref="DateOfBirth"/> on every
+    /// create/update/import. Backs the <c>(tenant_id, birth_month_day)</c> index the upcoming-birthdays
+    /// dashboard widget uses to filter the recurring birthday window in SQL instead of materializing every
+    /// active employee (dashboard p95 &lt; 800ms at 50k employees).
+    /// </summary>
+    public int? BirthMonthDay { get; set; }
+
+    /// <summary>
     /// Gender, optional.
     /// </summary>
     public Gender? Gender { get; set; }

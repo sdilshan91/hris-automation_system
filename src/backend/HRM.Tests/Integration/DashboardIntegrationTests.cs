@@ -31,7 +31,9 @@ using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Persistence.Interceptors;
 using HRM.Infrastructure.Services;
+using HRM.Tests.Unit; // FakeTimeProvider (hand-rolled TimeProvider, reused across the HRM.Tests assembly)
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -81,7 +83,12 @@ public sealed class DashboardIntegrationTests
     private AppDbContext Db(Guid tenantId)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_dbName)
+            // ISSUE-285(a): wire the interceptor so seeded employees get Employee.BirthMonthDay populated on the
+            // InMemory provider (mirrors production), which the upcoming-birthdays widget's index-backed query reads.
+            .AddInterceptors(new EmployeeBirthMonthDayInterceptor())
+            .Options;
         return new AppDbContext(options, ctx);
     }
 
@@ -97,16 +104,21 @@ public sealed class DashboardIntegrationTests
         IOnboardingChecklistService? onboarding = null,
         IHolidayService? holidays = null,
         IAppraisalCycleService? appraisalCycles = null,
-        IMyPayslipService? payslips = null)
+        IMyPayslipService? payslips = null,
+        TimeProvider? timeProvider = null)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_dbName)
+            .AddInterceptors(new EmployeeBirthMonthDayInterceptor())
+            .Options;
         var db = new AppDbContext(options, ctx);
         var user = new FakeCurrentUser { UserId = userId, TenantId = tenantId, Permissions = permissions, Roles = roles ?? [] };
         var hrReports = new HrReportService(db, ctx, NullLogger<HrReportService>.Instance);
         var svc = new DashboardService(
             db, ctx, user, hrReports, NullLogger<DashboardService>.Instance,
-            vacancies, leaveRequests, leaveDashboard, attendance, onboarding, holidays, appraisalCycles, payslips);
+            vacancies, leaveRequests, leaveDashboard, attendance, onboarding, holidays, appraisalCycles, payslips,
+            cache: null, timeProvider: timeProvider);
         return (db, svc, user);
     }
 
@@ -364,6 +376,123 @@ public sealed class DashboardIntegrationTests
             var b = await svcB.GetWidgetsAsync();
             b.IsSuccess.Should().BeTrue();
             Widget(b.Value!, "headcount").Value.Should().Be(7m); // ONLY Tenant B's employees
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ISSUE-285(a): upcoming-birthdays widget — index-backed SQL window.
+    //  All use a FakeTimeProvider so "today" is deterministic (the window depends
+    //  on the date). Joining dates are set OUTSIDE the window so the anniversary
+    //  arm doesn't add noise; each test asserts the exact birthday label set.
+    // ════════════════════════════════════════════════════════════════════════
+
+    private static TimeProvider At(int year, int month, int day)
+        => new FakeTimeProvider(new DateTimeOffset(year, month, day, 12, 0, 0, TimeSpan.Zero));
+
+    // A mid-year joining date, far from any window used below (keeps anniversaries out of the assertions).
+    private static readonly DateTime JoinFarFromWindow = new(2020, 8, 15);
+
+    private IReadOnlyList<string> BirthdayLabels(DashboardResponse dash)
+        => Widget(dash, "upcoming-birthdays").Items!
+            .Select(i => i.Label!)
+            .Where(l => l.EndsWith("— Birthday", StringComparison.Ordinal))
+            .ToList();
+
+    [Fact]
+    public async Task UpcomingBirthdays_IncludesInsideWindow_ExcludesOutside()
+    {
+        var dept = await SeedDepartment(_tenantA, "Engineering");
+        // "today" = 2026-06-17; window = [06-17 .. 06-24] inclusive.
+        await SeedEmployee(_tenantA, "TODAY", dept, joining: JoinFarFromWindow, dob: new DateTime(1985, 6, 17)); // boundary: today
+        await SeedEmployee(_tenantA, "MID", dept, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 20));   // +3 days
+        await SeedEmployee(_tenantA, "DAY7", dept, joining: JoinFarFromWindow, dob: new DateTime(1980, 6, 24));  // +7 days (inclusive)
+        await SeedEmployee(_tenantA, "DAY8", dept, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 25));  // +8 days → out
+        await SeedEmployee(_tenantA, "PAST", dept, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 10));  // already passed → out
+        await SeedEmployee(_tenantA, "NODOB", dept, joining: JoinFarFromWindow, dob: null);                       // null DOB → out
+
+        var (db, svc, _) = Scope(_tenantA, Guid.NewGuid(), HrPerms(), timeProvider: At(2026, 6, 17));
+        using (db)
+        {
+            var dash = (await svc.GetWidgetsAsync()).Value!;
+            BirthdayLabels(dash).Should().BeEquivalentTo(
+                "TODAY X — Birthday", "MID X — Birthday", "DAY7 X — Birthday");
+        }
+    }
+
+    [Fact]
+    public async Task UpcomingBirthdays_WrapsYearEnd_IncludesEarlyJanuaryBirthday()
+    {
+        var dept = await SeedDepartment(_tenantA, "Engineering");
+        // "today" = 2026-12-30; window = [12-30, 12-31, 01-01 .. 01-06] inclusive.
+        await SeedEmployee(_tenantA, "DEC31", dept, joining: JoinFarFromWindow, dob: new DateTime(1980, 12, 31)); // +1 day
+        await SeedEmployee(_tenantA, "JAN2", dept, joining: JoinFarFromWindow, dob: new DateTime(1990, 1, 2));    // wraps → +3 days
+        await SeedEmployee(_tenantA, "JAN6", dept, joining: JoinFarFromWindow, dob: new DateTime(1995, 1, 6));    // wraps → +7 days (inclusive)
+        await SeedEmployee(_tenantA, "JAN10", dept, joining: JoinFarFromWindow, dob: new DateTime(1990, 1, 10));  // +11 days → out
+        await SeedEmployee(_tenantA, "DEC20", dept, joining: JoinFarFromWindow, dob: new DateTime(1990, 12, 20)); // already passed → out
+
+        var (db, svc, _) = Scope(_tenantA, Guid.NewGuid(), HrPerms(), timeProvider: At(2026, 12, 30));
+        using (db)
+        {
+            var dash = (await svc.GetWidgetsAsync()).Value!;
+            BirthdayLabels(dash).Should().BeEquivalentTo(
+                "DEC31 X — Birthday", "JAN2 X — Birthday", "JAN6 X — Birthday");
+        }
+    }
+
+    [Fact]
+    public async Task UpcomingBirthdays_ExcludesTerminatedAndInactive_IncludesProbation()
+    {
+        var dept = await SeedDepartment(_tenantA, "Engineering");
+        // "today" = 2026-06-17; all DOBs land inside the window — only status filters them.
+        await SeedEmployee(_tenantA, "ACT", dept, status: EmployeeStatus.Active, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 18));
+        await SeedEmployee(_tenantA, "PROB", dept, status: EmployeeStatus.Probation, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 19));
+        await SeedEmployee(_tenantA, "TERM", dept, status: EmployeeStatus.Terminated, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 20));
+        await SeedEmployee(_tenantA, "SUSP", dept, status: EmployeeStatus.Suspended, joining: JoinFarFromWindow, dob: new DateTime(1990, 6, 21));
+
+        var (db, svc, _) = Scope(_tenantA, Guid.NewGuid(), HrPerms(), timeProvider: At(2026, 6, 17));
+        using (db)
+        {
+            var dash = (await svc.GetWidgetsAsync()).Value!;
+            BirthdayLabels(dash).Should().BeEquivalentTo("ACT X — Birthday", "PROB X — Birthday");
+        }
+    }
+
+    [Fact]
+    public async Task BirthMonthDayInterceptor_SetsKeyOnCreate_AndUpdatesWhenDobChanges()
+    {
+        var dept = await SeedDepartment(_tenantA, "Engineering");
+        var id = await SeedEmployee(_tenantA, "BMD", dept, dob: new DateTime(1990, 3, 5)); // Mar 5 → 305
+
+        using (var db = Db(_tenantA))
+        {
+            var created = await db.Employees.SingleAsync(e => e.Id == id);
+            created.BirthMonthDay.Should().Be(305);
+        }
+
+        // Change DOB → the interceptor must recompute the key on update.
+        using (var db = Db(_tenantA))
+        {
+            var e = await db.Employees.SingleAsync(x => x.Id == id);
+            e.DateOfBirth = new DateTime(1990, 11, 20); // Nov 20 → 1120
+            await db.SaveChangesAsync();
+        }
+
+        using (var db = Db(_tenantA))
+        {
+            (await db.Employees.SingleAsync(e => e.Id == id)).BirthMonthDay.Should().Be(1120);
+        }
+
+        // Clear DOB → key becomes null.
+        using (var db = Db(_tenantA))
+        {
+            var e = await db.Employees.SingleAsync(x => x.Id == id);
+            e.DateOfBirth = null;
+            await db.SaveChangesAsync();
+        }
+
+        using (var db = Db(_tenantA))
+        {
+            (await db.Employees.SingleAsync(e => e.Id == id)).BirthMonthDay.Should().BeNull();
         }
     }
 
