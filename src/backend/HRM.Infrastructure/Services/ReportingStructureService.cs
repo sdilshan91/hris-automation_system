@@ -286,6 +286,85 @@ public sealed class ReportingStructureService : IReportingStructureService
         });
     }
 
+    /// <inheritdoc />
+    public async Task<Result<ReportingChainDto>> GetReportingChainAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ReportingChainDto>.Failure("Tenant context is not resolved.", 400);
+
+        // ONE projected, tenant-scoped query: load the minimal shape of every employee in the
+        // tenant into a dictionary, then walk the chain in memory (no query-per-level N+1, no CTE
+        // — a recursive CTE has no precedent here and would break the InMemory unit tests).
+        // Tenant scope comes from the Employee global query filter (no manual TenantId predicate).
+        var nodes = await _dbContext.Employees
+            .AsNoTracking()
+            .Select(e => new ReportingChainNode(e.Id, e.ReportsToEmployeeId, e.FirstName, e.LastName, e.JobTitleId))
+            .ToDictionaryAsync(n => n.Id, cancellationToken);
+
+        // Not-found: the requested employee id isn't in the tenant (mirrors direct-reports' 404).
+        if (!nodes.TryGetValue(employeeId, out var start))
+            return Result<ReportingChainDto>.Failure("Employee not found.", 404);
+
+        // Walk UP from the employee following ReportsToEmployeeId, collecting the ascending path.
+        var ordered = new List<ReportingChainNode>();
+        var visited = new HashSet<Guid>();
+        var current = start;
+        var depth = 0;
+
+        while (depth < MaxChainDepth)
+        {
+            // Cycle guard: if we have already seen this node, stop (visited-set terminates the walk).
+            if (!visited.Add(current.Id))
+            {
+                _logger.LogWarning(
+                    "Cyclic reporting chain detected while building the reporting chain for employee {EmployeeId}. " +
+                    "Chain truncated at {NodeId}. TenantId={TenantId}",
+                    employeeId, current.Id, _tenantContext.TenantId);
+                break;
+            }
+
+            ordered.Add(current);
+
+            // Root reached: no manager set.
+            if (current.ReportsToEmployeeId is null)
+                break;
+
+            // A soft-deleted/absent manager (not in the tenant set) simply ends the walk — the
+            // chain truncates there, consistent with the immediate-manager field returning null.
+            if (!nodes.TryGetValue(current.ReportsToEmployeeId.Value, out var next))
+                break;
+
+            current = next;
+            depth++;
+        }
+
+        // Resolve job-title NAMES in ONE batched lookup (mirrors OrganizationTreeService).
+        var jtIds = ordered.Where(n => n.JobTitleId != Guid.Empty).Select(n => n.JobTitleId).Distinct().ToList();
+        var jtNames = jtIds.Count > 0
+            ? await _dbContext.JobTitles.AsNoTracking()
+                .Where(j => jtIds.Contains(j.Id))
+                .ToDictionaryAsync(j => j.Id, j => j.TitleName, cancellationToken)
+            : new Dictionary<Guid, string>();
+
+        var chain = ordered.Select(n => new ReportingChainItemDto
+        {
+            Id = n.Id,
+            Name = $"{n.FirstName} {n.LastName}",
+            JobTitle = jtNames.GetValueOrDefault(n.JobTitleId),
+        }).ToList();
+
+        return Result<ReportingChainDto>.Success(new ReportingChainDto
+        {
+            EmployeeId = employeeId,
+            Chain = chain,
+        });
+    }
+
+    /// <summary>Minimal projected employee shape used to walk the reporting chain in memory.</summary>
+    private sealed record ReportingChainNode(Guid Id, Guid? ReportsToEmployeeId, string FirstName, string LastName, Guid JobTitleId);
+
     // ── Private helpers ──────────────────────────────────────────────
 
     private static readonly JsonSerializerOptions AuditJsonOptions = new() { WriteIndented = false };

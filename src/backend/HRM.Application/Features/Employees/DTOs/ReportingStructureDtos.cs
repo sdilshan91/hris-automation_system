@@ -99,3 +99,25 @@ public sealed record DirectReportsResult
     public string ManagerName { get; init; } = string.Empty;
     public IReadOnlyList<DirectReportDto> DirectReports { get; init; } = [];
 }
+
+/// <summary>
+/// A single node in an employee's ascending reporting chain (DF-8 / ISSUE-218).
+/// </summary>
+public sealed record ReportingChainItemDto
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string? JobTitle { get; init; }
+}
+
+/// <summary>
+/// The full ascending reporting chain for an employee (DF-8 / ISSUE-218).
+/// Mirrors <see cref="DirectReportsResult"/>: an owner id plus the ordered list.
+/// <c>Chain[0]</c> is the employee themselves; the last element is the top/root
+/// manager (the one with no manager, or whose manager is outside the tenant set).
+/// </summary>
+public sealed record ReportingChainDto
+{
+    public Guid EmployeeId { get; init; }
+    public IReadOnlyList<ReportingChainItemDto> Chain { get; init; } = [];
+}

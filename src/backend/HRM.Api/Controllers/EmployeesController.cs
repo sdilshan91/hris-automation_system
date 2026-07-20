@@ -407,6 +407,27 @@ public sealed class EmployeesController : ControllerBase
         return Ok(ApiResponse<DirectReportsResult>.Ok(result.Value!));
     }
 
+    /// <summary>
+    /// GET /api/v1/tenant/employees/{id}/reporting-chain
+    /// Returns the full ascending reporting chain for an employee (DF-8 / ISSUE-218):
+    /// element 0 is the employee, then each manager up to the top/root.
+    /// </summary>
+    [HttpGet("{id:guid}/reporting-chain")]
+    [RequirePermission("Employee.View.All")]
+    [ProducesResponseType(typeof(ApiResponse<ReportingChainDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetReportingChain(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetReportingChainQuery(id), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<ReportingChainDto>.Ok(result.Value!));
+    }
+
     // ── Document Management (US-CHR-008) ──────────────────────────
 
     /// <summary>

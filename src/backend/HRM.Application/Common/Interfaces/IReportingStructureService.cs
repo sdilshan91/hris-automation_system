@@ -34,4 +34,14 @@ public interface IReportingStructureService
     Task<Result<DirectReportsResult>> GetDirectReportsAsync(
         Guid managerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the full ascending reporting chain for an employee (DF-8 / ISSUE-218):
+    /// element 0 is the employee themselves, then each manager up to the top/root.
+    /// The walk is cycle-guarded and depth-capped; a soft-deleted/absent manager
+    /// truncates the chain at that rung.
+    /// </summary>
+    Task<Result<ReportingChainDto>> GetReportingChainAsync(
+        Guid employeeId,
+        CancellationToken cancellationToken = default);
 }
