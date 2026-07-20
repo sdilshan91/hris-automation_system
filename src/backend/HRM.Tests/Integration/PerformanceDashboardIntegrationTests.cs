@@ -85,6 +85,20 @@ public sealed class PerformanceDashboardIntegrationTests
         public bool ImpersonationReadOnly => false;
     }
 
+    // The dashboard PDF export (ISSUE-126/DF-6) reads tenant logo bytes via IFileStorage. These tests never set
+    // a tenant LogoUrl (it is null), so ResolveLogoBytesAsync short-circuits before touching storage — this no-op
+    // just satisfies the constructor dependency.
+    private sealed class NoopFileStorage : IFileStorage
+    {
+        public Task<string> UploadAsync(Guid tenantId, string relativePath, Stream content, string contentType,
+            CancellationToken cancellationToken = default) => Task.FromResult(relativePath);
+        public Task<Stream?> OpenReadAsync(Guid tenantId, string relativePath,
+            CancellationToken cancellationToken = default) => Task.FromResult<Stream?>(null);
+        public string GetSignedUrl(Guid tenantId, string relativePath, TimeSpan? expiresIn = null) => string.Empty;
+        public Task DeleteAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
     private IMediator BuildPipeline(Guid tenantId, ICurrentUser user)
     {
         var tenantContext = new MutableTenantContext { TenantId = tenantId };
@@ -93,6 +107,7 @@ public sealed class PerformanceDashboardIntegrationTests
         services.AddLogging();
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton(user);
+        services.AddSingleton<IFileStorage, NoopFileStorage>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IPerformanceDashboardService, PerformanceDashboardService>();
         services.AddMediatR(cfg =>
