@@ -353,6 +353,8 @@ public static class DependencyInjection
         services.AddScoped<IPayrollSlipCleaner, PayrollSlipCleaner>();
         services.AddScoped<IPayrollApprovalService, PayrollApprovalService>();  // US-PAY-008
         services.AddScoped<IPayrollNotificationService, RealPayrollNotificationService>();  // US-NTF-006 Phase 4
+        // US-PAY-008 FR-3 (ISSUE-173): per-tenant SLA escalation of overdue payroll approvals (idempotent CAS).
+        services.AddScoped<IPayrollApprovalSlaEscalator, PayrollApprovalSlaEscalator>();
 
         // US-PAY-004: Payroll — payslip-PDF generation. The generation service (enqueue + status + downloads)
         // takes an OPTIONAL IPayslipGenerationJobScheduler (Hangfire-backed impl registered in Program.cs) so

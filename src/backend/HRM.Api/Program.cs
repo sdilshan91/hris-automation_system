@@ -347,6 +347,9 @@ try
     // US-ADM-011b (AC-5/FR-8/NFR-3): per-tenant SLA-escalation sweep for overdue approval steps (every 5 min).
     builder.Services.AddScoped<HRM.Api.Jobs.WorkflowSlaEscalationJob>();
 
+    // US-PAY-008 FR-3 (ISSUE-173): per-tenant SLA-escalation sweep for overdue PAYROLL approvals (every 5 min).
+    builder.Services.AddScoped<HRM.Api.Jobs.PayrollApprovalSlaEscalationJob>();
+
     // US-ATT-007: monthly attendance summary jobs (daily refresh + monthly finalize) and the large-export
     // background job (bound to the interface so the Infrastructure service can enqueue it by interface).
     builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryDailyJob>();
@@ -789,6 +792,13 @@ try
         // tenants every 5 minutes. Idempotent (conditional CAS per breached step). Runs on a single UTC cron.
         recurringJobs.AddOrUpdate<HRM.Api.Jobs.WorkflowSlaEscalationJob>(
             "workflow-sla-escalation",
+            job => job.RunAsync(CancellationToken.None),
+            "*/5 * * * *"); // every 5 minutes
+
+        // US-PAY-008 FR-3 (ISSUE-173): PAYROLL approval SLA-escalation sweep — escalates overdue payroll approvals
+        // across active tenants every 5 minutes. Idempotent (conditional CAS per breached run). Single UTC cron.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.PayrollApprovalSlaEscalationJob>(
+            "payroll-approval-sla-escalation",
             job => job.RunAsync(CancellationToken.None),
             "*/5 * * * *"); // every 5 minutes
 

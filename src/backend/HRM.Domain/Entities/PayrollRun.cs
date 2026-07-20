@@ -81,6 +81,21 @@ public sealed class PayrollRun : BaseEntity, IAuditExempt
     /// <summary>US-PAY-008 AC-1: when the run was submitted for approval, nullable.</summary>
     public DateTime? SubmittedAt { get; set; }
 
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): when the CURRENT approval step's SLA elapses. Stamped on submit and on each
+    /// step-advance from the current step's <see cref="PayrollApprovalStepConfig.SlaHours"/>; null when the current
+    /// step has no configured SLA (then the run never escalates). Cleared to null when the run leaves
+    /// AwaitingApproval.
+    /// </summary>
+    public DateTime? SlaDueAt { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): when the current step's SLA breach was escalated (the escalation NOTIFY +
+    /// Escalated history row happened). Set once by the escalator via an idempotent compare-and-swap and CLEARED on
+    /// submit and on every step-advance so a fresh step gets a fresh SLA. Null until the current step breaches.
+    /// </summary>
+    public DateTime? EscalatedAt { get; set; }
+
     /// <summary>US-PAY-008 AC-3: the latest rejection reason, nullable (cleared on re-submit).</summary>
     public string? RejectionReason { get; set; }
 

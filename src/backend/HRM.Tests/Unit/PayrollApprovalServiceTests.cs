@@ -753,4 +753,127 @@ public sealed class PayrollApprovalServiceTests
         var ids = (await Service(_financeUserId).GetPendingApprovalsAsync()).Value!.Select(r => r.RunId).ToList();
         ids.Should().Contain(runId);
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  ISSUE-173 FR-3 — SLA auto-escalation: submit/advance stamps SlaDueAt from the step's SlaHours.
+    //  (The escalator itself uses ExecuteUpdate CAS → proven on real Postgres, not InMemory.)
+    // ══════════════════════════════════════════════════════════════
+
+    private PayrollApprovalService Service(Guid actingUserId, TimeProvider clock)
+    {
+        var currentUser = Substitute.For<ICurrentUser>();
+        currentUser.UserId.Returns(actingUserId);
+        return new PayrollApprovalService(Db(), _tenantContext, currentUser,
+            Substitute.For<IPayrollNotificationService>(), Substitute.For<IPayrollAuditLogger>(),
+            Substitute.For<ILogger<PayrollApprovalService>>(), clock);
+    }
+
+    // ── A step with SlaHours set → submit stamps SlaDueAt = now + SlaHours (from the injected clock). ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Submit_WithStepSla_StampsSlaDueAt_FromInjectedClock()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var roleId = await SeedApproverRoleAsync("Finance", _financeUserId);
+        using (var db = Db())
+        {
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 1, RoleId = roleId, SlaHours = 24,
+            });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending);
+
+        var result = await Service(_hrUserId, new FakeTimeProvider(now)).SubmitForApprovalAsync(runId, null, "ready", "1.2.3.4");
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db2 = Db();
+        var run = await db2.PayrollRuns.FirstAsync(r => r.Id == runId);
+        run.SlaDueAt.Should().Be(now.UtcDateTime.AddHours(24));   // now + step-1 SlaHours
+        run.EscalatedAt.Should().BeNull();                        // fresh step, not yet escalated
+    }
+
+    // ── No SlaHours on the step (opt-in) → SlaDueAt stays null → the run never escalates. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Submit_NoStepSla_LeavesSlaDueAtNull()
+    {
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending); // no step config / no SlaHours
+
+        (await Service(_hrUserId).SubmitForApprovalAsync(runId, null, "ready", "1.2.3.4")).IsSuccess.Should().BeTrue();
+
+        using var db = Db();
+        (await db.PayrollRuns.FirstAsync(r => r.Id == runId)).SlaDueAt.Should().BeNull();
+    }
+
+    // ── Advancing to the next step re-stamps SlaDueAt from THAT step's SlaHours and clears EscalatedAt. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Approve_AdvancingToNextStep_ReStampsSlaDueAt_FromNextStepSla_AndClearsEscalatedAt()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var roleB = await SeedApproverRoleAsync("Step2");
+        using (var db = Db())
+        {
+            // Only step 2 has an SLA (48h). Step 1 has no config → no step-role gate on the first approval.
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 2, RoleId = roleB, SlaHours = 48,
+            });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
+            step: 1, totalSteps: 2, instanceId: Guid.NewGuid());
+        using (var db = Db())
+        {
+            var r = await db.PayrollRuns.FirstAsync(x => x.Id == runId);
+            r.EscalatedAt = now.UtcDateTime.AddHours(-1); // pretend step 1 had been escalated
+            await db.SaveChangesAsync();
+        }
+
+        (await Service(_financeUserId, new FakeTimeProvider(now)).ApproveAsync(runId, null, null)).IsSuccess.Should().BeTrue();
+
+        using var db2 = Db();
+        var run = await db2.PayrollRuns.FirstAsync(r => r.Id == runId);
+        run.CurrentApprovalStep.Should().Be(2);
+        run.SlaDueAt.Should().Be(now.UtcDateTime.AddHours(48)); // re-stamped from step-2 SlaHours
+        run.EscalatedAt.Should().BeNull();                      // cleared for the fresh step
+    }
+
+    // ── Step-config validation: SlaHours must be > 0 when set. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task SetStepConfig_ZeroSlaHours_Returns400()
+    {
+        var r1 = await SeedApproverRoleAsync("R1");
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = r1, SlaHours = 0 } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("sla_hours_invalid");
+    }
+
+    // ── Step-config validation: a BackupRoleId must be a real in-tenant role that holds Payroll.Approve. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task SetStepConfig_BackupRoleLacksApprovePermission_Returns400()
+    {
+        var r1 = await SeedApproverRoleAsync("R1");
+        Guid backupNoApprove = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Roles.Add(new Role { Id = backupNoApprove, TenantId = _tenantId, Name = "Backup No Approve" });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = r1, BackupRoleId = backupNoApprove } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("role_missing_approve_permission");
+    }
 }

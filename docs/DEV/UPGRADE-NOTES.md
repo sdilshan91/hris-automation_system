@@ -16,6 +16,26 @@ entries below.
 
 ---
 
+## 2026-07-20 — ISSUE-173 FR-3: payroll approval SLA auto-escalation (opt-in)
+
+**What changed.** Payroll approval steps can now carry an **SLA** and a **backup approver role**. When a run
+sits in `AwaitingApproval` past its step SLA, a recurring job escalates it: it stamps the run `escalated_at`,
+writes an `Escalated` approval-history row, and **notifies the backup role's holders** (falling back to the
+payroll approver pool). Escalation is a NOTIFY — the run is not reassigned; any holder of the step/backup role
+can still act via the pending-approvals queue.
+
+**What the platform does automatically.** Migration `Payroll_SlaEscalation` adds four **nullable** columns
+(`payroll_approval_step_config.sla_hours` + `.backup_role_id`, `payroll_run.sla_due_at` + `.escalated_at`) —
+all default null, so **nothing escalates until you configure an SLA** (opt-in). A recurring Hangfire job
+`payroll-approval-sla-escalation` runs every 5 minutes (per-tenant). `sla_due_at` is stamped at submit and each
+step advance from the current step's `sla_hours`; reject / return-to-HR clear it.
+
+**Action for admins.** Optional. To enable escalation for a step, set **SLA hours** (>0) and a **backup approver
+role** (a role holding `Payroll.Approve`) on that approval step via `PUT /api/v1/payroll/approval/step-config`.
+Leave `sla_hours` unset to keep today's behaviour (no escalation).
+
+---
+
 ## 2026-07-20 — DF-5: notification-template language-variant cap is now plan-configurable
 
 **What changed.** The per-(tenant, event) email-template **language-variant cap** — previously a hardcoded `2` — is now
