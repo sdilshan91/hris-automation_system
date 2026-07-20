@@ -685,6 +685,233 @@ public sealed class ReportingStructureServiceTests : IDisposable
         result.Value!.Message.Should().Contain("No change");
     }
 
+    // ── DF-8 / ISSUE-218: ascending reporting chain ──────────────────
+
+    private JobTitle CreateJobTitle(string titleName)
+    {
+        return new JobTitle
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            TitleName = titleName,
+            IsActive = true,
+            IsDeleted = false,
+        };
+    }
+
+    [Fact]
+    [Trait("TC", "TC-CHR-338")]
+    public async Task GetReportingChain_FourLevelChain_ReturnsAscendingOrder_WithNamesAndTitles()
+    {
+        // Arrange: Employee -> Manager -> VP -> CEO (CEO has no manager = root).
+        var ceoTitle = CreateJobTitle("Chief Executive Officer");
+        var vpTitle = CreateJobTitle("Vice President");
+        var mgrTitle = CreateJobTitle("Manager");
+        var engTitle = CreateJobTitle("Engineer");
+
+        var ceo = CreateEmployee("Carol", "Chief");
+        ceo.JobTitleId = ceoTitle.Id;
+
+        var vp = CreateEmployee("Victor", "Veep");
+        vp.JobTitleId = vpTitle.Id;
+        vp.ReportsToEmployeeId = ceo.Id;
+
+        var mgr = CreateEmployee("Mona", "Manager");
+        mgr.JobTitleId = mgrTitle.Id;
+        mgr.ReportsToEmployeeId = vp.Id;
+
+        var emp = CreateEmployee("Eddie", "Engineer");
+        emp.JobTitleId = engTitle.Id;
+        emp.ReportsToEmployeeId = mgr.Id;
+
+        await using (var db = CreateDbContext())
+        {
+            db.JobTitles.AddRange(ceoTitle, vpTitle, mgrTitle, engTitle);
+            db.Employees.AddRange(ceo, vp, mgr, emp);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+
+        // Act
+        var result = await service.GetReportingChainAsync(emp.Id);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.EmployeeId.Should().Be(emp.Id);
+        result.Value.Chain.Should().HaveCount(4);
+
+        // Ascending order: element 0 = the employee, last = the root CEO.
+        result.Value.Chain[0].Id.Should().Be(emp.Id);
+        result.Value.Chain[0].Name.Should().Be("Eddie Engineer");
+        result.Value.Chain[0].JobTitle.Should().Be("Engineer");
+
+        result.Value.Chain[1].Id.Should().Be(mgr.Id);
+        result.Value.Chain[1].Name.Should().Be("Mona Manager");
+        result.Value.Chain[1].JobTitle.Should().Be("Manager");
+
+        result.Value.Chain[2].Id.Should().Be(vp.Id);
+        result.Value.Chain[2].JobTitle.Should().Be("Vice President");
+
+        result.Value.Chain[3].Id.Should().Be(ceo.Id);
+        result.Value.Chain[3].Name.Should().Be("Carol Chief");
+        result.Value.Chain[3].JobTitle.Should().Be("Chief Executive Officer");
+    }
+
+    [Trait("TC", "TC-CHR-338")]
+    [Fact]
+    public async Task GetReportingChain_RootEmployee_ReturnsSingleElement()
+    {
+        // Employee with no manager (ReportsToEmployeeId == null) -> chain is just themselves.
+        var root = CreateEmployee("Root", "Solo");
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.Add(root);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+
+        var result = await service.GetReportingChainAsync(root.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Chain.Should().ContainSingle();
+        result.Value.Chain[0].Id.Should().Be(root.Id);
+        result.Value.Chain[0].Name.Should().Be("Root Solo");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-CHR-338")]
+    public async Task GetReportingChain_CyclicGraph_Terminates_WithBoundedChain()
+    {
+        // Seed a cycle A -> B -> A. The visited-set must stop the walk (no hang / no throw).
+        var a = CreateEmployee("Ada", "Cycle");
+        var b = CreateEmployee("Ben", "Cycle");
+        a.ReportsToEmployeeId = b.Id;
+        b.ReportsToEmployeeId = a.Id;
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.AddRange(a, b);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+
+        // Act
+        var result = await service.GetReportingChainAsync(a.Id);
+
+        // Assert: bounded chain (each distinct node once), terminated by the visited-set.
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Chain.Should().HaveCount(2);
+        result.Value.Chain.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+        result.Value.Chain[0].Id.Should().Be(a.Id);
+        result.Value.Chain[1].Id.Should().Be(b.Id);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-CHR-338")]
+    public async Task GetReportingChain_MissingRung_TruncatesChain_NoThrow()
+    {
+        // Employee whose manager id points at an id NOT in the tenant set (e.g. soft-deleted /
+        // hidden by the query filter) -> the walk stops at that rung.
+        var emp = CreateEmployee("Orphan", "Emp");
+        emp.ReportsToEmployeeId = Guid.NewGuid(); // no such employee in the tenant set
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.Add(emp);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+
+        var result = await service.GetReportingChainAsync(emp.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Chain.Should().ContainSingle();
+        result.Value.Chain[0].Id.Should().Be(emp.Id);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-CHR-338")]
+    public async Task GetReportingChain_ManagerInAnotherTenant_ChainTruncatesAtTheBoundary_NoLeak()
+    {
+        // BUG-003 class: the walk loads the tenant's employees via the global query filter. A
+        // tenant-A employee whose ReportsToEmployeeId points at a manager row owned by tenant B must
+        // NOT pull that foreign manager into A's chain — the walk truncates at the tenant boundary
+        // (the foreign id isn't in tenant A's `nodes` dictionary), exactly like a missing rung.
+        var otherTenantId = Guid.NewGuid();
+        var otherTenantContext = Substitute.For<ITenantContext>();
+        otherTenantContext.TenantId.Returns(otherTenantId);
+        otherTenantContext.IsResolved.Returns(true);
+        otherTenantContext.IsSystemContext.Returns(false);
+
+        var mgrB = CreateEmployee("Foreign", "Manager");
+        mgrB.TenantId = otherTenantId;
+
+        var emp = CreateEmployee("TenantA", "Emp");
+        emp.ReportsToEmployeeId = mgrB.Id; // points at a manager owned by tenant B
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.Add(emp);
+            await db.SaveChangesAsync();
+        }
+        await using (var db = TestDbContextFactory.Create(otherTenantContext, _dbName))
+        {
+            db.Employees.Add(mgrB);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+
+        var result = await service.GetReportingChainAsync(emp.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Chain.Should().ContainSingle("the walk must stop at the tenant boundary, not cross into tenant B");
+        result.Value.Chain[0].Id.Should().Be(emp.Id);
+        result.Value.Chain.Select(c => c.Id).Should().NotContain(mgrB.Id,
+            "tenant B's manager must never leak into tenant A's reporting chain");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-CHR-338")]
+    public async Task GetReportingChain_UnknownEmployee_Returns404()
+    {
+        var existing = CreateEmployee("Someone", "Else");
+
+        await using (var db = CreateDbContext())
+        {
+            db.Employees.Add(existing);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+
+        var result = await service.GetReportingChainAsync(Guid.NewGuid());
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+        result.Error.Should().Contain("Employee not found");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-CHR-338")]
+    public async Task GetReportingChain_TenantNotResolved_Fails()
+    {
+        var unresolvedTenant = Substitute.For<ITenantContext>();
+        unresolvedTenant.IsResolved.Returns(false);
+
+        var service = CreateService(unresolvedTenant);
+
+        var result = await service.GetReportingChainAsync(Guid.NewGuid());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Contain("Tenant context is not resolved");
+    }
+
     public void Dispose()
     {
         // InMemory database is cleaned up automatically
