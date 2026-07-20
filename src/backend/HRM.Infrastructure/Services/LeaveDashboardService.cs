@@ -25,7 +25,8 @@ namespace HRM.Infrastructure.Services;
 /// the apply-preview, and the ledger consistent (BR-1, TC-LV-110/112/115). The component fields
 /// (Used/CarryForward/Expired/Adjustments) remain a breakdown for display only.
 /// The Entitlement value is informational and reuses the US-LV-002 entitlement engine
-/// (override &gt; rule &gt; default, pro-rated) via ILeaveEntitlementService.ComputeEffectiveEntitlementAsync.
+/// (override &gt; rule &gt; default, pro-rated) via ILeaveEntitlementService.ComputeProratedEntitlementsBatchAsync
+/// (DF-21: one batched pass for all leave types, not a per-type N+1).
 ///
 /// Leave-year boundary (BR-4): the codebase has no tenant fiscal-year config entity, so the
 /// established calendar-year convention from US-LV-002..005 is reused (the year a request/ledger
@@ -160,6 +161,12 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             .GroupBy(x => x.LeaveTypeId)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalDays));
 
+        // DF-21/ISSUE-039: resolve entitlement for ALL leave types in ONE batched pass (2 queries) instead of a
+        // per-type engine call (the old N+1 — ~4-5 round-trips × leaveTypes). The batch method is the same
+        // byte-identical resolver the reports use (BUG-124); the dashboard only wants ProratedEntitlementDays.
+        var entitlementByType = await _entitlementService.ComputeProratedEntitlementsBatchAsync(
+            new[] { employee }, leaveTypes, leaveYear, cancellationToken);
+
         var result = new List<LeaveBalanceDto>(leaveTypes.Count);
 
         foreach (var lt in leaveTypes)
@@ -169,7 +176,8 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
             // Entitlement reuses the US-LV-002 engine (override > rule > default, pro-rated).
             // It is INFORMATIONAL only (the "resolved entitlement" the card shows) and is NOT added
             // into the balance — doing so would double-count against the ledger's Accrual entries.
-            decimal entitlement = await ResolveEntitlementAsync(employee.Id, lt.Id, leaveYear, cancellationToken);
+            // A pair the engine can't resolve (probation/ineligible/missing ref data) → 0 (unchanged fallback).
+            decimal entitlement = entitlementByType.TryGetValue((employee.Id, lt.Id), out var e) ? e : 0m;
 
             // BR-1: the headline balance is the AUTHORITATIVE ledger running balance (BalanceAfter of
             // the latest entry), which already folds in Accrual + CarryForward + Adjustments - Used -
@@ -316,17 +324,6 @@ public sealed class LeaveDashboardService : ILeaveDashboardService
     private async Task<int> ResolveLeaveYearAsync(int? year, CancellationToken cancellationToken)
         => year ?? await _leaveYearResolver.LabelForAsync(
             DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime), cancellationToken);
-
-    private async Task<decimal> ResolveEntitlementAsync(
-        Guid employeeId, Guid leaveTypeId, int leaveYear, CancellationToken cancellationToken)
-    {
-        var entitlement = await _entitlementService.ComputeEffectiveEntitlementAsync(
-            employeeId, leaveTypeId, leaveYear, cancellationToken);
-
-        // The engine returns probation/ineligible cases as 0 (never a failure); on the rare
-        // failure path (e.g. missing reference data) fall back to 0 so the dashboard still renders.
-        return entitlement.IsSuccess ? entitlement.Value!.ProratedEntitlementDays : 0m;
-    }
 
     private Task<Employee?> GetCurrentEmployeeAsync(CancellationToken cancellationToken)
         => _dbContext.Employees

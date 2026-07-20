@@ -101,29 +101,29 @@ public sealed class LeaveDashboardServiceTests
         db.SaveChanges();
     }
 
-    /// <summary>ISSUE-313: entitlement is informational (not in the balance); stub any (type, year) so the
-    /// default-year arms — which resolve years off the fixture's 2026 stub — don't NRE on an unconfigured call.</summary>
-    private void StubEntitlementAnyYear()
+    // DF-21: the dashboard now resolves entitlement for all leave types in ONE batched call
+    // (ComputeProratedEntitlementsBatchAsync) instead of a per-type ComputeEffectiveEntitlementAsync
+    // (the old N+1). These stubs accumulate the (employee, type) → prorated-days map and re-arm the
+    // batch mock; a pair the map omits reads 0 via the service's missing-pair fallback.
+    private readonly Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal> _entitlementStub = new();
+
+    private void ApplyBatchStub(Dictionary<(Guid EmployeeId, Guid LeaveTypeId), decimal> map)
         => _entitlementService
-            .ComputeEffectiveEntitlementAsync(_employeeId, Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Result<EffectiveEntitlementDto>.Success(new EffectiveEntitlementDto
-            {
-                EmployeeId = _employeeId, ProratedEntitlementDays = 0m,
-            }));
+            .ComputeProratedEntitlementsBatchAsync(
+                Arg.Any<IReadOnlyList<Employee>>(),
+                Arg.Any<IReadOnlyList<LeaveType>>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(map);
+
+    /// <summary>ISSUE-313: entitlement is informational (not in the balance); the fiscal default-year arms
+    /// resolve a year the fixture doesn't stub — return an EMPTY map so every type reads 0 (the fallback).</summary>
+    private void StubEntitlementAnyYear() => ApplyBatchStub(new());
 
     private void StubEntitlement(Guid leaveTypeId, decimal days)
     {
-        _entitlementService
-            .ComputeEffectiveEntitlementAsync(_employeeId, leaveTypeId, Year, Arg.Any<CancellationToken>())
-            .Returns(Result<EffectiveEntitlementDto>.Success(new EffectiveEntitlementDto
-            {
-                EmployeeId = _employeeId,
-                LeaveTypeId = leaveTypeId,
-                LeaveYear = Year,
-                BaseEntitlementDays = days,
-                ProratedEntitlementDays = days,
-                Source = "leave_type_default",
-            }));
+        _entitlementStub[(_employeeId, leaveTypeId)] = days;
+        ApplyBatchStub(new(_entitlementStub));
     }
 
     private void SeedReferenceData()
@@ -201,7 +201,11 @@ public sealed class LeaveDashboardServiceTests
         // dashboard Balance is the AUTHORITATIVE ledger running balance_after — which is 0 until an
         // Accrual/opening ledger entry is written — NOT the engine entitlement. This keeps the card,
         // the apply-preview, and the ledger in lock-step (TC-LV-110/112/115: the card MUST equal the
-        // ledger balance_after). The engine entitlement (14) is still shown as an informational field.
+        // ledger balance_after). The engine entitlement is still shown as an informational field.
+        // DF-21: stub a distinct entitlement (13.5, ≠ the seeded AnnualEntitlement=14) so the assertion
+        // can only pass if the value came from the batch MAP, not the LeaveType column.
+        StubEntitlement(_annualLeaveTypeId, 13.5m);
+
         var result = await CreateService().GetMyBalancesAsync(Year);
 
         result.IsSuccess.Should().BeTrue();
@@ -209,10 +213,29 @@ public sealed class LeaveDashboardServiceTests
         result.Value!.Should().HaveCount(2);
         result.Value.Should().OnlyContain(b => !b.IsArchived);
         var annual = result.Value.Single(b => b.LeaveTypeId == _annualLeaveTypeId);
-        annual.Entitlement.Should().Be(14m); // engine entitlement still surfaced (informational only)
+        annual.Entitlement.Should().Be(13.5m); // from the batch map, NOT the seeded column (14)
         annual.Used.Should().Be(0m);
         // BUG-030 (#144) ledger-truth: no ledger entry yet -> Balance is 0, NOT the 14 entitlement.
         annual.Balance.Should().Be(0m);
+    }
+
+    [Fact]
+    [Trait("DF", "DF-21")]
+    [Trait("TC", "TC-LV-267")]
+    public async Task GetMyBalances_ResolvesEntitlementInOneBatchedCall_NoPerTypeN1()
+    {
+        // DF-21: the card resolves entitlement for every leave type in ONE batched call, not a
+        // per-type ComputeEffectiveEntitlementAsync loop. The fixture has 3 types (annual/sick/archived);
+        // the old code fired 3 engine calls, the fix fires exactly 1 batch call and 0 per-type calls.
+        await CreateService().GetMyBalancesAsync(Year);
+
+        await _entitlementService.Received(1).ComputeProratedEntitlementsBatchAsync(
+            Arg.Any<IReadOnlyList<Employee>>(),
+            Arg.Any<IReadOnlyList<LeaveType>>(),
+            Year,
+            Arg.Any<CancellationToken>());
+        await _entitlementService.DidNotReceive().ComputeEffectiveEntitlementAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -395,21 +418,9 @@ public sealed class LeaveDashboardServiceTests
     [Fact]
     public async Task GetMyBalances_DefaultsToCurrentYear_WhenYearNull()
     {
-        StubEntitlement(_annualLeaveTypeId, 14m); // current year entitlement stub
-        _entitlementService
-            .ComputeEffectiveEntitlementAsync(_employeeId, _annualLeaveTypeId, DateTime.UtcNow.Year, Arg.Any<CancellationToken>())
-            .Returns(Result<EffectiveEntitlementDto>.Success(new EffectiveEntitlementDto
-            {
-                EmployeeId = _employeeId, LeaveTypeId = _annualLeaveTypeId,
-                LeaveYear = DateTime.UtcNow.Year, ProratedEntitlementDays = 14m,
-            }));
-        _entitlementService
-            .ComputeEffectiveEntitlementAsync(_employeeId, _sickLeaveTypeId, DateTime.UtcNow.Year, Arg.Any<CancellationToken>())
-            .Returns(Result<EffectiveEntitlementDto>.Success(new EffectiveEntitlementDto
-            {
-                EmployeeId = _employeeId, LeaveTypeId = _sickLeaveTypeId,
-                LeaveYear = DateTime.UtcNow.Year, ProratedEntitlementDays = 7m,
-            }));
+        // DF-21: the ctor's batch stub is year-agnostic (annual→14, sick→7), so the null-year path
+        // (which resolves to DateTime.UtcNow.Year) reads the same informational entitlement.
+        StubEntitlement(_annualLeaveTypeId, 14m);
 
         var result = await CreateService().GetMyBalancesAsync(null);
 
