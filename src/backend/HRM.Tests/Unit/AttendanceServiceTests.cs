@@ -127,6 +127,30 @@ public sealed class AttendanceServiceTests
         db.AttendanceLogs.Should().ContainSingle(a => a.EmployeeId == _employeeId);
     }
 
+    // ── DF-43: the recorded ClockIn timestamp comes from the injected clock (deterministic seam). ──
+    // Proves the TimeProvider seam is actually wired — a fixed fake clock produces a fixed ClockIn time.
+    [Fact]
+    [Trait("TC", "TC-ATT-001-14")]
+    public async Task ClockIn_TimestampComesFromInjectedClock()
+    {
+        var fixedUtc = new DateTime(2026, 3, 15, 9, 30, 0, DateTimeKind.Utc);
+        var db = CreateDbContext();
+        var overtime = new OvertimeService(db, _tenantContext, _currentUser, Substitute.For<ILogger<OvertimeService>>());
+        var shiftService = new ShiftService(db, _tenantContext, _currentUser, Substitute.For<ILogger<ShiftService>>());
+        var svc = new AttendanceService(db, _tenantContext, _currentUser, overtime, shiftService, _logger,
+            timeProvider: new FakeTimeProvider(fixedUtc));
+
+        var result = await svc.ClockInAsync(Data());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.ClockIn.Should().Be(fixedUtc);                 // exactly the fake clock's instant
+        result.Value.ClockIn.Kind.Should().Be(DateTimeKind.Utc);
+
+        using var check = CreateDbContext();
+        var persisted = check.AttendanceLogs.Single(a => a.EmployeeId == _employeeId);
+        persisted.ClockIn.Should().Be(fixedUtc);                     // persisted from the same seam
+    }
+
     // ── FR-5: IP / user-agent capture ──────────────────────────────
 
     [Fact]
