@@ -25,6 +25,7 @@ describe('OrgProfileSectionComponent', () => {
     fiscalYearStartMonth: 4,
     defaultCountryCode: 'LK',
     probationPeriodDays: 60,
+    leaveCancellationWindowDays: 14,
     payslipFooterDisclaimer: 'Confidential payslip',
     payrollFromEmail: 'payroll@acme.test',
   };
@@ -63,6 +64,26 @@ describe('OrgProfileSectionComponent', () => {
     expect(component.form.get('probationPeriodDays')?.value).toBe(60);
     expect(component.form.get('payslipFooterDisclaimer')?.value).toBe('Confidential payslip');
     expect(component.form.get('payrollFromEmail')?.value).toBe('payroll@acme.test');
+  });
+
+  // DF-20 / ISSUE-044: the leave-cancellation-window field renders and loads
+  // its value from the GET org-profile so it round-trips (full-replace PUT).
+  it('renders the leave-cancellation-window field and loads its value', () => {
+    httpMock = TestBed.inject(HttpTestingController);
+    const input: HTMLInputElement =
+      fixture.nativeElement.querySelector('#org-leave-cancel-window');
+    expect(input).toBeTruthy();
+    expect(input.getAttribute('type')).toBe('number');
+    expect(component.form.get('leaveCancellationWindowDays')?.value).toBe(14);
+  });
+
+  it('flags an invalid leave-cancellation-window (> 90)', () => {
+    httpMock = TestBed.inject(HttpTestingController);
+    const control = component.form.get('leaveCancellationWindowDays');
+    control?.setValue(120);
+    expect(control?.invalid).toBeTrue();
+    control?.setValue(30);
+    expect(control?.valid).toBeTrue();
   });
 
   it('keeps Save disabled until the form is dirty, then enables it', () => {
@@ -114,6 +135,8 @@ describe('OrgProfileSectionComponent', () => {
     expect(req.request.body.defaultCountryCode).toBe('LK');
     expect(req.request.body.probationPeriodDays).toBe(60);
     expect(typeof req.request.body.probationPeriodDays).toBe('number');
+    expect(req.request.body.leaveCancellationWindowDays).toBe(14);
+    expect(typeof req.request.body.leaveCancellationWindowDays).toBe('number');
     expect(req.request.body.payslipFooterDisclaimer).toBe('Confidential payslip');
     expect(req.request.body.payrollFromEmail).toBe('payroll@acme.test');
     req.flush(null);

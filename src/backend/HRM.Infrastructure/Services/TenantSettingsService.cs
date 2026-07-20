@@ -128,6 +128,8 @@ public sealed class TenantSettingsService : ITenantSettingsService
         tenant.FiscalYearStartMonth = request.FiscalYearStartMonth;
         // ISSUE-304: the probation period the reminder sweep resolves (a Location may override it).
         tenant.ProbationPeriodDays = request.ProbationPeriodDays;
+        // DF-20/ISSUE-044 (US-LV-010 FR-7): the tenant leave-cancellation notice window read at cancel time.
+        tenant.LeaveCancellationWindowDays = request.LeaveCancellationWindowDays;
 
         // ISSUE-159 (BR-3): tenant payslip footer disclaimer. Blank clears it → renderer default fallback.
         tenant.PayslipFooterDisclaimer = Normalize(request.PayslipFooterDisclaimer);
@@ -482,7 +484,7 @@ public sealed class TenantSettingsService : ITenantSettingsService
     private static OrgProfileDto ToOrgProfileDto(Tenant t) => new(
         t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize,
         t.FiscalYearStartMonth, t.DefaultCountryCode, t.ProbationPeriodDays, t.PayslipFooterDisclaimer,
-        t.PayrollFromEmail);
+        t.PayrollFromEmail, t.LeaveCancellationWindowDays);
 
     private static BrandingDto ToBrandingDto(Tenant t) => new(
         t.LogoUrl, t.EmailLogoUrl, t.FaviconUrl, t.PrimaryColor);

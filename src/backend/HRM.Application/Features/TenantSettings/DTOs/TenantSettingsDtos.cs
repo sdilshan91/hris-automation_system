@@ -31,7 +31,11 @@ public sealed record OrgProfileDto(
     string? PayslipFooterDisclaimer = null,
     // ISSUE-229 (US-PAY-011 BR-4): tenant-configurable "From" address for payslip distribution emails. Null/blank
     // → payslip emails use the system default sender. APPENDED positional.
-    string? PayrollFromEmail = null);
+    string? PayrollFromEmail = null,
+    // DF-20/ISSUE-044 (US-LV-010 FR-7): tenant leave-cancellation notice window in days. An employee may
+    // self-cancel an APPROVED leave only when StartDate > today + N. Default 0 = cancellable strictly before
+    // start. APPENDED positional.
+    int LeaveCancellationWindowDays = 0);
 
 public sealed record BrandingDto(
     string? LogoUrl,
@@ -85,7 +89,11 @@ public sealed record UpdateOrgProfileRequest(
     // ISSUE-229 (US-PAY-011 BR-4): tenant-configurable "From" address for payslip distribution emails. Null/blank
     // clears it (payslip emails fall back to the system default sender). Validated as a well-formed email on
     // write. APPENDED positional.
-    string? PayrollFromEmail = null);
+    string? PayrollFromEmail = null,
+    // DF-20/ISSUE-044 (US-LV-010 FR-7): tenant leave-cancellation notice window in days (0-90). An employee may
+    // self-cancel an APPROVED leave only when StartDate > today + N. Default 0 = cancellable strictly before
+    // start. APPENDED positional.
+    int LeaveCancellationWindowDays = 0);
 
 public sealed record UpdateLocalizationRequest(
     string DefaultLanguage,

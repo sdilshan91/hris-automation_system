@@ -303,6 +303,82 @@ public sealed class CancelLeaveRequestServiceTests
         result.Error.Should().Contain("already started");
     }
 
+    // ── DF-20/ISSUE-044 (FR-7): the cancellation window is tenant-configurable (N-day before-start cutoff). ──
+    // With a tenant window of 5, an approved leave must be cancelled MORE than 5 days before it starts:
+    // starting in 3 days → blocked; starting in 10 days → allowed. Proves CancelAsync reads Tenant.LeaveCancellationWindowDays.
+    [Fact]
+    [Trait("TC", "TC-LV-203")]
+    public async Task Cancel_ApprovedRequest_RespectsTenantConfiguredWindow()
+    {
+        using (var db = CreateDbContext())
+        {
+            db.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme", LeaveCancellationWindowDays = 5 });
+            db.SaveChanges();
+        }
+        SeedBalance(_ownerEmployeeId, DateTime.UtcNow.Year, 14m);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // (a) starts in 3 days → within the 5-day notice window → blocked 400.
+        var near = SeedRequest(_ownerEmployeeId, LeaveRequestStatus.Approved, totalDays: 1m,
+            start: today.AddDays(3), end: today.AddDays(3));
+        var blocked = await CreateService().CancelAsync(near, reason: "too close");
+        blocked.IsFailure.Should().BeTrue();
+        blocked.StatusCode.Should().Be(400);
+        blocked.Error.Should().Contain("already started");
+        LoadRequest(near).Status.Should().Be(LeaveRequestStatus.Approved); // unchanged
+
+        // (b) starts in 10 days → outside the 5-day window → allowed.
+        var far = SeedRequest(_ownerEmployeeId, LeaveRequestStatus.Approved, totalDays: 1m,
+            start: today.AddDays(10), end: today.AddDays(10));
+        var ok = await CreateService().CancelAsync(far, reason: "far enough ahead");
+        ok.IsSuccess.Should().BeTrue(ok.Error);
+        LoadRequest(far).Status.Should().Be(LeaveRequestStatus.Cancelled);
+    }
+
+    // ── Exact cutoff boundary (off-by-one): with N=5, start == today+5 is blocked (<=), today+6 is allowed. ──
+    // Pins the `StartDate <= cutoff` comparison — a mutant flipping <= to < survives the +3/+10 arm but fails here.
+    [Fact]
+    [Trait("TC", "TC-LV-203")]
+    public async Task Cancel_ApprovedRequest_AtExactCutoffDay_IsBlocked_OneDayPast_IsAllowed()
+    {
+        using (var db = CreateDbContext())
+        {
+            db.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme", LeaveCancellationWindowDays = 5 });
+            db.SaveChanges();
+        }
+        SeedBalance(_ownerEmployeeId, DateTime.UtcNow.Year, 14m);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // start == today+5 == cutoff → StartDate <= cutoff → blocked.
+        var atCutoff = SeedRequest(_ownerEmployeeId, LeaveRequestStatus.Approved, totalDays: 1m,
+            start: today.AddDays(5), end: today.AddDays(5));
+        (await CreateService().CancelAsync(atCutoff, reason: "on the line")).StatusCode.Should().Be(400);
+
+        // start == today+6 == cutoff+1 → allowed.
+        var pastCutoff = SeedRequest(_ownerEmployeeId, LeaveRequestStatus.Approved, totalDays: 1m,
+            start: today.AddDays(6), end: today.AddDays(6));
+        (await CreateService().CancelAsync(pastCutoff, reason: "one day clear")).IsSuccess.Should().BeTrue();
+    }
+
+    // ── The window gates ONLY Approved requests: a Pending request inside the window stays cancellable. ──
+    [Fact]
+    [Trait("TC", "TC-LV-203")]
+    public async Task Cancel_PendingRequest_InsideTenantWindow_IsStillAllowed()
+    {
+        using (var db = CreateDbContext())
+        {
+            db.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme", LeaveCancellationWindowDays = 5 });
+            db.SaveChanges();
+        }
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Pending, starting in 3 days (inside the 5-day window) — the window guard is under `if (wasApproved)`.
+        var pending = SeedRequest(_ownerEmployeeId, LeaveRequestStatus.Pending, totalDays: 1m,
+            start: today.AddDays(3), end: today.AddDays(3));
+
+        (await CreateService().CancelAsync(pending, reason: "changed my mind")).IsSuccess.Should().BeTrue();
+        LoadRequest(pending).Status.Should().Be(LeaveRequestStatus.Cancelled);
+    }
+
     // ── BR-2: rejected / already-cancelled cannot be cancelled ───────
 
     [Fact]

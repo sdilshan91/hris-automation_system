@@ -31,6 +31,7 @@ describe('CompanySettingsService', () => {
       fiscalYearStartMonth: 1,
       defaultCountryCode: 'LK',
       probationPeriodDays: 90,
+      leaveCancellationWindowDays: 0,
       payslipFooterDisclaimer: null,
       payrollFromEmail: null,
     },

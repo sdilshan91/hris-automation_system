@@ -1310,7 +1310,7 @@
 - **Suggested direction (NOT applied):** none — report only. (Dev should pick a single authoritative balance source — fix BUG-030's reconciliation — and have both the cancel response and `my-balance` derive from it.)
 
 ### ISSUE-044 — FR-7 tenant-configurable cancellation window (allow cancel up to N days before start) is NOT implemented: the window is a hardcoded `const = 0`, so the policy can never be set per tenant
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ RESOLVED (2026-07-20, #PR-pending, DF-20) — added `Tenant.LeaveCancellationWindowDays` (0–90, org-profile admin field + migration); `LeaveRequestService.CancelAsync` reads it per-tenant (`StartDate <= today + N` blocks an Approved leave). Default 0 preserves today's behavior. Automated (TC-LV-203, +UpdateOrgProfileValidatorTests). FE proactive Cancel-button disable deferred to DF-54 (needs an employee-readable window source).
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-010 · TC-LV-203 (FR-7 tenant-configurable N-day cut-off; default N=0)
 - **Title:** FR-7 specifies a tenant-configurable policy "allow cancellation of approved leaves up to N days before start date (default 0 = anytime before start)." The default (N=0) is honored, but there is **no tenant-settings lookup** — `DefaultCancellationWindowDays` is a compile-time `private const int … = 0` in `LeaveRequestService`. No tenant can configure N>0; the conditional window arm of TC-LV-203 cannot be exercised because the wiring does not exist.

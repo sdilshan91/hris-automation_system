@@ -32,6 +32,13 @@ export interface IOrgProfile {
   defaultCountryCode: string | null;
   /** Default probation length in days (BE default 90 when omitted). */
   probationPeriodDays: number;
+  /**
+   * DF-20 / ISSUE-044 (US-LV-010 FR-7): tenant self-cancellation window in days,
+   * 0–90 (BE default 0). An employee may self-cancel an Approved leave only when
+   * its start date is more than N days away (N=0 = any time strictly before start);
+   * inside the window the BE rejects the cancel with a 400.
+   */
+  leaveCancellationWindowDays: number;
   /** ISSUE-159 footer text on payslips; blank clears it. */
   payslipFooterDisclaimer: string | null;
   /** ISSUE-229 sender email for payroll notifications; BE validates format. */
