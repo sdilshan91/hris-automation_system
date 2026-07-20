@@ -201,4 +201,70 @@ public sealed class RealPayrollNotificationServiceTests
 
         await act.Should().NotThrowAsync();
     }
+
+    // ── ISSUE-173 FR-3: an SLA-escalated run notifies the current step's BACKUP ROLE holders. ──
+
+    /// <summary>Seeds an AwaitingApproval run at step 1 (SubmittedBy the maker). Optionally a step-1 config with a backup role.</summary>
+    private async Task<Guid> SeedAwaitingRunAtStep1Async(Guid? backupRoleId)
+    {
+        using var db = Db();
+        var runId = BaseEntity.NewUuidV7();
+        db.PayrollRuns.Add(new PayrollRun
+        {
+            Id = runId, TenantId = _tenantId, PayMonth = 5, PayYear = 2026,
+            Status = PayrollRunStatus.AwaitingApproval, InitiatedBy = Guid.NewGuid(), InitiatedAt = DateTime.UtcNow,
+            TotalEmployees = 2, ProcessedEmployees = 2, SubmittedBy = _submitter,
+            CurrentApprovalStep = 1, TotalApprovalSteps = 1,
+        });
+        if (backupRoleId is { } br)
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 1, RoleId = br, BackupRoleId = br,
+            });
+        await db.SaveChangesAsync();
+        return runId;
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task NotifyApprovalEventAsync_Escalated_DispatchesToBackupRoleHolders_NotTheGeneralPool()
+    {
+        await SeedApproverPoolAsync();        // the general pool (approver1/2) must NOT receive when a backup is configured.
+        var backupUser = Guid.NewGuid();
+        Guid backupRole;
+        using (var db = Db())
+        {
+            backupRole = Guid.NewGuid();
+            db.Roles.Add(new Role { Id = backupRole, TenantId = _tenantId, Name = "Backup Approver" });
+            db.RolePermissions.Add(new RolePermission { RoleId = backupRole, Permission = PermissionCatalog.Payroll.Approve });
+            var utId = Guid.NewGuid();
+            db.UserTenants.Add(new UserTenant { Id = utId, UserId = backupUser, TenantId = _tenantId, Status = UserTenantStatus.Active });
+            db.UserTenantRoles.Add(new UserTenantRole { UserTenantId = utId, RoleId = backupRole });
+            await db.SaveChangesAsync();
+        }
+        var runId = await SeedAwaitingRunAtStep1Async(backupRole);
+        var dispatcher = new RecordingDispatcher();
+
+        await Service(dispatcher).NotifyApprovalEventAsync(_tenantId, runId, "payroll-approval-escalated");
+
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { backupUser });
+        dispatcher.InApp.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { backupUser });
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().NotContain(_approver1); // general pool NOT used when a backup is set
+        dispatcher.Email.Should().OnlyContain(r => r.EventKey == "payroll_approval_escalated");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task NotifyApprovalEventAsync_Escalated_NoBackupConfigured_FallsBackToApproverPool()
+    {
+        await SeedApproverPoolAsync();
+        var runId = await SeedAwaitingRunAtStep1Async(backupRoleId: null); // no step config / no BackupRoleId
+
+        var dispatcher = new RecordingDispatcher();
+        await Service(dispatcher).NotifyApprovalEventAsync(_tenantId, runId, "payroll-approval-escalated");
+
+        // Fallback: the Payroll.Approve approver pool (people who can actually clear the overdue run).
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { _approver1, _approver2 });
+        dispatcher.Email.Should().OnlyContain(r => r.EventKey == "payroll_approval_escalated");
+    }
 }

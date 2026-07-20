@@ -969,6 +969,28 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.PayrollNotifications,
             IsMandatory: false);
 
+        // US-PAY-008 FR-3 (ISSUE-173): a payroll approval breached its per-step SLA and was escalated. Recipients are
+        // resolved in the Real service = the current step's backup approver role holders (fallback: the approver pool).
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_approval_escalated",
+            EventName: "Payroll Approval Escalated",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "An overdue payroll approval for {{payroll.period}} was escalated to you",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The payroll run for <strong>{{payroll.period}}</strong> has been awaiting approval past its SLA " +
+                "and has been <strong>escalated</strong> to you as a backup approver.</p>" +
+                "<p>Please review it in the HRM portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The payroll run for {{payroll.period}} has been awaiting approval past its SLA and has been " +
+                "escalated to you as a backup approver.\n\nPlease review it in the HRM portal.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
         yield return new NotificationEventDefinition(
             EventKey: "payroll_finalized",
             EventName: "Payroll Run Finalized",

@@ -61,6 +61,15 @@ public sealed record PayrollApprovalStepConfigDto
 
     /// <summary>The role's display name (resolved for the caller; empty if the role was since removed).</summary>
     public string RoleName { get; init; } = string.Empty;
+
+    /// <summary>US-PAY-008 FR-3 (ISSUE-173): per-step approval SLA in hours; null = no SLA (never escalates).</summary>
+    public int? SlaHours { get; init; }
+
+    /// <summary>US-PAY-008 FR-3 (ISSUE-173): the backup approver role notified on SLA breach; null = approver-pool fallback.</summary>
+    public Guid? BackupRoleId { get; init; }
+
+    /// <summary>The backup role's display name (resolved for the caller; empty when no backup role / role removed).</summary>
+    public string? BackupRoleName { get; init; }
 }
 
 /// <summary>One (StepNumber, RoleId) pair in a step-config replacement request (US-PAY-008 AC-4/FR-2).</summary>
@@ -68,6 +77,15 @@ public sealed record PayrollApprovalStepConfigItem
 {
     public int StepNumber { get; init; }
     public Guid RoleId { get; init; }
+
+    /// <summary>US-PAY-008 FR-3 (ISSUE-173): optional per-step SLA in hours; when set must be &gt; 0. Null = no SLA.</summary>
+    public int? SlaHours { get; init; }
+
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): optional backup approver role notified on SLA breach. When set it must exist in
+    /// the tenant AND hold Payroll.Approve (same validation as <see cref="RoleId"/>). Null = approver-pool fallback.
+    /// </summary>
+    public Guid? BackupRoleId { get; init; }
 }
 
 /// <summary>

@@ -53,6 +53,10 @@ public sealed class PayrollRunConfiguration : IEntityTypeConfiguration<PayrollRu
         builder.Property(x => x.SubmittedAt);
         builder.Property(x => x.RejectionReason).HasColumnType("text");
 
+        // US-PAY-008 FR-3 (ISSUE-173): per-step SLA due-at + escalated-at (both nullable, opt-in).
+        builder.Property(x => x.SlaDueAt);
+        builder.Property(x => x.EscalatedAt);
+
         builder.Property(x => x.ApprovedBy);
         builder.Property(x => x.ApprovedAt);
         builder.Property(x => x.FinalizedAt);

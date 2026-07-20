@@ -37,6 +37,7 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
     private readonly IPayrollNotificationService _notifications;
     private readonly IPayrollAuditLogger _audit;
     private readonly ILogger<PayrollApprovalService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     private const int MinReasonLength = 10;
 
@@ -46,7 +47,8 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         ICurrentUser currentUser,
         IPayrollNotificationService notifications,
         IPayrollAuditLogger audit,
-        ILogger<PayrollApprovalService> logger)
+        ILogger<PayrollApprovalService> logger,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -54,6 +56,10 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         _notifications = notifications;
         _audit = audit;
         _logger = logger;
+        // US-PAY-008 FR-3 (ISSUE-173): injectable clock so the SlaDueAt stamping is deterministically testable
+        // (a test can force a breach). Trailing-optional + TimeProvider.System default so the existing manual
+        // test-DI constructions of this service keep compiling; DI supplies the real provider (DF-43).
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>US-PAY-012: audited snapshot of a run's status/totals/actor fields (before/after JSON).</summary>
@@ -98,6 +104,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         run.SubmittedBy = _currentUser.UserId;
         run.SubmittedAt = DateTime.UtcNow;
         run.RejectionReason = null;  // a re-submit clears the prior rejection reason.
+
+        // FR-3 (ISSUE-173): stamp the step-1 SLA (from its config's SlaHours) and start the step with a clean
+        // escalation slate. Null when step 1 has no SLA configured (then the run never escalates).
+        run.SlaDueAt = await ComputeSlaDueAtAsync(1, cancellationToken);
+        run.EscalatedAt = null;
 
         var history = NewHistory(run, instanceId, 1, PayrollApprovalAction.Submitted, Trim(comments), ipAddress);
         _dbContext.PayrollApprovalHistories.Add(history);
@@ -176,6 +187,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             run.ApprovedAt = DateTime.UtcNow;
             run.CurrentApprovalStep = null;
 
+            // FR-3 (ISSUE-173): the run has left AwaitingApproval — clear the SLA slate so the escalator never
+            // picks it up.
+            run.SlaDueAt = null;
+            run.EscalatedAt = null;
+
             // US-PAY-012 (FR-2/BR-5): audit the terminal Approved transition WITH IP/user-agent (sensitive
             // action). Intermediate step approvals are captured in PayrollApprovalHistory; the PayrollRun.Approved
             // audit action fires once on the final approval (matches the §7 single action value).
@@ -186,6 +202,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         {
             // AC-4: advance to the next step; the run stays AwaitingApproval until the last step approves.
             run.CurrentApprovalStep = step + 1;
+
+            // FR-3 (ISSUE-173): a fresh step gets a fresh SLA — stamp from the NEXT step's config (null when it has
+            // no SLA) and clear the escalation slate so this step can escalate independently.
+            run.SlaDueAt = await ComputeSlaDueAtAsync(step + 1, cancellationToken);
+            run.EscalatedAt = null;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -223,6 +244,8 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         // AC-3: status -> Rejected, store the reason. HR corrects + re-submits (BR-3, new instance).
         run.Status = PayrollRunStatus.Rejected;
         run.RejectionReason = trimmed;
+        run.SlaDueAt = null;   // FR-3 hygiene: a rejected run has no live approval SLA (re-submit re-stamps).
+        run.EscalatedAt = null;
         run.CurrentApprovalStep = null;
 
         var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Rejected, trimmed, ipAddress);
@@ -265,6 +288,8 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         // FR-9: send back to HR without a formal rejection. Closes the active workflow instance; a subsequent
         // submit starts a new one (mirrors the BR-3 re-submit semantics).
         run.Status = PayrollRunStatus.ReviewPending;
+        run.SlaDueAt = null;   // FR-3 hygiene: no live approval SLA while back with HR (re-submit re-stamps).
+        run.EscalatedAt = null;
         run.CurrentWorkflowInstanceId = null;
         run.CurrentApprovalStep = null;
         run.TotalApprovalSteps = null;
@@ -572,7 +597,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             .OrderBy(c => c.StepNumber)
             .ToListAsync(cancellationToken);
 
-        var roleIds = configs.Select(c => c.RoleId).Distinct().ToList();
+        // Include backup role ids in the same keyed name lookup so both the primary + backup role names resolve
+        // in one query (FR-3, ISSUE-173).
+        var roleIds = configs.Select(c => c.RoleId)
+            .Concat(configs.Where(c => c.BackupRoleId is not null).Select(c => c.BackupRoleId!.Value))
+            .Distinct().ToList();
         var roleNames = await _dbContext.Roles.AsNoTracking()
             .Where(r => roleIds.Contains(r.Id))
             .ToDictionaryAsync(r => r.Id, r => r.Name, cancellationToken);
@@ -582,6 +611,9 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             StepNumber = c.StepNumber,
             RoleId = c.RoleId,
             RoleName = roleNames.TryGetValue(c.RoleId, out var name) ? name : string.Empty,
+            SlaHours = c.SlaHours,
+            BackupRoleId = c.BackupRoleId,
+            BackupRoleName = c.BackupRoleId is { } bid && roleNames.TryGetValue(bid, out var bname) ? bname : null,
         }).ToList();
 
         return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Success(rows);
@@ -606,7 +638,16 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
                     "Approval steps must be contiguous starting at 1 (1..N with no gaps or duplicates).",
                     400, "steps_not_contiguous");
 
-        var roleIds = ordered.Select(s => s.RoleId).Distinct().ToList();
+        // FR-3 (ISSUE-173): SlaHours is opt-in but, when set, must be a positive number of hours.
+        if (ordered.Any(s => s.SlaHours is <= 0))
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                "SlaHours, when set, must be greater than 0.", 400, "sla_hours_invalid");
+
+        // Primary role ids PLUS any backup role ids (FR-3): backups get the SAME tenant-existence + Payroll.Approve
+        // validation as the primary step role — a backup that can't approve would be a dead escalation target.
+        var roleIds = ordered.Select(s => s.RoleId)
+            .Concat(ordered.Where(s => s.BackupRoleId is not null).Select(s => s.BackupRoleId!.Value))
+            .Distinct().ToList();
 
         // Every role must exist IN THIS TENANT (tenant-owned role, not a null/system role).
         var tenantRoleIds = await _dbContext.Roles.AsNoTracking()
@@ -615,10 +656,10 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             .ToListAsync(cancellationToken);
         if (roleIds.Any(id => !tenantRoleIds.Contains(id)))
             return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
-                "One or more step roles do not exist in this tenant.", 400, "role_not_found");
+                "One or more step or backup roles do not exist in this tenant.", 400, "role_not_found");
 
-        // Every role must hold Payroll.Approve — a step role that can't pass the controller's approve gate would
-        // be a dead misconfiguration (nobody in it could ever approve the step).
+        // Every role must hold Payroll.Approve — a step/backup role that can't pass the controller's approve gate
+        // would be a dead misconfiguration (nobody in it could ever approve the step).
         var approveRoleIds = await _dbContext.RolePermissions.AsNoTracking()
             .Where(rp => rp.Permission == PermissionCatalog.Payroll.Approve && roleIds.Contains(rp.RoleId))
             .Select(rp => rp.RoleId)
@@ -626,12 +667,12 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             .ToListAsync(cancellationToken);
         if (roleIds.Any(id => !approveRoleIds.Contains(id)))
             return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
-                "Every step role must hold the Payroll.Approve permission.", 400, "role_missing_approve_permission");
+                "Every step and backup role must hold the Payroll.Approve permission.", 400, "role_missing_approve_permission");
 
         // Atomic replace: drop the tenant's existing config and insert the new ordered set in one SaveChanges.
         var existing = await _dbContext.PayrollApprovalStepConfigs.ToListAsync(cancellationToken);
         var before = existing.OrderBy(c => c.StepNumber)
-            .Select(c => new { c.StepNumber, c.RoleId }).ToList();
+            .Select(c => new { c.StepNumber, c.RoleId, c.SlaHours, c.BackupRoleId }).ToList();
         _dbContext.PayrollApprovalStepConfigs.RemoveRange(existing);
 
         foreach (var s in ordered)
@@ -641,9 +682,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
                 TenantId = _tenantContext.TenantId,
                 StepNumber = s.StepNumber,
                 RoleId = s.RoleId,
+                SlaHours = s.SlaHours,
+                BackupRoleId = s.BackupRoleId,
             });
 
-        var after = ordered.Select(s => new { s.StepNumber, s.RoleId }).ToList();
+        var after = ordered.Select(s => new { s.StepNumber, s.RoleId, s.SlaHours, s.BackupRoleId }).ToList();
         _audit.Log(PA.PayrollApprovalStepConfigUpdated, PA.ResourceType.PayrollApprovalStepConfig,
             _tenantContext.TenantId.ToString(), before: before, after: after, ipAddress: ipAddress);
 
@@ -712,6 +755,24 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
                 && h.Action == PayrollApprovalAction.Approved
                 && h.ActorUserId == _currentUser.UserId,
             cancellationToken);
+
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): the SLA due-at for the given 1-based approval step — <c>now + SlaHours</c> read
+    /// from that step's <see cref="PayrollApprovalStepConfig"/>, or null when the step has no config row or no
+    /// SlaHours (opt-in; a step with no SLA never escalates). <c>now</c> is read from the injected clock so the
+    /// stamping is deterministically testable.
+    /// </summary>
+    private async Task<DateTime?> ComputeSlaDueAtAsync(int stepNumber, CancellationToken cancellationToken)
+    {
+        var slaHours = await _dbContext.PayrollApprovalStepConfigs.AsNoTracking()
+            .Where(c => c.StepNumber == stepNumber)
+            .Select(c => c.SlaHours)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return slaHours is > 0
+            ? _timeProvider.GetUtcNow().UtcDateTime.AddHours(slaHours.Value)
+            : null;
+    }
 
     private async Task<(PayrollRun? Run, Result<PayrollApprovalResultDto>? Failure)> LoadRunAsync(
         Guid runId, CancellationToken cancellationToken)

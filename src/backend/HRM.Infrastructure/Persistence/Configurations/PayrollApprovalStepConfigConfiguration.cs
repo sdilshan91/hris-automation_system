@@ -21,6 +21,11 @@ public sealed class PayrollApprovalStepConfigConfiguration : IEntityTypeConfigur
         builder.Property(c => c.StepNumber).IsRequired();
         builder.Property(c => c.RoleId).IsRequired();
 
+        // US-PAY-008 FR-3 (ISSUE-173): per-step approval SLA + backup approver role. Both nullable/opt-in — no
+        // SLA configured means the step never escalates.
+        builder.Property(c => c.SlaHours);
+        builder.Property(c => c.BackupRoleId);
+
         builder.Property(c => c.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // One row per (tenant, step): the step→role binding is unique per step within a tenant.

@@ -23,4 +23,20 @@ public sealed class PayrollApprovalStepConfig : BaseEntity
     /// the controller's approve gate would be a dead misconfiguration.
     /// </summary>
     public Guid RoleId { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): per-step approval SLA in hours. Opt-in and nullable — when set (&gt; 0) a run
+    /// sitting on this step past <c>SubmittedAt/step-advance + SlaHours</c> is escalated once by the recurring
+    /// <c>PayrollApprovalSlaEscalationJob</c>. Null = this step never escalates (no SLA configured).
+    /// </summary>
+    public int? SlaHours { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): the tenant <see cref="Role"/> notified when this step breaches its SLA (the
+    /// backup approver role). Payroll is role-gated, so escalation NOTIFIES this role's holders (who can act via
+    /// the existing pending-approvals queue) rather than hard-reassigning to a user. Like <see cref="RoleId"/> it
+    /// must, when set, exist in the tenant AND hold <c>Payroll.Approve</c> (validated on write). Null → the tenant
+    /// approver pool is notified as a fallback.
+    /// </summary>
+    public Guid? BackupRoleId { get; set; }
 }

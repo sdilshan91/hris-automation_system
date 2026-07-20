@@ -73,24 +73,29 @@ public sealed class RealPayrollNotificationService : IPayrollNotificationService
         try
         {
             // Map the caller's verbatim event type to a catalog event + its recipient rule.
-            var (eventKey, notificationType, title, toApprovers) = eventType switch
+            var (eventKey, notificationType, title, mode) = eventType switch
             {
                 "payroll-approval-submitted" => (
                     "payroll_approval_submitted", "payroll.approval.submitted",
-                    "A payroll run was submitted for approval", true),
+                    "A payroll run was submitted for approval", RecipientMode.Approvers),
                 "payroll-approval-approved" => (
                     "payroll_approval_approved", "payroll.approval.approved",
-                    "Your payroll run was approved", false),
+                    "Your payroll run was approved", RecipientMode.Submitter),
                 "payroll-approval-rejected" => (
                     "payroll_approval_rejected", "payroll.approval.rejected",
-                    "Your payroll run was rejected", false),
+                    "Your payroll run was rejected", RecipientMode.Submitter),
                 "payroll-approval-returned" => (
                     "payroll_approval_returned", "payroll.approval.returned",
-                    "Your payroll run was returned to HR", false),
+                    "Your payroll run was returned to HR", RecipientMode.Submitter),
+                // US-PAY-008 FR-3 (ISSUE-173): recipients = the run's current-step backup approver role holders,
+                // falling back to the tenant approver pool when no backup role is configured / has no holders.
+                "payroll-approval-escalated" => (
+                    "payroll_approval_escalated", "payroll.approval.escalated",
+                    "A payroll approval is overdue and was escalated", RecipientMode.BackupRoleOrApprovers),
                 "payroll-finalized" => (
                     "payroll_finalized", "payroll.finalized",
-                    "A payroll run was finalized", true),
-                _ => (string.Empty, string.Empty, string.Empty, false),
+                    "A payroll run was finalized", RecipientMode.Approvers),
+                _ => (string.Empty, string.Empty, string.Empty, RecipientMode.Approvers),
             };
 
             if (string.IsNullOrEmpty(eventKey))
@@ -109,21 +114,28 @@ public sealed class RealPayrollNotificationService : IPayrollNotificationService
                 period, run?.ProcessedEmployees ?? 0, run?.SkippedEmployees ?? 0, runId);
 
             IReadOnlyList<Guid> recipients;
-            if (toApprovers)
+            switch (mode)
             {
-                recipients = await ResolveApproverUserIdsAsync(tenantId, cancellationToken);
-            }
-            else
-            {
-                // approved / rejected / returned → the run's submitter (maker). Skip gracefully when unknown.
-                if (run?.SubmittedBy is not { } submitter)
-                {
-                    _logger.LogWarning(
-                        "RealPayrollNotificationService: run {RunId} has no SubmittedBy; approval event " +
-                        "'{EventType}' not delivered (tenant {TenantId}).", runId, eventType, tenantId);
-                    return;
-                }
-                recipients = [submitter];
+                case RecipientMode.Approvers:
+                    recipients = await ResolveApproverUserIdsAsync(tenantId, cancellationToken);
+                    break;
+
+                case RecipientMode.BackupRoleOrApprovers:
+                    recipients = await ResolveBackupApproverUserIdsAsync(tenantId, run, cancellationToken);
+                    break;
+
+                case RecipientMode.Submitter:
+                default:
+                    // approved / rejected / returned → the run's submitter (maker). Skip gracefully when unknown.
+                    if (run?.SubmittedBy is not { } submitter)
+                    {
+                        _logger.LogWarning(
+                            "RealPayrollNotificationService: run {RunId} has no SubmittedBy; approval event " +
+                            "'{EventType}' not delivered (tenant {TenantId}).", runId, eventType, tenantId);
+                        return;
+                    }
+                    recipients = [submitter];
+                    break;
             }
 
             await DispatchToUsersAsync(tenantId, eventKey, notificationType, payload, recipients, runId, cancellationToken);
@@ -158,6 +170,56 @@ public sealed class RealPayrollNotificationService : IPayrollNotificationService
                 select ut.UserId)
             .Distinct()
             .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// US-PAY-008 FR-3 (ISSUE-173): resolves the escalation recipients — the ACTIVE tenant users holding the run's
+    /// CURRENT-step backup approver role (<see cref="HRM.Domain.Entities.PayrollApprovalStepConfig.BackupRoleId"/>).
+    /// Falls back to the tenant approver pool when the run has no current step, no configured backup role, or the
+    /// backup role has no holders — so an overdue approval is never silently un-notified. Scoped by tenant id with
+    /// IgnoreQueryFilters (correct outside a request scope).
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> ResolveBackupApproverUserIdsAsync(
+        Guid tenantId, PayrollRun? run, CancellationToken cancellationToken)
+    {
+        if (run?.CurrentApprovalStep is { } step)
+        {
+            var backupRoleId = await _db.PayrollApprovalStepConfigs.IgnoreQueryFilters().AsNoTracking()
+                .Where(c => c.TenantId == tenantId && c.StepNumber == step)
+                .Select(c => c.BackupRoleId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (backupRoleId is { } roleId)
+            {
+                var holders = await (
+                        from ut in _db.UserTenants.IgnoreQueryFilters()
+                        where ut.TenantId == tenantId && ut.Status == UserTenantStatus.Active
+                        join utr in _db.UserTenantRoles.IgnoreQueryFilters() on ut.Id equals utr.UserTenantId
+                        where utr.RoleId == roleId
+                        select ut.UserId)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                if (holders.Count > 0)
+                    return holders;
+            }
+        }
+
+        // Fallback: the tenant approver pool (Payroll.Approve holders) — the admins who can actually clear the run.
+        return await ResolveApproverUserIdsAsync(tenantId, cancellationToken);
+    }
+
+    /// <summary>Recipient-resolution strategy for a payroll approval event (US-PAY-008).</summary>
+    private enum RecipientMode
+    {
+        /// <summary>The tenant approver pool (Payroll.Approve holders) — submit / finalize.</summary>
+        Approvers,
+
+        /// <summary>The run's submitter (maker) — approved / rejected / returned.</summary>
+        Submitter,
+
+        /// <summary>The current step's backup approver role holders, falling back to the approver pool — escalated.</summary>
+        BackupRoleOrApprovers,
+    }
 
     private async Task DispatchToUsersAsync(
         Guid tenantId, string eventKey, string notificationType, string payloadJson,
