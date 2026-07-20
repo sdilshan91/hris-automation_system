@@ -17,7 +17,7 @@ public interface IMyPayslipService
     /// paginated (FR-6 default 12/page, optional <paramref name="year"/> filter). 403 when no employee record
     /// is linked to the current user (BR-5 — never leaks anyone else's data).
     /// </summary>
-    Task<Result<MyPayslipListDto>> ListMineAsync(int? year, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<Result<MyPayslipListDto>> ListMineAsync(int? year, int? month, int page, int pageSize, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Full breakdown for ONE of the caller's own payslips (AC-2/FR-3). 404 when the slip does not exist for

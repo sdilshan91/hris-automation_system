@@ -35,12 +35,13 @@ export class MyPayslipService {
   /**
    * The authenticated employee's payslips from Finalized runs (FR-2/BR-1), most-recent
    * first (the backend sorts; the component re-sorts defensively). Paginated (§7);
-   * pass `year` to filter (FR-6) and `page` to page through history. Tolerates either
-   * the paginated shape or a bare array (normalized to a page) so a backend shape
-   * choice doesn't break the list.
+   * pass `year` and/or `month` (1-12) to filter (FR-6) and `page` to page through
+   * history — the two filters compose. Tolerates either the paginated shape or a bare
+   * array (normalized to a page) so a backend shape choice doesn't break the list.
    */
   listMyPayslips(
     year?: number | null,
+    month?: number | null,
     page = 1,
     pageSize = 12,
   ): Observable<IMyPayslipPage> {
@@ -49,6 +50,9 @@ export class MyPayslipService {
       .set('pageSize', String(pageSize));
     if (year != null) {
       params = params.set('year', String(year));
+    }
+    if (month != null) {
+      params = params.set('month', String(month));
     }
     return this.http
       .get<IMyPayslipPage | IMyPayslipListItem[]>(this.baseUrl, {

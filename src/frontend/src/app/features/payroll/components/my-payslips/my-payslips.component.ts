@@ -17,6 +17,7 @@ import { MyPayslipService } from '../../services/my-payslip.service';
 import {
   IMyPayslipDetail,
   IMyPayslipListItem,
+  MONTH_NAMES,
   hasYtd,
   payPeriodLabel,
 } from '../../models/my-payslip.models';
@@ -68,22 +69,40 @@ import {
         </p>
       </div>
 
-      <!-- Year filter tabs (FR-6) -->
+      <!-- Filters (FR-6): year tabs + pay-month select -->
       @if (years().length > 0) {
-        <div class="year-tabs" role="tablist" aria-label="Filter payslips by year" data-test="year-tabs">
-          @for (y of years(); track y) {
-            <button
-              type="button"
-              role="tab"
-              class="year-tab"
-              [class.year-tab-active]="selectedYear() === y"
-              [attr.aria-selected]="selectedYear() === y"
-              (click)="selectYear(y)"
-              [attr.data-test]="'year-' + y"
+        <div class="filter-bar">
+          <div class="year-tabs" role="tablist" aria-label="Filter payslips by year" data-test="year-tabs">
+            @for (y of years(); track y) {
+              <button
+                type="button"
+                role="tab"
+                class="year-tab"
+                [class.year-tab-active]="selectedYear() === y"
+                [attr.aria-selected]="selectedYear() === y"
+                (click)="selectYear(y)"
+                [attr.data-test]="'year-' + y"
+              >
+                {{ y }}
+              </button>
+            }
+          </div>
+
+          <label class="month-filter-label">
+            <span class="sr-only">Filter payslips by month</span>
+            <select
+              class="month-select"
+              aria-label="Filter payslips by month"
+              data-test="month-filter"
+              [value]="selectedMonth() ?? ''"
+              (change)="onMonthChange($any($event.target).value)"
             >
-              {{ y }}
-            </button>
-          }
+              <option value="">All months</option>
+              @for (m of monthOptions; track m.value) {
+                <option [value]="m.value">{{ m.label }}</option>
+              }
+            </select>
+          </label>
         </div>
       }
 
@@ -302,8 +321,21 @@ import {
     .page-container { @apply max-w-4xl mx-auto p-4 sm:p-6; }
     .card-notion { @apply rounded-xl bg-white border border-neutral-100 shadow-sm; }
 
+    /* Filter bar: year tabs + month select */
+    .filter-bar { @apply flex flex-wrap items-center justify-between gap-3 mb-4; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+    .month-filter-label { @apply inline-flex items-center; }
+    .month-select {
+      @apply rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium
+        text-neutral-700 transition-colors hover:bg-neutral-50
+        focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1;
+    }
+
     /* Year tabs */
-    .year-tabs { @apply flex flex-wrap gap-1 mb-4; }
+    .year-tabs { @apply flex flex-wrap gap-1; }
     .year-tab {
       @apply rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500
         transition-colors hover:bg-neutral-100 hover:text-neutral-800
@@ -391,7 +423,14 @@ export class MyPayslipsComponent implements OnInit, OnDestroy {
   readonly payslips = signal<IMyPayslipListItem[]>([]);
   readonly years = signal<number[]>([]);
   readonly selectedYear = signal<number | null>(null);
+  /** null = "All months"; otherwise 1-12 filtering by pay month (FR-6). */
+  readonly selectedMonth = signal<number | null>(null);
   readonly isLoading = signal(true);
+
+  /** Static "January…December" options (value 1-12) for the pay-month filter (FR-6). */
+  readonly monthOptions: { value: number; label: string }[] = MONTH_NAMES.slice(1).map(
+    (label, i) => ({ value: i + 1, label }),
+  );
 
   readonly expandedId = signal<string | null>(null);
   readonly detail = signal<IMyPayslipDetail | null>(null);
@@ -405,7 +444,7 @@ export class MyPayslipsComponent implements OnInit, OnDestroy {
 
   // ─── Lifecycle ──────────────────────────────────────────────
   ngOnInit(): void {
-    this.load(null, true);
+    this.load(null, null, true);
   }
 
   ngOnDestroy(): void {
@@ -414,16 +453,17 @@ export class MyPayslipsComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Load the payslip list, optionally filtered by year. On the first load
-   * (`deriveYears`) the year-filter tabs are derived from the returned payslips so the
-   * employee can switch between the years they have payslips for.
+   * Load the payslip list, optionally filtered by year and/or pay month (the two
+   * filters compose, FR-6). On the first load (`deriveYears`) the year-filter tabs are
+   * derived from the returned payslips so the employee can switch between the years
+   * they have payslips for.
    */
-  load(year: number | null, deriveYears = false): void {
+  load(year: number | null, month: number | null, deriveYears = false): void {
     this.isLoading.set(true);
     this.expandedId.set(null);
     this.detail.set(null);
     this.service
-      .listMyPayslips(year)
+      .listMyPayslips(year, month)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (page) => {
@@ -447,7 +487,20 @@ export class MyPayslipsComponent implements OnInit, OnDestroy {
       return;
     }
     this.selectedYear.set(year);
-    this.load(year);
+    this.load(year, this.selectedMonth());
+  }
+
+  /**
+   * Change the pay-month filter (FR-6). An empty value ("All months") clears it to
+   * null; a 1-12 value filters by that month. Reloads composing with the active year.
+   */
+  onMonthChange(value: string): void {
+    const month = value === '' ? null : Number(value);
+    if (this.selectedMonth() === month) {
+      return;
+    }
+    this.selectedMonth.set(month);
+    this.load(this.selectedYear(), month);
   }
 
   /** Expand/collapse a payslip row, lazy-loading its detail on first open (AC-2). */

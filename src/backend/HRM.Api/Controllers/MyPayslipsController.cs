@@ -36,11 +36,12 @@ public sealed class MyPayslipsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> List(
         [FromQuery] int? year,
+        [FromQuery] int? month,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 12,
         CancellationToken cancellationToken = default)
     {
-        var result = await _mediator.Send(new GetMyPayslipsQuery(year, page, pageSize), cancellationToken);
+        var result = await _mediator.Send(new GetMyPayslipsQuery(year, month, page, pageSize), cancellationToken);
         return result.IsFailure
             ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))
             : Ok(ApiResponse<MyPayslipListDto>.Ok(result.Value!));

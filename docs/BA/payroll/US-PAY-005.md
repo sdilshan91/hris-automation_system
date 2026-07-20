@@ -37,7 +37,7 @@ acceptance_criteria_count: 5
 - FR-3: The system SHALL display payslip details inline with expandable sections for Earnings and Deductions, each showing component name and amount.
 - FR-4: The system SHALL provide a PDF download endpoint: `GET /api/v1/payroll/my-payslips/{payslipId}/pdf` that returns the pre-generated PDF.
 - FR-5: The system SHALL enforce `Self` scope on the `Payroll.Read` permission — employees can only access their own payslip data.
-- FR-6: The system SHALL support filtering payslips by year and searching by pay period.
+- FR-6: The system SHALL support filtering payslips by year and searching by pay period. **Shipped (ISSUE-164):** the list accepts optional `year` + `month` filters that compose (`GET /api/v1/payroll/my-payslips?year=&month=`); the UI offers a year-tab set + a month `<select>` ("All months" + Jan–Dec). Covered by TC-PAY-005-14.
 - FR-7: The system SHALL display YTD (year-to-date) totals on the payslip detail view if enabled by the tenant.
 - FR-8: All payslip queries SHALL be scoped by `tenant_id` via RLS and by `employee_id` via application-level authorization.
 

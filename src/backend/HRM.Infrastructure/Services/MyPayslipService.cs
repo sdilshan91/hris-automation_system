@@ -46,7 +46,7 @@ public sealed class MyPayslipService : IMyPayslipService
     }
 
     public async Task<Result<MyPayslipListDto>> ListMineAsync(
-        int? year, int page, int pageSize, CancellationToken cancellationToken = default)
+        int? year, int? month, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
             return Result<MyPayslipListDto>.Failure("Tenant context is not resolved.", 400);
@@ -68,6 +68,10 @@ public sealed class MyPayslipService : IMyPayslipService
 
         if (year is not null)
             query = query.Where(s => s.PayYear == year);
+
+        // ISSUE-164/FR-6: optional pay-period (month) filter, alongside the year filter.
+        if (month is not null)
+            query = query.Where(s => s.PayMonth == month);
 
         var totalCount = await query.CountAsync(cancellationToken);
 

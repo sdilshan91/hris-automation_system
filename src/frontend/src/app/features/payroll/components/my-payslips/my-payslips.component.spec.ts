@@ -111,7 +111,7 @@ describe('MyPayslipsComponent', () => {
 
   it('loads payslips on init sorted most-recent-first (AC-1)', () => {
     setup();
-    expect(service.listMyPayslips).toHaveBeenCalledWith(null);
+    expect(service.listMyPayslips).toHaveBeenCalledWith(null, null);
     const ids = component.payslips().map((p) => p.payslipId);
     expect(ids).toEqual(['p-2026-05', 'p-2026-01', 'p-2025-12']);
     expect(component.isLoading()).toBeFalse();
@@ -166,7 +166,7 @@ describe('MyPayslipsComponent', () => {
     service.listMyPayslips.calls.reset();
     component.selectYear(2025);
     expect(component.selectedYear()).toBe(2025);
-    expect(service.listMyPayslips).toHaveBeenCalledWith(2025);
+    expect(service.listMyPayslips).toHaveBeenCalledWith(2025, null);
   });
 
   it('selectYear ignores re-selecting the active year', () => {
@@ -175,6 +175,44 @@ describe('MyPayslipsComponent', () => {
     service.listMyPayslips.calls.reset();
     component.selectYear(2025);
     expect(service.listMyPayslips).not.toHaveBeenCalled();
+  });
+
+  it('onMonthChange reloads filtered by that month, composing with the year (FR-6)', () => {
+    setup();
+    component.selectYear(2026);
+    service.listMyPayslips.calls.reset();
+    component.onMonthChange('5');
+    expect(component.selectedMonth()).toBe(5);
+    expect(service.listMyPayslips).toHaveBeenCalledWith(2026, 5);
+  });
+
+  it('onMonthChange with "All months" clears the month filter (FR-6)', () => {
+    setup();
+    component.onMonthChange('5');
+    service.listMyPayslips.calls.reset();
+    component.onMonthChange('');
+    expect(component.selectedMonth()).toBeNull();
+    expect(service.listMyPayslips).toHaveBeenCalledWith(null, null);
+  });
+
+  it('onMonthChange ignores re-selecting the active month', () => {
+    setup();
+    component.onMonthChange('5');
+    service.listMyPayslips.calls.reset();
+    component.onMonthChange('5');
+    expect(service.listMyPayslips).not.toHaveBeenCalled();
+  });
+
+  it('renders the month filter with All months + 12 month options', () => {
+    setup();
+    const select: HTMLSelectElement = fixture.nativeElement.querySelector(
+      '[data-test="month-filter"]',
+    );
+    expect(select).toBeTruthy();
+    expect(select.options.length).toBe(13);
+    expect(select.options[0].textContent).toContain('All months');
+    expect(select.options[1].textContent).toContain('January');
+    expect(select.options[12].textContent).toContain('December');
   });
 
   it('toggle expands a row and lazy-loads the detail (AC-2)', () => {
