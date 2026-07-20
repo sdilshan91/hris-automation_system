@@ -65,11 +65,26 @@ export class PayslipService {
 
   /**
    * Regenerate (overwrite) all payslip PDFs using the current template (AC-5).
-   * Only valid on a non-finalized run; the backend enforces that rule.
+   * Valid on both draft AND finalized runs — the backend allows regenerating a
+   * finalized run's PDFs (e.g. after a template change); it enforces its own rules.
    */
   regeneratePayslips(runId: string): Observable<IPayslipGenerationStatus> {
     return this.http.post<IPayslipGenerationStatus>(
       `${this.runsUrl}/${runId}/payslips/regenerate`,
+      {},
+      { withCredentials: true },
+    );
+  }
+
+  /**
+   * Retry PDF rendering for ONE employee's failed payslip (DF-31 / ISSUE-162 FR-8).
+   * Re-enqueues rendering for a single slip whose `pdfStatus` is `Failed`. The
+   * backend explicitly ALLOWS this on a Finalized run — retrying a failed slip on a
+   * finalized run is the main use case — and responds 202 (Accepted) with no body.
+   */
+  retryPayslip(runId: string, employeeId: string): Observable<void> {
+    return this.http.post<void>(
+      `${this.runsUrl}/${runId}/payslips/${employeeId}/retry`,
       {},
       { withCredentials: true },
     );

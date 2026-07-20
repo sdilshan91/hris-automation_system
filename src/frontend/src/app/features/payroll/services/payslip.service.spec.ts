@@ -100,6 +100,18 @@ describe('PayslipService', () => {
     req.flush(sampleStatus);
   });
 
+  it('retryPayslip POSTs to the per-employee retry endpoint (DF-31, FR-8)', () => {
+    let done = false;
+    service.retryPayslip('r-1', 'e-3').subscribe(() => (done = true));
+
+    const req = httpMock.expectOne(`${runsUrl}/r-1/payslips/e-3/retry`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(null, { status: 202, statusText: 'Accepted' });
+
+    expect(done).toBeTrue();
+  });
+
   it('getGenerationStatus GETs the status endpoint', () => {
     let status: IPayslipGenerationStatus | undefined;
     service.getGenerationStatus('r-1').subscribe((s) => (status = s));

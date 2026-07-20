@@ -69,6 +69,7 @@ describe('PayslipListComponent', () => {
       'streamGenerationStatus',
       'downloadPayslip',
       'downloadZip',
+      'retryPayslip',
     ]);
     payslip.listPayslips.and.returnValue(of(initialRows));
     payslip.streamGenerationStatus.and.returnValue(of(status));
@@ -331,6 +332,74 @@ describe('PayslipListComponent', () => {
       payslip.downloadZip.and.returnValue(throwError(() => new Error('boom')));
       component.downloadAll();
       expect(component.zipDownloading()).toBeFalse();
+      expect(toastr.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('retry (DF-31 / ISSUE-162 FR-8)', () => {
+    /** Retry buttons in the desktop table only, keyed by their text content. */
+    function retryButtons(): HTMLButtonElement[] {
+      const table = fixture.debugElement.query(By.css('table'));
+      return (table.queryAll(By.css('button')) as { nativeElement: HTMLButtonElement }[])
+        .map((d) => d.nativeElement)
+        .filter((b) => (b.textContent ?? '').trim() === 'Retry');
+    }
+
+    it('renders a Retry button only for Failed rows', () => {
+      setup(); // rows: s-1 Generated, s-2 not-failed, s-3 Failed
+      const buttons = retryButtons();
+      // Exactly one Failed row → exactly one Retry button.
+      expect(buttons.length).toBe(1);
+    });
+
+    it('does not render a Retry button when no row is Failed', () => {
+      setup([rows[0], rows[1]]); // no Failed row
+      expect(retryButtons().length).toBe(0);
+    });
+
+    it('hides the Retry button when the user cannot generate', () => {
+      setup();
+      fixture.componentRef.setInput('canGenerate', false);
+      fixture.detectChanges();
+      expect(retryButtons().length).toBe(0);
+    });
+
+    it('retry() calls the service with the row employeeId, then reloads + toasts', () => {
+      setup(); // Failed row is rows[2] → e-3
+      payslip.retryPayslip.and.returnValue(of(undefined));
+      payslip.streamGenerationStatus.and.returnValue(of(status));
+      payslip.listPayslips.calls.reset();
+      payslip.listPayslips.and.returnValue(of(rows));
+
+      component.retry(rows[2]);
+
+      expect(payslip.retryPayslip).toHaveBeenCalledWith('r-1', 'e-3');
+      // streamStatus() completes synchronously (of(status)) → reload + success toast.
+      expect(payslip.listPayslips).toHaveBeenCalled();
+      expect(toastr.success).toHaveBeenCalled();
+      expect(component.retryingId()).toBeNull();
+      expect(component.generating()).toBeFalse();
+    });
+
+    it('clicking the row Retry button invokes retry()', () => {
+      setup();
+      payslip.retryPayslip.and.returnValue(of(undefined));
+      payslip.streamGenerationStatus.and.returnValue(of(status));
+      const spy = spyOn(component, 'retry').and.callThrough();
+
+      retryButtons()[0].click();
+
+      expect(spy).toHaveBeenCalled();
+      expect(payslip.retryPayslip).toHaveBeenCalledWith('r-1', 'e-3');
+    });
+
+    it('toasts an error and clears retryingId when retry fails', () => {
+      setup();
+      payslip.retryPayslip.and.returnValue(throwError(() => new Error('boom')));
+
+      component.retry(rows[2]);
+
+      expect(component.retryingId()).toBeNull();
       expect(toastr.error).toHaveBeenCalled();
     });
   });

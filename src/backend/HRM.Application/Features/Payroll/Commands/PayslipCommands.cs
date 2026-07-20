@@ -36,3 +36,20 @@ public sealed class RegeneratePayslipsCommandHandler : IRequestHandler<Regenerat
     public Task<Result<PayslipGenerationAcceptedDto>> Handle(RegeneratePayslipsCommand request, CancellationToken cancellationToken)
         => _service.GenerateAsync(request.RunId, cancellationToken);
 }
+
+/// <summary>
+/// Retries the PDF render of ONE slip in a run (US-PAY-004 FR-8 / DF-31 / ISSUE-162) — a PDF re-render only, no
+/// payroll recalc. Resets just that slip to Pending and enqueues the single-slip retry job. Same BR-1 status guard
+/// as <see cref="GeneratePayslipsCommand"/> (Finalized runs allowed — retrying a failed slip on a Finalized run is
+/// the primary use case). 404 <c>payslip_not_found</c> when the slip is not visible for the tenant (AC-4).
+/// </summary>
+public sealed record RetryPayslipCommand(Guid RunId, Guid EmployeeId) : IRequest<Result<PayslipGenerationAcceptedDto>>;
+
+public sealed class RetryPayslipCommandHandler : IRequestHandler<RetryPayslipCommand, Result<PayslipGenerationAcceptedDto>>
+{
+    private readonly IPayslipGenerationService _service;
+    public RetryPayslipCommandHandler(IPayslipGenerationService service) => _service = service;
+
+    public Task<Result<PayslipGenerationAcceptedDto>> Handle(RetryPayslipCommand request, CancellationToken cancellationToken)
+        => _service.RetryOneAsync(request.RunId, request.EmployeeId, cancellationToken);
+}

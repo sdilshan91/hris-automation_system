@@ -19,6 +19,16 @@ public interface IPayslipGenerationService
     /// </summary>
     Task<Result<PayslipGenerationAcceptedDto>> GenerateAsync(Guid runId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// FR-8 (DF-31 / ISSUE-162): retries the PDF render of ONE slip in a run — a PDF re-render only (no payroll
+    /// recalc). Same BR-1 status guard as <see cref="GenerateAsync"/> (retrying a failed slip on a Finalized run is
+    /// the primary use case, so Finalized is allowed). 404 <c>payslip_not_found</c> when the slip is not visible
+    /// for the tenant (the EF global query filter rejects cross-tenant/unknown — AC-4). BE-permissive: retries a
+    /// slip in ANY PDF state (the render is idempotent); resets that one slip to Pending and enqueues the
+    /// single-slip job (or, with no Hangfire scheduler, marks Pending for a direct render — tests/dev).
+    /// </summary>
+    Task<Result<PayslipGenerationAcceptedDto>> RetryOneAsync(Guid runId, Guid employeeId, CancellationToken cancellationToken = default);
+
     /// <summary>Per-status counts for the run's slips (FR-7, §8 status bar).</summary>
     Task<Result<PayslipGenerationStatusDto>> GetStatusAsync(Guid runId, CancellationToken cancellationToken = default);
 
@@ -59,12 +69,28 @@ public interface IPayslipBatchRenderer
     Task<Result<PayslipBatchResult>> RenderRunAsync(Guid runId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// FR-8 (DF-31 / ISSUE-162): single-slip counterpart to <see cref="RenderRunAsync"/> — runs the READ → WORK →
+    /// WRITE phases for just <paramref name="employeeId"/>'s slip in the run. Used by the direct-render (no-scheduler
+    /// tests/dev) path and the single-slip Hangfire retry job. Reuses the same render/upload/persist phases; only the
+    /// plan is filtered to the one slip.
+    /// </summary>
+    Task<Result<PayslipBatchResult>> RenderOneAsync(Guid runId, Guid employeeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// ISSUE-269 phase 1 — READ. Bulk-loads (AsNoTracking) the run + slips + employees + details + branding and
     /// projects them to non-tracked value snapshots so the WORK phase carries no tracked entities. Runs inside a
     /// short tenant-GUC transaction (the job wraps it in <see cref="ITenantJobRunner"/>). Returns the render plan
     /// (empty Items when the run has no slips). 404 when the run does not exist for the tenant.
     /// </summary>
     Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-8 (DF-31 / ISSUE-162): the single-slip overload of <see cref="LoadRenderPlanAsync(Guid, CancellationToken)"/>.
+    /// Identical READ phase but the slip load is filtered to <paramref name="employeeId"/> — so the returned plan has
+    /// at most one <see cref="PayslipRenderItem"/>. The WORK/WRITE phases (RenderAndUploadAsync/PersistRenderResultsAsync)
+    /// operate on the plan/outcomes unchanged. 404 when the run does not exist for the tenant.
+    /// </summary>
+    Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, Guid employeeId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// ISSUE-269 phase 2 — WORK (no DB, no transaction). The bounded-concurrency (NFR-3) render + storage-upload
@@ -142,4 +168,10 @@ public interface IPayslipGenerationJobScheduler
 {
     /// <summary>Enqueues PDF generation of <paramref name="runId"/> for <paramref name="tenantId"/> (FR-4).</summary>
     string Enqueue(Guid tenantId, string tenantSubdomain, Guid runId);
+
+    /// <summary>
+    /// FR-8 (DF-31 / ISSUE-162): enqueues the single-slip <c>RetryPayslipJob</c> to re-render just
+    /// <paramref name="employeeId"/>'s slip in <paramref name="runId"/> for <paramref name="tenantId"/>.
+    /// </summary>
+    string Enqueue(Guid tenantId, string tenantSubdomain, Guid runId, Guid employeeId);
 }

@@ -65,6 +65,27 @@ public sealed class PayslipsController : ControllerBase
     }
 
     /// <summary>
+    /// POST — retries the PDF render of ONE slip in the run (FR-8 / DF-31 / ISSUE-162). PDF re-render only (no
+    /// payroll recalc). Returns 202 Accepted; the single-slip render continues in a Hangfire background job. Same
+    /// BR-1 status guard as generate (400 <c>run_not_ready_for_payslips</c>; Finalized runs are allowed — the
+    /// primary use case). 404 <c>payslip_not_found</c> when the slip is not visible for the tenant (AC-4).
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/payslips/{employeeId:guid}/retry")]
+    [RequirePermission("Payroll.Run")]
+    [ProducesResponseType(typeof(ApiResponse<PayslipGenerationAcceptedDto>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Retry(Guid runId, Guid employeeId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RetryPayslipCommand(runId, employeeId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return AcceptedAtAction(nameof(GetStatus), new { runId },
+            ApiResponse<PayslipGenerationAcceptedDto>.Ok(result.Value!, "Payslip retry queued."));
+    }
+
+    /// <summary>
     /// GET — lists the run's payslips for the §8 Notion-style table (employee name/no/department, net salary,
     /// PDF status). Tenant-scoped (AC-4). Returns an empty array when the run has no slips.
     /// </summary>

@@ -391,4 +391,155 @@ public sealed class PayslipGenerationIntegrationTests
         done.Value.Pending.Should().Be(0);
         done.Value.IsComplete.Should().BeTrue();
     }
+
+    // ── DF-31/ISSUE-162 (FR-8): per-employee retry re-renders ONLY that slip; siblings are untouched. ──
+
+    /// <summary>Adds a second employee + slip (+details) to an existing run, returning the new employee id.</summary>
+    private async Task<Guid> AddSlipToRun(Guid tenantId, Guid runId, string employeeNo)
+    {
+        using var db = Db(tenantId);
+        var deptId = BaseEntity.NewUuidV7();
+        db.Departments.Add(new Department { Id = deptId, TenantId = tenantId, Name = "Ops", Code = "OPS", IsActive = true });
+        var jobId = BaseEntity.NewUuidV7();
+        db.JobTitles.Add(new JobTitle { Id = jobId, TenantId = tenantId, TitleName = "Analyst", IsActive = true });
+        var empId = BaseEntity.NewUuidV7();
+        db.Employees.Add(new Employee
+        {
+            Id = empId, TenantId = tenantId, EmployeeNo = employeeNo, FirstName = "Sam", LastName = "Roe",
+            Email = $"{employeeNo}@t.com", DateOfJoining = new DateTime(2021, 1, 1), DepartmentId = deptId, JobTitleId = jobId,
+            EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+        });
+        var slipId = BaseEntity.NewUuidV7();
+        db.PayrollSlips.Add(new PayrollSlip
+        {
+            Id = slipId, TenantId = tenantId, PayrollRunId = runId, EmployeeId = empId,
+            GrossEarnings = 50_000m, TotalDeductions = 8_000m, NetSalary = 42_000m,
+            WorkingDays = 22m, PaidDays = 22m, LopDays = 0m, PayMonth = 5, PayYear = 2026,
+        });
+        db.PayrollSlipDetails.Add(new PayrollSlipDetail
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId, PayrollSlipId = slipId, SalaryComponentId = Guid.NewGuid(),
+            ComponentName = "Basic", ComponentType = nameof(SalaryComponentType.Earning), Amount = 50_000m,
+        });
+        await db.SaveChangesAsync();
+        return empId;
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-004-05")]
+    public async Task Retry_OneFailedSlip_RerendersOnlyThatSlip_SiblingUntouched()
+    {
+        var (runId, empA) = await SeedRunWithSlip(_tenantA, "EMP-A");
+        var empB = await AddSlipToRun(_tenantA, runId, "EMP-B");
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var renderer = provider.GetRequiredService<IPayslipBatchRenderer>();
+
+        // Generate both slips.
+        await mediator.Send(new GeneratePayslipsCommand(runId));
+        (await renderer.RenderRunAsync(runId)).Value!.Generated.Should().Be(2);
+
+        // Force slip A to Failed; stamp slip B with a sentinel timestamp so any accidental re-render of B is detectable.
+        var sentinel = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        using (var db = Db(_tenantA))
+        {
+            var a = await db.PayrollSlips.FirstAsync(s => s.PayrollRunId == runId && s.EmployeeId == empA);
+            a.PdfStatus = PayslipPdfStatus.Failed; a.PdfGeneratedAt = null; a.PdfStoragePath = null; a.PdfFileSizeBytes = null;
+            var b = await db.PayrollSlips.FirstAsync(s => s.PayrollRunId == runId && s.EmployeeId == empB);
+            b.PdfGeneratedAt = sentinel;
+            await db.SaveChangesAsync();
+        }
+
+        // Retry ONLY employee A (marks A Pending), then render just that slip.
+        var accepted = await mediator.Send(new RetryPayslipCommand(runId, empA));
+        accepted.IsSuccess.Should().BeTrue(accepted.Error);
+        accepted.Value!.QueuedCount.Should().Be(1);
+        (await renderer.RenderOneAsync(runId, empA)).Value!.Generated.Should().Be(1);
+
+        using (var db = Db(_tenantA))
+        {
+            var a = await db.PayrollSlips.AsNoTracking().FirstAsync(s => s.PayrollRunId == runId && s.EmployeeId == empA);
+            a.PdfStatus.Should().Be(PayslipPdfStatus.Generated);          // re-rendered
+            a.PdfGeneratedAt.Should().NotBeNull();
+            a.PdfStoragePath.Should().Be($"payroll/{runId:D}/{empA:D}.pdf");
+
+            var b = await db.PayrollSlips.AsNoTracking().FirstAsync(s => s.PayrollRunId == runId && s.EmployeeId == empB);
+            b.PdfStatus.Should().Be(PayslipPdfStatus.Generated);
+            b.PdfGeneratedAt.Should().Be(sentinel);                        // UNTOUCHED — proves the single-slip filter
+        }
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-004-05")]
+    public async Task Retry_UnknownEmployee_Returns404()
+    {
+        var (runId, _) = await SeedRunWithSlip(_tenantA, "EMP-1");
+        var mediator = Provider(_tenantA).GetRequiredService<IMediator>();
+
+        var result = await mediator.Send(new RetryPayslipCommand(runId, Guid.NewGuid()));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+        result.ErrorCode.Should().Be("payslip_not_found");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-004-05")]
+    public async Task Retry_NonReadyRun_Returns400()
+    {
+        var (runId, empId) = await SeedRunWithSlip(_tenantA, "EMP-1", status: PayrollRunStatus.Queued);
+        var mediator = Provider(_tenantA).GetRequiredService<IMediator>();
+
+        var result = await mediator.Send(new RetryPayslipCommand(runId, empId));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("run_not_ready_for_payslips");
+    }
+
+    // ── Isolation (BUG-003 WRITE-side): tenant A cannot retry tenant B's slip, and B's slip is not mutated. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-004-05")]
+    public async Task Retry_CrossTenant_Returns404_AndForeignSlipUntouched()
+    {
+        // Tenant B has a real, generated slip.
+        var (runIdB, empIdB) = await SeedRunWithSlip(_tenantB, "B-1");
+        var providerB = Provider(_tenantB);
+        await providerB.GetRequiredService<IMediator>().Send(new GeneratePayslipsCommand(runIdB));
+        (await providerB.GetRequiredService<IPayslipBatchRenderer>().RenderRunAsync(runIdB)).Value!.Generated.Should().Be(1);
+
+        // Tenant A attempts to retry tenant B's slip → invisible under the global filter → 404, no write.
+        var resultA = await Provider(_tenantA).GetRequiredService<IMediator>().Send(new RetryPayslipCommand(runIdB, empIdB));
+        resultA.IsFailure.Should().BeTrue();
+        resultA.StatusCode.Should().Be(404);
+
+        using var db = Db(_tenantB);
+        var b = await db.PayrollSlips.AsNoTracking().FirstAsync(s => s.PayrollRunId == runIdB && s.EmployeeId == empIdB);
+        b.PdfStatus.Should().Be(PayslipPdfStatus.Generated); // untouched — no cross-tenant mutation
+    }
+
+    // ── BE-permissive (locked decision): the BE allows retrying a NON-Failed (Generated) slip; the FE gates on Failed. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-004-05")]
+    public async Task Retry_GeneratedSlip_IsAllowed_BackendIsPermissive()
+    {
+        var (runId, empId) = await SeedRunWithSlip(_tenantA, "EMP-1");
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var renderer = provider.GetRequiredService<IPayslipBatchRenderer>();
+
+        await mediator.Send(new GeneratePayslipsCommand(runId));
+        (await renderer.RenderRunAsync(runId)).Value!.Generated.Should().Be(1); // slip is Generated, NOT Failed.
+
+        // The BE retries a Generated slip (no PdfStatus==Failed guard) — Regenerated flag set since it was Generated.
+        var accepted = await mediator.Send(new RetryPayslipCommand(runId, empId));
+        accepted.IsSuccess.Should().BeTrue(accepted.Error);
+        accepted.Value!.QueuedCount.Should().Be(1);
+        accepted.Value.Regenerated.Should().BeTrue();
+
+        (await renderer.RenderOneAsync(runId, empId)).Value!.Generated.Should().Be(1);
+        using var db = Db(_tenantA);
+        (await db.PayrollSlips.AsNoTracking().FirstAsync(s => s.PayrollRunId == runId)).PdfStatus
+            .Should().Be(PayslipPdfStatus.Generated);
+    }
 }
