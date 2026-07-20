@@ -110,6 +110,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         run.SlaDueAt = await ComputeSlaDueAtAsync(1, cancellationToken);
         run.EscalatedAt = null;
 
+        // FR-6 (ISSUE-173): evaluate step-1 delegation at activation — if the step's primary approver is on approved
+        // leave today the delegate becomes the effective approver (stamps DelegatedToUserId + adds a Delegated history
+        // row to THIS SaveChanges). Returns whether it fired so the delegate is notified AFTER the run is persisted.
+        bool delegated = await ApplyDelegationAsync(run, 1, cancellationToken);
+
         var history = NewHistory(run, instanceId, 1, PayrollApprovalAction.Submitted, Trim(comments), ipAddress);
         _dbContext.PayrollApprovalHistories.Add(history);
 
@@ -121,6 +126,10 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
 
         // AC-1: notify the designated approver(s). Log-only seam; SignalR/email deferred.
         await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-submitted", cancellationToken);
+
+        // FR-6: notify the delegate AFTER the run is persisted (the Real service reads the just-saved DelegatedToUserId).
+        if (delegated)
+            await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-delegated", cancellationToken);
 
         Log(run, PayrollApprovalAction.Submitted);
         return Ok(run, PayrollApprovalAction.Submitted);
@@ -179,6 +188,9 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Approved, Trim(comments), ipAddress);
         _dbContext.PayrollApprovalHistories.Add(history);
 
+        // FR-6 (ISSUE-173): set when the step-advance below delegates the NEXT step (notify after the run is persisted).
+        bool delegated = false;
+
         if (step >= total)
         {
             // AC-2 / AC-4: all steps complete — the run is Approved.
@@ -191,6 +203,9 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             // picks it up.
             run.SlaDueAt = null;
             run.EscalatedAt = null;
+
+            // FR-6 hygiene: the run is no longer awaiting a step approver — clear the effective delegate.
+            run.DelegatedToUserId = null;
 
             // US-PAY-012 (FR-2/BR-5): audit the terminal Approved transition WITH IP/user-agent (sensitive
             // action). Intermediate step approvals are captured in PayrollApprovalHistory; the PayrollRun.Approved
@@ -207,11 +222,20 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             // no SLA) and clear the escalation slate so this step can escalate independently.
             run.SlaDueAt = await ComputeSlaDueAtAsync(step + 1, cancellationToken);
             run.EscalatedAt = null;
+
+            // FR-6 (ISSUE-173): evaluate the NEXT step's delegation at its activation — primary-on-leave → delegate is
+            // the effective approver (stamps DelegatedToUserId + Delegated history row into this SaveChanges). Notified
+            // after persistence.
+            delegated = await ApplyDelegationAsync(run, step + 1, cancellationToken);
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-approved", cancellationToken);
+
+        // FR-6: notify the newly-activated step's delegate AFTER the run is persisted (recipient = the saved DelegatedToUserId).
+        if (delegated)
+            await _notifications.NotifyApprovalEventAsync(_tenantContext.TenantId, run.Id, "payroll-approval-delegated", cancellationToken);
 
         Log(run, PayrollApprovalAction.Approved);
         return Ok(run, PayrollApprovalAction.Approved);
@@ -246,6 +270,7 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         run.RejectionReason = trimmed;
         run.SlaDueAt = null;   // FR-3 hygiene: a rejected run has no live approval SLA (re-submit re-stamps).
         run.EscalatedAt = null;
+        run.DelegatedToUserId = null;   // FR-6 hygiene: no active step → no effective delegate.
         run.CurrentApprovalStep = null;
 
         var history = NewHistory(run, instanceId, step, PayrollApprovalAction.Rejected, trimmed, ipAddress);
@@ -290,6 +315,7 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         run.Status = PayrollRunStatus.ReviewPending;
         run.SlaDueAt = null;   // FR-3 hygiene: no live approval SLA while back with HR (re-submit re-stamps).
         run.EscalatedAt = null;
+        run.DelegatedToUserId = null;   // FR-6 hygiene: no active step → no effective delegate.
         run.CurrentWorkflowInstanceId = null;
         run.CurrentApprovalStep = null;
         run.TotalApprovalSteps = null;
@@ -614,6 +640,8 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             SlaHours = c.SlaHours,
             BackupRoleId = c.BackupRoleId,
             BackupRoleName = c.BackupRoleId is { } bid && roleNames.TryGetValue(bid, out var bname) ? bname : null,
+            PrimaryApproverUserId = c.PrimaryApproverUserId,
+            DelegateUserId = c.DelegateUserId,
         }).ToList();
 
         return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Success(rows);
@@ -669,10 +697,47 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
             return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
                 "Every step and backup role must hold the Payroll.Approve permission.", 400, "role_missing_approve_permission");
 
+        // FR-6 (ISSUE-173): per-step delegation. A step opts in by setting BOTH a primary approver + a delegate user;
+        // setting only one is a mis-config (400). Both, when set, must be ACTIVE in-tenant users holding Payroll.Approve
+        // (same gate as the step/backup roles) — a delegate who cannot pass the approve gate would be a dead target.
+        if (ordered.Any(s => s.PrimaryApproverUserId is not null ^ s.DelegateUserId is not null))
+            return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                "A delegation step must set both a primary approver and a delegate user.", 400, "delegation_config_incomplete");
+
+        var delegationUserIds = ordered
+            .SelectMany(s => new[] { s.PrimaryApproverUserId, s.DelegateUserId })
+            .Where(id => id is not null).Select(id => id!.Value).Distinct().ToList();
+        if (delegationUserIds.Count > 0)
+        {
+            // ACTIVE in-tenant users (UserTenant is not BaseEntity → filter tenant + status explicitly).
+            var activeTenantUserIds = await _dbContext.UserTenants.AsNoTracking()
+                .Where(ut => ut.TenantId == _tenantContext.TenantId && ut.Status == UserTenantStatus.Active
+                    && delegationUserIds.Contains(ut.UserId))
+                .Select(ut => ut.UserId).Distinct()
+                .ToListAsync(cancellationToken);
+            if (delegationUserIds.Any(id => !activeTenantUserIds.Contains(id)))
+                return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                    "One or more delegation users are not active users in this tenant.", 400, "delegation_user_not_found");
+
+            // …and each must hold Payroll.Approve (the same UserTenant→role→permission join as CountEligibleApprovers).
+            var approveUserIds = await (
+                from ut in _dbContext.UserTenants.AsNoTracking()
+                where ut.TenantId == _tenantContext.TenantId && ut.Status == UserTenantStatus.Active
+                    && delegationUserIds.Contains(ut.UserId)
+                join utr in _dbContext.UserTenantRoles.AsNoTracking() on ut.Id equals utr.UserTenantId
+                join rp in _dbContext.RolePermissions.AsNoTracking() on utr.RoleId equals rp.RoleId
+                where rp.Permission == PermissionCatalog.Payroll.Approve
+                select ut.UserId).Distinct().ToListAsync(cancellationToken);
+            if (delegationUserIds.Any(id => !approveUserIds.Contains(id)))
+                return Result<IReadOnlyList<PayrollApprovalStepConfigDto>>.Failure(
+                    "Every delegation primary approver and delegate must hold the Payroll.Approve permission.",
+                    400, "delegation_user_missing_approve_permission");
+        }
+
         // Atomic replace: drop the tenant's existing config and insert the new ordered set in one SaveChanges.
         var existing = await _dbContext.PayrollApprovalStepConfigs.ToListAsync(cancellationToken);
         var before = existing.OrderBy(c => c.StepNumber)
-            .Select(c => new { c.StepNumber, c.RoleId, c.SlaHours, c.BackupRoleId }).ToList();
+            .Select(c => new { c.StepNumber, c.RoleId, c.SlaHours, c.BackupRoleId, c.PrimaryApproverUserId, c.DelegateUserId }).ToList();
         _dbContext.PayrollApprovalStepConfigs.RemoveRange(existing);
 
         foreach (var s in ordered)
@@ -684,9 +749,11 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
                 RoleId = s.RoleId,
                 SlaHours = s.SlaHours,
                 BackupRoleId = s.BackupRoleId,
+                PrimaryApproverUserId = s.PrimaryApproverUserId,
+                DelegateUserId = s.DelegateUserId,
             });
 
-        var after = ordered.Select(s => new { s.StepNumber, s.RoleId, s.SlaHours, s.BackupRoleId }).ToList();
+        var after = ordered.Select(s => new { s.StepNumber, s.RoleId, s.SlaHours, s.BackupRoleId, s.PrimaryApproverUserId, s.DelegateUserId }).ToList();
         _audit.Log(PA.PayrollApprovalStepConfigUpdated, PA.ResourceType.PayrollApprovalStepConfig,
             _tenantContext.TenantId.ToString(), before: before, after: after, ipAddress: ipAddress);
 
@@ -772,6 +839,71 @@ public sealed class PayrollApprovalService : IPayrollApprovalService
         return slaHours is > 0
             ? _timeProvider.GetUtcNow().UtcDateTime.AddHours(slaHours.Value)
             : null;
+    }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): evaluate step delegation ONCE at the activation of <paramref name="stepNumber"/>
+    /// (submit → step 1; each approve-advance → step N). Delegation is configured only when the step's config sets BOTH
+    /// <see cref="PayrollApprovalStepConfig.PrimaryApproverUserId"/> and <see cref="PayrollApprovalStepConfig.DelegateUserId"/>
+    /// (partial config is rejected at write time). When it is, AND the primary approver is on an approved leave spanning
+    /// today (<see cref="HasActiveApprovedLeaveOnDateAsync"/>, injected clock), the delegate becomes the effective
+    /// approver: <see cref="PayrollRun.DelegatedToUserId"/> is stamped and a system-actor <c>Delegated</c>
+    /// <see cref="PayrollApprovalHistory"/> row is added to the caller's pending SaveChanges. Otherwise the effective
+    /// delegate is cleared. This is a NOTIFICATION/RECORD overlay, NOT an authz change — approval stays role-gated by the
+    /// <see cref="ApproveAsync"/> step-role guard (mirrors the generic engine's notify-don't-reassign delegation).
+    /// Returns true iff delegation fired, so the caller can dispatch the delegation notification AFTER persistence (the
+    /// recipient is resolved from the just-saved <see cref="PayrollRun.DelegatedToUserId"/>).
+    /// </summary>
+    private async Task<bool> ApplyDelegationAsync(PayrollRun run, int stepNumber, CancellationToken cancellationToken)
+    {
+        var config = await _dbContext.PayrollApprovalStepConfigs.AsNoTracking()
+            .Where(c => c.StepNumber == stepNumber)
+            .Select(c => new { c.PrimaryApproverUserId, c.DelegateUserId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+
+        if (config is { PrimaryApproverUserId: { } primary, DelegateUserId: { } delegateUser }
+            && await HasActiveApprovedLeaveOnDateAsync(primary, today, cancellationToken))
+        {
+            run.DelegatedToUserId = delegateUser;
+            _dbContext.PayrollApprovalHistories.Add(new PayrollApprovalHistory
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                PayrollRunId = run.Id,
+                WorkflowInstanceId = run.CurrentWorkflowInstanceId ?? BaseEntity.NewUuidV7(),
+                StepNumber = stepNumber,
+                Action = PayrollApprovalAction.Delegated,
+                ActorUserId = Guid.Empty,  // system: delegation is applied by the engine, not an acting user.
+                Comments = $"Step {stepNumber} primary approver on leave; delegated to {delegateUser}.",
+                ActedAt = _timeProvider.GetUtcNow().UtcDateTime,
+                IpAddress = null,
+            });
+            return true;
+        }
+
+        run.DelegatedToUserId = null;
+        return false;
+    }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): true when <paramref name="userId"/> maps to a tenant employee who has an APPROVED
+    /// leave request spanning <paramref name="onDate"/> — the delegation trigger at step activation. Replicates the
+    /// generic engine's leave overlap query (resolve the user's Employee, then any Approved LeaveRequest covering the
+    /// date). A user with no linked employee returns false. Tenant-scoped by the global query filter (BR-8).
+    /// </summary>
+    private async Task<bool> HasActiveApprovedLeaveOnDateAsync(Guid userId, DateOnly onDate, CancellationToken cancellationToken)
+    {
+        var empId = await _dbContext.Employees.AsNoTracking()
+            .Where(e => e.UserId == userId).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(cancellationToken);
+        if (empId is not { } eid)
+            return false;
+
+        return await _dbContext.LeaveRequests.AsNoTracking().AnyAsync(
+            lr => lr.EmployeeId == eid && lr.Status == LeaveRequestStatus.Approved
+                  && lr.StartDate <= onDate && lr.EndDate >= onDate,
+            cancellationToken);
     }
 
     private async Task<(PayrollRun? Run, Result<PayrollApprovalResultDto>? Failure)> LoadRunAsync(

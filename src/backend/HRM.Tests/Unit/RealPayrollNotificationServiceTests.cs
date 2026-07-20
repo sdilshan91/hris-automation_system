@@ -267,4 +267,34 @@ public sealed class RealPayrollNotificationServiceTests
         dispatcher.Email.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { _approver1, _approver2 });
         dispatcher.Email.Should().OnlyContain(r => r.EventKey == "payroll_approval_escalated");
     }
+
+    // ── ISSUE-173 FR-6: a delegated run notifies the run's DelegatedToUserId (the delegate), no one else. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task NotifyApprovalEventAsync_Delegated_DispatchesToTheDelegateUserOnly()
+    {
+        await SeedApproverPoolAsync();
+        var delegateUser = Guid.NewGuid();
+        Guid runId;
+        using (var db = Db())
+        {
+            runId = BaseEntity.NewUuidV7();
+            db.PayrollRuns.Add(new PayrollRun
+            {
+                Id = runId, TenantId = _tenantId, PayMonth = 5, PayYear = 2026,
+                Status = PayrollRunStatus.AwaitingApproval, InitiatedBy = Guid.NewGuid(), InitiatedAt = DateTime.UtcNow,
+                TotalEmployees = 2, ProcessedEmployees = 2, SubmittedBy = _submitter,
+                CurrentApprovalStep = 1, TotalApprovalSteps = 1, DelegatedToUserId = delegateUser,
+            });
+            await db.SaveChangesAsync();
+        }
+        var dispatcher = new RecordingDispatcher();
+
+        await Service(dispatcher).NotifyApprovalEventAsync(_tenantId, runId, "payroll-approval-delegated");
+
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { delegateUser });
+        dispatcher.InApp.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { delegateUser });
+        dispatcher.Email.Select(r => r.RecipientUserId).Should().NotContain(_approver1);
+        dispatcher.Email.Should().OnlyContain(r => r.EventKey == "payroll_approval_delegated");
+    }
 }

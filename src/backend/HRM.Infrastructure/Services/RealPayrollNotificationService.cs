@@ -92,6 +92,10 @@ public sealed class RealPayrollNotificationService : IPayrollNotificationService
                 "payroll-approval-escalated" => (
                     "payroll_approval_escalated", "payroll.approval.escalated",
                     "A payroll approval is overdue and was escalated", RecipientMode.BackupRoleOrApprovers),
+                // US-PAY-008 FR-6 (ISSUE-173): recipient = the run's DelegatedToUserId (the single effective delegate).
+                "payroll-approval-delegated" => (
+                    "payroll_approval_delegated", "payroll.approval.delegated",
+                    "A payroll approval was delegated to you", RecipientMode.Delegate),
                 "payroll-finalized" => (
                     "payroll_finalized", "payroll.finalized",
                     "A payroll run was finalized", RecipientMode.Approvers),
@@ -122,6 +126,18 @@ public sealed class RealPayrollNotificationService : IPayrollNotificationService
 
                 case RecipientMode.BackupRoleOrApprovers:
                     recipients = await ResolveBackupApproverUserIdsAsync(tenantId, run, cancellationToken);
+                    break;
+
+                case RecipientMode.Delegate:
+                    // FR-6: the single effective delegate stamped at step activation. Skip gracefully when unset.
+                    if (run?.DelegatedToUserId is not { } delegateUser)
+                    {
+                        _logger.LogWarning(
+                            "RealPayrollNotificationService: run {RunId} has no DelegatedToUserId; approval event " +
+                            "'{EventType}' not delivered (tenant {TenantId}).", runId, eventType, tenantId);
+                        return;
+                    }
+                    recipients = [delegateUser];
                     break;
 
                 case RecipientMode.Submitter:
@@ -219,6 +235,9 @@ public sealed class RealPayrollNotificationService : IPayrollNotificationService
 
         /// <summary>The current step's backup approver role holders, falling back to the approver pool — escalated.</summary>
         BackupRoleOrApprovers,
+
+        /// <summary>The run's single effective delegate (<c>DelegatedToUserId</c>) — delegated (FR-6).</summary>
+        Delegate,
     }
 
     private async Task DispatchToUsersAsync(

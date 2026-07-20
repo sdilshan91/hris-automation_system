@@ -57,6 +57,9 @@ public sealed class PayrollRunConfiguration : IEntityTypeConfiguration<PayrollRu
         builder.Property(x => x.SlaDueAt);
         builder.Property(x => x.EscalatedAt);
 
+        // US-PAY-008 FR-6 (ISSUE-173): the effective delegate for the current step (nullable, set at activation).
+        builder.Property(x => x.DelegatedToUserId);
+
         builder.Property(x => x.ApprovedBy);
         builder.Property(x => x.ApprovedAt);
         builder.Property(x => x.FinalizedAt);

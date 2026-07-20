@@ -991,6 +991,28 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.PayrollNotifications,
             IsMandatory: false);
 
+        // US-PAY-008 FR-6 (ISSUE-173): the current step's primary approver is on leave at activation, so the step was
+        // delegated. Recipient is resolved in the Real service = the run's DelegatedToUserId (the single delegate user).
+        yield return new NotificationEventDefinition(
+            EventKey: "payroll_approval_delegated",
+            EventName: "Payroll Approval Delegated",
+            Placeholders: [.. PayrollPlaceholders, .. TenantPlaceholders],
+            SampleData: PayrollSample(),
+            DefaultSubject: "A payroll approval for {{payroll.period}} was delegated to you",
+            DefaultBodyHtml:
+                "<p>Hello,</p>" +
+                "<p>The primary approver for the <strong>{{payroll.period}}</strong> payroll run is on leave, so its " +
+                "approval has been <strong>delegated</strong> to you.</p>" +
+                "<p>Please review it in the HRM portal.</p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hello,\n\n" +
+                "The primary approver for the {{payroll.period}} payroll run is on leave, so its approval has been " +
+                "delegated to you.\n\nPlease review it in the HRM portal.\n\n" +
+                "Regards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.PayrollNotifications,
+            IsMandatory: false);
+
         yield return new NotificationEventDefinition(
             EventKey: "payroll_finalized",
             EventName: "Payroll Run Finalized",

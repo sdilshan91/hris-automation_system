@@ -96,6 +96,14 @@ public sealed class PayrollRun : BaseEntity, IAuditExempt
     /// </summary>
     public DateTime? EscalatedAt { get; set; }
 
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): the effective DELEGATE for the CURRENT approval step — set once at step activation
+    /// when the step's configured <see cref="PayrollApprovalStepConfig.PrimaryApproverUserId"/> is on an approved leave
+    /// spanning today, else null (primary expected / no delegation). Recorded + notified, NOT an authz change:
+    /// approval stays role-gated by the step-role guard. Cleared to null when the run leaves AwaitingApproval.
+    /// </summary>
+    public Guid? DelegatedToUserId { get; set; }
+
     /// <summary>US-PAY-008 AC-3: the latest rejection reason, nullable (cleared on re-submit).</summary>
     public string? RejectionReason { get; set; }
 

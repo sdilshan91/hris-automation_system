@@ -26,6 +26,11 @@ public sealed class PayrollApprovalStepConfigConfiguration : IEntityTypeConfigur
         builder.Property(c => c.SlaHours);
         builder.Property(c => c.BackupRoleId);
 
+        // US-PAY-008 FR-6 (ISSUE-173): per-step primary approver + delegate user. Both nullable/opt-in — delegation is
+        // configured only when BOTH are set.
+        builder.Property(c => c.PrimaryApproverUserId);
+        builder.Property(c => c.DelegateUserId);
+
         builder.Property(c => c.IsDeleted).HasDefaultValue(false).IsRequired();
 
         // One row per (tenant, step): the step→role binding is unique per step within a tenant.
