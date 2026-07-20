@@ -66,6 +66,7 @@ public sealed class PerformanceDashboardServiceTests
 
     private PerformanceDashboardService CreateService(ICurrentUser user) => new(
         CreateDbContext(), _tenantContext, user,
+        Substitute.For<IFileStorage>(),
         Substitute.For<ILogger<PerformanceDashboardService>>());
 
     private ICurrentUser HrUser()
@@ -432,5 +433,69 @@ public sealed class PerformanceDashboardServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("invalid_format");
+    }
+
+    // ── DF-6/ISSUE-126: the branded dashboard PDF embeds the tenant logo (read in-process via IFileStorage). ──
+
+    private PerformanceDashboardService CreateServiceWith(ICurrentUser user, IFileStorage fileStorage) => new(
+        CreateDbContext(), _tenantContext, user, fileStorage,
+        Substitute.For<ILogger<PerformanceDashboardService>>());
+
+    // A minimal valid 1×1 PNG (decodable by QuestPDF's Image.FromBinaryData).
+    private static byte[] ValidPng() => Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    [Fact]
+    [Trait("TC", "TC-PRF-007-16")]
+    public async Task Export_pdf_WithTenantLogo_EmbedsLogo_LargerThanNoLogoBaseline()
+    {
+        // Baseline: no logo configured (LogoUrl null) → colour-band-only header.
+        var noLogo = await CreateService(HrUser()).ExportOverviewAsync(Filter(_cycleId), "pdf");
+        noLogo.IsSuccess.Should().BeTrue(noLogo.Error);
+        System.Text.Encoding.ASCII.GetString(noLogo.Value!.FileContent, 0, 4).Should().Be("%PDF");
+
+        // With a tenant logo: the in-process IFileStorage read returns a valid PNG → the image is embedded.
+        _tenantContext.LogoUrl.Returns($"/{_tenantId}/branding/logo.png");
+        var storage = Substitute.For<IFileStorage>();
+        storage.OpenReadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(new MemoryStream(ValidPng())));
+
+        var withLogo = await CreateServiceWith(HrUser(), storage).ExportOverviewAsync(Filter(_cycleId), "pdf");
+        withLogo.IsSuccess.Should().BeTrue(withLogo.Error);
+        System.Text.Encoding.ASCII.GetString(withLogo.Value!.FileContent, 0, 4).Should().Be("%PDF");
+
+        await storage.Received().OpenReadAsync(_tenantId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        // The embedded logo image adds bytes — a dropped `.Image(logoBytes)` mutant makes both PDFs identical.
+        withLogo.Value!.FileContent.Length.Should().BeGreaterThan(noLogo.Value!.FileContent.Length);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PRF-007-16")]
+    public async Task Export_pdf_NoTenantLogo_StillRenders_NoStorageRead()
+    {
+        _tenantContext.LogoUrl.Returns((string?)null);
+        var storage = Substitute.For<IFileStorage>();
+
+        var result = await CreateServiceWith(HrUser(), storage).ExportOverviewAsync(Filter(_cycleId), "pdf");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        System.Text.Encoding.ASCII.GetString(result.Value!.FileContent, 0, 4).Should().Be("%PDF");
+        await storage.DidNotReceive().OpenReadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PRF-007-16")]
+    public async Task Export_pdf_CorruptLogoBytes_DegradesGracefully_StillRendersPdf()
+    {
+        // A stored "logo" that is not a decodable image → IsRenderableImage rejects it → colour-only header, no crash.
+        _tenantContext.LogoUrl.Returns($"/{_tenantId}/branding/logo.png");
+        var storage = Substitute.For<IFileStorage>();
+        storage.OpenReadAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(new MemoryStream(new byte[] { 1, 2, 3, 4, 5 })));
+
+        var result = await CreateServiceWith(HrUser(), storage).ExportOverviewAsync(Filter(_cycleId), "pdf");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        System.Text.Encoding.ASCII.GetString(result.Value!.FileContent, 0, 4).Should().Be("%PDF");
     }
 }

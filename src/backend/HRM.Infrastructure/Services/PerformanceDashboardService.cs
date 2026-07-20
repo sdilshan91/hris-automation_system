@@ -42,17 +42,20 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IFileStorage _fileStorage;
     private readonly ILogger<PerformanceDashboardService> _logger;
 
     public PerformanceDashboardService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IFileStorage fileStorage,
         ILogger<PerformanceDashboardService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _fileStorage = fileStorage;
         _logger = logger;
     }
 
@@ -268,8 +271,13 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             return Result<PerformanceDashboardExportResult>.Failure(
                 overview.Error!, overview.StatusCode ?? 400, overview.ErrorCode);
 
-        // ISSUE-126: PDF (FR-8) carries tenant branding — the primary colour bands the header.
-        var (content, fileName, contentType) = RenderExport(normalized, overview.Value!, _tenantContext.PrimaryColor);
+        // ISSUE-126: PDF (FR-8) carries tenant branding — the primary colour bands the header and the tenant
+        // logo (when set) is embedded top-left. Logo bytes are read in-process via IFileStorage (NO HTTP fetch);
+        // a missing/blank/absolute/undecodable logo degrades to no-logo so the PDF still renders (DF-6).
+        // Only the PDF branch consumes the logo, so skip the storage read + decode for csv/xlsx.
+        var logoBytes = normalized == "pdf" ? await ResolveLogoBytesAsync(cancellationToken) : null;
+        var (content, fileName, contentType) = RenderExport(
+            normalized, overview.Value!, _tenantContext.PrimaryColor, logoBytes);
         return Result<PerformanceDashboardExportResult>.Success(new PerformanceDashboardExportResult
         {
             FileContent = content,
@@ -599,18 +607,93 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Branding — logo bytes (ISSUE-126 / DF-6)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// ISSUE-126/DF-6: resolves the tenant logo bytes from tenant-scoped storage for the branded PDF header,
+    /// mirroring <c>PayslipBatchRenderer.ResolveLogoBytesAsync</c> (the ISSUE-158 pattern). The stored
+    /// <see cref="ITenantContext.LogoUrl"/> is the app-internal storage path ("/{tenantId}/branding/logo.png"),
+    /// so the bytes are loaded via <see cref="IFileStorage"/> — NO outbound HTTP fetch is performed. Degrades
+    /// gracefully to <c>null</c> (logging a warning) on ANY of: blank/absolute URL, missing file, zero-length,
+    /// or a non-decodable image, so the PDF still renders (header colour band + title only) without a logo.
+    /// </summary>
+    private async Task<byte[]?> ResolveLogoBytesAsync(CancellationToken ct)
+    {
+        var storedUrl = _tenantContext.LogoUrl;
+        if (string.IsNullOrWhiteSpace(storedUrl))
+            return null;
+
+        var trimmed = storedUrl.Trim();
+        // An external asset is never fetched by the renderer (ISSUE-158 constraint) — degrade to no-logo.
+        if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var relativePath = BrandingAssetUrls.ToStorageRelativePath(trimmed, _tenantContext.TenantId);
+        if (string.IsNullOrWhiteSpace(relativePath))
+            return null;
+
+        try
+        {
+            await using var stream = await _fileStorage.OpenReadAsync(_tenantContext.TenantId, relativePath, ct);
+            if (stream is null)
+                return null;
+
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer, ct);
+            var bytes = buffer.ToArray();
+            if (bytes.Length == 0)
+                return null;
+
+            // Validate the bytes decode as an image QuestPDF can render, so a corrupt asset degrades to
+            // "no logo" rather than throwing mid-render (which would fail the whole export).
+            if (!IsRenderableImage(bytes))
+            {
+                _logger.LogWarning(
+                    "Performance dashboard logo bytes were not a decodable image; rendering without a logo. Tenant={TenantId}, Path={Path}",
+                    _tenantContext.TenantId, relativePath);
+                return null;
+            }
+
+            return bytes;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Performance dashboard logo could not be loaded; rendering without a logo. Tenant={TenantId}, Path={Path}",
+                _tenantContext.TenantId, relativePath);
+            return null;
+        }
+    }
+
+    /// <summary>True when the bytes decode as an image QuestPDF can render (defensive graceful-degrade check).</summary>
+    private static bool IsRenderableImage(byte[] bytes)
+    {
+        try
+        {
+            _ = QuestPDF.Infrastructure.Image.FromBinaryData(bytes);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Export rendering
     // ══════════════════════════════════════════════════════════════
 
     private static (byte[] Content, string FileName, string ContentType) RenderExport(
-        string format, PerformanceDashboardDto d, string? brandColor = null)
+        string format, PerformanceDashboardDto d, string? brandColor = null, byte[]? logoBytes = null)
     {
         var baseName = $"performance-dashboard-{d.CycleId:N}";
         return format switch
         {
             "xlsx" => (RenderXlsx(d), $"{baseName}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-            "pdf" => (RenderPdf(d, brandColor), $"{baseName}.pdf", "application/pdf"),
+            "pdf" => (RenderPdf(d, brandColor, logoBytes), $"{baseName}.pdf", "application/pdf"),
             _ => (RenderCsv(d), $"{baseName}.csv", "text/csv"),
         };
     }
@@ -633,7 +716,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     /// header (falling back to the default); the summary, cycle-progress, department averages and top/bottom
     /// performers render as tables.
     /// </summary>
-    private static byte[] RenderPdf(PerformanceDashboardDto d, string? brandColor)
+    private static byte[] RenderPdf(PerformanceDashboardDto d, string? brandColor, byte[]? logoBytes = null)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         var brand = ResolveBrandColor(brandColor);
@@ -646,11 +729,21 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
                 page.Margin(24);
                 page.DefaultTextStyle(t => t.FontSize(9));
 
-                // Branded header band (tenant primary colour).
-                page.Header().Background(brand).Padding(12).Column(col =>
+                // Branded header band (tenant primary colour) with the tenant logo top-left when set
+                // (ISSUE-126/DF-6). A null/undecodable logo falls through to the colour band + title only.
+                page.Header().Background(brand).Padding(12).Row(row =>
                 {
-                    col.Item().Text("Performance Dashboard").FontColor(Colors.White).FontSize(16).Bold();
-                    col.Item().Text($"{d.CycleName}  ·  Scope: {d.Scope}").FontColor(Colors.White).FontSize(9);
+                    if (logoBytes is { Length: > 0 })
+                    {
+                        // Mirror PayslipPdfRenderer: bounded to a 110x48 box, aspect preserved.
+                        row.ConstantItem(110).AlignMiddle().Height(48).Image(logoBytes).FitArea();
+                        row.ConstantItem(12);
+                    }
+                    row.RelativeItem().Column(col =>
+                    {
+                        col.Item().Text("Performance Dashboard").FontColor(Colors.White).FontSize(16).Bold();
+                        col.Item().Text($"{d.CycleName}  ·  Scope: {d.Scope}").FontColor(Colors.White).FontSize(9);
+                    });
                 });
 
                 page.Content().PaddingTop(12).Column(col =>
