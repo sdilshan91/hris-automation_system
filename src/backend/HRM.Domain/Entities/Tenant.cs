@@ -51,6 +51,16 @@ public sealed class Tenant
     public int ProbationPeriodDays { get; set; } = 90;
 
     /// <summary>
+    /// US-LV-010 FR-7 (DF-20/ISSUE-044): the tenant's leave-cancellation notice window in days — an employee may
+    /// self-cancel an APPROVED leave only when its StartDate is MORE THAN this many days after today
+    /// (<c>StartDate &gt; today + N</c>). N is a before-start minimum-notice cutoff; default 0 = cancellable strictly
+    /// before start, the value previously HARDCODED in <c>LeaveRequestService</c>, so a tenant that has never
+    /// configured this behaves exactly as before. Applies only to Approved requests (Pending is always cancellable).
+    /// Settable via the tenant-settings (org-profile) surface.
+    /// </summary>
+    public int LeaveCancellationWindowDays { get; set; } = 0;
+
+    /// <summary>
     /// Default ISO country code (alpha-2/alpha-3, max 5), e.g. "LK" (settings key org.default_country_code).
     /// Multi-country tax foundation: the FALLBACK tax country used when an employee's branch/location has no
     /// <c>CountryCode</c>. When this is also null and no location country resolves, the employee's statutory

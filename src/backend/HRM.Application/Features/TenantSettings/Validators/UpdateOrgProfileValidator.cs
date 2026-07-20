@@ -37,6 +37,12 @@ public sealed class UpdateOrgProfileValidator : AbstractValidator<UpdateOrgProfi
             .InclusiveBetween(1, 1825)
             .WithMessage("Probation period must be between 1 and 1825 days.");
 
+        // DF-20/ISSUE-044 (US-LV-010 FR-7): the leave-cancellation notice window. 0 = an approved leave is
+        // cancellable strictly before start (today's behaviour); the upper bound is a sanity rail.
+        RuleFor(x => x.Request.LeaveCancellationWindowDays)
+            .InclusiveBetween(0, 90)
+            .WithMessage("Leave cancellation window must be between 0 and 90 days.");
+
         // Multi-country tax foundation: optional default ISO country code (alpha-2/alpha-3) — the fallback tax country.
         RuleFor(x => x.Request.DefaultCountryCode)
             .MaximumLength(5).WithMessage("Default country code cannot exceed 5 characters.")

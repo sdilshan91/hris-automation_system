@@ -8,10 +8,16 @@ status: pass
 created: 2026-06-14
 ---
 
-# TC-LV-203: Tenant-configurable cancellation window -- allow cancellation up to N days before start (CONDITIONAL; FR-7, AC-3)
+# TC-LV-203: Tenant-configurable cancellation window -- allow cancellation up to N days before start (FR-7, AC-3)
+
+> **✅ Conditional (N>0) arm now AUTOMATED (DF-20, 2026-07-20).** The policy is implemented — `Tenant.LeaveCancellationWindowDays`
+> (0–90, org-profile) is read by `LeaveRequestService.CancelAsync`. Automated by `CancelLeaveRequestServiceTests`
+> (`Cancel_ApprovedRequest_RespectsTenantConfiguredWindow`, `..._AtExactCutoffDay_IsBlocked_OneDayPast_IsAllowed`,
+> `Cancel_PendingRequest_InsideTenantWindow_IsStillAllowed`) + `UpdateOrgProfileValidatorTests` (the server-side 0–90 bound)
+> via `[Trait("TC","TC-LV-203")]`. The N=0 default remains covered by the existing cancel arms.
 
 ## 1. Test Objective
-Verify the tenant-configurable policy that allows cancellation of an approved leave only up to N days before the start date (default N=0 = anytime before start). With a non-zero N, a cancellation submitted inside the cut-off window (fewer than N days before start) is blocked; outside the window it succeeds. If tenant-policy config is not yet implemented, the default (N=0, anytime-before-start) is verified live and the N>0 window is recorded as conditional (FR-7).
+Verify the tenant-configurable policy that allows cancellation of an approved leave only up to N days before the start date (default N=0 = anytime before start). With a non-zero N, a cancellation submitted inside the cut-off window (fewer than N days before start) is blocked; outside the window it succeeds. **N>0 is now implemented (DF-20)** — an admin sets `LeaveCancellationWindowDays` via org-profile; `CancelAsync` blocks an Approved leave when `StartDate <= today + N`.
 
 ## 2. Related Requirements
 - User Story: US-LV-010

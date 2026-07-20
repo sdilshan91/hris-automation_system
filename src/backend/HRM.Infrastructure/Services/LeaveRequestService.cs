@@ -37,10 +37,10 @@ public sealed class LeaveRequestService : ILeaveRequestService
     private const int DefaultPastLookbackDays = 7;   // BR-1
     private const int DefaultFutureWindowDays = 90;  // BR-2
 
-    // US-LV-010 FR-7: tenant-configurable "allow cancellation up to N days before start date".
-    // Default 0 = an approved leave can be cancelled any time BEFORE it starts, but is blocked once
-    // start_date <= today (BR-3, AC-3). No tenant-settings entity exists yet, so this is a constant.
-    // TODO(tenant-settings): read the cancellation window from tenant settings when available.
+    // US-LV-010 FR-7 (DF-20/ISSUE-044): tenant-configurable "allow cancellation up to N days before start date".
+    // The effective window is now read per-tenant from Tenant.LeaveCancellationWindowDays at cancel time; this
+    // constant is only the fallback default when the tenant row cannot be resolved. Default 0 = an approved leave
+    // can be cancelled any time BEFORE it starts, but is blocked once start_date <= today (BR-3, AC-3).
     private const int DefaultCancellationWindowDays = 0;
 
     public LeaveRequestService(
@@ -1273,7 +1273,13 @@ public sealed class LeaveRequestService : ILeaveRequestService
         // can be cancelled regardless of date (nothing was committed against the balance).
         if (wasApproved)
         {
-            var cutoff = today.AddDays(DefaultCancellationWindowDays);
+            // DF-20/ISSUE-044: the notice window is tenant-configurable (Tenant.LeaveCancellationWindowDays).
+            // Scoped read of the current tenant's value; falls back to the const default if the row is missing.
+            var windowDays = await _dbContext.Tenants
+                .Where(t => t.Id == _tenantContext.TenantId)
+                .Select(t => (int?)t.LeaveCancellationWindowDays)
+                .FirstOrDefaultAsync(cancellationToken) ?? DefaultCancellationWindowDays;
+            var cutoff = today.AddDays(windowDays);
             if (request.StartDate <= cutoff)
                 return Result<LeaveCancellationResultDto>.Failure(
                     "Cannot cancel leave that has already started. Please contact HR for assistance.", 400);

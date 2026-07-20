@@ -112,6 +112,25 @@ import {
           </div>
 
           <div class="cs-field">
+            <label class="cs-label" for="org-leave-cancel-window">Leave cancellation window (days)</label>
+            <input
+              id="org-leave-cancel-window"
+              type="number"
+              min="0"
+              max="90"
+              formControlName="leaveCancellationWindowDays"
+              class="cs-input"
+            />
+            <p class="cs-hint">
+              Employees must cancel an approved leave more than this many days before it starts
+              (0 = any time before start).
+            </p>
+            @if (form.get('leaveCancellationWindowDays')?.invalid && form.get('leaveCancellationWindowDays')?.touched) {
+              <p class="cs-error">Enter a value between 0 and 90.</p>
+            }
+          </div>
+
+          <div class="cs-field">
             <label class="cs-label" for="org-country">Default Country Code</label>
             <input
               id="org-country"
@@ -195,6 +214,7 @@ export class OrgProfileSectionComponent {
     address: [''],
     // ISSUE-322: these 4 were previously unmapped + being wiped on every save.
     probationPeriodDays: [90, [Validators.min(0)]],
+    leaveCancellationWindowDays: [0, [Validators.min(0), Validators.max(90)]],
     defaultCountryCode: [''],
     payslipFooterDisclaimer: [''],
     payrollFromEmail: ['', [Validators.email]],
@@ -215,6 +235,7 @@ export class OrgProfileSectionComponent {
           fiscalYearStartMonth: String(v.fiscalYearStartMonth ?? 1),
           address: v.address ?? '',
           probationPeriodDays: v.probationPeriodDays ?? 90,
+          leaveCancellationWindowDays: v.leaveCancellationWindowDays ?? 0,
           defaultCountryCode: v.defaultCountryCode ?? '',
           payslipFooterDisclaimer: v.payslipFooterDisclaimer ?? '',
           payrollFromEmail: v.payrollFromEmail ?? '',
@@ -241,6 +262,7 @@ export class OrgProfileSectionComponent {
       // ISSUE-322: full-replace PUT — resend these 4 so they are preserved,
       // never silently reset to BE defaults. Blank clears the nullable ones.
       probationPeriodDays: Number(raw.probationPeriodDays),
+      leaveCancellationWindowDays: Number(raw.leaveCancellationWindowDays),
       defaultCountryCode: raw.defaultCountryCode?.trim() || null,
       payslipFooterDisclaimer: raw.payslipFooterDisclaimer?.trim() || null,
       payrollFromEmail: raw.payrollFromEmail?.trim() || null,
