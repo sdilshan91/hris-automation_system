@@ -33,6 +33,7 @@ public sealed class AttendanceService : IAttendanceService
     private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly IAttendanceNotificationService? _notifications;
     private readonly ILateEarlyService? _lateEarly;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<AttendanceService> _logger;
 
     public AttendanceService(
@@ -44,7 +45,8 @@ public sealed class AttendanceService : IAttendanceService
         ILogger<AttendanceService> logger,
         IWorkflowRuntime? workflowRuntime = null,
         IAttendanceNotificationService? notifications = null,
-        ILateEarlyService? lateEarly = null)
+        ILateEarlyService? lateEarly = null,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -60,8 +62,15 @@ public sealed class AttendanceService : IAttendanceService
         // US-ATT-008 FR-7: optional so existing US-ATT unit tests keep compiling; DI always supplies it. Used to
         // count distinct late days in the current calendar month for the chronic-lateness escalation crossing.
         _lateEarly = lateEarly;
+        // DF-43: injectable clock so date-dependent logic (late detection, the FR-7 chronic-lateness month
+        // window, period locks, the idempotency window) is deterministically testable. Trailing-optional +
+        // TimeProvider.System default so existing US-ATT unit-test constructions keep compiling; DI supplies it.
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger;
     }
+
+    /// <summary>DF-43: the current UTC instant via the injected clock (seam for date-dependent logic + tests).</summary>
+    private DateTime UtcNow => _timeProvider.GetUtcNow().UtcDateTime;
 
     public async Task<Result<AttendanceLogDto>> ClockInAsync(
         ClockInData data, CancellationToken cancellationToken = default)
@@ -166,7 +175,7 @@ public sealed class AttendanceService : IAttendanceService
             Id = BaseEntity.NewUuidV7(),
             TenantId = _tenantContext.TenantId,
             EmployeeId = employee.Id,
-            ClockIn = DateTime.UtcNow,          // FR-1 / FR-7: store in UTC.
+            ClockIn = UtcNow,                   // FR-1 / FR-7: store in UTC (DF-43 clock seam).
             ClockInLatitude = hasCoordinates ? data.Latitude : null,
             ClockInLongitude = hasCoordinates ? data.Longitude : null,
             ClockInIp = data.IpAddress,          // FR-5.
@@ -323,7 +332,7 @@ public sealed class AttendanceService : IAttendanceService
             return Result<ClockOutResultDto>.Failure(
                 "Location is required to clock out. Please enable location access and try again.", 400);
 
-        var clockOut = DateTime.UtcNow;                  // FR-1: server-side UTC, not client-reported.
+        var clockOut = UtcNow;                           // FR-1: server-side UTC, not client-reported (DF-43 clock seam).
 
         // FR-2/FR-3/FR-4/FR-7, BR-2/BR-3/BR-4/BR-6: minute-accurate work-hours calculation.
         var calc = AttendanceCalculator.Calculate(openLog.ClockIn, clockOut, settings);
@@ -626,7 +635,7 @@ public sealed class AttendanceService : IAttendanceService
             Before = before,
             After = after,
             Detail = detail,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = UtcNow,
         });
     }
 
@@ -826,8 +835,8 @@ public sealed class AttendanceService : IAttendanceService
                 OperationName = OperationName,
                 ResponseJson = JsonSerializer.Serialize(dto),
                 ResponseStatusCode = 201,
-                CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.Add(IdempotencyWindow),
+                CreatedAt = UtcNow,
+                ExpiresAt = UtcNow.Add(IdempotencyWindow),
             });
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
