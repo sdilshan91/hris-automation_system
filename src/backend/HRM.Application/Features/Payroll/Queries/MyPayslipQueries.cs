@@ -7,9 +7,10 @@ namespace HRM.Application.Features.Payroll.Queries;
 
 /// <summary>
 /// Lists the authenticated employee's own payslips from Finalized runs (US-PAY-005 AC-1/FR-2/FR-6), most
-/// recent first, paginated. Scoped to the caller's employee + tenant (FR-8). Optional year filter.
+/// recent first, paginated. Scoped to the caller's employee + tenant (FR-8). Optional year + month
+/// (pay-period) filter (ISSUE-164/FR-6).
 /// </summary>
-public sealed record GetMyPayslipsQuery(int? Year, int Page, int PageSize) : IRequest<Result<MyPayslipListDto>>;
+public sealed record GetMyPayslipsQuery(int? Year, int? Month, int Page, int PageSize) : IRequest<Result<MyPayslipListDto>>;
 
 public sealed class GetMyPayslipsQueryHandler : IRequestHandler<GetMyPayslipsQuery, Result<MyPayslipListDto>>
 {
@@ -17,7 +18,7 @@ public sealed class GetMyPayslipsQueryHandler : IRequestHandler<GetMyPayslipsQue
     public GetMyPayslipsQueryHandler(IMyPayslipService service) => _service = service;
 
     public Task<Result<MyPayslipListDto>> Handle(GetMyPayslipsQuery request, CancellationToken cancellationToken)
-        => _service.ListMineAsync(request.Year, request.Page, request.PageSize, cancellationToken);
+        => _service.ListMineAsync(request.Year, request.Month, request.Page, request.PageSize, cancellationToken);
 }
 
 /// <summary>

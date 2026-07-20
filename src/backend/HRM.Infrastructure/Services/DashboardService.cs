@@ -721,7 +721,7 @@ public sealed class DashboardService : IDashboardService
         if (_payslips is null)
             return null;
 
-        var list = await _payslips.ListMineAsync(null, page: 1, pageSize: 3, ct);
+        var list = await _payslips.ListMineAsync(null, month: null, page: 1, pageSize: 3, ct);
         if (list.IsFailure)
             return null;
 

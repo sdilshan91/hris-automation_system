@@ -3576,7 +3576,7 @@ Scope: Executed TC-PAY-005-01..12 + TC-PAY-ISO-017..020 against the running API 
 - **Severity rationale**: Cosmetic — file still downloads correctly and opens; only the filename text differs from the documented pattern. No functional/security impact. Spec could equally be read as not requiring padding; flagged as drift.
 
 ### ISSUE-164 — My-Payslips "search by pay period" (FR-6) is not implemented; only the year filter exists
-- **Type**: ISSUE · **Severity**: LOW · **Status**: OPEN · **Layer**: BE
+- **Type**: ISSUE · **Severity**: LOW · **Status**: ✅ RESOLVED (2026-07-20, #PR-pending, +TC-PAY-005-14) — added an optional `month` (pay-period) filter that composes with `year`: `GET /my-payslips?year=&month=`, `MyPayslipService.ListMineAsync(year, month, …)` filters `PayMonth == month`; FE adds a native month `<select>` ("All months" + Jan–Dec) alongside the year tabs. BE integration arm + FE service/component specs green. · **Layer**: BE + FE
 - **Module/US/TC**: Payroll / US-PAY-005 / TC-PAY-005-06 (steps 5 & 6)
 - **Title**: FR-6 requires "filtering by year AND searching by pay period." The endpoint supports only `?year=`; there is no pay-period/month search param. `?search=`, `?month=`, `?q=` are silently ignored.
 - **Root cause** (98%): `GetMyPayslipsQuery` (HRM.Application/Features/Payroll/Queries/MyPayslipQueries.cs) and `MyPayslipService.ListMineAsync` (MyPayslipService.cs:48-100) accept only `year/page/pageSize`; no month/search filter is wired. The controller `List` action exposes only `year,page,pageSize` query params.

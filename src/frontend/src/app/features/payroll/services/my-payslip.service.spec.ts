@@ -83,6 +83,7 @@ describe('MyPayslipService', () => {
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('pageSize')).toBe('12');
     expect(req.request.params.has('year')).toBeFalse();
+    expect(req.request.params.has('month')).toBeFalse();
     expect(req.request.withCredentials).toBeTrue();
     req.flush(page);
 
@@ -90,12 +91,31 @@ describe('MyPayslipService', () => {
   });
 
   it('listMyPayslips appends the year filter when provided (FR-6)', () => {
-    service.listMyPayslips(2025, 2, 6).subscribe();
+    service.listMyPayslips(2025, null, 2, 6).subscribe();
 
     const req = httpMock.expectOne((r) => r.url === baseUrl);
     expect(req.request.params.get('year')).toBe('2025');
+    expect(req.request.params.has('month')).toBeFalse();
     expect(req.request.params.get('page')).toBe('2');
     expect(req.request.params.get('pageSize')).toBe('6');
+    req.flush(page);
+  });
+
+  it('listMyPayslips appends the month filter when provided (FR-6)', () => {
+    service.listMyPayslips(2026, 5).subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.get('year')).toBe('2026');
+    expect(req.request.params.get('month')).toBe('5');
+    req.flush(page);
+  });
+
+  it('listMyPayslips omits the month filter when null', () => {
+    service.listMyPayslips(2026, null).subscribe();
+
+    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(req.request.params.get('year')).toBe('2026');
+    expect(req.request.params.has('month')).toBeFalse();
     req.flush(page);
   });
 

@@ -214,7 +214,7 @@ public sealed class MyPayslipIntegrationTests
         await SeedEmployeeWithSlip(_tenantB, "EMP-B"); // a payslip in another tenant.
 
         var mediator = Provider(_tenantA, userA).GetRequiredService<IMediator>();
-        var result = await mediator.Send(new GetMyPayslipsQuery(null, 1, 12));
+        var result = await mediator.Send(new GetMyPayslipsQuery(null, null, 1, 12));
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Items.Should().ContainSingle();
@@ -246,7 +246,7 @@ public sealed class MyPayslipIntegrationTests
         await SeedExtraSlipForEmployee(_tenantA, empId, month: 3, status: PayrollRunStatus.ReviewPending);
 
         var mediator = Provider(_tenantA, userId).GetRequiredService<IMediator>();
-        var result = await mediator.Send(new GetMyPayslipsQuery(null, 1, 12));
+        var result = await mediator.Send(new GetMyPayslipsQuery(null, null, 1, 12));
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Items.Should().ContainSingle();
@@ -368,7 +368,7 @@ public sealed class MyPayslipIntegrationTests
 
         var mediator = Provider(_tenantA, userId).GetRequiredService<IMediator>();
 
-        var page1 = await mediator.Send(new GetMyPayslipsQuery(null, 1, 2));
+        var page1 = await mediator.Send(new GetMyPayslipsQuery(null, null, 1, 2));
         page1.Value!.TotalCount.Should().Be(3);
         page1.Value.Items.Should().HaveCount(2);
         // Most recent first: 2026-02, then 2026-01.
@@ -376,7 +376,7 @@ public sealed class MyPayslipIntegrationTests
         page1.Value.Items[0].PayMonth.Should().Be(2);
         page1.Value.Items[1].PayMonth.Should().Be(1);
 
-        var page2 = await mediator.Send(new GetMyPayslipsQuery(null, 2, 2));
+        var page2 = await mediator.Send(new GetMyPayslipsQuery(null, null, 2, 2));
         page2.Value!.Items.Should().ContainSingle();
         page2.Value.Items[0].PayYear.Should().Be(2025);
         page2.Value.Items[0].PayMonth.Should().Be(12);
@@ -389,10 +389,31 @@ public sealed class MyPayslipIntegrationTests
         await SeedExtraSlipForEmployee(_tenantA, empId, month: 12, year: 2025);
 
         var mediator = Provider(_tenantA, userId).GetRequiredService<IMediator>();
-        var result = await mediator.Send(new GetMyPayslipsQuery(2025, 1, 12));
+        var result = await mediator.Send(new GetMyPayslipsQuery(2025, null, 1, 12));
 
         result.Value!.Items.Should().ContainSingle();
         result.Value.Items[0].PayYear.Should().Be(2025);
+    }
+
+    // ── ISSUE-164/FR-6: the optional pay-period (month) filter scopes to that month, composing with year ──
+    [Fact]
+    [Trait("TC", "TC-PAY-005-14")]
+    public async Task List_MonthFilter_ScopesToPayMonth()
+    {
+        var (userId, empId, _) = await SeedEmployeeWithSlip(_tenantA, "EMP-A", month: 1, year: 2026);
+        await SeedExtraSlipForEmployee(_tenantA, empId, month: 12, year: 2026);
+
+        var mediator = Provider(_tenantA, userId).GetRequiredService<IMediator>();
+
+        // month=12 → only the December slip; month=1 → only the January slip; no month → both.
+        var dec = await mediator.Send(new GetMyPayslipsQuery(null, 12, 1, 12));
+        dec.Value!.Items.Should().ContainSingle().Which.PayMonth.Should().Be(12);
+
+        var jan = await mediator.Send(new GetMyPayslipsQuery(null, 1, 1, 12));
+        jan.Value!.Items.Should().ContainSingle().Which.PayMonth.Should().Be(1);
+
+        var all = await mediator.Send(new GetMyPayslipsQuery(null, null, 1, 12));
+        all.Value!.Items.Should().HaveCount(2);
     }
 
     // ── AC-3/FR-4: own PDF download streams the stored file ────────────────────────────────────────
@@ -432,7 +453,7 @@ public sealed class MyPayslipIntegrationTests
         await SeedEmployeeWithSlip(_tenantA, "EMP-A"); // an employee exists, but not linked to this user.
 
         var mediator = Provider(_tenantA, Guid.NewGuid()).GetRequiredService<IMediator>();
-        var result = await mediator.Send(new GetMyPayslipsQuery(null, 1, 12));
+        var result = await mediator.Send(new GetMyPayslipsQuery(null, null, 1, 12));
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(403);
