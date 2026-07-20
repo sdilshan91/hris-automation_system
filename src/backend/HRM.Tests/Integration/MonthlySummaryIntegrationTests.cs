@@ -133,13 +133,14 @@ public sealed class MonthlySummaryIntegrationTests
         db.SaveChanges();
     }
 
-    private static Employee Emp(Guid id, Guid tenantId, Guid deptId, string name) => new()
+    private static Employee Emp(Guid id, Guid tenantId, Guid deptId, string name, Guid? locationId = null) => new()
     {
         Id = id, TenantId = tenantId,
         EmployeeNo = name, FirstName = name, LastName = "X", Email = $"{name}@t.com",
         DateOfJoining = new DateTime(2020, 1, 1),
         DepartmentId = deptId, JobTitleId = Guid.NewGuid(),
         EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+        LocationId = locationId,
     };
 
     private void SeedSettings(Guid tenantId, bool halfDayEnabled = false)
@@ -645,6 +646,68 @@ public sealed class MonthlySummaryIntegrationTests
 
         result.Value!.Rows.Should().Contain(r => r.EmployeeId == _empA1);
         result.Value.Rows.Should().NotContain(r => r.EmployeeId == _empB1);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Per-location policy override (DF-22 / ISSUE-309)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// DF-22 / ISSUE-309: the monthly summary must resolve the attendance policy PER LOCATION, not apply the
+    /// tenant default to every employee. The tenant default has HalfDayEnabled=false; a Dubai override has
+    /// HalfDayEnabled=true. A 240-minute day on the shared 480-minute default shift is a HALF_DAY (0.5
+    /// present) for the Dubai employee but a full PRESENT (1.0) for a default-location employee — so a single
+    /// GenerateAsync sweep must produce DIFFERENT results for the two employees, each read from ITS location's
+    /// policy. Before the fix both employees read the tenant default and both would be 1.0.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task Generate_LocationOverride_EachEmployeeGetsItsOwnLocationPolicy_DF22()
+    {
+        var dubaiId = Guid.NewGuid();
+        var dubaiEmp = Guid.NewGuid();
+        var defaultEmp = Guid.NewGuid();
+
+        using (var db = Db(_tenantA))
+        {
+            db.Locations.Add(new Location
+            {
+                Id = dubaiId, TenantId = _tenantA, Name = "Dubai", TimeZone = "UTC", IsActive = true,
+            });
+            db.Employees.AddRange(
+                Emp(dubaiEmp, _tenantA, _deptEng, "DXB1", dubaiId),      // Dubai override applies
+                Emp(defaultEmp, _tenantA, _deptEng, "DEF1", null));      // tenant default applies
+
+            // Tenant default: half-day OFF.
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                StandardWorkMinutes = 480, MinimumWorkMinutes = 240, HalfDayEnabled = false,
+            });
+            // Dubai override: half-day ON.
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, LocationId = dubaiId,
+                StandardWorkMinutes = 480, MinimumWorkMinutes = 240, HalfDayEnabled = true,
+            });
+            db.SaveChanges();
+        }
+
+        var day = Weekday(0);
+        SeedLog(_tenantA, dubaiEmp, day, 9, 0, 240);     // 4h, exactly 50% of 480
+        SeedLog(_tenantA, defaultEmp, day, 9, 0, 240);
+
+        var (mediator, _) = BuildPipeline(_tenantA);
+        await mediator.Send(new GenerateMonthlySummaryCommand(Year, Month));
+        var result = await mediator.Send(new GetMonthlySummaryQuery(Year, Month, NoFilter));
+
+        var dubaiRow = result.Value!.Rows.Single(r => r.EmployeeId == dubaiEmp);
+        var defaultRow = result.Value!.Rows.Single(r => r.EmployeeId == defaultEmp);
+
+        dubaiRow.PresentDays.Should().Be(
+            0.5m, "Dubai's override enables half-day → 240 min is a HALF_DAY");
+        defaultRow.PresentDays.Should().Be(
+            1m, "the tenant default disables half-day → 240 min is a full PRESENT day");
     }
 
     [Fact]
