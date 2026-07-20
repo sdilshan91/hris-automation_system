@@ -70,6 +70,15 @@ public sealed record PayrollApprovalStepConfigDto
 
     /// <summary>The backup role's display name (resolved for the caller; empty when no backup role / role removed).</summary>
     public string? BackupRoleName { get; init; }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): the step's designated primary approver user; null = no delegation configured.
+    /// Delegation is active only when this AND <see cref="DelegateUserId"/> are both set.
+    /// </summary>
+    public Guid? PrimaryApproverUserId { get; init; }
+
+    /// <summary>US-PAY-008 FR-6 (ISSUE-173): the user the step delegates to when the primary approver is on leave; null = none.</summary>
+    public Guid? DelegateUserId { get; init; }
 }
 
 /// <summary>One (StepNumber, RoleId) pair in a step-config replacement request (US-PAY-008 AC-4/FR-2).</summary>
@@ -86,6 +95,19 @@ public sealed record PayrollApprovalStepConfigItem
     /// the tenant AND hold Payroll.Approve (same validation as <see cref="RoleId"/>). Null = approver-pool fallback.
     /// </summary>
     public Guid? BackupRoleId { get; init; }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): optional per-step PRIMARY approver user for delegation. When set, <see
+    /// cref="DelegateUserId"/> must also be set (partial config → 400 <c>delegation_config_incomplete</c>) and both
+    /// must be ACTIVE in-tenant users holding Payroll.Approve. Null = no delegation on this step.
+    /// </summary>
+    public Guid? PrimaryApproverUserId { get; init; }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): optional per-step DELEGATE user, effective when the primary approver is on leave at
+    /// activation. Set together with (and validated identically to) <see cref="PrimaryApproverUserId"/>. Null = none.
+    /// </summary>
+    public Guid? DelegateUserId { get; init; }
 }
 
 /// <summary>

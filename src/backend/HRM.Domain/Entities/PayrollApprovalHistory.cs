@@ -70,4 +70,5 @@ public static class PayrollApprovalAction
     public const string Rejected = "Rejected";
     public const string Returned = "Returned";
     public const string Escalated = "Escalated";
+    public const string Delegated = "Delegated";
 }

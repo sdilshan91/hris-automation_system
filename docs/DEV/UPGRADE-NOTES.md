@@ -16,6 +16,25 @@ entries below.
 
 ---
 
+## 2026-07-20 — ISSUE-173 FR-6: payroll approval delegation (config-driven, on approver leave)
+
+**What changed.** A payroll approval step can name a **primary approver user** and a **delegate user**. When the
+run activates that step (at submit or on advancing to it) and the primary approver is on an **approved leave
+spanning that day**, the run is delegated to the delegate: it records a `Delegated` approval-history row and
+notifies the delegate. Delegation is a NOTIFY/record overlay — it does **not** change the role-gated approval
+authorization (any holder of the step role can still approve).
+
+**What the platform does automatically.** Migration `Payroll_ApprovalDelegation` adds three **nullable** columns
+(`payroll_approval_step_config.primary_approver_user_id` + `.delegate_user_id`, `payroll_run.delegated_to_user_id`)
+— all default null, so **nothing delegates until you configure a primary + delegate** on a step. The leave check
+uses the same approved-leave-spanning-today logic as the rest of the app.
+
+**Action for admins.** Optional. To enable delegation for a step, set both a **primary approver** and a
+**delegate** (both must be active users holding `Payroll.Approve`) on that approval step via
+`PUT /api/v1/payroll/approval/step-config`. Setting only one → 400. Leave both unset for today's behaviour.
+
+---
+
 ## 2026-07-20 — ISSUE-173 FR-3: payroll approval SLA auto-escalation (opt-in)
 
 **What changed.** Payroll approval steps can now carry an **SLA** and a **backup approver role**. When a run

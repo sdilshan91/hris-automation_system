@@ -876,4 +876,240 @@ public sealed class PayrollApprovalServiceTests
         result.StatusCode.Should().Be(400);
         result.ErrorCode.Should().Be("role_missing_approve_permission");
     }
+
+    // ══ ISSUE-173 FR-6 — approval delegation: primary approver on approved leave → the delegate is recorded. ══
+
+    /// <summary>Seeds an employee linked to <paramref name="userId"/> with a leave request over [start, end] in the given status.</summary>
+    private async Task SeedUserLeaveAsync(Guid userId, DateOnly start, DateOnly end, LeaveRequestStatus status)
+    {
+        using var db = Db();
+        var empId = Guid.NewGuid();
+        db.Employees.Add(new Employee
+        {
+            Id = empId, TenantId = _tenantId, UserId = userId, EmployeeNo = $"EMP-{userId.ToString()[..4]}",
+            FirstName = "On", LastName = "Leave", Email = $"{userId:N}@acme.com",
+            Status = EmployeeStatus.Active, IsActive = true,
+        });
+        db.LeaveRequests.Add(new LeaveRequest
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeId = empId, LeaveTypeId = Guid.NewGuid(),
+            Status = status, StartDate = start, EndDate = end, TotalDays = (end.DayNumber - start.DayNumber + 1),
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Seeds an ACTIVE tenant user in a role that does NOT grant Payroll.Approve.</summary>
+    private async Task SeedActiveUserWithoutApproveAsync(Guid userId)
+    {
+        using var db = Db();
+        var roleId = Guid.NewGuid();
+        db.Roles.Add(new Role { Id = roleId, TenantId = _tenantId, Name = "Viewer" });
+        var utId = Guid.NewGuid();
+        db.UserTenants.Add(new UserTenant { Id = utId, UserId = userId, TenantId = _tenantId, Status = UserTenantStatus.Active });
+        db.UserTenantRoles.Add(new UserTenantRole { UserTenantId = utId, RoleId = roleId });
+        await db.SaveChangesAsync();
+    }
+
+    // ── Primary approver on leave at submit → the run is delegated to the delegate + a Delegated history row. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Submit_PrimaryApproverOnLeave_DelegatesToDelegate_WritesDelegatedHistory()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var primaryUser = Guid.NewGuid();
+        var delegateUser = Guid.NewGuid();
+        var roleId = await SeedApproverRoleAsync("Finance", primaryUser, delegateUser);
+        using (var db = Db())
+        {
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 1, RoleId = roleId,
+                PrimaryApproverUserId = primaryUser, DelegateUserId = delegateUser,
+            });
+            await db.SaveChangesAsync();
+        }
+        await SeedUserLeaveAsync(primaryUser, today.AddDays(-3), today.AddDays(3), LeaveRequestStatus.Approved);
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending);
+
+        (await Service(_hrUserId, new FakeTimeProvider(now)).SubmitForApprovalAsync(runId, null, "ready", "1.2.3.4"))
+            .IsSuccess.Should().BeTrue();
+
+        using var db2 = Db();
+        var run = await db2.PayrollRuns.FirstAsync(r => r.Id == runId);
+        run.DelegatedToUserId.Should().Be(delegateUser);
+        (await db2.PayrollApprovalHistories.CountAsync(
+            h => h.PayrollRunId == runId && h.Action == PayrollApprovalAction.Delegated)).Should().Be(1);
+    }
+
+    // ── Delegation ALSO fires at step-ADVANCE: approving step 1 activates step 2, whose primary is on leave. ──
+    // Kills a mutant that drops the ApplyDelegationAsync call on the approve→next-step branch.
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Approve_AdvancingToStepWithDelegatedPrimaryOnLeave_DelegatesAtThatStep()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var step2Primary = Guid.NewGuid();
+        var step2Delegate = Guid.NewGuid();
+        var roleB = await SeedApproverRoleAsync("Step2", step2Primary, step2Delegate);
+        using (var db = Db())
+        {
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 2, RoleId = roleB,
+                PrimaryApproverUserId = step2Primary, DelegateUserId = step2Delegate,
+            });
+            await db.SaveChangesAsync();
+        }
+        await SeedUserLeaveAsync(step2Primary, today.AddDays(-1), today.AddDays(1), LeaveRequestStatus.Approved);
+        var runId = await SeedRunAsync(PayrollRunStatus.AwaitingApproval, submittedBy: _hrUserId,
+            step: 1, totalSteps: 2, instanceId: Guid.NewGuid());
+
+        (await Service(_financeUserId, new FakeTimeProvider(now)).ApproveAsync(runId, null, null)).IsSuccess.Should().BeTrue();
+
+        using var db2 = Db();
+        var run = await db2.PayrollRuns.FirstAsync(r => r.Id == runId);
+        run.CurrentApprovalStep.Should().Be(2);
+        run.DelegatedToUserId.Should().Be(step2Delegate);           // delegated at the newly-activated step 2
+        (await db2.PayrollApprovalHistories.CountAsync(
+            h => h.PayrollRunId == runId && h.Action == PayrollApprovalAction.Delegated)).Should().Be(1);
+    }
+
+    // ── Leave-DATE boundary: a leave that ended YESTERDAY does not span today → no delegation. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Submit_PrimaryLeaveEndedYesterday_NoDelegation()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var primaryUser = Guid.NewGuid();
+        var delegateUser = Guid.NewGuid();
+        var roleId = await SeedApproverRoleAsync("Finance", primaryUser, delegateUser);
+        using (var db = Db())
+        {
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 1, RoleId = roleId,
+                PrimaryApproverUserId = primaryUser, DelegateUserId = delegateUser,
+            });
+            await db.SaveChangesAsync();
+        }
+        await SeedUserLeaveAsync(primaryUser, today.AddDays(-5), today.AddDays(-1), LeaveRequestStatus.Approved); // ended yesterday
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending);
+
+        (await Service(_hrUserId, new FakeTimeProvider(now)).SubmitForApprovalAsync(runId, null, "ready", "1.2.3.4"))
+            .IsSuccess.Should().BeTrue();
+
+        (await Db().PayrollRuns.FirstAsync(r => r.Id == runId)).DelegatedToUserId.Should().BeNull();
+    }
+
+    // ── Leave-STATUS gate: a non-approved (Rejected) leave spanning today does not delegate. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Submit_PrimaryNonApprovedLeaveSpanningToday_NoDelegation()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var primaryUser = Guid.NewGuid();
+        var delegateUser = Guid.NewGuid();
+        var roleId = await SeedApproverRoleAsync("Finance", primaryUser, delegateUser);
+        using (var db = Db())
+        {
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 1, RoleId = roleId,
+                PrimaryApproverUserId = primaryUser, DelegateUserId = delegateUser,
+            });
+            await db.SaveChangesAsync();
+        }
+        // Spans today but is NOT approved → the Status == Approved gate excludes it.
+        await SeedUserLeaveAsync(primaryUser, today.AddDays(-3), today.AddDays(3), LeaveRequestStatus.Rejected);
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending);
+
+        (await Service(_hrUserId, new FakeTimeProvider(now)).SubmitForApprovalAsync(runId, null, "ready", "1.2.3.4"))
+            .IsSuccess.Should().BeTrue();
+
+        (await Db().PayrollRuns.FirstAsync(r => r.Id == runId)).DelegatedToUserId.Should().BeNull();
+    }
+
+    // ── Validation: a delegate user who is not an active tenant user → 400 delegation_user_not_found. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task SetStepConfig_DelegateUserNotFound_Returns400()
+    {
+        var primaryUser = Guid.NewGuid();
+        var r1 = await SeedApproverRoleAsync("R1", primaryUser); // primary is a valid approve-holding user
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = r1, PrimaryApproverUserId = primaryUser, DelegateUserId = Guid.NewGuid() } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("delegation_user_not_found");
+    }
+
+    // ── Validation: a delegate user who does not hold Payroll.Approve → 400 delegation_user_missing_approve_permission. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task SetStepConfig_DelegateUserLacksApprove_Returns400()
+    {
+        var primaryUser = Guid.NewGuid();
+        var delegateUser = Guid.NewGuid();
+        var r1 = await SeedApproverRoleAsync("R1", primaryUser);
+        await SeedActiveUserWithoutApproveAsync(delegateUser); // active tenant user, but no Payroll.Approve
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = r1, PrimaryApproverUserId = primaryUser, DelegateUserId = delegateUser } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("delegation_user_missing_approve_permission");
+    }
+
+    // ── Primary approver NOT on leave → no delegation (DelegatedToUserId stays null). ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task Submit_PrimaryApproverNotOnLeave_NoDelegation()
+    {
+        var now = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+        var primaryUser = Guid.NewGuid();
+        var delegateUser = Guid.NewGuid();
+        var roleId = await SeedApproverRoleAsync("Finance", primaryUser, delegateUser);
+        using (var db = Db())
+        {
+            db.PayrollApprovalStepConfigs.Add(new PayrollApprovalStepConfig
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, StepNumber = 1, RoleId = roleId,
+                PrimaryApproverUserId = primaryUser, DelegateUserId = delegateUser,
+            });
+            await db.SaveChangesAsync();
+        }
+        // No leave seeded for the primary → not on leave.
+        var runId = await SeedRunAsync(PayrollRunStatus.ReviewPending);
+
+        (await Service(_hrUserId, new FakeTimeProvider(now)).SubmitForApprovalAsync(runId, null, "ready", "1.2.3.4"))
+            .IsSuccess.Should().BeTrue();
+
+        using var db2 = Db();
+        var run = await db2.PayrollRuns.FirstAsync(r => r.Id == runId);
+        run.DelegatedToUserId.Should().BeNull();
+        (await db2.PayrollApprovalHistories.CountAsync(
+            h => h.PayrollRunId == runId && h.Action == PayrollApprovalAction.Delegated)).Should().Be(0);
+    }
+
+    // ── Step-config validation: setting only ONE of primary/delegate → 400 delegation_config_incomplete. ──
+    [Fact]
+    [Trait("TC", "TC-PAY-008-07")]
+    public async Task SetStepConfig_IncompleteDelegation_Returns400()
+    {
+        var r1 = await SeedApproverRoleAsync("R1");
+
+        var result = await Service(_hrUserId).SetApprovalStepConfigAsync(
+            new[] { new PayrollApprovalStepConfigItem { StepNumber = 1, RoleId = r1, PrimaryApproverUserId = Guid.NewGuid() } }, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("delegation_config_incomplete");
+    }
 }

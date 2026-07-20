@@ -39,4 +39,21 @@ public sealed class PayrollApprovalStepConfig : BaseEntity
     /// approver pool is notified as a fallback.
     /// </summary>
     public Guid? BackupRoleId { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): the step's designated PRIMARY approver user. Delegation is configured on a step
+    /// only when BOTH this and <see cref="DelegateUserId"/> are set (a partial config is rejected on write). When set
+    /// it must be an ACTIVE in-tenant user holding <c>Payroll.Approve</c>. At step activation, if this user is on an
+    /// approved leave spanning today, the <see cref="DelegateUserId"/> becomes the effective approver — recorded on
+    /// <see cref="PayrollRun.DelegatedToUserId"/> + notified, NOT an authz change (approval stays role-gated). Null =
+    /// no per-step delegation configured.
+    /// </summary>
+    public Guid? PrimaryApproverUserId { get; set; }
+
+    /// <summary>
+    /// US-PAY-008 FR-6 (ISSUE-173): the user the step delegates to when its <see cref="PrimaryApproverUserId"/> is on
+    /// leave at activation. Set together with (and validated identically to) the primary approver — an ACTIVE
+    /// in-tenant user holding <c>Payroll.Approve</c> so the delegate can actually act. Null = no delegation configured.
+    /// </summary>
+    public Guid? DelegateUserId { get; set; }
 }
