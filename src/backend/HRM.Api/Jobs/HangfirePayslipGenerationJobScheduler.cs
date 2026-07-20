@@ -21,4 +21,8 @@ public sealed class HangfirePayslipGenerationJobScheduler : IPayslipGenerationJo
 
     public string Enqueue(Guid tenantId, string tenantSubdomain, Guid runId)
         => _backgroundJobs.Enqueue<GeneratePayslipsJob>(job => job.RunAsync(tenantId, tenantSubdomain, runId, CancellationToken.None));
+
+    // FR-8 (DF-31 / ISSUE-162): enqueue the single-slip retry job.
+    public string Enqueue(Guid tenantId, string tenantSubdomain, Guid runId, Guid employeeId)
+        => _backgroundJobs.Enqueue<RetryPayslipJob>(job => job.RunAsync(tenantId, tenantSubdomain, runId, employeeId, CancellationToken.None));
 }

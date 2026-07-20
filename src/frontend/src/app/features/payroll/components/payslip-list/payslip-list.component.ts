@@ -271,6 +271,16 @@ import { TrappedDialogDirective } from '../../../../shared/directives';
                       >
                         Download
                       </button>
+                      @if (p.pdfStatus === 'Failed' && canGenerate()) {
+                        <button
+                          type="button"
+                          class="rounded-md px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-40"
+                          [disabled]="retryingId() === p.id || generating()"
+                          (click)="retry(p)"
+                        >
+                          Retry
+                        </button>
+                      }
                     </div>
                   </td>
                 </tr>
@@ -322,6 +332,16 @@ import { TrappedDialogDirective } from '../../../../shared/directives';
                   >
                     Download
                   </button>
+                  @if (p.pdfStatus === 'Failed' && canGenerate()) {
+                    <button
+                      type="button"
+                      class="rounded-md px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-40"
+                      [disabled]="retryingId() === p.id || generating()"
+                      (click)="retry(p)"
+                    >
+                      Retry
+                    </button>
+                  }
                 </div>
               </div>
             </li>
@@ -457,6 +477,8 @@ export class PayslipListComponent implements OnInit, OnDestroy {
 
   readonly downloadingId = signal<string | null>(null);
   readonly zipDownloading = signal(false);
+  /** The slip id whose failed PDF is currently being re-queued (DF-31, FR-8). */
+  readonly retryingId = signal<string | null>(null);
 
   readonly previewSlip = signal<IPayslip | null>(null);
   readonly previewLoading = signal(false);
@@ -567,6 +589,35 @@ export class PayslipListComponent implements OnInit, OnDestroy {
           this.generating.set(false);
           this.toastr.success('Payslip generation finished.');
           this.loadPayslips();
+        },
+      });
+  }
+
+  // ─── Per-employee retry (DF-31 / ISSUE-162 FR-8) ───────────
+
+  /**
+   * Re-queue rendering for ONE employee's failed payslip. Mirrors `generate()`: on
+   * a successful enqueue it drives the generation status bar via `streamStatus()`,
+   * which polls, then reloads the list (fresh per-row PDF statuses) and toasts on
+   * completion. Gated in the template to `Failed` rows and `canGenerate()` users.
+   */
+  retry(p: IPayslip): void {
+    if (this.retryingId() || this.generating()) {
+      return;
+    }
+    this.retryingId.set(p.id);
+    this.payslipService
+      .retryPayslip(this.runId(), p.employeeId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.retryingId.set(null);
+          this.generating.set(true);
+          this.streamStatus();
+        },
+        error: () => {
+          this.retryingId.set(null);
+          this.toastr.error('Could not retry the payslip.');
         },
       });
   }

@@ -3538,7 +3538,7 @@ Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl
 - **Severity rationale:** Cosmetic/content-completeness; the rest of the employee section is present.
 
 ### ISSUE-162 — No per-employee payslip retry endpoint (FR-8 individual retry not exposed)
-- **Type / Severity / Status:** ISSUE · LOW · DEFERRED (story-sized; needs a single-employee render path through PayslipBatchRenderer + new command/handler — see DEFERRED-FOLLOWUPS DF-31; PR #371 assessed 2026-07-18)
+- **Type / Severity / Status:** ISSUE · LOW · ✅ RESOLVED (2026-07-20, #PR-pending, DF-31) — added `POST /api/v1/payroll/runs/{runId}/payslips/{employeeId}/retry` (`Payroll.Run`, 202): `RetryOneAsync` reuses the 3-phase renderer on a single-employee plan filter (run-level path unchanged), BE-permissive (retry any slip state; FE surfaces Retry only on Failed), BR-1 run-status guard (Finalized allowed), 404 `payslip_not_found`, single-slip Hangfire job. Automated (TC-PAY-004-05 retry half). Follow-up: actor-attributed retry audit → DF-55 (decision).
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-004 / TC-PAY-004-05, TC-PAY-004-12
 - **Title:** FR-8 requires failed payslips to be "retryable individually"; the API exposes only run-level generate/regenerate — no `.../payslips/{employeeId}/retry`.

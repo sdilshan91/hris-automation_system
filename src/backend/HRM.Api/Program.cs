@@ -396,6 +396,8 @@ try
     // The job is enqueued by GeneratePayslips and restores the tenant context before rendering.
     builder.Services.AddScoped<HRM.Api.Jobs.GeneratePayslipsJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayslipGenerationJobScheduler, HRM.Api.Jobs.HangfirePayslipGenerationJobScheduler>();
+    // US-PAY-004 FR-8 (DF-31): single-slip payslip retry job (enqueued by the scheduler's employeeId overload).
+    builder.Services.AddScoped<HRM.Api.Jobs.RetryPayslipJob>();
 
     // US-PAY-011 FR-1/FR-8: tenant-aware bulk payslip-email distribution job + the Hangfire-backed scheduler
     // seam (bound to IPayslipDistributionJobScheduler so the Infrastructure PayslipDistributionService can

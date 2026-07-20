@@ -82,7 +82,46 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
     }
 
     /// <inheritdoc />
-    public async Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, CancellationToken cancellationToken = default)
+    public async Task<Result<PayslipBatchResult>> RenderOneAsync(Guid runId, Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        // FR-8 (DF-31): single-slip counterpart to RenderRunAsync — same READ → WORK → WRITE flow, but the plan is
+        // filtered to one slip. The WORK/WRITE phases are reused unchanged (they already operate on arbitrary
+        // item/outcome collections).
+        var planResult = await LoadRenderPlanAsync(runId, employeeId, cancellationToken);
+        if (planResult.IsFailure)
+            return Result<PayslipBatchResult>.Failure(planResult.Error!, planResult.StatusCode ?? 400, planResult.ErrorCode);
+
+        var plan = planResult.Value!;
+        if (plan.Items.Count == 0)
+            return Result<PayslipBatchResult>.Success(new PayslipBatchResult(0, 0));
+
+        var outcomes = await RenderAndUploadAsync(plan, cancellationToken);
+        await PersistRenderResultsAsync(outcomes, cancellationToken);
+
+        var generated = outcomes.Count(o => o.Ok);
+        var failed = outcomes.Count(o => !o.Ok);
+
+        _logger.LogInformation(
+            "Payslip single-slip render complete. RunId={RunId}, EmployeeId={EmployeeId}, Generated={Generated}, Failed={Failed}, Tenant={TenantId}",
+            plan.RunId, employeeId, generated, failed, plan.TenantId);
+
+        return Result<PayslipBatchResult>.Success(new PayslipBatchResult(generated, failed));
+    }
+
+    /// <inheritdoc />
+    public Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, CancellationToken cancellationToken = default)
+        => LoadRenderPlanCoreAsync(runId, employeeId: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<Result<PayslipRenderPlan>> LoadRenderPlanAsync(Guid runId, Guid employeeId, CancellationToken cancellationToken = default)
+        => LoadRenderPlanCoreAsync(runId, employeeId, cancellationToken);
+
+    /// <summary>
+    /// Shared READ phase. When <paramref name="employeeId"/> is non-null the slip load is filtered to that one
+    /// employee (FR-8 single-slip retry, DF-31); otherwise it loads every slip in the run (batch generate). All
+    /// supporting data + WORK/WRITE phases are identical.
+    /// </summary>
+    private async Task<Result<PayslipRenderPlan>> LoadRenderPlanCoreAsync(Guid runId, Guid? employeeId, CancellationToken cancellationToken)
     {
         if (!_tenantContext.IsResolved)
             return Result<PayslipRenderPlan>.Failure("Tenant context is not resolved.", 400);
@@ -94,8 +133,9 @@ public sealed class PayslipBatchRenderer : IPayslipBatchRenderer
         var tenantId = _tenantContext.TenantId;
 
         // ISSUE-269: load slips AsNoTracking + project to SlipId — no tracked entities are carried into WORK.
+        // FR-8 (DF-31): filter to the single employee's slip when employeeId is supplied.
         var slips = await _dbContext.PayrollSlips.AsNoTracking()
-            .Where(s => s.PayrollRunId == runId)
+            .Where(s => s.PayrollRunId == runId && (employeeId == null || s.EmployeeId == employeeId))
             .Select(s => new
             {
                 s.Id, s.EmployeeId, s.PayMonth, s.PayYear,

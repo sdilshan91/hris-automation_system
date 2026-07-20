@@ -96,6 +96,61 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
         });
     }
 
+    public async Task<Result<PayslipGenerationAcceptedDto>> RetryOneAsync(Guid runId, Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayslipGenerationAcceptedDto>.Failure("Tenant context is not resolved.", 400);
+
+        var run = await _dbContext.PayrollRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+        if (run is null)
+            return Result<PayslipGenerationAcceptedDto>.Failure("Payroll run not found.", 404, "run_not_found");
+
+        // BR-1 (unchanged): payslips only for ReviewPending / Approved / Finalized runs. Retrying a failed slip on a
+        // Finalized run is the primary FR-8 use case, so Finalized is explicitly allowed (not restricted).
+        if (run.Status is not (PayrollRunStatus.ReviewPending or PayrollRunStatus.Approved or PayrollRunStatus.Finalized))
+            return Result<PayslipGenerationAcceptedDto>.Failure(
+                "Payslips can only be generated for runs that are ReviewPending, Approved, or Finalized.",
+                400, "run_not_ready_for_payslips");
+
+        // Load the ONE slip. The EF global query filter scopes to the caller's tenant — a cross-tenant/unknown slip
+        // is simply not visible → 404 (AC-4). No request body carries tenant_id (runId+employeeId are route-bound),
+        // preserving AC-4/NFR-6.
+        var slip = await _dbContext.PayrollSlips
+            .FirstOrDefaultAsync(s => s.PayrollRunId == runId && s.EmployeeId == employeeId, cancellationToken);
+        if (slip is null)
+            return Result<PayslipGenerationAcceptedDto>.Failure("Payslip not found.", 404, "payslip_not_found");
+
+        // BE-permissive (locked decision): retry ANY slip state (Failed / stuck-Pending / even Generated) — the
+        // render is idempotent, and the FE only surfaces Retry on Failed. Reset THIS slip to Pending and clear the
+        // generated markers; PdfStoragePath is left as-is (the renderer overwrites the same GUID-derived path).
+        var regenerated = slip.PdfStatus == PayslipPdfStatus.Generated;
+        slip.PdfStatus = PayslipPdfStatus.Pending;
+        slip.PdfGeneratedAt = null;
+        slip.PdfFileSizeBytes = null;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // FR-8: enqueue the single-slip retry job (when the Hangfire-backed scheduler is registered); otherwise the
+        // slip is left Pending and the render must be triggered directly via IPayslipBatchRenderer.RenderOneAsync
+        // (dev/test) — mirrors GenerateAsync's enqueue-or-log.
+        if (_jobScheduler is not null)
+        {
+            _jobScheduler.Enqueue(_tenantContext.TenantId, _tenantContext.Subdomain, run.Id, employeeId);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Payslip retry for run {RunId}, employee {EmployeeId} marked Pending but no IPayslipGenerationJobScheduler " +
+                "is registered — rendering must be triggered directly (dev/test).", run.Id, employeeId);
+        }
+
+        return Result<PayslipGenerationAcceptedDto>.Success(new PayslipGenerationAcceptedDto
+        {
+            RunId = run.Id,
+            QueuedCount = 1,
+            Regenerated = regenerated,
+        });
+    }
+
     public async Task<Result<PayslipGenerationStatusDto>> GetStatusAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
