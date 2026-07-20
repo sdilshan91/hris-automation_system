@@ -9,6 +9,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HRM.Tests" />
+    <!-- DF-22 / ISSUE-309: AutoClockOutJob (HRM.Api) resolves the per-location attendance policy via the
+         internal AttendancePolicyResolver, whose own docs name the auto-clock-out job as an intended
+         direct caller. Exposing the internal static resolver to the API assembly avoids duplicating the
+         (tenant-default + location-override) precedence in the job. -->
+    <InternalsVisibleTo Include="HRM.Api" />
   </ItemGroup>
 
   <ItemGroup>

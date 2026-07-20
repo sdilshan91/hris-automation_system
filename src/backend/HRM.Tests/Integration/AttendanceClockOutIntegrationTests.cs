@@ -248,6 +248,136 @@ public sealed class AttendanceClockOutIntegrationTests
         db.AttendanceLogs.Single(a => a.Id == logId).ClockOut.Should().BeNull();
     }
 
+    // ── DF-22 / ISSUE-309: per-location policy in the auto-clock-out sweep ──
+
+    /// <summary>
+    /// DF-22 / ISSUE-309: the auto-clock-out sweep must resolve the attendance policy PER LOCATION, not apply
+    /// the tenant default to every open log. Two employees — one at a Dubai location whose override sets
+    /// AutoBreakMinutes=120, one at the tenant default (AutoBreakMinutes=60) — are both auto-closed in the
+    /// SAME RunAsync. With an identical gross span, the computed TotalWorkMinutes must differ by the break
+    /// delta, proving each log's calc used ITS location's policy. Before the fix both used the tenant default
+    /// and both totals would be identical.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task AutoClockOutJob_ResolvesPolicyPerLocation_AcrossTwoLocationsInOneSweep_DF22()
+    {
+        var dubaiId = Guid.NewGuid();
+        var dubaiEmp = Guid.NewGuid();
+
+        // Seed a Dubai location + a Dubai employee, plus the tenant-default and Dubai-override settings rows.
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using (var db = new AppDbContext(options, ctx))
+        {
+            db.Locations.Add(new Location
+            {
+                Id = dubaiId, TenantId = _tenantA, Name = "Dubai", TimeZone = "UTC", IsActive = true,
+            });
+            db.Employees.Add(new Employee
+            {
+                Id = dubaiEmp, TenantId = _tenantA, UserId = Guid.NewGuid(),
+                EmployeeNo = "DXB-1", FirstName = "Dana", LastName = "D", Email = "d@dxb.com",
+                DateOfJoining = new DateTime(2020, 1, 1),
+                DepartmentId = Guid.NewGuid(), JobTitleId = Guid.NewGuid(),
+                EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active,
+                IsActive = true, LocationId = dubaiId,
+            });
+            // Tenant default: auto-break 60 min beyond the 180-min threshold.
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                AutoBreakThresholdMinutes = 180, AutoBreakMinutes = 60,
+            });
+            // Dubai override: a longer auto-break (120 min) — this is the discriminating field.
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, LocationId = dubaiId,
+                AutoBreakThresholdMinutes = 180, AutoBreakMinutes = 120,
+            });
+            db.SaveChanges();
+        }
+
+        // Open logs both clocked in yesterday at 14:00 UTC → the job closes them at yesterday 23:59:59, a
+        // fixed gross span of 599 minutes (floor of 9h59m59s), independent of the wall clock at run time.
+        var clockInUtc = DateTime.UtcNow.Date.AddDays(-1).AddHours(14);
+        var dubaiLogId = SeedOpenLogAt(_tenantA, dubaiEmp, clockInUtc);
+        var defaultLogId = SeedOpenLogAt(_tenantA, _employeeA, clockInUtc);
+
+        SeedTenantRow(_tenantA);
+
+        var provider = BuildJobProvider();
+        var job = new AutoClockOutJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync();
+
+        var verifyCtx = new MutableTenantContext { TenantId = _tenantA };
+        using var verify = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options, verifyCtx);
+
+        var dubaiLog = verify.AttendanceLogs.Single(a => a.Id == dubaiLogId);
+        var defaultLog = verify.AttendanceLogs.Single(a => a.Id == defaultLogId);
+
+        // Both auto-closed as anomalies (BR-5, isSystemClosed).
+        dubaiLog.Status.Should().Be("ANOMALY");
+        defaultLog.Status.Should().Be("ANOMALY");
+
+        // gross = 599; default break 60 → 539; Dubai override break 120 → 479.
+        defaultLog.TotalWorkMinutes.Should().Be(539, "the default-location employee used the tenant default");
+        dubaiLog.TotalWorkMinutes.Should().Be(
+            479, "the Dubai employee's calc used the location override's larger auto-break");
+    }
+
+    /// <summary>
+    /// DF-22 / ISSUE-309 (enforcer safety property): the per-log location lookup must NOT drop an open log
+    /// whose owning employee row is missing/deleted. Such a log resolves to a null location → the tenant
+    /// default → (with NO settings rows at all) the code default — and is still auto-closed, never skipped.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task AutoClockOutJob_OpenLogWithMissingEmployee_IsStillClosed_ViaCodeDefault_DF22()
+    {
+        // An open log for an employee id that has NO Employee row (and NO AttendanceSettings rows at all,
+        // so For(map, null) returns null → the code-default AttendanceSettings fallback).
+        var orphanEmp = Guid.NewGuid();
+        var clockInUtc = DateTime.UtcNow.Date.AddDays(-1).AddHours(14);
+        var orphanLogId = SeedOpenLogAt(_tenantA, orphanEmp, clockInUtc);
+
+        SeedTenantRow(_tenantA);
+
+        var provider = BuildJobProvider();
+        var job = new AutoClockOutJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync();
+
+        var verifyCtx = new MutableTenantContext { TenantId = _tenantA };
+        using var verify = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options, verifyCtx);
+
+        var orphanLog = verify.AttendanceLogs.Single(a => a.Id == orphanLogId);
+        // Not silently dropped by the location lookup: closed as an anomaly with the code-default policy.
+        orphanLog.ClockOut.Should().NotBeNull("the sweep must still close a log whose employee row is missing");
+        orphanLog.Status.Should().Be("ANOMALY");
+    }
+
+    /// <summary>Seeds an open clock-in for an employee at a fixed UTC instant (deterministic gross span).</summary>
+    private Guid SeedOpenLogAt(Guid tenantId, Guid employeeId, DateTime clockInUtc)
+    {
+        var ctx = new MutableTenantContext { TenantId = tenantId };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+
+        var id = BaseEntity.NewUuidV7();
+        db.AttendanceLogs.Add(new AttendanceLog
+        {
+            Id = id,
+            TenantId = tenantId,
+            EmployeeId = employeeId,
+            ClockIn = DateTime.SpecifyKind(clockInUtc, DateTimeKind.Utc),
+            Source = "WEB",
+        });
+        db.SaveChanges();
+        return id;
+    }
+
     private void SeedTenantRow(Guid tenantId)
     {
         // Tenants are not tenant-scoped; use a system-ish context. The Tenant entity has no global

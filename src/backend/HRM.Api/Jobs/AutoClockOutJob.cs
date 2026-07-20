@@ -2,6 +2,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -79,16 +80,12 @@ public sealed class AutoClockOutJob
         int closed = 0;
         await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
         {
-        // CAL-4 (US-ATT-011 AC-3): read the TENANT-DEFAULT row explicitly (location_id IS NULL); fall back
-        // to code defaults when none exists (read-only — don't create a row as a side effect).
-        //
-        // ⚠ The "one settings row per tenant" assumption this comment used to state is GONE: a Location may
-        // now carry its own override row. An unpredicated FirstOrDefaultAsync() would pick an ARBITRARY row,
-        // so this tenant-wide sweep could auto-clock-out every employee against one branch's policy.
-        // Behaviour is deliberately unchanged (tenant default for the whole sweep); a per-location
-        // auto-clock-out is filed as a follow-up.
-        var settings = await dbContext.AttendanceSettings.FirstOrDefaultAsync(s => s.LocationId == null)
-                       ?? new AttendanceSettings { TenantId = tenantId };
+        // DF-22 / ISSUE-309 (US-ATT-011 AC-3): load the tenant's WHOLE attendance-policy set — the tenant
+        // default (location_id IS NULL) AND every per-location override — in ONE read, then resolve per log
+        // below so each branch's employees are auto-closed against THEIR policy, not one tenant-wide row.
+        // Read-only: LoadAllAsync never creates a settings row as a side effect (this is the safety-net job).
+        // A location with no override (or a tenant with no rows) resolves to null → the code-default fallback.
+        var policyByLocation = await AttendancePolicyResolver.LoadAllAsync(dbContext, CancellationToken.None);
 
         while (true)
         {
@@ -101,12 +98,29 @@ public sealed class AutoClockOutJob
             if (openLogs.Count == 0)
                 break;
 
+            // DF-22 / ISSUE-309: batch-load each open log's owning employee LocationId for this page, so the
+            // policy can be resolved per location without an N+1 and without reshaping the paged log query
+            // (which would risk dropping orphan logs on an inner join). A missing employee → null location →
+            // tenant default.
+            var pageEmployeeIds = openLogs.Select(a => a.EmployeeId).Distinct().ToList();
+            var locationByEmployee = await dbContext.Employees.AsNoTracking()
+                .Where(e => pageEmployeeIds.Contains(e.Id))
+                .Select(e => new { e.Id, e.LocationId })
+                .ToDictionaryAsync(e => e.Id, e => e.LocationId);
+
             foreach (var log in openLogs)
             {
                 // System clock-out at the end of the clock-in's own UTC day (23:59:59).
                 var clockInDayStart = log.ClockIn.Date;
                 var systemClockOut = DateTime.SpecifyKind(
                     clockInDayStart.AddDays(1).AddSeconds(-1), DateTimeKind.Utc);
+
+                // DF-22 / ISSUE-309: the effective policy for THIS log's employee location (override → tenant
+                // default → code default). For returns null for a tenant with no settings rows at all — keep
+                // the original code-default fallback in that case.
+                var locationId = locationByEmployee.GetValueOrDefault(log.EmployeeId);
+                var settings = AttendancePolicyResolver.For(policyByLocation, locationId)
+                               ?? new AttendanceSettings { TenantId = tenantId };
 
                 var calc = AttendanceCalculator.Calculate(
                     log.ClockIn, systemClockOut, settings, isSystemClosed: true);

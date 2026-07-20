@@ -160,7 +160,12 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
 
         var tenantZone = await ResolveTenantZoneAsync(cancellationToken);
         var (monthStart, monthEnd, lastDay) = MonthBounds(year, month, tenantZone);
-        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, tenantZone, cancellationToken);
+        // DF-22 / ISSUE-309: resolve this employee's effective policy PER LOCATION (override → tenant default
+        // → null). LoadAllAsync is read-only (never creates a settings row) so the breakdown read has no
+        // write side effect; For applies the same precedence in memory.
+        var policyMap = await AttendancePolicyResolver.LoadAllAsync(_dbContext, cancellationToken);
+        var policy = AttendancePolicyResolver.For(policyMap, employee.LocationId);
+        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, tenantZone, policy, cancellationToken);
 
         var days = new List<DailyBreakdownDto>();
         for (var date = monthStart; date <= lastDay; date = date.AddDays(1))
@@ -210,7 +215,11 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         if (lastDay < monthStart)
             return Result<EmployeeMonthlySummaryDto?>.Success(null);   // cutoff precedes the month — no data.
 
-        var agg = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, tenantZone, cancellationToken);
+        // DF-22 / ISSUE-309: resolve this employee's effective policy per location (override → tenant default
+        // → null), batched read-only.
+        var policyMap = await AttendancePolicyResolver.LoadAllAsync(_dbContext, cancellationToken);
+        var policy = AttendancePolicyResolver.For(policyMap, employee.LocationId);
+        var agg = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, tenantZone, policy, cancellationToken);
 
         return Result<EmployeeMonthlySummaryDto?>.Success(new EmployeeMonthlySummaryDto
         {
@@ -256,10 +265,16 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             .ToListAsync(cancellationToken);
         var existingByEmp = existing.ToDictionary(s => s.EmployeeId);
 
+        // DF-22 / ISSUE-309: load the tenant's whole attendance-policy set (tenant default + every location
+        // override) ONCE, then resolve per employee in memory. This both fixes the per-location bug and kills
+        // the N+1 the old per-employee tenant-default read inside LoadEmployeeMonthContextAsync caused.
+        var policyMap = await AttendancePolicyResolver.LoadAllAsync(_dbContext, cancellationToken);
+
         var now = DateTime.UtcNow;
         foreach (var employee in employees)
         {
-            var computed = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, tenantZone, cancellationToken);
+            var policy = AttendancePolicyResolver.For(policyMap, employee.LocationId);
+            var computed = await ComputeMonthAsync(employee, monthStart, monthEnd, lastDay, tenantZone, policy, cancellationToken);
 
             if (existingByEmp.TryGetValue(employee.Id, out var row))
             {
@@ -393,7 +408,8 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
     }
 
     private async Task<MonthContext> LoadEmployeeMonthContextAsync(
-        Employee employee, DateOnly monthStart, DateOnly monthEnd, TimeZoneInfo tenantZone, CancellationToken ct)
+        Employee employee, DateOnly monthStart, DateOnly monthEnd, TimeZoneInfo tenantZone,
+        AttendanceSettings? policy, CancellationToken ct)
     {
         // Attendance logs for the month (match on the tenant-LOCAL calendar day of clock-in — ISSUE-065).
         // The local month [monthStart 00:00, monthEnd+1 00:00) maps to this UTC window (UTC zone → no-op).
@@ -460,19 +476,17 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
         var (workingDays, standardMinutes, minimumMinutes, grace, shiftStart, shiftEnd) =
             await ResolveShiftSignalsAsync(employee.Id, monthStart, ct);
 
-        // CAL-4: read the TENANT-DEFAULT row explicitly. This was an unpredicated FirstOrDefaultAsync(),
-        // safe only while there was exactly one settings row per tenant; with Location override rows it
-        // would return an arbitrary row and silently compute this summary on another branch's policy.
-        // Behaviour is deliberately UNCHANGED (still the tenant default, not the employee's location) —
-        // resolving per employee here would add ~5 queries per employee to a monthly sweep. Per-location
-        // summary signals are filed as a follow-up.
-        var settings = await AttendancePolicyResolver.GetTenantDefaultOrNullAsync(_dbContext, ct);
-        bool halfDayEnabled = settings?.HalfDayEnabled ?? false;
-        // Minimum threshold falls back to tenant setting when the shift carries none.
+        // DF-22 / ISSUE-309: use the effective policy for THIS employee's location (their Location override →
+        // the tenant default → null), resolved by the caller via AttendancePolicyResolver — batched once per
+        // sweep with LoadAllAsync + For, so the previous per-employee tenant-default read (an N+1 that also
+        // ignored per-location overrides) is gone. A null policy (tenant has no settings row at all) keeps
+        // the code-default fallback the prior tenant-default read relied on.
+        bool halfDayEnabled = policy?.HalfDayEnabled ?? false;
+        // Minimum threshold falls back to policy setting when the shift carries none.
         if (minimumMinutes <= 0)
-            minimumMinutes = settings?.MinimumWorkMinutes ?? 240;
+            minimumMinutes = policy?.MinimumWorkMinutes ?? 240;
         if (standardMinutes <= 0)
-            standardMinutes = settings?.StandardWorkMinutes ?? 480;
+            standardMinutes = policy?.StandardWorkMinutes ?? 480;
 
         // Approved overtime in the month (BR — approved only).
         var overtimeRows = await _dbContext.OvertimeRecords.AsNoTracking()
@@ -532,9 +546,9 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
 
     private async Task<MonthAggregate> ComputeMonthAsync(
         Employee employee, DateOnly monthStart, DateOnly monthEnd, DateOnly lastIncludedDay,
-        TimeZoneInfo tenantZone, CancellationToken ct)
+        TimeZoneInfo tenantZone, AttendanceSettings? policy, CancellationToken ct)
     {
-        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, tenantZone, ct);
+        var ctx = await LoadEmployeeMonthContextAsync(employee, monthStart, monthEnd, tenantZone, policy, ct);
 
         decimal present = 0m, absent = 0m, leave = 0m, lop = 0m;
         int late = 0, early = 0, workMinutes = 0, holidays = 0, weeklyOffs = 0, overtime = 0;
