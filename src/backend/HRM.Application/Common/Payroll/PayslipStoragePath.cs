@@ -27,7 +27,8 @@ public static class PayslipStoragePath
         // EmployeeNo is tenant-controlled config, not free-form user input, but sanitize to a safe file-name
         // charset so a stray separator can never alter a Content-Disposition header or a ZIP entry path.
         var safeNo = Sanitize(employeeNo);
-        return $"{safeNo}_{payMonth}_{payYear}.pdf";
+        // ISSUE-163: zero-pad the month so files sort correctly and read consistently (EMP_05_2026, not EMP_5_2026).
+        return $"{safeNo}_{payMonth:D2}_{payYear}.pdf";
     }
 
     /// <summary>NFR-6: rejects any relative path that escapes the tenant scope. Defensive — paths are GUID-derived.</summary>

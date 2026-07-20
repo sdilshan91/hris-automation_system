@@ -117,11 +117,24 @@ public sealed class PayslipStoragePathTests
     }
 
     [Fact]
+    [Trait("TC", "TC-PAY-004-14")]
     public void DownloadFileName_FollowsBr5Format()
     {
+        // ISSUE-163: the pay month is zero-padded (EMP-0042_05_2026, not _5_).
         var name = PayslipStoragePath.DownloadFileName("EMP-0042", 5, 2026);
 
-        name.Should().Be("EMP-0042_5_2026.pdf");
+        name.Should().Be("EMP-0042_05_2026.pdf");
+    }
+
+    // ISSUE-163: the month is always two digits; two-digit months are unchanged.
+    [Theory]
+    [Trait("TC", "TC-PAY-004-14")]
+    [InlineData(1, "EMP-0042_01_2026.pdf")]
+    [InlineData(5, "EMP-0042_05_2026.pdf")]
+    [InlineData(12, "EMP-0042_12_2026.pdf")]
+    public void DownloadFileName_ZeroPadsMonthToTwoDigits(int month, string expected)
+    {
+        PayslipStoragePath.DownloadFileName("EMP-0042", month, 2026).Should().Be(expected);
     }
 
     [Theory]
@@ -150,6 +163,6 @@ public sealed class PayslipStoragePathTests
 
         name.Should().NotContain("/");
         name.Should().NotContain("..");
-        name.Should().EndWith("_3_2026.pdf");
+        name.Should().EndWith("_03_2026.pdf"); // ISSUE-163: zero-padded month
     }
 }

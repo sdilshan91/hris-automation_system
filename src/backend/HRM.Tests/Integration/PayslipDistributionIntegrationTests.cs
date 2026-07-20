@@ -179,7 +179,7 @@ public sealed class PayslipDistributionIntegrationTests
 
         _sender.Sent.Select(m => m.RecipientEmail).Should().BeEquivalentTo(new[] { "e1@t.com", "e2@t.com" });
         _sender.Sent.Should().OnlyContain(m => m.AttachmentContent.Length > 0 && m.AttachmentContentType == "application/pdf");
-        _sender.Sent.Should().OnlyContain(m => m.AttachmentFileName.EndsWith("_5_2026.pdf"));
+        _sender.Sent.Should().OnlyContain(m => m.AttachmentFileName.EndsWith("_05_2026.pdf")); // ISSUE-163: zero-padded month
 
         using var db = Db(_tenantA);
         var logs = await db.PayslipEmailLogs.Where(l => l.PayrollRunId == runId).ToListAsync();

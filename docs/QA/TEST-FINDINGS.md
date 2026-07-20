@@ -3567,7 +3567,7 @@ Scope: TC-PAY-004-01..12 + TC-PAY-ISO-013..016 (16 TCs). Method: API-layer (curl
 Scope: Executed TC-PAY-005-01..12 + TC-PAY-ISO-017..020 against the running API at :5000 (acme tenant). Method: API-layer (curl + JWT), persona employee@acme.test (`Payroll.View.Own`, linked Employee record). Routes discovered: `GET /api/v1/payroll/my-payslips` (list), `GET .../my-payslips/{payslipId}` (detail), `GET .../my-payslips/{payslipId}/pdf` (download) — all gated by `Payroll.View.Own` (story named `Payroll.Read.Self`; not in catalog). FE/Docker down → UI/a11y/perf/cross-browser TCs BLOCKED. Findings below.
 
 ### ISSUE-163 — Payslip PDF download filename omits zero-padding on month (`_5_` not `_05_`)
-- **Type**: ISSUE · **Severity**: LOW · **Status**: OPEN · **Layer**: BE
+- **Type**: ISSUE · **Severity**: LOW · **Status**: ✅ RESOLVED (2026-07-20, #PR-pending, +TC-PAY-004-14) — `PayslipStoragePath.DownloadFileName` now formats the month as `{PayMonth:D2}`; the four end-to-end download assertions (admin/self-service/ZIP/emailed) updated to the padded name. · **Layer**: BE
 - **Module/US/TC**: Payroll / US-PAY-005 / TC-PAY-005-03 (also affects US-PAY-004 admin download — same shared helper)
 - **Title**: `Content-Disposition` filename is `EMP-0001_5_2026.pdf` but the spec (TC-PAY-005-03 step 2, US-PAY-004 BR-5 `{EmployeeNo}_{PayMonth}_{PayYear}.pdf`) implies a 2-digit zero-padded month → expected `EMP-0001_05_2026.pdf`.
 - **Root cause** (95%): `PayslipStoragePath.DownloadFileName` (HRM.Application/Common/Payroll/PayslipStoragePath.cs:25-31) interpolates `{payMonth}` as a raw int with no `:D2` format. Shared by both the employee self-service download and the admin download, so both are non-padded.
