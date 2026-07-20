@@ -44,9 +44,10 @@
 
 | Item | What | Status |
 |------|------|--------|
-| **DF-51** | k6 dashboard-at-scale scenario (p95<800ms @ 50k rows) | Rig exists (`perf/scripts/*` + 50k seed); **run locally now**. |
-| RLS dev-enable | Enable + validate RLS in a local/throwaway DB (prod flip stays ops) | Built + proven OFF; **validate in dev now**. |
-| ClamAV | Run ClamAV in Docker + confirm the virus-scan path (EICAR) locally | **Validate in dev now**. |
+| **DF-51** | k6 dashboard-at-scale scenario (p95<800ms @ 50k rows) | ✅ **VALIDATED 2026-07-20** — 50k / 50-VU / 5-min: widgets **p95 192.9ms** (<800 ✅), 0% errors. Cold-start outliers (max ~25s) → DF-50. |
+| RLS dev-enable | Enable + validate RLS in a local/throwaway DB (prod flip stays ops) | ✅ **VALIDATED 2026-07-20** — 20/20 across all 5 RLS Testcontainers suites (isolation, fail-closed GUC, reconciler ENABLE→isolate→DISABLE reversibility). Prod flip stays the ops runbook. |
+| ClamAV | Run ClamAV in Docker + confirm the virus-scan path (EICAR) locally | ✅ **VALIDATED 2026-07-20 (#401)** — `ClamAvVirusScanner` detects EICAR against a real clamd; clean passes. Durable opt-in test `Category=ClamAv`. |
+| **DF-53** (new) | Perf seed not self-contained on a fresh DB (sources hash + roles from `acme`) | Rig-hardening: COALESCE the role/hash source across acme→e2e→any built-in-role tenant. Workaround documented in `perf/README.md`. |
 
 ## Suggested order
 1. **Tier A** (DF-20 → DF-6 → DF-31) — fast, low-risk, reuse shipped patterns.
