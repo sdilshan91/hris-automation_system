@@ -407,7 +407,7 @@ public sealed class MyPayslipIntegrationTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.ContentType.Should().Be("application/pdf");
-        result.Value.FileName.Should().Be("EMP-7_5_2026.pdf");
+        result.Value.FileName.Should().Be("EMP-7_05_2026.pdf"); // ISSUE-163: zero-padded month
         result.Value.Content.Should().NotBeNullOrEmpty();
     }
 

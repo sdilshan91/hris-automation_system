@@ -245,7 +245,7 @@ public sealed class PayslipGenerationIntegrationTests
 
         download.IsSuccess.Should().BeTrue();
         download.Value!.ContentType.Should().Be("application/pdf");
-        download.Value.FileName.Should().Be("EMP-7_5_2026.pdf");
+        download.Value.FileName.Should().Be("EMP-7_05_2026.pdf"); // ISSUE-163: zero-padded month
         download.Value.Content.Should().NotBeNullOrEmpty();
     }
 
@@ -323,7 +323,7 @@ public sealed class PayslipGenerationIntegrationTests
 
         using var archive = new ZipArchive(new MemoryStream(zip.Value.Content), ZipArchiveMode.Read);
         archive.Entries.Should().ContainSingle();
-        archive.Entries[0].Name.Should().Be("EMP-Z_5_2026.pdf");
+        archive.Entries[0].Name.Should().Be("EMP-Z_05_2026.pdf"); // ISSUE-163: zero-padded month
     }
 
     // ── §8: per-run payslip list carries employee + net + pdf status ────────
