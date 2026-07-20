@@ -13,6 +13,18 @@ Direct SQL, bypasses the broken employee-no generator (BUG-093) with explicit `e
 Replicates acme's 8 built-in roles + permissions and creates `perfadmin@perf.test`
 (password `Admin@123!`, hash copied from `tenantadmin@acme.test`).
 
+> **⚠ The seed is NOT self-contained on a fresh/throwaway DB.** It sources perfadmin's password hash
+> AND the 8 built-in roles **from the `acme` tenant** — which a normal dev DB has (via the QA personas
+> reseed) but a freshly-migrated DB does NOT (`DbInitializer` seeds only `platform` + `e2e`). On a fresh
+> DB the unpatched seed yields a `fk_user_tenants_users_user_id` error + a permission-less admin
+> (`roles=0`). **Throwaway-DB recipe (validated 2026-07-20 for the DF-51 50k run):** create the DB → start
+> the API against it once (migrates + seeds `platform`/`e2e`) → `CREATE EXTENSION pgcrypto;` → run the seed
+> with two edits: source the hash via `crypt('Admin@123!', gen_salt('bf', 12))` instead of copying from
+> `tenantadmin@acme.test`, and change the role-replication `WHERE t.subdomain = 'acme'` → `'e2e'` (the 8
+> standard tenant roles incl. `Tenant Admin`, 84 perms). Then perfadmin logs in with full View perms.
+> (Filed as a rig-hardening follow-up: make the seed COALESCE its role/hash source across acme→e2e→any
+> built-in-role tenant so it just works on any DB.)
+
 ```bash
 # from src/backend/HRM.Api, with PGPASSWORD set from user-secrets (never echo it):
 PSQL="/c/Program Files/PostgreSQL/18/bin/psql.exe"
