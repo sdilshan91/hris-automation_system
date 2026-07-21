@@ -727,19 +727,31 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
 
         var workingDays = shift.WorkingDays.ToHashSet();
 
-        int standard = 0;
-        if (shift.StartTime is { } st && shift.EndTime is { } en)
+        // DF-56: an EXPLICIT per-shift StandardWorkMinutes wins; else derive from the span (or MinimumHours
+        // for FLEXIBLE) exactly as today. The caller's `<= 0 → policy` fallback still applies afterwards.
+        int standard;
+        if (shift.StandardWorkMinutes is { } explicitStandard)
         {
-            var span = en.ToTimeSpan().TotalMinutes - st.ToTimeSpan().TotalMinutes;
-            if (span <= 0) span += 24 * 60;   // overnight shift (§10).
-            standard = Math.Max(0, (int)Math.Round(span) - shift.BreakDurationMinutes);
+            standard = explicitStandard;
         }
-        else if (shift.MinimumHours is { } mh)
+        else
         {
-            standard = (int)Math.Round(mh * 60m);
+            standard = 0;
+            if (shift.StartTime is { } st && shift.EndTime is { } en)
+            {
+                var span = en.ToTimeSpan().TotalMinutes - st.ToTimeSpan().TotalMinutes;
+                if (span <= 0) span += 24 * 60;   // overnight shift (§10).
+                standard = Math.Max(0, (int)Math.Round(span) - shift.BreakDurationMinutes);
+            }
+            else if (shift.MinimumHours is { } mh)
+            {
+                standard = (int)Math.Round(mh * 60m);
+            }
         }
 
-        int minimum = shift.MinimumHours is { } min ? (int)Math.Round(min * 60m) : 0;
+        // DF-56: an EXPLICIT per-shift MinimumWorkMinutes wins; else derive from MinimumHours as today.
+        int minimum = shift.MinimumWorkMinutes
+            ?? (shift.MinimumHours is { } min ? (int)Math.Round(min * 60m) : 0);
 
         return (workingDays, standard, minimum, shift.GracePeriodMinutes, shift.StartTime, shift.EndTime);
     }

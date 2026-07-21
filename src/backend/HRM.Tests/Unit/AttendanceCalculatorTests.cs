@@ -39,6 +39,29 @@ public sealed class AttendanceCalculatorTests
         r.Status.Should().Be("COMPLETE");
     }
 
+    // ── DF-56: an EXPLICIT shift knob governs the money math; a null / unset knob is byte-identical ──
+    [Fact]
+    [Trait("TC", "TC-ATT-005-19")]
+    public void ExplicitShiftStandard_GovernsOvertime_NullKnobIsIdentical()
+    {
+        // High break threshold so no auto-break; OT tolerance 0. 500 gross minutes worked.
+        var settings = Settings(standard: 480, breakThreshold: 100_000, otThreshold: 0);
+        var clockIn = new DateTime(2026, 6, 14, 8, 0, 0, DateTimeKind.Utc);
+        var clockOut = clockIn.AddMinutes(500);
+
+        // A shift with an explicit 420-min standard → OT = 500 - 420 = 80 (more than the tenant's 500-480=20).
+        AttendanceCalculator.Calculate(clockIn, clockOut, settings, shift: new Shift { StandardWorkMinutes = 420 })
+            .OvertimeMinutes.Should().Be(80, "the shift's explicit standard governs the overtime math");
+
+        // No shift → tenant 480 → OT 20 (byte-identical to pre-DF-56).
+        AttendanceCalculator.Calculate(clockIn, clockOut, settings, shift: null)
+            .OvertimeMinutes.Should().Be(20, "a null shift falls back to the tenant setting");
+
+        // A shift that leaves every knob unset changes nothing.
+        AttendanceCalculator.Calculate(clockIn, clockOut, settings, shift: new Shift())
+            .OvertimeMinutes.Should().Be(20, "an all-null-knob shift is identical to no shift");
+    }
+
     [Fact]
     public void BelowBreakThreshold_NoDeduction()
     {

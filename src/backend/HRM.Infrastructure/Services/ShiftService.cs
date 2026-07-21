@@ -88,6 +88,12 @@ public sealed class ShiftService : IShiftService
             BreakDurationMinutes = request.BreakDurationMinutes,
             GracePeriodMinutes = request.GracePeriodMinutes,
             MinimumHours = request.MinimumHours,
+            // DF-56: optional EXPLICIT work-minute overrides (null → tenant/derived resolution).
+            StandardWorkMinutes = request.StandardWorkMinutes,
+            MinimumWorkMinutes = request.MinimumWorkMinutes,
+            AutoBreakMinutes = request.AutoBreakMinutes,
+            AutoBreakThresholdMinutes = request.AutoBreakThresholdMinutes,
+            OvertimeThresholdMinutes = request.OvertimeThresholdMinutes,
             WorkingDays = request.WorkingDays.Distinct().OrderBy(d => d).ToList(),
             IsDefault = false,
             IsActive = true,
@@ -159,6 +165,12 @@ public sealed class ShiftService : IShiftService
         shift.BreakDurationMinutes = request.BreakDurationMinutes;
         shift.GracePeriodMinutes = request.GracePeriodMinutes;
         shift.MinimumHours = request.MinimumHours;
+        // DF-56: optional EXPLICIT work-minute overrides (null → tenant/derived resolution).
+        shift.StandardWorkMinutes = request.StandardWorkMinutes;
+        shift.MinimumWorkMinutes = request.MinimumWorkMinutes;
+        shift.AutoBreakMinutes = request.AutoBreakMinutes;
+        shift.AutoBreakThresholdMinutes = request.AutoBreakThresholdMinutes;
+        shift.OvertimeThresholdMinutes = request.OvertimeThresholdMinutes;
         shift.WorkingDays = request.WorkingDays.Distinct().OrderBy(d => d).ToList();
 
         // Replace rotation steps wholesale (soft-delete the old ones to honour the unique/order index).
@@ -283,6 +295,12 @@ public sealed class ShiftService : IShiftService
             BreakDurationMinutes = source.BreakDurationMinutes,
             GracePeriodMinutes = source.GracePeriodMinutes,
             MinimumHours = source.MinimumHours,
+            // DF-56: carry the EXPLICIT work-minute overrides onto the clone verbatim.
+            StandardWorkMinutes = source.StandardWorkMinutes,
+            MinimumWorkMinutes = source.MinimumWorkMinutes,
+            AutoBreakMinutes = source.AutoBreakMinutes,
+            AutoBreakThresholdMinutes = source.AutoBreakThresholdMinutes,
+            OvertimeThresholdMinutes = source.OvertimeThresholdMinutes,
             WorkingDays = new List<int>(source.WorkingDays),
             IsDefault = false,
             IsActive = true,
@@ -520,6 +538,14 @@ public sealed class ShiftService : IShiftService
             BreakDurationMinutes = dto.BreakDurationMinutes,
             GracePeriodMinutes = dto.GracePeriodMinutes,
             MinimumHours = dto.MinimumHours,
+            // DF-56: this manual copy hand-maps every ShiftDto field, so the overrides must be carried
+            // explicitly (inheritance alone would leave them defaulted). The resolved-shift path feeds the
+            // attendance/overtime math, so dropping them here would silently defeat the knobs.
+            StandardWorkMinutes = dto.StandardWorkMinutes,
+            MinimumWorkMinutes = dto.MinimumWorkMinutes,
+            AutoBreakMinutes = dto.AutoBreakMinutes,
+            AutoBreakThresholdMinutes = dto.AutoBreakThresholdMinutes,
+            OvertimeThresholdMinutes = dto.OvertimeThresholdMinutes,
             WorkingDays = dto.WorkingDays,
             IsDefault = dto.IsDefault,
             IsActive = dto.IsActive,
@@ -716,6 +742,12 @@ public sealed class ShiftService : IShiftService
         s.BreakDurationMinutes,
         s.GracePeriodMinutes,
         s.MinimumHours,
+        // DF-56: audit the explicit work-minute overrides so a change is captured before/after.
+        s.StandardWorkMinutes,
+        s.MinimumWorkMinutes,
+        s.AutoBreakMinutes,
+        s.AutoBreakThresholdMinutes,
+        s.OvertimeThresholdMinutes,
         WorkingDays = s.WorkingDays,
         s.IsDefault,
         s.IsActive,
@@ -789,6 +821,12 @@ public sealed class ShiftService : IShiftService
             BreakDurationMinutes = s.BreakDurationMinutes,
             GracePeriodMinutes = s.GracePeriodMinutes,
             MinimumHours = s.MinimumHours,
+            // DF-56: surface the explicit work-minute overrides on the response.
+            StandardWorkMinutes = s.StandardWorkMinutes,
+            MinimumWorkMinutes = s.MinimumWorkMinutes,
+            AutoBreakMinutes = s.AutoBreakMinutes,
+            AutoBreakThresholdMinutes = s.AutoBreakThresholdMinutes,
+            OvertimeThresholdMinutes = s.OvertimeThresholdMinutes,
             WorkingDays = s.WorkingDays,
             IsDefault = s.IsDefault,
             IsActive = s.IsActive,

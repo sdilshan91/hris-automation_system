@@ -825,11 +825,9 @@ public sealed class OvertimeService : IOvertimeService
     private async Task<int> ResolveStandardMinutesAsync(
         Guid employeeId, DateOnly date, AttendanceSettings settings, CancellationToken cancellationToken)
     {
-        // ISSUE-078: canonical — the tenant standard, matching the report/summary. Falls through to the
-        // shift-derived span only when no tenant standard is configured.
-        if (settings.StandardWorkMinutes > 0)
-            return settings.StandardWorkMinutes;
-
+        // Resolve the employee's shift up front (assignment effective on the date, else the tenant default)
+        // so an EXPLICIT per-shift standard (DF-56) can take top priority before the ISSUE-078 tenant
+        // canonical. Byte-identical to the prior order when no shift carries an explicit standard.
         var assignment = await _dbContext.EmployeeShifts
             .AsNoTracking()
             .Where(es => es.EmployeeId == employeeId
@@ -850,6 +848,17 @@ public sealed class OvertimeService : IOvertimeService
         shift ??= await _dbContext.Shifts
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.IsDefault, cancellationToken);
+
+        // DF-56: an EXPLICIT per-shift StandardWorkMinutes wins over everything — including the tenant
+        // canonical below. This is the money path (payroll overtime), so an explicitly-configured shift
+        // standard is authoritative for that shift.
+        if (shift?.StandardWorkMinutes is { } explicitStandard)
+            return explicitStandard;
+
+        // ISSUE-078: canonical — the tenant standard, matching the report/summary. Falls through to the
+        // shift-derived span only when no tenant standard is configured.
+        if (settings.StandardWorkMinutes > 0)
+            return settings.StandardWorkMinutes;
 
         if (shift is null)
             return settings.StandardWorkMinutes;   // AC-1 fallback: no shift -> tenant setting.

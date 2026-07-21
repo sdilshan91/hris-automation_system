@@ -46,6 +46,30 @@ public sealed class Shift : BaseEntity, IAuditExempt
     /// <summary>Break minutes auto-deducted from worked time on clock-out (BR-5; see US-ATT-002).</summary>
     public int BreakDurationMinutes { get; set; }
 
+    // ── DF-56: per-shift work-minute overrides ─────────────────────────
+    // Optional EXPLICIT overrides that mirror the tenant AttendanceSettings knobs. Each is the
+    // TOP-priority input to the attendance/overtime work-minute resolution: precedence everywhere is
+    // `shift.<Knob> ?? <existing tenant/derived resolution>`. LEFT NULL, a knob changes NOTHING — the
+    // resolution falls through to exactly today's logic (tenant setting / shift-span derivation). These
+    // are deliberately nullable (NOT the <=0 sentinel the older shift fields use) because 0 is a
+    // legitimate value — e.g. OvertimeThresholdMinutes = 0 means "any excess is overtime" — so 0 must be
+    // distinguishable from "unset".
+
+    /// <summary>EXPLICIT standard work minutes for this shift (mirrors <c>AttendanceSettings.StandardWorkMinutes</c>). Null → tenant/derived standard.</summary>
+    public int? StandardWorkMinutes { get; set; }
+
+    /// <summary>EXPLICIT minimum work minutes below which a day is SHORT_DAY (mirrors <c>AttendanceSettings.MinimumWorkMinutes</c>). Null → tenant/derived minimum.</summary>
+    public int? MinimumWorkMinutes { get; set; }
+
+    /// <summary>EXPLICIT auto-break minutes deducted once the gross span exceeds the threshold (mirrors <c>AttendanceSettings.AutoBreakMinutes</c>). Null → tenant setting.</summary>
+    public int? AutoBreakMinutes { get; set; }
+
+    /// <summary>EXPLICIT gross-span threshold above which the auto-break is deducted (mirrors <c>AttendanceSettings.AutoBreakThresholdMinutes</c>). Null → tenant setting.</summary>
+    public int? AutoBreakThresholdMinutes { get; set; }
+
+    /// <summary>EXPLICIT tolerance minutes beyond the standard before overtime is recognized (mirrors <c>AttendanceSettings.OvertimeThresholdMinutes</c>; 0 = no tolerance). Null → tenant setting.</summary>
+    public int? OvertimeThresholdMinutes { get; set; }
+
     /// <summary>Minutes after <see cref="StartTime"/> before a clock-in is "late" (BR-4).</summary>
     public int GracePeriodMinutes { get; set; }
 

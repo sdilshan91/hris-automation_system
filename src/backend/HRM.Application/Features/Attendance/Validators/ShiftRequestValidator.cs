@@ -28,6 +28,29 @@ public sealed class ShiftRequestValidator : AbstractValidator<ShiftRequest>
         RuleFor(x => x.GracePeriodMinutes)
             .InclusiveBetween(0, 1440).WithMessage("Grace period must be between 0 and 1440 minutes.");
 
+        // DF-56: optional per-shift work-minute overrides. Only validated when supplied (null = unset →
+        // falls through to the tenant setting). Range is 0..1440 (one day); 0 is a legitimate value for
+        // OvertimeThresholdMinutes ("any excess is overtime").
+        // DF-56: floor Standard/Minimum at 1 — a zero standard is nonsensical AND would split the OT record
+        // (which treats an explicit 0 as authoritative) from the monthly summary (which re-overrides `<= 0` back
+        // to tenant policy, AttendanceSummaryService), breaking the ISSUE-078 reconciliation this DF preserves.
+        // (0 remains valid for AutoBreak*/OvertimeThreshold below, where it is a meaningful setting.)
+        RuleFor(x => x.StandardWorkMinutes!.Value)
+            .InclusiveBetween(1, 1440).WithMessage("Standard work minutes must be between 1 and 1440.")
+            .When(x => x.StandardWorkMinutes.HasValue);
+        RuleFor(x => x.MinimumWorkMinutes!.Value)
+            .InclusiveBetween(1, 1440).WithMessage("Minimum work minutes must be between 1 and 1440.")
+            .When(x => x.MinimumWorkMinutes.HasValue);
+        RuleFor(x => x.AutoBreakMinutes!.Value)
+            .InclusiveBetween(0, 1440).WithMessage("Auto-break minutes must be between 0 and 1440.")
+            .When(x => x.AutoBreakMinutes.HasValue);
+        RuleFor(x => x.AutoBreakThresholdMinutes!.Value)
+            .InclusiveBetween(0, 1440).WithMessage("Auto-break threshold minutes must be between 0 and 1440.")
+            .When(x => x.AutoBreakThresholdMinutes.HasValue);
+        RuleFor(x => x.OvertimeThresholdMinutes!.Value)
+            .InclusiveBetween(0, 1440).WithMessage("Overtime threshold minutes must be between 0 and 1440.")
+            .When(x => x.OvertimeThresholdMinutes.HasValue);
+
         // Time format (HH:mm 24h) when provided.
         RuleFor(x => x.StartTime)
             .Must(BeValidTimeOrNull).WithMessage("Start time must be in HH:mm (24h) format.");
