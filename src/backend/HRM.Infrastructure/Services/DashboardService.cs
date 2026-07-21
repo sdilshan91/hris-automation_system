@@ -11,6 +11,8 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Services;
@@ -53,6 +55,13 @@ public sealed class DashboardService : IDashboardService
     private readonly IHrReportService _hrReports;
     private readonly ILogger<DashboardService> _logger;
 
+    // DF-50: fans each role's widgets out over child DI scopes (bounded) so the ~8 independent per-role widget
+    // builders no longer serialize on the single scoped AppDbContext. The runner re-seeds the tenant on every
+    // child scope (isolation gate). Default bound 4 (Dashboard:MaxWidgetParallelism) to avoid Npgsql pool
+    // exhaustion (~8 widgets × concurrent users × EnableRetryOnFailure can cascade).
+    private readonly IParallelTenantScopeRunner _parallelRunner;
+    private readonly int _maxWidgetParallelism;
+
     // Per-module collaborators are OPTIONAL so the tests can construct the service with only the pieces a
     // given scenario exercises (mirrors the HrReportService optional-collaborator pattern). A widget whose
     // collaborator is absent is simply omitted (graceful degradation).
@@ -76,6 +85,8 @@ public sealed class DashboardService : IDashboardService
         ICurrentUser currentUser,
         IHrReportService hrReports,
         ILogger<DashboardService> logger,
+        IParallelTenantScopeRunner parallelRunner,
+        IConfiguration configuration,
         IVacancyService? vacancies = null,
         ILeaveRequestService? leaveRequests = null,
         ILeaveDashboardService? leaveDashboard = null,
@@ -92,6 +103,8 @@ public sealed class DashboardService : IDashboardService
         _currentUser = currentUser;
         _hrReports = hrReports;
         _logger = logger;
+        _parallelRunner = parallelRunner;
+        _maxWidgetParallelism = Math.Max(1, configuration.GetValue("Dashboard:MaxWidgetParallelism", 4));
         _vacancies = vacancies;
         _leaveRequests = leaveRequests;
         _leaveDashboard = leaveDashboard;
@@ -165,37 +178,32 @@ public sealed class DashboardService : IDashboardService
     // headcount, open-positions, pending-leave, attendance-today, upcoming-birthdays, recent-joiners,
     // onboarding-in-progress, turnover-rate.
 
+    // DF-50: the ~8 HR widgets are mutually independent — each is now a factory that resolves a FRESH,
+    // tenant-re-seeded DashboardService from its own child scope (own AppDbContext + collaborators) and builds
+    // ONE widget. The runner drives them concurrently (bounded) and returns them IN ORDER; nulls omit (as before).
     private async Task<List<DashboardWidget>> BuildHrWidgetsAsync(bool refresh, CancellationToken ct)
     {
-        var widgets = new List<DashboardWidget>();
-        var now = DateTime.UtcNow;
+        var factories = new List<Func<IServiceProvider, CancellationToken, Task<DashboardWidget?>>>
+        {
+            // headcount (+ MoM trend from headcount-this-month vs joiners last month — growth = positive/green).
+            (sp, c) => Svc(sp).BuildHeadcountCachedAsync(refresh, c),
+            // open-positions (status = Open) ← IVacancyService.
+            (sp, c) => Svc(sp).BuildOpenPositionsCachedAsync(refresh, c),
+            // pending-leave (tenant-wide pending leave requests; click-through to the leave queue).
+            (sp, c) => Svc(sp).BuildPendingLeaveAllCachedAsync(refresh, c),
+            // attendance-today (HR all scope) ← IAttendanceDashboardService.
+            (sp, c) => Svc(sp).BuildAttendanceTodayCachedAsync("all", "attendance-today", "Today's Attendance", refresh, c),
+            // upcoming-birthdays + anniversaries (next 7 days, BR-4).
+            (sp, c) => Svc(sp).BuildUpcomingBirthdaysCachedAsync(null, refresh, c),
+            // recent-joiners (last 30 days).
+            (sp, c) => Svc(sp).BuildRecentJoinersCachedAsync(refresh, c),
+            // onboarding-in-progress (active checklist instances).
+            (sp, c) => Svc(sp).BuildOnboardingInProgressCachedAsync(refresh, c),
+            // turnover-rate (current quarter) ← IHrReportService EmployeeTurnover; increase = negative/red.
+            (sp, c) => Svc(sp).BuildTurnoverCachedAsync(refresh, c),
+        };
 
-        // headcount (+ MoM trend from headcount-this-month vs joiners last month — growth = positive/green).
-        var headcount = await CachedAsync("hr", "headcount", refresh, ct, () => HeadcountWidgetAsync(ct));
-        Add(widgets, headcount);
-
-        // open-positions (status = Open) ← IVacancyService.
-        Add(widgets, await CachedAsync("hr", "open-positions", refresh, ct, () => OpenPositionsWidgetAsync(ct)));
-
-        // pending-leave (tenant-wide pending leave requests; click-through to the leave queue).
-        Add(widgets, await CachedAsync("hr", "pending-leave", refresh, ct, () => PendingLeaveAllWidgetAsync(ct)));
-
-        // attendance-today (HR all scope) ← IAttendanceDashboardService.
-        Add(widgets, await CachedAsync("hr", "attendance-today", refresh, ct, () => AttendanceTodayWidgetAsync("all", "attendance-today", "Today's Attendance", ct)));
-
-        // upcoming-birthdays + anniversaries (next 7 days, BR-4).
-        Add(widgets, await CachedAsync("hr", "upcoming-birthdays", refresh, ct, () => UpcomingBirthdaysWidgetAsync(null, ct)));
-
-        // recent-joiners (last 30 days).
-        Add(widgets, await CachedAsync("hr", "recent-joiners", refresh, ct, () => RecentJoinersWidgetAsync(ct)));
-
-        // onboarding-in-progress (active checklist instances).
-        Add(widgets, await CachedAsync("hr", "onboarding-in-progress", refresh, ct, () => OnboardingInProgressWidgetAsync(ct)));
-
-        // turnover-rate (current quarter) ← IHrReportService EmployeeTurnover; increase = negative/red.
-        Add(widgets, await CachedAsync("hr", "turnover-rate", refresh, ct, () => TurnoverWidgetAsync(now, ct)));
-
-        return widgets;
+        return await FanOutAsync(factories, ct);
     }
 
     // ── Manager dashboard (AC-2) ────────────────────────────────────────────
@@ -203,72 +211,149 @@ public sealed class DashboardService : IDashboardService
 
     private async Task<List<DashboardWidget>> BuildManagerWidgetsAsync(Employee? me, bool refresh, CancellationToken ct)
     {
-        var widgets = new List<DashboardWidget>();
-
-        // team-size (direct reports of me).
-        Add(widgets, await CachedAsync("manager", "team-size", refresh, ct, () => TeamSizeWidgetAsync(me, ct)));
-
-        // team-attendance-today (team scope) ← IAttendanceDashboardService.
-        Add(widgets, await CachedAsync("manager", "team-attendance-today", refresh, ct, () => AttendanceTodayWidgetAsync("team", "team-attendance-today", "Team Attendance Today", ct)));
-
-        // pending-approvals (leave requests assigned to ME only, BR-3) ← ILeaveRequestService.
-        Add(widgets, await CachedAsync("manager", "pending-approvals", refresh, ct, () => PendingApprovalsWidgetAsync(ct)));
-
-        // team-leave-calendar (link widget — the FE renders the mini calendar from the leave module).
-        widgets.Add(new DashboardWidget
+        var factories = new List<Func<IServiceProvider, CancellationToken, Task<DashboardWidget?>>>
         {
-            WidgetKey = "team-leave-calendar",
-            Label = "Team Leave Calendar",
-            LinkUrl = "/leave/calendar",
-        });
+            // team-size (direct reports of me).
+            (sp, c) => Svc(sp).BuildTeamSizeCachedAsync(me, refresh, c),
+            // team-attendance-today (team scope) ← IAttendanceDashboardService.
+            (sp, c) => Svc(sp).BuildAttendanceTodayCachedAsync("team", "team-attendance-today", "Team Attendance Today", refresh, c),
+            // pending-approvals (leave requests assigned to ME only, BR-3) ← ILeaveRequestService.
+            (sp, c) => Svc(sp).BuildPendingApprovalsCachedAsync(refresh, c),
+            // team-leave-calendar (pure link widget — no scope/DB needed).
+            (_, _) => Task.FromResult<DashboardWidget?>(TeamLeaveCalendarWidget()),
+            // upcoming-reviews (active appraisal cycle) ← IAppraisalCycleService; OMITTED gracefully if none.
+            (sp, c) => Svc(sp).BuildUpcomingReviewsCachedAsync(refresh, c),
+            // quick-actions (BR-6 actionable shortcuts for the manager persona, FR-7) — pure.
+            (_, _) => Task.FromResult<DashboardWidget?>(QuickActionsWidget()),
+        };
 
-        // upcoming-reviews (active appraisal cycle) ← IAppraisalCycleService; OMITTED gracefully if none.
-        var reviews = await CachedAsync("manager", "upcoming-reviews", refresh, ct, () => UpcomingReviewsWidgetAsync(ct));
-        Add(widgets, reviews);
-
-        // quick-actions (BR-6 actionable shortcuts for the manager persona, FR-7).
-        widgets.Add(new DashboardWidget
-        {
-            WidgetKey = "quick-actions",
-            Label = "Quick Actions",
-            Items =
-            [
-                new() { Label = "Review pending leave", LinkUrl = "/leave/approvals", LinkFilters = Filters(("status", "Pending")) },
-                new() { Label = "Review attendance regularizations", LinkUrl = "/attendance/approvals", LinkFilters = Filters(("status", "Pending")) },
-                new() { Label = "View team", LinkUrl = "/team" },
-            ],
-        });
-
-        return widgets;
+        return await FanOutAsync(factories, ct);
     }
+
+    // Pure manager widgets (no DB) — extracted so they slot into the fan-out factory list in order.
+    private static DashboardWidget TeamLeaveCalendarWidget() => new()
+    {
+        WidgetKey = "team-leave-calendar",
+        Label = "Team Leave Calendar",
+        LinkUrl = "/leave/calendar",
+    };
+
+    private static DashboardWidget QuickActionsWidget() => new()
+    {
+        WidgetKey = "quick-actions",
+        Label = "Quick Actions",
+        Items =
+        [
+            new() { Label = "Review pending leave", LinkUrl = "/leave/approvals", LinkFilters = Filters(("status", "Pending")) },
+            new() { Label = "Review attendance regularizations", LinkUrl = "/attendance/approvals", LinkFilters = Filters(("status", "Pending")) },
+            new() { Label = "View team", LinkUrl = "/team" },
+        ],
+    };
 
     // ── Employee dashboard (AC-3) ───────────────────────────────────────────
     // leave-balance, attendance-this-month, onboarding-progress, upcoming-holidays, recent-payslips, pending-actions.
 
     private async Task<List<DashboardWidget>> BuildEmployeeWidgetsAsync(Employee? me, bool refresh, CancellationToken ct)
     {
-        var widgets = new List<DashboardWidget>();
+        var factories = new List<Func<IServiceProvider, CancellationToken, Task<DashboardWidget?>>>
+        {
+            // leave-balance (donut: consumed vs remaining) ← ILeaveDashboardService.
+            (sp, c) => Svc(sp).BuildLeaveBalanceCachedAsync(refresh, c),
+            // attendance-this-month (progress bar) ← the materialized monthly summary (own record, current month).
+            (sp, c) => Svc(sp).BuildAttendanceThisMonthCachedAsync(me, refresh, c),
+            // onboarding-progress (only when there is an active checklist) ← IOnboardingChecklistService.
+            (sp, c) => Svc(sp).BuildOnboardingProgressCachedAsync(refresh, c),
+            // upcoming-holidays (next 30 days) ← IHolidayService.
+            (sp, c) => Svc(sp).BuildUpcomingHolidaysCachedAsync(refresh, c),
+            // recent-payslips (link + latest count) ← IMyPayslipService.
+            (sp, c) => Svc(sp).BuildRecentPayslipsCachedAsync(refresh, c),
+            // pending-actions (onboarding pending tasks + link; the broader US-NTF task queue is deferred).
+            //   NOTE (DF-50): onboarding-progress + pending-actions both call GetMyChecklistProgressAsync. They now
+            //   run in SEPARATE child scopes so they can't share that result — accepted (no cross-scope state).
+            (sp, c) => Svc(sp).BuildPendingActionsCachedAsync(refresh, c),
+        };
 
-        // leave-balance (donut: consumed vs remaining) ← ILeaveDashboardService.
-        Add(widgets, await CachedAsync("employee", "leave-balance", refresh, ct, () => LeaveBalanceWidgetAsync(ct)));
+        return await FanOutAsync(factories, ct);
+    }
 
-        // attendance-this-month (progress bar) ← the materialized monthly summary (own record, current month).
-        Add(widgets, await CachedAsync("employee", "attendance-this-month", refresh, ct, () => AttendanceThisMonthWidgetAsync(me, ct)));
+    // ── DF-50 fan-out plumbing ───────────────────────────────────────────────
 
-        // onboarding-progress (only when there is an active checklist) ← IOnboardingChecklistService.
-        Add(widgets, await CachedAsync("employee", "onboarding-progress", refresh, ct, () => OnboardingProgressWidgetAsync(ct)));
-
-        // upcoming-holidays (next 30 days) ← IHolidayService.
-        Add(widgets, await CachedAsync("employee", "upcoming-holidays", refresh, ct, () => UpcomingHolidaysWidgetAsync(ct)));
-
-        // recent-payslips (link + latest count) ← IMyPayslipService.
-        Add(widgets, await CachedAsync("employee", "recent-payslips", refresh, ct, () => RecentPayslipsWidgetAsync(ct)));
-
-        // pending-actions (onboarding pending tasks + link; the broader US-NTF task queue is deferred).
-        Add(widgets, await CachedAsync("employee", "pending-actions", refresh, ct, () => PendingActionsWidgetAsync(ct)));
-
+    /// <summary>
+    /// Runs the per-widget factories concurrently (bounded by <see cref="_maxWidgetParallelism"/>) via
+    /// <see cref="IParallelTenantScopeRunner"/> — each in its own tenant-re-seeded child scope — then drops the
+    /// null results (graceful omit, as the old sequential <c>Add</c> did) preserving input order.
+    /// </summary>
+    private async Task<List<DashboardWidget>> FanOutAsync(
+        IEnumerable<Func<IServiceProvider, CancellationToken, Task<DashboardWidget?>>> factories, CancellationToken ct)
+    {
+        var results = await _parallelRunner.RunAllAsync(factories, _maxWidgetParallelism, ct);
+        var widgets = new List<DashboardWidget>(results.Count);
+        foreach (var w in results)
+            if (w is not null)
+                widgets.Add(w);
         return widgets;
     }
+
+    /// <summary>
+    /// Resolves the FRESH, tenant-re-seeded <see cref="DashboardService"/> from a child scope. The child instance
+    /// has its own scoped <c>AppDbContext</c> + collaborators, so one widget's queries never race another's.
+    /// </summary>
+    private static DashboardService Svc(IServiceProvider sp) => (DashboardService)sp.GetRequiredService<IDashboardService>();
+
+    // ── Internal per-widget entrypoints (cache-wrapped) — invoked ON a child-scope instance by the factories ──
+    // Each mirrors exactly what the old sequential role builders did for that widget (same cache key/role/TTL).
+
+    internal Task<DashboardWidget?> BuildHeadcountCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "headcount", refresh, ct, () => HeadcountWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildOpenPositionsCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "open-positions", refresh, ct, () => OpenPositionsWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildPendingLeaveAllCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "pending-leave", refresh, ct, () => PendingLeaveAllWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildAttendanceTodayCachedAsync(
+        string scope, string key, string label, bool refresh, CancellationToken ct)
+        => CachedAsync(scope == "team" ? "manager" : "hr", key, refresh, ct, () => AttendanceTodayWidgetAsync(scope, key, label, ct));
+
+    internal Task<DashboardWidget?> BuildUpcomingBirthdaysCachedAsync(Guid? teamManagerId, bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "upcoming-birthdays", refresh, ct, () => UpcomingBirthdaysWidgetAsync(teamManagerId, ct));
+
+    internal Task<DashboardWidget?> BuildRecentJoinersCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "recent-joiners", refresh, ct, () => RecentJoinersWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildOnboardingInProgressCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "onboarding-in-progress", refresh, ct, () => OnboardingInProgressWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildTurnoverCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("hr", "turnover-rate", refresh, ct, () => TurnoverWidgetAsync(DateTime.UtcNow, ct));
+
+    internal Task<DashboardWidget?> BuildTeamSizeCachedAsync(Employee? me, bool refresh, CancellationToken ct)
+        => CachedAsync("manager", "team-size", refresh, ct, () => TeamSizeWidgetAsync(me, ct));
+
+    internal Task<DashboardWidget?> BuildPendingApprovalsCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("manager", "pending-approvals", refresh, ct, () => PendingApprovalsWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildUpcomingReviewsCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("manager", "upcoming-reviews", refresh, ct, () => UpcomingReviewsWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildLeaveBalanceCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("employee", "leave-balance", refresh, ct, () => LeaveBalanceWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildAttendanceThisMonthCachedAsync(Employee? me, bool refresh, CancellationToken ct)
+        => CachedAsync("employee", "attendance-this-month", refresh, ct, () => AttendanceThisMonthWidgetAsync(me, ct));
+
+    internal Task<DashboardWidget?> BuildOnboardingProgressCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("employee", "onboarding-progress", refresh, ct, () => OnboardingProgressWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildUpcomingHolidaysCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("employee", "upcoming-holidays", refresh, ct, () => UpcomingHolidaysWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildRecentPayslipsCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("employee", "recent-payslips", refresh, ct, () => RecentPayslipsWidgetAsync(ct));
+
+    internal Task<DashboardWidget?> BuildPendingActionsCachedAsync(bool refresh, CancellationToken ct)
+        => CachedAsync("employee", "pending-actions", refresh, ct, () => PendingActionsWidgetAsync(ct));
 
     // ════════════════════════════════════════════════════════════════════════
     //  Per-widget builders (each returns null → the widget is omitted)
@@ -856,12 +941,6 @@ public sealed class DashboardService : IDashboardService
 
     private static IReadOnlyDictionary<string, object?> Filters(params (string Key, object? Value)[] pairs)
         => pairs.ToDictionary(p => p.Key, p => p.Value);
-
-    private static void Add(List<DashboardWidget> widgets, DashboardWidget? widget)
-    {
-        if (widget is not null)
-            widgets.Add(widget);
-    }
 
     // ── FR-4 caching (per widget; key includes userId for team/personal scoping) ─────────────────
 
