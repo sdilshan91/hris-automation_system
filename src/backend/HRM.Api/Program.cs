@@ -401,6 +401,10 @@ try
     // DF-4 (BUG-118): durability backstop for the best-effort post-commit recalc enqueue in UpdateRuleAsync —
     // a daily sweep that re-runs the idempotent recalc across active tenants so a dropped enqueue self-heals.
     builder.Services.AddScoped<HRM.Api.Jobs.LeaveEntitlementReconcileJob>();
+    // DF-58: durability backstops for the best-effort post-commit enqueues in OnboardingChecklistService +
+    // PayrollRunService (siblings of DF-4's LeaveEntitlementReconcileJob).
+    builder.Services.AddScoped<HRM.Api.Jobs.OnboardingOutboxReconcileJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.PayrollRunReconcileJob>();
 
     // US-PAY-004 FR-4: tenant-aware payslip-PDF generation job + the Hangfire-backed scheduler seam (bound to
     // IPayslipGenerationJobScheduler so the Infrastructure PayslipGenerationService can enqueue by interface).
@@ -698,6 +702,21 @@ try
             "leave-entitlement-reconcile",
             job => job.RunAsync(CancellationToken.None),
             "30 2 * * *"); // 02:30 UTC daily
+
+        // DF-58: durability backstop for OnboardingChecklistService's post-commit dispatch enqueue. Drains any
+        // orphaned Pending notification-outbox rows across active tenants (idempotent on the outbox watermark).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.OnboardingOutboxReconcileJob>(
+            "onboarding-outbox-reconcile",
+            job => job.RunAsync(CancellationToken.None),
+            "*/30 * * * *"); // every 30 min — a dropped notification enqueue self-heals within one cadence
+
+        // DF-58: durability backstop for PayrollRunService.InitiateAsync's post-commit enqueue. Re-enqueues runs
+        // stranded in Queued (past the fast-path window) so a wedged period-lockout self-heals. Only Queued+aged —
+        // never Processing/ReviewPending (PayrollRun has no concurrency token; racing a live worker corrupts slips).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.PayrollRunReconcileJob>(
+            "payroll-run-reconcile",
+            job => job.RunAsync(CancellationToken.None),
+            "*/5 * * * *"); // every 5 min — heals a stranded Queued run within ~15 min of the 10-min staleness cut
 
         // US-LV-007 FR-3 / BR-5: Recurring-holiday next-year generation (1 Dec, ~30 days before
         // year-end). Idempotent, so a daily-or-later cadence in December is safe.
